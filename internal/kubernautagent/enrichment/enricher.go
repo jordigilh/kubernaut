@@ -193,15 +193,17 @@ func HistoryEvidenceStatusForError(err error, kind, name, namespace, clusterID, 
 type Tier1Entry struct {
 	RemediationUID string `json:"remediation_uid"`
 	// DD-KA-2496: current-version RO selection metadata, never inferred.
-	WorkflowID                  string   `json:"workflow_id,omitempty"`
-	WorkflowName                string   `json:"workflow_name,omitempty"`
-	WorkflowSelectionConfidence *float64 `json:"workflow_selection_confidence,omitempty"`
-	SignalType                  string   `json:"signal_type,omitempty"`
-	ActionType                  string   `json:"action_type,omitempty"`
-	Outcome                     string   `json:"outcome,omitempty"`
-	EffectivenessScore          *float64 `json:"effectiveness_score,omitempty"`
-	SignalResolved              *bool    `json:"signal_resolved,omitempty"`
-	HashMatch                   string   `json:"hash_match,omitempty"`
+	WorkflowID                  string                           `json:"workflow_id,omitempty"`
+	WorkflowName                string                           `json:"workflow_name,omitempty"`
+	WorkflowSelectionConfidence *float64                         `json:"workflow_selection_confidence,omitempty"`
+	WorkflowRationale           string                           `json:"workflow_rationale,omitempty"`
+	RepeatJustification         *sharedtypes.RepeatJustification `json:"repeat_justification,omitempty"`
+	SignalType                  string                           `json:"signal_type,omitempty"`
+	ActionType                  string                           `json:"action_type,omitempty"`
+	Outcome                     string                           `json:"outcome,omitempty"`
+	EffectivenessScore          *float64                         `json:"effectiveness_score,omitempty"`
+	SignalResolved              *bool                            `json:"signal_resolved,omitempty"`
+	HashMatch                   string                           `json:"hash_match,omitempty"`
 	// DD-KA-2511: server-derived application evidence, never model supplied.
 	AppliedState            string        `json:"applied_state,omitempty"`
 	SpecChangeStatus        string        `json:"spec_change_status,omitempty"`
@@ -215,22 +217,24 @@ type Tier1Entry struct {
 
 // Tier2Summary is a compact historical remediation record (wider window).
 type Tier2Summary struct {
-	RemediationUID              string    `json:"remediation_uid"`
-	WorkflowID                  string    `json:"workflow_id,omitempty"`
-	WorkflowName                string    `json:"workflow_name,omitempty"`
-	WorkflowSelectionConfidence *float64  `json:"workflow_selection_confidence,omitempty"`
-	SignalType                  string    `json:"signal_type,omitempty"`
-	ActionType                  string    `json:"action_type,omitempty"`
-	Outcome                     string    `json:"outcome,omitempty"`
-	EffectivenessScore          *float64  `json:"effectiveness_score,omitempty"`
-	SignalResolved              *bool     `json:"signal_resolved,omitempty"`
-	HashMatch                   string    `json:"hash_match,omitempty"`
-	AppliedState                string    `json:"applied_state,omitempty"`
-	SpecChangeStatus            string    `json:"spec_change_status,omitempty"`
-	PreRemediationSpecHash      string    `json:"pre_remediation_spec_hash,omitempty"`
-	PostRemediationSpecHash     string    `json:"post_remediation_spec_hash,omitempty"`
-	AssessmentReason            string    `json:"assessment_reason,omitempty"`
-	CompletedAt                 time.Time `json:"completed_at"`
+	RemediationUID              string                           `json:"remediation_uid"`
+	WorkflowID                  string                           `json:"workflow_id,omitempty"`
+	WorkflowName                string                           `json:"workflow_name,omitempty"`
+	WorkflowSelectionConfidence *float64                         `json:"workflow_selection_confidence,omitempty"`
+	WorkflowRationale           string                           `json:"workflow_rationale,omitempty"`
+	RepeatJustification         *sharedtypes.RepeatJustification `json:"repeat_justification,omitempty"`
+	SignalType                  string                           `json:"signal_type,omitempty"`
+	ActionType                  string                           `json:"action_type,omitempty"`
+	Outcome                     string                           `json:"outcome,omitempty"`
+	EffectivenessScore          *float64                         `json:"effectiveness_score,omitempty"`
+	SignalResolved              *bool                            `json:"signal_resolved,omitempty"`
+	HashMatch                   string                           `json:"hash_match,omitempty"`
+	AppliedState                string                           `json:"applied_state,omitempty"`
+	SpecChangeStatus            string                           `json:"spec_change_status,omitempty"`
+	PreRemediationSpecHash      string                           `json:"pre_remediation_spec_hash,omitempty"`
+	PostRemediationSpecHash     string                           `json:"post_remediation_spec_hash,omitempty"`
+	AssessmentReason            string                           `json:"assessment_reason,omitempty"`
+	CompletedAt                 time.Time                        `json:"completed_at"`
 }
 
 // IsCompletedValidAssessment implements the shared DD-KA-2496 evidence predicate.

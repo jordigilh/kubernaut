@@ -4652,6 +4652,9 @@ type AIAnalysisAuditPayload struct {
 	WorkflowID OptString `json:"workflow_id"`
 	// Catalog-authoritative non-unique workflow name (DD-KA-2496).
 	WorkflowName OptString `json:"workflow_name"`
+	// Bounded model-authored workflow rationale retained for historical decision context; not execution
+	// configuration.
+	WorkflowRationale OptString `json:"workflow_rationale"`
 	// Selection confidence only; omitted when unknown, never inherited from RCA.
 	WorkflowSelectionConfidence OptFloat64                                       `json:"workflow_selection_confidence"`
 	RepeatJustification         OptRepeatJustification                           `json:"repeat_justification"`
@@ -4723,6 +4726,11 @@ func (s *AIAnalysisAuditPayload) GetWorkflowID() OptString {
 // GetWorkflowName returns the value of WorkflowName.
 func (s *AIAnalysisAuditPayload) GetWorkflowName() OptString {
 	return s.WorkflowName
+}
+
+// GetWorkflowRationale returns the value of WorkflowRationale.
+func (s *AIAnalysisAuditPayload) GetWorkflowRationale() OptString {
+	return s.WorkflowRationale
 }
 
 // GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
@@ -4838,6 +4846,11 @@ func (s *AIAnalysisAuditPayload) SetWorkflowID(val OptString) {
 // SetWorkflowName sets the value of WorkflowName.
 func (s *AIAnalysisAuditPayload) SetWorkflowName(val OptString) {
 	s.WorkflowName = val
+}
+
+// SetWorkflowRationale sets the value of WorkflowRationale.
+func (s *AIAnalysisAuditPayload) SetWorkflowRationale(val OptString) {
+	s.WorkflowRationale = val
 }
 
 // SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
@@ -32139,6 +32152,10 @@ type RemediationHistoryEntry struct {
 	// Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown;
 	//  zero is known (DD-KA-2496).
 	WorkflowSelectionConfidence OptFloat64 `json:"workflowSelectionConfidence"`
+	// Bounded model-authored rationale from the AIAnalysis audit record; historical context only,
+	// omitted when unavailable.
+	WorkflowRationale   OptString              `json:"workflowRationale"`
+	RepeatJustification OptRepeatJustification `json:"repeatJustification"`
 	// Signal fingerprint that triggered the remediation.
 	SignalFingerprint OptString `json:"signalFingerprint"`
 	// Type of signal (e.g. HighCPULoad, OOMKilled).
@@ -32198,6 +32215,16 @@ func (s *RemediationHistoryEntry) GetWorkflowName() OptString {
 // GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
 func (s *RemediationHistoryEntry) GetWorkflowSelectionConfidence() OptFloat64 {
 	return s.WorkflowSelectionConfidence
+}
+
+// GetWorkflowRationale returns the value of WorkflowRationale.
+func (s *RemediationHistoryEntry) GetWorkflowRationale() OptString {
+	return s.WorkflowRationale
+}
+
+// GetRepeatJustification returns the value of RepeatJustification.
+func (s *RemediationHistoryEntry) GetRepeatJustification() OptRepeatJustification {
+	return s.RepeatJustification
 }
 
 // GetSignalFingerprint returns the value of SignalFingerprint.
@@ -32303,6 +32330,16 @@ func (s *RemediationHistoryEntry) SetWorkflowName(val OptString) {
 // SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
 func (s *RemediationHistoryEntry) SetWorkflowSelectionConfidence(val OptFloat64) {
 	s.WorkflowSelectionConfidence = val
+}
+
+// SetWorkflowRationale sets the value of WorkflowRationale.
+func (s *RemediationHistoryEntry) SetWorkflowRationale(val OptString) {
+	s.WorkflowRationale = val
+}
+
+// SetRepeatJustification sets the value of RepeatJustification.
+func (s *RemediationHistoryEntry) SetRepeatJustification(val OptRepeatJustification) {
+	s.RepeatJustification = val
 }
 
 // SetSignalFingerprint sets the value of SignalFingerprint.
@@ -32662,6 +32699,10 @@ type RemediationHistorySummary struct {
 	// Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown;
 	//  zero is known (DD-KA-2496).
 	WorkflowSelectionConfidence OptFloat64 `json:"workflowSelectionConfidence"`
+	// Bounded model-authored rationale from the AIAnalysis audit record; historical context only,
+	// omitted when unavailable.
+	WorkflowRationale   OptString              `json:"workflowRationale"`
+	RepeatJustification OptRepeatJustification `json:"repeatJustification"`
 	// Type of signal.
 	SignalType OptString `json:"signalType"`
 	// Action type applied (null if escalated).
@@ -32708,6 +32749,16 @@ func (s *RemediationHistorySummary) GetWorkflowName() OptString {
 // GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
 func (s *RemediationHistorySummary) GetWorkflowSelectionConfidence() OptFloat64 {
 	return s.WorkflowSelectionConfidence
+}
+
+// GetWorkflowRationale returns the value of WorkflowRationale.
+func (s *RemediationHistorySummary) GetWorkflowRationale() OptString {
+	return s.WorkflowRationale
+}
+
+// GetRepeatJustification returns the value of RepeatJustification.
+func (s *RemediationHistorySummary) GetRepeatJustification() OptRepeatJustification {
+	return s.RepeatJustification
 }
 
 // GetSignalType returns the value of SignalType.
@@ -32788,6 +32839,16 @@ func (s *RemediationHistorySummary) SetWorkflowName(val OptString) {
 // SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
 func (s *RemediationHistorySummary) SetWorkflowSelectionConfidence(val OptFloat64) {
 	s.WorkflowSelectionConfidence = val
+}
+
+// SetWorkflowRationale sets the value of WorkflowRationale.
+func (s *RemediationHistorySummary) SetWorkflowRationale(val OptString) {
+	s.WorkflowRationale = val
+}
+
+// SetRepeatJustification sets the value of RepeatJustification.
+func (s *RemediationHistorySummary) SetRepeatJustification(val OptRepeatJustification) {
+	s.RepeatJustification = val
 }
 
 // SetSignalType sets the value of SignalType.

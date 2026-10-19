@@ -44,6 +44,7 @@ import (
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Default lookback windows per DD-KA-016 v1.1.
@@ -114,6 +115,16 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 	if tier2Summaries == nil {
 		tier2Summaries = []api.RemediationHistorySummary{}
 	}
+	if err := h.attachHistoricalDecisionContext(ctx, req.clusterID, tier1Entries, tier2Summaries); err != nil {
+		// #2533: a failed supplemental source query means the complete
+		// historical decision context cannot be reconstructed. Preserve the
+		// existing fail-closed history path; missing rows/fields alone remain
+		// explicit unknown context.
+		h.logger.Error(err, "AIAnalysis historical decision context unavailable; failing closed",
+			"target_resource", req.targetResource, "cluster_id", req.clusterID)
+		h.writeRemediationHistoryQueryError(w, err)
+		return
+	}
 	h.logHistorySelectionMetadataGaps(r, req, tier1Entries, tier2Summaries)
 
 	h.logger.Info("Remediation history context served",
@@ -123,6 +134,65 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		"regression_detected", regressionDetected)
 
 	h.writeRemediationHistoryResponse(w, req, tier1Entries, tier2Summaries, regressionDetected)
+}
+
+func (h *Handler) attachHistoricalDecisionContext(
+	ctx context.Context,
+	clusterID string,
+	tier1 []api.RemediationHistoryEntry,
+	tier2 []api.RemediationHistorySummary,
+) error {
+	querier, ok := h.remediationHistoryRepo.(HistoricalDecisionContextQuerier)
+	if !ok {
+		return nil
+	}
+	correlationIDs := make([]string, 0, len(tier1)+len(tier2))
+	seen := make(map[string]struct{}, len(tier1)+len(tier2))
+	add := func(correlationID string) {
+		if correlationID == "" {
+			return
+		}
+		if _, exists := seen[correlationID]; exists {
+			return
+		}
+		seen[correlationID] = struct{}{}
+		correlationIDs = append(correlationIDs, correlationID)
+	}
+	for _, entry := range tier1 {
+		add(entry.RemediationUID)
+	}
+	for _, entry := range tier2 {
+		add(entry.RemediationUID)
+	}
+	if len(correlationIDs) == 0 {
+		return nil
+	}
+
+	contexts, err := querier.QueryAIAnalysisDecisionContextBatch(ctx, correlationIDs, clusterID)
+	if err != nil {
+		return fmt.Errorf("query aianalysis historical decision context: %w", err)
+	}
+	for i := range tier1 {
+		applyHistoricalDecisionContext(&tier1[i].WorkflowRationale, &tier1[i].RepeatJustification, contexts[tier1[i].RemediationUID])
+	}
+	for i := range tier2 {
+		applyHistoricalDecisionContext(&tier2[i].WorkflowRationale, &tier2[i].RepeatJustification, contexts[tier2[i].RemediationUID])
+	}
+	return nil
+}
+
+func applyHistoricalDecisionContext(rationale *api.OptString, justification *api.OptRepeatJustification, context repository.AIAnalysisDecisionContext) {
+	safe := sharedtypes.SafeHistoricalDecisionContext(context)
+	if safe.WorkflowRationale != "" {
+		rationale.SetTo(safe.WorkflowRationale)
+	}
+	if safe.RepeatJustification != nil {
+		justification.SetTo(api.RepeatJustification{
+			EvidenceBasis:         safe.RepeatJustification.EvidenceBasis,
+			PriorOutcomeRelevance: safe.RepeatJustification.PriorOutcomeRelevance,
+			ExpectedMechanism:     safe.RepeatJustification.ExpectedMechanism,
+		})
+	}
 }
 
 // logHistorySelectionMetadataGaps emits one bounded diagnostic for the entire

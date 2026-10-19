@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	internalerrors "github.com/jordigilh/kubernaut/internal/errors"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -94,6 +95,9 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
+	if budgetResult := inv.workflowSelectionPromptBudgetResult(systemPrompt, correlationID); budgetResult != nil {
+		return budgetResult, nil
+	}
 	llmCtx.WorkflowDiscovery = newWorkflowDiscoveryAuditContext(enrichData, overriddenSignal, systemPrompt)
 
 	messages := []llm.Message{
@@ -124,6 +128,33 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return early, nil
 	}
 	return inv.completeWorkflowSelection(ctx, content, messages, rcaSummary, llmCtx)
+}
+
+func validateWorkflowSelectionPromptBudget(rendered string, budget int) error {
+	if len(rendered) > budget {
+		return &internalerrors.PromptBudgetError{PromptBytes: len(rendered), BudgetBytes: budget}
+	}
+	return nil
+}
+
+func (inv *Investigator) workflowSelectionPromptBudgetResult(rendered, correlationID string) *katypes.InvestigationResult {
+	err := validateWorkflowSelectionPromptBudget(rendered, inv.evidence.budget)
+	if err == nil {
+		return nil
+	}
+	var budgetErr *internalerrors.PromptBudgetError
+	if !errors.As(err, &budgetErr) {
+		return nil
+	}
+	inv.logger.Error(err, "workflow selection prompt rejected by byte budget",
+		"correlation_id", correlationID, "prompt_bytes", budgetErr.PromptBytes, "budget_bytes", budgetErr.BudgetBytes)
+	return &katypes.InvestigationResult{
+		HumanReviewNeeded:       true,
+		HumanReviewReason:       katypes.HumanReviewReasonRCAIncomplete,
+		Reason:                  err.Error(),
+		TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
+		WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+	}
 }
 
 // completeWorkflowSelection keeps recovered and first-turn proposals on the

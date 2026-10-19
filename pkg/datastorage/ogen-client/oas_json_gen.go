@@ -7651,6 +7651,12 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.WorkflowRationale.Set {
+			e.FieldStart("workflow_rationale")
+			s.WorkflowRationale.Encode(e)
+		}
+	}
+	{
 		if s.WorkflowSelectionConfidence.Set {
 			e.FieldStart("workflow_selection_confidence")
 			s.WorkflowSelectionConfidence.Encode(e)
@@ -7728,7 +7734,7 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAnalysisAuditPayload = [23]string{
+var jsonFieldsNameOfAIAnalysisAuditPayload = [24]string{
 	0:  "event_type",
 	1:  "analysis_name",
 	2:  "namespace",
@@ -7740,18 +7746,19 @@ var jsonFieldsNameOfAIAnalysisAuditPayload = [23]string{
 	8:  "confidence",
 	9:  "workflow_id",
 	10: "workflow_name",
-	11: "workflow_selection_confidence",
-	12: "repeat_justification",
-	13: "repeat_justification_required",
-	14: "prior_workflow_match",
-	15: "repeat_validation_outcome",
-	16: "handoff_digest",
-	17: "prior_remediation_uids",
-	18: "selection_assessment",
-	19: "reason",
-	20: "sub_reason",
-	21: "provider_response_summary",
-	22: "error_details",
+	11: "workflow_rationale",
+	12: "workflow_selection_confidence",
+	13: "repeat_justification",
+	14: "repeat_justification_required",
+	15: "prior_workflow_match",
+	16: "repeat_validation_outcome",
+	17: "handoff_digest",
+	18: "prior_remediation_uids",
+	19: "selection_assessment",
+	20: "reason",
+	21: "sub_reason",
+	22: "provider_response_summary",
+	23: "error_details",
 }
 
 // Decode decodes AIAnalysisAuditPayload from json.
@@ -7882,6 +7889,16 @@ func (s *AIAnalysisAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_name\"")
+			}
+		case "workflow_rationale":
+			if err := func() error {
+				s.WorkflowRationale.Reset()
+				if err := s.WorkflowRationale.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_rationale\"")
 			}
 		case "workflow_selection_confidence":
 			if err := func() error {
@@ -19216,6 +19233,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.WorkflowRationale.Set {
+					e.FieldStart("workflow_rationale")
+					s.WorkflowRationale.Encode(e)
+				}
+			}
+			{
 				if s.WorkflowSelectionConfidence.Set {
 					e.FieldStart("workflow_selection_confidence")
 					s.WorkflowSelectionConfidence.Encode(e)
@@ -25174,6 +25197,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowName.Set {
 					e.FieldStart("workflow_name")
 					s.WorkflowName.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowRationale.Set {
+					e.FieldStart("workflow_rationale")
+					s.WorkflowRationale.Encode(e)
 				}
 			}
 			{
@@ -48640,6 +48669,18 @@ func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.WorkflowRationale.Set {
+			e.FieldStart("workflowRationale")
+			s.WorkflowRationale.Encode(e)
+		}
+	}
+	{
+		if s.RepeatJustification.Set {
+			e.FieldStart("repeatJustification")
+			s.RepeatJustification.Encode(e)
+		}
+	}
+	{
 		if s.SignalFingerprint.Set {
 			e.FieldStart("signalFingerprint")
 			s.SignalFingerprint.Encode(e)
@@ -48745,28 +48786,30 @@ func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationHistoryEntry = [21]string{
+var jsonFieldsNameOfRemediationHistoryEntry = [23]string{
 	0:  "remediationUID",
 	1:  "workflowId",
 	2:  "workflowName",
 	3:  "workflowSelectionConfidence",
-	4:  "signalFingerprint",
-	5:  "signalType",
-	6:  "actionType",
-	7:  "outcome",
-	8:  "effectivenessScore",
-	9:  "signalResolved",
-	10: "hashMatch",
-	11: "appliedState",
-	12: "specChangeStatus",
-	13: "preRemediationSpecHash",
-	14: "postRemediationSpecHash",
-	15: "healthChecks",
-	16: "metricDeltas",
-	17: "sideEffects",
-	18: "completedAt",
-	19: "assessmentReason",
-	20: "assessedAt",
+	4:  "workflowRationale",
+	5:  "repeatJustification",
+	6:  "signalFingerprint",
+	7:  "signalType",
+	8:  "actionType",
+	9:  "outcome",
+	10: "effectivenessScore",
+	11: "signalResolved",
+	12: "hashMatch",
+	13: "appliedState",
+	14: "specChangeStatus",
+	15: "preRemediationSpecHash",
+	16: "postRemediationSpecHash",
+	17: "healthChecks",
+	18: "metricDeltas",
+	19: "sideEffects",
+	20: "completedAt",
+	21: "assessmentReason",
+	22: "assessedAt",
 }
 
 // Decode decodes RemediationHistoryEntry from json.
@@ -48819,6 +48862,26 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflowSelectionConfidence\"")
+			}
+		case "workflowRationale":
+			if err := func() error {
+				s.WorkflowRationale.Reset()
+				if err := s.WorkflowRationale.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowRationale\"")
+			}
+		case "repeatJustification":
+			if err := func() error {
+				s.RepeatJustification.Reset()
+				if err := s.RepeatJustification.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"repeatJustification\"")
 			}
 		case "signalFingerprint":
 			if err := func() error {
@@ -48970,7 +49033,7 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sideEffects\"")
 			}
 		case "completedAt":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CompletedAt = v
@@ -49013,7 +49076,7 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b00000001,
 		0b00000000,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -49275,6 +49338,18 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.WorkflowRationale.Set {
+			e.FieldStart("workflowRationale")
+			s.WorkflowRationale.Encode(e)
+		}
+	}
+	{
+		if s.RepeatJustification.Set {
+			e.FieldStart("repeatJustification")
+			s.RepeatJustification.Encode(e)
+		}
+	}
+	{
 		if s.SignalType.Set {
 			e.FieldStart("signalType")
 			s.SignalType.Encode(e)
@@ -49346,23 +49421,25 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationHistorySummary = [16]string{
+var jsonFieldsNameOfRemediationHistorySummary = [18]string{
 	0:  "remediationUID",
 	1:  "workflowId",
 	2:  "workflowName",
 	3:  "workflowSelectionConfidence",
-	4:  "signalType",
-	5:  "actionType",
-	6:  "outcome",
-	7:  "effectivenessScore",
-	8:  "signalResolved",
-	9:  "hashMatch",
-	10: "appliedState",
-	11: "specChangeStatus",
-	12: "preRemediationSpecHash",
-	13: "postRemediationSpecHash",
-	14: "assessmentReason",
-	15: "completedAt",
+	4:  "workflowRationale",
+	5:  "repeatJustification",
+	6:  "signalType",
+	7:  "actionType",
+	8:  "outcome",
+	9:  "effectivenessScore",
+	10: "signalResolved",
+	11: "hashMatch",
+	12: "appliedState",
+	13: "specChangeStatus",
+	14: "preRemediationSpecHash",
+	15: "postRemediationSpecHash",
+	16: "assessmentReason",
+	17: "completedAt",
 }
 
 // Decode decodes RemediationHistorySummary from json.
@@ -49370,7 +49447,7 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationHistorySummary to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -49415,6 +49492,26 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflowSelectionConfidence\"")
+			}
+		case "workflowRationale":
+			if err := func() error {
+				s.WorkflowRationale.Reset()
+				if err := s.WorkflowRationale.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowRationale\"")
+			}
+		case "repeatJustification":
+			if err := func() error {
+				s.RepeatJustification.Reset()
+				if err := s.RepeatJustification.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"repeatJustification\"")
 			}
 		case "signalType":
 			if err := func() error {
@@ -49527,7 +49624,7 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"assessmentReason\"")
 			}
 		case "completedAt":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CompletedAt = v
@@ -49547,9 +49644,10 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b00000001,
-		0b10000000,
+		0b00000000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

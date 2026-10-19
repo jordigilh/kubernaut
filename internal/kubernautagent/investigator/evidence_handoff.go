@@ -31,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // DD-KA-2496 / BR-KA-016: this packet exists only for the current model handoff.
@@ -76,16 +77,18 @@ type handoffRCA struct {
 }
 
 type handoffPriorAttempt struct {
-	Attempt                     int                    `json:"attempt"`
-	RemediationUID              string                 `json:"remediation_uid"`
-	WorkflowID                  *string                `json:"workflow_id"`
-	WorkflowName                *string                `json:"workflow_name"`
-	WorkflowSelectionConfidence *float64               `json:"workflow_selection_confidence"`
-	ActionType                  *string                `json:"action_type"`
-	SignalType                  *string                `json:"signal_type"`
-	RecordedAt                  *time.Time             `json:"recorded_at"`
-	Assessment                  handoffPriorAssessment `json:"assessment"`
-	RecordedState               handoffPriorState      `json:"recorded_state"`
+	Attempt                     int                              `json:"attempt"`
+	RemediationUID              string                           `json:"remediation_uid"`
+	WorkflowID                  *string                          `json:"workflow_id"`
+	WorkflowName                *string                          `json:"workflow_name"`
+	WorkflowSelectionConfidence *float64                         `json:"workflow_selection_confidence"`
+	WorkflowRationale           *string                          `json:"workflow_rationale"`
+	RepeatJustification         *sharedtypes.RepeatJustification `json:"repeat_justification"`
+	ActionType                  *string                          `json:"action_type"`
+	SignalType                  *string                          `json:"signal_type"`
+	RecordedAt                  *time.Time                       `json:"recorded_at"`
+	Assessment                  handoffPriorAssessment           `json:"assessment"`
+	RecordedState               handoffPriorState                `json:"recorded_state"`
 	sortKey                     string
 }
 
@@ -323,9 +326,13 @@ func (packet *evidenceHandoff) projectEnrichment(data *prompt.EnrichmentData) {
 func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []handoffPriorAttempt {
 	attempts := make([]handoffPriorAttempt, 0, len(history.Tier1))
 	for _, prior := range history.Tier1 {
+		decision := sharedtypes.SafeHistoricalDecisionContext(sharedtypes.HistoricalDecisionContext{
+			WorkflowRationale: prior.WorkflowRationale, RepeatJustification: prior.RepeatJustification,
+		})
 		attempts = append(attempts, handoffPriorAttempt{
 			RemediationUID: prior.RemediationUID, WorkflowID: optionalHandoffString(prior.WorkflowID), WorkflowName: optionalHandoffString(prior.WorkflowName),
 			WorkflowSelectionConfidence: prior.WorkflowSelectionConfidence, ActionType: optionalHandoffString(prior.ActionType), SignalType: optionalHandoffString(prior.SignalType),
+			WorkflowRationale: optionalHandoffString(decision.WorkflowRationale), RepeatJustification: decision.RepeatJustification,
 			RecordedAt: handoffRecordedTime(prior.CompletedAt),
 			Assessment: handoffPriorAssessment{Reason: optionalHandoffString(prior.AssessmentReason), EffectivenessScore: prior.EffectivenessScore,
 				SignalResolved: prior.SignalResolved, Outcome: optionalHandoffString(prior.Outcome), CompletedValid: enrichment.IsCompletedValidAssessment(prior.AssessmentReason, prior.EffectivenessScore)},
@@ -337,9 +344,13 @@ func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []hando
 	// Grow reserves the second tier without unchecked allocation-size addition.
 	attempts = slices.Grow(attempts, len(history.Tier2))
 	for _, prior := range history.Tier2 {
+		decision := sharedtypes.SafeHistoricalDecisionContext(sharedtypes.HistoricalDecisionContext{
+			WorkflowRationale: prior.WorkflowRationale, RepeatJustification: prior.RepeatJustification,
+		})
 		attempts = append(attempts, handoffPriorAttempt{
 			RemediationUID: prior.RemediationUID, WorkflowID: optionalHandoffString(prior.WorkflowID), WorkflowName: optionalHandoffString(prior.WorkflowName),
 			WorkflowSelectionConfidence: prior.WorkflowSelectionConfidence, ActionType: optionalHandoffString(prior.ActionType), SignalType: optionalHandoffString(prior.SignalType),
+			WorkflowRationale: optionalHandoffString(decision.WorkflowRationale), RepeatJustification: decision.RepeatJustification,
 			RecordedAt: handoffRecordedTime(prior.CompletedAt),
 			Assessment: handoffPriorAssessment{Reason: optionalHandoffString(prior.AssessmentReason), EffectivenessScore: prior.EffectivenessScore,
 				SignalResolved: prior.SignalResolved, Outcome: optionalHandoffString(prior.Outcome), CompletedValid: enrichment.IsCompletedValidAssessment(prior.AssessmentReason, prior.EffectivenessScore)},

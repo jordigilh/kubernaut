@@ -26,9 +26,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/lib/pq"
 )
 
@@ -49,6 +52,9 @@ const (
 	// remediationHistoryQueryTimeout bounds database work independently of the
 	// connection-wide PostgreSQL statement_timeout.
 	remediationHistoryQueryTimeout = 10 * time.Second
+	// MaxAIAnalysisDecisionContextResults bounds the single history association
+	// query. Tier 1 and Tier 2 are each capped by MaxROEventsBySpecHashResults.
+	MaxAIAnalysisDecisionContextResults = 2 * MaxROEventsBySpecHashResults
 )
 
 // queryROEventsBySpecHash traverses the linked RO chain from a dual-hash
@@ -130,6 +136,11 @@ type RawAuditRow struct {
 	EventTimestamp time.Time
 	CorrelationID  string
 }
+
+// AIAnalysisDecisionContext is the bounded allow-list projected from one
+// aianalysis.analysis.completed audit payload. It is historical evidence only;
+// it contains no execution configuration or raw provider content.
+type AIAnalysisDecisionContext = sharedtypes.HistoricalDecisionContext
 
 // EffectivenessEventRow represents a parsed EM component audit event.
 // Mirrors the EffectivenessEvent type in effectiveness_handler.go but lives
@@ -249,6 +260,100 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	}
 
 	return results, rows.Err()
+}
+
+// QueryAIAnalysisDecisionContextBatch associates the latest typed AIAnalysis
+// completion payload with the already target/cluster-scoped remediation
+// correlation IDs. This is one bounded batch query, never a Phase 3 lookup or
+// an N+1 association read (BR-KA-016, BR-AUDIT-005, AU-3, AC-4).
+func (r *RemediationHistoryRepository) QueryAIAnalysisDecisionContextBatch(
+	ctx context.Context,
+	correlationIDs []string,
+	clusterID string,
+) (map[string]AIAnalysisDecisionContext, error) {
+	ids := uniqueCorrelationIDs(correlationIDs)
+	if len(ids) == 0 {
+		return map[string]AIAnalysisDecisionContext{}, nil
+	}
+	if len(ids) > MaxAIAnalysisDecisionContextResults {
+		err := fmt.Errorf("%w: aianalysis decision context correlation count exceeded %d", ErrRemediationHistoryResourceLimit, MaxAIAnalysisDecisionContextResults)
+		r.logger.Error(err, "AIAnalysis decision context batch exceeded its bound", "correlation_id_count", len(ids))
+		return nil, err
+	}
+
+	const query = `SELECT DISTINCT ON (correlation_id) correlation_id, event_data
+		FROM audit_events
+		WHERE event_type = 'aianalysis.analysis.completed'
+			AND correlation_id = ANY($1)
+			AND ($2 = '' OR cluster_id = $2)
+		ORDER BY correlation_id, event_timestamp DESC, event_id DESC
+		LIMIT $3`
+
+	queryCtx, cancel := context.WithTimeout(ctx, remediationHistoryQueryTimeout)
+	defer cancel()
+	rows, err := r.db.QueryContext(queryCtx, query, pq.Array(ids), clusterID, len(ids))
+	if err != nil {
+		r.logger.Error(err, "failed to query AIAnalysis decision context", "correlation_id_count", len(ids), "cluster_id", clusterID)
+		return nil, fmt.Errorf("query aianalysis decision context: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			r.logger.Error(closeErr, "failed to close AIAnalysis decision context rows")
+		}
+	}()
+
+	result := make(map[string]AIAnalysisDecisionContext, len(ids))
+	for rows.Next() {
+		var correlationID string
+		var eventDataJSON []byte
+		if err := rows.Scan(&correlationID, &eventDataJSON); err != nil {
+			return nil, fmt.Errorf("scan aianalysis decision context: %w", err)
+		}
+
+		var payload ogenclient.AIAnalysisAuditPayload
+		if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+			// A missing or malformed optional source record is unknown context;
+			// do not expose raw payload bytes or fail an otherwise valid history.
+			r.logger.Error(err, "ignored malformed AIAnalysis decision context", "correlation_id", correlationID)
+			continue
+		}
+		decision := sharedtypes.HistoricalDecisionContext{WorkflowRationale: payload.WorkflowRationale.Or("")}
+		if justification, known := payload.RepeatJustification.Get(); known {
+			decision.RepeatJustification = &sharedtypes.RepeatJustification{
+				EvidenceBasis:         justification.EvidenceBasis,
+				PriorOutcomeRelevance: justification.PriorOutcomeRelevance,
+				ExpectedMechanism:     justification.ExpectedMechanism,
+			}
+		}
+		decision = sharedtypes.SafeHistoricalDecisionContext(decision)
+		if decision.WorkflowRationale != "" || decision.RepeatJustification != nil {
+			result[correlationID] = decision
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate aianalysis decision context: %w", err)
+	}
+	if err := queryCtx.Err(); err != nil {
+		return nil, fmt.Errorf("aianalysis decision context query exceeded its context: %w", err)
+	}
+	return result, nil
+}
+
+func uniqueCorrelationIDs(correlationIDs []string) []string {
+	result := make([]string, 0, len(correlationIDs))
+	seen := make(map[string]struct{}, len(correlationIDs))
+	for _, correlationID := range correlationIDs {
+		correlationID = strings.TrimSpace(correlationID)
+		if correlationID == "" {
+			continue
+		}
+		if _, exists := seen[correlationID]; exists {
+			continue
+		}
+		seen[correlationID] = struct{}{}
+		result = append(result, correlationID)
+	}
+	return result
 }
 
 // QueryROEventsBySpecHash queries the complete remediation.workflow_created

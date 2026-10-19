@@ -3209,6 +3209,10 @@ components:
         workflow_name:
           type: string
           description: Catalog-authoritative non-unique workflow name (DD-KA-2496)
+        workflow_rationale:
+          type: string
+          maxLength: 2000
+          description: Bounded model-authored workflow rationale retained for historical decision context; not execution configuration
         workflow_selection_confidence:
           type: number
           format: double
@@ -6227,6 +6231,12 @@ components:
           minimum: 0
           maximum: 1
           description: Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown; zero is known (DD-KA-2496).
+        workflowRationale:
+          type: string
+          maxLength: 2000
+          description: Bounded model-authored rationale from the AIAnalysis audit record; historical context only, omitted when unavailable
+        repeatJustification:
+          $ref: '#/components/schemas/RepeatJustification'
         signalFingerprint:
           type: string
           description: Signal fingerprint that triggered the remediation
@@ -6362,6 +6372,12 @@ components:
           minimum: 0
           maximum: 1
           description: Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown; zero is known (DD-KA-2496).
+        workflowRationale:
+          type: string
+          maxLength: 2000
+          description: Bounded model-authored rationale from the AIAnalysis audit record; historical context only, omitted when unavailable
+        repeatJustification:
+          $ref: '#/components/schemas/RepeatJustification'
         signalType:
           type: string
           description: Type of signal

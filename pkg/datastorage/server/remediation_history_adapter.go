@@ -38,6 +38,8 @@ type remediationHistoryRepoAdapter struct {
 	repo *repository.RemediationHistoryRepository
 }
 
+var _ HistoricalDecisionContextQuerier = (*remediationHistoryRepoAdapter)(nil)
+
 // NewRemediationHistoryRepoAdapter creates a new adapter wrapping the given repository.
 func NewRemediationHistoryRepoAdapter(repo *repository.RemediationHistoryRepository) RemediationHistoryQuerier {
 	return &remediationHistoryRepoAdapter{repo: repo}
@@ -65,4 +67,8 @@ func (a *remediationHistoryRepoAdapter) QueryEffectivenessEventsBatch(ctx contex
 
 func (a *remediationHistoryRepoAdapter) QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error) {
 	return a.repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
+}
+
+func (a *remediationHistoryRepoAdapter) QueryAIAnalysisDecisionContextBatch(ctx context.Context, correlationIDs []string, clusterID string) (map[string]repository.AIAnalysisDecisionContext, error) {
+	return a.repo.QueryAIAnalysisDecisionContextBatch(ctx, correlationIDs, clusterID)
 }
