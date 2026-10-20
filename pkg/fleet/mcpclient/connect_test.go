@@ -168,7 +168,9 @@ var _ = Describe("Connect (issue #2315 self-healing fix)", func() {
 		gateway, gatewayCA := newTLSTestGateway()
 		tokenServer, tokenCA := newTLSTestServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"access_token":"test-token","token_type":"Bearer","expires_in":3600}`))
+			if _, err := response.Write([]byte(`{"access_token":"test-token","token_type":"Bearer","expires_in":3600}`)); err != nil {
+				logger.Error(err, "failed to write OAuth2 token test response")
+			}
 		}))
 		DeferCleanup(func() {
 			gateway.CloseClientConnections()
