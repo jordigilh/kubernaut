@@ -306,6 +306,7 @@ global:
         endpoint: ""
         mcpGatewayEndpoint: ""
         mcpGatewayNamespace: ""
+        mcpGatewayTLSCAFile: ""
         mcpGatewayType: ""
         oauth2:
             credentialsSecretRef: ""
