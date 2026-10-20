@@ -137,7 +137,9 @@ func GenerateMarkdown(root *helmschema.RootSchema) string {
 		}
 		sb.WriteString("\n")
 	}
-	return sb.String()
+	// Keep generated Markdown to one trailing newline so git diff --check
+	// does not report an empty line at EOF on every regeneration.
+	return strings.TrimRight(sb.String(), "\n") + "\n"
 }
 
 func requiredCell(required bool) string {

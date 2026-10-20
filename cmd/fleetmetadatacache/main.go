@@ -187,7 +187,10 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	mcpReadiness := readiness.NewGate(
 		5*time.Second,
 		logger,
-		&readiness.MCPClientProber{Client: mcpClient, Timeout: 2 * time.Second},
+		// DD-FLEET-010: a reconnect probe must allow the configured MCP
+		// handshake budget. DiscoverProbeTimeout bounds only the optional
+		// server/discover sub-request, not the complete reconnect operation.
+		&readiness.MCPClientProber{Client: mcpClient, Timeout: resilienceCfg.ConnectTimeout},
 	)
 
 	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
