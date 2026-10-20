@@ -58,6 +58,29 @@ tests:
           path: data["workflowexecution.yaml"]
           pattern: "(?m)^\\s*endpoint: \"http://mcp\\.example\\.com\""
 
+  - it: "WE ConfigMap renders mcpGatewayTLSCAFile from global.fleet.tlsCAFile"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          tlsCAFile: "/etc/fleet/custom-gateway-ca.crt"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-read-only-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-write-scoped-creds"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*mcpGatewayTLSCAFile: \"/etc/fleet/custom-gateway-ca\\.crt\""
+
   - it: "IT-HELM-1984-110 (Phase B): global.fleet.enabled=true without mcpGatewayEndpoint is now rejected at the schema level, even scoped to this single-template suite -- GW/RO's pre-existing unconditional endpoint requirement (fail() guards removed in Phase B, now values.schema.json) makes WE's own local-only-fallback rendering (line 241 `endpoint: \"\"`) unreachable in any real full-chart install, since GW/RO always render alongside WE and always demanded the endpoint whenever fleet.enabled=true"
     set:
       global:
@@ -219,6 +242,15 @@ tests:
       workflowexecution:
         fleet:
           namespace: "team-a"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the workflowexecution.fleet.mcpGatewayTLSCAFile key is not recognized (global.fleet.tlsCAFile is the sole chart source)"
+    set:
+      workflowexecution:
+        fleet:
+          mcpGatewayTLSCAFile: "/etc/fleet/custom-gateway-ca.crt"
     template: templates/workflowexecution/workflowexecution.yaml
     asserts:
       - failedTemplate: {}
