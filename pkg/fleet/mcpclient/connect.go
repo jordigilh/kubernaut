@@ -49,6 +49,11 @@ type ConnectConfig struct {
 	// OAuth2 client-id/client-secret files are mounted at. Only consulted
 	// when OAuth2.Enabled.
 	CredentialsBasePath string
+
+	// MCPGatewayTLSCAFile is the CA bundle used only for the MCP Gateway
+	// session transport. It is independent from OAuth2.TLSCAFile, which is
+	// used only for the token endpoint.
+	MCPGatewayTLSCAFile string
 }
 
 // Connect dials the MCP Gateway with backoff and returns a *ResilientClient
@@ -68,6 +73,9 @@ type ConnectConfig struct {
 // Authority: ADR-068 decision #11, BR-INTEGRATION-054.
 func Connect(ctx context.Context, cfg ConnectConfig, logger logr.Logger) (*ResilientClient, error) {
 	var opts []Option
+	if cfg.MCPGatewayTLSCAFile != "" {
+		opts = append(opts, WithMCPGatewayTLSCAFile(cfg.MCPGatewayTLSCAFile))
+	}
 	if cfg.OAuth2.Enabled {
 		reloadCfg := ReloadableOAuth2Config{
 			TokenURL:         cfg.OAuth2.TokenURL,

@@ -80,6 +80,11 @@ type FleetConfig struct {
 	Endpoint string      `yaml:"endpoint"`
 	OAuth2   FleetOAuth2 `yaml:"oauth2"`
 
+	// MCPGatewayTLSCAFile is the CA bundle used only for MCP Gateway session
+	// traffic. It is distinct from FleetOAuth2.TLSCAFile, which verifies the
+	// OAuth2 token endpoint.
+	MCPGatewayTLSCAFile string `yaml:"mcpGatewayTLSCAFile,omitempty"`
+
 	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
 	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
 	// preserves WE's current hardcoded defaults unchanged.

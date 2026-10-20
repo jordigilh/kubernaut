@@ -77,6 +77,11 @@ type FleetConfig struct {
 	Endpoint string      `yaml:"endpoint"`
 	OAuth2   FleetOAuth2 `yaml:"oauth2"`
 
+	// MCPGatewayTLSCAFile is the CA bundle used only for MCP Gateway session
+	// traffic. It is distinct from FleetOAuth2.TLSCAFile, which verifies the
+	// OAuth2 token endpoint.
+	MCPGatewayTLSCAFile string `yaml:"mcpGatewayTLSCAFile,omitempty"`
+
 	// MCPGatewayType selects the MCP Gateway CRD implementation ("eaigw" or
 	// "kuadrant") used to construct a ClusterRegistry for cluster
 	// classification label lookups (BR-FLEET-003, #1511). Optional -- when

@@ -473,8 +473,9 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
 	connectCfg := fleetclient.ConnectConfig{
-		Endpoint:   cfg.Fleet.Endpoint,
-		Resilience: cfg.Fleet.Resilience,
+		Endpoint:            cfg.Fleet.Endpoint,
+		Resilience:          cfg.Fleet.Resilience,
+		MCPGatewayTLSCAFile: cfg.Fleet.MCPGatewayTLSCAFile,
 	}
 	if cfg.Fleet.OAuth2.Enabled {
 		basePath := "/etc/workflowexecution/fleet-oauth2"

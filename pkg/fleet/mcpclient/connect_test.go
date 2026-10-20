@@ -18,10 +18,14 @@ package mcpclient_test
 
 import (
 	"context"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -103,4 +107,56 @@ var _ = Describe("Connect (issue #2315 self-healing fix)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(rc.Ready()).To(BeFalse())
 	})
+
+	It("UT-FLEET-CONN-004 [SC-8]: uses the configured MCP Gateway CA without changing OAuth2 trust", func() {
+		gateway, gatewayCA := newTLSTestGateway()
+		defer func() {
+			gateway.CloseClientConnections()
+			gateway.Close()
+		}()
+
+		tmpDir, err := os.MkdirTemp("", "connect-gateway-tls-test")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = os.RemoveAll(tmpDir) }()
+
+		gatewayCAPath := filepath.Join(tmpDir, "gateway-ca.pem")
+		invalidCAPath := filepath.Join(tmpDir, "invalid-ca.pem")
+		Expect(os.WriteFile(gatewayCAPath, gatewayCA, 0o600)).To(Succeed())
+		Expect(os.WriteFile(invalidCAPath, []byte("not a certificate"), 0o600)).To(Succeed())
+
+		cfg := mcpclient.ConnectConfig{
+			Endpoint:            gateway.URL,
+			MCPGatewayTLSCAFile: gatewayCAPath,
+			Resilience: fleet.FleetResilienceConfig{
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     100 * time.Millisecond,
+				MaxElapsedTime:  300 * time.Millisecond,
+			},
+		}
+		rc, err := mcpclient.Connect(context.Background(), cfg, logger)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rc.Ready()).To(BeTrue())
+		Expect(rc.Close()).To(Succeed())
+
+		cfg.Endpoint = gateway.URL
+		cfg.MCPGatewayTLSCAFile = invalidCAPath
+		rc, err = mcpclient.Connect(context.Background(), cfg, logger)
+		Expect(rc).NotTo(BeNil())
+		Expect(err).To(HaveOccurred())
+		Expect(rc.Ready()).To(BeFalse())
+		Expect(rc.Close()).To(Succeed())
+	})
 })
+
+func newTLSTestGateway() (*httptest.Server, []byte) {
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: "tls-test-mcp-gateway", Version: "v0.1.0"},
+		nil,
+	)
+	handler := mcp.NewStreamableHTTPHandler(
+		func(_ *http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{DisableLocalhostProtection: true},
+	)
+	httpServer := httptest.NewTLSServer(handler)
+	return httpServer, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: httpServer.Certificate().Raw})
+}

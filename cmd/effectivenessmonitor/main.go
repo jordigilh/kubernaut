@@ -527,9 +527,10 @@ func buildFleetReaderFactoryWithRegistry(ctx context.Context, localClient client
 	}
 
 	connectCfg := mcpclient.ConnectConfig{
-		Endpoint:   cfg.Fleet.MCPGatewayEndpoint,
-		OAuth2:     cfg.Fleet.OAuth2,
-		Resilience: cfg.Fleet.Resilience,
+		Endpoint:            cfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:              cfg.Fleet.OAuth2,
+		Resilience:          cfg.Fleet.Resilience,
+		MCPGatewayTLSCAFile: cfg.Fleet.MCPGatewayTLSCAFile,
 	}
 	if cfg.Fleet.OAuth2.Enabled {
 		connectCfg.CredentialsBasePath = "/etc/effectivenessmonitor/fleet-oauth2"

@@ -283,7 +283,8 @@ fleet:
   {{- if $apifrontendFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $apifrontendFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}
-  tlsCAFile: {{ $apifrontendFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+   tlsCAFile: {{ $apifrontendFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+   mcpGatewayTLSCAFile: {{ $apifrontendFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- if $apifrontendFleetPreamble.oauth2.enabled }}
   oauth2:
     enabled: true

@@ -83,9 +83,10 @@ fleet:
   {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}
-  {{- if $signalprocessingFleetPreamble.config.namespace }}
-  namespace: {{ $signalprocessingFleetPreamble.config.namespace | quote }}
-  {{- end }}
+   {{- if $signalprocessingFleetPreamble.config.namespace }}
+   namespace: {{ $signalprocessingFleetPreamble.config.namespace | quote }}
+   {{- end }}
+   mcpGatewayTLSCAFile: {{ $signalprocessingFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
   oauth2:
     enabled: true

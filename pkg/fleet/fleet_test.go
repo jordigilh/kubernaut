@@ -383,6 +383,24 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	})
 })
 
+var _ = Describe("FleetConfig MCPGatewayTLSCAFile (#2540, SC-8)", func() {
+	It("UT-FLEET-CFG-094: preserves the gateway CA path independently from scope-check trust", func() {
+		cfg := fleet.FleetConfig{
+			TLSCAFile:           "/etc/fleet-tls/scope-check/ca.crt",
+			MCPGatewayTLSCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt",
+		}
+		data, err := yaml.Marshal(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("tlsCAFile: /etc/fleet-tls/scope-check/ca.crt"))
+		Expect(string(data)).To(ContainSubstring("mcpGatewayTLSCAFile: /etc/fleet-tls/mcp-gateway/ca.crt"))
+
+		var roundTripped fleet.FleetConfig
+		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
+		Expect(roundTripped.TLSCAFile).To(Equal(cfg.TLSCAFile))
+		Expect(roundTripped.MCPGatewayTLSCAFile).To(Equal(cfg.MCPGatewayTLSCAFile))
+	})
+})
+
 // GW and RO each rely on BOTH FleetConfig capabilities to operate correctly:
 // Backend/Endpoint (federated scope-check: "is this resource managed?") and
 // MCPGatewayEndpoint (remote reads: GW's owner-chain metadata, RO's
@@ -497,11 +515,11 @@ var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553
 
 	It("UT-FLEET-CFG-061b: accepts mcpGatewayEndpoint unset with oauth2.enabled=false (fleet enabled for backend+endpoint scope-checking only, e.g. GW/RO with ACM/FMC -- MCP Gateway is never called, so OAuth2 is irrelevant)", func() {
 		cfg := fleet.FleetConfig{
-			Enabled: true,
-			Backend: "acm",
-			Endpoint: "https://acm-search.example.com/graphql",
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  "https://acm-search.example.com/graphql",
 			TokenPath: "/etc/gateway/acm-token/token",
-			OAuth2:  fleet.FleetOAuth2Config{Enabled: false},
+			OAuth2:    fleet.FleetOAuth2Config{Enabled: false},
 		}
 		Expect(cfg.Validate()).To(Succeed())
 	})

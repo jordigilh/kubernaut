@@ -70,6 +70,9 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if cfg.configurationErr != nil {
+		return nil, cfg.configurationErr
+	}
 	if cfg.discoverProbeTimeout > 0 {
 		wrapTransportWithDiscoverProbe(cfg)
 	}

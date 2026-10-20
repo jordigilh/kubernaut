@@ -764,9 +764,10 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg
 
 	fleetLog := logger.WithName("fleet-mcp")
 	connectCfg := mcpclient.ConnectConfig{
-		Endpoint:   cfg.Fleet.MCPGatewayEndpoint,
-		OAuth2:     cfg.Fleet.OAuth2,
-		Resilience: cfg.Fleet.Resilience,
+		Endpoint:            cfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:              cfg.Fleet.OAuth2,
+		Resilience:          cfg.Fleet.Resilience,
+		MCPGatewayTLSCAFile: cfg.Fleet.MCPGatewayTLSCAFile,
 	}
 	if cfg.Fleet.OAuth2.Enabled {
 		connectCfg.CredentialsBasePath = "/etc/remediationorchestrator/fleet-oauth2"

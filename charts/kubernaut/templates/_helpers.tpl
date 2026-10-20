@@ -138,6 +138,7 @@ Usage:
     "mcpGatewayType" ((get $svc "mcpGatewayType") | default $g.mcpGatewayType)
     "namespace" ((get $svc "namespace") | default $g.mcpGatewayNamespace)
     "tlsCAFile" ((get $svc "tlsCAFile") | default $g.tlsCAFile)
+    "mcpGatewayTLSCAFile" ((get $svc "mcpGatewayTLSCAFile") | default $g.tlsCAFile)
     "tokenSecretRef" ((get $svc "tokenSecretRef") | default $g.tokenSecretRef)
   | toYaml -}}
 {{- end }}

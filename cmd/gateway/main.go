@@ -420,6 +420,7 @@ func wireFleetOwnerResolution(
 		OAuth2:              serverCfg.Fleet.OAuth2,
 		Resilience:          serverCfg.Fleet.Resilience,
 		CredentialsBasePath: fleetOAuth2CredentialsBasePath(serverCfg),
+		MCPGatewayTLSCAFile: serverCfg.Fleet.MCPGatewayTLSCAFile,
 	}
 	fleetResilientClient, fleetErr := fleetclient.Connect(ctx, connectCfg, logger.WithName("fleet-client")) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
 	if fleetErr != nil {

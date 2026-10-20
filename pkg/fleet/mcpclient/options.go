@@ -18,12 +18,15 @@ package mcpclient
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // Option configures an MCPResourceClient.
@@ -38,6 +41,7 @@ type clientConfig struct {
 	scheme               *runtime.Scheme
 	discoverProbeTimeout time.Duration
 	discoverProbeLogger  logr.Logger
+	configurationErr     error
 }
 
 // resolvedDiscoverProbeLogger returns cfg.discoverProbeLogger, defaulting to
@@ -96,6 +100,30 @@ func WithToolPrefix(prefix string) Option {
 func WithHTTPClient(c *http.Client) Option {
 	return func(cfg *clientConfig) {
 		cfg.httpClient = c
+	}
+}
+
+// WithMCPGatewayTLSCAFile configures the CA bundle used by the MCP Gateway
+// session transport. It is deliberately separate from OAuth2's token-endpoint
+// CA: a Fleet deployment may trust different certificate authorities for the
+// gateway and identity provider. The file is loaded each time New applies the
+// option, so resilient reconnects observe a rotated mounted Secret after the
+// process is restarted or reconnects.
+func WithMCPGatewayTLSCAFile(caFile string) Option {
+	return func(cfg *clientConfig) {
+		if caFile == "" {
+			return
+		}
+		transport, err := sharedtls.NewTLSTransport(caFile)
+		if err != nil {
+			cfg.configurationErr = fmt.Errorf("load MCP Gateway TLS CA file %s: %w", caFile, err)
+			return
+		}
+		if cfg.httpClient == nil {
+			cfg.httpClient = &http.Client{Transport: transport}
+			return
+		}
+		cfg.httpClient.Transport = transport
 	}
 }
 

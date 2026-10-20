@@ -97,6 +97,12 @@ type FleetConfig struct {
 	// +optional
 	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
 
+	// MCPGatewayTLSCAFile is the CA bundle used only for MCP Gateway session
+	// traffic. It is distinct from TLSCAFile (scope-check backend trust) and
+	// OAuth2.TLSCAFile (token-endpoint trust).
+	// +optional
+	MCPGatewayTLSCAFile string `yaml:"mcpGatewayTLSCAFile,omitempty"`
+
 	// TokenPath is the absolute path to a file containing a bearer token for
 	// authenticating to the ACM Search GraphQL API (backend=acm). ACM Search
 	// mandatorily requires bearer-token auth (#1556); without this, the ACM
@@ -180,6 +186,9 @@ type MCPGatewayConfig struct {
 	Endpoint    string `yaml:"endpoint"`
 	GatewayType string `yaml:"gatewayType"`
 	Namespace   string `yaml:"namespace"`
+	// TLSCAFile is the CA bundle used only for MCP Gateway session traffic.
+	// +optional
+	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
 
 	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
 	// tuning (issue #2262 Phase 2). See FleetConfig.Resilience's doc comment.
