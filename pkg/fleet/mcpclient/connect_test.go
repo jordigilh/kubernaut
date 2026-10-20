@@ -209,6 +209,35 @@ var _ = Describe("Connect (issue #2315 self-healing fix)", func() {
 		Expect(rc.Ready()).To(BeTrue())
 		Expect(rc.Close()).To(Succeed())
 	})
+
+	It("UT-FLEET-CONN-007 [SC-8, SI-4]: reloads the current gateway CA on reconnect", func() {
+		gateway, gatewayCA := newTLSTestGateway()
+		DeferCleanup(func() {
+			gateway.CloseClientConnections()
+			gateway.Close()
+		})
+		tmpDir, err := os.MkdirTemp("", "reconnect-gateway-tls-test")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { Expect(os.RemoveAll(tmpDir)).To(Succeed()) })
+		caPath := filepath.Join(tmpDir, "gateway-ca.pem")
+		Expect(os.WriteFile(caPath, gatewayCA, 0o600)).To(Succeed())
+
+		rc, err := mcpclient.Connect(context.Background(), mcpclient.ConnectConfig{
+			Endpoint:            gateway.URL,
+			MCPGatewayTLSCAFile: caPath,
+		}, logger)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rc.Ready()).To(BeTrue())
+
+		Expect(os.WriteFile(caPath, unrelatedCAPEM(), 0o600)).To(Succeed())
+		Expect(rc.Reconnect(context.Background())).To(HaveOccurred())
+		Expect(rc.Ready()).To(BeFalse())
+
+		Expect(os.WriteFile(caPath, gatewayCA, 0o600)).To(Succeed())
+		Expect(rc.Reconnect(context.Background())).To(Succeed())
+		Expect(rc.Ready()).To(BeTrue())
+		Expect(rc.Close()).To(Succeed())
+	})
 })
 
 // newTLSTestGateway creates a stateful MCP server with a unique self-signed
