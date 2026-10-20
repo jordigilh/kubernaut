@@ -80,6 +80,7 @@ datastorage:
 {{- if $signalprocessingFleetPreamble.config.mcpGatewayEndpoint }}
 fleet:
   endpoint: {{ $signalprocessingFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  mcpGatewayTLSCAFile: {{ $signalprocessingFleetPreamble.config.mcpGatewayTLSCAFile | quote }}
   {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}

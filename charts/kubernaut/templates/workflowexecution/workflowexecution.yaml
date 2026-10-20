@@ -166,6 +166,7 @@ ansible:
 {{- if .Values.global.fleet.enabled }}
 fleet:
   endpoint: {{ .Values.global.fleet.mcpGatewayEndpoint | quote }}
+  mcpGatewayTLSCAFile: {{ .Values.global.fleet.mcpGatewayTLSCAFile | quote }}
   {{- if .Values.global.fleet.oauth2.enabled }}
   oauth2:
     enabled: true

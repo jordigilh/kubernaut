@@ -373,7 +373,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
 | `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
 | `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
-| `fleet.tlsCAFile` | string | Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
+| `fleet.tlsCAFile` | string | Shared CA bundle path for verifying the Fleet scope-check backend, used by Gateway and RemediationOrchestrator. | `""` | No |
+| `fleet.mcpGatewayTLSCAFile` | string | Dedicated CA bundle path for verifying MCP Gateway protocol traffic. Empty preserves process-effective system trust; independent from scope-check and OAuth2 trust. | `""` | No |
 | `fleet.tokenSecretRef` | string | K8s Secret (key: token) with a bearer token for authenticating to the ACM Search GraphQL API (backend=acm). Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556). | `""` | No |
 | `image.digest` | string | Image digest (e.g. sha256:abc...); when set, overrides tag for immutable references | `""` | No |
 | `image.namespace` | string | Image namespace prefix. Joined to service name by separator. | `"kubernaut-ai"` | No |
@@ -716,4 +717,3 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `tolerations` | array of object | Pod tolerations (overrides global.tolerations for this component) | `` | No |
 | `topologySpreadConstraints` | array of object | Kubernetes topology spread constraints | `` | No |
 | `workflowNamespace` | string | Namespace for Job/PipelineRun execution | `"kubernaut-workflows"` | No |
-

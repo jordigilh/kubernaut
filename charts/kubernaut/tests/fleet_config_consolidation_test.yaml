@@ -1,4 +1,4 @@
-suite: "fleet config consolidation (Issue #1707 follow-up): backend/endpoint/tokenSecretRef/mcpGatewayType/tlsCAFile/oauth2.{enabled,tokenURL,scopes,tlsCAFile} move to global.fleet, only oauth2.credentialsSecretRef stays per-service overridable"
+suite: "fleet config consolidation (Issue #1707/#2540): backend/endpoint/tokenSecretRef/mcpGatewayType/tlsCAFile/mcpGatewayTLSCAFile/oauth2.{enabled,tokenURL,scopes,tlsCAFile} move to global.fleet, only oauth2.credentialsSecretRef stays per-service overridable"
 templates:
   - templates/gateway/gateway.yaml
   - templates/remediationorchestrator/remediationorchestrator.yaml
@@ -35,6 +35,57 @@ set:
       oauth2:
         credentialsSecretRef: we-oauth2-creds
 tests:
+  - it: "renders MCP Gateway CA independently from scope-check CA"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "https://mcp.example.com"
+          mcpGatewayTLSCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt"
+          mcpGatewayNamespace: "mcp-gateway-system"
+          mcpGatewayType: "eaigw"
+          tlsCAFile: "/etc/fleet-tls/scope-check/ca.crt"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '(?m)^\s*mcpGatewayTLSCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '(?m)^\s*tlsCAFile: "/etc/fleet-tls/scope-check/ca.crt"'
+
+  - it: "renders MCP Gateway CA in FMC's nested config shape"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "https://mcp.example.com"
+          mcpGatewayTLSCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt"
+          mcpGatewayType: "eaigw"
+          mcpGatewayNamespace: "mcp-gateway-system"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+      fleetmetadatacache:
+        enabled: true
+        namespace: "mcp-gateway-system"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '(?m)^mcpGateway:\n\s+endpoint: "https://mcp.example.com"\n\s+gatewayType: "eaigw"\n\s+tlsCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt"'
+
   # ---------------------------------------------------------------------
   # GW/RO: backend + endpoint + tokenSecretRef now come from global only
   # ---------------------------------------------------------------------

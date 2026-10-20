@@ -98,6 +98,8 @@
 - global.fleet.enabled
 - global.fleet.endpoint
 - global.fleet.mcpGatewayEndpoint
+# Dedicated MCP protocol trust is distinct from global.fleet.tlsCAFile.
+- global.fleet.mcpGatewayTLSCAFile
 - global.fleet.mcpGatewayNamespace
 - global.fleet.mcpGatewayType
 - global.fleet.oauth2.credentialsSecretRef

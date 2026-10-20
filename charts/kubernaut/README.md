@@ -558,6 +558,11 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 
 `global.fleet.mcpGatewayEndpoint` is required when `global.fleet.enabled` / `fleetmetadatacache.enabled` is `true` for `gateway`, `remediationorchestrator`, and `fleetmetadatacache` — `helm install`/`upgrade` fails fast with a remediation message if it's unset. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
+`global.fleet.mcpGatewayTLSCAFile` is the dedicated CA bundle path for MCP
+protocol traffic. It is independent from `global.fleet.tlsCAFile` (scope-check
+backend trust) and `global.fleet.oauth2.tlsCAFile` (OAuth2 token-endpoint trust).
+When empty, MCP clients use the process-effective standard trust behavior.
+
 **Worked example** (enabling Fleet with the FleetMetadataCache backend and OAuth2 auth; see
 `docs/generated/helm-values-reference.md#global` for the complete field list including
 `backend: "acm"`'s additional requirements):

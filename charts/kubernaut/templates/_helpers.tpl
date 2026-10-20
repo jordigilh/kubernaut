@@ -103,7 +103,8 @@ Usage:
 {{- end }}
 
 {{/*
-Merged fleet MCP Gateway config (endpoint/type/CA/backend/token, distinct
+Merged fleet MCP Gateway and scope-check config (endpoint/type/gateway CA/
+backend/token, distinct
 from OAuth2 credentials -- see kubernaut.fleet.oauth2). Issue #1707
 follow-up: backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
 tokenSecretRef are now global-only -- removed from every per-service
@@ -138,6 +139,7 @@ Usage:
     "mcpGatewayType" ((get $svc "mcpGatewayType") | default $g.mcpGatewayType)
     "namespace" ((get $svc "namespace") | default $g.mcpGatewayNamespace)
     "tlsCAFile" ((get $svc "tlsCAFile") | default $g.tlsCAFile)
+    "mcpGatewayTLSCAFile" $g.mcpGatewayTLSCAFile
     "tokenSecretRef" ((get $svc "tokenSecretRef") | default $g.tokenSecretRef)
   | toYaml -}}
 {{- end }}
