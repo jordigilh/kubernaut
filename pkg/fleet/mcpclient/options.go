@@ -24,6 +24,8 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 )
 
 // Option configures an MCPResourceClient.
@@ -38,6 +40,8 @@ type clientConfig struct {
 	scheme               *runtime.Scheme
 	discoverProbeTimeout time.Duration
 	discoverProbeLogger  logr.Logger
+	transportErr         error
+	gatewayCAWatcher     *hotreload.FileWatcher
 }
 
 // resolvedDiscoverProbeLogger returns cfg.discoverProbeLogger, defaulting to

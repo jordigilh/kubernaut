@@ -74,8 +74,9 @@ type Config struct {
 // FleetConfig holds MCP Gateway connectivity settings for multi-cluster support.
 // BR-INTEGRATION-054: Optional -- when Endpoint is empty, SP operates in local-only mode.
 type FleetConfig struct {
-	Endpoint string      `yaml:"endpoint"`
-	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+	Endpoint            string      `yaml:"endpoint"`
+	MCPGatewayTLSCAFile string      `yaml:"mcpGatewayTLSCAFile,omitempty"`
+	OAuth2              FleetOAuth2 `yaml:"oauth2"`
 
 	// MCPGatewayType selects the MCP Gateway CRD implementation ("eaigw" or
 	// "kuadrant") used to construct a ClusterRegistry for cluster

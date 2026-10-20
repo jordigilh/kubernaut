@@ -89,6 +89,7 @@ classifier:
   hotReloadInterval: 30s
 fleet:
   endpoint: "http://mcp-gateway:1975/mcp"
+  mcpGatewayTLSCAFile: "/etc/signalprocessing/mcp-gateway/ca.crt"
   oauth2:
     enabled: true
     tokenURL: "https://dex.local/token"
@@ -110,6 +111,7 @@ fleet:
 			Expect(cfg.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "fleet-admin"}))
 			Expect(cfg.Fleet.OAuth2.Enabled).To(BeTrue())
 			Expect(cfg.Fleet.Endpoint).To(Equal("http://mcp-gateway:1975/mcp"))
+			Expect(cfg.Fleet.MCPGatewayTLSCAFile).To(Equal("/etc/signalprocessing/mcp-gateway/ca.crt"))
 		})
 
 		It("defaults to nil scopes when omitted from YAML", func() {

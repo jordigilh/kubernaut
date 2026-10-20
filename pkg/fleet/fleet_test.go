@@ -467,6 +467,22 @@ var _ = Describe("FleetOAuth2Config.TLSCAFile (BR-INTEGRATION-065)", func() {
 	})
 })
 
+var _ = Describe("FleetConfig.MCPGatewayTLSCAFile (BR-INTEGRATION-054)", func() {
+	It("UT-FLEET-2540-009 [CM-6, SI-10, ASVS-13.1.1]: preserves the dedicated MCP Gateway CA path through YAML", func() {
+		cfg := fleet.FleetConfig{
+			MCPGatewayTLSCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt",
+		}
+
+		data, err := yaml.Marshal(cfg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("mcpGatewayTLSCAFile: /etc/fleet-tls/mcp-gateway/ca.crt"))
+
+		var roundTripped fleet.FleetConfig
+		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
+		Expect(roundTripped.MCPGatewayTLSCAFile).To(Equal(cfg.MCPGatewayTLSCAFile))
+	})
+})
+
 // Readiness gate Wave 1 (#1553): FleetConfig.Validate() historically never
 // checked OAuth2 field consistency, unlike the local FleetOAuth2 pairing
 // check that SP/WE/KA already have. This left GW/RO/AF/EM able to start
@@ -497,11 +513,11 @@ var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553
 
 	It("UT-FLEET-CFG-061b: accepts mcpGatewayEndpoint unset with oauth2.enabled=false (fleet enabled for backend+endpoint scope-checking only, e.g. GW/RO with ACM/FMC -- MCP Gateway is never called, so OAuth2 is irrelevant)", func() {
 		cfg := fleet.FleetConfig{
-			Enabled: true,
-			Backend: "acm",
-			Endpoint: "https://acm-search.example.com/graphql",
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  "https://acm-search.example.com/graphql",
 			TokenPath: "/etc/gateway/acm-token/token",
-			OAuth2:  fleet.FleetOAuth2Config{Enabled: false},
+			OAuth2:    fleet.FleetOAuth2Config{Enabled: false},
 		}
 		Expect(cfg.Validate()).To(Succeed())
 	})

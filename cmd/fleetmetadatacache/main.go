@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
@@ -66,6 +67,7 @@ type fmcDeps struct {
 	reg             *prometheus.Registry
 	metrics         *fmc.Metrics
 	mcpClient       *mcpclient.ResilientClient
+	mcpReadiness    *readiness.Gate
 	writer          *fmc.ValkeyWriter
 	cacheReader     *scopecache.ValkeyCacheReader
 	clusterRegistry registry.ClusterRegistry
@@ -81,6 +83,9 @@ type fmcDeps struct {
 
 // close releases the resources held by deps, in reverse dependency order.
 func (d *fmcDeps) close() {
+	if d.mcpReadiness != nil {
+		d.mcpReadiness.Stop()
+	}
 	d.clusterRegistry.Stop()
 	_ = d.cacheReader.Close()
 	_ = d.writer.Close()
@@ -90,8 +95,8 @@ func (d *fmcDeps) close() {
 // wireFMCDependencies connects to the MCP Gateway (with reloadable OAuth2
 // transport), the Kubernetes API (for the dynamic client used by the
 // cluster registry), and Valkey (read/write), then constructs and starts
-// the cluster registry and metadata syncer. Exits the process on any
-// failure, matching main()'s original fail-fast behavior.
+// the cluster registry and metadata syncer. MCP connectivity failures are
+// retained as a disconnected client so readiness and reconnect can recover.
 // buildValkeyTLSConfig constructs the *tls.Config for FMC's Valkey client
 // connection (DD-PLATFORM-006 Decision Area 13 follow-up, round-16 RCA): the
 // chart's own Valkey is TLS-only (Decision Area 8), and unlike the
@@ -167,6 +172,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		TlsCaFile:        cfg.OAuth2.TlsCaFile,
 	}
 	opts := []mcpclient.Option{
+		mcpclient.WithMCPGatewayTLSCAFile(cfg.MCPGateway.TLSCAFile, logger),
 		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 	logger.Info("OAuth2 authentication configured for MCP Gateway",
@@ -176,9 +182,13 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.MCPGateway.Resilience)
 	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGateway.Endpoint, resilienceCfg, logger, opts...)
 	if err != nil {
-		logger.Error(err, "Failed to connect to MCP Gateway")
-		os.Exit(1)
+		logger.Error(err, "Failed to connect to MCP Gateway; retaining disconnected client for readiness recovery")
 	}
+	mcpReadiness := readiness.NewGate(
+		5*time.Second,
+		logger,
+		&readiness.MCPClientProber{Client: mcpClient, Timeout: 2 * time.Second},
+	)
 
 	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
 
@@ -225,6 +235,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		reg:              reg,
 		metrics:          metrics,
 		mcpClient:        mcpClient,
+		mcpReadiness:     mcpReadiness,
 		writer:           writer,
 		cacheReader:      cacheReader,
 		clusterRegistry:  clusterRegistry,
@@ -423,6 +434,22 @@ func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Lo
 // failure is observed, gracefully shutting down all three HTTP servers
 // before returning.
 func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan os.Signal, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
+	if deps.mcpReadiness != nil {
+		deps.mcpReadiness.Start(ctx)
+		servers.ready.Store(deps.mcpReadiness.Ready())
+		go func() {
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					servers.ready.Store(deps.mcpReadiness.Ready())
+				}
+			}
+		}()
+	}
 	certWatcher := startCertHotReload(ctx, servers, logger)
 	if certWatcher != nil {
 		defer certWatcher.Stop()

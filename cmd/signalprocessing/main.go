@@ -295,8 +295,9 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient cli
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
 	connectCfg := fleetclient.ConnectConfig{
-		Endpoint:   cfg.Fleet.Endpoint,
-		Resilience: cfg.Fleet.Resilience,
+		Endpoint:            cfg.Fleet.Endpoint,
+		MCPGatewayTLSCAFile: cfg.Fleet.MCPGatewayTLSCAFile,
+		Resilience:          cfg.Fleet.Resilience,
 	}
 	if cfg.Fleet.OAuth2.Enabled {
 		basePath := "/etc/signalprocessing/fleet-oauth2"

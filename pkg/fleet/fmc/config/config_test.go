@@ -93,6 +93,7 @@ mcpGateway:
   endpoint: "http://gateway.svc:8080"
   gatewayType: "kuadrant"
   namespace: "fleet-system"
+  tlsCAFile: "/etc/fleet-tls/mcp-gateway/ca.crt"
 valkey:
   addr: "redis.fleet:6380"
   tls:
@@ -128,6 +129,7 @@ oauth2:
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gateway.svc:8080"))
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("kuadrant"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("fleet-system"))
+			Expect(cfg.MCPGateway.TLSCAFile).To(Equal("/etc/fleet-tls/mcp-gateway/ca.crt"))
 			Expect(cfg.Valkey.Addr).To(Equal("redis.fleet:6380"))
 			Expect(cfg.Valkey.TLS.Enabled).To(BeTrue())
 			Expect(cfg.Valkey.TLS.CAFile).To(Equal("/etc/fleetmetadatacache/tls/ca.crt"))

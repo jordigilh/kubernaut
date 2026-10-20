@@ -52,14 +52,15 @@ type SessionProvider func() *mcp.ClientSession
 // When WithToolPrefix is set, tool names use the gateway-specific prefix;
 // otherwise the EAIGW "{clusterID}__{tool}" convention is applied.
 type Client struct {
-	session         *mcp.ClientSession
-	sessionProvider SessionProvider
-	reconnect       func(context.Context) error
-	clusterID       string
-	toolPrefix      string
-	scheme          *runtime.Scheme
-	mu              sync.Mutex
-	closed          bool
+	session          *mcp.ClientSession
+	sessionProvider  SessionProvider
+	reconnect        func(context.Context) error
+	clusterID        string
+	toolPrefix       string
+	scheme           *runtime.Scheme
+	mu               sync.Mutex
+	closed           bool
+	gatewayCAWatcher interface{ Stop() }
 }
 
 // New creates a Client connected to the given MCP Gateway endpoint.
@@ -70,8 +71,17 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if cfg.transportErr != nil {
+		if cfg.gatewayCAWatcher != nil {
+			cfg.gatewayCAWatcher.Stop()
+		}
+		return nil, cfg.transportErr
+	}
 	if cfg.discoverProbeTimeout > 0 {
 		wrapTransportWithDiscoverProbe(cfg)
+	}
+	if err := startGatewayCAWatcher(ctx, cfg.gatewayCAWatcher); err != nil {
+		return nil, err
 	}
 
 	mcpClient := mcp.NewClient(
@@ -86,10 +96,19 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
+		if cfg.gatewayCAWatcher != nil {
+			cfg.gatewayCAWatcher.Stop()
+		}
 		return nil, fmt.Errorf("connect to MCP Gateway at %s: %w", endpoint, err)
 	}
 
-	return &Client{session: session, clusterID: cfg.clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}, nil
+	return &Client{
+		session:          session,
+		clusterID:        cfg.clusterID,
+		toolPrefix:       cfg.toolPrefix,
+		scheme:           cfg.resolvedScheme(),
+		gatewayCAWatcher: cfg.gatewayCAWatcher,
+	}, nil
 }
 
 // wrapTransportWithDiscoverProbe wraps cfg.httpClient's transport with
@@ -253,6 +272,10 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
+	if c.gatewayCAWatcher != nil {
+		c.gatewayCAWatcher.Stop()
+		c.gatewayCAWatcher = nil
+	}
 	if c.sessionProvider != nil {
 		return nil
 	}
