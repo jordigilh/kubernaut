@@ -95,6 +95,15 @@ var _ = Describe("UT-FLEET-RES-OPT: Options and ResilienceConfig", func() {
 		})
 	})
 
+	Describe("WithMCPGatewayTLSCAFile", func() {
+		It("UT-FLEET-CONN-006 [SC-8]: treats an empty CA path as system trust", func() {
+			cfg := &clientConfig{}
+			WithMCPGatewayTLSCAFile("")(cfg)
+			Expect(cfg.httpClient).To(BeNil())
+			Expect(cfg.configurationErr).NotTo(HaveOccurred())
+		})
+	})
+
 	Describe("WithTimeout", func() {
 		It("UT-FLEET-RES-OPT-004: should create HTTP client if none set", func() {
 			cfg := &clientConfig{}

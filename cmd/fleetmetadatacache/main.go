@@ -166,12 +166,13 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		TokenTimeout:     cfg.OAuth2.TokenTimeout,
 		TlsCaFile:        cfg.OAuth2.TlsCaFile,
 	}
-	opts := []mcpclient.Option{
-		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	}
+	opts := make([]mcpclient.Option, 0, 2)
 	if cfg.MCPGateway.TLSCAFile != "" {
 		opts = append(opts, mcpclient.WithMCPGatewayTLSCAFile(cfg.MCPGateway.TLSCAFile))
 	}
+	opts = append(opts,
+		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
+	)
 	logger.Info("OAuth2 authentication configured for MCP Gateway",
 		"tokenURL", cfg.OAuth2.TokenURL,
 		"credentialsDir", cfg.OAuth2.CredentialsDir)

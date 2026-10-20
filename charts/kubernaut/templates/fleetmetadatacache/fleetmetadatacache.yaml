@@ -15,9 +15,9 @@ server:
   tls:
     certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
 mcpGateway:
-   endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
-   gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-   tlsCAFile: {{ $fmcFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
+  tlsCAFile: {{ $fmcFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- /* Issue #1730: fleetmetadatacache.namespace falls back to
   global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset.
   Issue #2298: there is no further fallback -- $v.namespace's own schema

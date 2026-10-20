@@ -51,8 +51,8 @@ fleet:
   {{- if $effectivenessmonitorFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}
-   tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-   mcpGatewayTLSCAFile: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  mcpGatewayTLSCAFile: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- if $effectivenessmonitorFleetPreamble.oauth2.enabled }}
   oauth2:
     enabled: true

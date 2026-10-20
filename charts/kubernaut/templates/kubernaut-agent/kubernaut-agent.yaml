@@ -309,9 +309,9 @@ Helm-side behavior.
 */}}
 {{- if .Values.global.fleet.enabled }}
   fleet:
-   endpoint: {{ $kaFleetPreamble.config.mcpGatewayEndpoint | quote }}
-   gatewayType: {{ $kaFleetPreamble.config.mcpGatewayType | quote }}
-   mcpGatewayTLSCAFile: {{ $kaFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+    endpoint: {{ $kaFleetPreamble.config.mcpGatewayEndpoint | quote }}
+    gatewayType: {{ $kaFleetPreamble.config.mcpGatewayType | quote }}
+    mcpGatewayTLSCAFile: {{ $kaFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 {{- if $kaFleetPreamble.oauth2.enabled }}
     oauth2:
       enabled: true

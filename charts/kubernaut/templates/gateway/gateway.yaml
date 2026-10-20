@@ -105,8 +105,8 @@ fleet:
   {{- if $gatewayFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $gatewayFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}
-   tlsCAFile: {{ $gatewayFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-   mcpGatewayTLSCAFile: {{ $gatewayFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  tlsCAFile: {{ $gatewayFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  mcpGatewayTLSCAFile: {{ $gatewayFleetPreamble.config.mcpGatewayTLSCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
        consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
   {{- if $gatewayFleetPreamble.config.tokenSecretRef }}
