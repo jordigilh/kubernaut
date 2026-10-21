@@ -39,6 +39,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
@@ -81,6 +84,9 @@ func mcpGatewayHandler() http.Handler {
 		case "initialize":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"test","version":"1.0"}}}`, request.ID)
+		case "tools/call":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"nginx\"}}"}]}}`, request.ID)
 		default:
 			w.WriteHeader(http.StatusNotImplemented)
 		}
@@ -339,7 +345,21 @@ var _ = Describe("MCP Gateway scoped TLS trust (Issue #2540)", func() {
 		Expect(client.Ready()).To(BeTrue())
 		DeferCleanup(func() { Expect(client.Close()).To(Succeed()) })
 
+		readPod := func() error {
+			pod := &unstructured.Unstructured{}
+			pod.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+			if err := client.Get(context.Background(), k8sclient.ObjectKey{Name: "nginx"}, pod); err != nil {
+				return err
+			}
+			if pod.GetName() != "nginx" {
+				return fmt.Errorf("unexpected pod name %q", pod.GetName())
+			}
+			return nil
+		}
+		Expect(readPod()).To(Succeed())
+
 		rotate()
+		Eventually(readPod, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 		Eventually(func() error {
 			return client.Reconnect(context.Background())
 		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
