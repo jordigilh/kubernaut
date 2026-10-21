@@ -52,7 +52,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 		Expect(match).To(HaveLen(2))
 		Expect(semver.Compare(match[1], "v0.60.0")).To(BeNumerically(">=", 0))
 		goose := readSecurityFixtureSource("docker/db-migrate.Dockerfile")
-		Expect(goose).To(MatchRegexp(`(?m)^ENV GOTOOLCHAIN=go1\.26\.9\+auto$`))
+		Expect(goose).To(MatchRegexp(`(?m)^ENV GOTOOLCHAIN=go1\.26\.10\+auto$`))
 		frontend := readSecurityFixtureSource("docker/apifrontend.Dockerfile")
 		Expect(frontend).To(ContainSubstring("ENV GOFIPS140=certified"))
 		Expect(frontend).NotTo(ContainSubstring("GOEXPERIMENT=boringcrypto"))
