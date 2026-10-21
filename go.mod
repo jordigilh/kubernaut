@@ -1,6 +1,6 @@
 module github.com/jordigilh/kubernaut
 
-go 1.26.10
+go 1.27.0
 
 require (
 	cloud.google.com/go/auth v0.24.1
@@ -10,18 +10,18 @@ require (
 	github.com/a2aproject/a2a-go v0.3.15
 	github.com/a2aproject/a2a-go/v2 v2.6.0
 	github.com/alicebob/miniredis/v2 v2.40.0
-	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/anthropics/anthropic-sdk-go v1.82.0
 	github.com/cloudwego/eino v0.9.21
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5
 	github.com/containers/kubernetes-mcp-server v0.0.67
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getkin/kin-openapi v0.149.0
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/getkin/kin-openapi v0.151.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/cors v1.2.2
 	github.com/go-faster/errors v0.8.0
 	github.com/go-faster/jx v1.2.0
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-playground/validator/v10 v10.30.5
@@ -39,9 +39,9 @@ require (
 	github.com/ogen-go/ogen v1.24.0
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
-	github.com/open-policy-agent/opa v1.21.1
-	github.com/pelletier/go-toml/v2 v2.2.4
-	github.com/pressly/goose/v3 v3.28.0
+	github.com/open-policy-agent/opa v1.21.2
+	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/prometheus v0.315.0
@@ -49,8 +49,8 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/slack-go/slack v0.30.1
 	github.com/sony/gobreaker/v2 v2.4.0
-	github.com/tektoncd/pipeline v1.16.0
-	github.com/vektah/gqlparser/v2 v2.5.62
+	github.com/tektoncd/pipeline v1.17.0
+	github.com/vektah/gqlparser/v2 v2.5.63
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
@@ -59,12 +59,12 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.opentelemetry.io/proto/otlp v1.11.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/mod v0.41.0
+	golang.org/x/mod v0.42.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/time v0.16.0
 	google.golang.org/adk/v2 v2.4.1-0.20260915115737-76959b0ca682
-	google.golang.org/genai v1.73.0
+	google.golang.org/genai v1.75.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
@@ -79,6 +79,7 @@ require (
 )
 
 require (
+	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
@@ -102,7 +103,7 @@ require (
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fatih/color v1.19.0 // indirect
@@ -147,7 +148,7 @@ require (
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
@@ -182,8 +183,8 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
-	github.com/sethvargo/go-retry v0.4.0 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/sethvargo/go-retry v0.5.0 // indirect
+	github.com/shopspring/decimal v1.5.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
@@ -219,18 +220,18 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/arch v0.11.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/tools v0.50.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/adk v1.0.0 // indirect
 	google.golang.org/api v0.297.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
