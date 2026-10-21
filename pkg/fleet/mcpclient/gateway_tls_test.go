@@ -21,6 +21,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -28,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,8 +54,8 @@ func fastGatewayResilience() fleet.FleetResilienceConfig {
 	}
 }
 
-func newMCPGatewayServer(tlsEnabled bool) (*httptest.Server, string) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func mcpGatewayHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -83,6 +85,10 @@ func newMCPGatewayServer(tlsEnabled bool) (*httptest.Server, string) {
 			w.WriteHeader(http.StatusNotImplemented)
 		}
 	})
+}
+
+func newMCPGatewayServer(tlsEnabled bool) (*httptest.Server, string) {
+	handler := mcpGatewayHandler()
 
 	var httpServer *httptest.Server
 	if tlsEnabled {
@@ -110,6 +116,65 @@ func newMCPGatewayServer(tlsEnabled bool) (*httptest.Server, string) {
 	}
 
 	return httpServer, caPath
+}
+
+func generateMCPGatewayCertificate() (tls.Certificate, []byte) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).ToNot(HaveOccurred())
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	Expect(err).ToNot(HaveOccurred())
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	Expect(err).ToNot(HaveOccurred())
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	Expect(err).ToNot(HaveOccurred())
+	return pair, certPEM
+}
+
+func newRotatingMCPGatewayServer() (*httptest.Server, string, func()) {
+	firstCert, firstCAPEM := generateMCPGatewayCertificate()
+	secondCert, secondCAPEM := generateMCPGatewayCertificate()
+	var current atomic.Pointer[tls.Certificate]
+	current.Store(&firstCert)
+
+	server := httptest.NewUnstartedServer(mcpGatewayHandler())
+	server.TLS = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return current.Load(), nil
+		},
+	}
+	server.StartTLS()
+	// StartTLS installs a generated static certificate when Certificates is
+	// empty. Clear it so the listener uses GetCertificate for the rotation
+	// assertion below.
+	server.TLS.Certificates = nil
+
+	tmpDir, err := os.MkdirTemp("", "mcp-gateway-rotate-2540-")
+	Expect(err).ToNot(HaveOccurred())
+	caPath := filepath.Join(tmpDir, "gateway-ca.crt")
+	Expect(os.WriteFile(caPath, firstCAPEM, 0o600)).To(Succeed())
+	DeferCleanup(func() {
+		server.Close()
+		Expect(os.RemoveAll(tmpDir)).To(Succeed())
+	})
+
+	rotate := func() {
+		current.Store(&secondCert)
+		Expect(os.WriteFile(caPath, secondCAPEM, 0o600)).To(Succeed())
+	}
+	return server, caPath, rotate
 }
 
 func newBogusCAPath() string {
@@ -261,5 +326,23 @@ var _ = Describe("MCP Gateway scoped TLS trust (Issue #2540)", func() {
 		Expect(client.Ready()).To(BeTrue())
 		Expect(tokenRequests.Load()).To(BeNumerically(">=", 1))
 		DeferCleanup(func() { Expect(client.Close()).To(Succeed()) })
+	})
+
+	It("UT-FLEET-2540-006 [BR-INTEGRATION-054, SC-12, SC-13, ASVS-12.3.4]: reloads the configured CA before reconnecting", func() {
+		gateway, caPath, rotate := newRotatingMCPGatewayServer()
+		client, err := mcpclient.Connect(context.Background(), mcpclient.ConnectConfig{
+			Endpoint:            gateway.URL,
+			MCPGatewayTLSCAFile: caPath,
+			Resilience:          fastGatewayResilience(),
+		}, logger)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(client.Ready()).To(BeTrue())
+		DeferCleanup(func() { Expect(client.Close()).To(Succeed()) })
+
+		rotate()
+		Eventually(func() error {
+			return client.Reconnect(context.Background())
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+		Expect(client.Ready()).To(BeTrue())
 	})
 })
