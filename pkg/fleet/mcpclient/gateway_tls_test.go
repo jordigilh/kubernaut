@@ -215,6 +215,26 @@ var _ = Describe("MCP Gateway scoped TLS trust (Issue #2540)", func() {
 		DeferCleanup(func() { Expect(client.Close()).To(Succeed()) })
 	})
 
+	It("UT-FLEET-2540-004b [BR-INTEGRATION-054, SI-10, CM-6, ASVS-16.5.3]: fails closed for malformed gateway CA PEM", func() {
+		gateway, _ := newMCPGatewayServer(true)
+		tmpDir, err := os.MkdirTemp("", "mcp-gateway-malformed-ca-2540-")
+		Expect(err).ToNot(HaveOccurred())
+		malformedCAPath := filepath.Join(tmpDir, "malformed-ca.crt")
+		Expect(os.WriteFile(malformedCAPath, []byte("not a PEM certificate\n"), 0o600)).To(Succeed())
+		DeferCleanup(func() { Expect(os.RemoveAll(tmpDir)).To(Succeed()) })
+
+		client, err := mcpclient.Connect(context.Background(), mcpclient.ConnectConfig{
+			Endpoint:            gateway.URL,
+			MCPGatewayTLSCAFile: malformedCAPath,
+			Resilience:          fastGatewayResilience(),
+		}, logger)
+		Expect(client).ToNot(BeNil())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("mcp gateway tls ca"))
+		Expect(client.Ready()).To(BeFalse())
+		DeferCleanup(func() { Expect(client.Close()).To(Succeed()) })
+	})
+
 	It("UT-FLEET-2540-005 [BR-INTEGRATION-054, BR-INTEGRATION-065, SC-8, ASVS-12.3.2/12.3.4]: keeps gateway and OAuth2 token CA trust independent", func() {
 		gateway, gatewayCAPath := newMCPGatewayServer(true)
 		var tokenRequests atomic.Int32
