@@ -38,6 +38,13 @@ type ConnectConfig struct {
 	// caller's behalf.
 	Endpoint string
 
+	// MCPGatewayTLSCAFile is the optional CA bundle used only for the MCP
+	// Gateway protocol session. It is intentionally distinct from
+	// fleet.FleetConfig.TLSCAFile (scope-check backend trust) and
+	// fleet.FleetOAuth2Config.TLSCAFile (OAuth2 token-endpoint trust).
+	// An empty path preserves the process-effective system trust behavior.
+	MCPGatewayTLSCAFile string
+
 	// OAuth2 holds fleet OAuth2 credentials.
 	OAuth2 fleet.FleetOAuth2Config
 
@@ -68,6 +75,9 @@ type ConnectConfig struct {
 // Authority: ADR-068 decision #11, BR-INTEGRATION-054.
 func Connect(ctx context.Context, cfg ConnectConfig, logger logr.Logger) (*ResilientClient, error) {
 	var opts []Option
+	if cfg.MCPGatewayTLSCAFile != "" {
+		opts = append(opts, WithMCPGatewayTLSCAFile(cfg.MCPGatewayTLSCAFile, logger))
+	}
 	if cfg.OAuth2.Enabled {
 		reloadCfg := ReloadableOAuth2Config{
 			TokenURL:         cfg.OAuth2.TokenURL,

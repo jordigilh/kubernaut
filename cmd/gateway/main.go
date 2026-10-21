@@ -417,6 +417,7 @@ func wireFleetOwnerResolution(
 
 	connectCfg := fleetclient.ConnectConfig{
 		Endpoint:            serverCfg.Fleet.MCPGatewayEndpoint,
+		MCPGatewayTLSCAFile: serverCfg.Fleet.MCPGatewayTLSCAFile,
 		OAuth2:              serverCfg.Fleet.OAuth2,
 		Resilience:          serverCfg.Fleet.Resilience,
 		CredentialsBasePath: fleetOAuth2CredentialsBasePath(serverCfg),

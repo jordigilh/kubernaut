@@ -884,6 +884,7 @@ ai:
 integrations:
   fleet:
     endpoint: "http://mcp-gateway:1975/mcp"
+    mcpGatewayTLSCAFile: "/etc/kubernaut-agent/mcp-gateway/ca.crt"
     oauth2:
       enabled: true
       tokenURL: "https://dex.local/token"
@@ -896,6 +897,7 @@ integrations:
 			cfg, err := config.Load([]byte(yamlContent))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Integrations.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "fleet-read"}))
+			Expect(cfg.Integrations.Fleet.MCPGatewayTLSCAFile).To(Equal("/etc/kubernaut-agent/mcp-gateway/ca.crt"))
 		})
 	})
 

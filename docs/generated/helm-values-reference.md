@@ -361,6 +361,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.endpoint` | string | Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm. | `""` | No |
 | `fleet.mcpGatewayEndpoint` | string | Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
 | `fleet.mcpGatewayNamespace` | string | Shared fallback restricting the ClusterRegistry CRD watch to a single namespace, used when a service's own fleet.namespace (signalprocessing) or top-level namespace (fleetmetadatacache) is unset (Issue #1730). Empty (default) leaves each service's own default/cluster-wide behavior unchanged. The per-service override still wins when explicitly set. | `""` | No |
+| `fleet.mcpGatewayTLSCAFile` | string | Dedicated CA bundle path for verifying MCP Gateway protocol traffic. Empty preserves process-effective system trust; this field is independent from scope-check and OAuth2 trust. | `""` | No |
 | `fleet.mcpGatewayType` | string | Shared MCP Gateway type (eaigw or kuadrant), used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | Shared Secret name (keys: client-id, client-secret) for MCP Gateway OAuth2, used as the fallback when a service's own fleet.oauth2.credentialsSecretRef is unset (the one field that remains overridable per service). | `""` | No |
 | `fleet.oauth2.enabled` | boolean | OAuth2 client_credentials auth on/off for MCP Gateway authentication (Issue #1707 follow-up: global-only, no per-service override). | `false` | No |
@@ -373,7 +374,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
 | `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
 | `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
-| `fleet.tlsCAFile` | string | Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
+| `fleet.tlsCAFile` | string | Shared CA bundle path for verifying the Fleet scope-check backend, used by Gateway and RemediationOrchestrator. | `""` | No |
 | `fleet.tokenSecretRef` | string | K8s Secret (key: token) with a bearer token for authenticating to the ACM Search GraphQL API (backend=acm). Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556). | `""` | No |
 | `image.digest` | string | Image digest (e.g. sha256:abc...); when set, overrides tag for immutable references | `""` | No |
 | `image.namespace` | string | Image namespace prefix. Joined to service name by separator. | `"kubernaut-ai"` | No |
@@ -716,4 +717,3 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `tolerations` | array of object | Pod tolerations (overrides global.tolerations for this component) | `` | No |
 | `topologySpreadConstraints` | array of object | Kubernetes topology spread constraints | `` | No |
 | `workflowNamespace` | string | Namespace for Job/PipelineRun execution | `"kubernaut-workflows"` | No |
-

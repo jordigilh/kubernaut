@@ -728,7 +728,12 @@
             "tlsCAFile": {
               "type": "string",
               "default": "",
-              "description": "Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
+              "description": "Shared CA bundle path for verifying the Fleet scope-check backend, used by Gateway and RemediationOrchestrator."
+            },
+            "mcpGatewayTLSCAFile": {
+              "type": "string",
+              "default": "",
+              "description": "Dedicated CA bundle path for verifying MCP Gateway protocol traffic. Empty preserves process-effective system trust; this field is independent from scope-check and OAuth2 trust."
             },
             "tokenSecretRef": {
               "type": "string",

@@ -21,7 +21,7 @@ global:
   # apifrontend, fleetmetadatacache). All of these point at the *same*
   # physical MCP Gateway instance and (for gateway/remediationorchestrator)
   # the *same* scope-check backend, so in practice they share one
-  # backend/endpoint/mcpGatewayType/CA/OAuth2 client -- there is no known
+  # backend/endpoint/mcpGatewayType/scope-check CA/MCP Gateway CA/OAuth2 client -- there is no known
   # deployment that needs a different value per service (Issue #1707
   # follow-up). The single per-service exception is
   # `fleet.oauth2.credentialsSecretRef` (still overridable per service, see
@@ -47,6 +47,10 @@ global:
     # `endpoint: ""` for WE's un-guarded read -- a real behavioral gap, not just
     # cosmetic (see workflowexecution_fleet_wiring_test.yaml).
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
+    # -- Dedicated MCP protocol CA path. Empty preserves the process-effective
+    # system trust behavior; this is independent from fleet.tlsCAFile (scope
+    # check) and fleet.oauth2.tlsCAFile (OAuth2 token endpoint).
+    mcpGatewayTLSCAFile: ""
     # -- Shared MCP Gateway type ("eaigw" or "kuadrant").
     # NOTE: intentionally NOT trimmed even though its default is "" -- FMC's
     # `gatewayType:` field (fleetmetadatacache.yaml) quotes this directly with

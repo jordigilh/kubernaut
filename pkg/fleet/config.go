@@ -75,6 +75,12 @@ type FleetConfig struct {
 	// connect to the MCP Gateway to issue K8s MCP tool calls against managed clusters.
 	MCPGatewayEndpoint string `yaml:"mcpGatewayEndpoint,omitempty"`
 
+	// MCPGatewayTLSCAFile is the optional CA bundle used only for the MCP
+	// Gateway protocol session. It is intentionally separate from TLSCAFile,
+	// which verifies the scope-check backend, and OAuth2.TLSCAFile, which
+	// verifies the OAuth2 token endpoint.
+	MCPGatewayTLSCAFile string `yaml:"mcpGatewayTLSCAFile,omitempty"`
+
 	// MCPGatewayType selects the MCP Gateway implementation: "eaigw" (Envoy AI Gateway)
 	// or "kuadrant" (Kuadrant MCP Gateway). Defaults to "eaigw" when empty.
 	MCPGatewayType MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
@@ -180,6 +186,7 @@ type MCPGatewayConfig struct {
 	Endpoint    string `yaml:"endpoint"`
 	GatewayType string `yaml:"gatewayType"`
 	Namespace   string `yaml:"namespace"`
+	TLSCAFile   string `yaml:"tlsCAFile,omitempty"`
 
 	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
 	// tuning (issue #2262 Phase 2). See FleetConfig.Resilience's doc comment.

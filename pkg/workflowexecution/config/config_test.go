@@ -86,6 +86,7 @@ execution:
   cooldownPeriod: 5m
 fleet:
   endpoint: "http://mcp-gateway:1975/mcp"
+  mcpGatewayTLSCAFile: "/etc/workflowexecution/mcp-gateway/ca.crt"
   oauth2:
     enabled: true
     tokenURL: "https://dex.local/token"
@@ -105,6 +106,7 @@ fleet:
 			cfg, err := weconfig.LoadFromFile(cfgPath)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "mcp-write"}))
+			Expect(cfg.Fleet.MCPGatewayTLSCAFile).To(Equal("/etc/workflowexecution/mcp-gateway/ca.crt"))
 		})
 
 		It("defaults to nil scopes when omitted from YAML", func() {

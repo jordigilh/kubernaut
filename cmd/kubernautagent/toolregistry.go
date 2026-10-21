@@ -407,8 +407,9 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 		"endpoint", endpoint, "gatewayType", gatewayType)
 
 	connectCfg := fleetclient.ConnectConfig{
-		Endpoint:   endpoint,
-		Resilience: cfg.Integrations.Fleet.Resilience,
+		Endpoint:            endpoint,
+		MCPGatewayTLSCAFile: cfg.Integrations.Fleet.MCPGatewayTLSCAFile,
+		Resilience:          cfg.Integrations.Fleet.Resilience,
 	}
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
 		basePath := fleetOAuth2CredentialsBasePath(cfg.Integrations.Fleet.OAuth2)

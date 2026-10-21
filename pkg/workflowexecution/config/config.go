@@ -77,8 +77,9 @@ type Config struct {
 // workflow execution. BR-FLEET-054: When Endpoint is empty, WE operates
 // in local-only mode (same as pre-fleet behavior).
 type FleetConfig struct {
-	Endpoint string      `yaml:"endpoint"`
-	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+	Endpoint            string      `yaml:"endpoint"`
+	MCPGatewayTLSCAFile string      `yaml:"mcpGatewayTLSCAFile,omitempty"`
+	OAuth2              FleetOAuth2 `yaml:"oauth2"`
 
 	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
 	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)

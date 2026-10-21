@@ -311,6 +311,7 @@ Helm-side behavior.
   fleet:
     endpoint: {{ $kaFleetPreamble.config.mcpGatewayEndpoint | quote }}
     gatewayType: {{ $kaFleetPreamble.config.mcpGatewayType | quote }}
+    mcpGatewayTLSCAFile: {{ $kaFleetPreamble.config.mcpGatewayTLSCAFile | quote }}
 {{- if $kaFleetPreamble.oauth2.enabled }}
     oauth2:
       enabled: true

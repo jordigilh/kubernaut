@@ -97,10 +97,11 @@ type IntegrationsConfig struct {
 // GatewayType selects the discovery strategy: "eaigw" or "kuadrant".
 // When GatewayType is empty, fleet is disabled regardless of Endpoint.
 type FleetConfig struct {
-	Endpoint       string                `yaml:"endpoint"`
-	GatewayType    string                `yaml:"gatewayType"`
-	OAuth2         FleetOAuth2           `yaml:"oauth2"`
-	AlignmentCheck *AlignmentCheckConfig `yaml:"alignmentCheck,omitempty"`
+	Endpoint            string                `yaml:"endpoint"`
+	GatewayType         string                `yaml:"gatewayType"`
+	MCPGatewayTLSCAFile string                `yaml:"mcpGatewayTLSCAFile,omitempty"`
+	OAuth2              FleetOAuth2           `yaml:"oauth2"`
+	AlignmentCheck      *AlignmentCheckConfig `yaml:"alignmentCheck,omitempty"`
 
 	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
 	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
