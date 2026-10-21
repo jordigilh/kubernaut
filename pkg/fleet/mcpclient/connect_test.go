@@ -130,6 +130,7 @@ var _ = Describe("Connect (issue #2315 self-healing fix)", func() {
 		gatewayCAPath := filepath.Join(tmpDir, "gateway-ca.pem")
 		wrongCAPath := filepath.Join(tmpDir, "wrong-ca.pem")
 		invalidCAPath := filepath.Join(tmpDir, "invalid-ca.pem")
+		unreadableCAPath := filepath.Join(tmpDir, "missing-ca.pem")
 		Expect(os.WriteFile(gatewayCAPath, gatewayCA, 0o600)).To(Succeed())
 		Expect(os.WriteFile(wrongCAPath, unrelatedCAPEM(), 0o600)).To(Succeed())
 		Expect(os.WriteFile(invalidCAPath, []byte("not a certificate"), 0o600)).To(Succeed())
@@ -157,6 +158,13 @@ var _ = Describe("Connect (issue #2315 self-healing fix)", func() {
 		Expect(rc.Close()).To(Succeed())
 
 		cfg.MCPGatewayTLSCAFile = invalidCAPath
+		rc, err = mcpclient.Connect(context.Background(), cfg, logger)
+		Expect(rc).NotTo(BeNil())
+		Expect(err).To(HaveOccurred())
+		Expect(rc.Ready()).To(BeFalse())
+		Expect(rc.Close()).To(Succeed())
+
+		cfg.MCPGatewayTLSCAFile = unreadableCAPath
 		rc, err = mcpclient.Connect(context.Background(), cfg, logger)
 		Expect(rc).NotTo(BeNil())
 		Expect(err).To(HaveOccurred())
