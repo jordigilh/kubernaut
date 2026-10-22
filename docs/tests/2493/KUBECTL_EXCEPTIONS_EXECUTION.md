@@ -99,6 +99,18 @@ Owned RCA directory: `../kubernaut-pr-2493-rca/`:
 - `kubectl-exceptions-verification-v15.json`
 - `kubectl-exceptions-{build,lint}-v15.log`
 
+## 2026-10-21 Follow-up: CVE-2026-111943
+
+The updated must-gather scan reported `CVE-2026-111943` in the retained
+`kubectl v1.36.2` binary. Inspection of the latest stable v1.36.5 and v1.37.1
+kubectl binaries found Go 1.26.8 in both; the CVE is fixed in Go 1.26.10 and
+1.27.3. The user approved a must-gather-only exception through 2027-04-21.
+
+The exception was added to `cmd/must-gather/.trivyignore`, the exact-CVE
+allowlist test was updated, and CI run 39700232226 passed `Build Infra
+(must-gather)` with the exception applied. The CVE remains unremediated and
+Issue #1662 remains the re-triage owner before expiry.
+
 **Confidence: 98%** in the exact CVE scope, calendar expiry, routing and local
 exception-aware scan behavior, justified by failing-before/passing-after BDD
 and actual same-image scans. This is not confidence that the CVEs are fixed or

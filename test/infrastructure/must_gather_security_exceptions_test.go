@@ -38,6 +38,9 @@ var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", f
 		newAcceptedAt, err := time.Parse(time.DateOnly, "2026-10-17")
 		Expect(err).NotTo(HaveOccurred())
 		newExpiresAt := "exp:" + newAcceptedAt.AddDate(0, 6, 0).Format(time.DateOnly)
+		latestAcceptedAt, err := time.Parse(time.DateOnly, "2026-10-21")
+		Expect(err).NotTo(HaveOccurred())
+		latestExpiresAt := "exp:" + latestAcceptedAt.AddDate(0, 6, 0).Format(time.DateOnly)
 		legacyIDs := []string{
 			"CVE-2026-25681", "CVE-2026-27136", "CVE-2026-33814", "CVE-2026-33818",
 			"CVE-2026-39821", "CVE-2026-39822", "CVE-2026-46600", "CVE-2026-56852",
@@ -49,6 +52,7 @@ var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", f
 			expectedExpirations[id] = legacyExpiresAt
 		}
 		expectedExpirations["CVE-2026-56851"] = newExpiresAt
+		expectedExpirations["CVE-2026-111943"] = latestExpiresAt
 		expectedIDs := make([]string, 0, len(expectedExpirations))
 		for id := range expectedExpirations {
 			expectedIDs = append(expectedIDs, id)
@@ -72,7 +76,7 @@ var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", f
 	It("UT-SEC-2493-008: records explicit risk acceptance without claiming the CVEs are fixed", func() {
 		body, err := os.ReadFile(filepath.Join(getProjectRoot(), "cmd/must-gather/.trivyignore")) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-		for _, evidence := range []string{"risk acceptance", "not vulnerability remediation", "2026-10-11", "2026-10-17", "2027-04-11", "2027-04-17", "Issue #1662", "DD-PLATFORM-003", "v1.36.5", "v1.37.1", "CVE-2026-56851"} {
+		for _, evidence := range []string{"risk acceptance", "not vulnerability remediation", "2026-10-11", "2026-10-17", "2026-10-21", "2027-04-11", "2027-04-17", "2027-04-21", "Issue #1662", "DD-PLATFORM-003", "v1.36.5", "v1.37.1", "CVE-2026-56851", "CVE-2026-111943"} {
 			Expect(string(body)).To(ContainSubstring(evidence))
 		}
 		Expect(string(body)).NotTo(ContainSubstring("no fix available"))
