@@ -197,6 +197,23 @@ application-image findings remain blocking. Re-triage with Issue #1662 before
 expiry and remove the entry when a compatible patched kubectl artifact is
 adopted.
 
+## 2026-10-21 Amendment: CVE-2026-111943 Exception
+
+The must-gather image scan reported **CVE-2026-111943** in the retained
+`kubectl v1.36.2` binary. The latest stable `kubectl` releases available for
+inspection, v1.36.5 and v1.37.1, embed Go 1.26.8; the CVE is fixed in Go
+1.26.10 and 1.27.3. No currently available stable kubectl artifact inspected
+provides the fixed Go standard library while preserving the selected
+must-gather compatibility contract.
+
+**Approved by the user**: add this exact CVE to the must-gather-only Trivy
+exception set through **2027-04-21**, six calendar months from the 2026-10-21
+approval. This is risk acceptance, not vulnerability remediation. Existing
+severity, `ignore-unfixed`, fail-closed exit behavior, and application-image
+routing remain unchanged. Issue #1662 remains the re-triage owner; remove the
+entry earlier if a compatible fixed kubectl artifact is adopted, and renewal
+requires fresh approval.
+
 ## 2026-10-11 Amendment: Explicit Six-Month Risk Acceptance
 
 **Approved by the user**: "let's add kubectl CVEs as exceptions for 6 months validity".
