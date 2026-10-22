@@ -745,7 +745,8 @@ jobs:
         with:
           image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
-          # acceptance until 2027-04-11, scoped to must-gather (not service images).
+          # acceptance entries expire between 2027-04-11 and 2027-04-21,
+          # scoped to must-gather (not service images).
           trivyignores: ${{ matrix.image_name == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Save image to tarball
