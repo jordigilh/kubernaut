@@ -11,7 +11,7 @@ require (
 	github.com/a2aproject/a2a-go/v2 v2.6.0
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/anthropics/anthropic-sdk-go v1.82.0
-	github.com/cloudwego/eino v0.9.21
+	github.com/cloudwego/eino v0.9.22
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5
 	github.com/containers/kubernetes-mcp-server v0.0.67
 	github.com/eino-contrib/jsonschema v1.0.3
