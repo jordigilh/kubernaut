@@ -69,3 +69,9 @@ CVE-2026-78669 exp:2027-04-11
 # kubectl x/text v0.33.0; fixed v0.41.0. User-approved risk acceptance on
 # 2026-10-17; this is not vulnerability remediation.
 CVE-2026-56851 exp:2027-04-17
+
+# kubectl v1.36.2 embeds Go stdlib v1.26.4. The latest stable kubectl
+# releases v1.36.5 and v1.37.1 embed Go v1.26.8, still below the fixed
+# Go versions 1.26.10/1.27.3. User-approved six-month risk acceptance on
+# 2026-10-21; tracked with Issue #1662 and expires 2027-04-21.
+CVE-2026-111943 exp:2027-04-21

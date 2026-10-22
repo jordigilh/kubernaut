@@ -31,7 +31,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 		module := readSecurityFixtureSource("go.mod")
 		match := regexp.MustCompile(`(?m)^go (\S+)$`).FindStringSubmatch(module)
 		Expect(match).To(HaveLen(2))
-		Expect(semver.Compare("v"+match[1], "v1.26.9")).To(BeNumerically(">=", 0))
+		Expect(semver.Compare("v"+match[1], "v1.26.10")).To(BeNumerically(">=", 0))
 		workflowCounts := map[string]int{
 			"ci-pipeline.yml": 9, "release.yml": 4, "codeql.yml": 1,
 			"chart-release.yml": 1, "helm-smoke-test.yml": 1,
@@ -41,7 +41,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 			versions := regexp.MustCompile(`(?m)^\s*go-version:\s*['"]?([0-9.]+)`).FindAllStringSubmatch(body, -1)
 			Expect(versions).To(HaveLen(expectedCount), "workflow: %s", workflow)
 			for _, version := range versions {
-				Expect(semver.Compare("v"+version[1], "v1.26.9")).To(BeNumerically(">=", 0), "workflow: %s", workflow)
+				Expect(semver.Compare("v"+version[1], "v1.26.10")).To(BeNumerically(">=", 0), "workflow: %s", workflow)
 			}
 		}
 	})

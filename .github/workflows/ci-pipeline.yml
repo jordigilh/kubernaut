@@ -745,7 +745,8 @@ jobs:
         with:
           image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
-          # acceptance until 2027-04-11, scoped to must-gather (not service images).
+          # acceptance entries expire between 2027-04-11 and 2027-04-21,
+          # scoped to must-gather (not service images).
           trivyignores: ${{ matrix.image_name == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Save image to tarball
@@ -1422,6 +1423,12 @@ jobs:
       KIND_CLUSTER_NAME: helm-smoke-${{ matrix.tls_mode }}
       IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
       ARGOCD_VERSION: v3.4.4
+      # ArgoCD v3.4.4's upstream manifest references the official Redis image
+      # through public.ecr.aws. GitHub-hosted runners intermittently receive
+      # HTTP 429 "Data limit exceeded" from that registry. Docker Hub serves
+      # the same official multi-arch manifest digest, so keep the content
+      # pinned while avoiding the throttled registry for this ephemeral test.
+      ARGOCD_REDIS_IMAGE: docker.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
       GITOPS_NAMESPACE: kubernaut-gitops-smoke
 
     steps:
@@ -1588,6 +1595,11 @@ jobs:
           kubectl create namespace argocd
           kubectl apply -n argocd --server-side --force-conflicts \
             -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+          # Avoid the public.ecr.aws pull quota without changing the Redis
+          # artifact: ARGOCD_REDIS_IMAGE is pinned to the upstream manifest
+          # digest above.
+          kubectl -n argocd set image deployment/argocd-redis \
+            "redis=${ARGOCD_REDIS_IMAGE}"
           kubectl wait --for=condition=Available --timeout=180s deployment -l app.kubernetes.io/part-of=argocd -n argocd
 
       - name: Log in to ArgoCD CLI

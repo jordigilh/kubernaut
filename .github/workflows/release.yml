@@ -379,7 +379,8 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
-          # acceptance until 2027-04-11, scoped to must-gather (not service images).
+          # acceptance entries expire between 2027-04-11 and 2027-04-21,
+          # scoped to must-gather (not service images).
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
@@ -434,7 +435,8 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
-          # acceptance until 2027-04-11, scoped to must-gather (not service images).
+          # acceptance entries expire between 2027-04-11 and 2027-04-21,
+          # scoped to must-gather (not service images).
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)

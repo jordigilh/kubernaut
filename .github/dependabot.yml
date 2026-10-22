@@ -19,6 +19,10 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "sigs.k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Tekton v1.17+ requires Go 1.27; keep the main branch on the
+      # Go 1.26.10 security floor until the v1.6.0 toolchain migration.
+      - dependency-name: "github.com/tektoncd/pipeline"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
       # fixes it. Remove this ignore rule once a fixed release is out.
       - dependency-name: "google.golang.org/adk/v2"
@@ -105,6 +109,10 @@ updates:
       - dependency-name: "k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "sigs.k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Tekton v1.17+ requires Go 1.27; keep the maintenance branch on its
+      # patched Go 1.26 toolchain until the v1.6.0 toolchain migration.
+      - dependency-name: "github.com/tektoncd/pipeline"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
       # fixes it. Remove this ignore rule once a fixed release is out.
