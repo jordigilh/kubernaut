@@ -189,6 +189,14 @@ At the time of this analysis, Kubernaut supports auto-approval or manual review,
 
 ## Success Hypotheses
 
+The proposed [Agentic Attacker-Defender Evaluation Scope](../../testing/554/AGENTIC_EVALUATION_SCOPE.md)
+preserves the future ARTEX-versus-Kubernaut benchmark: compare attacker success
+with and without remediation, observe adaptation and escalation, and assess
+operational and forensic impact using independent evidence. It is not an
+execution authorization or a claim of implemented threat-remediation support.
+Threat-specific effectiveness signals remain undecided; a future spike must
+select and validate them before measurement implementation and scored trials.
+
 The design-partner pilot should establish baselines before committing targets. The primary measures are:
 
 - Time from authoritative finding to trusted decision.

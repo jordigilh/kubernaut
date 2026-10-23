@@ -75,6 +75,12 @@ Integration test infrastructure is fully programmatic Go -- `test/infrastructure
 
 Test plans for specific features and issues live in subdirectories named by issue number or BR/DD identifier (e.g., `docs/testing/291/TEST_PLAN.md`, `docs/testing/BR-KA-197/`).
 
+### Future Evaluation Scopes
+
+| Document | Description |
+|----------|-------------|
+| [Threat Remediation: Agentic Attacker-Defender Evaluation Scope](554/AGENTIC_EVALUATION_SCOPE.md) | Proposed ARTEX-versus-Kubernaut benchmark with baseline comparisons, adaptive attacks, and escalation. Effectiveness signals await a future spike; not an approved execution plan. |
+
 ## Validation Commands
 
 ```bash

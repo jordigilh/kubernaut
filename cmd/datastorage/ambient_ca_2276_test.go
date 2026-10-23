@@ -32,7 +32,6 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 func generateAmbientCATestCert(t *testing.T) string {
@@ -67,22 +66,21 @@ func resetAmbientCAEnv(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		_ = os.Unsetenv("SSL_CERT_FILE")
+		_ = os.Unsetenv("SSL_CERT_DIR")
 		_ = os.Unsetenv("TLS_CA_FILE")
-		sharedtls.ResetSystemCertFileCandidatesForTesting()
 	})
 }
 
 // IT-DS-2276-001: a redis.tls.caFile configured via YAML is wired through
 // bootstrapAmbientCATrust -- the exact production function run() calls
 // immediately after loadRunConfig, before telemetry.Bootstrap's OTel
-// exporter -- into ambient env vars as defense-in-depth (Issue #2276,
+// exporter -- into ambient env vars as defense-in-depth (Issue #2545,
 // SC-8). This does not replace DataStorage's existing explicit Redis/Valkey
 // TLS wiring -- it only backstops any code path not covered by that
 // explicit field.
 func TestBootstrapAmbientCATrust_DataStorage_InjectsFromConfig(t *testing.T) {
 	resetAmbientCAEnv(t)
 	realCA := generateAmbientCATestCert(t)
-	sharedtls.SetSystemCertFileCandidatesForTesting([]string{"/nonexistent/system-bundle.pem"})
 
 	cfg := &config.Config{Redis: config.RedisConfig{TLS: config.RedisTLSConfig{CAFile: realCA}}}
 
@@ -93,8 +91,11 @@ func TestBootstrapAmbientCATrust_DataStorage_InjectsFromConfig(t *testing.T) {
 	if got := os.Getenv("TLS_CA_FILE"); got != realCA {
 		t.Errorf("TLS_CA_FILE = %q, want %q", got, realCA)
 	}
-	if got := os.Getenv("SSL_CERT_FILE"); got == "" {
-		t.Error("SSL_CERT_FILE must be set after bootstrapAmbientCATrust with a non-empty redis.tls.caFile")
+	if got := os.Getenv("SSL_CERT_FILE"); got != "" {
+		t.Errorf("SSL_CERT_FILE = %q, want empty", got)
+	}
+	if got := os.Getenv("SSL_CERT_DIR"); got == "" {
+		t.Error("SSL_CERT_DIR must be set after bootstrapAmbientCATrust with a non-empty CA")
 	}
 }
 

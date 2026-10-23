@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // Issue #2276: KubernautAgent's primary MCP Gateway connection (and any
@@ -38,15 +37,13 @@ var _ = Describe("cmd/kubernautagent bootstrapAmbientCATrust — ambient CA trus
 
 	AfterEach(func() {
 		Expect(os.Unsetenv("SSL_CERT_FILE")).To(Succeed())
+		Expect(os.Unsetenv("SSL_CERT_DIR")).To(Succeed())
 		Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
-		sharedtls.ResetSystemCertFileCandidatesForTesting()
 	})
 
 	Describe("IT-KA-2276-001: a tlsCaFile configured via YAML is wired through bootstrapAmbientCATrust into ambient env vars", func() {
 		It("parses runtime.server.tlsCaFile from YAML and injects it via the same bootstrapAmbientCATrust call main() makes", func() {
 			realCA := generateTestCACert(GinkgoTB(), "ka-ambient-ca-2276-test")
-			sharedtls.SetSystemCertFileCandidatesForTesting([]string{"/nonexistent/system-bundle.pem"})
-
 			cfgYAML := []byte(`
 runtime:
   server:
@@ -63,12 +60,13 @@ runtime:
 			Expect(bootstrapAmbientCATrust(logr.Discard(), cfg)).To(Succeed())
 
 			Expect(os.Getenv("TLS_CA_FILE")).To(Equal(realCA))
-			Expect(os.Getenv("SSL_CERT_FILE")).NotTo(BeEmpty())
+			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("SSL_CERT_DIR")).NotTo(BeEmpty())
 		})
 	})
 
 	Describe("IT-KA-2276-002: an unset tlsCaFile leaves ambient env vars untouched (fail-open parity)", func() {
-		It("does not set SSL_CERT_FILE or TLS_CA_FILE when tlsCaFile is absent from config", func() {
+		It("does not set ambient trust variables when tlsCaFile is absent from config", func() {
 			cfg, err := kaconfig.Load([]byte(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg.Runtime.Server.TLSCAFile).To(BeEmpty())
@@ -76,6 +74,7 @@ runtime:
 			Expect(bootstrapAmbientCATrust(logr.Discard(), cfg)).To(Succeed())
 
 			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("SSL_CERT_DIR")).To(BeEmpty())
 			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
 		})
 	})
