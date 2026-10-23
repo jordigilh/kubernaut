@@ -114,10 +114,12 @@ other agent's control plane. Preserve the realistic feedback that each agent
 could legitimately observe. Administrative access used to provision the lab
 must not become attacker access or an undocumented defender advantage.
 
-An initial campaign should select one authoritative source and two or three
-response journeys, as required by BR-SECURITY-554-010. Source selection must
-match the chosen behaviors: a runtime sensor is not automatically evidence of
-cloud identity activity, and an ARTEX transcript is not a detector integration.
+Initial validation must use one authoritative source and two or three
+deterministic response journeys, as required by BR-SECURITY-554-010. Adaptive
+benchmark runs complement, but do not replace, that initial validation.
+Source selection must match the chosen behaviors: a runtime sensor is not
+automatically evidence of cloud identity activity, and an ARTEX transcript is
+not a detector integration.
 
 ## 5. Candidate Encounters
 
