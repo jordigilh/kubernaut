@@ -289,6 +289,9 @@ func validateAmbientCAFile(caFile string) (string, error) {
 	}
 
 	caDir := filepath.Dir(caFile)
+	if strings.Contains(caDir, string(filepath.ListSeparator)) {
+		return "", fmt.Errorf("ambient CA directory path contains path-list separator: %s", caDir)
+	}
 	info, err := os.Stat(caDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to stat ambient CA directory %s: %w", caDir, err)

@@ -526,6 +526,23 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(os.Getenv("SSL_CERT_DIR")).To(BeEmpty())
 			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
 		})
+
+		It("UT-TLS-2545-008: should reject CA directories containing the path-list separator", func() {
+			generateSelfSignedCert(certPath, keyPath)
+			separatorDir := filepath.Join(certDir, "ca"+string(filepath.ListSeparator)+"directory")
+			Expect(os.Mkdir(separatorDir, 0755)).To(Succeed())
+			caPEM, err := os.ReadFile(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			separatorCAPath := filepath.Join(separatorDir, "ca.crt")
+			Expect(os.WriteFile(separatorCAPath, caPEM, 0444)).To(Succeed())
+
+			err = sharedtls.InjectAmbientCACerts(logr.Discard(), separatorCAPath)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("path-list separator"))
+			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("SSL_CERT_DIR")).To(BeEmpty())
+			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
+		})
 	})
 
 	Describe("DefaultBaseTransportWithRetry (#853)", func() {

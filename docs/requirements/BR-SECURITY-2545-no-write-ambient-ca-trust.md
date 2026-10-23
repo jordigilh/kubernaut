@@ -28,10 +28,12 @@ artifacts.
    shared transports and their CA file watcher retain reload behavior.
 5. Missing, unreadable, malformed, or relative CA paths MUST fail before
    environment mutation and MUST be observable at service startup.
-6. CA rotation MUST preserve last-known-good behavior for explicit reloadable
+6. The CA directory path MUST NOT contain the platform path-list separator,
+   because that character would create multiple `SSL_CERT_DIR` entries.
+7. CA rotation MUST preserve last-known-good behavior for explicit reloadable
    transports. Consumers of Go's process-cached system pool require rollout or
    restart to adopt changed ambient trust.
-7. Helm/operator deployments MUST remove legacy static ambient environment
+8. Helm/operator deployments MUST remove legacy static ambient environment
    declarations and ambient-only writable `/tmp` mounts. Other business-required
    scratch paths remain in scope only when independently justified.
 
@@ -56,6 +58,7 @@ approved change-management process, not to this runtime TLS behavior.
 - Explicit `TLS_CA_FILE` transports still reload valid CA rotations and retain
   the previous transport after invalid rotations.
 - Invalid CA input fails without partial environment mutation.
+- A CA directory containing the platform path-list separator is rejected.
 - Focused Helm cleanup removes ambient-only `/tmp` mounts while preserving
   legitimate writable paths.
 - Operator deployment qualification covers the same contract in its separate

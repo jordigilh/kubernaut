@@ -24,11 +24,12 @@
 | UT-TLS-2545-005 | UT | Invalid/relative CA input fails before environment mutation | BR-SECURITY-2545; SI-10/CM-6; V16.3.4/V16.5.3 |
 | UT-TLS-2545-006 | UT | Explicit `TLS_CA_FILE` reload path remains wired | BR-SECURITY-2545; SC-12/SC-13; V12.3.4 |
 | UT-TLS-2545-007 | UT | Environment mutation rollback is observable and complete | BR-SECURITY-2545; SI-10; V16.5.3 |
+| UT-TLS-2545-008 | UT | CA directories containing the platform path-list separator are rejected before environment mutation | BR-SECURITY-2545; SI-10/CM-6; V16.5.3 |
 | IT-TLS-2545-001 | IT | Production bootstrap works in read-only UBI with private/system CA trust | BR-SECURITY-2545; SC-8/AC-6/CM-7; CC7.2; V12.3.1–V12.3.4/V15.2.5 |
 | IT-TLS-2545-002 | IT | Valid CA rotation updates explicit transports; invalid rotation keeps last-known-good | BR-SECURITY-2545; SC-12/SC-13/CM-6; CC7.2 |
 | IT-HELM-2545-003 | IT | Deprecated chart has no ambient-only `/tmp` mount and keeps CA mount read-only | BR-SECURITY-2545; AC-6/CM-7; V15.2.5 |
 
-Target: 7/7 meaningful UT scenarios, 3/3 in-repository IT rows, and 100% of
+Target: 8/8 meaningful UT scenarios, 3/3 in-repository IT rows, and 100% of
 critical safety/security scenarios. The operator qualification is a separate
 cross-repository gate.
 

@@ -413,6 +413,9 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		caPEM, err := os.ReadFile(caCertPath)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.crt"), caPEM, 0444)).To(Succeed())
+		caKey, err := os.ReadFile(caKeyPath)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.key"), caKey, 0400)).To(Succeed())
 
 		repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 		Expect(err).ToNot(HaveOccurred())
@@ -439,7 +442,7 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 			"--volume", caMountDir+":/custom-ca:ro",
 			"--volume", binaryPath+":/ambient-ca-child:ro",
 			"registry.access.redhat.com/ubi10/ubi-minimal:10.2",
-			"/ambient-ca-child", "/custom-ca/ca.crt", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+			"/ambient-ca-child", "/custom-ca/ca.crt", "/custom-ca/ca.key", "https://example.com/")
 		runOutput, runErr := run.CombinedOutput()
 		Expect(runErr).ToNot(HaveOccurred(), strings.TrimSpace(string(runOutput)))
 	})

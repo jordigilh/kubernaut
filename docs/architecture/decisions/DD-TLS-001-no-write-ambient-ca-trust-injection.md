@@ -11,6 +11,8 @@
 It SHALL:
 
 1. Validate the configured absolute CA file before mutating process state.
+   Reject CA directory paths containing the platform path-list separator so the
+   directory cannot become multiple `SSL_CERT_DIR` entries.
 2. Set `TLS_CA_FILE` to the configured CA path for explicit reloadable transports.
 3. Clear `SSL_CERT_FILE` unconditionally; static process-wide file overrides are
    not part of the supported deployment contract.
