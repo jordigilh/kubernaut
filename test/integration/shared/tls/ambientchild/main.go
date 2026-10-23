@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -148,7 +149,11 @@ func startPrivateServer(ca *x509.Certificate, keyPath string) (*http.Server, str
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})}
-	go func() { _ = server.Serve(listener) }()
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "private HTTPS server stopped unexpectedly: %v\n", err)
+		}
+	}()
 	return server, "https://" + listener.Addr().String(), nil
 }
 

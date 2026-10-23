@@ -415,7 +415,7 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.crt"), caPEM, 0444)).To(Succeed())
 		caKey, err := os.ReadFile(caKeyPath)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.key"), caKey, 0400)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.key"), caKey, 0444)).To(Succeed())
 
 		repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 		Expect(err).ToNot(HaveOccurred())
