@@ -32,7 +32,6 @@ import (
 	"github.com/go-logr/logr"
 
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // generateAmbientCATestCert creates a self-signed CA certificate PEM file
@@ -69,19 +68,18 @@ func resetAmbientCAEnv(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		_ = os.Unsetenv("SSL_CERT_FILE")
+		_ = os.Unsetenv("SSL_CERT_DIR")
 		_ = os.Unsetenv("TLS_CA_FILE")
-		sharedtls.ResetSystemCertFileCandidatesForTesting()
 	})
 }
 
 // IT-AA-2276-001: a tlsCaFile configured via YAML is wired through
 // bootstrapAmbientCATrust -- the exact production function run() calls
 // immediately after loadAIAnalysisConfig, before wireAIAnalysisClients'
-// DataStorage HTTP client -- into ambient env vars (Issue #2276, SC-8).
+// DataStorage HTTP client -- into ambient env vars (Issue #2545, SC-8).
 func TestBootstrapAmbientCATrust_AIAnalysis_InjectsFromConfig(t *testing.T) {
 	resetAmbientCAEnv(t)
 	realCA := generateAmbientCATestCert(t)
-	sharedtls.SetSystemCertFileCandidatesForTesting([]string{"/nonexistent/system-bundle.pem"})
 
 	cfg := &config.Config{TLSCAFile: realCA}
 
@@ -92,13 +90,16 @@ func TestBootstrapAmbientCATrust_AIAnalysis_InjectsFromConfig(t *testing.T) {
 	if got := os.Getenv("TLS_CA_FILE"); got != realCA {
 		t.Errorf("TLS_CA_FILE = %q, want %q", got, realCA)
 	}
-	if got := os.Getenv("SSL_CERT_FILE"); got == "" {
-		t.Error("SSL_CERT_FILE must be set after bootstrapAmbientCATrust with a non-empty TLSCAFile")
+	if got := os.Getenv("SSL_CERT_FILE"); got != "" {
+		t.Errorf("SSL_CERT_FILE = %q, want empty", got)
+	}
+	if got := os.Getenv("SSL_CERT_DIR"); got == "" {
+		t.Error("SSL_CERT_DIR must be set after bootstrapAmbientCATrust with a non-empty CA")
 	}
 }
 
 // IT-AA-2276-002: an unset tlsCaFile leaves ambient env vars untouched
-// (fail-open parity with sharedtls.InjectAmbientCACerts' empty-caFile
+// (fail-open parity with shared TLS helper's empty-caFile
 // contract).
 func TestBootstrapAmbientCATrust_AIAnalysis_NoopWhenUnset(t *testing.T) {
 	resetAmbientCAEnv(t)

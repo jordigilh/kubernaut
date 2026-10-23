@@ -756,11 +756,6 @@ spec:
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- /* Issue #2276: unconditional (decoupled from monitoring
-            tlsEnabled above) -- bootstrapAmbientCATrust always runs at
-            startup and needs a writable /tmp regardless of whether
-            Prometheus/AlertManager TLS is configured. */}}
-            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             # BR-PLATFORM-005: short-TTL projected token, replacing the SA's
             # disabled default automount (see ServiceAccount above).
             - name: sa-token
@@ -840,7 +835,6 @@ spec:
           secret:
             secretName: kubernautagent-tls
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
         # (much longer-lived) automounted SA token for this high-risk component.
         #
