@@ -30,11 +30,11 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f",
-			ResolvedSHA:   "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f",
+			RequestedRef:  "c226705e24bef67fa947c535d59ea87d4251b483",
+			ResolvedSHA:   "c226705e24bef67fa947c535d59ea87d4251b483",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f",
+			ChartRevision: "c226705e24bef67fa947c535d59ea87d4251b483",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -42,7 +42,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "c226705e24bef67fa947c535d59ea87d4251b483"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
@@ -131,6 +131,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		minimalManifest, minimalErr := BuildKubernautCRManifest(minimal)
 		Expect(minimalErr).NotTo(HaveOccurred())
 		Expect(minimalManifest).NotTo(ContainSubstring("monitoring:"))
+	})
+
+	It("UT-2492-007A [BR-E2E-001]: renders KA investigation capacity when explicitly requested", func() {
+		options := testOperatorCROptions()
+		options.MaxConcurrentInvestigations = 50
+		manifest, err := BuildKubernautCRManifest(options)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(manifest).To(ContainSubstring("maxConcurrentInvestigations: 50"))
 	})
 
 	It("UT-2492-008 [BR-E2E-001]: requires Running, positive conditions, services, and EndpointSlices", func() {
@@ -270,14 +278,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 				OperatorDigest:      "sha256:operator",
 				OperatorChart:       "oci://quay.io/example/operator",
 				OperatorChartDigest: "sha256:chart",
-				OperatorRef:         "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f",
+				OperatorRef:         "c226705e24bef67fa947c535d59ea87d4251b483",
 				KubernautVersion:    "1.6.0-rc9",
 			},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.OperatorImage).To(Equal("quay.io/example/operator@sha256:operator"))
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/example/operator@sha256:chart"))
-		Expect(resolved.OperatorRef).To(Equal("cebebf7596d35cb5c263bdd82fef09e2fd44ca5f"))
+		Expect(resolved.OperatorRef).To(Equal("c226705e24bef67fa947c535d59ea87d4251b483"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
 	})
 

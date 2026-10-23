@@ -433,55 +433,6 @@ func CreateDataStorageAccessRoleBinding(ctx context.Context, namespace, kubeconf
 	return nil
 }
 
-// EnsureAPIFrontendInvestigationSessionRBAC grants the operator-managed API
-// Frontend service account the metadata patch permission used when it
-// backfills an InvestigationSession owner reference after creating an RR.
-// The pinned operator role currently grants create/update but not patch; keep
-// this compatibility grant namespace-scoped and test-owned instead of
-// mutating the operator-owned ClusterRole.
-func EnsureAPIFrontendInvestigationSessionRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	manifest := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: apifrontend-e2e-investigationsession-access
-  namespace: %s
-  labels:
-    app: apifrontend
-    component: rbac
-    test: e2e
-rules:
-- apiGroups: ["kubernaut.ai"]
-  resources: ["investigationsessions"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["kubernaut.ai"]
-  resources: ["investigationsessions/status"]
-  verbs: ["get", "update", "patch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: apifrontend-e2e-investigationsession-access
-  namespace: %s
-  labels:
-    app: apifrontend
-    component: rbac
-    test: e2e
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: apifrontend-e2e-investigationsession-access
-subjects:
-- kind: ServiceAccount
-  name: apifrontend
-  namespace: %s
-`, namespace, namespace, namespace)
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
-		return fmt.Errorf("ensure API Frontend InvestigationSession RBAC: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ API Frontend InvestigationSession patch RBAC ready")
-	return nil
-}
-
 // CreateServiceAccount creates a ServiceAccount without any RBAC permissions.
 // This is used for testing unauthorized access scenarios.
 //

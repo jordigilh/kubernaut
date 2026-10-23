@@ -66,7 +66,7 @@ on:
         description: Exact kubernaut-operator ref/SHA for FP/Fleet qualification
         required: false
         type: string
-        default: cebebf7596d35cb5c263bdd82fef09e2fd44ca5f
+        default: c226705e24bef67fa947c535d59ea87d4251b483
       operator_candidate_manifest:
         description: Optional immutable operator-candidate manifest URL for release qualification
         required: false
@@ -89,7 +89,7 @@ env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
   KIND_EXPERIMENTAL_PROVIDER: podman
-  KUBERNAUT_OPERATOR_REF: cebebf7596d35cb5c263bdd82fef09e2fd44ca5f
+  KUBERNAUT_OPERATOR_REF: c226705e24bef67fa947c535d59ea87d4251b483
 
 jobs:
   # ========================================

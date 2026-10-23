@@ -358,6 +358,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			ValkeyHost:        "valkey." + namespace + ".svc.cluster.local",
 			PostgreSQLSecret:  "postgresql-secret", ValkeySecret: "valkey-secret",
 			LLM:                              OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm." + namespace + ".svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"},
+			MaxConcurrentInvestigations:      50,
 			InteractiveRateLimitPerUser:      100,
 			RemediationStabilizationWindow:   "10s",
 			EffectivenessStabilizationWindow: "30s",
@@ -452,9 +453,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			return builtImages, nil, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
-	}
-	if err := EnsureOperatorAgentE2ECapacity(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, err
 	}
 	if fleetProvisioner != nil {
 		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
@@ -786,9 +784,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if len(deployErrors) > 0 {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
 	}
-	if err := EnsureAPIFrontendInvestigationSessionRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, nil, err
-	}
 	if err := EnsureEventExporterGatewayNetworkPolicy(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, nil, err
 	}
@@ -835,13 +830,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
-	// Re-apply after the operator's readiness reconciliation settles. The
-	// pinned operator does not expose this Helm capacity knob in v1alpha2 and
-	// may rewrite its generated ConfigMap during the initial rollout.
-	if err := EnsureOperatorAgentE2ECapacity(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8: ensure KA E2E capacity: %w", err)
-	}
-
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 8b: Verify Prometheus cadvisor scrape target is UP
 	// ═══════════════════════════════════════════════════════════════════════

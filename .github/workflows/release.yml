@@ -33,7 +33,7 @@ on:
         description: Exact operator SHA fallback for development qualification
         required: false
         type: string
-        default: cebebf7596d35cb5c263bdd82fef09e2fd44ca5f
+        default: c226705e24bef67fa947c535d59ea87d4251b483
       release_version:
         description: Application release version for manual qualification
         required: false
@@ -53,7 +53,7 @@ permissions:
 
 env:
   IMAGE_REGISTRY: quay.io/kubernaut-ai
-  KUBERNAUT_OPERATOR_REF: cebebf7596d35cb5c263bdd82fef09e2fd44ca5f
+  KUBERNAUT_OPERATOR_REF: c226705e24bef67fa947c535d59ea87d4251b483
 
 jobs:
   # ========================================

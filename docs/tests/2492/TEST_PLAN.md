@@ -54,7 +54,7 @@ installing `charts/kubernaut`.
 - `BR-PLATFORM-014`: preserve the stable Fleet demo/QE environment and lifecycle.
 - `DD-TEST-015`: provision Fleet infrastructure before the application configuration is reconciled.
 - Issue #2492: run FP and Fleet against an operator-built deployment.
-- Operator revision `cebebf7596d35cb5c263bdd82fef09e2fd44ca5f`.
+- Operator revision `c226705e24bef67fa947c535d59ea87d4251b483`.
 - `docs/testing/TEST_PLAN_TEMPLATE.md`.
 
 ### 2.2 Cross-References
@@ -164,7 +164,7 @@ or a legacy live application-chart install.
 
 | Item | Version/Commit | Notes |
 |------|----------------|-------|
-| Upstream operator | `cebebf7596d35cb5c263bdd82fef09e2fd44ca5f` | Exact qualification source |
+| Upstream operator | `c226705e24bef67fa947c535d59ea87d4251b483` | Exact qualification source |
 | Kind node | `kindest/node:v1.37.0@sha256:a1ed56cf...` | Existing pinned FP profile |
 | PostgreSQL | `docker.io/library/postgres:16.4@sha256:e62fbf9d...` | Operator harness Kind profile; record resolved digest per run |
 | Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | Operator dev-bootstrap profile; record resolved digest per run |

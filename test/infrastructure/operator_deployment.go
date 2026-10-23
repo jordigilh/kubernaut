@@ -37,14 +37,13 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision           = "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f"
+	operatorRevision           = "c226705e24bef67fa947c535d59ea87d4251b483"
 	operatorRepository         = "jordigilh/kubernaut-operator"
 	applicationNamespace       = "kubernaut-system"
 	operatorNamespace          = "kubernaut-operator-system"
@@ -307,6 +306,7 @@ type OperatorCROptions struct {
 	NetworkPolicies                  OperatorNetworkPolicyOptions
 	Fleet                            *OperatorFleetOptions
 	ImageOverrides                   map[string]string
+	MaxConcurrentInvestigations      int
 	InteractiveRateLimitPerUser      int
 	RemediationStabilizationWindow   string
 	EffectivenessStabilizationWindow string
@@ -404,6 +404,7 @@ type operatorLLMReasoning struct {
 type operatorAgentSpec struct {
 	Investigation     *operatorInvestigationSpec     `yaml:"investigation,omitempty"`
 	WorkflowDiscovery *operatorWorkflowDiscoverySpec `yaml:"workflowDiscovery,omitempty"`
+	Session           *operatorSessionSpec           `yaml:"session,omitempty"`
 	Interactive       *operatorInteractiveSpec       `yaml:"interactive,omitempty"`
 	Audit             *operatorAuditSpec             `yaml:"audit,omitempty"`
 }
@@ -415,6 +416,10 @@ type operatorInvestigationSpec struct {
 
 type operatorWorkflowDiscoverySpec struct {
 	LLMProfileRef string `yaml:"llmProfileRef,omitempty"`
+}
+
+type operatorSessionSpec struct {
+	MaxConcurrentInvestigations int `yaml:"maxConcurrentInvestigations,omitempty"`
 }
 
 type operatorInteractiveSpec struct {
@@ -674,6 +679,9 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 	}
 	if options.InteractiveRateLimitPerUser > 0 {
 		cr.Spec.KubernautAgent.Interactive = &operatorInteractiveSpec{Enabled: true, RateLimitPerUser: options.InteractiveRateLimitPerUser}
+	}
+	if options.MaxConcurrentInvestigations > 0 {
+		cr.Spec.KubernautAgent.Session = &operatorSessionSpec{MaxConcurrentInvestigations: options.MaxConcurrentInvestigations}
 	}
 	if strings.TrimSpace(options.RemediationStabilizationWindow) != "" {
 		cr.Spec.RemediationOrchestrator = &operatorRemediationSpec{Effectiveness: operatorEffectivenessAssessment{StabilizationWindow: options.RemediationStabilizationWindow}}
@@ -1352,71 +1360,6 @@ rules:
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ data-storage-client ClusterRole ready for operator-managed RoleBindings")
 	_, _ = fmt.Fprintln(writer, "  ✅ cluster-monitoring-view ClusterRole ready for operator-managed bindings")
-	return nil
-}
-
-// EnsureOperatorAgentE2ECapacity applies the FullPipeline qualification
-// capacity that the application Helm chart renders by default. Operator
-// v1alpha2 currently exposes KA session TTL but not
-// maxConcurrentInvestigations, leaving the binary default of 10 and causing
-// parallel E2E investigations to be rejected. This is a temporary,
-// test-owned ConfigMap override until kubernaut-operator#567 adds the CRD
-// contract; it does not change production defaults.
-func EnsureOperatorAgentE2ECapacity(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("create Kubernetes client for KA E2E capacity: %w", err)
-	}
-	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(ctx, "kubernaut-agent-config", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("read kubernaut-agent-config for E2E capacity: %w", err)
-	}
-	config := cm.Data["config.yaml"]
-	changed := false
-	lines := strings.Split(config, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "maxConcurrentInvestigations:") {
-			continue
-		}
-		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		replacement := indent + "maxConcurrentInvestigations: 50"
-		if line != replacement {
-			lines[i] = replacement
-			changed = true
-		}
-	}
-	if !changed && !strings.Contains(config, "maxConcurrentInvestigations:") {
-		const sessionBlock = "  session:\n    ttl: 30m\n"
-		if !strings.Contains(config, sessionBlock) {
-			return fmt.Errorf("kubernaut-agent-config has no recognizable runtime.session block")
-		}
-		config = strings.Replace(config, sessionBlock, "  session:\n    maxConcurrentInvestigations: 50\n    ttl: 30m\n", 1)
-		changed = true
-	} else {
-		config = strings.Join(lines, "\n")
-	}
-	if !changed {
-		_, _ = fmt.Fprintln(writer, "  ✅ Kubernaut Agent E2E investigation capacity already set (50)")
-		return nil
-	}
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	cm.Data["config.yaml"] = config
-	if _, err := clientset.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("update kubernaut-agent-config for E2E capacity: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Kubernaut Agent E2E investigation capacity override ready (50)")
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace, "rollout", "restart", "deployment/kubernaut-agent")
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restart Kubernaut Agent after E2E capacity override: %w", err)
-	}
-	if err := waitForDeploymentRollout(ctx, namespace, kubeconfigPath, "kubernaut-agent", 180*time.Second, writer); err != nil {
-		return fmt.Errorf("wait for Kubernaut Agent after E2E capacity override: %w", err)
-	}
 	return nil
 }
 
