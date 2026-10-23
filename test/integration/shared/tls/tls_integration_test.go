@@ -17,6 +17,7 @@ limitations under the License.
 package tls
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -29,7 +30,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -398,5 +402,45 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
 		_, err = client.Get(url + "/health")
 		Expect(err).To(HaveOccurred())
+	})
+
+	// IT-TLS-2545-001: BR-SECURITY-2545 requires ambient CA bootstrap to work
+	// through the production shared helper in a read-only UBI container, with
+	// both private and public/system trust available and no writable /tmp.
+	It("IT-TLS-2545-001: should bootstrap private and system trust in read-only UBI", func() {
+		caMountDir := filepath.Join(certDir, "ambient-ca-mount")
+		Expect(os.Mkdir(caMountDir, 0755)).To(Succeed())
+		caPEM, err := os.ReadFile(caCertPath)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(filepath.Join(caMountDir, "ca.crt"), caPEM, 0444)).To(Succeed())
+
+		repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+		Expect(err).ToNot(HaveOccurred())
+		binaryDir, err := os.MkdirTemp("", "ambient-ca-child-bin-*")
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { Expect(os.RemoveAll(binaryDir)).To(Succeed()) })
+		binaryPath := filepath.Join(binaryDir, "ambient-ca-child")
+
+		buildCtx, cancelBuild := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancelBuild()
+		build := exec.CommandContext(buildCtx, "go", "build", "-o", binaryPath, "./test/integration/shared/tls/ambientchild")
+		build.Dir = repoRoot
+		build.Env = append(os.Environ(),
+			"CGO_ENABLED=0",
+			"GOOS=linux",
+			"GOARCH="+runtime.GOARCH,
+		)
+		buildOutput, buildErr := build.CombinedOutput()
+		Expect(buildErr).ToNot(HaveOccurred(), string(buildOutput))
+
+		runCtx, cancelRun := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancelRun()
+		run := exec.CommandContext(runCtx, "podman", "run", "--rm", "--read-only", "--user", "1001",
+			"--volume", caMountDir+":/custom-ca:ro",
+			"--volume", binaryPath+":/ambient-ca-child:ro",
+			"registry.access.redhat.com/ubi10/ubi-minimal:10.2",
+			"/ambient-ca-child", "/custom-ca/ca.crt", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+		runOutput, runErr := run.CombinedOutput()
+		Expect(runErr).ToNot(HaveOccurred(), strings.TrimSpace(string(runOutput)))
 	})
 })

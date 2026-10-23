@@ -32,7 +32,6 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 func generateAmbientCATestCert(t *testing.T) string {
@@ -67,8 +66,8 @@ func resetAmbientCAEnv(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		_ = os.Unsetenv("SSL_CERT_FILE")
+		_ = os.Unsetenv("SSL_CERT_DIR")
 		_ = os.Unsetenv("TLS_CA_FILE")
-		sharedtls.ResetSystemCertFileCandidatesForTesting()
 	})
 }
 
@@ -76,11 +75,10 @@ func resetAmbientCAEnv(t *testing.T) {
 // bootstrapAmbientCATrust -- the exact production function run() calls
 // immediately after loadSignalProcessingConfig, before
 // wireSignalProcessingAudit's DataStorage HTTP client -- into ambient env
-// vars (Issue #2276, SC-8).
+// vars (Issue #2545, SC-8).
 func TestBootstrapAmbientCATrust_SignalProcessing_InjectsFromConfig(t *testing.T) {
 	resetAmbientCAEnv(t)
 	realCA := generateAmbientCATestCert(t)
-	sharedtls.SetSystemCertFileCandidatesForTesting([]string{"/nonexistent/system-bundle.pem"})
 
 	cfg := &config.Config{TLSCAFile: realCA}
 
@@ -91,8 +89,11 @@ func TestBootstrapAmbientCATrust_SignalProcessing_InjectsFromConfig(t *testing.T
 	if got := os.Getenv("TLS_CA_FILE"); got != realCA {
 		t.Errorf("TLS_CA_FILE = %q, want %q", got, realCA)
 	}
-	if got := os.Getenv("SSL_CERT_FILE"); got == "" {
-		t.Error("SSL_CERT_FILE must be set after bootstrapAmbientCATrust with a non-empty TLSCAFile")
+	if got := os.Getenv("SSL_CERT_FILE"); got != "" {
+		t.Errorf("SSL_CERT_FILE = %q, want empty", got)
+	}
+	if got := os.Getenv("SSL_CERT_DIR"); got == "" {
+		t.Error("SSL_CERT_DIR must be set after bootstrapAmbientCATrust with a non-empty CA")
 	}
 }
 
