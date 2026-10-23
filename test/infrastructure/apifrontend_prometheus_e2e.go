@@ -239,9 +239,16 @@ type prometheusRulesResponse struct {
 
 // WaitForPrometheusRuleState polls Prometheus /api/v1/rules until the named
 // alert rule reaches the desired state or the timeout expires.
-func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName string, desired PrometheusRuleState, timeout time.Duration) error {
+func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName string, desired PrometheusRuleState, timeout time.Duration, caPath ...string) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
+	if len(caPath) > 0 && caPath[0] != "" {
+		var err error
+		client, err = NewMonitoringTLSAwareClient(caPath[0])
+		if err != nil {
+			return err
+		}
+	}
 
 	for time.Now().Before(deadline) {
 		select {
@@ -263,6 +270,9 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 
 		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("prometheus rules endpoint returned status %d: %s", resp.StatusCode, string(body))
+		}
 		if err != nil {
 			time.Sleep(2 * time.Second)
 			continue

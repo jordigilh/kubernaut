@@ -18,6 +18,7 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -54,8 +55,8 @@ import (
 //   8. WorkflowExecution (CRD controller, Job engine)
 //   9. Notification (CRD controller, file-based delivery)
 //  10. KA + Mock LLM (AI service)
-//  11. Prometheus (metric comparison for EM, ADR-EM-001)
-//  12. AlertManager (alert resolution for EM, ADR-EM-001)
+//  11. Prometheus in the dedicated monitoring namespace (metric comparison for EM, ADR-EM-001)
+//  12. AlertManager in the dedicated monitoring namespace (alert resolution for EM, ADR-EM-001)
 //  13. EffectivenessMonitor (CRD controller, watches EA CRDs)
 //
 // Test infrastructure:
@@ -65,7 +66,7 @@ import (
 // Port Allocation (DD-TEST-001 v2.8, Issue #1737):
 //   Gateway:      hostPort 30080, chart-pinned NodePort 30080 (host-side signal POSTs, e.g. af_helpers_test.go)
 //   DataStorage:  hostPort 30081, chart-pinned NodePort 30081 (workflow seeding + audit queries)
-//   API Frontend: hostPort 30443, chart-pinned NodePort 30443 (AF E2E HTTP client)
+//   API Frontend: hostPort 18443, NodePort 30443 (DD-TEST-001)
 //   All three are pinned via gateway/datastorage/apifrontend.service.{type,nodePort}
 //   (default-off, production-safe chart knob) + networkPolicies.<svc>.ingressCIDRs
 //   ipBlock rules to admit the NodePort-sourced (SNAT'd to node IP) traffic
@@ -82,6 +83,8 @@ import (
 // Kind Config: test/infrastructure/kind-fullpipeline-config.yaml
 // Kubeconfig:  ~/.kube/fullpipeline-e2e-config
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const mockLLMServiceName = "mock-llm"
 
 // skipMockLLM returns true when the SKIP_MOCK_LLM environment variable is set
 // to any non-empty value. When true, the Mock LLM service is NOT built, deployed,
@@ -108,7 +111,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "kubernautagent", ImageName: "kubernaut/kubernautagent", DockerfilePath: "docker/kubernautagent.Dockerfile"},
-	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: ""},
+	{ServiceName: mockLLMServiceName, ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: ""},
 	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 	{ServiceName: "apifrontend", ImageName: "kubernaut/apifrontend", DockerfilePath: "docker/apifrontend.Dockerfile"},
 	{ServiceName: "fleetmetadatacache", ImageName: "kubernaut/fleetmetadatacache", DockerfilePath: "docker/fleetmetadatacache.Dockerfile"},
@@ -199,26 +202,49 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 complete: %d images ready (%s)\n",
 		len(builtImages), time.Since(startTime).Round(time.Second))
 
-	// Issue #1737: normalize the 12 chart-managed images to one shared
-	// localhost/<service>:<tag> reference for the chart's global.image.tag
-	// (buildFullPipelineImages may hand back per-service registry refs,
-	// a shared CI-artifact tag, or per-service random local-build tags --
-	// this makes the downstream `helm install` image resolution uniform
-	// regardless of source). mock-llm is untouched (stays Go-managed).
-	chartImageRegistry, chartImageTag, retagErr := ensureSharedChartImageTag(ctx, builtImages, writer)
-	if retagErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: image retag for Helm failed: %w", retagErr)
-	}
-
-	// db-migrate (charts/kubernaut/templates/hooks/migration-job.yaml) is a
-	// standalone infra image, not one of fullPipelineImageConfigs -- build/
-	// reuse it separately and fold it into builtImages so PHASE 3's
-	// loadFullPipelineImages picks it up automatically (Issue #1737).
-	dbMigrateImage, dbMigrateErr := ensureDBMigrateImage(ctx, chartImageTag, writer)
+	// The operator consumes one exact image reference per operand. Do not retag
+	// application images into a chart-wide tag: that would hide which artifact
+	// each reconciled Deployment actually runs.
+	dbMigrateImage, dbMigrateErr := ensureDBMigrateImage(ctx, "operator-"+uuid.New().String()[:8], writer)
 	if dbMigrateErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 1: db-migrate image failed: %w", dbMigrateErr)
 	}
 	builtImages["db-migrate"] = dbMigrateImage
+	operatorImages, imageErr := OperatorOperandImagesFromBuiltImages(builtImages)
+	if imageErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 1: operator operand image map: %w", imageErr)
+	}
+	operatorChartPath, dependencyChartPath, chartErr := OperatorChartPathsFromEnvironment(ctx)
+	if chartErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 1: operator chart artifacts: %w", chartErr)
+	}
+	operatorImage := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE"))
+	if operatorImage == "" {
+		return builtImages, nil, nil, errors.New("PHASE 1: KUBERNAUT_OPERATOR_IMAGE is required for operator qualification")
+	}
+
+	operatorExposure, exposureErr := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", []string{"gateway", "datastorage", "apifrontend", "kubernautagent"})
+	if exposureErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 1: allocate operator exposure: %w", exposureErr)
+	}
+	operatorFixtureDir, fixtureErr := os.MkdirTemp("", "operator-fp-fixtures-*")
+	if fixtureErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 1: create operator fixture directory: %w", fixtureErr)
+	}
+	defer func() { _ = os.RemoveAll(operatorFixtureDir) }()
+	operatorLLMFile := filepath.Join(operatorFixtureDir, "llm-credentials")
+	operatorAIPolicyFile := filepath.Join(operatorFixtureDir, "ai-analysis.rego")
+	operatorSPPolicyFile := filepath.Join(operatorFixtureDir, "signal-processing.rego")
+	for path, content := range map[string]string{
+		operatorLLMFile:      "mock-llm-e2e-key",
+		operatorAIPolicyFile: fullPipelineAIAnalysisPolicyRego,
+		operatorSPPolicyFile: fullPipelineSignalProcessingPolicyRego,
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			return builtImages, nil, nil, fmt.Errorf("PHASE 1: write operator fixture %s: %w", path, err)
+		}
+	}
+	operatorFixtures := OperatorFixtureFiles{LLMCredentials: operatorLLMFile, AIAnalysisPolicy: operatorAIPolicyFile, SignalProcessingPolicy: operatorSPPolicyFile}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster
@@ -242,11 +268,16 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(ctx,
-		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
+	if err := CreateKindClusterWithExtraMountsAndPortMappings(ctx,
+		clusterName, kubeconfigPath, kindConfigPath, extraMounts, OperatorPortMappings(operatorExposure), writer,
 	); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
 	}
+	hostIngressCIDR, ingressErr := KindHostIngressCIDR(ctx, clusterName)
+	if ingressErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 2: resolve Kind host ingress CIDR: %w", ingressErr)
+	}
+	_, _ = fmt.Fprintf(writer, "  🔐 Operator NetworkPolicy host ingress peer: %s\n", hostIngressCIDR)
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 2 complete: Kind cluster ready (%s)\n",
 		time.Since(phase2Start).Round(time.Second))
 
@@ -291,9 +322,67 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to create namespace: %w", err)
 	}
-
-	if err := createFullPipelineHelmSecrets(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to create Helm chart secrets: %w", err)
+	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to create monitoring namespace: %w", err)
+	}
+	crManifestPath := ""
+	hostIngressPolicyCIDR := hostIngressCIDR
+	if fleetProvisioner != nil {
+		crManifestPath = filepath.Join(projectRoot, "test", "fixtures", "operator", "kubernaut-fleet.yaml")
+	}
+	operatorConfig := OperatorDeploymentConfig{
+		ClusterName:         clusterName,
+		Namespace:           namespace,
+		KubeconfigPath:      kubeconfigPath,
+		OperatorChartPath:   operatorChartPath,
+		DependencyChartPath: dependencyChartPath,
+		OperatorImage:       operatorImage,
+		RelatedImages:       operatorImages,
+		PostgreSQLImage:     "docker.io/library/postgres:16.4@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412",
+		ValkeyImage:         "docker.io/valkey/valkey:8.0.2@sha256:57bcc49c6ade1813ef25206c571b65b66bb0094235ff7fb767941622892297d9",
+		FixtureFiles:        operatorFixtures,
+		CRManifestPath:      crManifestPath,
+		HostIngressCIDR:     hostIngressPolicyCIDR,
+		MonitoringNamespace: monitoringNamespace,
+		Exposure:            &operatorExposure,
+		DiagnosticsDir:      strings.TrimSpace(os.Getenv("KUBERNAUT_QUALIFICATION_DIR")),
+		Provenance: OperatorArtifactProvenance{
+			Repository: operatorRepository, RequestedRef: operatorRevision,
+			ResolvedSHA: strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_SHA")),
+			ImageRef:    operatorImage, Profile: "generic-kind-v1.6",
+		},
+		CR: OperatorCROptions{
+			Name: operatorCRName, Namespace: namespace,
+			PostgreSQLHost:    "postgresql." + namespace + ".svc.cluster.local",
+			PostgreSQLSSLMode: "require",
+			ValkeyHost:        "valkey." + namespace + ".svc.cluster.local",
+			PostgreSQLSecret:  "postgresql-secret", ValkeySecret: "valkey-secret",
+			LLM:              OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm." + namespace + ".svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"},
+			TLS:              OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"localhost"}},
+			PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
+			Monitoring:       OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093", TLSSource: "interService"},
+			// Kind host ingress is runtime test infrastructure. Apply the
+			// test-owned policy after reconciliation instead of putting the
+			// host bridge CIDR into the user CR.
+			NetworkPolicies: OperatorNetworkPolicyOptions{},
+			GatewayEnabled:  true, APIFrontendEnabled: true,
+			IssuerURL: "https://dex:5556/dex", JWKSURL: "https://dex:5556/dex/keys", Audience: "kubernaut-apifrontend",
+		},
+	}
+	if err := InstallOperatorDependencies(ctx, operatorConfig, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to install operator dependencies: %w", err)
+	}
+	if err := InstallOperatorBootstrap(ctx, operatorConfig, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to install operator bootstrap: %w", err)
+	}
+	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to prepare DataStorage client RBAC: %w", err)
+	}
+	if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to prepare operator Fleet TLS: %w", err)
+	}
+	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to prepare monitoring TLS: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
@@ -320,17 +409,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 6: helm install charts/kubernaut (Issue #1737)
-	//
-	// Replaces the manual PostgreSQL + Redis + DB migrations + DataStorage +
-	// AuthWebhook deployment (previously 6a-6c here) with a single Helm
-	// install that also covers every chart-managed service deployed in the
-	// old PHASE 7 below (Gateway, SignalProcessing, RemediationOrchestrator,
-	// AIAnalysis, WorkflowExecution, Notification, KubernautAgent,
-	// EffectivenessMonitor, APIFrontend, FleetMetadataCache). Mock-Slack stays
-	// Go-managed test infrastructure (not part of the production chart).
+	// PHASE 6: apply the user-owned Kubernaut CR after dependencies/Fleet
+	// infrastructure are ready. The operator bootstrap and dependency chart
+	// were installed in PHASE 5; this is the only application configuration
+	// path and there is no upstream application Helm release.
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 6: helm install charts/kubernaut...")
+	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 6: applying Kubernaut CR through the operator...")
 	phase6Start := time.Now()
 
 	type deployResult struct {
@@ -339,8 +423,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 	phase6Results := make(chan deployResult, 2)
 	go func() {
-		phase6Results <- deployResult{"HelmChart",
-			InstallFullPipelineHelmChart(ctx, kubeconfigPath, namespace, chartImageRegistry, chartImageTag, fleetOpts, writer)}
+		if fleetOpts != nil {
+			operatorConfig.CR.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+			operatorConfig.CR.IssuerURL = "https://keycloak:8443/realms/kubernaut-demo"
+			operatorConfig.CR.JWKSURL = "https://keycloak." + namespace + ".svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
+			operatorConfig.CR.TLS.ExtraSANs = []string{"localhost", "keycloak"}
+		}
+		evidence, deployErr := ApplyOperatorCRAndWait(ctx, operatorConfig, writer)
+		if deployErr == nil {
+			RememberOperatorExposure(kubeconfigPath, evidence)
+		}
+		phase6Results <- deployResult{"OperatorCR", deployErr}
 	}()
 	go func() {
 		phase6Results <- deployResult{"Mock-Slack",
@@ -353,13 +446,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
+	if fleetProvisioner != nil {
+		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+			return builtImages, nil, nil, fmt.Errorf("AF persona RBAC verification failed: %w", err)
+		}
+	} else if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("AF persona RBAC binding failed: %w", err)
+	}
 
 	// dex-tls (Issue #1737): the chart's pre-install tls-cert-gen hook has
 	// already run by this point (helm install above blocks on hooks), so
 	// authwebhook-tls's embedded ca.crt/ca.key are available to sign DEX's
 	// leaf cert. Must happen before PHASE 7's deployDexOIDCProviderForAF.
 	if shouldDeployDexForAF(fleetProvisioner) {
-		if err := ensureDexTLSFromChartCA(ctx, kubeconfigPath, namespace, writer); err != nil {
+		if err := ensureDexTLSFromOperatorCA(ctx, kubeconfigPath, namespace, writer); err != nil {
 			return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
 		}
 	}
@@ -368,7 +468,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// "localhost" SAN (needed for host-side E2E clients dialing their
 	// chart-pinned NodePorts with full hostname verification, Issue #785/
 	// #1737) is now baked into the ORIGINAL chart-issued certs via
-	// InstallFullPipelineHelmChart's `--set hooks.tlsCerts.extraSANs[0]=
+	// the operator CR's `tls.hooks.tlsCerts.extraSANs` setting
 	// localhost`, instead of being re-signed here post-install. The former
 	// re-sign-then-rolling-restart-4-deployments pass
 	// (resignHostAccessedTLSCertsWithLocalhostSAN, removed) was the
@@ -384,8 +484,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// Go-native GenerateInterServiceTLS used to write as a side effect of
 	// generating the CA itself; the chart generates the CA in-cluster now, so
 	// fetch it back out to the same expected path.
-	if err := writeInterServiceCAPEMFromCluster(ctx, kubeconfigPath, namespace, writer); err != nil {
+	if err := writeInterServiceCAPEMFromOperator(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6: failed to write inter-service CA PEM: %w", err)
+	}
+	if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, monitoringNamespace, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6: monitoring Gateway CA setup failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6 complete (%s)\n", time.Since(phase6Start).Round(time.Second))
@@ -431,16 +534,25 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// waitForServiceEndpointReady doc comment) -- close that remaining gap
 	// before the apiserver's webhook call below can hit it.
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook Service endpoint (kube-proxy programming)...")
-	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "authwebhook", 60*time.Second, writer); err != nil {
+	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "authwebhook-service", 60*time.Second, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook service endpoint not ready: %w", err)
 	}
 
-	if err := SeedE2EActionTypes(ctx, kubeconfigPath, namespace, writer); err != nil {
+	// The pinned operator RC admits ActionType CRs successfully but does not
+	// populate the legacy AuthWebhook registration status used by
+	// SeedE2EActionTypes. Use the direct CRD seeder here; it applies the same
+	// catalog status contract explicitly and keeps workflow seeding independent
+	// of that legacy admission-side effect.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
 
 	fpWorkflows := fullPipelineWorkflowSeeds(fleetProvisioner != nil)
-	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
+	// The pinned RC admits RemediationWorkflow CRs but does not populate the
+	// legacy AuthWebhook status.workflowId side effect. Stamp the same catalog
+	// status through the direct CRD path so workflow discovery sees the seeded
+	// catalog without depending on that legacy admission mutation.
+	seededUUIDs, seedErr := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
 	}
@@ -561,26 +673,26 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			allResults <- waveResult{"MockLLM", nil}
 			return
 		}
-		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, afRemediateNS, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages[mockLLMServiceName], seededUUIDs, afRemediateNS, writer)
 		allResults <- waveResult{"MockLLM", err}
 	}()
 
 	// Mock LLM Shadow (alignment evaluation — KA config references mock-llm-shadow:8080)
 	go func() {
-		err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages[mockLLMServiceName], writer)
 		allResults <- waveResult{"MockLLMShadow", err}
 	}()
 
 	// Prometheus + AlertManager: chart-external test infrastructure (ADR-EM-001).
 	go func() {
-		if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
+		if err := DeployPrometheusTLS(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 			allResults <- waveResult{"Prometheus", err}
 			return
 		}
 		allResults <- waveResult{"Prometheus", nil}
 	}()
 	go func() {
-		if err := DeployAlertManager(ctx, namespace, namespace, kubeconfigPath, gatewayToken, writer); err != nil {
+		if err := DeployAlertManagerTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, gatewayToken, writer); err != nil {
 			allResults <- waveResult{"AlertManager", err}
 			return
 		}
@@ -608,13 +720,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// bindAFPersonaToolClusterRoles doc comment). Only depends on those
 	// ClusterRoles existing, not on DEX itself being up yet.
 	go func() {
+		if fleetProvisioner != nil {
+			allResults <- waveResult{"AF-Persona-RBAC-Bindings", nil}
+			return
+		}
 		err := bindAFPersonaToolClusterRoles(ctx, kubeconfigPath, writer)
 		allResults <- waveResult{"AF-Persona-RBAC-Bindings", err}
 	}()
 
 	// APIFrontend -> DataStorage audit RoleBinding (Issue #1189): the chart's
 	// own datastorage-rbac.yaml does not include the apifrontend SA (verified
-	// against charts/kubernaut/templates/rbac/datastorage-rbac.yaml), so this
+	// against operator-managed DataStorage RBAC), so this
 	// stays a Go-managed step, same as before Issue #1737.
 	go func() {
 		err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "apifrontend", writer)
@@ -669,8 +785,29 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8: Waiting for all services ready...")
 	phase8Start := time.Now()
 
-	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, fleetProvisioner, writer); err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
+	phase8Results := make(chan error, 2)
+	go func() {
+		if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, fleetProvisioner, writer); err != nil {
+			phase8Results <- fmt.Errorf("application services not ready: %w", err)
+			return
+		}
+		phase8Results <- nil
+	}()
+	go func() {
+		if err := waitForMonitoringDeploymentsReady(ctx, monitoringNamespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
+			phase8Results <- fmt.Errorf("monitoring deployments not ready: %w", err)
+			return
+		}
+		phase8Results <- nil
+	}()
+	var phase8Errors []error
+	for i := 0; i < 2; i++ {
+		if err := <-phase8Results; err != nil {
+			phase8Errors = append(phase8Errors, err)
+		}
+	}
+	if len(phase8Errors) > 0 {
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: %w", errors.Join(phase8Errors...))
 	}
 	// fleetmetadatacache is chart-managed only when fleetOpts != nil (its
 	// enabled state is derived by the chart itself from global.fleet.enabled,
@@ -687,13 +824,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// PHASE 8b: Verify Prometheus cadvisor scrape target is UP
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
-	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
+	promURL := fmt.Sprintf("https://127.0.0.1:%d", PrometheusHostPort)
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer, MonitoringCAPath(kubeconfigPath)); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
 	}
 	if !skipMockLLM() {
 		_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8c: Seeding A2A severity-grounding alerts...")
-		if err := SeedFullPipelineA2AGroundingRules(ctx, namespace, kubeconfigPath, afRemediateNS, writer); err != nil {
+		if err := SeedFullPipelineA2AGroundingRules(ctx, monitoringNamespace, kubeconfigPath, afRemediateNS, writer); err != nil {
 			return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8c failed: A2A severity grounding: %w", err)
 		}
 	}
@@ -716,7 +853,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Total setup time: %s\n", totalDuration)
 	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     https://localhost:30080 (chart-pinned NodePort)\n")
 	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: https://localhost:30081 (chart-pinned NodePort)\n")
-	_, _ = fmt.Fprintf(writer, "  🖥️  APIFrontend: https://localhost:30443 (chart-pinned NodePort)\n")
+	_, _ = fmt.Fprintf(writer, "  🖥️  APIFrontend: https://localhost:18443 (DD-TEST-001 host port)\n")
 	_, _ = fmt.Fprintf(writer, "  📦 Namespace:   %s\n", namespace)
 	_, _ = fmt.Fprintf(writer, "  🔑 Kubeconfig:  %s\n", kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -729,6 +866,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 // state. This is called from SynchronizedAfterSuite so retries start clean.
 func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "\n🧹 Cleaning up test-created resources...")
+	if err := DeleteOperatorExposureAdapters(context.Background(), kubeconfigPath, kubernautSystem, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  operator exposure cleanup: %v\n", err)
+	}
 
 	crdKinds := []string{
 		"remediationrequests.kubernaut.ai",
@@ -804,14 +944,14 @@ func buildFullPipelineImages(ctx context.Context, writer io.Writer) (map[string]
 
 	for _, baseCfg := range fullPipelineImageConfigs {
 		// Skip mock-llm build when SKIP_MOCK_LLM is set (local dev with real LLM)
-		if baseCfg.ServiceName == "mock-llm" && skipMockLLM() {
+		if baseCfg.ServiceName == mockLLMServiceName && skipMockLLM() {
 			_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping mock-llm build (SKIP_MOCK_LLM is set)")
 			continue
 		}
 		wg.Add(1)
 		cfg := baseCfg // capture loop variable
 		// Mock LLM doesn't need Go coverage instrumentation
-		if cfg.ServiceName != "mock-llm" {
+		if cfg.ServiceName != mockLLMServiceName {
 			cfg.EnableCoverage = enableCoverage
 		}
 
@@ -820,7 +960,16 @@ func buildFullPipelineImages(ctx context.Context, writer io.Writer) (map[string]
 			sem <- struct{}{}        // acquire slot
 			defer func() { <-sem }() // release slot
 
-			imageName, err := BuildImageForKind(ctx, cfg, writer)
+			var imageName string
+			var err error
+			switch {
+			case cfg.ServiceName == mockLLMServiceName && os.Getenv("KUBERNAUT_BUILD_MOCK_LLM") == trueFixture:
+				imageName, err = buildMockLLMQualificationImage(ctx, writer)
+			case cfg.ServiceName == mockLLMServiceName && strings.TrimSpace(os.Getenv("KUBERNAUT_MOCK_LLM_IMAGE")) != "":
+				imageName = strings.TrimSpace(os.Getenv("KUBERNAUT_MOCK_LLM_IMAGE"))
+			default:
+				imageName, err = BuildImageForKind(ctx, cfg, writer)
+			}
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -839,6 +988,26 @@ func buildFullPipelineImages(ctx context.Context, writer io.Writer) (map[string]
 		return builtImages, fmt.Errorf("image builds failed: %v", buildErrors)
 	}
 	return builtImages, nil
+}
+
+// buildMockLLMQualificationImage builds only the test-owned mock LLM when a
+// qualification profile intentionally reuses published v1.6 RC operands for
+// every application service. Mock LLM is not a release artifact and is never
+// added to operator relatedImages.
+func buildMockLLMQualificationImage(ctx context.Context, writer io.Writer) (string, error) {
+	tag := strings.TrimSpace(os.Getenv("KUBERNAUT_MOCK_LLM_TAG"))
+	if tag == "" {
+		tag = "operator-2492-mock-llm"
+	}
+	image := "localhost/mock-llm:" + tag
+	cmd := exec.CommandContext(ctx, "podman", "build", "-t", image, "-f", filepath.Join(getProjectRoot(), "test", "services", mockLLMServiceName, "go.Dockerfile"), getProjectRoot())
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("build test-owned mock-llm image: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ mock-llm test image → %s\n", image)
+	return image, nil
 }
 
 // ============================================================================
@@ -1264,19 +1433,46 @@ func indentYAMLLines(s string, spaces int) string {
 
 func fullPipelineReadinessDeployments(fleetProvisioner FleetProvisioner) []string {
 	deployments := []string{
-		"datastorage",
+		"data-storage",
 		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
-		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
-		"apifrontend",  // Issue #1189: AF as FP signal source
+		"mock-slack",  // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"apifrontend", // Issue #1189: AF as FP signal source
 	}
 	if shouldDeployDexForAF(fleetProvisioner) {
 		deployments = append(deployments, "dex") // Issue #1189: OIDC provider for AF authentication
 	}
 	return deployments
+}
+
+// waitForMonitoringDeploymentsReady waits for the isolated monitoring stack in
+// parallel. Prometheus and AlertManager are independent workloads; serial
+// rollout waits unnecessarily add one startup duration to the other.
+func waitForMonitoringDeploymentsReady(ctx context.Context, namespace, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
+	type readyResult struct {
+		name string
+		err  error
+	}
+	deployments := []string{"prometheus", "alertmanager"}
+	results := make(chan readyResult, len(deployments))
+	for _, deployment := range deployments {
+		go func(name string) {
+			results <- readyResult{name: name, err: waitForDeployment(ctx, name, namespace, kubeconfigPath, timeout, writer)}
+		}(deployment)
+	}
+
+	var readinessErrors []error
+	for range deployments {
+		result := <-results
+		if result.err != nil {
+			readinessErrors = append(readinessErrors, fmt.Errorf("%s: %w", result.name, result.err))
+		}
+	}
+	if len(readinessErrors) > 0 {
+		return errors.Join(readinessErrors...)
+	}
+	return nil
 }
 
 // waitForFullPipelineServicesReady waits for all services to be ready in the cluster.
@@ -1294,7 +1490,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	// List of deployments that must be ready
 	deployments := fullPipelineReadinessDeployments(fleetProvisioner)
 	if !skipMockLLM() {
-		deployments = append(deployments, "mock-llm")
+		deployments = append(deployments, mockLLMServiceName)
 	}
 
 	// Controller pods checked by label (may have different deployment names)
@@ -1303,12 +1499,12 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		selector string
 	}
 	controllers := []controllerCheck{
-		{"SignalProcessing", "app=signalprocessing-controller"},
-		{"RemediationOrchestrator", "app=remediationorchestrator-controller"},
-		{"AIAnalysis", "app=aianalysis-controller"},
-		{"WorkflowExecution", "app=workflowexecution-controller"},
-		{"Notification", "app=notification-controller"},
-		{"EffectivenessMonitor", "app=effectivenessmonitor-controller"}, // ADR-EM-001
+		{"SignalProcessing", "app=signalprocessing"},
+		{"RemediationOrchestrator", "app=remediationorchestrator"},
+		{"AIAnalysis", "app=aianalysis"},
+		{"WorkflowExecution", "app=workflowexecution"},
+		{"Notification", "app=notification"},
+		{"EffectivenessMonitor", "app=effectivenessmonitor"}, // ADR-EM-001
 	}
 
 	// Run all checks in parallel
@@ -1445,7 +1641,7 @@ func pollUntilReady(ctx context.Context, timeout, interval time.Duration, condFn
 // AuthWebhook's validating webhook forwards to DataStorage.
 func waitForDataStorageHTTP(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
-		"deployment/datastorage",
+		"deployment/data-storage",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
 		"--timeout=120s")
@@ -1467,7 +1663,7 @@ func waitForDataStorageHTTP(ctx context.Context, namespace, kubeconfigPath strin
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
+			LabelSelector: "app=data-storage",
 		})
 		if listErr == nil && len(pods.Items) > 0 {
 			for _, cond := range pods.Items[0].Status.Conditions {
@@ -1520,11 +1716,20 @@ func waitForServiceEndpointReady(ctx context.Context, namespace, kubeconfigPath,
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		ep, getErr := clientset.CoreV1().Endpoints(namespace).Get(ctx, serviceName, metav1.GetOptions{})
-		if getErr == nil {
-			for _, subset := range ep.Subsets {
-				if len(subset.Addresses) > 0 {
-					_, _ = fmt.Fprintf(writer, "  ✅ Service %s has %d ready endpoint(s)\n", serviceName, len(subset.Addresses))
+		slices, listErr := clientset.DiscoveryV1().EndpointSlices(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "kubernetes.io/service-name=" + serviceName,
+		})
+		if listErr == nil {
+			for _, slice := range slices.Items {
+				readyAddresses := 0
+				for _, endpoint := range slice.Endpoints {
+					if endpoint.Conditions.Ready != nil && !*endpoint.Conditions.Ready {
+						continue
+					}
+					readyAddresses += len(endpoint.Addresses)
+				}
+				if readyAddresses > 0 {
+					_, _ = fmt.Fprintf(writer, "  ✅ Service %s has %d ready endpoint(s)\n", serviceName, readyAddresses)
 					return nil
 				}
 			}

@@ -82,19 +82,19 @@ const interServiceCAIssuerSecretName = "inter-service-ca-issuer"
 // requesting "keycloak-tls" from it (BR-PLATFORM-014).
 //
 // Unlike the ad hoc, one-shot signAndApplyLeafTLSSecret call
-// (ensureKeycloakTLSFromChartCA, used by the FMC/Ginkgo suites), cert-manager
+// (ensureKeycloakTLSFromOperatorCA, used by the FMC/Ginkgo suites), cert-manager
 // owns "keycloak-tls" going forward and renews it automatically ahead of
 // expiry (duration 2160h/90d, renewBefore 720h/30d) -- no code needs to run
 // again after this call.
 //
 // namespace is where authwebhook-tls (and thus the inter-service CA) lives
-// (loadChartCAFromAuthwebhookTLS); keycloakNamespace is where the Issuer,
+// (loadOperatorCAFromAuthwebhookTLS); keycloakNamespace is where the Issuer,
 // Certificate, and resulting keycloak-tls Secret are created -- the demo
 // entry point's "idp" namespace, distinct from namespace.
 func ensureKeycloakCertManagerIssuer(ctx context.Context, kubeconfigPath, namespace, keycloakNamespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Creating cert-manager CA Issuer + Certificate for keycloak-tls (auto-renewing)...")
 
-	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+	caCert, caKey, err := loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
 	if err != nil {
 		return err
 	}

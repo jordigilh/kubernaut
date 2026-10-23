@@ -90,7 +90,7 @@ nodes:
     protocol: TCP
   # API Frontend HTTPS (Issue #1189: AF as FP signal source)
   - containerPort: 30443  # AF NodePort
-    hostPort: 30443       # DD-TEST-001: AF HTTPS
+    hostPort: 18443       # DD-TEST-001: AF HTTPS
     protocol: TCP
   # DEX OIDC for AF's own login flow (Issue #1189) -- unrelated to fleet;
   # kept as-is, this DEX instance is never used for the K8s API server's

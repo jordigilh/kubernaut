@@ -157,7 +157,7 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 	}
 	_, hubToolPrefix := fleetHubRegistrationIdentity(authConfig)
 	gatewayReadyStarted := startAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness")
-	if err := WaitForFleetReady(ctx, keycloakFleetReadToken, eaigwGatewayNodePort, hubToolPrefix, writer); err != nil {
+	if err := WaitForFleetReady(ctx, keycloakFleetReadToken, eaigwGatewayNodePort, hubToolPrefix, kubeconfigPath, writer); err != nil {
 		finishAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness", gatewayReadyStarted)
 		return nil, fmt.Errorf("wait for hub-only Gateway readiness: %w", err)
 	}
@@ -434,7 +434,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 			KubeconfigPath: kubeconfigPath,
 		})
 	}
-	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, kubeconfigPath, writer); readyErr != nil {
 		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -479,7 +479,7 @@ spec:
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ FMC E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
-	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
+	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  https://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-demo")
 	_, _ = fmt.Fprintf(writer, "  Remote cluster (prod-east): %s\n", remoteClusterName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

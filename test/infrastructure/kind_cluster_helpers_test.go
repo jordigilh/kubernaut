@@ -56,6 +56,16 @@ var _ = Describe("checkKindVersionOutput", func() {
 	)
 })
 
+var _ = Describe("kindNodeNamesFromOutput", func() {
+	It("UT-INFRA-KIND-CPU-001: ignores provider diagnostics and deduplicates node names", func() {
+		output := "using podman due to KIND_EXPERIMENTAL_PROVIDER\n" +
+			"fleet-e2e-control-plane\n" +
+			"fleet-e2e-worker\n" +
+			"fleet-e2e-control-plane\n"
+		Expect(kindNodeNamesFromOutput(output, "fleet-e2e")).To(ConsistOf("fleet-e2e-control-plane", "fleet-e2e-worker"))
+	})
+})
+
 // Issue #2333: some E2E demo scenarios (pending-taint, pdb-deadlock,
 // autoscale, node-notready) taint/drain/pressure-test a worker node distinct
 // from the control plane. The fleet spoke cluster (kind-fleetmetadatacache-

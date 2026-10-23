@@ -51,6 +51,8 @@ var kindVersionPattern = regexp.MustCompile(`kind v(\d+)\.(\d+)\.(\d+)`)
 // version as the existing control-plane node (appendWorkerNodesToKindConfig).
 var kindNodeImagePattern = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
 
+const kindNodeCPUEnv = "KUBERNAUT_E2E_KIND_NODE_CPUS"
+
 // kindHostPortPattern matches only Kind extraPortMappings hostPort fields.
 // Container ports and in-cluster service ports must remain unchanged when an
 // isolated E2E run selects a separate host-port block.
@@ -228,6 +230,64 @@ func hasLiveNodeInOutput(output string) bool {
 	return strings.TrimSpace(output) != "" && !strings.Contains(output, "No kind nodes found")
 }
 
+func kindNodeNamesFromOutput(output, clusterName string) []string {
+	prefix := clusterName + "-"
+	seen := make(map[string]struct{})
+	var names []string
+	for _, line := range strings.Split(output, "\n") {
+		name := strings.TrimSpace(line)
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+// applyOptionalKindNodeCPUQuota applies an opt-in per-node Podman CPU limit.
+// CI-equivalent Helios runs set KUBERNAUT_E2E_KIND_NODE_CPUS=2 for the hub and
+// spoke, keeping the two Kind nodes within a four-vCPU budget. The default is
+// unchanged so existing local and CI lanes retain their current behavior.
+func applyOptionalKindNodeCPUQuota(ctx context.Context, clusterName string, writer io.Writer) error {
+	rawCPUs := strings.TrimSpace(os.Getenv(kindNodeCPUEnv))
+	if rawCPUs == "" {
+		return nil
+	}
+	cpus, err := strconv.ParseFloat(rawCPUs, 64)
+	if err != nil || cpus <= 0 {
+		return fmt.Errorf("invalid %s value %q: expected a positive CPU count", kindNodeCPUEnv, rawCPUs)
+	}
+	if strings.TrimSpace(os.Getenv("KIND_EXPERIMENTAL_PROVIDER")) != "podman" {
+		return fmt.Errorf("%s requires KIND_EXPERIMENTAL_PROVIDER=podman", kindNodeCPUEnv)
+	}
+
+	nodesCmd := exec.CommandContext(ctx, "kind", "get", "nodes", "--name", clusterName)
+	nodesCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	output, err := nodesCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("list Kind nodes for CPU quota: %w", err)
+	}
+	nodes := kindNodeNamesFromOutput(string(output), clusterName)
+	if len(nodes) == 0 {
+		return fmt.Errorf("no Kind nodes found for CPU quota on cluster %s", clusterName)
+	}
+	quota := strconv.FormatFloat(cpus, 'f', -1, 64)
+	for _, node := range nodes {
+		updateCmd := exec.CommandContext(ctx, "podman", "update", "--cpus", quota, node)
+		updateCmd.Stdout = writer
+		updateCmd.Stderr = writer
+		if err := updateCmd.Run(); err != nil {
+			return fmt.Errorf("apply CPU quota %s to Kind node %s: %w", quota, node, err)
+		}
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Applied %s CPU quota per Kind node to %s (%d node(s))\n", quota, clusterName, len(nodes))
+	return nil
+}
+
 // clusterHasLiveNode reports whether kind's provider can see at least one
 // running node container for clusterName, via `kind get nodes` -- the same
 // node-listing path `kind load image-archive` itself relies on. Used to
@@ -339,6 +399,51 @@ func retryTransientKindRuntimeError(writer io.Writer, runOnce func() (output str
 //   - ✅ Consistent YAML manipulation logic
 //   - ✅ Reusable across Notification, Gateway, WorkflowExecution, etc.
 //   - ✅ Easier to maintain and test
+//
+// CreateKindClusterWithExtraMountsAndPortMappings adds test-owned NodePort
+// mappings to a temporary copy of the base config before creating the Kind
+// node. Kind cannot publish a new container port after the node exists.
+func CreateKindClusterWithExtraMountsAndPortMappings(
+	ctx context.Context,
+	clusterName string,
+	kubeconfigPath string,
+	baseConfigPath string,
+	extraMounts []ExtraMount,
+	portMappings []KindPortMapping,
+	writer io.Writer,
+) error {
+	if len(portMappings) == 0 {
+		return CreateKindClusterWithExtraMounts(ctx, clusterName, kubeconfigPath, baseConfigPath, extraMounts, writer)
+	}
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root for Kind port mappings: %w", err)
+	}
+	basePath := filepath.Join(workspaceRoot, baseConfigPath)
+	configData, err := os.ReadFile(basePath)
+	if err != nil {
+		return fmt.Errorf("read Kind config for port mappings: %w", err)
+	}
+	mappedConfig, err := appendKindPortMappings(string(configData), portMappings)
+	if err != nil {
+		return fmt.Errorf("append Kind port mappings: %w", err)
+	}
+	tmpConfig, err := os.CreateTemp(workspaceRoot, ".kind-operator-ports-*.yaml")
+	if err != nil {
+		return fmt.Errorf("create temporary Kind config: %w", err)
+	}
+	tmpName := filepath.Base(tmpConfig.Name())
+	defer func() { _ = os.Remove(tmpConfig.Name()) }()
+	if _, err := tmpConfig.WriteString(mappedConfig); err != nil {
+		_ = tmpConfig.Close()
+		return fmt.Errorf("write temporary Kind config: %w", err)
+	}
+	if err := tmpConfig.Close(); err != nil {
+		return fmt.Errorf("close temporary Kind config: %w", err)
+	}
+	return CreateKindClusterWithExtraMounts(ctx, clusterName, kubeconfigPath, tmpName, extraMounts, writer)
+}
+
 func CreateKindClusterWithExtraMounts(ctx context.Context,
 	clusterName string,
 	kubeconfigPath string,
@@ -375,6 +480,9 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 			// never sets KIND_EXPERIMENTAL_PROVIDER either, relying entirely on the
 			// ambient process environment (unlike CreateKindClusterWithConfig's
 			// opts.UsePodman-gated cmd.Env) -- mirror that here for consistency.
+			if err := applyOptionalKindNodeCPUQuota(ctx, clusterName, writer); err != nil {
+				return err
+			}
 			return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, false, writer)
 		}
 		_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster %s is registered but has no live node (stale from a prior run) — deleting and recreating\n", clusterName)
@@ -460,6 +568,9 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	})
 	if err != nil {
 		return fmt.Errorf("kind create cluster failed: %w", err)
+	}
+	if err := applyOptionalKindNodeCPUQuota(ctx, clusterName, writer); err != nil {
+		return err
 	}
 
 	return nil
@@ -633,6 +744,9 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	if clusterExists {
 		if opts.ReuseExisting {
 			_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, reusing...\n", opts.ClusterName)
+			if err := applyOptionalKindNodeCPUQuota(ctx, opts.ClusterName, writer); err != nil {
+				return err
+			}
 			return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, opts.UsePodman, writer)
 		}
 		if opts.DeleteExisting {
@@ -767,6 +881,9 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created successfully")
+	if err := applyOptionalKindNodeCPUQuota(ctx, opts.ClusterName, writer); err != nil {
+		return err
+	}
 
 	// 10. Ensure /coverdata is world-writable inside Kind node (DD-TEST-007)
 	// Defense-in-depth: even if the host directory is 0777, DirectoryOrCreate may

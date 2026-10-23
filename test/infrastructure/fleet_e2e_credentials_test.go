@@ -37,7 +37,7 @@ import (
 // `setup-fleet-demo-infra` at all -- impossible, since the cluster meant to
 // hold it doesn't exist yet at that point. SetupFleetCoreInfrastructureWithGateway
 // always creates a mock placeholder regardless (createFullPipelineHelmSecrets),
-// so the "actionable error if missing" InstallDemoHelmChart's
+// so the "actionable error if missing" the demo deployment's
 // checkSecretExists promised was actually unreachable. buildLLMCredentialsSecretManifest
 // is the pure builder behind the fix: -llm-credentials-file overwrites that
 // placeholder with real content once the cluster exists, closing the gap in
@@ -168,6 +168,8 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 
 		fullPipelineDeployments := fullPipelineReadinessDeployments(nil)
 		Expect(fullPipelineDeployments).To(ContainElement("dex"))
+		Expect(fullPipelineDeployments).ToNot(ContainElement("prometheus"))
+		Expect(fullPipelineDeployments).ToNot(ContainElement("alertmanager"))
 	})
 
 	It("UT-INFRA-FLEET-TLS-002: event exporter uses the Gateway HTTPS endpoint and mounted CA", func() {
@@ -194,6 +196,15 @@ var _ = Describe("FullPipeline event exporter resilience", func() {
 var _ = Describe("kube-mcp-server E2E configuration", func() {
 	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
 		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+	})
+
+	It("UT-INFRA-FLEET-032: gives preloaded MCP images a deterministic local tag", func() {
+		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+	})
+
+	It("UT-INFRA-FLEET-033: uses the preloaded reference only when supplied", func() {
+		Expect(kubeMCPServerImageReference(KubeMCPServerAuthConfig{})).To(Equal(KubeMCPServerImage))
+		Expect(kubeMCPServerImageReference(KubeMCPServerAuthConfig{ImageReference: "localhost/kind-preload:sha256-test"})).To(Equal("localhost/kind-preload:sha256-test"))
 	})
 
 	It("UT-INFRA-FLEET-031: renders the current RFC 8693 token exchange schema", func() {
@@ -529,6 +540,19 @@ var _ = Describe("EAIGW version overrides", func() {
 			"--version", "v1.9.2",
 			"--set", "crds.enabled=false",
 			"-f", "https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml",
+			"--set", "config.envoyGateway.provider.type=Kubernetes",
+			"--set", "config.envoyGateway.extensionApis.enableEnvoyPatchPolicy=true",
+			"--set", "config.envoyGateway.extensionApis.enableBackend=true",
+			"--set", "config.envoyGateway.extensionManager.service.fqdn.hostname=ai-gateway-controller.envoy-ai-gateway-system.svc.cluster.local",
+			"--set", "config.envoyGateway.extensionManager.service.fqdn.port=1063",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.listener.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.route.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.cluster.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.secret.includeAll=true",
+			"--set-json", `config.envoyGateway.extensionManager.hooks.xdsTranslator.post=["Translation","Cluster","Route"]`,
+			"--set-json", `config.envoyGateway.extensionManager.resources=[{"group":"aigateway.envoyproxy.io","version":"v1beta1","kind":"MCPRoute"}]`,
+			"--set", "config.envoyGateway.gateway.controllerName=gateway.envoyproxy.io/gatewayclass-controller",
+			"--set", "config.envoyGateway.logging.level.default=info",
 		}))
 		Expect(buildAgentRouterHelmArgs(versions)).To(Equal([]string{
 			"--version", "v1.2.0",
