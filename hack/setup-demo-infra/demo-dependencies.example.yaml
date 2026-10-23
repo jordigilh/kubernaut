@@ -2,3 +2,18 @@
 # Built-in defaults remain in the Go infrastructure code when this file is omitted.
 envoyGatewayVersion: v1.9.2
 agentRouterVersion: v1.2.0
+
+# Optional prebuilt release inputs. Explicit values win over the selected
+# published v1.6 line. Digests are preferred for qualification evidence.
+operator:
+  version: 1.6.0-rcN
+  image: quay.io/kubernaut-ai/kubernaut-operator@sha256:<operator-image-digest>
+  imageDigest: sha256:<operator-image-digest>
+  chart: oci://quay.io/kubernaut-ai/charts/kubernaut-operator
+  chartDigest: sha256:<operator-chart-digest>
+  ref: <operator-commit-sha>
+
+kubernaut:
+  version: 1.6.0-rcN
+  image: quay.io/kubernaut-ai/gateway@sha256:<gateway-image-digest>
+  imageDigest: sha256:<gateway-image-digest>

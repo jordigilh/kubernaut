@@ -962,8 +962,8 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 	@podman network rm authwebhook_test-network 2>/dev/null || true
 	@echo "✅ Cleanup complete"
 
-# Full Pipeline E2E: Complete remediation lifecycle test (Issue #39)
-# Deploys ALL services in a single Kind cluster - requires ~6GB RAM
+# Full Pipeline E2E: Complete remediation lifecycle test (Issue #39/#2492)
+# Deploys the operator bootstrap, dependencies, and Kubernaut CR in one Kind cluster - requires ~6GB RAM
 # CI/CD: Set IMAGE_REGISTRY + IMAGE_TAG to use pre-built images (fast)
 # Local: Builds 3 images at a time (slow, ~20-30 min)
 .PHONY: test-e2e-fullpipeline
@@ -978,6 +978,10 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@$(GINKGO) -v --race --timeout=70m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
+.PHONY: check-operator-deployment-boundary
+check-operator-deployment-boundary: ## Fail on live charts/kubernaut deployment in FP/Fleet/demo paths (Issue #2492)
+	@go test ./test/infrastructure -ginkgo.focus='UT-2492-019' -count=1
+
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
 # Validates multi-cluster remediation via MCP gateway (Issue #54, ADR-068)
 # Requires ~6GB RAM (fullpipeline + ~66MB fleet infra)
@@ -991,9 +995,9 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
-# Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337):
+# Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337/#2492):
 # hub+spoke Kind clusters + Keycloak + MCP Gateway + kube-mcp-server +
-# Traefik, THEN `helm upgrade --install charts/kubernaut` itself, wired up
+# Traefik, THEN the operator bootstrap plus user-owned Kubernaut CR, wired up
 # Console-first -- Gateway starts disabled (AUTONOMOUS=true to enable it) so
 # you investigate the first demo scenario via Console chat before opting
 # into the fully autonomous flow. Leaves the clusters running -- tear down
@@ -1009,7 +1013,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut through the operator, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
@@ -1024,7 +1028,7 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		exit 1; \
 	fi
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Fleet demo/QE setup: infra + helm install (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
+	@echo "🚀 Fleet demo/QE setup: infra + operator CR (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
 	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway ($(if $(GATEWAY_TYPE),$(GATEWAY_TYPE),eaigw) by default), kube-mcp-server, Traefik"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	go run ./hack/setup-demo-infra \
@@ -1076,7 +1080,7 @@ setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Requ
 		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
-bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)
+bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (legacy/manual helper; demo CR wiring is preferred)
 	@if [ -z "$(KUBECONFIG)" ]; then \
 		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/kubernaut-hub-config"; \
 		exit 1; \

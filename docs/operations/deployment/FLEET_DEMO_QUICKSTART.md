@@ -57,10 +57,10 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
-The equivalent explicit Helm values are:
+The equivalent user-applied CR fields are:
 
 ```yaml
-global:
+spec:
   llmProfiles:
     primary:
       provider: openai
@@ -72,17 +72,12 @@ global:
         effort: none
 ```
 
-Equivalent command-line Helm settings are:
+The demo writes this contract to a user-owned `Kubernaut` CR and applies it after
+the operator bootstrap and dependency chart are ready. There is no live
+`charts/kubernaut` application release.
 
 ```bash
-helm upgrade --install kubernaut charts/kubernaut \
-  --namespace kubernaut-system \
-  --set global.llmProfiles.primary.provider=openai \
-  --set global.llmProfiles.primary.model=gpt-6-luna \
-  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
-  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
-  --set global.llmProfiles.primary.reasoning.enabled=true \
-  --set global.llmProfiles.primary.reasoning.effort=none
+kubectl apply -f kubernaut-cr.yaml
 ```
 
 To override the demo decision, set `LLM_REASONING_ENABLED=true|false` and/or
@@ -114,9 +109,9 @@ make setup-fleet-demo-infra \
   IMAGE_TAG=dev
 ```
 
-`IMAGE_REPOSITORY` is the common base path without the service name. For example,
-`localhost/kubernaut` makes the chart use `localhost/kubernaut/gateway` and the matching
-path for each chart-managed Kubernaut service, including the `kubernaut-console` image.
+`IMAGE_REPOSITORY` is the common base path without the service name. The operator
+demo resolves the matching prebuilt operand image for each service and passes the
+complete related-image map to the bootstrap chart.
 When `IMAGE_TAG` is provided, it is used unchanged as the shared image tag. Published
 release tags resolve through multi-architecture manifests; architecture-suffixed tags
 are only intermediate build references.
@@ -124,7 +119,8 @@ are only intermediate build references.
 For images loaded from this repository's CI artifacts, use `IMAGE_REPOSITORY=localhost`.
 `IMAGE_TAG` should be the base tag from the CI run (for example, `pr-123` or
 `main-<sha>`). `download-images.sh --load` and the fleet demo use the same shared tag,
-then the setup transfers those local images into the hub Kind nodes before Helm runs.
+then the setup transfers those local images into the hub Kind nodes before the
+operator bootstrap runs.
 On ARM64, the CI artifact download omits `db-migrate`; build that one image locally with
 `IMAGE_TAG=<base> IMAGE_ARCH=arm64` and tag it with the shared `<base>` tag before loading.
 
@@ -183,18 +179,18 @@ with `LLM_PROVIDER=vertex_ai` (issue #2355).
 This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, hub-local and
 spoke `kube-mcp-server` instances, the `hub` and `remote-cluster` registrations,
 and fleet-wide monitoring; once the hub cluster exists, it writes
-`LLM_CREDENTIALS_FILE`'s contents into the `llm-credentials-primary` Secret (there's no
-way to do this before the cluster exists to hold it); then it runs
-`helm install charts/kubernaut` itself — remaining Secrets, default Rego policies, and
-RBAC included — and finishes by printing a Console URL, a login, and a suggested
+`LLM_CREDENTIALS_FILE`'s contents into the user-owned `llm-credentials-primary` Secret
+(there's no way to do this before the cluster exists to hold it); then it installs the
+pinned operator bootstrap/dependency charts, applies the user-owned Kubernaut CR, and
+finishes by printing a Console URL, a login, and a suggested
 `/etc/hosts` line (~15 min total).
 
 The demo keeps Kubernaut workloads in `kubernaut-system` and places the hub MCP
 Gateway/server and Gateway registrations in the dedicated `mcp-system` namespace,
 matching the production boundary. The remote MCP server independently defaults to
 `mcp-system`. Override either namespace with `MCP_GATEWAY_NAMESPACE` or
-`REMOTE_MCP_SERVER_NAMESPACE` when invoking the Make target; the generated Helm
-installation receives the matching `global.fleet.mcpGatewayNamespace` value.
+`REMOTE_MCP_SERVER_NAMESPACE` when invoking the Make target; the generated Kubernaut
+CR receives the matching `spec.fleet.mcpGateway.namespace` value.
 
 Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
 in Prometheus, but nothing auto-remediates until you ask Console to investigate — so

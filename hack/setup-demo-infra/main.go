@@ -2,7 +2,7 @@
 // installs Kubernaut with the supplied LLM configuration and policies.
 //
 // Local is the default topology. Pass -mode=fleet to add the fleet hub/spoke
-// infrastructure and fleet Helm configuration.
+// infrastructure and Fleet fields in the user-owned Kubernaut CR.
 package main
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-//nolint:funlen // CLI flag parsing and topology dispatch are kept together at the entry point.
+//nolint:funlen,gocyclo // CLI flag parsing and topology dispatch are kept together at the entry point.
 func main() {
 	modeFlag := flag.String("mode", string(infrastructure.DemoModeLocal), "demo mode: local or fleet")
 	clusterName := flag.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)")
@@ -46,11 +46,11 @@ func main() {
 		flag.String("kubeconfig", "", "path to write the cluster kubeconfig")
 	}
 	flag.Parse()
-	fileGatewayVersions, dependencyErr := infrastructure.LoadFleetGatewayVersionOverrides(*dependencyOverridesFile)
+	fileOverrides, dependencyErr := infrastructure.LoadDemoDependencyOverrides(*dependencyOverridesFile)
 	if dependencyErr != nil {
 		fail(dependencyErr.Error())
 	}
-	gatewayVersions := infrastructure.MergeFleetGatewayVersionOverrides(fileGatewayVersions, infrastructure.FleetGatewayVersionOverrides{
+	gatewayVersions := infrastructure.MergeFleetGatewayVersionOverrides(fileOverrides.FleetGatewayVersions(), infrastructure.FleetGatewayVersionOverrides{
 		EnvoyGatewayVersion: *envoyGatewayVersion,
 		AgentRouterVersion:  *agentRouterVersion,
 	})
@@ -98,6 +98,7 @@ func main() {
 		ImageRepository:     *imageRepository,
 		VertexProject:       *vertexProject,
 		VertexLocation:      *vertexLocation,
+		OperatorArtifacts:   fileOverrides.ArtifactOverrides(),
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fail(err.Error())
@@ -109,26 +110,32 @@ func main() {
 	ctx := context.Background()
 	var fleetOpts *infrastructure.FleetHelmOptions
 	var remoteKubeconfigPath string
+	var operatorExposure *infrastructure.OperatorExposurePlan
 	var err error
 	if fleet {
 		fleetOpts, remoteKubeconfigPath, err = infrastructure.SetupFleetCoreInfrastructureWithGateway(
 			ctx, *clusterName, *remoteClusterName, kubeconfigPath,
 			infrastructure.FleetCoreDemoOptions{
+				Autonomous:               *autonomous,
 				GatewayType:              gatewayType,
 				GatewayVersions:          gatewayVersions,
 				MCPGatewayNamespace:      *mcpGatewayNamespace,
 				RemoteMCPServerNamespace: *remoteMCPServerNamespace,
 				SpokeWorkers:             *spokeWorkers,
 			}, os.Stdout)
+		if fleetOpts != nil {
+			operatorExposure = fleetOpts.OperatorExposure
+		}
 	} else {
-		err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath)
+		operatorExposure, err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath, *autonomous)
 	}
 	if err != nil {
 		fail(fmt.Sprintf("demo infrastructure setup failed: %v", err))
 	}
+	demoOpts.Exposure = operatorExposure
 
-	if err := infrastructure.InstallDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, *clusterName, fleetOpts, demoOpts, os.Stdout); err != nil {
-		fail(fmt.Sprintf("helm install failed: %v", err))
+	if err := infrastructure.InstallDemoOperatorApplication(ctx, kubeconfigPath, remoteKubeconfigPath, *clusterName, fleetOpts, demoOpts, os.Stdout); err != nil {
+		fail(fmt.Sprintf("operator deployment failed: %v", err))
 	}
 }
 
@@ -153,24 +160,29 @@ func defaultClusterName(current string, fleet bool) string {
 	return "kubernaut-demo"
 }
 
-func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string) error {
-	if err := infrastructure.CreateKindClusterWithConfig(ctx, infrastructure.KindClusterOptions{
-		ClusterName:             clusterName,
-		KubeconfigPath:          kubeconfigPath,
-		ConfigPath:              "test/infrastructure/kind-fullpipeline-config.yaml",
-		WaitTimeout:             "60s",
-		ReuseExisting:           true,
-		ProjectRootAsWorkingDir: true,
-	}, os.Stdout); err != nil {
-		return err
+func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, autonomous bool) (*infrastructure.OperatorExposurePlan, error) {
+	exposure, err := infrastructure.OperatorExposurePlanForCluster(ctx, clusterName, "kubernaut-system", "localhost", infrastructure.DemoExposureComponents(autonomous))
+	if err != nil {
+		return nil, err
+	}
+	if err := infrastructure.CreateKindClusterWithExtraMountsAndPortMappings(ctx, clusterName, kubeconfigPath, "test/infrastructure/kind-fullpipeline-config.yaml", nil, infrastructure.OperatorPortMappings(exposure), os.Stdout); err != nil {
+		return nil, err
 	}
 	if err := infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout); err != nil {
-		return err
+		return nil, err
+	}
+	// Pre-create the operator trust root before Keycloak and monitoring start so
+	// every HTTPS dependency shares the CR's inter-service CA.
+	if err := infrastructure.EnsureOperatorFleetTLS(ctx, kubeconfigPath, "kubernaut-system", os.Stdout); err != nil {
+		return nil, err
 	}
 	if err := infrastructure.SetupOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
-		return err
+		return nil, err
 	}
-	return infrastructure.SetupDemoMonitoringInfrastructure(ctx, kubeconfigPath, os.Stdout)
+	if err := infrastructure.SetupDemoMonitoringInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
+		return nil, err
+	}
+	return &exposure, nil
 }
 
 func fail(message string) {

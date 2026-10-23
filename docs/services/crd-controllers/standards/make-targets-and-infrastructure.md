@@ -239,7 +239,7 @@ nodes:
         hostPort: 30080
         protocol: TCP
       - containerPort: 30443
-        hostPort: 30443
+        hostPort: 18443
         protocol: TCP
 # Configure for faster test execution
 networking:
@@ -500,4 +500,3 @@ jobs:
 **Status**: ✅ **READY FOR IMPLEMENTATION**
 **Total Additional Effort**: 14 hours (8 shared + 6 per-service)
 **Integration Test Architecture Confidence**: 95% (see `INTEGRATION_TEST_INFRASTRUCTURE_ASSESSMENT.md`)
-
