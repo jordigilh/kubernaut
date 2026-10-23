@@ -357,10 +357,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			PostgreSQLSSLMode: "require",
 			ValkeyHost:        "valkey." + namespace + ".svc.cluster.local",
 			PostgreSQLSecret:  "postgresql-secret", ValkeySecret: "valkey-secret",
-			LLM:              OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm." + namespace + ".svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"},
-			TLS:              OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"localhost"}},
-			PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
-			Monitoring:       OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093", TLSSource: "interService"},
+			LLM:                              OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm." + namespace + ".svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"},
+			InteractiveRateLimitPerUser:      100,
+			RemediationStabilizationWindow:   "10s",
+			EffectivenessStabilizationWindow: "30s",
+			EffectivenessValidityWindow:      "120s",
+			TLS:                              OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"localhost"}},
+			PolicyConfigMaps:                 OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
+			// Prometheus/AlertManager are test-owned endpoints signed by the
+			// monitoring CA. Mount that CA into operator-managed clients instead
+			// of the application inter-service trust bundle.
+			Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093", TLSSource: "configMap", TLSCAConfigMapName: "monitoring-ca"},
 			// Kind host ingress is runtime test infrastructure. Apply the
 			// test-owned policy after reconciliation instead of putting the
 			// host bridge CIDR into the user CR.
@@ -445,6 +452,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			return builtImages, nil, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
+	}
+	if err := EnsureOperatorAgentE2ECapacity(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, nil, err
 	}
 	if fleetProvisioner != nil {
 		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
@@ -701,7 +711,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// event-exporter: Gateway is already up (PHASE 6 helm install --wait).
 	go func() {
-		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, gatewayToken, writer)
+		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, gatewayToken, writer, true)
 		allResults <- waveResult{"event-exporter", err}
 	}()
 
@@ -776,6 +786,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if len(deployErrors) > 0 {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
 	}
+	if err := EnsureAPIFrontendInvestigationSessionRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, nil, err
+	}
+	if err := EnsureEventExporterGatewayNetworkPolicy(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, nil, err
+	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
 
@@ -819,6 +835,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
+	// Re-apply after the operator's readiness reconciliation settles. The
+	// pinned operator does not expose this Helm capacity knob in v1alpha2 and
+	// may rewrite its generated ConfigMap during the initial rollout.
+	if err := EnsureOperatorAgentE2ECapacity(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8: ensure KA E2E capacity: %w", err)
+	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 8b: Verify Prometheus cadvisor scrape target is UP
@@ -1047,11 +1069,19 @@ func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, 
 //
 // Image: ghcr.io/resmoio/kubernetes-event-exporter:latest
 // (No local build needed — pulled directly by Kind's containerd)
-func buildEventExporterManifest(namespace, gatewayToken string) string {
+func buildEventExporterManifest(namespace, gatewayToken string, tlsEnabled ...bool) string {
 	// BR-GATEWAY-036/037: Add Authorization header to webhook when token is provided
 	authHeaderYaml := ""
 	if gatewayToken != "" {
 		authHeaderYaml = fmt.Sprintf("            Authorization: \"Bearer %s\"\n", gatewayToken)
+	}
+
+	gatewayEventEndpoint := fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/kubernetes-event", namespace)
+	if len(tlsEnabled) > 0 && tlsEnabled[0] {
+		// Operator-managed Gateway serves the webhook on HTTPS :8443. Keep
+		// the legacy :8080 default for the application-Helm compatibility
+		// manifest used by the existing Fleet contract tests.
+		gatewayEventEndpoint = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8443/api/v1/signals/kubernetes-event", namespace)
 	}
 
 	manifest := fmt.Sprintf(`---
@@ -1129,7 +1159,7 @@ data:
     receivers:
       - name: gateway-webhook
         webhook:
-          endpoint: "https://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
+          endpoint: "%[3]s"
           headers:
             Content-Type: application/json
           tls:
@@ -1184,18 +1214,55 @@ spec:
       - name: inter-service-ca
         configMap:
           name: inter-service-ca
-`, namespace, authHeaderYaml)
+ `, namespace, authHeaderYaml, gatewayEventEndpoint)
 	return manifest
 }
 
-func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer, tlsEnabled ...bool) error {
 	_, _ = fmt.Fprintln(writer, "  📡 Deploying kubernetes-event-exporter...")
-	manifest := buildEventExporterManifest(namespace, gatewayToken)
+	manifest := buildEventExporterManifest(namespace, gatewayToken, tlsEnabled...)
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// EnsureEventExporterGatewayNetworkPolicy adds the test-owned ingress edge
+// omitted by the operator's default-deny Gateway policy. The event-exporter
+// is Go-managed test infrastructure, so it does not carry the operator labels
+// allowed by kubernaut-gateway. Keep this additive and limited to HTTPS 8443.
+func EnsureEventExporterGatewayNetworkPolicy(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	manifest := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubernaut-e2e-event-exporter-gateway
+  namespace: %s
+  labels:
+    app: event-exporter
+    component: test-infrastructure
+    test: e2e
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: event-exporter
+          component: test-infrastructure
+    ports:
+    - protocol: TCP
+      port: 8443
+`, namespace)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("ensure event-exporter Gateway NetworkPolicy: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ event-exporter Gateway ingress NetworkPolicy ready")
+	return nil
 }
 
 // deployMockSlack deploys a minimal HTTP service that accepts POST requests and

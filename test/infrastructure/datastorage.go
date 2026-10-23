@@ -143,6 +143,14 @@ func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writ
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	// Issue #2492: remove upstream test-owned NodePort adapters before the
+	// cluster teardown. The selector is restricted to the explicit owner label;
+	// operator-owned Services are never patched or deleted by this cleanup.
+	if kubeconfigPath := os.Getenv("KUBECONFIG"); kubeconfigPath != "" {
+		if err := DeleteOperatorExposureAdapters(context.Background(), kubeconfigPath, kubernautSystem, writer); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  operator exposure cleanup before cluster deletion: %v\n", err)
+		}
+	}
 	// ═══════════════════════════════════════════════════════════════════════
 	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
 	// ═══════════════════════════════════════════════════════════════════════

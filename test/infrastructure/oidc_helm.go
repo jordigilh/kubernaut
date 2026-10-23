@@ -28,118 +28,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// OIDCConsoleHelmOptions describes the provider-specific OIDC endpoints and
-// the optional Console frontend that consume them. It is shared by demo and
-// full-pipeline Helm installers; provider lifecycle provisioning remains
-// provider-specific.
-type OIDCConsoleHelmOptions struct {
-	IssuerURL        string
-	JWKSURL          string
-	Audience         string
-	IDPPort          int
-	ConsoleEnabled   bool
-	ConsoleSecret    string
-	ConsoleHost      string
-	ConsolePort      int
-	SkipDiscovery    bool
-	LoginURL         string
-	RedeemURL        string
-	ConsoleJWKSURL   string
-	BackendLogoutURL string
-	IngressNamespace string
-	ConsoleTLSSecret string
-}
-
-const demoKeycloakRealm = "kubernaut-demo"
-
-// keycloakOIDCConsoleHelmOptionsForRealm returns shared Keycloak wiring for a
-// Helm install. Keycloak's browser-facing issuer must include the realm because
-// APIFrontend compares it to the JWT iss claim. The realm is explicit so
-// production installs can use kubernaut while demo installs remain isolated.
-func keycloakOIDCConsoleHelmOptionsForRealm(keycloakNamespace, realm string) OIDCConsoleHelmOptions {
-	keycloakBrowserBase := "https://keycloak:8443/realms/" + realm
-	keycloakServiceBase := "https://keycloak." + keycloakNamespace + ".svc.cluster.local:8443/realms/" + realm
-
-	return OIDCConsoleHelmOptions{
-		IssuerURL:      keycloakBrowserBase,
-		JWKSURL:        keycloakServiceBase + "/protocol/openid-connect/certs",
-		Audience:       "kubernaut-apifrontend",
-		IDPPort:        8443,
-		SkipDiscovery:  true,
-		LoginURL:       keycloakBrowserBase + "/protocol/openid-connect/auth",
-		RedeemURL:      keycloakServiceBase + "/protocol/openid-connect/token",
-		ConsoleJWKSURL: keycloakServiceBase + "/protocol/openid-connect/certs",
-		// Keycloak's end_session_endpoint is provider-specific; derive it here
-		// for the demo instead of making the generic Helm chart Keycloak-aware.
-		BackendLogoutURL: keycloakBrowserBase + "/protocol/openid-connect/logout?id_token_hint={id_token}",
-	}
-}
-
-// keycloakOIDCConsoleHelmOptions preserves the demo installation defaults.
-func keycloakOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOptions {
-	return keycloakOIDCConsoleHelmOptionsForRealm(keycloakNamespace, demoKeycloakRealm)
-}
-
-// demoOIDCConsoleHelmOptions returns the complete AF and Console OIDC wiring
-// shared by local and fleet demo deployments. Fleet-specific gateway and
-// service OAuth2 values are appended separately by the caller.
-func demoOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOptions {
-	opts := keycloakOIDCConsoleHelmOptions(keycloakNamespace)
-	opts.ConsoleEnabled = true
-	opts.ConsoleSecret = demoConsoleOAuthSecretName
-	opts.ConsoleHost = demoConsoleHost
-	opts.ConsolePort = demoConsolePort
-	opts.IngressNamespace = demoTraefikNamespace
-	opts.ConsoleTLSSecret = "console-tls"
-	return opts
-}
-
-func appendDemoOIDCConsoleHelmArgs(args []string, keycloakNamespace string) []string {
-	return appendOIDCConsoleHelmArgs(args, demoOIDCConsoleHelmOptions(keycloakNamespace))
-}
-
-func appendOIDCConsoleHelmArgs(args []string, opts OIDCConsoleHelmOptions) []string {
-	args = append(args,
-		"--set", "apifrontend.config.auth.issuerURL="+opts.IssuerURL,
-		"--set", "apifrontend.config.auth.jwksURL="+opts.JWKSURL,
-		"--set", "apifrontend.config.auth.audience="+opts.Audience,
-	)
-	if opts.IDPPort > 0 {
-		args = append(args, "--set", fmt.Sprintf("networkPolicies.idp.port=%d", opts.IDPPort))
-	}
-	if !opts.ConsoleEnabled {
-		return args
-	}
-
-	args = append(args,
-		"--set", "console.enabled=true",
-		"--set", "console.auth.secretName="+opts.ConsoleSecret,
-		"--set", "console.ingress.enabled=true",
-		"--set", "console.ingress.className=traefik",
-		"--set", "console.ingress.host="+opts.ConsoleHost,
-		"--set", fmt.Sprintf("console.ingress.port=%d", opts.ConsolePort),
-	)
-	if opts.ConsoleTLSSecret != "" {
-		args = append(args, "--set", "console.ingress.tls.secretName="+opts.ConsoleTLSSecret)
-	}
-	if opts.IngressNamespace != "" {
-		args = append(args, "--set", "networkPolicies.console.ingressNamespaces[0]="+opts.IngressNamespace)
-	}
-	if opts.BackendLogoutURL != "" {
-		args = append(args, "--set-string", "console.oauth2Proxy.backendLogoutURL="+opts.BackendLogoutURL)
-	}
-	if !opts.SkipDiscovery {
-		return args
-	}
-
-	return append(args,
-		"--set", "console.oauth2Proxy.skipDiscovery=true",
-		"--set", "console.oauth2Proxy.loginURL="+opts.LoginURL,
-		"--set", "console.oauth2Proxy.redeemURL="+opts.RedeemURL,
-		"--set", "console.oauth2Proxy.jwksURL="+opts.ConsoleJWKSURL,
-	)
-}
-
 // SetupOIDCInfrastructure provisions the shared browser-authentication
 // dependencies used by local and fleet demo installations. Fleet-only MCP
 // Gateway, spoke, and API-server OIDC wiring remain outside this helper.
@@ -182,6 +70,14 @@ func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer 
 	}
 	if err := DeployKeycloakInfra(ctx, idpNamespace, kubeconfigPath, keycloakHostPortDemo, true, writer); err != nil {
 		return fmt.Errorf("keycloak deployment failed: %w", err)
+	}
+	// Keep the browser-facing issuer stable as "https://keycloak" while the
+	// actual provider remains in the dedicated idp namespace. The alias also
+	// makes in-cluster API Frontend JWKS/token requests resolve in local mode.
+	if aliasManifest := buildKeycloakServiceAliasManifest(appNamespace, idpNamespace); aliasManifest != "" {
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, aliasManifest); err != nil {
+			return fmt.Errorf("keycloak service alias creation failed: %w", err)
+		}
 	}
 	if err := deployTraefikForKind(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("traefik installation failed: %w", err)
@@ -266,6 +162,9 @@ func SetupDemoMonitoringInfrastructure(ctx context.Context, kubeconfigPath strin
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create %s namespace: %w", monitoringNamespace, err)
 	}
+	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, kubernautSystem, monitoringNamespace, writer); err != nil {
+		return fmt.Errorf("failed to prepare monitoring TLS: %w", err)
+	}
 	// AlertManager mounts inter-service-ca from its own namespace. OIDC setup
 	// creates the shared CA in kubernaut-system, so replicate the trust bundle
 	// before applying the monitoring workload (Issue #2405).
@@ -286,11 +185,11 @@ func SetupDemoMonitoringInfrastructure(ctx context.Context, kubeconfigPath strin
 	if err := DeployKubeStateMetrics(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("kube-state-metrics deployment failed: %w", err)
 	}
-	if err := DeployAlertManager(ctx, monitoringNamespace, kubernautSystem, kubeconfigPath, token, writer); err != nil {
+	if err := DeployAlertManagerTLS(ctx, monitoringNamespace, kubernautSystem, kubeconfigPath, token, writer); err != nil {
 		return fmt.Errorf("alertmanager deployment failed: %w", err)
 	}
 	alertManagerTarget := fmt.Sprintf("alertmanager-svc.%s.svc.cluster.local:9093", monitoringNamespace)
-	if err := DeployManagedPrometheus(ctx, monitoringNamespace, kubeconfigPath, "local", alertManagerTarget, writer); err != nil {
+	if err := DeployLocalManagedPrometheusTLS(ctx, monitoringNamespace, kubeconfigPath, "local", alertManagerTarget, writer); err != nil {
 		return fmt.Errorf("managed Prometheus deployment failed: %w", err)
 	}
 	return nil

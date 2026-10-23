@@ -8,6 +8,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -98,6 +100,10 @@ func EnsureMonitoringTLS(ctx context.Context, kubeconfigPath, applicationNamespa
 			"alertmanager-svc." + monitoringNamespace,
 			"alertmanager-svc." + monitoringNamespace + ".svc",
 			"alertmanager-svc." + monitoringNamespace + ".svc.cluster.local",
+			"thanos-querier-svc",
+			"thanos-querier-svc." + monitoringNamespace,
+			"thanos-querier-svc." + monitoringNamespace + ".svc",
+			"thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local",
 		},
 		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1)},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -147,6 +153,18 @@ data:
   ca.crt: |
 %s
 `, monitoringCAConfigMapName, applicationNamespace, indentPEM(string(ca.certificatePEM)))
+	if monitoringNamespace != applicationNamespace {
+		caManifest += fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: %s
+  namespace: %s
+data:
+  ca.crt: |
+%s
+`, monitoringCAConfigMapName, monitoringNamespace, indentPEM(string(ca.certificatePEM)))
+	}
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, caManifest); err != nil {
 		return fmt.Errorf("create monitoring CA ConfigMap: %w", err)
 	}
@@ -155,6 +173,73 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS Secret ready in %s\n", monitoringNamespace)
 	return nil
+}
+
+// ReplicateMonitoringTLS copies the demo monitoring serving Secret and CA
+// ConfigMap between the hub and spoke kubeconfigs. Fleet Prometheus instances
+// must trust the hub AlertManager certificate; generating an independent spoke
+// CA would make the HTTPS alerting hop fail closed.
+func ReplicateMonitoringTLS(ctx context.Context, sourceKubeconfig, targetKubeconfig, monitoringNamespace string, writer io.Writer) error {
+	secretJSON, err := kubectlJSON(ctx, sourceKubeconfig, "-n", monitoringNamespace, "get", "secret", monitoringTLSSecretName, "-o", "json")
+	if err != nil {
+		return fmt.Errorf("read source monitoring TLS Secret: %w", err)
+	}
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(secretJSON, &secret); err != nil {
+		return fmt.Errorf("decode source monitoring TLS Secret: %w", err)
+	}
+	ca := secret.Data["ca.crt"]
+	if ca == "" {
+		return errors.New("source monitoring TLS Secret has no ca.crt")
+	}
+	secretManifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: kubernetes.io/tls
+data:
+  tls.crt: %s
+  tls.key: %s
+  ca.crt: %s
+  web-config.yml: %s
+`, monitoringTLSSecretName, monitoringNamespace, secret.Data["tls.crt"], secret.Data["tls.key"], ca, secret.Data["web-config.yml"])
+	if err := kubectlApplyManifest(ctx, targetKubeconfig, writer, secretManifest); err != nil {
+		return fmt.Errorf("apply target monitoring TLS Secret: %w", err)
+	}
+	caPEM := decodeMonitoringCA(ca)
+	configMapManifest := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: %s
+  namespace: %s
+data:
+  ca.crt: |
+%s
+`, monitoringCAConfigMapName, monitoringNamespace, indentPEM(string(caPEM)))
+	if err := kubectlApplyManifest(ctx, targetKubeconfig, writer, configMapManifest); err != nil {
+		return fmt.Errorf("apply target monitoring CA ConfigMap: %w", err)
+	}
+	if err := os.WriteFile(MonitoringCAPath(targetKubeconfig), caPEM, 0o600); err != nil {
+		return fmt.Errorf("write target monitoring CA: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS trust replicated to %s\n", monitoringNamespace)
+	return nil
+}
+
+func kubectlJSON(ctx context.Context, kubeconfigPath string, args ...string) ([]byte, error) {
+	commandArgs := append([]string{"--kubeconfig", kubeconfigPath}, args...)
+	return exec.CommandContext(ctx, "kubectl", commandArgs...).Output()
+}
+
+func decodeMonitoringCA(value string) []byte {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return []byte(value)
+	}
+	return decoded
 }
 
 // monitoringCAFromOperator reuses the operator inter-service trust root when

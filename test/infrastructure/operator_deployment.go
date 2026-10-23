@@ -37,19 +37,21 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision           = "f6da13f8347860041c19f1a9eaf2e5029a42e99a9"
+	operatorRevision           = "cebebf7596d35cb5c263bdd82fef09e2fd44ca5f"
 	operatorRepository         = "jordigilh/kubernaut-operator"
 	applicationNamespace       = "kubernaut-system"
 	operatorNamespace          = "kubernaut-operator-system"
 	operatorCRName             = "kubernaut"
 	operatorCRAPIVersion       = "kubernaut.ai/v1alpha2"
 	operatorOwnerLabel         = "upstream-2492"
+	demoDependencyChartOCI     = "oci://quay.io/kubernaut-ai/charts/kubernaut-dev-bootstrap"
 	operatorDataStorageOperand = "datastorage"
 	operatorAPIFrontendOperand = "apifrontend"
 )
@@ -136,6 +138,7 @@ func ValidateOperatorOperandImageMap(images map[string]string) error {
 type OperatorChartInstallOptions struct {
 	Namespace     string
 	ChartPath     string
+	ChartVersion  string
 	OperatorRef   string
 	RelatedImages map[string]string
 }
@@ -149,6 +152,9 @@ func BuildOperatorChartArgs(options OperatorChartInstallOptions) []string {
 		"--namespace", options.Namespace, "--create-namespace",
 		"--wait", "--timeout", "10m",
 		"--set-string", "webhook.tls.mode=development",
+	}
+	if strings.TrimSpace(options.ChartVersion) != "" && strings.HasPrefix(options.ChartPath, "oci://") && !strings.Contains(options.ChartPath, "@sha256:") {
+		args = append(args, "--version", options.ChartVersion)
 	}
 	args = append(args, operatorImageHelmArgs(options.OperatorRef)...)
 	for _, name := range operatorOperandImageKeys {
@@ -178,6 +184,7 @@ func BuildOperatorBootstrapArgs(options OperatorBootstrapOptions) []string {
 type OperatorDependencyOptions struct {
 	Namespace       string
 	ChartPath       string
+	ChartVersion    string
 	PostgreSQLImage string
 	ValkeyImage     string
 }
@@ -192,6 +199,9 @@ func BuildOperatorDependencyArgs(options OperatorDependencyOptions) []string {
 		"--set", "postgresql.commandMode=official",
 		"--set-json", "postgresql.securityContext.enabled=false",
 		"--set-json", "valkey.securityContext.enabled=false",
+	}
+	if strings.TrimSpace(options.ChartVersion) != "" && strings.HasPrefix(options.ChartPath, "oci://") && !strings.Contains(options.ChartPath, "@sha256:") {
+		args = append(args, "--version", options.ChartVersion)
 	}
 	args = append(args, imageReferenceHelmArgs("postgresql.image", options.PostgreSQLImage)...)
 	args = append(args, imageReferenceHelmArgs("valkey.image", options.ValkeyImage)...)
@@ -221,6 +231,15 @@ type OperatorLLMOptions struct {
 	Model             string
 	Endpoint          string
 	CredentialsSecret string
+	VertexProject     string
+	VertexLocation    string
+	Reasoning         *OperatorLLMReasoning
+}
+
+type OperatorLLMReasoning struct {
+	Enabled            bool
+	Effort             string
+	CapabilityOverride string
 }
 
 // OperatorTLSOptions selects development certificates and their initial host
@@ -277,27 +296,32 @@ type OperatorCROptions struct {
 	// the operator default; disposable Kind bootstrap profiles may set
 	// "require" when their CA is not part of the operator migration trust
 	// bundle.
-	PostgreSQLSSLMode     string
-	ValkeyHost            string
-	PostgreSQLSecret      string
-	ValkeySecret          string
-	LLM                   OperatorLLMOptions
-	TLS                   OperatorTLSOptions
-	PolicyConfigMaps      OperatorPolicyOptions
-	Monitoring            OperatorMonitoringOptions
-	NetworkPolicies       OperatorNetworkPolicyOptions
-	Fleet                 *OperatorFleetOptions
-	ImageOverrides        map[string]string
-	GatewayEnabled        bool
-	APIFrontendEnabled    bool
-	ConsoleEnabled        bool
-	ConsoleAuthSecretName string
-	ConsoleIngressHost    string
-	ConsoleIngressClass   string
-	ConsoleTLSSecretName  string
-	IssuerURL             string
-	JWKSURL               string
-	Audience              string
+	PostgreSQLSSLMode                string
+	ValkeyHost                       string
+	PostgreSQLSecret                 string
+	ValkeySecret                     string
+	LLM                              OperatorLLMOptions
+	TLS                              OperatorTLSOptions
+	PolicyConfigMaps                 OperatorPolicyOptions
+	Monitoring                       OperatorMonitoringOptions
+	NetworkPolicies                  OperatorNetworkPolicyOptions
+	Fleet                            *OperatorFleetOptions
+	ImageOverrides                   map[string]string
+	InteractiveRateLimitPerUser      int
+	RemediationStabilizationWindow   string
+	EffectivenessStabilizationWindow string
+	EffectivenessValidityWindow      string
+	GatewayEnabled                   bool
+	APIFrontendEnabled               bool
+	ConsoleEnabled                   bool
+	ConsoleAuthSecretName            string
+	ConsoleIngressHost               string
+	ConsoleIngressClass              string
+	ConsoleTLSSecretName             string
+	ConsoleProviderLogoutURL         string
+	IssuerURL                        string
+	JWKSURL                          string
+	Audience                         string
 }
 
 type operatorCRManifest struct {
@@ -362,10 +386,19 @@ type operatorPolicyRef struct {
 }
 
 type operatorLLMProfile struct {
-	Provider          string `yaml:"provider"`
-	Model             string `yaml:"model"`
-	Endpoint          string `yaml:"endpoint,omitempty"`
-	CredentialsSecret string `yaml:"credentialsSecretName"`
+	Provider          string                `yaml:"provider"`
+	Model             string                `yaml:"model"`
+	Endpoint          string                `yaml:"endpoint,omitempty"`
+	CredentialsSecret string                `yaml:"credentialsSecretName"`
+	VertexProject     string                `yaml:"vertexProject,omitempty"`
+	VertexLocation    string                `yaml:"vertexLocation,omitempty"`
+	Reasoning         *operatorLLMReasoning `yaml:"reasoning,omitempty"`
+}
+
+type operatorLLMReasoning struct {
+	Enabled            bool   `yaml:"enabled,omitempty"`
+	Effort             string `yaml:"effort,omitempty"`
+	CapabilityOverride string `yaml:"capabilityOverride,omitempty"`
 }
 
 type operatorAgentSpec struct {
@@ -431,7 +464,8 @@ type operatorIngressSpec struct {
 }
 
 type operatorConsoleAuthSpec struct {
-	SecretName string `yaml:"secretName,omitempty"`
+	SecretName        string `yaml:"secretName,omitempty"`
+	ProviderLogoutURL string `yaml:"providerLogoutURL,omitempty"`
 }
 
 type operatorMonitoringSpec struct {
@@ -487,6 +521,7 @@ type operatorRemediationSpec struct {
 
 type operatorEffectivenessAssessment struct {
 	StabilizationWindow string `yaml:"stabilizationWindow,omitempty"`
+	ValidityWindow      string `yaml:"validityWindow,omitempty"`
 }
 
 type operatorWorkflowExecutionSpec struct {
@@ -626,13 +661,10 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 			Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret},
 			AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}},
 			SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
-			LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret}},
-			KubernautAgent: operatorAgentSpec{
-				Investigation:     &operatorInvestigationSpec{LLMProfileRef: "primary", MaxTurns: 40},
-				WorkflowDiscovery: &operatorWorkflowDiscoverySpec{LLMProfileRef: "primary"},
-				Interactive:       &operatorInteractiveSpec{Enabled: true, RateLimitPerUser: 100},
-				Audit:             &operatorAuditSpec{Enabled: true},
-			},
+			LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
+			// The operator infers the sole LLM profile and owns its defaults. Keep
+			// the authored CR minimal instead of copying those defaults here.
+			KubernautAgent:  operatorAgentSpec{},
 			Gateway:         gateway,
 			APIFrontend:     apiFrontend,
 			Monitoring:      monitoring,
@@ -640,10 +672,22 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 			TLS:             tls,
 		},
 	}
+	if options.InteractiveRateLimitPerUser > 0 {
+		cr.Spec.KubernautAgent.Interactive = &operatorInteractiveSpec{Enabled: true, RateLimitPerUser: options.InteractiveRateLimitPerUser}
+	}
+	if strings.TrimSpace(options.RemediationStabilizationWindow) != "" {
+		cr.Spec.RemediationOrchestrator = &operatorRemediationSpec{Effectiveness: operatorEffectivenessAssessment{StabilizationWindow: options.RemediationStabilizationWindow}}
+	}
+	if strings.TrimSpace(options.EffectivenessStabilizationWindow) != "" || strings.TrimSpace(options.EffectivenessValidityWindow) != "" {
+		cr.Spec.EffectivenessMonitor = &operatorEffectivenessSpec{Assessment: operatorEffectivenessAssessment{
+			StabilizationWindow: options.EffectivenessStabilizationWindow,
+			ValidityWindow:      options.EffectivenessValidityWindow,
+		}}
+	}
 	if options.ConsoleEnabled {
 		console := &operatorConsoleSpec{Enabled: pointerToBool(true)}
 		if options.ConsoleAuthSecretName != "" {
-			console.Auth = &operatorConsoleAuthSpec{SecretName: options.ConsoleAuthSecretName}
+			console.Auth = &operatorConsoleAuthSpec{SecretName: options.ConsoleAuthSecretName, ProviderLogoutURL: options.ConsoleProviderLogoutURL}
 		}
 		if options.ConsoleIngressHost != "" {
 			console.Ingress = &operatorIngressSpec{Enabled: true, IngressClassName: options.ConsoleIngressClass, Host: options.ConsoleIngressHost, TLSSecretName: options.ConsoleTLSSecretName}
@@ -663,6 +707,13 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 
 func pointerToBool(value bool) *bool {
 	return &value
+}
+
+func operatorReasoningManifest(reasoning *OperatorLLMReasoning) *operatorLLMReasoning {
+	if reasoning == nil {
+		return nil
+	}
+	return &operatorLLMReasoning{Enabled: reasoning.Enabled, Effort: reasoning.Effort, CapabilityOverride: reasoning.CapabilityOverride}
 }
 
 // KindHostIngressCIDR returns the /32 peer used by the Kind node's container
@@ -871,8 +922,29 @@ type ResolvedDemoOperatorArtifacts struct {
 	OperatorVersion  string
 	OperatorImage    string
 	OperatorChart    string
+	OperatorRef      string
 	KubernautVersion string
 	KubernautImage   string
+}
+
+// DemoArtifactResolutionRecord is emitted before live reconciliation so a
+// demo failure can be reconstructed without guessing which release inputs won.
+type DemoArtifactResolutionRecord struct {
+	ReleaseLine      string            `json:"releaseLine"`
+	OperatorVersion  string            `json:"operatorVersion"`
+	OperatorRef      string            `json:"operatorRef,omitempty"`
+	OperatorImage    string            `json:"operatorImage"`
+	OperatorChart    string            `json:"operatorChart"`
+	DependencyChart  string            `json:"dependencyChart"`
+	KubernautVersion string            `json:"kubernautVersion"`
+	RelatedImages    map[string]string `json:"relatedImages"`
+}
+
+func BuildDemoArtifactResolutionJSON(record DemoArtifactResolutionRecord) ([]byte, error) {
+	if record.OperatorImage == "" || record.OperatorChart == "" || record.DependencyChart == "" || record.KubernautVersion == "" {
+		return nil, errors.New("demo artifact resolution requires operator image/chart, dependency chart, and Kubernaut version")
+	}
+	return json.MarshalIndent(record, "", "  ")
 }
 
 func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDemoOperatorArtifacts, error) {
@@ -886,27 +958,33 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 	if version == "1.6" {
 		version = "1.6.0-rc26"
 	}
-	operatorVersion := input.Explicit.OperatorVersion
+	operatorVersion := strings.TrimSpace(input.Explicit.OperatorVersion)
 	if operatorVersion == "" {
 		operatorVersion = version
 	}
-	kubernautVersion := input.Explicit.KubernautVersion
+	kubernautVersion := strings.TrimSpace(input.Explicit.KubernautVersion)
 	if kubernautVersion == "" {
 		kubernautVersion = version
 	}
-	operatorImage := input.Explicit.OperatorImage
+	operatorImage := strings.TrimSpace(input.Explicit.OperatorImage)
 	if operatorImage == "" {
 		operatorImage = "quay.io/kubernaut-ai/kubernaut-operator:" + operatorVersion
 	}
-	operatorChart := input.Explicit.OperatorChart
+	if digest := strings.TrimSpace(input.Explicit.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
+		operatorImage += "@" + digest
+	}
+	operatorChart := strings.TrimSpace(input.Explicit.OperatorChart)
 	if operatorChart == "" {
 		operatorChart = "oci://quay.io/kubernaut-ai/charts/kubernaut-operator"
+	}
+	if digest := strings.TrimSpace(input.Explicit.OperatorChartDigest); digest != "" && !strings.Contains(operatorChart, "@sha256:") {
+		operatorChart += "@" + digest
 	}
 	kubernautImage := input.Explicit.KubernautImage
 	if kubernautImage == "" {
 		kubernautImage = "quay.io/kubernaut-ai/gateway:" + kubernautVersion
 	}
-	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
+	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, OperatorRef: strings.TrimSpace(input.Explicit.OperatorRef), KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
 }
 
 func ValidateOperatorSourceCheckout(root, statusOutput string) error {
@@ -1122,24 +1200,27 @@ type OperatorFixtureFiles struct {
 // OperatorDeploymentConfig is the complete input contract for a live
 // operator-managed application deployment.
 type OperatorDeploymentConfig struct {
-	ClusterName         string
-	Namespace           string
-	OperatorNamespace   string
-	KubeconfigPath      string
-	OperatorChartPath   string
-	DependencyChartPath string
-	OperatorImage       string
-	RelatedImages       map[string]string
-	PostgreSQLImage     string
-	ValkeyImage         string
-	CR                  OperatorCROptions
-	CRManifestPath      string
-	HostIngressCIDR     string
-	MonitoringNamespace string
-	FixtureFiles        OperatorFixtureFiles
-	Exposure            *OperatorExposurePlan
-	DiagnosticsDir      string
-	Provenance          OperatorArtifactProvenance
+	ClusterName            string
+	Namespace              string
+	OperatorNamespace      string
+	KubeconfigPath         string
+	OperatorChartPath      string
+	OperatorChartVersion   string
+	DependencyChartPath    string
+	DependencyChartVersion string
+	OperatorImage          string
+	RelatedImages          map[string]string
+	PostgreSQLImage        string
+	ValkeyImage            string
+	CR                     OperatorCROptions
+	CRManifestPath         string
+	HostIngressCIDR        string
+	MonitoringNamespace    string
+	FixtureFiles           OperatorFixtureFiles
+	Exposure               *OperatorExposurePlan
+	DiagnosticsDir         string
+	Provenance             OperatorArtifactProvenance
+	DemoArtifacts          *DemoArtifactResolutionRecord
 }
 
 // DeployOperatorManagedApplication installs external dependencies and the
@@ -1156,6 +1237,17 @@ func DeployOperatorManagedApplication(ctx context.Context, config OperatorDeploy
 	}
 	if err := ValidateOperatorOperandImageMap(config.RelatedImages); err != nil {
 		return OperatorExposureEvidence{}, err
+	}
+	if config.DemoArtifacts != nil {
+		data, err := BuildDemoArtifactResolutionJSON(*config.DemoArtifacts)
+		if err != nil {
+			return OperatorExposureEvidence{}, fmt.Errorf("build demo artifact provenance: %w", err)
+		}
+		path, err := writeOperatorArtifact(config.DiagnosticsDir, "demo-artifacts.json", data)
+		if err != nil {
+			return OperatorExposureEvidence{}, fmt.Errorf("write demo artifact provenance: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ demo artifact provenance recorded at %s\n", path)
 	}
 	if config.DependencyChartPath == "" || config.OperatorChartPath == "" {
 		return OperatorExposureEvidence{}, errors.New("operator deployment requires dependency and operator chart paths")
@@ -1177,10 +1269,15 @@ func InstallOperatorDependencies(ctx context.Context, config OperatorDeploymentC
 			return fmt.Errorf("set dependency deployment kubeconfig: %w", err)
 		}
 	}
+	chartFixtures := config.FixtureFiles
+	// The real LLM credential is a user-owned Secret referenced by the CR. The
+	// disposable chart may still create its synthetic fixture Secret, but it
+	// must never own or overwrite the primary credential consumed by Kubernaut.
+	chartFixtures.LLMCredentials = ""
 	if err := runOperatorHelm(ctx, BuildOperatorDependencyArgs(OperatorDependencyOptions{
-		Namespace: config.Namespace, ChartPath: config.DependencyChartPath,
+		Namespace: config.Namespace, ChartPath: config.DependencyChartPath, ChartVersion: config.DependencyChartVersion,
 		PostgreSQLImage: config.PostgreSQLImage, ValkeyImage: config.ValkeyImage,
-	}), config.FixtureFiles, writer); err != nil {
+	}), chartFixtures, writer); err != nil {
 		return fmt.Errorf("install operator dependencies: %w", err)
 	}
 	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_SHA")) != "" {
@@ -1258,6 +1355,71 @@ rules:
 	return nil
 }
 
+// EnsureOperatorAgentE2ECapacity applies the FullPipeline qualification
+// capacity that the application Helm chart renders by default. Operator
+// v1alpha2 currently exposes KA session TTL but not
+// maxConcurrentInvestigations, leaving the binary default of 10 and causing
+// parallel E2E investigations to be rejected. This is a temporary,
+// test-owned ConfigMap override until kubernaut-operator#567 adds the CRD
+// contract; it does not change production defaults.
+func EnsureOperatorAgentE2ECapacity(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes client for KA E2E capacity: %w", err)
+	}
+	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(ctx, "kubernaut-agent-config", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("read kubernaut-agent-config for E2E capacity: %w", err)
+	}
+	config := cm.Data["config.yaml"]
+	changed := false
+	lines := strings.Split(config, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "maxConcurrentInvestigations:") {
+			continue
+		}
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		replacement := indent + "maxConcurrentInvestigations: 50"
+		if line != replacement {
+			lines[i] = replacement
+			changed = true
+		}
+	}
+	if !changed && !strings.Contains(config, "maxConcurrentInvestigations:") {
+		const sessionBlock = "  session:\n    ttl: 30m\n"
+		if !strings.Contains(config, sessionBlock) {
+			return fmt.Errorf("kubernaut-agent-config has no recognizable runtime.session block")
+		}
+		config = strings.Replace(config, sessionBlock, "  session:\n    maxConcurrentInvestigations: 50\n    ttl: 30m\n", 1)
+		changed = true
+	} else {
+		config = strings.Join(lines, "\n")
+	}
+	if !changed {
+		_, _ = fmt.Fprintln(writer, "  ✅ Kubernaut Agent E2E investigation capacity already set (50)")
+		return nil
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	cm.Data["config.yaml"] = config
+	if _, err := clientset.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("update kubernaut-agent-config for E2E capacity: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Kubernaut Agent E2E investigation capacity override ready (50)")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace, "rollout", "restart", "deployment/kubernaut-agent")
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restart Kubernaut Agent after E2E capacity override: %w", err)
+	}
+	if err := waitForDeploymentRollout(ctx, namespace, kubeconfigPath, "kubernaut-agent", 180*time.Second, writer); err != nil {
+		return fmt.Errorf("wait for Kubernaut Agent after E2E capacity override: %w", err)
+	}
+	return nil
+}
+
 // BuildOperatorUnauthenticatedValkeySecretManifest returns the disposable
 // qualification-only Valkey credential shape. The operator-managed FMC
 // runtime in the pinned RC26 operand has no Valkey password field; keeping the
@@ -1308,6 +1470,9 @@ kind: Secret
 metadata:
   name: llm-credentials-primary
   namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: setup-demo-infra
+    kubernaut.ai/demo-owner: setup-demo-infra
 type: Opaque
 data:
   api_key: %s
@@ -1336,7 +1501,7 @@ func InstallOperatorBootstrap(ctx context.Context, config OperatorDeploymentConf
 	}
 	operatorNamespace := operatorNamespaceForConfig(config)
 	operatorArgs := BuildOperatorChartArgs(OperatorChartInstallOptions{
-		Namespace: operatorNamespace, ChartPath: config.OperatorChartPath,
+		Namespace: operatorNamespace, ChartPath: config.OperatorChartPath, ChartVersion: config.OperatorChartVersion,
 		OperatorRef: config.OperatorImage, RelatedImages: config.RelatedImages,
 	})
 	if err := runHelmCommand(ctx, operatorArgs, writer); err != nil {
@@ -2086,7 +2251,7 @@ func (e OperatorExposureEvidence) HostnameOrLoopback() string {
 // OperatorChartPathsFromEnvironment resolves only explicit qualification
 // artifacts. CI supplies unpacked chart artifacts; an explicit source root is
 // allowed for development qualification and is rejected when dirty.
-func OperatorChartPathsFromEnvironment(ctx context.Context) (operatorChartPath, dependencyChartPath string, err error) {
+func OperatorChartPathsFromEnvironment(ctx context.Context, requestedRefs ...string) (operatorChartPath, dependencyChartPath string, err error) {
 	operatorChartPath = strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH"))
 	dependencyChartPath = strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH"))
 	if operatorChartPath != "" && dependencyChartPath != "" {
@@ -2108,6 +2273,9 @@ func OperatorChartPathsFromEnvironment(ctx context.Context) (operatorChartPath, 
 		return "", "", fmt.Errorf("resolve operator source SHA: %w", err)
 	}
 	expectedSHA := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_SHA"))
+	if expectedSHA == "" && len(requestedRefs) > 0 {
+		expectedSHA = strings.TrimSpace(requestedRefs[0])
+	}
 	if expectedSHA == "" {
 		expectedSHA = operatorRevision
 	}
@@ -2122,8 +2290,12 @@ func OperatorChartPathsFromEnvironment(ctx context.Context) (operatorChartPath, 
 // profile inputs and may be overridden by the qualification environment.
 func OperatorOperandImagesFromBuiltImages(builtImages map[string]string) (map[string]string, error) {
 	images := map[string]string{
-		"console":          os.Getenv("KUBERNAUT_CONSOLE_IMAGE"),
-		"init-ubi-minimal": "registry.access.redhat.com/ubi10/ubi-minimal@sha256:7dc60d7777e010c50f5e041ff069112b379c3d5eef2823d20871c67cf663f10",
+		"console": os.Getenv("KUBERNAUT_CONSOLE_IMAGE"),
+		// The pinned operator RC marks this helper runAsNonRoot. Its source
+		// UBI digest is malformed and the UBI minimal image defaults to root;
+		// reuse the pinned non-root console UBI image, which contains the same
+		// shell/CA tooling required by build-ca-bundle.
+		"init-ubi-minimal": "quay.io/kubernaut-ai/kubernaut-console@sha256:68cf5aebbca09c079fccda92b4c86f4a019a8f6878cf30e5b6724f4e2e48657b",
 		"oauth2-proxy":     "quay.io/oauth2-proxy/oauth2-proxy@sha256:37c1570c0427e02fc7c947ef2c04e8995b8347b7abc9fcf1dbb4e376a4b221a7",
 	}
 	if images["console"] == "" {
@@ -2155,28 +2327,68 @@ func OperatorPortMappings(plan OperatorExposurePlan) []KindPortMapping {
 	return mappings
 }
 
-func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOptions) (operatorChart, dependencyChart, operatorImage string, version string, err error) {
+// DemoExposureComponents omits the Gateway adapter when Console-first mode
+// intentionally disables Gateway. Waiting for a disabled service would make a
+// valid user-owned CR look unready (BR-PLATFORM-014).
+func DemoExposureComponents(autonomous bool) []string {
+	components := []string{"datastorage", "apifrontend", "kubernautagent"}
+	if autonomous {
+		components = append([]string{"gateway"}, components...)
+	}
+	return components
+}
+
+func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOptions) (operatorChart, dependencyChart, operatorImage, applicationVersion, operatorChartVersion, dependencyChartVersion string, err error) {
 	resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: os.Getenv("KUBERNAUT_RELEASE_LINE"), Explicit: options.OperatorArtifacts})
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", "", err
 	}
 	operatorImage = resolved.OperatorImage
-	if options.OperatorArtifacts.OperatorDigest != "" && !strings.Contains(operatorImage, "@sha256:") {
-		operatorImage += "@" + options.OperatorArtifacts.OperatorDigest
+	if options.OperatorArtifacts.OperatorImage == "" {
+		if explicit := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")); explicit != "" {
+			operatorImage = explicit
+		}
 	}
-	if explicit := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")); explicit != "" {
-		operatorImage = explicit
+	if options.OperatorArtifacts.OperatorChart != "" {
+		operatorChart = resolved.OperatorChart
+		dependencyChart = demoDependencyChartOCI
+		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.OperatorVersion, nil
+	}
+	if explicitChart := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")); explicitChart != "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH")) == "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) == "" {
+		return explicitChart, demoDependencyChartOCI, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.OperatorVersion, nil
 	}
 	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != "" || strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" {
-		operatorChart, dependencyChart, err = OperatorChartPathsFromEnvironment(ctx)
-		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, err
+		if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && options.OperatorArtifacts.OperatorImage == "" {
+			return "", "", "", "", "", "", errors.New("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE; source is never built implicitly")
+		}
+		operatorChart, dependencyChart, err = OperatorChartPathsFromEnvironment(ctx, resolved.OperatorRef)
+		if err != nil {
+			return "", "", "", "", "", "", err
+		}
+		operatorChartVersion = chartVersionOrDefault(operatorChart, resolved.OperatorVersion)
+		dependencyChartVersion = chartVersionOrDefault(dependencyChart, resolved.OperatorVersion)
+		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, operatorChartVersion, dependencyChartVersion, nil
 	}
 	operatorChart = resolved.OperatorChart
-	if options.OperatorArtifacts.OperatorChartDigest != "" {
-		operatorChart += "@" + options.OperatorArtifacts.OperatorChartDigest
+	dependencyChart = demoDependencyChartOCI
+	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.OperatorVersion, nil
+}
+
+func chartVersionOrDefault(chartPath, fallback string) string {
+	if !filepath.IsAbs(chartPath) && !strings.HasPrefix(chartPath, ".") {
+		return fallback
 	}
-	dependencyChart = "oci://quay.io/kubernaut-ai/charts/kubernaut-dev-bootstrap"
-	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, nil
+	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
+	if err != nil {
+		return fallback
+	}
+	var chart struct {
+		Version string `yaml:"version"`
+	}
+	if yaml.Unmarshal(data, &chart) != nil || strings.TrimSpace(chart.Version) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(chart.Version)
 }
 
 func operatorOperandImagesForDemo(options DemoHelmOptions, version string) (map[string]string, error) {

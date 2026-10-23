@@ -63,7 +63,7 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 		)
 
 		BeforeEach(func() {
-			afBaseURL = envOrDefault("AF_FP_BASE_URL", "https://localhost:30443")
+			afBaseURL = envOrDefault("AF_FP_BASE_URL", "https://localhost:18443")
 			afDexURL = envOrDefault("AF_FP_DEX_URL", "https://localhost:5556/dex")
 			afClientID = envOrDefault("AF_FP_CLIENT_ID", "kubernaut-apifrontend")
 			afClientSec = envOrDefault("AF_FP_CLIENT_SECRET", "e2e-client-secret")

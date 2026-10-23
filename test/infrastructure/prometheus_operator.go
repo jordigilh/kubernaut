@@ -43,6 +43,7 @@ type managedPrometheusOptions struct {
 	prometheusName     string
 	statefulSetName    string
 	thanosEnabled      bool
+	tlsEnabled         bool
 }
 
 // InstallPrometheusOperator installs the CRDs and controller used by the fleet
@@ -76,6 +77,20 @@ func DeployManagedPrometheusWithThanosSidecar(ctx context.Context, namespace, ku
 	}, writer)
 }
 
+// DeployManagedPrometheusTLS is the demo-only HTTPS variant. The operator's
+// monitoring client must never be pointed at a plaintext endpoint when the
+// demo CR selects an HTTPS monitoring URL.
+func DeployManagedPrometheusTLS(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
+	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     managedPrometheusName,
+		statefulSetName:    managedPrometheusStatefulSet,
+		thanosEnabled:      true,
+		tlsEnabled:         true,
+	}, writer)
+}
+
 func DeployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
 	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
 		clusterLabel:       clusterLabel,
@@ -83,6 +98,16 @@ func DeployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath, clu
 		prometheusName:     localPrometheusName,
 		statefulSetName:    localPrometheusStatefulSet,
 		thanosEnabled:      false,
+	}, writer)
+}
+
+func DeployLocalManagedPrometheusTLS(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
+	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     localPrometheusName,
+		statefulSetName:    localPrometheusStatefulSet,
+		tlsEnabled:         true,
 	}, writer)
 }
 
@@ -194,6 +219,31 @@ subsets:
 	if options.thanosEnabled {
 		thanosConfig = fmt.Sprintf("  thanos:\n    image: %s\n", ThanosImage)
 	}
+	prometheusWebConfig := ""
+	prometheusServicePortName := "http"
+	alertManagerTLSConfig := ""
+	if options.tlsEnabled {
+		prometheusServicePortName = "https"
+		prometheusWebConfig = `  web:
+    tlsConfig:
+      cert:
+        secret:
+          name: monitoring-tls
+          key: tls.crt
+      keySecret:
+        name: monitoring-tls
+        key: tls.key
+`
+		alertManagerTLSConfig = `
+        scheme: https
+        tlsConfig:
+          ca:
+            configMap:
+              name: monitoring-ca
+              key: ca.crt
+          serverName: localhost
+`
+	}
 
 	return fmt.Sprintf(`---
 apiVersion: v1
@@ -269,7 +319,7 @@ spec:
   selector:
     app: prometheus
   ports:
-  - name: http
+  - name: %[10]s
     port: 9090
     targetPort: 9090
     nodePort: %[3]d
@@ -335,6 +385,7 @@ metadata:
   namespace: %[1]s
 spec:
   image: %[6]s
+%[12]s
   replicas: 1
   serviceAccountName: prometheus
   podMetadata:
@@ -360,8 +411,9 @@ spec:
     key: additional-scrape-configs.yaml
   alerting:
     alertmanagers:
-    - name: %[7]s
-      namespace: %[1]s
-      port: %[9]s
-%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName), nil
+      - name: %[7]s
+        namespace: %[1]s
+        port: %[9]s
+%[11]s
+%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, prometheusServicePortName, alertManagerTLSConfig, prometheusWebConfig), nil
 }

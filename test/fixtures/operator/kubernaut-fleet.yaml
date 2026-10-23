@@ -85,4 +85,4 @@ spec:
         - kube-mcp-server-audience
   workflowExecution:
     fleet:
-      oauth2CredentialsSecretRef: fleet-oauth2-creds
+      oauth2CredentialsSecretRef: fleet-workflowexecution-oauth2-creds

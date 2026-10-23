@@ -67,3 +67,55 @@ func MergeFleetGatewayVersionOverrides(file, explicit FleetGatewayVersionOverrid
 	}
 	return merged
 }
+
+// DemoDependencyOverrides is the user-facing release/profile file for both
+// external Fleet dependencies and the prebuilt operator/application artifacts.
+// It deliberately has no source-build default; an explicit source checkout is
+// handled only through KUBERNAUT_OPERATOR_ROOT with dirty-tree validation.
+type DemoDependencyOverrides struct {
+	EnvoyGatewayVersion string                   `yaml:"envoyGatewayVersion,omitempty"`
+	AgentRouterVersion  string                   `yaml:"agentRouterVersion,omitempty"`
+	Operator            DemoArtifactOverrideYAML `yaml:"operator,omitempty"`
+	Kubernaut           DemoArtifactOverrideYAML `yaml:"kubernaut,omitempty"`
+}
+
+type DemoArtifactOverrideYAML struct {
+	Version     string `yaml:"version,omitempty"`
+	Image       string `yaml:"image,omitempty"`
+	ImageDigest string `yaml:"imageDigest,omitempty"`
+	Chart       string `yaml:"chart,omitempty"`
+	ChartDigest string `yaml:"chartDigest,omitempty"`
+	Ref         string `yaml:"ref,omitempty"`
+}
+
+func LoadDemoDependencyOverrides(path string) (DemoDependencyOverrides, error) {
+	if strings.TrimSpace(path) == "" {
+		return DemoDependencyOverrides{}, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return DemoDependencyOverrides{}, fmt.Errorf("read dependency overrides file %q: %w", path, err)
+	}
+	var overrides DemoDependencyOverrides
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&overrides); err != nil {
+		if errors.Is(err, io.EOF) {
+			return DemoDependencyOverrides{}, nil
+		}
+		return DemoDependencyOverrides{}, fmt.Errorf("parse dependency overrides: %w", err)
+	}
+	return overrides, nil
+}
+
+func (o DemoDependencyOverrides) FleetGatewayVersions() FleetGatewayVersionOverrides {
+	return FleetGatewayVersionOverrides{EnvoyGatewayVersion: o.EnvoyGatewayVersion, AgentRouterVersion: o.AgentRouterVersion}
+}
+
+func (o DemoDependencyOverrides) ArtifactOverrides() DemoArtifactOverrides {
+	return DemoArtifactOverrides{
+		OperatorVersion: o.Operator.Version, OperatorImage: o.Operator.Image, OperatorDigest: o.Operator.ImageDigest,
+		OperatorChart: o.Operator.Chart, OperatorChartDigest: o.Operator.ChartDigest, OperatorRef: o.Operator.Ref,
+		KubernautVersion: o.Kubernaut.Version, KubernautImage: o.Kubernaut.Image, KubernautDigest: o.Kubernaut.ImageDigest,
+	}
+}

@@ -442,9 +442,12 @@ func (t *monitoringTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response
 
 // NewTLSAwareTransport creates an HTTP round tripper that trusts the
 // inter-service CA. Useful for wrapping with additional transports (e.g.,
-// ServiceAccountTransport).
+// ServiceAccountTransport). It leaves response-header timing to the caller's
+// http.Client timeout so long-running A2A/MCP turns are not cut off by a
+// hidden 30-second transport deadline. Callers that need a transport-level
+// budget can use NewTLSAwareTransportWithResponseHeaderTimeout explicitly.
 func NewTLSAwareTransport(kubeconfigPath string) (http.RoundTripper, error) {
-	return NewTLSAwareTransportWithResponseHeaderTimeout(kubeconfigPath, 30*time.Second)
+	return NewTLSAwareTransportWithResponseHeaderTimeout(kubeconfigPath, 0)
 }
 
 // NewTLSAwareTransportWithResponseHeaderTimeout creates a CA-aware transport

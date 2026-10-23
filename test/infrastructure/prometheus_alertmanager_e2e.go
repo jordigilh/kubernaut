@@ -639,7 +639,11 @@ func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string,
 	monitoringTLSVolume := ""
 	monitoringProbeScheme := ""
 	gatewayWebhookURL := fmt.Sprintf("http://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
-	if len(tlsEnabled) > 0 && tlsEnabled[0] {
+	useTLS := true
+	if len(tlsEnabled) > 0 {
+		useTLS = tlsEnabled[0]
+	}
+	if useTLS {
 		monitoringTLSArgs = "\n        - \"--web.config.file=/etc/monitoring-tls/web-config.yml\""
 		monitoringTLSMount = `
         - name: monitoring-tls
@@ -651,8 +655,9 @@ func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string,
           secretName: monitoring-tls`
 		monitoringProbeScheme = "\n             scheme: HTTPS"
 		// Operator-managed Gateway serves the application webhook on its
-		// HTTPS Service port. The legacy application Helm lane used HTTP:8080.
-		gatewayWebhookURL = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8443/api/v1/signals/prometheus", gatewayNamespace)
+		// HTTPS Service port. The operator-backed Gateway keeps the service
+		// port at 8080 while changing the transport to TLS.
+		gatewayWebhookURL = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
 	}
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
 	webhookAuthYaml := `

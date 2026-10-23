@@ -641,7 +641,7 @@ func addFleetWorkloadNamespaces(namespaces map[string]string) {
 // deliberately: vertex_ai credential material is a JSON blob that may
 // contain characters (quotes, newlines) that don't round-trip safely
 // through a YAML block scalar. Pure function (no exec/cluster access) for
-// unit testing, mirroring buildDemoHelmSecretsManifest.
+// unit testing without cluster access.
 func buildLLMCredentialsSecretManifest(namespace string, credentials []byte) string {
 	encoded := base64.StdEncoding.EncodeToString(credentials)
 	return fmt.Sprintf(`apiVersion: v1
@@ -693,6 +693,9 @@ func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPa
 // GatewayType/SpokeWorkers/LLMCredentialsFile as three more positional
 // params would push the function to 8.
 type FleetCoreDemoOptions struct {
+	// Autonomous controls whether the demo's Gateway is enabled. It also
+	// controls whether a host-access adapter is allocated for Gateway.
+	Autonomous bool
 	// GatewayType selects registry.GatewayKuadrant or registry.GatewayEAIGW;
 	// empty defaults to Kuadrant. See provisionFleetCoreInfra's doc comment
 	// for what differs between the two.
@@ -772,7 +775,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := kubernautSystem
-	operatorExposure, exposureErr := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", []string{"gateway", "datastorage", "apifrontend", "kubernautagent"})
+	operatorExposure, exposureErr := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", DemoExposureComponents(opts.Autonomous))
 	if exposureErr != nil {
 		return nil, "", fmt.Errorf("allocate operator exposure: %w", exposureErr)
 	}
@@ -852,6 +855,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create hub monitoring namespace: %w", err)
 	}
+	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("failed to prepare hub monitoring TLS: %w", err)
+	}
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
@@ -901,7 +907,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "\n📊 Installing fleet-wide monitoring (Prometheus+Thanos per cluster, hub AlertManager)...")
-	if err := DeployAlertManager(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
+	if err := DeployAlertManagerTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("alertmanager install failed: %w", err)
 	}
 
@@ -930,7 +936,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}
 
 	hubAlertManagerTarget := fmt.Sprintf("alertmanager-svc.%s.svc.cluster.local:9093", monitoringNamespace)
-	if err := DeployManagedPrometheusWithThanosSidecar(ctx, monitoringNamespace, kubeconfigPath, "hub", hubAlertManagerTarget, writer); err != nil {
+	if err := DeployManagedPrometheusTLS(ctx, monitoringNamespace, kubeconfigPath, "hub", hubAlertManagerTarget, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("hub managed prometheus+thanos install failed: %w", err)
 	}
 
@@ -938,7 +944,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to resolve hub AlertManager bridge address for spoke: %w", err)
 	}
-	if err := DeployManagedPrometheusWithThanosSidecar(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", spokeAlertManagerTarget, writer); err != nil {
+	if err := DeployManagedPrometheusTLS(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", spokeAlertManagerTarget, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("spoke managed prometheus+thanos install failed: %w", err)
 	}
 
@@ -1136,6 +1142,12 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// with the local demo. Ginkgo callers retain their lightweight path.
 	isDemo := keycloakNamespace == idpNamespace
 	if isDemo {
+		// Gateway reconciliation consumes mcp-gateway-tls immediately. Create
+		// the operator CA and listener Secret before SetupOIDCInfrastructure or
+		// any Gateway API object is applied (BR-PLATFORM-014, DD-TEST-015).
+		if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return nil, "", fmt.Errorf("operator Fleet TLS preflight failed: %w", err)
+		}
 		if err := SetupOIDCInfrastructure(ctx, kubeconfigPath, writer); err != nil {
 			return nil, "", err
 		}
@@ -1226,6 +1238,11 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
 	}
+	if isDemo {
+		if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
+			return nil, "", fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+		}
+	}
 
 	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
 	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
@@ -1253,7 +1270,8 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// so this ADDITIONAL grant is fleet-suite-only and strictly additive
 	// (batch/jobs create/delete, nothing else).
 	_, _ = fmt.Fprintln(writer, "🔐 Granting batch/jobs write access to the exchanged fleet identity (Issue #1542, fleet-only)...")
-	if err := applyExchangedIdentityWriteRBAC(ctx, remoteKubeconfigPath, writer); err != nil {
+	writeClientID := "kubernaut-fleet-write"
+	if err := applyExchangedIdentityWriteRBAC(ctx, remoteKubeconfigPath, writeClientID, writer); err != nil {
 		return nil, "", fmt.Errorf("failed to grant exchanged identity write RBAC on remote cluster: %w", err)
 	}
 
@@ -1336,7 +1354,8 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 	if opts.HubClusterID != "" {
 		_, _ = fmt.Fprintln(writer, "  🔐 Granting hub workflow Job write access to the exchanged identity...")
-		if err := applyExchangedIdentityWriteRBAC(ctx, kubeconfigPath, writer); err != nil {
+		writeClientID := "kubernaut-fleet-write"
+		if err := applyExchangedIdentityWriteRBAC(ctx, kubeconfigPath, writeClientID, writer); err != nil {
 			return nil, "", fmt.Errorf("hub exchanged-identity Job write RBAC creation failed: %w", err)
 		}
 	}
@@ -1387,7 +1406,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// resulting Pod gets stuck in ContainerCreating (missing volume
 	// source).
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating shared fleet OAuth2 credentials Secret...")
-	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer, true); err != nil {
 		return nil, "", err
 	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1407,7 +1426,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		OAuth2TokenURL:            keycloakFleetTokenURLFor(keycloakNamespace, namespace),
 		OAuth2CredentialsSecret:   fleetOAuth2SecretName,
 		OAuth2Scopes:              fleetScopes,
-		WEOAuth2CredentialsSecret: fleetOAuth2SecretName,
+		WEOAuth2CredentialsSecret: fleetOAuth2WriteSecretName,
 		SignalProcessingNamespace: mcpGatewayNamespace,
 		// Issue #2298: MCPServerRegistrations are created in the effective MCP
 		// Gateway namespace
@@ -1431,6 +1450,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 // applyExchangedIdentityRBAC already binds that one exchanged identity to
 // "view" for every caller.
 const fleetOAuth2SecretName = "fleet-oauth2-creds"
+const fleetOAuth2WriteSecretName = "fleet-workflowexecution-oauth2-creds"
 
 // fleetKeycloakTokenURL is the Keycloak client_credentials token endpoint
 // every fleet-aware service's fleet.oauth2.tokenURL points at (in-cluster
@@ -1494,25 +1514,31 @@ spec:
 // equivalents in pkg/signalprocessing/config, pkg/workflowexecution/config)
 // expect "client-id" and "client-secret" keys -- see the
 // buildFleetReaderFactory-style call sites in cmd/*/main.go.
-func deployFleetOAuth2Secret(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	manifest := fmt.Sprintf(`---
-apiVersion: v1
+func deployFleetOAuth2Secret(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer, separateWriteCredential bool) error {
+	manifest := buildFleetOAuth2SecretManifest(namespace, fleetOAuth2SecretName, "kubernaut-fleet-read", "e2e-fleet-secret")
+	if separateWriteCredential {
+		manifest += "---\n" + buildFleetOAuth2SecretManifest(namespace, fleetOAuth2WriteSecretName, "kubernaut-fleet-write", "e2e-fleet-write-secret")
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("fleet OAuth2 secret creation failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Fleet OAuth2 read/write credential Secrets created")
+	return nil
+}
+
+func buildFleetOAuth2SecretManifest(namespace, secretName, clientID, clientSecret string) string {
+	return fmt.Sprintf(`apiVersion: v1
 kind: Secret
 metadata:
-  name: %[2]s
-  namespace: %[1]s
+  name: %s
+  namespace: %s
   labels:
     component: fleet
 type: Opaque
 stringData:
-  client-id: "kubernaut-fleet-read"
-  client-secret: "e2e-fleet-secret"
-`, namespace, fleetOAuth2SecretName)
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
-		return fmt.Errorf("fleet OAuth2 secret creation failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "    ✅ Fleet OAuth2 credentials Secret created")
-	return nil
+  client-id: %q
+  client-secret: %q
+`, secretName, namespace, clientID, clientSecret)
 }
 
 // DeployFleetCoreInfra deploys the fleet-core infrastructure in the Kind

@@ -32,6 +32,32 @@
       ]
     },
     {
+      "clientId": "kubernaut-fleet-write",
+      "name": "Kubernaut Fleet WorkflowExecution Write (demo)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "e2e-fleet-write-secret",
+      "attributes": {
+        "access.token.lifespan": "604800",
+        "client.session.max.lifespan": "604800"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "kube-mcp-server-audience"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    },
+    {
       "clientId": "kube-mcp-server",
       "name": "kube-mcp-server (E2E, token-exchange requester)",
       "enabled": true,

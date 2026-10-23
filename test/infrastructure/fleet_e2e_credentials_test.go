@@ -183,6 +183,18 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 	})
 })
 
+var _ = Describe("Fleet OAuth2 credential ownership", func() {
+	It("UT-2492-FLEET-OAUTH-001 [BR-FLEET-054]: keeps read and WorkflowExecution write Secret contracts separate", func() {
+		read := buildFleetOAuth2SecretManifest("kubernaut-system", fleetOAuth2SecretName, "kubernaut-fleet-read", "e2e-fleet-secret")
+		write := buildFleetOAuth2SecretManifest("kubernaut-system", fleetOAuth2WriteSecretName, "kubernaut-fleet-write", "e2e-fleet-write-secret")
+		Expect(read).To(ContainSubstring("name: fleet-oauth2-creds"))
+		Expect(read).To(ContainSubstring("client-id: \"kubernaut-fleet-read\""))
+		Expect(write).To(ContainSubstring("name: fleet-workflowexecution-oauth2-creds"))
+		Expect(write).To(ContainSubstring("client-id: \"kubernaut-fleet-write\""))
+		Expect(write).NotTo(Equal(read))
+	})
+})
+
 var _ = Describe("FullPipeline event exporter resilience", func() {
 	It("UT-INFRA-FP-EVENT-001: keeps Warning events fresh for the full lifecycle budget", func() {
 		manifest := buildEventExporterManifest("kubernaut-system", "test-token")

@@ -163,7 +163,7 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 	}
 	finishAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness", gatewayReadyStarted)
 	oauthSecretStarted := startAFInfraSetupStep(writer, "deploy Fleet OAuth2 credentials")
-	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer, false); err != nil {
 		finishAFInfraSetupStep(writer, "deploy Fleet OAuth2 credentials", oauthSecretStarted)
 		return nil, fmt.Errorf("deploy shared AF/KA Fleet OAuth2 secret: %w", err)
 	}
@@ -558,9 +558,8 @@ subjects:
 	return nil
 }
 
-// applyExchangedIdentityWriteRBAC grants the same exchanged identity
-// (keycloak:service-account-kubernaut-fleet-read, see applyExchangedIdentityRBAC)
-// an ADDITIONAL, strictly minimal write grant on batch/jobs.
+// applyExchangedIdentityWriteRBAC grants the dedicated WorkflowExecution
+// exchanged identity an additional, strictly minimal write grant on batch/jobs.
 //
 // Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) require
 // WE's Job executor to create a K8s Job on the remote cluster when
@@ -580,8 +579,8 @@ subjects:
 // It is wired into the full-pipeline fleet suite and the fleet demo; the
 // FMC-only E2E lane (test/e2e/fleetmetadatacache) remains read-only, matching
 // its BR-FLEET-0xx read-path scope.
-func applyExchangedIdentityWriteRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	rbacManifest := `---
+func applyExchangedIdentityWriteRBAC(ctx context.Context, kubeconfigPath, clientID string, writer io.Writer) error {
+	rbacManifest := fmt.Sprintf(`---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -607,12 +606,12 @@ roleRef:
   name: fleet-exchanged-identity-job-write
 subjects:
 - kind: User
-  name: "keycloak:service-account-kubernaut-fleet-read"
+  name: "keycloak:service-account-%[1]s"
   apiGroup: rbac.authorization.k8s.io
-`
+`, clientID)
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (batch/jobs write, Issue #1542)")
+	_, _ = fmt.Fprintf(writer, "  ✅ RBAC created for keycloak:service-account-%s (batch/jobs write, Issue #1542)\n", clientID)
 	return nil
 }

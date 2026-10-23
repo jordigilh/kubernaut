@@ -252,6 +252,28 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(manifest).NotTo(ContainSubstring("image: " + ThanosImage))
 		Expect(manifest).NotTo(ContainSubstring("KAInteractiveFleetBridgeGrounding"))
 	})
+
+	It("UT-2492-MONITORING-001 [BR-PLATFORM-014]: renders CA-verified HTTPS for Prometheus and AlertManager", func() {
+		manifest, err := buildManagedPrometheusManifestWithOptionsChecked("monitoring", managedPrometheusOptions{
+			clusterLabel: "hub", alertManagerTarget: "alertmanager-svc.monitoring.svc.cluster.local:9093",
+			prometheusName: localPrometheusName, statefulSetName: localPrometheusStatefulSet, tlsEnabled: true,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(manifest).To(ContainSubstring("name: monitoring-tls"))
+		Expect(manifest).To(ContainSubstring("name: monitoring-ca"))
+		Expect(manifest).To(ContainSubstring("scheme: https"))
+		Expect(manifest).To(ContainSubstring("serverName: localhost"))
+		Expect(manifest).NotTo(ContainSubstring("insecureSkipVerify: true"), "the monitoring endpoint contract must remain CA-verified")
+		decoder := utilyaml.NewYAMLOrJSONDecoder(strings.NewReader(manifest), 4096)
+		for {
+			var document map[string]interface{}
+			err := decoder.Decode(&document)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			Expect(err).NotTo(HaveOccurred(), "TLS monitoring manifest must be valid multi-document YAML")
+		}
+	})
 })
 
 func findManifestDocument(manifest, kind, name string) unstructured.Unstructured {
