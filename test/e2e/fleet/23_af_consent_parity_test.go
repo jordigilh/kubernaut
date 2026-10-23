@@ -104,6 +104,11 @@ func fleetSendTurnWithBody(body string, timeout time.Duration) afA2ATaskResult {
 // checkRRScope runs before RR creation; each attempt therefore uses a fresh
 // session rather than resuming a session that has no RR attached.
 func fleetSendInitialTurnUntilRR(targetNS, idPrefix, text string) (afA2ATaskResult, string) {
+	// The first turn is deliberately retryable: FMC may not have observed the
+	// freshly created managed namespace yet. Keep each failed scope attempt
+	// shorter than fmcSyncTimeout so Eventually can issue a fresh A2A session;
+	// subsequent consent turns retain their longer 180s budget.
+	const initialTurnTimeout = 30 * time.Second
 	var task afA2ATaskResult
 	var contextID string
 	attempt := 0
@@ -113,7 +118,7 @@ func fleetSendInitialTurnUntilRR(targetNS, idPrefix, text string) (afA2ATaskResu
 		turnID := fmt.Sprintf("%s-%d-%s", idPrefix, attempt, uuid.NewString()[:8])
 		contextID = "ctx-" + turnID
 
-		resp, err := afA2AInvokeWithTimeout(afA2ATasksSend(turnID, text), 180*time.Second)
+		resp, err := afA2AInvokeWithTimeout(afA2ATasksSend(turnID, text), initialTurnTimeout)
 		if err != nil {
 			g.Expect(err).NotTo(HaveOccurred())
 			return
@@ -175,7 +180,8 @@ func fleetDeployConsentTarget(targetNS string) {
 	// triager with the suite's real PrometheusRule using a uniquely labeled
 	// resource metric; an Alertmanager-only injection is invisible to AF's
 	// Prometheus-backed triager.
-	const prometheusURL = "http://localhost:9190"
+	prometheusURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.PrometheusHostPort)
+	monitoringCAPath := infrastructure.MonitoringCAPath(kubeconfigPath)
 	metric := infrastructure.TestMetric{
 		Name: "memory_eater_grounding_signal",
 		Labels: map[string]string{
@@ -186,11 +192,11 @@ func fleetDeployConsentTarget(targetNS string) {
 		},
 		Value: 1,
 	}
-	Expect(infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{metric})).To(Succeed())
-	Expect(infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, "MemoryEaterResourcePressure", infrastructure.RuleStateFiring, 60*time.Second)).To(Succeed())
+	Expect(infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{metric}, monitoringCAPath)).To(Succeed())
+	Expect(infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, "MemoryEaterResourcePressure", infrastructure.RuleStateFiring, 60*time.Second, monitoringCAPath)).To(Succeed())
 	DeferCleanup(func() {
 		metric.Value = 0
-		Expect(infrastructure.InjectMetrics(context.Background(), prometheusURL, []infrastructure.TestMetric{metric})).To(Succeed())
+		Expect(infrastructure.InjectMetrics(context.Background(), prometheusURL, []infrastructure.TestMetric{metric}, monitoringCAPath)).To(Succeed())
 	})
 }
 

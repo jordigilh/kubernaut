@@ -38,12 +38,13 @@ import (
 // remote-critical alert labels; the resulting RR must be hub-scoped and warning.
 var _ = Describe("E2E-FLEET-2394-001 [BR-FLEET-054]: AF hub Gateway severity attribution", Label("fleet", "af", "gateway", "severity", "issue-2394"), func() {
 	const (
-		prometheusURL = "http://localhost:9190"
-		targetName    = "af-hub-triage-target"
-		targetNS      = "fleet-af-hub-triage"
+		targetName = "af-hub-triage-target"
+		targetNS   = "fleet-af-hub-triage"
 	)
 
 	It("should select the warning hub alert over a critical remote-cluster collision", NodeTimeout(8*time.Minute), func(_ SpecContext) {
+		prometheusURL := fleetPrometheusURL()
+		monitoringCAPath := fleetMonitoringCAPath()
 		By("Verifying AF is reachable")
 		healthResp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		Expect(err).NotTo(HaveOccurred())
@@ -58,11 +59,11 @@ var _ = Describe("E2E-FLEET-2394-001 [BR-FLEET-054]: AF hub Gateway severity att
 		promCtx := context.Background()
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(promCtx, prometheusURL,
-				"AFHubClusterTriage2394", infrastructure.RuleStateFiring, 5*time.Second)
+				"AFHubClusterTriage2394", infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed())
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(promCtx, prometheusURL,
-				"AFRemoteClusterTriageCollision2394", infrastructure.RuleStateFiring, 5*time.Second)
+				"AFRemoteClusterTriageCollision2394", infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 		By("Creating the managed target only on the hub cluster")

@@ -53,11 +53,12 @@ import (
 // AU-3 (audit record content)
 var _ = Describe("E2E-FLEET-022 [AC-4, SI-10, AU-3]: AF-only organic alert never reaches Gateway", Label("fleet", "af"), func() {
 	const (
-		prometheusURL = "http://localhost:9190"
-		ruleName      = "FleetOrganicAFOnlyAlert"
+		ruleName = "FleetOrganicAFOnlyAlert"
 	)
 
 	It("should be readable via AF's real Prometheus client while producing zero RemediationRequests", func() {
+		prometheusURL := fleetPrometheusURL()
+		monitoringCAPath := fleetMonitoringCAPath()
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -69,7 +70,7 @@ var _ = Describe("E2E-FLEET-022 [AC-4, SI-10, AU-3]: AF-only organic alert never
 			"same /api/v1/rules backend AF's severity-triage grounding and list_alerts both read)")
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, ruleName,
-				infrastructure.RuleStateFiring, 5*time.Second)
+				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "FleetOrganicAFOnlyAlert must be firing")
 
 		By("Verifying NO RemediationRequest was ever created for this alert (route_skip_gateway must actually keep it out of Gateway)")

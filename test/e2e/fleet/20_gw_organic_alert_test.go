@@ -63,10 +63,11 @@ import (
 var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward organically creates a RemediationRequest", Label("fleet"), func() {
 	It("should create a RemediationRequest from a Prometheus-rule-fired, AlertManager-forwarded alert with no test-initiated Gateway POST", func() {
 		const (
-			prometheusURL = "http://localhost:9190"
-			targetName    = "fleet-organic-gw-target"
-			ruleName      = "FleetOrganicGatewayAlert"
+			targetName = "fleet-organic-gw-target"
+			ruleName   = "FleetOrganicGatewayAlert"
 		)
+		prometheusURL := fleetPrometheusURL()
+		monitoringCAPath := fleetMonitoringCAPath()
 		targetNS := fleetWorkloadNamespace("fleet-organic-gateway")
 
 		By("Creating the real target Deployment BEFORE the alert can fire (Gateway owner-resolution requires it to exist)")
@@ -127,12 +128,12 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 				Value:     1,
 				Timestamp: time.Now(),
 			},
-		})).To(Succeed(), "failed to inject fleet_organic_gw_signal metric")
+		}, monitoringCAPath)).To(Succeed(), "failed to inject fleet_organic_gw_signal metric")
 
 		By("Waiting for FleetOrganicGatewayAlert to transition to firing")
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, ruleName,
-				infrastructure.RuleStateFiring, 5*time.Second)
+				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "FleetOrganicGatewayAlert must be firing")
 
 		By("Verifying a RemediationRequest appears from AlertManager's OWN webhook forward -- no test-initiated Gateway POST was made")

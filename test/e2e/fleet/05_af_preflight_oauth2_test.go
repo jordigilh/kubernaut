@@ -49,7 +49,9 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 		By("Verifying MCP gateway is reachable via NodePort")
 		mcpCtx := context.Background()
-		authClient := &http.Client{Transport: testauth.NewStaticTokenTransport(token)}
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).NotTo(HaveOccurred())
+		authClient := &http.Client{Transport: testauth.NewStaticTokenTransportWithBase(token, tlsTransport)}
 		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "MCP gateway must be reachable via NodePort")
 		defer mcpClient.Close()
