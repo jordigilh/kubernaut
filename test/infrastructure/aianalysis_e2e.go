@@ -56,9 +56,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return err
 	}
 
-	tarFiles, err := prepareAIAnalysisImages(builtImages, writer)
+	tarFiles, tarDir, err := prepareAIAnalysisImages(builtImages, writer)
 	if err != nil {
 		return err
+	}
+	if tarDir != "" {
+		defer func() {
+			if removeErr := os.RemoveAll(tarDir); removeErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove image archive directory %s: %v\n", tarDir, removeErr)
+			}
+		}()
 	}
 
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
@@ -666,13 +673,19 @@ func buildAIAnalysisImages(ctx context.Context, writer io.Writer) (map[string]st
 }
 
 //nolint:contextcheck // disk-space/export helpers intentionally use their own bounded subprocess contexts.
-func prepareAIAnalysisImages(builtImages map[string]string, writer io.Writer) (map[string]string, error) {
-	var err error
+func prepareAIAnalysisImages(builtImages map[string]string, writer io.Writer) (tarFiles map[string]string, tarDir string, err error) {
+	defer func() {
+		if err != nil && tarDir != "" {
+			if removeErr := os.RemoveAll(tarDir); removeErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove image archive directory %s after preparation failure: %v\n", tarDir, removeErr)
+			}
+		}
+	}()
+
 	// PHASE 2-3: Export images to .tar and aggressive Podman cleanup
 	// ═══════════════════════════════════════════════════════════════════════
 	// This frees ~5-9 GB of disk space by removing Podman cache and intermediate layers
 	// FIX: Skip export/prune in CI/CD mode (images pushed to registry, not stored locally)
-	var tarFiles map[string]string
 	if ShouldSkipImageExportAndPrune() {
 		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 2-3: Skipping image export/prune (CI/CD registry mode)")
 		_, _ = fmt.Fprintln(writer, "   Images already pushed to GHCR and will be pulled directly by Kind")
@@ -680,18 +693,14 @@ func prepareAIAnalysisImages(builtImages map[string]string, writer io.Writer) (m
 	} else {
 		// Local mode: export and prune to save disk space
 		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2-3: Exporting images to .tar and pruning Podman cache...")
-		tarDir, tempErr := os.MkdirTemp("", "kubernaut-aianalysis-e2e-")
+		var tempErr error
+		tarDir, tempErr = os.MkdirTemp("", "kubernaut-aianalysis-e2e-")
 		if tempErr != nil {
-			return nil, fmt.Errorf("failed to create image archive directory: %w", tempErr)
+			return nil, "", fmt.Errorf("failed to create image archive directory: %w", tempErr)
 		}
-		defer func() {
-			if removeErr := os.RemoveAll(tarDir); removeErr != nil {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove image archive directory %s: %v\n", tarDir, removeErr)
-			}
-		}()
 		tarFiles, err = ExportImagesAndPrune(builtImages, tarDir, writer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to export images and prune: %w", err)
+			return nil, tarDir, fmt.Errorf("failed to export images and prune: %w", err)
 		}
 	}
 
@@ -700,14 +709,14 @@ func prepareAIAnalysisImages(builtImages map[string]string, writer io.Writer) (m
 	projectRoot := getProjectRoot()
 	coverdataPath := filepath.Join(projectRoot, "coverdata")
 	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-		return nil, fmt.Errorf("failed to create coverdata directory: %w", err)
+		return nil, tarDir, fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	return tarFiles, nil
+	return tarFiles, tarDir, nil
 }
 
 func seedAIAnalysisWorkflows(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) (map[string]string, error) {
