@@ -985,127 +985,6 @@ func BuildOperatorDiagnostics(input OperatorDiagnosticInput) string {
 	return fmt.Sprintf("scenario: %s\noperatorSHA: %s\noperatorImage: %s\n--- CR manifest ---\n%s\n--- status ---\n%s\n--- conditions ---\n%s\n--- events ---\n%s\n--- dependencies ---\n%s\n", input.Scenario, input.OperatorSHA, input.OperatorImage, input.CRManifest, input.Status, input.Conditions, input.Events, input.Dependencies)
 }
 
-// DemoArtifactOverrides are user-facing explicit release/source overrides.
-type DemoArtifactOverrides struct {
-	OperatorVersion         string `yaml:"version,omitempty"`
-	OperatorImage           string `yaml:"image,omitempty"`
-	OperatorImageRepository string `yaml:"imageRepository,omitempty"`
-	OperatorImageTag        string `yaml:"imageTag,omitempty"`
-	OperatorDigest          string `yaml:"imageDigest,omitempty"`
-	OperatorChart           string `yaml:"chart,omitempty"`
-	OperatorChartDigest     string `yaml:"chartDigest,omitempty"`
-	OperatorRef             string `yaml:"ref,omitempty"`
-	DependencyChart         string `yaml:"dependencyChart,omitempty"`
-	DependencyChartVersion  string `yaml:"dependencyChartVersion,omitempty"`
-	DependencyChartDigest   string `yaml:"dependencyChartDigest,omitempty"`
-	KubernautVersion        string `yaml:"kubernautVersion,omitempty"`
-	KubernautImage          string `yaml:"kubernautImage,omitempty"`
-	KubernautDigest         string `yaml:"kubernautImageDigest,omitempty"`
-}
-
-type DemoArtifactResolutionInput struct {
-	ReleaseLine string
-	Explicit    DemoArtifactOverrides
-}
-
-type ResolvedDemoOperatorArtifacts struct {
-	OperatorVersion        string
-	OperatorImage          string
-	OperatorChart          string
-	OperatorRef            string
-	DependencyChart        string
-	DependencyChartVersion string
-	KubernautVersion       string
-	KubernautImage         string
-}
-
-// DemoArtifactResolutionRecord is emitted before live reconciliation so a
-// demo failure can be reconstructed without guessing which release inputs won.
-type DemoArtifactResolutionRecord struct {
-	ReleaseLine            string            `json:"releaseLine"`
-	OperatorVersion        string            `json:"operatorVersion"`
-	OperatorRef            string            `json:"operatorRef,omitempty"`
-	OperatorImage          string            `json:"operatorImage"`
-	OperatorChart          string            `json:"operatorChart"`
-	DependencyChart        string            `json:"dependencyChart"`
-	DependencyChartVersion string            `json:"dependencyChartVersion,omitempty"`
-	KubernautVersion       string            `json:"kubernautVersion"`
-	RelatedImages          map[string]string `json:"relatedImages"`
-}
-
-func BuildDemoArtifactResolutionJSON(record DemoArtifactResolutionRecord) ([]byte, error) {
-	if record.OperatorImage == "" || record.OperatorChart == "" || record.DependencyChart == "" || record.KubernautVersion == "" {
-		return nil, errors.New("demo artifact resolution requires operator image/chart, dependency chart, and Kubernaut version")
-	}
-	return json.MarshalIndent(record, "", "  ")
-}
-
-func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDemoOperatorArtifacts, error) {
-	version := strings.TrimSpace(input.ReleaseLine)
-	if version == "" {
-		version = strings.TrimSpace(os.Getenv("KUBERNAUT_RELEASE_VERSION"))
-	}
-	if version == "" {
-		version = "1.6.0-rc27"
-	}
-	if version == "1.6" {
-		version = "1.6.0-rc27"
-	}
-	operatorVersion := strings.TrimSpace(input.Explicit.OperatorVersion)
-	if operatorVersion == "" {
-		operatorVersion = version
-	}
-	kubernautVersion := strings.TrimSpace(input.Explicit.KubernautVersion)
-	if kubernautVersion == "" {
-		kubernautVersion = version
-	}
-	operatorImage := strings.TrimSpace(input.Explicit.OperatorImage)
-	if operatorImage == "" {
-		operatorImage = composeImageReference(input.Explicit.OperatorImageRepository, input.Explicit.OperatorImageTag)
-	}
-	if operatorImage == "" {
-		operatorImage = "quay.io/kubernaut-ai/kubernaut-operator:" + operatorVersion
-	}
-	if digest := strings.TrimSpace(input.Explicit.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
-		operatorImage += "@" + digest
-	}
-	operatorChart := strings.TrimSpace(input.Explicit.OperatorChart)
-	if operatorChart == "" {
-		operatorChart = "oci://quay.io/kubernaut-ai/charts/kubernaut-operator"
-	}
-	if digest := strings.TrimSpace(input.Explicit.OperatorChartDigest); digest != "" && !strings.Contains(operatorChart, "@sha256:") {
-		operatorChart += "@" + digest
-	}
-	dependencyChart := strings.TrimSpace(input.Explicit.DependencyChart)
-	if dependencyChart == "" {
-		dependencyChart = demoDependencyChartOCI
-	}
-	if digest := strings.TrimSpace(input.Explicit.DependencyChartDigest); digest != "" && !strings.Contains(dependencyChart, "@sha256:") {
-		dependencyChart += "@" + digest
-	}
-	dependencyChartVersion := strings.TrimSpace(input.Explicit.DependencyChartVersion)
-	if dependencyChartVersion == "" {
-		dependencyChartVersion = demoDependencyChartVersion
-	}
-	kubernautImage := input.Explicit.KubernautImage
-	if kubernautImage == "" {
-		kubernautImage = "quay.io/kubernaut-ai/gateway:" + kubernautVersion
-	}
-	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, OperatorRef: strings.TrimSpace(input.Explicit.OperatorRef), DependencyChart: dependencyChart, DependencyChartVersion: dependencyChartVersion, KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
-}
-
-func composeImageReference(repository, tag string) string {
-	repository = strings.TrimRight(strings.TrimSpace(repository), "/")
-	tag = strings.TrimSpace(tag)
-	if repository == "" {
-		return ""
-	}
-	if tag == "" {
-		return repository
-	}
-	return repository + ":" + tag
-}
-
 func ValidateOperatorSourceCheckout(root, statusOutput string) error {
 	if strings.TrimSpace(root) == "" {
 		return errors.New("operator source checkout path is empty")
@@ -1301,7 +1180,6 @@ type OperatorDeploymentConfig struct {
 	Exposure               *OperatorExposurePlan
 	DiagnosticsDir         string
 	Provenance             OperatorArtifactProvenance
-	DemoArtifacts          *DemoArtifactResolutionRecord
 }
 
 // DeployOperatorManagedApplication installs external dependencies and the
@@ -1318,17 +1196,6 @@ func DeployOperatorManagedApplication(ctx context.Context, config OperatorDeploy
 	}
 	if err := ValidateOperatorOperandImageMap(config.RelatedImages); err != nil {
 		return OperatorExposureEvidence{}, err
-	}
-	if config.DemoArtifacts != nil {
-		data, err := BuildDemoArtifactResolutionJSON(*config.DemoArtifacts)
-		if err != nil {
-			return OperatorExposureEvidence{}, fmt.Errorf("build demo artifact provenance: %w", err)
-		}
-		path, err := writeOperatorArtifact(config.DiagnosticsDir, "demo-artifacts.json", data)
-		if err != nil {
-			return OperatorExposureEvidence{}, fmt.Errorf("write demo artifact provenance: %w", err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ demo artifact provenance recorded at %s\n", path)
 	}
 	if config.DependencyChartPath == "" || config.OperatorChartPath == "" {
 		return OperatorExposureEvidence{}, errors.New("operator deployment requires dependency and operator chart paths")
@@ -2523,98 +2390,6 @@ func OperatorPortMappings(plan OperatorExposurePlan) []KindPortMapping {
 		mappings = append(mappings, KindPortMapping{ContainerPort: adapter.NodePort, HostPort: adapter.HostPort, Protocol: "TCP"})
 	}
 	return mappings
-}
-
-// DemoExposureComponents omits the Gateway adapter when Console-first mode
-// intentionally disables Gateway. Waiting for a disabled service would make a
-// valid user-owned CR look unready (BR-PLATFORM-014).
-func DemoExposureComponents(autonomous bool) []string {
-	components := []string{"datastorage", "apifrontend", "kubernautagent"}
-	if autonomous {
-		components = append([]string{"gateway"}, components...)
-	}
-	return components
-}
-
-func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOptions) (operatorChart, dependencyChart, operatorImage, applicationVersion, operatorChartVersion, dependencyChartVersion string, err error) {
-	resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: os.Getenv("KUBERNAUT_RELEASE_LINE"), Explicit: options.OperatorArtifacts})
-	if err != nil {
-		return "", "", "", "", "", "", err
-	}
-	operatorImage = resolved.OperatorImage
-	if options.OperatorArtifacts.OperatorImage == "" {
-		if explicit := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")); explicit != "" {
-			operatorImage = explicit
-		}
-	}
-	if options.OperatorArtifacts.OperatorChart != "" {
-		operatorChart = resolved.OperatorChart
-		dependencyChart = resolved.DependencyChart
-		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
-	}
-	if explicitChart := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")); explicitChart != "" && strings.TrimSpace(os.Getenv("KUBERNAUT_DEPENDENCY_CHART_PATH")) == "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) == "" {
-		return explicitChart, resolved.DependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.DependencyChartVersion, nil
-	}
-	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != "" || strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" {
-		if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && options.OperatorArtifacts.OperatorImage == "" {
-			return "", "", "", "", "", "", errors.New("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE; source is never built implicitly")
-		}
-		operatorChart, dependencyChart, err = OperatorChartPathsFromEnvironment(ctx, resolved.OperatorRef)
-		if err != nil {
-			return "", "", "", "", "", "", err
-		}
-		if options.OperatorArtifacts.DependencyChart != "" {
-			dependencyChart = resolved.DependencyChart
-		}
-		operatorChartVersion = chartVersionOrDefault(operatorChart, resolved.OperatorVersion)
-		dependencyChartVersion = chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion)
-		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, operatorChartVersion, dependencyChartVersion, nil
-	}
-	operatorChart = resolved.OperatorChart
-	dependencyChart = resolved.DependencyChart
-	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
-}
-
-func chartVersionOrDefault(chartPath, fallback string) string {
-	if !filepath.IsAbs(chartPath) && !strings.HasPrefix(chartPath, ".") {
-		return fallback
-	}
-	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
-	if err != nil {
-		return fallback
-	}
-	var chart struct {
-		Version string `yaml:"version"`
-	}
-	if yaml.Unmarshal(data, &chart) != nil || strings.TrimSpace(chart.Version) == "" {
-		return fallback
-	}
-	return strings.TrimSpace(chart.Version)
-}
-
-func operatorOperandImagesForDemo(options DemoHelmOptions, version string) (map[string]string, error) {
-	repository := strings.TrimRight(options.ImageRepository, "/")
-	if repository == "" {
-		repository = strings.TrimRight(os.Getenv("KUBERNAUT_IMAGE_REPOSITORY"), "/")
-	}
-	if repository == "" {
-		repository = "quay.io/kubernaut-ai"
-	}
-	tag := options.ImageTag
-	if tag == "" {
-		tag = version
-	}
-	built := make(map[string]string, len(demoLocalImageServices))
-	for _, service := range demoLocalImageServices {
-		built[service] = fmt.Sprintf("%s/%s:%s", repository, service, tag)
-	}
-	if options.OperatorArtifacts.KubernautImage != "" {
-		built["gateway"] = options.OperatorArtifacts.KubernautImage
-	}
-	if options.OperatorArtifacts.KubernautDigest != "" && !strings.Contains(built["gateway"], "@sha256:") {
-		built["gateway"] += "@" + options.OperatorArtifacts.KubernautDigest
-	}
-	return OperatorOperandImagesFromBuiltImages(built)
 }
 
 func operatorFleetOptionsFromHelm(options *FleetHelmOptions) *OperatorFleetOptions {

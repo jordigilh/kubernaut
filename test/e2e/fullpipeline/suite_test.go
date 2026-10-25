@@ -423,7 +423,7 @@ var _ = SynchronizedAfterSuite(
 		// Clean up all test-created CRs and namespaces so the cluster
 		// is ready for a retry run. Must-gather has already collected logs.
 		if !setupFailed {
-			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
+			infrastructure.CleanupFullPipelineTestResources(context.Background(), kubeconfigPath, GinkgoWriter)
 		}
 
 		// DD-TEST-007: Collect coverage before cluster deletion

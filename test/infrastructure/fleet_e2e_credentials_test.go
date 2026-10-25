@@ -18,7 +18,6 @@ package infrastructure
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"io"
 	"os"
@@ -31,40 +30,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
-
-// Issue found 2026-09-01 (FLEET_DEMO_QUICKSTART.md): the docs told users to
-// pre-create the llm-credentials-primary Secret before running
-// `setup-fleet-demo-infra` at all -- impossible, since the cluster meant to
-// hold it doesn't exist yet at that point. SetupFleetCoreInfrastructureWithGateway
-// always creates a mock placeholder regardless (createFullPipelineHelmSecrets),
-// so the "actionable error if missing" the demo deployment's
-// checkSecretExists promised was actually unreachable. buildLLMCredentialsSecretManifest
-// is the pure builder behind the fix: -llm-credentials-file overwrites that
-// placeholder with real content once the cluster exists, closing the gap in
-// one command instead of two.
-var _ = Describe("buildLLMCredentialsSecretManifest", func() {
-	It("UT-INFRA-FLEETDEMO-023: base64-encodes the credentials into both data.api_key and data[credentials.json]", func() {
-		manifest := buildLLMCredentialsSecretManifest("kubernaut-system", []byte(`{"type":"authorized_user"}`))
-		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":"authorized_user"}`))
-		Expect(manifest).To(ContainSubstring("name: llm-credentials-primary"))
-		Expect(manifest).To(ContainSubstring("namespace: kubernaut-system"))
-		Expect(manifest).To(ContainSubstring("data:"))
-		Expect(manifest).To(ContainSubstring("api_key: " + encoded))
-		Expect(manifest).To(ContainSubstring("credentials.json: " + encoded))
-	})
-
-	It("UT-INFRA-FLEETDEMO-024: scopes the Secret to the namespace passed in", func() {
-		manifest := buildLLMCredentialsSecretManifest("some-other-namespace", []byte("a-plain-api-key"))
-		Expect(manifest).To(ContainSubstring("namespace: some-other-namespace"))
-		Expect(manifest).NotTo(ContainSubstring("namespace: kubernaut-system"))
-	})
-
-	It("UT-INFRA-FLEETDEMO-025: round-trips credential bytes containing YAML-unsafe characters (quotes, newlines)", func() {
-		tricky := []byte("{\n  \"private_key\": \"-----BEGIN KEY-----\\nabc\\n-----END KEY-----\"\n}\n")
-		manifest := buildLLMCredentialsSecretManifest("kubernaut-system", tricky)
-		Expect(manifest).To(ContainSubstring("api_key: " + base64.StdEncoding.EncodeToString(tricky)))
-	})
-})
 
 var _ = Describe("addFleetWorkloadNamespaces", func() {
 	It("UT-INFRA-FLEET-026: allocates isolated workload namespaces outside kubernaut-system", func() {
