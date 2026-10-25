@@ -107,6 +107,7 @@ func ValidateLabels(labels ContractLabels) ValidationResult {
 	return result
 }
 
+//nolint:funlen // Standalone contract validator intentionally keeps its report flow together.
 func main() {
 	tests := []struct {
 		name   string
