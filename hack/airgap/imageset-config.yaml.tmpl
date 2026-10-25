@@ -4,9 +4,6 @@
 #   1. Replace <VERSION> with the Kubernaut release version (e.g. 1.0.0).
 #   2. Run: oc mirror --config=imageset-config.yaml docker://<mirror-registry>
 #
-# Generate the image list dynamically:
-#   ./hack/airgap/generate-image-list.sh --set global.image.tag=<VERSION>
-#
 # Reference: https://docs.openshift.com/container-platform/latest/installing/disconnected_install/installing-mirroring-disconnected.html
 
 kind: ImageSetConfiguration
@@ -16,7 +13,7 @@ storageConfig:
     path: ./kubernaut-mirror
 mirror:
   additionalImages:
-    # Kubernaut service images (governed by global.image.registry)
+    # Kubernaut service images (governed by the Operator CR)
     - name: quay.io/kubernaut-ai/gateway:<VERSION>
     - name: quay.io/kubernaut-ai/datastorage:<VERSION>
     - name: quay.io/kubernaut-ai/aianalysis:<VERSION>

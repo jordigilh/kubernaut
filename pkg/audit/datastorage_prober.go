@@ -61,7 +61,7 @@ const DefaultProbeTimeout = 10 * time.Second
 type DataStorageProber struct {
 	// HealthURL is DataStorage's cross-service readiness endpoint:
 	// https://<service>:8080/readyz (DD-PLATFORM-010; see
-	// kubernaut.datastorage.healthUrl in charts/kubernaut/templates/_helpers.tpl).
+	// kubernaut.datastorage.healthUrl in operator-managed manifests/_helpers.tpl).
 	HealthURL string
 	// Client performs the HTTP health check. NewReadinessGate (the common
 	// production constructor, used by 9 of the 10 audit-writing services)

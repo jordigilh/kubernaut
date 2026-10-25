@@ -1,12 +1,11 @@
 # Interactive Mode Setup Guide (Console + APIFrontend + OIDC)
 
-**Status**: Operator-facing setup guide, condensed from the Helm chart's own reference
-(`charts/kubernaut/README.md`).
+**Status**: Operator-facing setup guide for the Kubernaut Operator deployment.
 **Audience**: Operators and SREs who want chat-driven investigation — a human (or an
 external agent) asks Kubernaut to investigate or remediate something on demand, via a
 browser console or directly against APIFrontend's MCP/API surface.
-**Authority**: `charts/kubernaut/README.md` ("Optional: Web Console", "Enable/Disable
-Gateway or APIFrontend"), Issue #2162, BR-PLATFORM-006.
+**Authority**: [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md),
+Issue #2162, BR-PLATFORM-006.
 
 ---
 
@@ -36,7 +35,7 @@ independent and can both be enabled on the same install.
 
 ### Does enabling this let Gateway/AlertManager "take over" too?
 
-No. Leave `gateway.enabled` at its Helm default (`true`) — it costs nothing to run
+No. Leave Gateway enabled in the `Kubernaut` CR — it costs nothing to run
 alongside Interactive mode, because `gateway.auth.signalSources` (the actual
 authorization gate on who can call Gateway's webhook endpoint) defaults to an **empty
 list**. With no entry in it, Gateway rejects every request with `403` regardless of
@@ -50,7 +49,6 @@ interactive deployment, not a required step.
 ## Prerequisites
 
 - A Kubernetes cluster with a dynamic-provisioning `StorageClass` (for PostgreSQL/Valkey)
-- Helm 3.12+
 - An API key from an LLM provider (OpenAI, Anthropic, etc.)
 - An OIDC provider (Keycloak, Dex, or any standards-compliant OIDC IdP) reachable from the
   cluster, with a browser-login-capable client for Console and (optionally) an audience
@@ -105,31 +103,14 @@ not from your OIDC provider.
 
 ## 3. Install with Console + APIFrontend enabled
 
-Follow [charts/kubernaut/README.md](../../../charts/kubernaut/README.md)'s Quick Start for
-the namespace and the three credential Secrets (PostgreSQL, Valkey, LLM provider API key),
-plus your Rego policies, then install with Console and its OIDC wiring:
+Install the Kubernaut Operator and apply a `Kubernaut` CR using the
+[operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+Configure the CR's Console, APIFrontend, OIDC, LLM, policy, and dependency fields for
+this mode; the application Helm chart is no longer shipped by this repository.
 
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system \
-  --set global.llmProfiles.primary.provider=openai \
-  --set global.llmProfiles.primary.model=gpt-4o \
-  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
-  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
-  --set kubernautAgent.llmProfileRef=primary \
-  --set-file signalprocessing.policies.content=path/to/policy.rego \
-  --set-file aianalysis.policies.content=path/to/approval.rego \
-  --set console.enabled=true \
-  --set console.auth.secretName=console-oauth-creds \
-  --set console.ingress.host=console.apps.example.com \
-  --set console.ingress.enabled=true
-```
-
-`apifrontend.enabled` defaults to `true` — no need to set it. `console.enabled=true`
-requires `apifrontend.enabled=true` (Console proxies to APIFrontend only) and a resolvable
-OIDC issuer. The chart defaults to `https://login.kubernaut.ai/realms/kubernaut`; override
-`apifrontend.config.auth.issuerURL` or `jwtProviders` for another IdP. The chart fails fast at
-`helm template`/`install` time, before anything is applied, when the issuer is explicitly empty.
+APIFrontend must be enabled when Console is enabled because Console proxies to it. Configure
+a resolvable OIDC issuer in the `Kubernaut` CR; the Operator validates the resulting workload
+configuration before reconciliation.
 
 `console.ingress.host` is **required** whenever `console.enabled=true`, even if you leave
 `console.ingress.enabled=false` (the default, per BR-PLATFORM-009's opt-in-only stance on
@@ -187,7 +168,7 @@ kubectl get investigationsessions,agentsessions -n kubernaut-system
 |---|---|---|
 | Console redirects to login in a loop, never completes | Missing/incorrect audience claim on the OIDC token for Console's own client ID | Add a self-referential audience mapper (`aud` must include `kubernaut-console` itself, not just `kubernaut-apifrontend`) |
 | Login succeeds, but every real tool call fails | No RBAC role binding for the logged-in user's group | See step 4 — configure `apifrontend.config.rbac.roleBindings` |
-| `helm install` fails before applying anything | Missing `console.auth.secretName`, OIDC issuer, or `console.ingress.host` while `console.enabled=true` | The chart's fail-fast validation names exactly which one is missing |
+| Console reconciliation fails | Missing Console secret, OIDC issuer, or ingress host | Inspect the `Kubernaut` CR conditions and Operator events |
 | APIFrontend rejects every console-issued token outright | No audience mapper injecting `kubernaut-apifrontend` into `aud` | See step 1's note on audience mappers — common on a fresh Keycloak realm with no existing kubernaut-apifrontend-aware client scope |
 | Investigating a spoke resource fails with "cannot determine which cluster it belongs to" (or "not managed") despite the `kubernaut.ai/managed=true` label | No `cluster_id` was supplied and the alert/rule carries no `cluster` label, so fleet scope attribution is ambiguous — by design this refuses rather than guessing (Issue #2362) | Pass `cluster_id` (e.g. from the alert's `cluster` label, see `list_clusters` for IDs); for alerts, bake a static `cluster:` label into the alerting rule so every evaluation carries attribution |
 
@@ -195,9 +176,7 @@ kubectl get investigationsessions,agentsessions -n kubernaut-system
 
 ## References
 
-- [charts/kubernaut/README.md](../../../charts/kubernaut/README.md) — full Helm chart reference
-- [Optional: Web Console](../../../charts/kubernaut/README.md#optional-web-console-br-platform-006)
-- [Enable/Disable Gateway or APIFrontend](../../../charts/kubernaut/README.md#enable-disable-gateway-or-apifrontend-issue-2162)
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
 - [AUTONOMOUS_MODE_SETUP_GUIDE.md](./AUTONOMOUS_MODE_SETUP_GUIDE.md) — the complementary alert-driven entry point
 - [FLEET_SETUP_GUIDE.md](./FLEET_SETUP_GUIDE.md) — layering multi-cluster fleet mode on top of this
 - `pkg/apifrontend/tools/af_create_rr.go` — source of truth for how AF creates `RemediationRequest` directly

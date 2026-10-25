@@ -33,12 +33,12 @@ on:
         description: Exact operator SHA fallback for development qualification
         required: false
         type: string
-        default: c226705e24bef67fa947c535d59ea87d4251b483
+        default: 2c021da02bd62aa9adf5c36d511b33c0483da359
       release_version:
         description: Application release version for manual qualification
         required: false
         type: string
-        default: 1.6.0-rc26
+        default: 1.6.0-rc27
 
 
 # Least-privilege default for every job. All image push/pull in this workflow
@@ -53,7 +53,7 @@ permissions:
 
 env:
   IMAGE_REGISTRY: quay.io/kubernaut-ai
-  KUBERNAUT_OPERATOR_REF: c226705e24bef67fa947c535d59ea87d4251b483
+  KUBERNAUT_OPERATOR_REF: 2c021da02bd62aa9adf5c36d511b33c0483da359
 
 jobs:
   # ========================================
@@ -188,7 +188,7 @@ jobs:
           mkdir -p operator-development
           docker save -o operator-development/kubernaut-operator.tar "$IMAGE"
           helm package kubernaut-operator/charts/kubernaut-operator --destination operator-development
-          helm package kubernaut-operator/charts/kubernaut-dev-bootstrap --destination operator-development
+          helm package kubernaut-operator/charts/kubernaut-development-dependencies --destination operator-development
           cp operator-candidate.yaml operator-development/
       - name: Upload development operator artifact
         if: inputs.operator_candidate_manifest == ''
@@ -233,7 +233,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.26.10'
       - name: Install Podman
         uses: ./.github/actions/install-podman
       - name: Install Kind
@@ -262,12 +262,12 @@ jobs:
             podman load -i /tmp/operator-development/kubernaut-operator.tar
             mkdir -p "$PWD/operator-charts"
             tar -xzf /tmp/operator-development/kubernaut-operator-*.tgz -C "$PWD/operator-charts"
-            tar -xzf /tmp/operator-development/kubernaut-dev-bootstrap-*.tgz -C "$PWD/operator-charts"
+            tar -xzf /tmp/operator-development/kubernaut-development-dependencies-*.tgz -C "$PWD/operator-charts"
             export KUBERNAUT_OPERATOR_CHART_PATH="$PWD/operator-charts/kubernaut-operator"
-            export KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH="$PWD/operator-charts/kubernaut-dev-bootstrap"
+            export KUBERNAUT_DEPENDENCY_CHART_PATH="$PWD/operator-charts/kubernaut-development-dependencies"
            else
              export KUBERNAUT_OPERATOR_CHART_PATH="$OPERATOR_CHART"
-             export KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH="${DEPENDENCY_CHART:-oci://quay.io/kubernaut-ai/charts/kubernaut-dev-bootstrap}"
+             export KUBERNAUT_DEPENDENCY_CHART_PATH="${DEPENDENCY_CHART:-oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a}"
            fi
           export KUBERNAUT_QUALIFICATION_DIR="$PWD/qualification-2492"
           export KUBERNAUT_BUILD_MOCK_LLM=true
@@ -330,7 +330,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.26.10'
           cache: true
 
       - name: Generate code
@@ -406,7 +406,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.26.10'
           cache: true
 
       - name: Generate code
@@ -483,7 +483,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.26.10'
           cache: true
 
       - name: Generate code
@@ -659,48 +659,15 @@ jobs:
           artifact-name: sbom-${{ matrix.service }}-arm64.cdx.json
 
   # ========================================
-  # STAGE 2: HELM SMOKE TESTS (Issue #569)
-  # Depends ONLY on build-amd64. Runs as soon as amd64 images are in Quay.
-  # arm64 builds continue in parallel and do NOT block this stage.
-  #
-  # Pulls amd64 images from Quay into a Kind cluster and runs the full
-  # smoke test suite. Gates the GitHub Release — a failing smoke test
-  # prevents the release from being published.
-  #
-  # Uses the same script and pattern as ci-pipeline.yml's deprecated-chart-validation
-  # job, adapted for Quay (public registry, no pull secret needed).
-  # ========================================
-
-  deprecated-chart-validation:
-    name: Deprecated application chart checks (offline)
-    needs: [prepare]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-      - name: Lint and render deprecated chart offline
-        run: |
-          set -euo pipefail
-          helm lint charts/kubernaut --strict
-          helm template kubernaut charts/kubernaut >/tmp/deprecated-kubernaut-rendered.yaml
-          test -s /tmp/deprecated-kubernaut-rendered.yaml
-          echo "Deprecated chart validation only; no live application-chart install is permitted."
-
-  # ========================================
   # STAGE 3: MULTI-ARCH MANIFESTS
-  # After both arch builds AND helm smoke tests complete, create manifest
+  # After both architecture builds complete, create manifest
   # lists so a single tag (e.g., 1.0.0) resolves to the correct arch
   # automatically. Also tags every image as :latest for GA releases.
   # ========================================
 
   create-manifests:
     name: Create Multi-Arch Manifests
-    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, deprecated-chart-validation]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -909,38 +876,9 @@ jobs:
     secrets: inherit
 
   # ========================================
-  # STAGE 4: HELM CHART PUBLISH
-  # Gated on all image builds AND helm smoke tests (Issue #569).
-  # Packages the Helm chart with the release version and pushes
-  # to the OCI registry at oci://quay.io/kubernaut-ai/charts
-  #
-  # Users install with:
-  #   helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version <version>
-  # ========================================
-
-  deprecated-chart-package:
-    name: Deprecated application chart package (offline)
-    needs: [prepare, deprecated-chart-validation]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-      - name: Package deprecated chart for offline inspection
-        run: |
-          set -euo pipefail
-          helm package charts/kubernaut --destination /tmp/deprecated-chart
-          echo "Deprecated application chart was packaged for offline inspection only; no OCI publication is a qualification source."
-
-  # ========================================
   # STAGE 6: GITHUB RELEASE
   # Creates a GitHub Release with auto-generated release notes.
-  # Gated on smoke tests, manifests, security scans, signing,
-  # AND Helm publish.
+  # Gated on manifests, security scans, signing, and provenance.
   # Downloads SBOMs from security scan jobs and attaches them
   # to the release for customer consumption.
   # Authority: Issue #569, #1315 | FedRAMP SA-12
@@ -948,7 +886,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, prepare-operator-candidate, operator-qualification, deprecated-chart-validation, create-manifests, deprecated-chart-package, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1034,10 +972,6 @@ jobs:
             echo ""
             echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
           fi
-
-          echo ""
-          echo "Install with:"
-          echo "  helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version ${VERSION}"
 
       - name: Attach SBOMs to release
         env:

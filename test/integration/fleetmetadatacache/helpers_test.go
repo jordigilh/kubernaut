@@ -119,7 +119,7 @@ func createServiceAccountWithToken(ctx context.Context, clientset kubernetes.Int
 }
 
 // bindServiceAccountToFMCScopeCheckClient creates the "fmc-scope-check-client-it"
-// ClusterRole (rules mirror charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml's
+// ClusterRole (rules mirror operator-managed manifests/rbac/fmc-scope-check-client-rbac.yaml's
 // fmc-scope-check-client) if it doesn't already exist, then binds
 // namespace/saName to it -- the same shape as production's gateway/
 // remediationorchestrator-controller ClusterRoleBindings.

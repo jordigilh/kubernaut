@@ -256,11 +256,8 @@ kubectl get validatingwebhookconfiguration kubernaut-auth-webhook -o yaml
 ### Resolution
 
 1. **Pod not running**: Check deployment, image pull errors, resource limits
-2. **Certificate expired**: Re-run the TLS cert generation hook:
-
-```bash
-helm upgrade kubernaut charts/kubernaut -n kubernaut-system
-```
+2. **Certificate expired**: Follow the Kubernaut Operator certificate rotation
+   procedure and inspect the Operator events for the `Kubernaut` resource.
 
 3. **CA bundle mismatch**: The TLS cert hook patches the webhook configuration with the CA bundle. If the CA bundle doesn't match the serving certificate, the API server cannot verify the webhook.
 
@@ -270,4 +267,4 @@ helm upgrade kubernaut charts/kubernaut -n kubernaut-system
 
 - Monitor AW pod restarts and readiness
 - Set up alerting on webhook failure rates
-- Certificate rotation should be automated via the Helm hook
+- Certificate rotation should be automated by the Operator/cert-manager integration

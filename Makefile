@@ -111,13 +111,8 @@ help: ## Display this help
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen sync-version ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
-	@echo "📋 Syncing CRDs to Helm chart..."
-	@cp -f config/crd/bases/*.yaml charts/kubernaut/crds/
-	@mkdir -p charts/kubernaut/files/crds
-	@cp -f config/crd/bases/*.yaml charts/kubernaut/files/crds/
-	@echo "✅ charts/kubernaut/crds/ and files/crds/ updated"
 	@$(MAKE) sync-embed
 
 .PHONY: sync-embed
@@ -157,31 +152,8 @@ validate-embed: sync-embed ## Validate embedded assets are in sync with source f
 	fi
 	@echo "✅ No duplicate migration versions"
 
-.PHONY: sync-version
-sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values, Dockerfiles, and docs
-	@test -f VERSION || (echo "ERROR: VERSION file not found at repo root" && exit 1)
-	@test -f CHART_VERSION || (echo "ERROR: CHART_VERSION file not found at repo root" && exit 1)
-	@VER=$$(cat VERSION) && \
-	CHART_VER=$$(cat CHART_VERSION) && \
-	echo "📌 Syncing version v$$VER (chart $$CHART_VER) from VERSION/CHART_VERSION files..." && \
-	sed -i.bak "s/^version: .*/version: $$CHART_VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
-	sed -i.bak "s/^appVersion: .*/appVersion: \"$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
-	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
-		charts/kubernaut/values.yaml \
-		charts/kubernaut/values.schema.json \
-		charts/kubernaut/values-airgap.yaml \
-		charts/kubernaut/README.md \
-		hack/airgap/imageset-config.yaml.tmpl && \
-	rm -f charts/kubernaut/values.yaml.bak charts/kubernaut/values.schema.json.bak \
-		charts/kubernaut/values-airgap.yaml.bak charts/kubernaut/README.md.bak \
-		hack/airgap/imageset-config.yaml.tmpl.bak && \
-	for df in docker/*.Dockerfile; do \
-		sed -i.bak "s/^ARG APP_VERSION=v[0-9][0-9a-zA-Z._-]*/ARG APP_VERSION=v$$VER/" "$$df" && rm -f "$$df.bak"; \
-	done && \
-	echo "✅ Version v$$VER synced to all targets"
-
 .PHONY: generate
-generate: controller-gen ogen generate-helm-config-docs generate-helm-defaults ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
@@ -221,36 +193,6 @@ generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
 	@hack/crd-ref-docs/clean-output.sh docs/generated/crds.md
 	@echo "✅ CRD docs generated: docs/generated/crds.md"
 
-.PHONY: generate-helm-config-docs
-generate-helm-config-docs: ## Generate Helm chart configuration reference from values.schema.json (DD-PLATFORM-006)
-	@echo "📋 Generating Helm values reference from charts/kubernaut/values.schema.json..."
-	@mkdir -p docs/generated
-	@go run ./hack/gen-helm-config-docs \
-		--schema charts/kubernaut/values.schema.json \
-		--output docs/generated/helm-values-reference.md
-	@echo "✅ Helm values reference generated: docs/generated/helm-values-reference.md"
-
-.PHONY: generate-helm-defaults
-generate-helm-defaults: ## Generate materialized Helm chart defaults template from values.schema.json (DD-PLATFORM-006 Decision Area 14)
-	@echo "📋 Generating Helm materialized defaults from charts/kubernaut/values.schema.json..."
-	@go run ./hack/gen-helm-defaults \
-		--schema charts/kubernaut/values.schema.json \
-		--output charts/kubernaut/templates/_generated_defaults.tpl
-	@echo "✅ Helm materialized defaults generated: charts/kubernaut/templates/_generated_defaults.tpl"
-
-.PHONY: check-helm-coverage
-check-helm-coverage: ## Fail if a schema-defaulted/map config field has no helm-unittest assertion proving it renders and isn't allowlisted (BR-PLATFORM-011, issue #2226)
-	@echo "📋 Checking Helm chart config-knob test coverage..."
-	@go run ./hack/check-helm-coverage \
-		--schema charts/kubernaut/values.schema.json \
-		--tests charts/kubernaut/tests \
-		--allowlist charts/kubernaut/.helm-coverage-allowlist.yaml
-
-.PHONY: verify-helm-defaults-parity
-verify-helm-defaults-parity: generate-helm-defaults ## Prove trimmed values.yaml renders identically to explicit-full-defaults (DD-PLATFORM-006 Decision Area 14)
-	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
-	@hack/verify-helm-defaults-parity.sh
-
 .PHONY: fmt
 fmt: ## Format code
 	@echo "Formatting Go code..."
@@ -263,12 +205,6 @@ vet: ## Run go vet against code
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint
 	$(GOLANGCI_LINT) run cmd/... pkg/... internal/... test/...
-
-.PHONY: test-helm
-test-helm: ## Run helm-unittest specs for charts/kubernaut (requires the helm-unittest plugin: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false)
-	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
-	@helm plugin list 2>/dev/null | grep -q unittest || { echo "❌ helm-unittest plugin not installed; run: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false"; exit 1; }
-	helm unittest charts/kubernaut/
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -977,10 +913,6 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@# Give the expanded suite room without changing any per-journey safety deadline.
 	@$(GINKGO) -v --race --timeout=70m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
-
-.PHONY: check-operator-deployment-boundary
-check-operator-deployment-boundary: ## Fail on live charts/kubernaut deployment in FP/Fleet/demo paths (Issue #2492)
-	@go test ./test/infrastructure -ginkgo.focus='UT-2492-019' -count=1
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
 # Validates multi-cluster remediation via MCP gateway (Issue #54, ADR-068)

@@ -59,26 +59,9 @@ Key behaviors driven by the `is_prerelease` flag in the release workflow:
 - **Stable tags**: GitHub Release is marked as stable (shown as "Latest");
   images **are** tagged as `:latest`.
 
-The `v` prefix is stripped for image tags and Helm chart versions
-(e.g., git tag `v1.1.0` produces images tagged `1.1.0` and chart version `1.1.0`).
-
-### Chart Version vs App Version
-
-The Helm chart has two independent version fields:
-
-- **`version`** (chart packaging version) — tracked in the `CHART_VERSION` file at repo root.
-  Bumped for any chart change (values, templates, schema) regardless of operator changes.
-- **`appVersion`** (operator binary version) — tracked in the `VERSION` file at repo root.
-  Bumped only for operator/Go code changes.
-
-**When to bump each:**
-
-| Change type | `VERSION` | `CHART_VERSION` | Tag | Workflow |
-|-------------|-----------|-----------------|-----|----------|
-| Operator release | Bump | Bump (match) | `v1.5.0` | `release.yml` (full) |
-| Chart-only fix | No change | Bump | `chart-v1.4.1` | `chart-release.yml` (chart only) |
-
-`make sync-version` reads both files and propagates them to `Chart.yaml` independently.
+The `v` prefix is stripped for image tags (e.g., git tag `v1.1.0` produces images tagged
+`1.1.0`). Application deployment and operator chart versioning are owned by the
+Kubernaut Operator repository.
 
 ---
 
@@ -159,20 +142,15 @@ git checkout -b release/vX.Y.0
 
 ### Step 3: Bump version files
 
-Update both `VERSION` and `CHART_VERSION` at repo root to the GA version:
+Update `VERSION` at repo root to the GA version:
 
 ```bash
 echo "X.Y.0" > VERSION
-echo "X.Y.0" > CHART_VERSION
 ```
 
-Then run `make sync-version` to propagate to `Chart.yaml` (sets `version` from
-`CHART_VERSION` and `appVersion` from `VERSION`).
-
-> **Why bump here?** The release workflow overwrites these fields from the git tag
-> and `CHART_VERSION` file, but committing the correct values ensures the chart is
-> accurate in the repository even outside of CI (e.g., `helm template` from a
-> local checkout).
+> **Why bump here?** The release workflow derives application image tags from the
+> Git tag. Operator chart publication and versioning remain owned by the operator
+> release pipeline.
 
 ### Step 4: Stamp CHANGELOG.md
 
@@ -191,7 +169,7 @@ Ensure the comparison link at the bottom of the file is correct:
 ### Step 5: Commit, push, and open PR
 
 ```bash
-git add charts/kubernaut/Chart.yaml CHANGELOG.md
+git add VERSION CHANGELOG.md
 git commit -m "release: prepare v1.1.0 GA"
 git push -u origin release/vX.Y.0
 gh pr create --title "release: vX.Y.0 GA" --body "..."
@@ -437,16 +415,15 @@ The Helm migration hook will detect fresh vs. upgrade by checking for the
 
 - Design decision: [DD-012](../../architecture/decisions/DD-012-goose-database-migration-management.md)
 - Migration files: [`migrations/`](../../../migrations/)
-- Helm hook: [`charts/kubernaut/templates/hooks/migration-job.yaml`](../../../charts/kubernaut/templates/hooks/migration-job.yaml)
+- Operator-managed migration workload and dependency chart artifacts
 
 ---
 
 ## Release Pipeline Stages
 
 The release workflow (`.github/workflows/release.yml`) is a lot more than
-build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
-signing, and SLSA provenance all gate the release now, not just the image
-builds:
+build-and-publish at this point — CVE scanning, operator qualification, Cosign
+signing, and SLSA provenance all gate the release now, not just the image builds:
 
 Node names below are the actual job IDs from `release.yml`. Arrows only run
 phase-to-phase, not job-to-job — see the "Stage N" sections below the diagram
@@ -569,21 +546,16 @@ Needs the manifests plus both security-scan stages. Two jobs run per service:
   makes it Build L3 (non-falsifiable) instead of self-asserted Build L2
   (issue #1109).
 
-### Stage 6: Helm Chart Publish
+### Stage 6: Operator Handoff
 
-Runs in parallel with signing/provenance (same dependencies: both build
-stages + smoke tests).
-
-1. Reads chart version from `CHART_VERSION` and app version from the git tag.
-2. Overwrites `Chart.yaml`'s `version` and `appVersion` accordingly.
-3. Packages and pushes to `oci://quay.io/kubernaut-ai/charts`.
-
-For chart-only releases (tag `chart-v*`), a separate `chart-release.yml`
-workflow handles publishing without building container images.
+Kubernaut release CI no longer packages or publishes an application chart. The
+release record links the exact operator candidate image/chart artifacts consumed by
+qualification; operator publication and promotion remain owned by the
+[Kubernaut Operator release pipeline](https://github.com/jordigilh/kubernaut-operator).
 
 ### Stage 7: GitHub Release
 
-Needs smoke tests, manifests, Helm publish, both security scans,
+Needs manifests, both security scans,
 sign-and-attest, and provenance — i.e. everything above has to pass first.
 Creates the GitHub Release with auto-generated notes, then downloads and
 attaches every SBOM and SLSA provenance bundle as release assets (required by
@@ -637,15 +609,6 @@ Expect 28 SBOMs (14 services × 2 arch) and 14 provenance bundles (one per
 service — the provenance job covers the manifest list, not each arch
 separately) attached to the release.
 
-### Helm Chart (all releases)
-
-```bash
-helm show chart oci://quay.io/kubernaut-ai/charts/kubernaut --version $CHART_VERSION
-```
-
-Verify `version` matches `CHART_VERSION` and `appVersion` matches `VERSION`.
-For operator releases these are the same; for chart-only releases they may differ.
-
 ### GitHub Release (all releases)
 
 ```bash
@@ -669,13 +632,6 @@ done
 ```
 
 Expected output: every service reports the GA version (e.g., `1.1.0`).
-
-### Install smoke test (optional)
-
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --version $VERSION --namespace kubernaut-system --create-namespace --dry-run
-```
 
 ---
 
@@ -803,18 +759,12 @@ over REST, per ADR-068) were added later and were never added to this table.
 
 `mock-llm` is **not** released — it is a test-only artifact.
 
-### Helm Chart
+### Operator Candidate Artifacts
 
-Published to `oci://quay.io/kubernaut-ai/charts/kubernaut`. The chart's `version`
-is set from the `CHART_VERSION` file and `appVersion` from the git tag (operator
-releases) or `VERSION` file (chart-only releases). These may differ when a
-chart-only fix is shipped independently of an operator release.
-
-Install with:
-
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version <version>
-```
+Kubernaut release qualification consumes the exact operator candidate image,
+bootstrap chart, and development-dependency chart recorded in the immutable
+qualification manifest. Operator publication and promotion are owned by the
+[Kubernaut Operator release workflow](https://github.com/jordigilh/kubernaut-operator).
 
 ### Version Injection
 
@@ -848,7 +798,7 @@ Every released image carries build-time version metadata:
 ## Related
 
 - [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Operator release workflow (tag `v*`)
-- [`.github/workflows/chart-release.yml`](../../../.github/workflows/chart-release.yml) — Chart-only release workflow (tag `chart-v*`)
+- Kubernaut Operator release workflow — publishes the application owner and its charts
 - [`.github/workflows/slsa-provenance.yml`](../../../.github/workflows/slsa-provenance.yml) — Isolated SLSA Build L3 provenance workflow
 - [`Makefile`](../../../Makefile) — `image-build`, `image-push`, `image-manifest` targets
 - [`CHANGELOG.md`](../../../CHANGELOG.md) — Release history

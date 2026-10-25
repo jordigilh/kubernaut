@@ -1,6 +1,6 @@
 # DEPRECATED (BR-FLEET-003, #1511, ADR-060): This standalone per-domain policy
 # file predates the unified SignalProcessing Rego policy. New deployments
-# should use charts/kubernaut/examples/signalprocessing-policy.rego, which
+# should use test/fixtures/signalprocessing-policy.rego, which
 # consolidates environment/severity/priority/labels/cluster classification
 # into a single package evaluated once per reconcile (and is the only policy
 # shape that supports the optional `cluster` dimension). This file is kept

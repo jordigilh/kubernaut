@@ -28,7 +28,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/namespace.sh"
 # Issue #2037: build the URL from RELEASE_NAMESPACE instead of a hardcoded
 # "kubernaut-system" literal, so collection still reaches DataStorage when the
 # chart is installed into a non-default Helm release namespace. The Service
-# name itself is "data-storage-service" (charts/kubernaut/templates/
+# name itself is "data-storage-service" (operator-managed manifests/
 # datastorage/datastorage.yaml), NOT "datastorage" -- confirmed against a
 # real live-cluster install during this issue's own e2e-tests CI validation,
 # where the old "datastorage" name silently resolved to nothing and every

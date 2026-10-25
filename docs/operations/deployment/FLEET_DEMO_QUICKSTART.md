@@ -9,9 +9,9 @@ footprint).
 
 For a walkthrough that explains every moving part instead of running it as a black box
 (or a manual, non-Kind topology), see the [Fleet Setup Guide](FLEET_SETUP_GUIDE.md).
-Already have your own cluster and want full control over every Helm value instead of
-the Kind automation below? Use the Helm chart's own
-[Quick Start](../../../charts/kubernaut/README.md#quick-start) instead.
+Already have your own cluster and want full control over the deployment? Use the
+[Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+and apply a user-owned `Kubernaut` CR instead.
 
 ---
 
@@ -73,8 +73,8 @@ spec:
 ```
 
 The demo writes this contract to a user-owned `Kubernaut` CR and applies it after
-the operator bootstrap and dependency chart are ready. There is no live
-`charts/kubernaut` application release.
+the operator bootstrap and dependency chart are ready. There is no application
+Helm release from this repository.
 
 ```bash
 kubectl apply -f kubernaut-cr.yaml

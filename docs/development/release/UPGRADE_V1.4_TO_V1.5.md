@@ -148,6 +148,11 @@ and WorkflowExecution resources are forward-compatible.
 
 ## Upgrade Procedure
 
+> **Historical Helm procedure**: the application Helm chart referenced below is no
+> longer shipped by this repository. Current installations must follow the
+> [Kubernaut Operator upgrade guidance](https://github.com/jordigilh/kubernaut-operator)
+> and migrate configuration into the user-owned `Kubernaut` resource before upgrading.
+
 1. **Back up** your existing Helm release values:
    ```bash
    helm get values kubernaut -n kubernaut-system > values-backup.yaml

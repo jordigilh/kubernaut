@@ -663,7 +663,7 @@ rules:
   verbs: ["get", "update", "patch"]
 # AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): mirrors the
 # production Helm chart's aianalysis-controller ClusterRole
-# (charts/kubernaut/templates/aianalysis/aianalysis.yaml) -- "create" for the
+# (operator-managed manifests/aianalysis/aianalysis.yaml) -- "create" for the
 # initial dispatch write, "get"/"list"/"watch" so AA's own AgentSession
 # EventSource informer can sync. Missing this grant here (this hand-rolled
 # E2E manifest had drifted from the Helm chart) is why the controller's cache
@@ -682,7 +682,7 @@ rules:
 # drifted a third time (CI run 32525130330, "E2E (aianalysis)": "cannot
 # update resource \"agentsessions\"" on every capacity-exceeded retry).
 # Keep this rule's verbs in sync with both
-# charts/kubernaut/templates/aianalysis/aianalysis.yaml and
+# operator-managed manifests/aianalysis/aianalysis.yaml and
 # config/rbac/role.yaml (kubebuilder marker in
 # internal/controller/aianalysis/aianalysis_controller.go) whenever any of
 # the three changes.

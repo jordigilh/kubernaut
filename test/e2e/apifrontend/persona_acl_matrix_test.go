@@ -21,7 +21,7 @@ import (
 // for more than one or two personas/tools at a time.
 //
 // This suite derives its expectations directly from values.yaml (via
-// kinfra.LoadPersonaToolsFromValuesYAML, the same source of truth
+// kinfra.LoadPersonaTools, the same source of truth
 // PersonaToolClusterRolesYAML renders from -- see UT-INFRA-RBAC-002) rather
 // than hand-declaring a second "expected" table that could itself drift, as
 // happened to the AF-only E2E suite's RBAC bootstrap (2026-08-03 incident).
@@ -134,7 +134,7 @@ var _ = Describe("Persona ACL matrix enforcement (#1827)", Ordered, Label("e2e",
 
 	BeforeAll(func() {
 		var err error
-		personaTools, err = kinfra.LoadPersonaToolsFromValuesYAML()
+		personaTools, err = kinfra.LoadPersonaTools()
 		Expect(err).NotTo(HaveOccurred(), "values.yaml apifrontend.config.rbac.personas must be parseable")
 		Expect(personaTools).NotTo(BeEmpty())
 		tokenCache = make(map[string]personaSession, len(e2ePersonas))

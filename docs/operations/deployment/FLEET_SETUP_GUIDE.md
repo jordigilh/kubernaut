@@ -497,22 +497,10 @@ stringData:
 EOF
 ```
 
-Install the chart on the hub with fleet enabled (see
-[charts/kubernaut/README.md](../../../charts/kubernaut/README.md) for the rest of the
-Quick Start — namespace, PostgreSQL/Valkey Secrets, Rego policies, and an LLM provider
-API key are still required the same as any install):
-
-```bash
-helm install kubernaut charts/kubernaut -n kubernaut-system \
-  --set global.fleet.enabled=true \
-  --set global.fleet.mcpGatewayEndpoint="http://mcp-gateway-istio.gateway-system.svc:8080/mcp" \
-  --set global.fleet.mcpGatewayType=kuadrant \
-  --set global.fleet.oauth2.enabled=true \
-  --set global.fleet.oauth2.tokenURL="https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token" \
-  --set global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
-  --set workflowexecution.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
-  # ... plus your usual PostgreSQL/Valkey/LLM/Rego overrides
-```
+Install the Kubernaut Operator and apply a Fleet-enabled `Kubernaut` CR using the
+[operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+Map the MCP Gateway endpoint and separate read/write OAuth2 Secret references into the
+CR; the application Helm chart is no longer shipped by this repository.
 
 `workflowexecution.fleet.oauth2.credentialsSecretRef` is called out explicitly because
 WE is the only fleet-integration-capable service that does **not** fall back to
@@ -522,9 +510,9 @@ independently-settable credential for least-privilege.
 
 ### Fleet still needs a triggering path: Autonomous or Interactive
 
-`global.fleet.*` only wires the MCP Gateway plumbing — it doesn't put anything in
-front of Kubernaut that can start an investigation. Layer one of the other two modes
-on top, in the same `helm install`:
+Fleet wiring only configures the MCP Gateway plumbing — it doesn't put anything in front
+of Kubernaut that can start an investigation. Enable one of the other two modes in the
+same `Kubernaut` CR:
 
 - **Autonomous** (alert-driven): `gateway.enabled` defaults to `true` already; add
   `gateway.auth.signalSources` for your AlertManager instance. See
@@ -604,6 +592,6 @@ kind delete cluster --name kubernaut-remote-cluster
 - `test/infrastructure/fleet_e2e.go` (`SetupFleetE2EInfrastructure`, EAIGW provisioning) — source of truth for Path A's automation and this guide's hub-side steps
 - `test/infrastructure/fleetmetadatacache_remote_cluster.go` (`SetupRemoteClusterForFMC`) — source of truth for this guide's spoke-side steps
 - `test/infrastructure/workflowexecution_e2e_hybrid.go` (`createWorkflowJobExecutorRBAC`) — source of truth for B4's RBAC
-- [charts/kubernaut/README.md](../../../charts/kubernaut/README.md) — full Helm chart install reference (Secrets, Rego policies, LLM provider config)
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
 - [AUTONOMOUS_MODE_SETUP_GUIDE.md](./AUTONOMOUS_MODE_SETUP_GUIDE.md) / [INTERACTIVE_MODE_SETUP_GUIDE.md](./INTERACTIVE_MODE_SETUP_GUIDE.md) — the triggering path fleet mode layers onto; see "Fleet still needs a triggering path" above
 - [Issue #54: Fleet Management](https://github.com/jordigilh/kubernaut/issues/54)

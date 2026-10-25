@@ -208,7 +208,7 @@ func startEnvWithPreparation(runner agentsession.InvestigationRunner, prepare fu
 //	  reliability gap this amendment addresses.
 //	AC-6 -- least privilege: the Dispatcher's finalizer add/remove is a
 //	  metadata-only write on the base AgentSession resource, matching the
-//	  scoped RBAC grant in charts/kubernaut/templates/kubernaut-agent/
+//	  scoped RBAC grant in operator-managed manifests/kubernaut-agent/
 //	  kubernaut-agent.yaml.
 var _ = Describe("AgentSession Dispatcher Reconciler wiring (#2231) [AU-2, CC7.2, AC-6]", func() {
 	It("IT-AA-2231-001: deleting a dispatched AgentSession against a real API server reliably stops the in-memory investigation via the finalizer-driven Reconcile path [CC7.2]", func() {

@@ -1,13 +1,10 @@
 # Deployment Guide
 
-> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This guide
-> predates the Go rewrite of HolmesGPT into **Kubernaut Agent (KA)** (v1.3, issue
-> [#433](https://github.com/jordigilh/kubernaut/issues/433)) and the move to Helm-based production deployment.
-> References to "HolmesGPT service"/`holmesgpt-service` below have been renamed to Kubernaut Agent (KA) for
-> terminology accuracy, but the env vars, Docker Compose flow, and manual `kubectl apply -f k8s/` steps described
-> here do not reflect the current deployment path. For current production deployment, use the Helm chart at
-> `charts/kubernaut/` (see `charts/kubernaut/README.md`); KA's real ports are API `8443`, health `8081`, metrics
-> `9090` (`charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`), not `8090` as shown below.
+> **⚠️ Legacy reference**: This document predates the Go rewrite of HolmesGPT into
+> **Kubernaut Agent (KA)** and the operator-managed deployment path. The Docker Compose,
+> manual `kubectl apply -f k8s/`, and legacy environment-variable examples below are not
+> supported production installation instructions. Use the
+> [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
 
 ## Prerequisites
 
@@ -49,18 +46,8 @@ Access (legacy):
 
 ### 3. Kubernetes (Production)
 
-```bash
-# Create namespace
-kubectl create namespace kubernaut
-
-# Create secrets (legacy secret name; predates Kubernaut Agent (KA) rewrite)
-kubectl create secret generic holmesgpt-secrets \
-  --from-literal=openai-api-key=your_api_key \
-  -n kubernaut
-
-# Deploy services
-kubectl apply -f k8s/ -n kubernaut
-```
+Use the [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+for namespace, dependency, credential, and `Kubernaut` CR setup.
 
 ## Configuration
 
@@ -68,8 +55,8 @@ kubectl apply -f k8s/ -n kubernaut
 
 ```env
 # Legacy env vars for the pre-rewrite "HolmesGPT" service, now Kubernaut Agent (KA); current KA
-# configuration is via a mounted config file, not these env vars — see
-# charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml
+# configuration is via a mounted config file, not these env vars — see the
+# Kubernaut Operator CR configuration.
 AI_SERVICES_HOLMESGPT_ENABLED=true
 AI_SERVICES_HOLMESGPT_ENDPOINT=http://holmesgpt-service:8090
 POSTGRES_HOST=postgres-service

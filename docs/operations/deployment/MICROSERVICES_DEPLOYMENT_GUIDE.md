@@ -698,28 +698,11 @@ rollback-deployment:
 	kubectl rollout undo deployment/workflow-service -n kubernaut
 ```
 
-### **Helm Chart Structure**
-```
-charts/kubernaut/
-├── Chart.yaml
-├── values.yaml
-├── templates/
-│   ├── gateway/
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── ingress.yaml
-│   ├── alert-processor/
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   ├── ai-analysis/
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   └── [other services...]
-└── values/
-    ├── production.yaml
-    ├── staging.yaml
-    └── development.yaml
-```
+### **Operator Deployment Structure**
+
+Application Deployments, Services, RBAC, policies, and migration workloads are
+reconciled by the Kubernaut Operator from a user-owned `Kubernaut` resource. The
+application Helm chart formerly described here is no longer shipped.
 
 ---
 

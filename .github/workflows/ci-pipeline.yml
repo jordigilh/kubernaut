@@ -63,10 +63,10 @@ on:
   workflow_dispatch:
     inputs:
       operator_ref:
-        description: Exact kubernaut-operator ref/SHA for FP/Fleet qualification
+        description: Optional exact kubernaut-operator ref/SHA override; otherwise match the Kubernaut base branch
         required: false
         type: string
-        default: c226705e24bef67fa947c535d59ea87d4251b483
+        default: ''
       operator_candidate_manifest:
         description: Optional immutable operator-candidate manifest URL for release qualification
         required: false
@@ -89,7 +89,6 @@ env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
   KIND_EXPERIMENTAL_PROVIDER: podman
-  KUBERNAUT_OPERATOR_REF: c226705e24bef67fa947c535d59ea87d4251b483
 
 jobs:
   # ========================================
@@ -128,8 +127,6 @@ jobs:
               - 'Makefile'
               - '.github/workflows/**'
               - 'docker/**'
-              - 'charts/**'
-              - 'scripts/deprecated-chart-validation.sh'
               - 'config/**'
               - 'hack/**'
 
@@ -190,6 +187,14 @@ jobs:
 
       - name: Validate embedded assets (CRDs, migrations)
         run: make validate-embed
+
+      - name: CRD freshness gate
+        run: |
+          make manifests
+          if ! git diff --exit-code -- config/crd/bases/ pkg/shared/assets/crds/; then
+            echo "::error::CRD YAMLs are stale relative to Go types in api/. Run 'make manifests' and commit the result."
+            exit 1
+          fi
 
       - name: Lint Go code
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
@@ -266,108 +271,6 @@ jobs:
           name: license-report
           path: licenses.csv
           retention-days: 90
-
-  # DD-PLATFORM-005 (motivated by #1686/BR-RBAC-020): dedicated fast
-  # fail-fast gate for chart template changes, distinct from deprecated-chart-validation
-  # (Stage 2+, needs built images and a live Kind cluster, ~30-45min).
-  # helm-unittest asserts specific rendered output (RBAC rule shape,
-  # conditional resources) offline in seconds -- runs in Stage 1 alongside
-  # lint-go/unit-tests instead of waiting on build-images, so a broken
-  # template fails CI in ~1min instead of ~30min.
-  helm-unittest:
-    name: Helm Chart Unit Tests (helm-unittest)
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          submodules: true
-
-      - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-
-      - name: Install helm-unittest plugin
-        # --verify=false: azure/setup-helm's "latest" now resolves to Helm v4,
-        # which added plugin provenance verification and refuses to install a
-        # plugin whose source doesn't publish it ("plugin source does not
-        # support verification") unless explicitly opted out. helm-unittest's
-        # releases aren't signed, so this is required, not optional.
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1 --verify=false
-
-      - name: Run helm-unittest specs
-        run: helm unittest charts/kubernaut/
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.26.10'
-          cache: true
-
-      # DD-PLATFORM-006 Decision Area 4: docs/generated/helm-values-reference.md
-      # is generated from charts/kubernaut/values.schema.json by
-      # hack/gen-helm-config-docs. Deliberately NOT chained onto the existing
-      # `make gen-diff` (Go-codegen) target -- that step's cache key excludes
-      # values.schema.json and could false-cache-hit, silently skipping this
-      # check. This is its own uncached, dedicated step instead.
-      - name: Helm values reference freshness check
-        run: |
-          make generate-helm-config-docs
-          if ! git diff --exit-code -- docs/generated/helm-values-reference.md; then
-            echo "::error::docs/generated/helm-values-reference.md is stale. Run 'make generate-helm-config-docs' and commit the result."
-            exit 1
-          fi
-
-      # DD-PLATFORM-006 Decision Area 14 (PR9):
-      # charts/kubernaut/templates/_generated_defaults.tpl is generated from
-      # the same schema by hack/gen-helm-defaults. Same rationale as the
-      # freshness check above -- its own uncached, dedicated step.
-      - name: Helm materialized defaults freshness check
-        run: |
-          make generate-helm-defaults
-          if ! git diff --exit-code -- charts/kubernaut/templates/_generated_defaults.tpl; then
-            echo "::error::charts/kubernaut/templates/_generated_defaults.tpl is stale. Run 'make generate-helm-defaults' and commit the result."
-            exit 1
-          fi
-
-      # BR-PLATFORM-011 (issue #2226): fails the build when a schema-defaulted
-      # or map-typed config field has no helm-unittest assertion proving it
-      # renders and isn't in the seeded allowlist -- same rationale/placement
-      # as the two freshness checks above (fast, offline, Stage 1).
-      - name: Helm chart config-knob test-coverage gate
-        run: make check-helm-coverage
-
-      # #1982: config/crd/bases/*.yaml (and its Helm chart + embedded-asset
-      # copies) must reflect the current Go type definitions in api/ -- K8s
-      # API servers silently prune fields absent from a structural-schema
-      # CRD, so drift here is silent data loss at runtime, not a build
-      # failure. Previously lived in deprecated-chart-validation (Stage 2+, ~30-45min)
-      # and diffed `make manifests`'s own output against itself (the target
-      # copies config/crd/bases/ -> charts/kubernaut/crds/ internally), which
-      # can never disagree regardless of whether the committed YAML was
-      # stale. Moved here, alongside the two freshness checks above, for
-      # both correctness (diff against git HEAD, not a second generated
-      # copy) and speed (Stage 1, no build-images/Kind dependency).
-      - name: CRD freshness gate
-        run: |
-          make manifests
-          if ! git diff --exit-code -- config/crd/bases/ charts/kubernaut/crds/ charts/kubernaut/files/crds/ pkg/shared/assets/crds/; then
-            echo "::error::CRD YAMLs are stale relative to Go types in api/. Run 'make manifests' and commit the result."
-            exit 1
-          fi
-
-      # DD-PLATFORM-006 Decision Area 14 (PR9): proves omitting a
-      # schema-defaulted field from values.yaml is render-neutral -- catches
-      # a template reading .Values.<path> directly instead of through
-      # kubernaut.mergedValues (which would silently render empty/zero
-      # instead of the documented schema default once the field is
-      # trimmed from values.yaml).
-      - name: Helm values.yaml defaults parity check
-        run: make verify-helm-defaults-parity
 
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
@@ -788,19 +691,53 @@ jobs:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     outputs:
       operator_sha: ${{ steps.provenance.outputs.operator_sha }}
       operator_image: ${{ steps.provenance.outputs.operator_image }}
       artifact_name: operator-qualification-${{ github.run_id }}
     steps:
-      - name: Checkout operator at requested ref
+      - name: Resolve operator source ref
+        id: resolve-operator-ref
+        shell: bash
+        env:
+          OPERATOR_OVERRIDE: ${{ inputs.operator_ref }}
+          PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          WORKFLOW_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${OPERATOR_OVERRIDE}" ]]; then
+            ref="${OPERATOR_OVERRIDE}"
+            source_branch="explicit"
+          else
+            source_branch="${PR_BASE_BRANCH:-${WORKFLOW_BRANCH}}"
+            case "${source_branch}" in
+              main|release/v[0-9]*.[0-9]*) ;;
+              *) source_branch="main" ;;
+            esac
+            ref="${source_branch}"
+            git ls-remote --exit-code "https://github.com/jordigilh/kubernaut-operator.git" "refs/heads/${source_branch}" >/dev/null
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "requested_ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "source_branch=${source_branch}" >> "$GITHUB_OUTPUT"
+          echo "Operator source ref: ${ref} (source branch: ${source_branch})"
+
+      - name: Checkout operator at resolved ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jordigilh/kubernaut-operator
-          ref: ${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}
+          ref: ${{ steps.resolve-operator-ref.outputs.ref }}
           path: kubernaut-operator
           fetch-depth: 0
+
+      - name: Set up QEMU for arm64 operator artifact
+        uses: docker/setup-qemu-action@v3.6.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.11.1
 
       - name: Resolve operator SHA before build
         id: provenance
@@ -808,7 +745,7 @@ jobs:
         run: |
           set -euo pipefail
           SHA=$(git -C kubernaut-operator rev-parse HEAD)
-          REQUESTED='${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}'
+          REQUESTED='${{ steps.resolve-operator-ref.outputs.requested_ref }}'
           if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::operator ref did not resolve to a commit SHA: $SHA"
             exit 1
@@ -817,25 +754,32 @@ jobs:
           echo "operator_sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "operator_image=$IMAGE" >> "$GITHUB_OUTPUT"
           cat > operator-provenance.json <<EOF
-          {"repository":"jordigilh/kubernaut-operator","requestedRef":"$REQUESTED","resolvedSHA":"$SHA","imageRef":"$IMAGE","profile":"generic-kind-v1.6","workflowURL":"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+          {"repository":"jordigilh/kubernaut-operator","requestedRef":"$REQUESTED","resolvedSHA":"$SHA","sourceBranch":"${{ steps.resolve-operator-ref.outputs.source_branch }}","imageRef":"$IMAGE","profile":"generic-kind-v1.6","workflowURL":"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
           EOF
           echo "Resolved operator source: $REQUESTED -> $SHA"
 
-      - name: Build immutable operator artifact
+      - name: Build immutable amd64 operator artifact
         run: |
           set -euo pipefail
           IMAGE="localhost/kubernaut-operator:${{ steps.provenance.outputs.operator_sha }}"
-          docker build --pull=false -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
+          docker buildx build --pull=false --platform linux/amd64 --load -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
           docker save -o kubernaut-operator.tar "$IMAGE"
           sha256sum kubernaut-operator.tar > kubernaut-operator.tar.sha256
+
+      - name: Build immutable arm64 operator artifact
+        run: |
+          set -euo pipefail
+          IMAGE="localhost/kubernaut-operator:${{ steps.provenance.outputs.operator_sha }}-arm64"
+          docker buildx build --pull=false --platform linux/arm64 --output "type=oci,dest=kubernaut-operator-arm64.oci" -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
+          sha256sum kubernaut-operator-arm64.oci > kubernaut-operator-arm64.oci.sha256
 
       - name: Lint and render operator charts from the same SHA
         run: |
           set -euo pipefail
           helm lint kubernaut-operator/charts/kubernaut-operator --strict
-          helm lint kubernaut-operator/charts/kubernaut-dev-bootstrap --strict
+          helm lint kubernaut-operator/charts/kubernaut-development-dependencies --strict
           helm template kubernaut-operator kubernaut-operator/charts/kubernaut-operator > operator-bootstrap-rendered.yaml
-          helm template kubernaut-dev-bootstrap kubernaut-operator/charts/kubernaut-dev-bootstrap > operator-dependencies-rendered.yaml
+          helm template kubernaut-development-dependencies kubernaut-operator/charts/kubernaut-development-dependencies > operator-dependencies-rendered.yaml
           if grep -Eq '^kind: Kubernaut$' operator-bootstrap-rendered.yaml; then
             echo "::error::operator bootstrap rendered a Kubernaut CR"
             exit 1
@@ -845,19 +789,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p operator-artifacts
-          tar -czf operator-artifacts/charts.tar.gz -C kubernaut-operator charts/kubernaut-operator charts/kubernaut-dev-bootstrap config/samples/v1alpha2_kubernaut.yaml
+          tar -czf operator-artifacts/charts.tar.gz -C kubernaut-operator charts/kubernaut-operator charts/kubernaut-development-dependencies config/samples/v1alpha2_kubernaut.yaml
           OPERATOR_ARTIFACT_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator.tar.sha256)"
-          jq --arg digest "$OPERATOR_ARTIFACT_DIGEST" '.imageDigest=$digest' operator-provenance.json > operator-provenance.json.tmp
+          ARM64_ARTIFACT_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator-arm64.oci.sha256)"
+          jq --arg digest "$OPERATOR_ARTIFACT_DIGEST" --arg arm64Digest "$ARM64_ARTIFACT_DIGEST" '.imageDigest=$digest | .imageDigests={amd64:$digest,arm64:$arm64Digest}' operator-provenance.json > operator-provenance.json.tmp
           mv operator-provenance.json.tmp operator-provenance.json
           cp operator-provenance.json operator-artifacts/
-          cp operator-bootstrap-rendered.yaml operator-dependencies-rendered.yaml kubernaut-operator.tar kubernaut-operator.tar.sha256 operator-artifacts/
+           cp operator-bootstrap-rendered.yaml operator-dependencies-rendered.yaml kubernaut-operator.tar kubernaut-operator.tar.sha256 kubernaut-operator-arm64.oci kubernaut-operator-arm64.oci.sha256 operator-artifacts/
           cat > operator-artifacts/candidate-manifest.yaml <<EOF
           schemaVersion: 1
           repository: jordigilh/kubernaut-operator
           sha: ${{ steps.provenance.outputs.operator_sha }}
-          image:
-            ref: ${{ steps.provenance.outputs.operator_image }}
-            artifact: kubernaut-operator.tar
+           image:
+             ref: ${{ steps.provenance.outputs.operator_image }}
+             artifact: kubernaut-operator.tar
+             architectures:
+               amd64: kubernaut-operator.tar
+               arm64: kubernaut-operator-arm64.oci
           charts:
             artifact: charts.tar.gz
           provenanceURL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1027,7 +975,7 @@ jobs:
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-operator" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-dev-bootstrap" >> "$GITHUB_ENV"
+          echo "KUBERNAUT_DEPENDENCY_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-development-dependencies" >> "$GITHUB_ENV"
       - name: Run ${{ matrix.service }} integration tests
         run: |
           make test-integration-${{ matrix.service }} 2>&1 | tee integration-${{ matrix.service }}.log
@@ -1350,7 +1298,7 @@ jobs:
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-operator" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-dev-bootstrap" >> "$GITHUB_ENV"
+          echo "KUBERNAUT_DEPENDENCY_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-development-dependencies" >> "$GITHUB_ENV"
       - name: Install Kind v0.32.0
         run: |
           KIND_VERSION="v0.32.0"
@@ -1515,613 +1463,6 @@ jobs:
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
 
   # ========================================
-  # HELM SMOKE TESTS
-  # Validates the Helm chart install/upgrade/uninstall lifecycle on a Kind cluster.
-  # Runs after images are built (parallel with integration + E2E tests).
-  #
-  # Includes a freshness gate that runs BEFORE the Kind cluster is created:
-  #   values.schema.json: `helm lint --strict` validates schema consistency
-  #
-  # (CRD freshness moved to the helm-unittest job -- see #1982: Stage 1, no
-  # build-images/Kind dependency, so drift fails in ~2min instead of here at
-  # ~30-45min. It also fixes the check itself: the gate previously here
-  # diffed `make manifests`'s own output against itself and could never
-  # disagree, regardless of whether the committed CRD YAML was stale.)
-  #
-  # Image strategy: Load pre-built images from workflow artifacts (no
-  # registry, no pull secret) and `kind load` them directly into the cluster.
-  # Authority: docs/testing/342/TEST_PLAN.md
-  # ========================================
-
-  deprecated-chart-validation:
-    name: Deprecated application chart checks (offline)
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    # cert-manager leg additionally runs the ArgoCD GitOps validation (see
-    # "Install ArgoCD" onward below) on top of the plain helm-install smoke
-    # test, so it needs materially more headroom than the hook leg.
-    #
-    # hook leg 30->35 (PR #1790 round-8 RCA): two consecutive runs hit this
-    # exact 30min ceiling with the *entire* 120-test TAP suite passing
-    # (0 failures) -- scripts/helm-smoke-test.sh itself took ~26min end to
-    # end (21:44:52->22:10:51), leaving under 2min of the 30min budget for
-    # cleanup, which the job then got `cancelled` mid-teardown for. Not a
-    # test regression, just a suite that has grown past its original budget;
-    # +5min gives comparable proportional headroom to cert-manager's 45min
-    # for its own (bigger) ArgoCD-inclusive suite.
-    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 35 }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # #334 + DD-PLATFORM-001: cert-manager mode was previously untested in
-        # CI -- both the datastorage-signing-cert gap and the inter-service
-        # mTLS gap were silent regressions only caught by manual kind spikes.
-        tls_mode: [hook, cert-manager]
-    permissions:
-      contents: read
-    env:
-      KIND_CLUSTER_NAME: helm-smoke-${{ matrix.tls_mode }}
-      IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
-      ARGOCD_VERSION: v3.4.4
-      # ArgoCD v3.4.4's upstream manifest references the official Redis image
-      # through public.ecr.aws. GitHub-hosted runners intermittently receive
-      # HTTP 429 "Data limit exceeded" from that registry. Docker Hub serves
-      # the same official multi-arch manifest digest, so keep the content
-      # pinned while avoiding the throttled registry for this ephemeral test.
-      ARGOCD_REDIS_IMAGE: docker.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
-      GITOPS_NAMESPACE: kubernaut-gitops-smoke
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-      - name: Lint and render deprecated chart offline
-        run: |
-          echo "Running helm lint --strict to validate schema consistency..."
-          helm lint charts/kubernaut/ --strict \
-            --set global.image.tag=schema-check \
-            --set postgresql.auth.existingSecret=lint-placeholder \
-            --set datastorage.dbExistingSecret=lint-placeholder \
-            --set valkey.existingSecret=lint-placeholder \
-            --set global.llmProfiles.primary.provider=openai \
-            --set global.llmProfiles.primary.model=gpt-4o \
-            --set global.llmProfiles.primary.credentialsSecretName=lint-placeholder \
-            --set kubernautAgent.llmProfileRef=primary \
-            --set aianalysis.policies.existingConfigMap=lint-placeholder \
-            --set signalprocessing.policies.existingConfigMap=lint-placeholder
-          echo "PASS: values.schema.json is consistent with values.yaml"
-
-      - name: Install Podman
-        uses: ./.github/actions/install-podman
-
-      - name: Install Kind
-        run: |
-          KIND_VERSION="v0.32.0"
-          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-          kind version
-
-      # extraPortMappings (hostPort 8080 -> containerPort 30080) is only
-      # consumed by the cert-manager leg's ArgoCD CLI access below (NodePort,
-      # not `kubectl port-forward` -- avoids a backgrounded process as a
-      # source of flakiness); harmless no-op for the hook leg.
-      - name: Create Kind cluster
-        run: |
-          cat <<'EOF' > /tmp/kind-config.yaml
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          nodes:
-          - role: control-plane
-            extraPortMappings:
-            - containerPort: 30080
-              hostPort: 8080
-              protocol: TCP
-          EOF
-
-          # Issue #1769: GitHub-hosted runners intermittently resolve a
-          # podman/crun combination where the OCI runtime rejects the
-          # container config ("crun: unknown version specified"), failing
-          # `kind create cluster` with exit status 126 while starting the
-          # control-plane container. This is a transient runner-side
-          # container-runtime issue, not a config problem -- Kind already
-          # tears down the partially-created node before returning, so a
-          # bare retry of the whole invocation is safe. Mirrors the same
-          # fix applied to the Go E2E harness (test/infrastructure/
-          # kind_cluster_helpers.go's retryTransientKindRuntimeError).
-          max_attempts=3
-          attempt=1
-          while true; do
-            echo "🔧 kind create cluster attempt ${attempt}/${max_attempts}"
-            if output=$(kind create cluster --name "$KIND_CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 120s 2>&1); then
-              echo "${output}"
-              break
-            fi
-            echo "${output}"
-            if [ "${attempt}" -ge "${max_attempts}" ] || ! echo "${output}" | grep -qiE "crun: unknown version specified|OCI runtime error"; then
-              echo "❌ kind create cluster failed (attempt ${attempt}/${max_attempts}) -- not a known-transient error, giving up."
-              exit 1
-            fi
-            backoff=$(( attempt * 5 ))
-            echo "⚠️  Transient container-runtime error detected (attempt ${attempt}/${max_attempts}), retrying in ${backoff}s..."
-            sleep "${backoff}"
-            attempt=$(( attempt + 1 ))
-          done
-
-          kubectl cluster-info
-          kubectl get nodes -o wide
-
-      - name: Download pre-built image artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          pattern: image-*-amd64
-          path: /tmp/ci-images
-          merge-multiple: true
-
-      - name: Load images directly into Kind (no registry, no pull secret)
-        run: |
-          shopt -s nullglob
-          tars=(/tmp/ci-images/*.tar)
-          if [ ${#tars[@]} -eq 0 ]; then
-            echo "::error::No image tarballs found in /tmp/ci-images"
-            exit 1
-          fi
-          for tar in "${tars[@]}"; do
-            echo "📦 Loading $(basename "$tar") into Kind cluster ${KIND_CLUSTER_NAME}..."
-            kind load image-archive "$tar" --name "$KIND_CLUSTER_NAME"
-          done
-
-      # #334 + DD-PLATFORM-001: install cert-manager + a single bootstrap
-      # ClusterIssuer so the chart's `lookup`-based issuerRef auto-selection
-      # (tls.certManager.issuerRef in values.yaml) has exactly one candidate,
-      # matching how a real cluster operator would prepare cert-manager mode.
-      - name: Install cert-manager
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml
-          kubectl wait --for=condition=Available --timeout=120s deployment --all -n cert-manager
-          kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
-          kubectl wait --for=condition=Ready --timeout=60s clusterissuer/selfsigned-issuer
-
-      - name: Run smoke tests
-        run: |
-          scripts/helm-smoke-test.sh \
-            --platform kind \
-            --image-tag "${IMAGE_TAG}" \
-            --registry localhost \
-            --chart-path charts/kubernaut/ \
-            --tls-mode "${{ matrix.tls_mode }}"
-
-      # ==========================================================
-      # GitOps (ArgoCD) validation -- issue #1617 item 4, DD-PLATFORM-002
-      #
-      # Deploys the SAME chart, at the SAME commit, using the SAME
-      # already-loaded PR images (registry=localhost, tag=${IMAGE_TAG}) as
-      # the plain `helm install` smoke test above -- but through a real
-      # ArgoCD Application instead of the Helm CLI, to catch ArgoCD-specific
-      # phase/wave/hook incompatibilities (e.g. the PostSync/health deadlock
-      # fixed by DD-PLATFORM-002) that a plain `helm install` can never
-      # exercise. Deliberately reuses this job's already-running Kind
-      # cluster and already-loaded images rather than a separate workflow
-      # with its own cluster: a separate workflow has no access to this PR's
-      # freshly-built (unpublished) images, so it would have to fall back to
-      # a stale published tag -- silently passing/failing independently of
-      # the actual code change under review. Scoped to the cert-manager leg
-      # only: DD-PLATFORM-001's inter-service mTLS auto-provisioning (which
-      # this validates end-to-end) only applies in that mode.
-      # ==========================================================
-
-      - name: Install ArgoCD CLI
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          curl -sSL -o /usr/local/bin/argocd "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
-          chmod +x /usr/local/bin/argocd
-          argocd version --client
-
-      # #1617 spike finding: ArgoCD's own CRDs (e.g. applicationsets.argoproj.io)
-      # exceed the client-side apply kubectl.kubernetes.io/last-applied-configuration
-      # annotation limit (262144 bytes) -- server-side apply is required to install
-      # ArgoCD itself, not just to sync this chart.
-      - name: Install ArgoCD
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          kubectl create namespace argocd
-          kubectl apply -n argocd --server-side --force-conflicts \
-            -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
-          # Avoid the public.ecr.aws pull quota without changing the Redis
-          # artifact: ARGOCD_REDIS_IMAGE is pinned to the upstream manifest
-          # digest above.
-          kubectl -n argocd set image deployment/argocd-redis \
-            "redis=${ARGOCD_REDIS_IMAGE}"
-          kubectl wait --for=condition=Available --timeout=180s deployment -l app.kubernetes.io/part-of=argocd -n argocd
-
-      - name: Log in to ArgoCD CLI
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          kubectl -n argocd wait --for=condition=Available --timeout=60s deployment/argocd-server
-          kubectl patch svc argocd-server -n argocd -p \
-            '{"spec": {"type": "NodePort", "ports": [{"name": "https", "port": 443, "targetPort": 8080, "nodePort": 30080}]}}'
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
-          for i in $(seq 1 10); do
-            argocd login localhost:8080 --username admin --password "$ARGOCD_PASSWORD" --insecure && break
-            echo "Retrying ArgoCD login ($i/10)..."
-            sleep 5
-          done
-
-      - name: Provision GitOps prerequisite namespace and secrets
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          kubectl create namespace "$GITOPS_NAMESPACE"
-          # #1617 spike finding: `lookup` has no live cluster access when ArgoCD's
-          # repo-server renders the chart (equivalent to `helm template`, not a real
-          # `helm install`) -- every value the chart would otherwise auto-discover
-          # via `lookup` (issuerRef, secrets) must be supplied explicitly here.
-          kubectl create secret generic postgresql-secret -n "$GITOPS_NAMESPACE" \
-            --from-literal=POSTGRES_USER=slm_user \
-            --from-literal=POSTGRES_PASSWORD=gitops-smoke-pass \
-            --from-literal=POSTGRES_DB=action_history \
-            --from-literal="db-secrets.yaml=$(printf 'username: slm_user\npassword: gitops-smoke-pass')"
-          kubectl create secret generic valkey-secret -n "$GITOPS_NAMESPACE" \
-            --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
-          kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
-            --from-literal=api_key=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
-          # DD-PLATFORM-006 DA6/DA7 (PR #1790 round-7 RCA): datastorage-audit-hmac-key
-          # is mandatory (AU-9) with no enabled gate, but secrets.yaml's fail() guard
-          # only skips validation when tls.mode=hook (that mode's tls-cert-job
-          # pre-install hook auto-generates it). cert-manager mode has no such hook,
-          # so it must be pre-created -- exactly like scripts/helm-smoke-test.sh's
-          # run_pre_005 already does for the plain `helm install` smoke test below,
-          # which this GitOps-via-ArgoCD leg has its own separate secret-provisioning
-          # step for and had never been updated to match. Without it, datastorage's
-          # non-optional /etc/datastorage/secrets volume mount fails
-          # (MountVolume.SetUp failed: secret "datastorage-audit-hmac-key" not
-          # found), so its pod never leaves Init:, blocking ArgoCD's sync-wave "-1"
-          # from ever completing -- which cascades into every sync-wave "0" resource
-          # (gateway, authwebhook-cert, etc.) never being applied within the sync
-          # timeout.
-          kubectl create secret generic datastorage-audit-hmac-key -n "$GITOPS_NAMESPACE" \
-            --from-literal="audit-hmac-key.yaml=$(printf 'hmacKey: %s' "$(openssl rand -base64 32)")"
-
-      # targetRevision uses the same merge commit this job already checked
-      # out and built images from (refs/pull/<n>/merge is maintained by
-      # GitHub in the base repo for every PR, fork or not), so ArgoCD's
-      # in-cluster git clone deploys the exact chart under review -- not a
-      # separately-fetched branch head that could have already diverged.
-      - name: Create ArgoCD Application
-        if: matrix.tls_mode == 'cert-manager'
-        env:
-          REPO_URL: https://github.com/${{ github.repository }}.git
-          TARGET_REVISION: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
-        run: |
-          # ArgoCD renders Helm with `helm template`, so lookup-based API server
-          # discovery is unavailable. NetworkPolicy matches the real backend
-          # endpoint after Service DNAT, not the kubernetes Service ClusterIP.
-          mapfile -t api_server_ips < <(
-            kubectl get endpoints kubernetes -n default \
-              -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{"\n"}{end}'
-          )
-          api_server_port=$(kubectl get endpoints kubernetes -n default \
-            -o jsonpath='{.subsets[0].ports[0].port}')
-          if [[ "${#api_server_ips[@]}" -eq 0 || -z "$api_server_port" ]]; then
-            echo "FAIL: could not discover Kubernetes API server endpoint"
-            exit 1
-          fi
-          api_server_cidrs=""
-          for ip in "${api_server_ips[@]}"; do
-            printf -v cidr_line '                      - %s/32\n' "$ip"
-            api_server_cidrs+="$cidr_line"
-          done
-          cat <<EOF | argocd app create -f -
-          apiVersion: argoproj.io/v1alpha1
-          kind: Application
-          metadata:
-            name: kubernaut-gitops-smoke
-            namespace: argocd
-          spec:
-            project: default
-            source:
-              repoURL: ${REPO_URL}
-              targetRevision: ${TARGET_REVISION}
-              path: charts/kubernaut
-              helm:
-                valuesObject:
-                  global:
-                    image:
-                      registry: localhost
-                      namespace: ""
-                      tag: ${IMAGE_TAG}
-                    llmProfiles:
-                      primary:
-                        provider: openai
-                        model: gpt-4o
-                        endpoint: https://api.openai.com/v1
-                        credentialsSecretName: kubernaut-llm-credentials
-                  postgresql:
-                    auth:
-                      existingSecret: postgresql-secret
-                  valkey:
-                    existingSecret: valkey-secret
-                  kubernautAgent:
-                    llmProfileRef: primary
-                  networkPolicies:
-                    apiServerCIDRs:
-          ${api_server_cidrs}          apiServerPort: ${api_server_port}
-                  signalprocessing:
-                    policies:
-                      content: |
-                        package signalprocessing
-                        import rego.v1
-                        default severity := "info"
-                  aianalysis:
-                    policies:
-                      content: |
-                        package aianalysis.approval
-                        import rego.v1
-                        default allow := false
-                  monitoring:
-                    prometheus:
-                      enabled: false
-                    alertManager:
-                      enabled: false
-                  tls:
-                    mode: cert-manager
-                    certManager:
-                      issuerRef:
-                        name: selfsigned-issuer
-                        kind: ClusterIssuer
-            destination:
-              server: https://kubernetes.default.svc
-              namespace: ${GITOPS_NAMESPACE}
-          EOF
-          argocd app list
-          # `argocd app create -f -` can silently accept malformed YAML and
-          # create no Application, so fail here instead of producing empty
-          # namespace checks later in the job.
-          argocd app get kubernaut-gitops-smoke >/dev/null
-
-      # `argocd app sync` blocks until Synced AND Healthy, not just until
-      # manifests are applied. This validates GitOps sync mechanics -- CRDs,
-      # hooks, cert-manager wiring -- with placeholder LLM credentials, so
-      # some controllers (aianalysis, kubernaut-agent) never reach Healthy
-      # for reasons unrelated to GitOps mechanics, and this command reliably
-      # times out even on a fully successful sync. That timeout is
-      # therefore tolerated here (`|| true`); "Verify GitOps deployment"
-      # below asserts the specific resources that actually matter with
-      # their own precise waits, instead of relying on aggregate app health.
-      # RCA (PR #1625 run 28916308187, 2026-07-08): the very first cert-manager
-      # run of this job hit a *terminal* sync failure, not the tolerated
-      # health-timeout above -- the operation phase flipped straight to
-      # "Failed" with message "one or more synchronization tasks completed
-      # unsuccessfully" while every sync-wave "-1" resource was in fact
-      # Healthy by the time the operation ended (confirmed via must-gather:
-      # datastorage-signing-cert, the 3 leaf Certificates, and the
-      # kubernaut-interservice-ca-issuer Issuer were all momentarily observed
-      # Degraded -- "Issuing certificate as Secret does not exist" / "Error
-      # getting keypair for CA issuer" -- for exactly one controller poll
-      # before self-healing). ArgoCD's sync engine records a sync task's
-      # phase as Failed the instant it sees this and never re-evaluates it,
-      # so it refuses to progress into sync-wave "0" (gateway, etc.) for the
-      # rest of that operation even though the gating wave *did* finish
-      # Healthy moments later -- this is a documented upstream behavior, not
-      # a chart defect (argoproj/argo-cd#9721: "when a hook fails [i.e. any
-      # sync task], even when it is retried and eventually successful, this
-      # will block argocd from continuing the sync"). A brand new sync
-      # operation re-evaluates current live state -- by then everything from
-      # the previous attempt is already Synced/Healthy -- so retry a bounded
-      # number of times before falling back to the pre-existing
-      # health-timeout tolerance.
-      - name: Sync ArgoCD Application
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          for attempt in 1 2 3; do
-            if argocd app sync kubernaut-gitops-smoke --server-side --timeout 180; then
-              echo "::notice::ArgoCD sync succeeded on attempt $attempt"
-              break
-            fi
-            phase=$(argocd app get kubernaut-gitops-smoke -o json 2>/dev/null | jq -r '.status.operationState.phase // "Unknown"')
-            if [ "$phase" != "Failed" ] && [ "$phase" != "Error" ]; then
-              echo "::notice::sync timed out waiting for full pod health (expected -- some controllers need real LLM credentials/config this smoke test doesn't provide) -- proceeding to targeted resource checks"
-              break
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::notice::sync operation phase '$phase' (attempt $attempt/3) -- terminal sync failure, likely a transient ArgoCD sync-wave health race (argoproj/argo-cd#9721); retrying with a fresh sync operation"
-              sleep 5
-            else
-              echo "::warning::sync failed 3 times with terminal phase '$phase' -- proceeding to targeted resource checks regardless, which will fail below if this was not a transient race"
-            fi
-          done
-          argocd app get kubernaut-gitops-smoke || true
-
-      # DD-PLATFORM-002 residual nuance (shared with tls.mode=hook under plain
-      # Helm CLI -- not new, not ArgoCD-specific): ~11 services mount
-      # inter-service-ca as a ConfigMap volume with `optional: true`. If a
-      # service's pod is scheduled and its volume set up *before*
-      # interservice-ca-sync creates that ConfigMap (a real race: the Job
-      # needs ~15-20s to run, a Deployment pod can start faster), kubelet
-      # mounts an empty directory and will not retroactively populate it for
-      # that pod once the ConfigMap appears; only a fresh pod re-evaluates
-      # the volume. This step makes that convergence deterministic in CI by
-      # restarting any pod still crash-looping once both sync Jobs have
-      # actually completed.
-      #
-      # Separate, CI-only resource-contention finding (observed on
-      # PR #1625's first cert-manager run, 2026-07-08): this Kind cluster
-      # runs kube-apiserver/etcd/scheduler + ArgoCD's ~9 pods + cert-manager's
-      # 3 pods + this chart's ~14 Go controllers + postgres + valkey -- and
-      # DD-PLATFORM-002 puts every chart Deployment in the same sync-wave "0"
-      # as the hook Jobs, so ArgoCD applies (and each controller starts) them
-      # essentially simultaneously. On a standard 4-vCPU/16GB GitHub-hosted
-      # runner (docs.github.com/en/actions/reference/runners/github-hosted-runners),
-      # that simultaneous burst can transiently starve the node enough that
-      # in-cluster apiserver connections fail during controller-runtime
-      # manager startup -- confirmed via must-gather: multiple *unrelated*
-      # services (gateway, authwebhook, effectivenessmonitor, notification,
-      # signalprocessing, workflowexecution) all failed with the identical
-      # "dial tcp <apiserver-ClusterIP>:443: i/o timeout" error, each exactly
-      # 30s (client-go's dial timeout) after their last successful log line,
-      # in the same ~45s wall-clock window -- while kube-apiserver's own log
-      # went silent for the preceding ~4 minutes. This is a CI-environment
-      # capacity artifact, not a chart/app defect, so a single restart isn't
-      # reliably enough time for the burst to subside; poll across multiple
-      # passes instead of failing fast on the first one.
-      - name: Recover pods that raced the migration/CA-sync Jobs
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          echo "=== Waiting for db-migration and interservice-ca-sync Jobs to complete ==="
-          for app_label in db-migration interservice-ca-sync; do
-            JOB_NAME=$(kubectl get pods -n "$GITOPS_NAMESPACE" -l "app=${app_label}" -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
-            if [[ -n "$JOB_NAME" ]]; then
-              kubectl wait --for=condition=Complete --timeout=120s "job/${JOB_NAME}" -n "$GITOPS_NAMESPACE" 2>&1 || true
-            else
-              echo "::warning::no pod found for app=${app_label} yet -- Job may not have been scheduled"
-            fi
-          done
-
-          echo "=== Restarting any pods still CrashLoopBackOff, across multiple passes to absorb transient CI resource contention ==="
-          for attempt in 1 2 3 4 5; do
-            CRASHING=$(kubectl get pods -n "$GITOPS_NAMESPACE" -o json | \
-              jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name')
-            if [[ -z "$CRASHING" ]]; then
-              echo "No crash-looping pods found on attempt ${attempt}/5 -- stable"
-              break
-            fi
-            echo "Attempt ${attempt}/5: restarting crash-looping pods: $CRASHING"
-            # shellcheck disable=SC2086
-            kubectl delete pod -n "$GITOPS_NAMESPACE" $CRASHING
-            echo "Waiting 45s for restarted pods to stabilize..."
-            sleep 45
-          done
-          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
-
-      - name: Verify GitOps deployment
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          FAIL=0
-
-          echo "=== CRDs (expect 11, installed by the PreSync crd-upgrade hook) ==="
-          CRD_COUNT=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-          echo "Found: ${CRD_COUNT}"
-          [[ "$CRD_COUNT" -eq 11 ]] || { echo "FAIL: expected 11 CRDs"; FAIL=1; }
-
-          echo "=== cert-manager Certificates (#334 + DD-PLATFORM-001) ==="
-          for cert in authwebhook-cert datastorage-signing-cert kubernaut-interservice-ca gateway-tls datastorage-tls kubernautagent-tls; do
-            if kubectl wait --for=condition=Ready --timeout=180s "certificate/${cert}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
-              echo "OK: ${cert} Ready"
-            else
-              echo "FAIL: ${cert} not Ready"
-              kubectl describe "certificate/${cert}" -n "$GITOPS_NAMESPACE" 2>&1 || true
-              FAIL=1
-            fi
-          done
-
-          echo "=== db-migration + inter-service-ca ConfigMap sync hooks (DD-PLATFORM-002) ==="
-          MIGRATION_JOB=$(kubectl get pods -n "$GITOPS_NAMESPACE" -l app=db-migration -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
-          if [[ -n "$MIGRATION_JOB" ]] && kubectl get job "$MIGRATION_JOB" -n "$GITOPS_NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null | grep -q '^1$'; then
-            echo "OK: db-migration Job (${MIGRATION_JOB}) succeeded"
-          else
-            echo "FAIL: db-migration Job did not succeed -- ArgoCD PostSync/health deadlock may have regressed"
-            kubectl get pods -n "$GITOPS_NAMESPACE" -l app=db-migration -o wide 2>&1 || true
-            FAIL=1
-          fi
-          if kubectl get configmap inter-service-ca -n "$GITOPS_NAMESPACE" >/dev/null 2>&1; then
-            echo "OK: inter-service-ca ConfigMap exists"
-          else
-            echo "FAIL: inter-service-ca ConfigMap missing -- ArgoCD PostSync/health deadlock may have regressed"
-            FAIL=1
-          fi
-
-          echo "=== datastorage-signing-cert Secret (#334 regression guard) ==="
-          if kubectl get secret datastorage-signing-cert -n "$GITOPS_NAMESPACE" -o jsonpath='{.data.tls\.key}' 2>/dev/null | grep -q .; then
-            echo "OK: datastorage-signing-cert has tls.key"
-          else
-            echo "FAIL: datastorage-signing-cert missing or empty tls.key"
-            FAIL=1
-          fi
-
-          echo "=== All GitOps application Deployments Ready (DD-PLATFORM-002 end-to-end proof) ==="
-          # 180s (not 120s): the "Recover pods" step above already absorbs most
-          # of the CI resource-contention-driven restarts, but leaves some
-          # margin here in case a pod's crash-loop backoff had grown past 45s
-          # by the time this runs.
-          mapfile -t deployments < <(
-            kubectl get deployments -n "$GITOPS_NAMESPACE" \
-              -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true
-          )
-          if [[ "${#deployments[@]}" -eq 0 ]]; then
-            echo "FAIL: no GitOps application Deployments found"
-            FAIL=1
-          else
-            for dep in "${deployments[@]}"; do
-              if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
-                echo "OK: ${dep} Available"
-              else
-                echo "FAIL: ${dep} not Available"
-                kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
-                FAIL=1
-              fi
-            done
-          fi
-
-          echo "=== Pod status (informational) ==="
-          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
-
-          if [[ "$FAIL" -ne 0 ]]; then
-            echo "::error::One or more GitOps deployment checks failed"
-            exit 1
-          fi
-          echo "PASS: all GitOps deployment checks succeeded"
-
-      - name: Verify PreDelete hook fires on ArgoCD cascade delete
-        if: matrix.tls_mode == 'cert-manager' && always()
-        run: |
-          argocd app delete kubernaut-gitops-smoke --cascade --yes || true
-          echo "Waiting up to 3m for cascade delete + webhook-cleanup PreDelete hook..."
-          for i in $(seq 1 18); do
-            if ! kubectl get namespace "$GITOPS_NAMESPACE" >/dev/null 2>&1; then
-              echo "OK: namespace ${GITOPS_NAMESPACE} fully removed (cascade + PreDelete hook completed)"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::warning::Namespace ${GITOPS_NAMESPACE} still present after 3m -- cascade delete or PreDelete hook may be stuck"
-          kubectl get all -n "$GITOPS_NAMESPACE" 2>&1 || true
-
-      - name: Collect ArgoCD diagnostics on failure
-        if: matrix.tls_mode == 'cert-manager' && (failure() || cancelled())
-        run: |
-          argocd app get kubernaut-gitops-smoke 2>&1 || true
-          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide 2>&1 || true
-          kubectl get events -n "$GITOPS_NAMESPACE" --sort-by='.lastTimestamp' 2>&1 | tail -40 || true
-          kubectl get certificates -n "$GITOPS_NAMESPACE" -o wide 2>&1 || true
-
-      - name: Collect Kind node logs on failure
-        if: failure() || cancelled()
-        run: |
-          kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
-
-      - name: Upload must-gather and Kind logs
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: helm-smoke-must-gather-${{ matrix.tls_mode }}-${{ github.run_id }}
-          path: |
-            /tmp/must-gather-helm-smoke-*.tar.gz
-            /tmp/kind-smoke-logs/
-          retention-days: 7
-          if-no-files-found: warn
-
-      - name: Cleanup Kind cluster
-        if: always()
-        run: |
-          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
-
-      - name: Cleanup Podman
-        if: always()
-        run: |
-          podman system prune -a -f 2>/dev/null || true
-  # ========================================
   # MUST-GATHER E2E TEST (Live Cluster, Deterministic Drift Detection)
   # Moved from must-gather-tests.yml (PR #2245 CI investigation): that
   # workflow's own E2E job pulled a hand-pinned quay.io/kubernaut-ai/*
@@ -2132,8 +1473,7 @@ jobs:
   # could just as easily mask a real regression the PR introduced). Runs
   # here instead, after build-images/build-infra-images, loading the SAME
   # artifact-based images (registry=localhost, tag=needs.build-images.
-  # outputs.tag) every other Kind job in this pipeline already uses -- see
-  # deprecated-chart-validation above for the artifact-handoff rationale. must-gather-
+  # outputs.tag) every other Kind job in this pipeline already uses. must-gather-
   # tests.yml keeps its own Unit Tests (52 bats) and Container Build jobs
   # (path-filtered, fast feedback for must-gather-only changes) -- neither
   # depends on other services' images, so neither was affected by the
@@ -2160,7 +1500,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, helm-unittest, deprecated-chart-validation, must-gather-e2e-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -2192,7 +1532,6 @@ jobs:
         if: always()
         run: |
           echo "📊 Generating comprehensive coverage report (Python-based, line-by-line merging)..."
-          echo ""
           
           # Debug: Show available coverage artifacts
           echo "🔍 Downloaded coverage summary artifacts:"
@@ -2347,9 +1686,6 @@ jobs:
           echo "  All Services (13 services): ${{ needs.e2e-tests.result }}"
           echo "  Image Strategy: Load from workflow artifacts (all service images)"
           echo ""
-          echo "Helm Smoke Tests (parallel with Stage 3+4):"
-          echo "  Smoke Tests (Kind):  ${{ needs.deprecated-chart-validation.result }}"
-          echo "  Gates: values.schema.json validation (CRD freshness now in helm-unittest, Stage 1)"
           echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
@@ -2447,41 +1783,12 @@ jobs:
             exit 1
           fi
 
-          # Check for Helm chart unit tests (helm-unittest, #1686)
-          if [ "${{ needs.helm-unittest.result }}" == "failure" ]; then
-            echo ""
-            echo "❌ Helm chart unit tests failed - check charts/kubernaut/tests/*.yaml"
-            exit 1
-          elif [ "${{ needs.helm-unittest.result }}" == "skipped" ]; then
-            echo ""
-            echo "⏭️  Helm chart unit tests skipped (dependencies failed)"
-          elif [ "${{ needs.helm-unittest.result }}" == "cancelled" ]; then
-            echo ""
-            echo "⚠️  Helm chart unit tests cancelled"
-            exit 1
-          fi
-
-          # Check for Helm smoke test (handle skipped if dependencies failed)
-          if [ "${{ needs.deprecated-chart-validation.result }}" == "failure" ]; then
-            echo ""
-            echo "❌ Helm smoke tests failed - check schema validation or install logs"
-            exit 1
-          elif [ "${{ needs.deprecated-chart-validation.result }}" == "skipped" ]; then
-            echo ""
-            echo "⏭️  Helm smoke tests skipped (dependencies failed)"
-          elif [ "${{ needs.deprecated-chart-validation.result }}" == "cancelled" ]; then
-            echo ""
-            echo "⚠️  Helm smoke tests cancelled"
-            exit 1
-          fi
-
           # Final result
           echo ""
           if [ "${{ needs.integration-tests.result }}" == "success" ] && \
              [ "${{ needs.cel-immutability-regression.result }}" == "success" ] && \
              [ "${{ needs.e2e-tests.result }}" == "success" ] && \
-             [ "${{ needs.helm-unittest.result }}" == "success" ] && \
-             [ "${{ needs.deprecated-chart-validation.result }}" == "success" ]; then
+             [ "${{ needs.e2e-tests.result }}" == "success" ]; then
             echo "✅ All tests passed!"
             exit 0
           else
@@ -2572,7 +1879,7 @@ jobs:
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-images,
             build-infra-images, build-operator,
-            integration-tests, cel-immutability-regression, e2e-tests, helm-unittest, deprecated-chart-validation,
+            integration-tests, cel-immutability-regression, e2e-tests,
             must-gather-e2e-test, summary]
     runs-on: ubuntu-latest
     steps:
@@ -2594,8 +1901,6 @@ jobs:
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  cel-immut-regression: ${{ needs.cel-immutability-regression.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
-          echo "  helm-unittest:        ${{ needs.helm-unittest.result }}"
-          echo "  deprecated-chart-validation:      ${{ needs.deprecated-chart-validation.result }}"
           echo "  must-gather-e2e-test: ${{ needs.must-gather-e2e-test.result }}"
           echo "  summary:              ${{ needs.summary.result }}"
           echo ""

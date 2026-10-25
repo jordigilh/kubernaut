@@ -33,8 +33,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 		Expect(match).To(HaveLen(2))
 		Expect(semver.Compare("v"+match[1], "v1.26.10")).To(BeNumerically(">=", 0))
 		workflowCounts := map[string]int{
-			"ci-pipeline.yml": 9, "release.yml": 4, "codeql.yml": 1,
-			"chart-release.yml": 0, "helm-smoke-test.yml": 0,
+			"ci-pipeline.yml": 8, "release.yml": 4, "codeql.yml": 1,
 		}
 		for workflow, expectedCount := range workflowCounts {
 			body := readSecurityFixtureSource(filepath.Join(".github", "workflows", workflow))

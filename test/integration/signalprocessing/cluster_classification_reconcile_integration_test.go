@@ -48,7 +48,7 @@ import (
 // Hot-Reload Integration" Describe block (DD-TEST-010).
 var _ = Describe("IT-SP-1511-002: cluster classification through the real reconcile loop (BR-FLEET-003)", Serial, Label("integration", "signalprocessing", "fleet"), func() {
 	// clusterLabelPolicy mirrors the example shipped in
-	// charts/kubernaut/examples/signalprocessing-policy.rego: no default rule,
+	// test/fixtures/signalprocessing-policy.rego: no default rule,
 	// so an unmatched/empty label is a valid "no classification" outcome
 	// rather than an error (BR-FLEET-003 R2).
 	const clusterLabelPolicy = `default labels := {}

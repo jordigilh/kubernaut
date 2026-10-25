@@ -86,22 +86,20 @@ teardown() {
 # UT-MG-2187-*: RBAC allowlist completeness (Issue #2187)
 # ========================================
 
-@test "UT-MG-2187-001: ClusterRole's static kubernaut.ai allowlist has an entry for every CRD shipped in the Helm chart" {
+@test "UT-MG-2187-001: ClusterRole's static kubernaut.ai allowlist has an entry for every CRD" {
     # Business Outcome: BR-PLATFORM-001.3.2 -- crds.sh discovers CRD types
     # dynamically (#2037), but RBAC is still a hand-maintained allowlist. A
     # type discoverable-but-not-readable is a silent partial-collection gap
     # (kubectl 403s on the instances/definition call even though the type was
-    # enumerated). Source of truth is the CRD manifests actually shipped in
-    # the chart (charts/kubernaut/crds/kubernaut.ai_*.yaml), not a
-    # hand-maintained fixture list here -- so this test itself can't rot the
-    # same way the allowlist it's checking did.
-    local chart_crd_dir="${MUST_GATHER_ROOT}/../../charts/kubernaut/crds"
+    # enumerated). Source of truth is the generated CRD manifests in
+    # config/crd/bases, not a hand-maintained fixture list here.
+    local crd_dir="${MUST_GATHER_ROOT}/../../config/crd/bases"
     local clusterrole="${MUST_GATHER_ROOT}/templates/clusterrole.yaml"
 
-    [ -d "${chart_crd_dir}" ] || skip "chart CRD directory not found: ${chart_crd_dir}"
+    [ -d "${crd_dir}" ] || skip "CRD directory not found: ${crd_dir}"
 
     local missing=""
-    for crd_file in "${chart_crd_dir}"/kubernaut.ai_*.yaml; do
+    for crd_file in "${crd_dir}"/kubernaut.ai_*.yaml; do
         local plural
         plural=$(basename "${crd_file}" .yaml | sed 's/^kubernaut\.ai_//')
         if ! grep -qE "^\s+- ${plural}\$" "${clusterrole}"; then
@@ -149,4 +147,3 @@ EOF
     assert_file_contains "${MOCK_COLLECTION_DIR}/crds/agentsessions/all-instances.yaml" "test-as-001"
     assert_file_contains "${MOCK_COLLECTION_DIR}/crds/agentsessions/all-instances.yaml" "kind: AgentSession"
 }
-

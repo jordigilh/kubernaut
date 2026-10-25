@@ -180,7 +180,7 @@ var _ = Describe("buildToolRegistry", func() {
 // Before this fix, registerFleetTools hardcoded the un-hyphenated
 // "/etc/kubernautagent/" prefix while the Helm chart mounts every other KA
 // credential (base LLM OAuth2, phase credentials, alignment-check
-// credentials -- see charts/kubernaut/templates/kubernaut-agent/
+// credentials -- see operator-managed manifests/kubernaut-agent/
 // kubernaut-agent.yaml) under the hyphenated "/etc/kubernaut-agent/". That
 // mismatch was latent (no Helm-exposed kubernautAgent.fleet.oauth2 existed
 // to reach this code path at all), but must be corrected now that #1729

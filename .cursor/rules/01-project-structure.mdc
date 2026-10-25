@@ -90,7 +90,7 @@ User-facing documentation lives at [kubernaut-docs](https://jordigilh.github.io/
 
 ## Deployment
 
-- [charts/kubernaut/](mdc:charts/kubernaut/) - Helm chart (primary deployment method)
+- Kubernaut Operator (external repository) - application deployment and lifecycle owner
 - [deploy/](mdc:deploy/) - Per-service Kustomize manifests, action types, CRDs
 
 ## Build System

@@ -1,14 +1,10 @@
 # Unified SignalProcessing Rego Policy (ADR-060)
 #
 # This single file contains all classification rules for the SignalProcessing controller.
-# Deploy via Helm:
-#   helm install kubernaut kubernaut/kubernaut \
-#     --set-file signalprocessing.policies.content=signalprocessing-policy.rego
-#
-# Or create a ConfigMap and reference it:
+# The operator qualification harness writes this fixture to an administrator-owned
+# ConfigMap and references it from the user-owned Kubernaut resource. For a direct
+# Kubernetes test setup, create a ConfigMap:
 #   kubectl create configmap signalprocessing-policy --from-file=policy.rego=signalprocessing-policy.rego
-#   helm install kubernaut kubernaut/kubernaut \
-#     --set signalprocessing.policies.existingConfigMap=signalprocessing-policy
 #
 # Input schema (type-safe from Go):
 #   input.namespace.name         string

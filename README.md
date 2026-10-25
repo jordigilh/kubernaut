@@ -129,16 +129,8 @@ tag, for example `IMAGE_REPOSITORY=quay.io/jordigilh IMAGE_TAG=dev`.
 
 ## Installation
 
-Pick the guide for your platform — both are production-ready deployment paths.
-
-New to Kubernaut? Start with the Helm chart's [Quick Start](charts/kubernaut/README.md#quick-start) — namespace, three credential Secrets (PostgreSQL, Valkey, and an LLM provider API key), two Rego policies, and one `helm install`.
-
-| Platform | Method | Guide |
-|---|---|---|
-| Vanilla Kubernetes (non-OpenShift) | Helm chart | [charts/kubernaut/README.md](charts/kubernaut/README.md) |
-| OpenShift | Operator (OLM) | [kubernaut-operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) |
-
-Each method's guide lives alongside its own code, so it stays current without a cross-repo docs update.
+Kubernaut is deployed through the [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+The application Helm chart is deprecated and is no longer shipped from this repository.
 
 Once installed, pick a setup guide for how you want to trigger remediation — the three are
 independent and can be combined on the same install:

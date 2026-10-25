@@ -871,8 +871,7 @@ func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptio
 
 // personaOrder is the fixed, deterministic rendering order for the 6
 // per-persona ClusterRoles/ClusterRoleBindings PersonaToolClusterRolesYAML
-// generates. Must match afPersonaGroupNames (fullpipeline_e2e_helm.go) and
-// charts/kubernaut/values.yaml's apifrontend.config.rbac.personas keys.
+// generates. Must match afPersonaGroupNames (fullpipeline_e2e_helm.go).
 var personaOrder = []string{
 	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
 }
@@ -881,23 +880,17 @@ var personaOrder = []string{
 // kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings
 // (mapping DEX OIDC groups to the ClusterRoles).
 //
-// Tool lists are derived directly from charts/kubernaut/values.yaml's
-// apifrontend.config.rbac.personas (via LoadPersonaToolsFromValuesYAML)
-// rather than hand-copied literals. This function used to embed its own
-// copy of each persona's tool list; that copy silently drifted out of sync
-// for 5 of 6 personas as values.yaml gained tools across #1367/#1372/#1869
-// with zero build/lint signal, breaking test/e2e/apifrontend's
-// E2E-KA-1418-001/002 (kubernaut_complete_no_action as sre) on SAR denial
-// (incident found 2026-08-03, regression-pinned by
-// UT-INFRA-RBAC-002 in rbac_parity_test.go). Deriving from values.yaml
-// eliminates this whole class of drift permanently.
+// Tool lists are kept in one test-infrastructure source of truth rather than
+// read from the removed application Helm chart. This function used to derive
+// them from a removed application Helm chart, which made the AF-only E2E lane
+// depend on a deprecated deployment artifact.
 //
 // Used by AF-only E2E deployments (see afDeployE2ERBAC). Full-pipeline E2E
 // does not call this: it deploys the real chart via `helm install` and only
 // adds the ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
 // fullpipeline_e2e_helm.go), so it was never subject to this drift.
 func PersonaToolClusterRolesYAML() (string, error) {
-	personaTools, err := LoadPersonaToolsFromValuesYAML()
+	personaTools, err := LoadPersonaTools()
 	if err != nil {
 		return "", fmt.Errorf("failed to load persona tool RBAC from values.yaml: %w", err)
 	}
@@ -944,34 +937,42 @@ subjects:
 	return b.String(), nil
 }
 
-// LoadPersonaToolsFromValuesYAML reads charts/kubernaut/values.yaml and
-// returns apifrontend.config.rbac.personas as persona name -> tool list --
-// the single source of truth PersonaToolClusterRolesYAML renders from.
-// Exported for reuse by test/e2e/apifrontend's persona ACL-matrix test
-// (#1827), so that test asserts against the same source of truth instead
-// of re-declaring a third hand-copied tool list.
-func LoadPersonaToolsFromValuesYAML() (map[string][]string, error) {
-	path := filepath.Join(getProjectRoot(), "charts", "kubernaut", "values.yaml")
-	data, err := os.ReadFile(path) //nolint:gosec // G304: known project path
-	if err != nil {
-		return nil, fmt.Errorf("failed to read values.yaml: %w", err)
+// LoadPersonaTools returns the AF persona tool contract used by the operator
+// qualification harness and the persona ACL-matrix test. The map is copied so
+// callers cannot mutate the shared contract between parallel Ginkgo specs.
+func LoadPersonaTools() (map[string][]string, error) {
+	tools := map[string][]string{
+		"sre": {
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
+			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_await_session",
+			"kubernaut_investigate", "kubernaut_discover_workflows", "kubernaut_select_workflow",
+			"kubernaut_present_decision", "kubernaut_list_workflows", "kubernaut_get_remediation_history",
+			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail", "kubernaut_message",
+			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
+			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
+			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
+			"kubernaut_get_approval_request", "kubernaut_complete_no_action", "kubernaut_list_approval_requests",
+			"list_clusters",
+		},
+		"ai-orchestrator": {
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
+			"kubernaut_await_session", "kubernaut_investigate", "kubernaut_discover_workflows",
+			"kubernaut_select_workflow", "kubernaut_present_decision", "kubernaut_message",
+			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
+			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
+			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
+			"list_clusters", "kubernaut_list_approval_requests", "kubernaut_get_approval_request",
+		},
+		"cicd":                 {"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch", "kubernaut_await_session"},
+		"observability":        {"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch", "kubernaut_await_session", "kubernaut_get_effectiveness", "kubernaut_list_workflows"},
+		"l3-audit":             {"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_list_workflows", "kubernaut_get_remediation_history", "kubernaut_get_effectiveness", "kubernaut_get_audit_trail"},
+		"remediation-approver": {"kubernaut_approve", "kubernaut_list_approval_requests", "kubernaut_get_approval_request", "kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch", "kubernaut_await_session"},
 	}
-	var parsed struct {
-		APIFrontend struct {
-			Config struct {
-				RBAC struct {
-					Personas map[string][]string `yaml:"personas"`
-				} `yaml:"rbac"`
-			} `yaml:"config"`
-		} `yaml:"apifrontend"`
+	clonedTools := make(map[string][]string, len(tools))
+	for persona, personaTools := range tools {
+		clonedTools[persona] = append([]string(nil), personaTools...)
 	}
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse values.yaml: %w", err)
-	}
-	if len(parsed.APIFrontend.Config.RBAC.Personas) == 0 {
-		return nil, fmt.Errorf("values.yaml apifrontend.config.rbac.personas is empty or missing")
-	}
-	return parsed.APIFrontend.Config.RBAC.Personas, nil
+	return clonedTools, nil
 }
 
 // ============================================================================

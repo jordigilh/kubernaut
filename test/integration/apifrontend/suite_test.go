@@ -330,7 +330,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// BR-KA-016 / DD-AA-KA-001: the shared KA must use the same dispatch and
 	// catalog identity as production. These rules mirror the relevant grants in
-	// charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml, not an admin
+	// operator-managed manifests/kubernaut-agent/kubernaut-agent.yaml, not an admin
 	// client or wildcard role. Leases deliberately remain namespace-scoped (AC-6).
 	By("Granting the shared KA fixture production-equivalent dispatch and investigative reads")
 	investigatorRole := &rbacv1.ClusterRole{

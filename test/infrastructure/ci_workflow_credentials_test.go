@@ -25,14 +25,17 @@ import (
 )
 
 var _ = Describe("operator qualification workflow credentials", func() {
-	It("UT-INFRA-CI-2390-001 [BR-PLATFORM-008]: keeps legacy chart smoke offline and uses operator qualification", func() {
+	It("UT-INFRA-CI-2390-001 [BR-PLATFORM-008]: uses operator qualification without application-chart jobs", func() {
 		workflowPath := filepath.Join(getProjectRoot(), ".github", "workflows", "ci-pipeline.yml")
 		workflow, err := os.ReadFile(workflowPath) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
 		body := string(workflow)
 		Expect(body).To(ContainSubstring("build-operator:"))
 		Expect(body).To(ContainSubstring("KUBERNAUT_OPERATOR_IMAGE"))
-		Expect(body).To(ContainSubstring("deprecated-chart-validation:"))
+		Expect(body).To(ContainSubstring("KUBERNAUT_OPERATOR_CHART_PATH"))
+		Expect(body).To(ContainSubstring("KUBERNAUT_DEPENDENCY_CHART_PATH"))
+		Expect(body).NotTo(ContainSubstring("deprecated-chart-validation:"))
+		Expect(body).NotTo(ContainSubstring("helm-unittest"))
 		Expect(body).NotTo(ContainSubstring("Create ArgoCD Application"))
 		Expect(body).NotTo(ContainSubstring("--from-literal=OPENAI_API_KEY="))
 	})

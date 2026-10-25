@@ -23,7 +23,7 @@ import (
 
 // restrictedPodSecurityContext returns the pod-level SecurityContext applied to
 // every spawned execution pod (Job and Tekton). Mirrors the controller's own
-// restricted profile (charts/kubernaut/templates/_helpers.tpl: kubernaut.podSecurityContext).
+// restricted profile (operator-managed manifests/_helpers.tpl: kubernaut.podSecurityContext).
 //
 // Authority: BR-WE-018 (Execution Pod Security Hardening), FedRAMP AC-6/CM-7.
 // This profile is intentionally non-configurable -- see BR-WE-018 for rationale.

@@ -4,7 +4,7 @@
 # (github.com/pressly/goose/v3) so the CLI matches application dependencies
 # without maintaining per-release binary SHA256 checksums.
 #
-# Postgres-only build (-tags): kubernaut's migrations (charts/kubernaut/templates/
+# Postgres-only build (-tags): kubernaut's migrations (operator-managed migration workload/
 # hooks/migration-job.yaml's `goose ... postgres ...` invocation, and
 # test/infrastructure/migrations.go's goose.DialectPostgres) only ever use the
 # postgres dialect. Excluding every other driver goose supports drops their

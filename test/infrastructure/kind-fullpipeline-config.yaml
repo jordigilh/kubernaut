@@ -21,7 +21,7 @@
 #                       setup-e2e-fleet-infra use only, see deployTraefikForKind;
 #                       unprivileged host ports, matched by console.ingress.port
 #                       in the manual `helm install` values -- see
-#                       charts/kubernaut's console.ingress.port field, added so
+#                       the operator-exposure console port, added so
 #                       CI runners that can't bind 80/443 as a non-root user
 #                       still work)
 #

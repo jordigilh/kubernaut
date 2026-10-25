@@ -253,8 +253,6 @@ OVERNIGHT_*.md
 !docs/triage/**
 
 # Default configs (Rego policies are now mandatory --set-file; no chart-embedded defaults)
-charts/kubernaut/files/defaults/*.rego
-charts/kubernaut/files/defaults/*.yaml
 
 # Auto-generated OpenAPI spec copies (via go:generate)
 # DD-API-002: These are auto-generated from api/openapi/*.yaml
