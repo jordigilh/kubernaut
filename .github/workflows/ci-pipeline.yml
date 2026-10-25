@@ -768,11 +768,16 @@ jobs:
           path: kubernaut-operator
           fetch-depth: 0
 
-      - name: Set up QEMU for arm64
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3.6.0
-        with:
-          platforms: arm64
+      # The operator Dockerfile's builder stage is not platform-qualified. Without
+      # this CI-only copy, Buildx emulates the complete Go toolchain for arm64
+      # instead of using native Go cross-compilation (the service-image pattern).
+      - name: Prepare native cross-compile Dockerfile
+        run: |
+          set -euo pipefail
+          sed "s|^FROM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder$|FROM --platform=\$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder|" \
+            kubernaut-operator/Dockerfile > kubernaut-operator/Dockerfile.ci
+          grep -Fqx "FROM --platform=\$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder" \
+            kubernaut-operator/Dockerfile.ci
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.11.1
@@ -782,7 +787,7 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="localhost/kubernaut-operator:${{ needs.resolve-operator.outputs.operator_sha }}"
-          docker buildx build --pull=false --platform linux/amd64 --load -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
+          docker buildx build --pull=false --platform linux/amd64 --load -t "$IMAGE" -f kubernaut-operator/Dockerfile.ci kubernaut-operator
           docker save -o kubernaut-operator-amd64.tar "$IMAGE"
           sha256sum kubernaut-operator-amd64.tar > kubernaut-operator-amd64.tar.sha256
 
@@ -791,7 +796,7 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="localhost/kubernaut-operator:${{ needs.resolve-operator.outputs.operator_sha }}-arm64"
-          docker buildx build --pull=false --platform linux/arm64 --output "type=oci,dest=kubernaut-operator-arm64.oci" -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
+          docker buildx build --pull=false --platform linux/arm64 --output "type=oci,dest=kubernaut-operator-arm64.oci" -t "$IMAGE" -f kubernaut-operator/Dockerfile.ci kubernaut-operator
           sha256sum kubernaut-operator-arm64.oci > kubernaut-operator-arm64.oci.sha256
 
       - name: Upload operator architecture artifact
