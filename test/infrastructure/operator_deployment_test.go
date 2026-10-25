@@ -31,6 +31,17 @@ import (
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorRevision).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator:1.6.0-rc27"))
+		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+	})
+
 	It("UT-2492-012 [BR-E2E-001]: mounts writable /tmp only on operator-managed deployments", func() {
 		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"}}}
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "gateway"}}
@@ -350,10 +361,83 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(diagnostic).To(ContainSubstring("postgresql Ready=false"))
 	})
 
+	It("UT-2492-016 [BR-PLATFORM-014]: explicit demo artifact overrides win", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6", Explicit: DemoArtifactOverrides{OperatorImage: "operator@sha256:explicit", OperatorChart: "oci://example/operator", KubernautVersion: "1.6.0-rc9"}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("operator@sha256:explicit"))
+		Expect(resolved.OperatorChart).To(Equal("oci://example/operator"))
+		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc9"))
+	})
+
 	It("UT-2492-017 [BR-PLATFORM-014]: rejects dirty explicit operator source", func() {
 		tmpDir := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(tmpDir, ".git-dirty-marker"), []byte("x"), 0o600)).To(Succeed())
 		Expect(ValidateOperatorSourceCheckout(tmpDir, " M charts/kubernaut-operator/values.yaml")).To(MatchError(ContainSubstring("dirty")))
+	})
+
+	It("UT-2492-016A [BR-PLATFORM-014]: records explicit operator ref and digest overrides", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			ReleaseLine: "1.6",
+			Explicit: DemoArtifactOverrides{
+				OperatorVersion:     "1.6.0-rc9",
+				OperatorImage:       "quay.io/example/operator",
+				OperatorDigest:      "sha256:operator",
+				OperatorChart:       "oci://quay.io/example/operator",
+				OperatorChartDigest: "sha256:chart",
+				OperatorRef:         "2c021da02bd62aa9adf5c36d511b33c0483da359",
+				KubernautVersion:    "1.6.0-rc9",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("quay.io/example/operator@sha256:operator"))
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/example/operator@sha256:chart"))
+		Expect(resolved.OperatorRef).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
+	})
+
+	It("UT-2492-016B [BR-PLATFORM-014]: keeps dependency, operator, and service artifact layers independent", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			ReleaseLine: "1.6",
+			Explicit: DemoArtifactOverrides{
+				OperatorImageRepository: "localhost/kubernaut-operator",
+				OperatorImageTag:        "operator-3838",
+				DependencyChart:         "oci://registry.example/kubernaut-development-dependencies",
+				DependencyChartVersion:  "0.2.0",
+				DependencyChartDigest:   "sha256:dependencies",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("localhost/kubernaut-operator:operator-3838"))
+		Expect(resolved.DependencyChart).To(Equal("oci://registry.example/kubernaut-development-dependencies@sha256:dependencies"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+
+	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
+			DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "ci", DependencyChartVersion: "0.2.0"},
+		)
+		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorImageRepository).To(Equal("localhost/operator"))
+		Expect(merged.OperatorImageTag).To(Equal("ci"))
+		Expect(merged.DependencyChart).To(Equal("oci://file/dependencies"))
+		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+
+	It("UT-2492-PROVENANCE-001 [BR-PLATFORM-014]: serializes exact demo artifact inputs", func() {
+		data, err := BuildDemoArtifactResolutionJSON(DemoArtifactResolutionRecord{
+			ReleaseLine: "1.6", OperatorVersion: "1.6.0-rc9", OperatorImage: "operator@sha256:op",
+			OperatorChart: "oci://example/operator@sha256:chart", DependencyChart: "oci://example/bootstrap",
+			KubernautVersion: "1.6.0-rc9", RelatedImages: map[string]string{"gateway": "gateway@sha256:gw"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("operator@sha256:op"))
+		Expect(string(data)).To(ContainSubstring("gateway@sha256:gw"))
+	})
+
+	It("UT-2492-EXPOSURE-001 [BR-PLATFORM-014]: omits disabled Gateway host exposure in Console-first mode", func() {
+		Expect(DemoExposureComponents(false)).To(Equal([]string{"datastorage", "apifrontend", "kubernautagent"}))
+		Expect(DemoExposureComponents(true)).To(Equal([]string{"gateway", "datastorage", "apifrontend", "kubernautagent"}))
 	})
 
 	It("UT-2492-018 [BR-PLATFORM-014]: qualification manifest links every immutable artifact", func() {
