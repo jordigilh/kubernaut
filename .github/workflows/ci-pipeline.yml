@@ -681,24 +681,27 @@ jobs:
           retention-days: 2
 
   # ========================================
-  # OPERATOR QUALIFICATION ARTIFACT
-  # Build the operator from one resolved source SHA. FP/Fleet consume this
-  # artifact; no mutable pre-published operator image is accepted in CI.
+  # OPERATOR SOURCE RESOLUTION
+  # Resolve the operator once, then build amd64/arm64 artifacts in parallel.
+  # An explicit operator_ref remains available for immutable qualification runs;
+  # normal PR/push builds follow the Kubernaut base branch.
   # ========================================
 
-  build-operator:
-    name: Build operator (exact SHA)
+  resolve-operator:
+    name: Resolve operator source
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
     outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      requested_ref: ${{ steps.resolve.outputs.requested_ref }}
+      source_branch: ${{ steps.resolve.outputs.source_branch }}
       operator_sha: ${{ steps.provenance.outputs.operator_sha }}
       operator_image: ${{ steps.provenance.outputs.operator_image }}
-      artifact_name: operator-qualification-${{ github.run_id }}
     steps:
       - name: Resolve operator source ref
-        id: resolve-operator-ref
+        id: resolve
         shell: bash
         env:
           OPERATOR_OVERRIDE: ${{ inputs.operator_ref }}
@@ -727,11 +730,46 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jordigilh/kubernaut-operator
-          ref: ${{ steps.resolve-operator-ref.outputs.ref }}
+          ref: ${{ steps.resolve.outputs.ref }}
           path: kubernaut-operator
           fetch-depth: 0
 
-      - name: Set up QEMU for arm64 operator artifact
+      - name: Resolve operator SHA
+        id: provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=$(git -C kubernaut-operator rev-parse HEAD)
+          IMAGE="localhost/kubernaut-operator:${SHA}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::operator ref did not resolve to a commit SHA: $SHA"; exit 1; }
+          echo "operator_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "operator_image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  # ========================================
+  # PARALLEL OPERATOR IMAGE ARTIFACTS
+  # ========================================
+
+  build-operator-arch:
+    name: Build operator (${{ matrix.arch }})
+    needs: [resolve-operator]
+    if: needs.resolve-operator.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout operator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: jordigilh/kubernaut-operator
+          ref: ${{ needs.resolve-operator.outputs.ref }}
+          path: kubernaut-operator
+          fetch-depth: 0
+
+      - name: Set up QEMU for arm64
+        if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3.6.0
         with:
           platforms: arm64
@@ -739,41 +777,63 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.11.1
 
-      - name: Resolve operator SHA before build
-        id: provenance
-        shell: bash
+      - name: Build amd64 Docker artifact
+        if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
-          SHA=$(git -C kubernaut-operator rev-parse HEAD)
-          REQUESTED='${{ steps.resolve-operator-ref.outputs.requested_ref }}'
-          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::operator ref did not resolve to a commit SHA: $SHA"
-            exit 1
-          fi
-          IMAGE="localhost/kubernaut-operator:${SHA}"
-          echo "operator_sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "operator_image=$IMAGE" >> "$GITHUB_OUTPUT"
-          cat > operator-provenance.json <<EOF
-          {"repository":"jordigilh/kubernaut-operator","requestedRef":"$REQUESTED","resolvedSHA":"$SHA","sourceBranch":"${{ steps.resolve-operator-ref.outputs.source_branch }}","imageRef":"$IMAGE","profile":"generic-kind-v1.6","workflowURL":"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
-          EOF
-          echo "Resolved operator source: $REQUESTED -> $SHA"
-
-      - name: Build immutable amd64 operator artifact
-        run: |
-          set -euo pipefail
-          IMAGE="localhost/kubernaut-operator:${{ steps.provenance.outputs.operator_sha }}"
+          IMAGE="localhost/kubernaut-operator:${{ needs.resolve-operator.outputs.operator_sha }}"
           docker buildx build --pull=false --platform linux/amd64 --load -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
-          docker save -o kubernaut-operator.tar "$IMAGE"
-          sha256sum kubernaut-operator.tar > kubernaut-operator.tar.sha256
+          docker save -o kubernaut-operator-amd64.tar "$IMAGE"
+          sha256sum kubernaut-operator-amd64.tar > kubernaut-operator-amd64.tar.sha256
 
-      - name: Build immutable arm64 operator artifact
+      - name: Build arm64 OCI artifact
+        if: matrix.arch == 'arm64'
         run: |
           set -euo pipefail
-          IMAGE="localhost/kubernaut-operator:${{ steps.provenance.outputs.operator_sha }}-arm64"
+          IMAGE="localhost/kubernaut-operator:${{ needs.resolve-operator.outputs.operator_sha }}-arm64"
           docker buildx build --pull=false --platform linux/arm64 --output "type=oci,dest=kubernaut-operator-arm64.oci" -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
           sha256sum kubernaut-operator-arm64.oci > kubernaut-operator-arm64.oci.sha256
 
-      - name: Lint and render operator charts from the same SHA
+      - name: Upload operator architecture artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: operator-arch-${{ matrix.arch }}-${{ github.run_id }}
+          path: |
+            kubernaut-operator-amd64.tar*
+            kubernaut-operator-arm64.oci*
+          retention-days: 2
+
+  # ========================================
+  # OPERATOR CHART VALIDATION + ARTIFACT PACKAGING
+  # ========================================
+
+  build-operator:
+    name: Package operator qualification artifact
+    needs: [resolve-operator, build-operator-arch]
+    if: needs.resolve-operator.result == 'success' && needs.build-operator-arch.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      operator_sha: ${{ needs.resolve-operator.outputs.operator_sha }}
+      operator_image: ${{ needs.resolve-operator.outputs.operator_image }}
+      artifact_name: operator-qualification-${{ github.run_id }}
+    steps:
+      - name: Checkout operator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: jordigilh/kubernaut-operator
+          ref: ${{ needs.resolve-operator.outputs.ref }}
+          path: kubernaut-operator
+          fetch-depth: 0
+
+      - name: Download parallel operator image artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: operator-arch-*-${{ github.run_id }}
+          path: /tmp/operator-arch
+          merge-multiple: true
+
+      - name: Lint and render operator charts
         run: |
           set -euo pipefail
           helm lint kubernaut-operator/charts/kubernaut-operator --strict
@@ -789,23 +849,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p operator-artifacts
+          cp /tmp/operator-arch/kubernaut-operator-amd64.tar* /tmp/operator-arch/kubernaut-operator-arm64.oci* .
           tar -czf operator-artifacts/charts.tar.gz -C kubernaut-operator charts/kubernaut-operator charts/kubernaut-development-dependencies config/samples/v1alpha2_kubernaut.yaml
-          OPERATOR_ARTIFACT_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator.tar.sha256)"
-          ARM64_ARTIFACT_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator-arm64.oci.sha256)"
-          jq --arg digest "$OPERATOR_ARTIFACT_DIGEST" --arg arm64Digest "$ARM64_ARTIFACT_DIGEST" '.imageDigest=$digest | .imageDigests={amd64:$digest,arm64:$arm64Digest}' operator-provenance.json > operator-provenance.json.tmp
-          mv operator-provenance.json.tmp operator-provenance.json
+          AMD64_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator-amd64.tar.sha256)"
+          ARM64_DIGEST="sha256:$(cut -d ' ' -f1 kubernaut-operator-arm64.oci.sha256)"
+          cat > operator-provenance.json <<EOF
+          {"repository":"jordigilh/kubernaut-operator","requestedRef":"${{ needs.resolve-operator.outputs.requested_ref }}","resolvedSHA":"${{ needs.resolve-operator.outputs.operator_sha }}","sourceBranch":"${{ needs.resolve-operator.outputs.source_branch }}","imageRef":"${{ needs.resolve-operator.outputs.operator_image }}","imageDigests":{"amd64":"$AMD64_DIGEST","arm64":"$ARM64_DIGEST"},"profile":"generic-kind-v1.6","workflowURL":"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+          EOF
           cp operator-provenance.json operator-artifacts/
-           cp operator-bootstrap-rendered.yaml operator-dependencies-rendered.yaml kubernaut-operator.tar kubernaut-operator.tar.sha256 kubernaut-operator-arm64.oci kubernaut-operator-arm64.oci.sha256 operator-artifacts/
+          cp operator-bootstrap-rendered.yaml operator-dependencies-rendered.yaml kubernaut-operator-amd64.tar kubernaut-operator-amd64.tar.sha256 kubernaut-operator-arm64.oci kubernaut-operator-arm64.oci.sha256 operator-artifacts/
           cat > operator-artifacts/candidate-manifest.yaml <<EOF
           schemaVersion: 1
           repository: jordigilh/kubernaut-operator
-          sha: ${{ steps.provenance.outputs.operator_sha }}
-           image:
-             ref: ${{ steps.provenance.outputs.operator_image }}
-             artifact: kubernaut-operator.tar
-             architectures:
-               amd64: kubernaut-operator.tar
-               arm64: kubernaut-operator-arm64.oci
+          sha: ${{ needs.resolve-operator.outputs.operator_sha }}
+          image:
+            ref: ${{ needs.resolve-operator.outputs.operator_image }}
+            architectures:
+              amd64: kubernaut-operator-amd64.tar
+              arm64: kubernaut-operator-arm64.oci
+            artifacts: operator-provenance.json
           charts:
             artifact: charts.tar.gz
           provenanceURL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -819,7 +881,6 @@ jobs:
           path: operator-artifacts
           retention-days: 2
 
-  # ========================================
   # STAGE 3: INTEGRATION TESTS
   # Waits for BOTH unit-tests AND build-images to complete
   # Matrix strategy: 10 services (all Go, same pattern: envtest + Podman)
