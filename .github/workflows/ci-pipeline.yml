@@ -1035,7 +1035,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tarball=/tmp/operator-qualification/kubernaut-operator.tar
+          tarball=/tmp/operator-qualification/kubernaut-operator-amd64.tar
           podman load -i "$tarball"
           tar -xzf /tmp/operator-qualification/charts.tar.gz -C "$GITHUB_WORKSPACE"
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
@@ -1359,7 +1359,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          podman load -i /tmp/operator-qualification/kubernaut-operator.tar
+          podman load -i /tmp/operator-qualification/kubernaut-operator-amd64.tar
           tar -xzf /tmp/operator-qualification/charts.tar.gz -C "$GITHUB_WORKSPACE"
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
