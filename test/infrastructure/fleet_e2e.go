@@ -19,7 +19,9 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,10 +49,11 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	kubeMcpServerRoute       = "kube-mcp-server-route"
-	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
-	fleetRemoteClusterID     = "remote-cluster"
-	fleetHubClusterID        = "hub"
+	kubeMcpServerRoute         = "kube-mcp-server-route"
+	kubeMcpServerRemoteRoute   = "kube-mcp-server-remote-route"
+	fleetRemoteClusterID       = "remote-cluster"
+	fleetHubClusterID          = "hub"
+	fleetAlertManagerGatewaySA = "fleet-alertmanager-gateway-sa"
 	// DefaultMCPGatewayNamespace mirrors DD-TEST-020's production platform boundary:
 	// MCP Gateway resources and the hub kube-mcp-server are not bundled with
 	// Kubernaut's application namespace.
@@ -201,6 +204,14 @@ stringData:
 // ensureFleetMCPSessionSeedSecret creates the seed only when the Secret is
 // absent. API/authentication failures are returned instead of rotating the
 // seed and invalidating active MCP sessions.
+func generateFleetMCPSessionSeed(size int) (string, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate random seed: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
 func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	check := exec.CommandContext(ctx, "kubectl", "get", "secret", fleetMCPSessionSeedSecretName,
 		"-n", namespace, "--kubeconfig", kubeconfigPath, "--ignore-not-found", "-o", "name")
@@ -213,7 +224,7 @@ func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigP
 		return nil
 	}
 
-	seed, err := generateDemoSecret(32)
+	seed, err := generateFleetMCPSessionSeed(32)
 	if err != nil {
 		return fmt.Errorf("generate MCP session encryption seed: %w", err)
 	}
