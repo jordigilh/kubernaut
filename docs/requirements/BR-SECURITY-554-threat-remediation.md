@@ -305,6 +305,7 @@ Before implementation begins:
 
 ## Related Documentation
 
+- [Agentic Attacker-Defender Evaluation Scope](../testing/554/AGENTIC_EVALUATION_SCOPE.md): proposed ARTEX-versus-Kubernaut evaluation; effectiveness signals remain undecided pending a future spike. Not an execution authorization or passing test evidence.
 - [Remediation Approval Architecture](../architecture/decisions/ADR-040-remediation-approval-request-architecture.md)
 - [Unified Audit Table Design](../architecture/decisions/ADR-034-unified-audit-table-design.md)
 - [Service Audit Trace Requirements](../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md)
