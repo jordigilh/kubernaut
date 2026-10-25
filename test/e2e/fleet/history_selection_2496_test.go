@@ -18,6 +18,7 @@ package fleet
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -342,8 +343,24 @@ func fleetHistoricalSnapshot2496(ids ...string) string {
 
 func fleetHistoricalSQL2496(sql string) string {
 	GinkgoHelper()
+	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"get", "secret", "postgresql-secret", "-o", "json")
+	secretOut, secretErr := secretCmd.Output()
+	Expect(secretErr).NotTo(HaveOccurred(), "read operator PostgreSQL Secret")
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	Expect(json.Unmarshal(secretOut, &secret)).To(Succeed())
+	decode := func(key string) string {
+		encoded := secret.Data[key]
+		value, err := base64.StdEncoding.DecodeString(encoded)
+		Expect(err).NotTo(HaveOccurred(), "decode PostgreSQL Secret field %s", key)
+		return string(value)
+	}
+	postgresUser := decode("POSTGRES_USER")
+	postgresDatabase := decode("POSTGRES_DB")
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-		"exec", "-i", "deployment/postgresql", "--", "psql", "-U", "kubernaut", "-d", "kubernaut", "-v", "ON_ERROR_STOP=1", "-At")
+		"exec", "-i", "deployment/postgresql", "--", "psql", "-U", postgresUser, "-d", postgresDatabase, "-v", "ON_ERROR_STOP=1", "-At")
 	cmd.Stdin = strings.NewReader(sql)
 	out, err := cmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "isolated historical fixture/query failed: %s", out)

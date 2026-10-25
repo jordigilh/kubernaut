@@ -29,6 +29,8 @@ import (
 const (
 	demoKeycloakIssuerURL        = "https://keycloak:8443/realms/kubernaut-demo"
 	demoKeycloakConsoleLogoutURL = "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"
+	demoPostgreSQLImageDefault   = "docker.io/library/postgres:16.4@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412"
+	demoValkeyImageDefault       = "docker.io/valkey/valkey:8.0.2@sha256:57bcc49c6ade1813ef25206c571b65b66bb0094235ff7fb767941622892297d9"
 )
 
 func demoKeycloakJWKSURL() string {
@@ -50,21 +52,22 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 		PostgreSQLHost: "postgresql." + kubernautSystem + ".svc.cluster.local", PostgreSQLSSLMode: "require",
 		ValkeyHost:       "valkey." + kubernautSystem + ".svc.cluster.local",
 		PostgreSQLSecret: demoPGSecretName, ValkeySecret: demoValkeySecretName,
+		ValkeyTLS: &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"},
 		LLM: OperatorLLMOptions{
 			Provider: opts.LLMProvider, Model: opts.LLMModel, Endpoint: opts.LLMEndpoint,
 			CredentialsSecret: demoLLMSecretName, VertexProject: opts.VertexProject,
 			VertexLocation: opts.VertexLocation, Reasoning: reasoning,
 		},
-		TLS:              OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"localhost", demoConsoleHost, "keycloak"}},
+		TLS:              OperatorTLSOptions{Mode: "manual"},
 		PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
 		Monitoring: OperatorMonitoringOptions{
 			PrometheusURL:   "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090",
 			AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093",
-			TLSSource:       "configMap", TLSCAConfigMapName: monitoringCAConfigMapName,
+			TLSCASecretName: monitoringClientCASecretName,
 		},
 		GatewayEnabled: opts.Autonomous, APIFrontendEnabled: true, ConsoleEnabled: true,
-		ConsoleAuthSecretName: "kubernaut-console-oidc", ConsoleIngressHost: demoConsoleHost,
-		ConsoleIngressClass: "traefik", ConsoleTLSSecretName: "console-tls",
+		ConsoleAuthSecretName:    "kubernaut-console-oidc",
+		ConsoleRedirectURL:       fmt.Sprintf("https://%s:%d/oauth2/callback", demoConsoleHost, DemoHostPort(demoConsolePort)),
 		ConsoleProviderLogoutURL: demoKeycloakConsoleLogoutURL,
 		IssuerURL:                demoKeycloakIssuerURL, JWKSURL: demoKeycloakJWKSURL(), Audience: "kubernaut-apifrontend",
 	}
@@ -75,26 +78,36 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 	return crOptions
 }
 
-// BuildDemoConsoleServiceAliasManifest bridges the pinned operator's static
-// Ingress backend name (console) to its generated Service name
-// (kubernaut-console). It is demo-owned and never becomes an operator owner.
-func BuildDemoConsoleServiceAliasManifest(namespace string) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Service
+// BuildDemoConsoleIngressManifest creates the administrator-owned browser edge
+// for the operator-created Console Service. The operator owns only the
+// kubernaut-console Service and workloads; this Ingress remains demo-owned.
+func BuildDemoConsoleIngressManifest(namespace string) string {
+	return fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: console
+  name: kubernaut-console
   namespace: %s
   labels:
     app.kubernetes.io/part-of: kubernaut-e2e
     kubernaut.ai/e2e-owner: upstream-2492
 spec:
-  selector:
-    app: kubernaut-console
-  ports:
-  - name: http
-    port: 4180
-    targetPort: http
-`, namespace)
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - %s
+    secretName: console-tls
+  rules:
+  - host: %s
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kubernaut-console
+            port:
+              name: http
+`, namespace, demoConsoleHost, demoConsoleHost)
 }
 
 // InstallDemoOperatorApplication deploys the demo through the operator
@@ -128,7 +141,8 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	demoArtifacts := &DemoArtifactResolutionRecord{
 		ReleaseLine: releaseLine, OperatorVersion: operatorChartVersion,
 		OperatorRef: resolved.OperatorRef, OperatorImage: operatorImage, OperatorChart: operatorChart,
-		DependencyChart: dependencyChart, KubernautVersion: resolved.KubernautVersion, RelatedImages: relatedImages,
+		DependencyChart: dependencyChart, DependencyChartVersion: dependencyChartVersion,
+		KubernautVersion: resolved.KubernautVersion, RelatedImages: relatedImages,
 	}
 
 	namespace := kubernautSystem
@@ -158,8 +172,8 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 		ClusterName: kindClusterName,
 		Namespace:   namespace, KubeconfigPath: kubeconfigPath, OperatorChartPath: operatorChart, OperatorChartVersion: operatorChartVersion, DependencyChartPath: dependencyChart, DependencyChartVersion: dependencyChartVersion,
 		OperatorImage: operatorImage, RelatedImages: relatedImages,
-		PostgreSQLImage: "docker.io/library/postgres:16.4@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412",
-		ValkeyImage:     "docker.io/valkey/valkey:8.0.2@sha256:57bcc49c6ade1813ef25206c571b65b66bb0094235ff7fb767941622892297d9",
+		PostgreSQLImage: demoPostgreSQLImageDefault,
+		ValkeyImage:     demoValkeyImageDefault,
 		CR:              crOptions, MonitoringNamespace: monitoringNamespace, Exposure: opts.Exposure, DiagnosticsDir: strings.TrimSpace(os.Getenv("KUBERNAUT_QUALIFICATION_DIR")),
 		FixtureFiles:  OperatorFixtureFiles{LLMCredentials: opts.LLMCredentialsFile, AIAnalysisPolicy: aaPolicyFile, SignalProcessingPolicy: spPolicyFile},
 		Provenance:    OperatorArtifactProvenance{Repository: operatorRepository, RequestedRef: opts.OperatorArtifacts.OperatorRef, ImageRef: operatorImage, Profile: "demo-v1.6"},
@@ -182,16 +196,25 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("prepare operator demo RBAC: %w", err)
 	}
+	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, fleetOpts != nil, writer); err != nil {
+		return fmt.Errorf("prepare manual operator service TLS: %w", err)
+	}
 	if evidence, err := DeployOperatorManagedApplication(ctx, config, writer); err != nil {
 		return err
 	} else {
 		RememberOperatorExposure(kubeconfigPath, evidence)
 	}
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildDemoConsoleServiceAliasManifest(namespace)); err != nil {
-		return fmt.Errorf("create demo Console Service alias: %w", err)
+	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "kubernaut-console", 60*time.Second, writer); err != nil {
+		return fmt.Errorf("wait for operator Console Service: %w", err)
 	}
-	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "console", 60*time.Second, writer); err != nil {
-		return fmt.Errorf("wait for demo Console Service alias: %w", err)
+	// Remove the legacy demo alias from retained clusters. It was required by
+	// the pre-#572 operator-owned Ingress and is no longer part of the exposure
+	// contract; only this exact, test-owned Service is targeted.
+	if err := runKubectl(ctx, kubeconfigPath, writer, "delete", "service", "console", "-n", namespace, "--ignore-not-found"); err != nil {
+		return fmt.Errorf("remove legacy demo Console Service alias: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildDemoConsoleIngressManifest(namespace)); err != nil {
+		return fmt.Errorf("create demo Console Ingress: %w", err)
 	}
 
 	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -215,7 +238,7 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 		_, _ = fmt.Fprintf(writer, "  Capability override: %s\n", reasoningCapabilityOverride)
 	}
 	_, _ = fmt.Fprintf(writer, "  Trust the demo CA before browser login: %s\n", InterServiceCAPath(kubeconfigPath))
-	_, _ = fmt.Fprintf(writer, "    Browse to: https://%s:%d\n", demoConsoleHost, demoConsolePort)
+	_, _ = fmt.Fprintf(writer, "    Browse to: https://%s:%d\n", demoConsoleHost, DemoHostPort(demoConsolePort))
 	_, _ = fmt.Fprintln(writer, "    Login: sre-user / password")
 	if opts.Mode == DemoModeFleet {
 		_, _ = fmt.Fprintf(writer, "    HUB_KUBECONFIG=%s\n    SPOKE_KUBECONFIG=%s\n", kubeconfigPath, remoteKubeconfigPath)
@@ -224,7 +247,9 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	}
 	_, _ = fmt.Fprintln(writer, "  Teardown ownership:")
 	_, _ = fmt.Fprintf(writer, "    kubectl delete kubernaut %s -n %s --ignore-not-found\n", operatorCRName, namespace)
-	_, _ = fmt.Fprintf(writer, "    helm uninstall kubernaut-dev-bootstrap -n %s --wait\n", namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete ingress kubernaut-console -n %s --ignore-not-found\n", namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete service console -n %s --ignore-not-found\n", namespace)
+	_, _ = fmt.Fprintf(writer, "    helm uninstall kubernaut-development-dependencies -n %s --wait\n", namespace)
 	_, _ = fmt.Fprintln(writer, "    helm uninstall kubernaut-operator -n kubernaut-operator-system --wait")
 	_, _ = fmt.Fprintf(writer, "    kind delete cluster --name %s\n", kindClusterName)
 	return nil

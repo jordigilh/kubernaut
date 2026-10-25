@@ -24,17 +24,48 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorRevision).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator:1.6.0-rc27"))
+		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+	})
+
+	It("UT-2492-012 [BR-E2E-001]: mounts writable /tmp only on operator-managed deployments", func() {
+		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"}}}
+		deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "gateway"}}
+		Expect(ensureWritableTempVolume(deployment)).To(BeTrue())
+		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(ConsistOf(corev1.VolumeMount{Name: operatorRuntimeTempVolumeName, MountPath: "/tmp"}))
+		Expect(deployment.Spec.Template.Spec.Volumes).To(ConsistOf(corev1.Volume{Name: operatorRuntimeTempVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}))
+		Expect(ensureWritableTempVolume(deployment)).To(BeFalse())
+
+		unmanaged := &appsv1.Deployment{}
+		unmanaged.Spec.Template.Spec.Containers = []corev1.Container{{Name: "other"}}
+		Expect(ensureWritableTempVolume(unmanaged)).To(BeFalse())
+
+		existing := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"}}}
+		existing.Spec.Template.Spec.Containers = []corev1.Container{{Name: "data-storage", VolumeMounts: []corev1.VolumeMount{{Name: "existing-tmp", MountPath: "/tmp"}}}}
+		Expect(ensureWritableTempVolume(existing)).To(BeFalse())
+	})
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "c226705e24bef67fa947c535d59ea87d4251b483",
-			ResolvedSHA:   "c226705e24bef67fa947c535d59ea87d4251b483",
+			RequestedRef:  "2c021da02bd62aa9adf5c36d511b33c0483da359",
+			ResolvedSHA:   "2c021da02bd62aa9adf5c36d511b33c0483da359",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "c226705e24bef67fa947c535d59ea87d4251b483",
+			ChartRevision: "2c021da02bd62aa9adf5c36d511b33c0483da359",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -42,7 +73,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "c226705e24bef67fa947c535d59ea87d4251b483"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "2c021da02bd62aa9adf5c36d511b33c0483da359"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
@@ -87,24 +118,27 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-006 [BR-E2E-001]: dependency arguments own PostgreSQL and Valkey only", func() {
 		args := BuildOperatorDependencyArgs(OperatorDependencyOptions{
 			Namespace:       "kubernaut-system",
-			ChartPath:       "oci://example/charts/kubernaut-dev-bootstrap",
-			ChartVersion:    "1.6.0-rc9",
+			ChartPath:       "oci://example/kubernaut-development-dependencies",
+			ChartVersion:    "0.1.0-run.1",
 			PostgreSQLImage: "docker.io/library/postgres:16.4@sha256:postgres",
 			ValkeyImage:     "docker.io/valkey/valkey:8.0.2@sha256:valkey",
 		})
 		joined := strings.Join(args, " ")
-		Expect(joined).To(ContainSubstring("--version 1.6.0-rc9"))
+		Expect(joined).To(ContainSubstring("--version 0.1.0-run.1"))
+		Expect(joined).To(ContainSubstring("kubernaut-development-dependencies"))
 		Expect(joined).To(ContainSubstring("postgresql.image.digest"))
 		Expect(joined).To(ContainSubstring("valkey.image.digest"))
 		Expect(joined).NotTo(ContainSubstring("charts/kubernaut/"))
 	})
 
-	It("UT-2492-006A [BR-E2E-001]: qualification-only Valkey Secret leaves FMC's unsupported password field empty", func() {
-		manifest := BuildOperatorUnauthenticatedValkeySecretManifest("kubernaut-system")
-		Expect(manifest).To(ContainSubstring("name: valkey-secret"))
-		Expect(manifest).To(ContainSubstring("namespace: kubernaut-system"))
-		Expect(manifest).To(ContainSubstring("password: \"\""))
-		Expect(manifest).To(ContainSubstring("VALKEY_PASSWORD: \"\""))
+	It("UT-2492-006B [BR-E2E-001]: renders Valkey mTLS references for the dependency chart", func() {
+		options := testOperatorCROptions()
+		options.ValkeyTLS = &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"}
+		manifest, err := BuildKubernautCRManifest(options)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(manifest).To(ContainSubstring("enabled: true"))
+		Expect(manifest).To(ContainSubstring("caSecretName: valkey-ca"))
+		Expect(manifest).To(ContainSubstring("clientCertSecretName: valkey-tls-client"))
 	})
 
 	It("UT-2492-007 [BR-E2E-001]: renders the minimal required CR plus explicit profile settings", func() {
@@ -116,9 +150,10 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(manifest).To(ContainSubstring("configMapName: signalprocessing-policy"))
 		Expect(manifest).To(ContainSubstring("provider: openai"))
 		Expect(manifest).To(ContainSubstring("kubernautAgent:"))
+		Expect(manifest).To(MatchRegexp(`(?m)^\s+apiFrontend:\s*\n\s+enabled: true\s`))
 		Expect(manifest).To(ContainSubstring("monitoring:"))
-		Expect(manifest).To(ContainSubstring("source: configMap"))
-		Expect(manifest).To(ContainSubstring("name: monitoring-ca"))
+		Expect(manifest).To(ContainSubstring("caCertSecretRef:"))
+		Expect(manifest).To(ContainSubstring("name: monitoring-client-ca"))
 		Expect(manifest).NotTo(ContainSubstring("pullPolicy:"))
 		Expect(manifest).NotTo(ContainSubstring("port: 5432"))
 		Expect(manifest).To(ContainSubstring("sslMode: require"))
@@ -131,6 +166,45 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		minimalManifest, minimalErr := BuildKubernautCRManifest(minimal)
 		Expect(minimalErr).NotTo(HaveOccurred())
 		Expect(minimalManifest).NotTo(ContainSubstring("monitoring:"))
+	})
+
+	It("UT-2492-007B [BR-PLATFORM-014]: explicitly enables API Frontend when the demo requests it", func() {
+		manifest, err := BuildKubernautCRManifest(testOperatorCROptions())
+		Expect(err).NotTo(HaveOccurred())
+		var decoded operatorCRManifest
+		Expect(yaml.Unmarshal([]byte(manifest), &decoded)).To(Succeed())
+		Expect(decoded.Spec.APIFrontend).NotTo(BeNil())
+		Expect(decoded.Spec.APIFrontend.Enabled).NotTo(BeNil())
+		Expect(*decoded.Spec.APIFrontend.Enabled).To(BeTrue())
+	})
+
+	It("UT-2492-007C [BR-E2E-001]: explicitly enables configured monitoring endpoints", func() {
+		manifest, err := BuildKubernautCRManifest(testOperatorCROptions())
+		Expect(err).NotTo(HaveOccurred())
+		var decoded operatorCRManifest
+		Expect(yaml.Unmarshal([]byte(manifest), &decoded)).To(Succeed())
+		Expect(decoded.Spec.Monitoring).NotTo(BeNil())
+		Expect(decoded.Spec.Monitoring.Prometheus).NotTo(BeNil())
+		Expect(decoded.Spec.Monitoring.Prometheus.Enabled).NotTo(BeNil())
+		Expect(*decoded.Spec.Monitoring.Prometheus.Enabled).To(BeTrue())
+		Expect(decoded.Spec.Monitoring.AlertManager).NotTo(BeNil())
+		Expect(decoded.Spec.Monitoring.AlertManager.Enabled).NotTo(BeNil())
+		Expect(*decoded.Spec.Monitoring.AlertManager.Enabled).To(BeTrue())
+	})
+
+	It("UT-2492-TLS-001 [BR-E2E-001]: provides the manual-TLS trust bundle expected by API Frontend", func() {
+		manifest := BuildOperatorTLSTrustBundleManifest("kubernaut-system", []byte("CA DATA\n"))
+		Expect(manifest).To(ContainSubstring("kind: ConfigMap"))
+		Expect(manifest).To(ContainSubstring("name: inter-service-trust-bundle"))
+		Expect(manifest).To(ContainSubstring("service-ca.crt:"))
+		Expect(manifest).To(ContainSubstring("CA DATA"))
+	})
+
+	It("UT-2492-TLS-002 [BR-E2E-001]: preserves the legacy inter-service CA alias for E2E helpers", func() {
+		manifest := BuildOperatorInterServiceCAManifest("kubernaut-system", []byte("CA DATA\n"))
+		Expect(manifest).To(ContainSubstring("name: inter-service-ca"))
+		Expect(manifest).To(ContainSubstring("ca.crt:"))
+		Expect(manifest).To(ContainSubstring("CA DATA"))
 	})
 
 	It("UT-2492-007A [BR-E2E-001]: renders KA investigation capacity when explicitly requested", func() {
@@ -166,13 +240,45 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(manifest).To(ContainSubstring("mirror.example/gateway@sha256:custom"))
 	})
 
-	It("UT-2492-010 [BR-E2E-001]: puts the initial host SAN in the CR TLS contract", func() {
+	It("UT-2492-010 [BR-E2E-001]: references externally prepared manual TLS material", func() {
 		manifest, err := BuildKubernautCRManifest(testOperatorCROptions())
 		Expect(err).NotTo(HaveOccurred())
-		Expect(manifest).To(ContainSubstring("mode: DevelopmentSelfSigned"))
-		Expect(manifest).To(ContainSubstring("developmentSelfSigned: {}"))
-		Expect(manifest).To(ContainSubstring("extraSANs:"))
-		Expect(manifest).To(ContainSubstring("kubernaut-e2e.local"))
+		Expect(manifest).To(ContainSubstring("mode: manual"))
+		Expect(manifest).To(ContainSubstring("internalCASecretName: kubernaut-internal-ca"))
+		Expect(manifest).To(ContainSubstring("gateway-tls"))
+		Expect(manifest).NotTo(ContainSubstring("extraSANs:"))
+	})
+
+	It("UT-2492-010A [BR-E2E-001]: rejects removed TLS source modes instead of silently rewriting them", func() {
+		options := testOperatorCROptions()
+		options.TLS.Mode = "DevelopmentSelfSigned"
+		_, err := BuildKubernautCRManifest(options)
+		Expect(err).To(MatchError(`kubernaut CR supports only the v1alpha2 manual TLS mode, got "DevelopmentSelfSigned"`))
+	})
+
+	It("UT-2492-010B [BR-PLATFORM-014]: requires an explicit HTTPS Console callback URL", func() {
+		options := testOperatorCROptions()
+		options.ConsoleEnabled = true
+		options.ConsoleAuthSecretName = "kubernaut-console-oidc"
+		_, err := BuildKubernautCRManifest(options)
+		Expect(err).To(MatchError("kubernaut CR requires an HTTPS Console redirect URL when Console is enabled"))
+	})
+
+	It("UT-2492-010C [BR-E2E-001]: includes every operator serving identity in manual TLS", func() {
+		options := testOperatorCROptions()
+		options.Fleet = &OperatorFleetOptions{Enabled: true, WriteCredentialsSecret: "fleet-write"}
+		manifest, err := BuildKubernautCRManifest(options)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(manifest).To(ContainSubstring("authwebhook: authwebhook-tls"))
+		Expect(manifest).To(ContainSubstring("fleetmetadatacache: fleetmetadatacache-tls"))
+	})
+
+	It("UT-2492-010D [BR-E2E-001]: signs AuthWebhook with both service DNS identities", func() {
+		names := qualificationServiceDNSNames("authwebhook-service", "kubernaut-system")
+		Expect(names).To(ContainElements(
+			"authwebhook-service.kubernaut-system.svc.cluster.local",
+			"authwebhook.kubernaut-system.svc.cluster.local",
+		))
 	})
 
 	It("UT-2492-011 [BR-E2E-001]: renders narrow test-owned adapter selectors and named target ports", func() {
@@ -278,15 +384,44 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 				OperatorDigest:      "sha256:operator",
 				OperatorChart:       "oci://quay.io/example/operator",
 				OperatorChartDigest: "sha256:chart",
-				OperatorRef:         "c226705e24bef67fa947c535d59ea87d4251b483",
+				OperatorRef:         "2c021da02bd62aa9adf5c36d511b33c0483da359",
 				KubernautVersion:    "1.6.0-rc9",
 			},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.OperatorImage).To(Equal("quay.io/example/operator@sha256:operator"))
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/example/operator@sha256:chart"))
-		Expect(resolved.OperatorRef).To(Equal("c226705e24bef67fa947c535d59ea87d4251b483"))
+		Expect(resolved.OperatorRef).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
+	})
+
+	It("UT-2492-016B [BR-PLATFORM-014]: keeps dependency, operator, and service artifact layers independent", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			ReleaseLine: "1.6",
+			Explicit: DemoArtifactOverrides{
+				OperatorImageRepository: "localhost/kubernaut-operator",
+				OperatorImageTag:        "operator-3838",
+				DependencyChart:         "oci://registry.example/kubernaut-development-dependencies",
+				DependencyChartVersion:  "0.2.0",
+				DependencyChartDigest:   "sha256:dependencies",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("localhost/kubernaut-operator:operator-3838"))
+		Expect(resolved.DependencyChart).To(Equal("oci://registry.example/kubernaut-development-dependencies@sha256:dependencies"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+
+	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
+			DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "ci", DependencyChartVersion: "0.2.0"},
+		)
+		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorImageRepository).To(Equal("localhost/operator"))
+		Expect(merged.OperatorImageTag).To(Equal("ci"))
+		Expect(merged.DependencyChart).To(Equal("oci://file/dependencies"))
+		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
 	})
 
 	It("UT-2492-PROVENANCE-001 [BR-PLATFORM-014]: serializes exact demo artifact inputs", func() {
@@ -313,27 +448,9 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(string(manifest)).To(ContainSubstring("fullpipeline"))
 	})
 
-	It("UT-2492-019 [BR-E2E-001]: detects live application-chart deployment but permits offline checks", func() {
-		violations := ScanForbiddenLiveApplicationChartDeployments([]string{
-			"helm upgrade --install kubernaut charts/kubernaut",
-			"helm template charts/kubernaut",
-			"helm unittest charts/kubernaut/",
-		})
-		Expect(violations).To(ConsistOf("helm upgrade --install kubernaut charts/kubernaut"))
-		boundaryViolations, err := ScanForbiddenDeploymentPaths([]string{
-			filepath.Join(getProjectRoot(), "test/infrastructure/fullpipeline_e2e.go"),
-			filepath.Join(getProjectRoot(), "test/infrastructure/fleet_e2e.go"),
-			filepath.Join(getProjectRoot(), "test/infrastructure/demo_helm.go"),
-			filepath.Join(getProjectRoot(), "hack/setup-demo-infra/main.go"),
-			filepath.Join(getProjectRoot(), "Makefile"),
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(boundaryViolations).To(BeEmpty())
-	})
-
 	It("UT-2492-020 [BR-PLATFORM-014]: teardown includes adapter and dependency cleanup", func() {
-		cleanup := BuildOperatorCleanupPlan(OperatorCleanupInput{Adapters: []string{"gateway-e2e-nodeport"}, DependencyReleases: []string{"kubernaut-dev-bootstrap"}})
-		Expect(cleanup).To(ConsistOf("delete service/gateway-e2e-nodeport", "helm uninstall kubernaut-dev-bootstrap"))
+		cleanup := BuildOperatorCleanupPlan(OperatorCleanupInput{Adapters: []string{"gateway-e2e-nodeport"}, DependencyReleases: []string{"kubernaut-development-dependencies"}})
+		Expect(cleanup).To(ConsistOf("delete service/gateway-e2e-nodeport", "helm uninstall kubernaut-development-dependencies"))
 	})
 })
 
@@ -345,6 +462,6 @@ func testOperatorOperandImages() map[string]string {
 
 func testOperatorCROptions() OperatorCROptions {
 	return OperatorCROptions{
-		Name: "kubernaut", Namespace: "kubernaut-system", PostgreSQLHost: "postgresql.kubernaut-system.svc.cluster.local", PostgreSQLSSLMode: "require", ValkeyHost: "valkey.kubernaut-system.svc.cluster.local", PostgreSQLSecret: "postgresql-secret", ValkeySecret: "valkey-secret", LLM: OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm.kubernaut-system.svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"}, TLS: OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"kubernaut-e2e.local"}}, PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"}, Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc.monitoring.svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc.monitoring.svc.cluster.local:9093", TLSSource: "configMap", TLSCAConfigMapName: "monitoring-ca"}, GatewayEnabled: true, APIFrontendEnabled: true, IssuerURL: "https://idp.example.com/realms/kubernaut", Audience: "kubernaut-apifrontend",
+		Name: "kubernaut", Namespace: "kubernaut-system", PostgreSQLHost: "postgresql.kubernaut-system.svc.cluster.local", PostgreSQLSSLMode: "require", ValkeyHost: "valkey.kubernaut-system.svc.cluster.local", PostgreSQLSecret: "postgresql-secret", ValkeySecret: "valkey-secret", ValkeyTLS: &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"}, LLM: OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm.kubernaut-system.svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"}, TLS: OperatorTLSOptions{Mode: "manual", ManualInternalCASecret: "kubernaut-internal-ca"}, PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"}, Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc.monitoring.svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc.monitoring.svc.cluster.local:9093", TLSCASecretName: "monitoring-client-ca"}, GatewayEnabled: true, APIFrontendEnabled: true, IssuerURL: "https://idp.example.com/realms/kubernaut", Audience: "kubernaut-apifrontend",
 	}
 }

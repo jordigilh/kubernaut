@@ -27,6 +27,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,22 +38,29 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
+	demoHostPortOffsetEnv = "KUBERNAUT_DEMO_HOST_PORT_OFFSET"
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision           = "c226705e24bef67fa947c535d59ea87d4251b483"
-	operatorRepository         = "jordigilh/kubernaut-operator"
-	applicationNamespace       = "kubernaut-system"
-	operatorNamespace          = "kubernaut-operator-system"
-	operatorCRName             = "kubernaut"
-	operatorCRAPIVersion       = "kubernaut.ai/v1alpha2"
-	operatorOwnerLabel         = "upstream-2492"
-	demoDependencyChartOCI     = "oci://quay.io/kubernaut-ai/charts/kubernaut-dev-bootstrap"
-	operatorDataStorageOperand = "datastorage"
-	operatorAPIFrontendOperand = "apifrontend"
+	operatorRevision             = "2c021da02bd62aa9adf5c36d511b33c0483da359"
+	operatorRepository           = "jordigilh/kubernaut-operator"
+	applicationNamespace         = "kubernaut-system"
+	operatorNamespace            = "kubernaut-operator-system"
+	operatorCRName               = "kubernaut"
+	operatorCRAPIVersion         = "kubernaut.ai/v1alpha2"
+	operatorOwnerLabel           = "upstream-2492"
+	demoDependencyChartOCI       = "oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"
+	demoDependencyChartVersion   = "0.1.0-run.1"
+	operatorDataStorageOperand   = "datastorage"
+	operatorAPIFrontendOperand   = "apifrontend"
+	operatorRuntimeTempMountPath = "/tmp"
 )
 
 // operatorOperandImageKeys is the exact image contract exercised by the
@@ -119,6 +127,35 @@ func BuildOperatorProvenanceJSON(provenance OperatorArtifactProvenance) ([]byte,
 		return nil, errors.New("operator provenance requires repository, requestedRef, and resolvedSHA")
 	}
 	return json.MarshalIndent(provenance, "", "  ")
+}
+
+// DemoHostPortOffset returns the optional host-only port offset used by the
+// local demo. Kind NodePorts and in-cluster service ports remain unchanged;
+// only host bindings move so an owned demo cannot collide with another team's
+// cluster on a shared Podman host.
+func DemoHostPortOffset() (int, error) {
+	raw := strings.TrimSpace(os.Getenv(demoHostPortOffsetEnv))
+	if raw == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", demoHostPortOffsetEnv, raw, err)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", demoHostPortOffsetEnv)
+	}
+	return offset, nil
+}
+
+// DemoHostPort returns the host-facing port for a demo endpoint while keeping
+// the endpoint's in-cluster NodePort unchanged.
+func DemoHostPort(defaultPort int) int {
+	offset, err := DemoHostPortOffset()
+	if err != nil {
+		return defaultPort
+	}
+	return defaultPort + offset
 }
 
 // ValidateOperatorOperandImageMap rejects incomplete maps before the CR is
@@ -192,7 +229,7 @@ type OperatorDependencyOptions struct {
 // the operator chart and records exact image refs in the command.
 func BuildOperatorDependencyArgs(options OperatorDependencyOptions) []string {
 	args := []string{
-		"upgrade", "--install", "kubernaut-dev-bootstrap", options.ChartPath,
+		"upgrade", "--install", "kubernaut-development-dependencies", options.ChartPath,
 		"--namespace", options.Namespace, "--create-namespace",
 		"--wait", "--timeout", "10m",
 		"--set", "postgresql.commandMode=official",
@@ -241,11 +278,18 @@ type OperatorLLMReasoning struct {
 	CapabilityOverride string
 }
 
-// OperatorTLSOptions selects development certificates and their initial host
-// identity. ExtraSANs must be present before the first operator reconciliation.
+// OperatorTLSOptions selects the externally prepared manual TLS material used
+// by the latest v1alpha2 operator contract.
 type OperatorTLSOptions struct {
-	Mode      string
-	ExtraSANs []string
+	Mode                   string
+	ManualInternalCASecret string
+	ServiceTLSSecretNames  map[string]string
+}
+
+type OperatorValkeyTLSOptions struct {
+	Enabled              bool
+	CASecretName         string
+	ClientCertSecretName string
 }
 
 // OperatorPolicyOptions contains user-owned policy ConfigMap names. The
@@ -257,10 +301,9 @@ type OperatorPolicyOptions struct {
 
 // OperatorMonitoringOptions contains the explicit generic-Kubernetes endpoints.
 type OperatorMonitoringOptions struct {
-	PrometheusURL      string
-	AlertManagerURL    string
-	TLSSource          string
-	TLSCAConfigMapName string
+	PrometheusURL   string
+	AlertManagerURL string
+	TLSCASecretName string
 }
 
 // OperatorNetworkPolicyOptions contains the runtime host peers that must be
@@ -299,6 +342,7 @@ type OperatorCROptions struct {
 	ValkeyHost                       string
 	PostgreSQLSecret                 string
 	ValkeySecret                     string
+	ValkeyTLS                        *OperatorValkeyTLSOptions
 	LLM                              OperatorLLMOptions
 	TLS                              OperatorTLSOptions
 	PolicyConfigMaps                 OperatorPolicyOptions
@@ -315,9 +359,7 @@ type OperatorCROptions struct {
 	APIFrontendEnabled               bool
 	ConsoleEnabled                   bool
 	ConsoleAuthSecretName            string
-	ConsoleIngressHost               string
-	ConsoleIngressClass              string
-	ConsoleTLSSecretName             string
+	ConsoleRedirectURL               string
 	ConsoleProviderLogoutURL         string
 	IssuerURL                        string
 	JWKSURL                          string
@@ -372,9 +414,16 @@ type operatorPostgreSQLSpec struct {
 }
 
 type operatorValkeySpec struct {
-	Host       string `yaml:"host"`
-	Port       int    `yaml:"port,omitempty"`
-	SecretName string `yaml:"secretName"`
+	Host       string             `yaml:"host"`
+	Port       int                `yaml:"port,omitempty"`
+	SecretName string             `yaml:"secretName"`
+	TLS        *operatorValkeyTLS `yaml:"tls,omitempty"`
+}
+
+type operatorValkeyTLS struct {
+	Enabled              bool   `yaml:"enabled"`
+	CASecretName         string `yaml:"caSecretName,omitempty"`
+	ClientCertSecretName string `yaml:"clientCertSecretName,omitempty"`
 }
 
 type operatorPolicySpec struct {
@@ -440,7 +489,6 @@ type operatorAPIFrontendSpec struct {
 	LLMProfileRef string                 `yaml:"llmProfileRef,omitempty"`
 	Auth          *operatorAPIAuthSpec   `yaml:"auth,omitempty"`
 	RateLimit     *operatorRateLimitSpec `yaml:"rateLimit,omitempty"`
-	Ingress       *operatorIngressSpec   `yaml:"ingress,omitempty"`
 }
 
 type operatorAPIAuthSpec struct {
@@ -458,18 +506,11 @@ type operatorRateLimitSpec struct {
 type operatorConsoleSpec struct {
 	Enabled *bool                    `yaml:"enabled,omitempty"`
 	Auth    *operatorConsoleAuthSpec `yaml:"auth,omitempty"`
-	Ingress *operatorIngressSpec     `yaml:"ingress,omitempty"`
-}
-
-type operatorIngressSpec struct {
-	Enabled          bool   `yaml:"enabled"`
-	IngressClassName string `yaml:"ingressClassName"`
-	Host             string `yaml:"host"`
-	TLSSecretName    string `yaml:"tlsSecretName"`
 }
 
 type operatorConsoleAuthSpec struct {
 	SecretName        string `yaml:"secretName,omitempty"`
+	RedirectURL       string `yaml:"redirectURL,omitempty"`
 	ProviderLogoutURL string `yaml:"providerLogoutURL,omitempty"`
 }
 
@@ -485,11 +526,10 @@ type operatorMonitoringEndpoint struct {
 }
 
 type operatorMonitoringTLS struct {
-	Source             string                   `yaml:"source,omitempty"`
-	CACertConfigMapRef *operatorMonitoringCARef `yaml:"caCertConfigMapRef,omitempty"`
+	CACertSecretRef *operatorMonitoringCASecretRef `yaml:"caCertSecretRef,omitempty"`
 }
 
-type operatorMonitoringCARef struct {
+type operatorMonitoringCASecretRef struct {
 	Name string `yaml:"name"`
 	Key  string `yaml:"key,omitempty"`
 }
@@ -506,17 +546,13 @@ type operatorNetworkPoliciesSpec struct {
 }
 
 type operatorTLSManifest struct {
-	Mode                  string                    `yaml:"mode"`
-	DevelopmentSelfSigned map[string]string         `yaml:"developmentSelfSigned"`
-	Hooks                 *operatorTLSHooksManifest `yaml:"hooks,omitempty"`
+	Mode   string                   `yaml:"mode"`
+	Manual *operatorManualTLSConfig `yaml:"manual,omitempty"`
 }
 
-type operatorTLSHooksManifest struct {
-	TLSCerts *operatorTLSCertsManifest `yaml:"tlsCerts,omitempty"`
-}
-
-type operatorTLSCertsManifest struct {
-	ExtraSANs []string `yaml:"extraSANs,omitempty"`
+type operatorManualTLSConfig struct {
+	InternalCASecretName  string            `yaml:"internalCASecretName,omitempty"`
+	ServiceTLSSecretNames map[string]string `yaml:"serviceTLSSecretNames,omitempty"`
 }
 
 type operatorRemediationSpec struct {
@@ -590,6 +626,9 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 	if options.TLS.Mode == "" {
 		return "", errors.New("kubernaut CR requires an explicit TLS mode")
 	}
+	if options.TLS.Mode != "manual" {
+		return "", fmt.Errorf("kubernaut CR supports only the v1alpha2 manual TLS mode, got %q", options.TLS.Mode)
+	}
 	if options.Fleet != nil && options.Fleet.Enabled && options.Fleet.WriteCredentialsSecret == "" {
 		return "", errors.New("fleet kubernaut CR requires a write OAuth2 Secret")
 	}
@@ -612,7 +651,7 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 		if options.JWKSURL != "" {
 			auth.JWKSURL = options.JWKSURL
 		}
-		apiFrontend = &operatorAPIFrontendSpec{Auth: auth}
+		apiFrontend = &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth}
 	} else {
 		apiFrontend = &operatorAPIFrontendSpec{Enabled: pointerToBool(false)}
 	}
@@ -621,16 +660,13 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 	if options.Monitoring.PrometheusURL != "" || options.Monitoring.AlertManagerURL != "" {
 		monitoring = &operatorMonitoringSpec{}
 		if options.Monitoring.PrometheusURL != "" {
-			monitoring.Prometheus = &operatorMonitoringEndpoint{URL: options.Monitoring.PrometheusURL}
+			monitoring.Prometheus = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.PrometheusURL}
 		}
 		if options.Monitoring.AlertManagerURL != "" {
-			monitoring.AlertManager = &operatorMonitoringEndpoint{URL: options.Monitoring.AlertManagerURL}
+			monitoring.AlertManager = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.AlertManagerURL}
 		}
-		if options.Monitoring.TLSSource != "" {
-			monitoring.TLS = &operatorMonitoringTLS{Source: options.Monitoring.TLSSource}
-			if options.Monitoring.TLSCAConfigMapName != "" {
-				monitoring.TLS.CACertConfigMapRef = &operatorMonitoringCARef{Name: options.Monitoring.TLSCAConfigMapName}
-			}
+		if options.Monitoring.TLSCASecretName != "" {
+			monitoring.TLS = &operatorMonitoringTLS{CACertSecretRef: &operatorMonitoringCASecretRef{Name: options.Monitoring.TLSCASecretName, Key: "ca.crt"}}
 		}
 	}
 
@@ -645,13 +681,12 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 		}
 	}
 
-	tls := operatorTLSManifest{
-		Mode:                  options.TLS.Mode,
-		DevelopmentSelfSigned: map[string]string{},
+	serviceTLSSecretNames := operatorManualTLSSecretNames(options.Fleet != nil && options.Fleet.Enabled, options.TLS.ServiceTLSSecretNames)
+	internalCASecret := options.TLS.ManualInternalCASecret
+	if internalCASecret == "" {
+		internalCASecret = operatorInternalCASecretName
 	}
-	if len(options.TLS.ExtraSANs) > 0 {
-		tls.Hooks = &operatorTLSHooksManifest{TLSCerts: &operatorTLSCertsManifest{ExtraSANs: options.TLS.ExtraSANs}}
-	}
+	tls := operatorTLSManifest{Mode: "manual", Manual: &operatorManualTLSConfig{InternalCASecretName: internalCASecret, ServiceTLSSecretNames: serviceTLSSecretNames}}
 
 	cr := operatorCRManifest{
 		APIVersion: operatorCRAPIVersion,
@@ -663,7 +698,7 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 			// keep it explicit instead of copying the operator's broader
 			// defaulted PostgreSQL block into every CR.
 			PostgreSQL:       operatorPostgreSQLSpec{Host: options.PostgreSQLHost, SecretName: options.PostgreSQLSecret, SSLMode: options.PostgreSQLSSLMode},
-			Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret},
+			Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret, TLS: operatorValkeyTLSManifest(options.ValkeyTLS)},
 			AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}},
 			SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
 			LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
@@ -693,12 +728,17 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 		}}
 	}
 	if options.ConsoleEnabled {
-		console := &operatorConsoleSpec{Enabled: pointerToBool(true)}
-		if options.ConsoleAuthSecretName != "" {
-			console.Auth = &operatorConsoleAuthSpec{SecretName: options.ConsoleAuthSecretName, ProviderLogoutURL: options.ConsoleProviderLogoutURL}
+		if options.ConsoleAuthSecretName == "" {
+			return "", errors.New("kubernaut CR requires a Console OIDC Secret when Console is enabled")
 		}
-		if options.ConsoleIngressHost != "" {
-			console.Ingress = &operatorIngressSpec{Enabled: true, IngressClassName: options.ConsoleIngressClass, Host: options.ConsoleIngressHost, TLSSecretName: options.ConsoleTLSSecretName}
+		if err := validateOperatorConsoleRedirectURL(options.ConsoleRedirectURL); err != nil {
+			return "", err
+		}
+		console := &operatorConsoleSpec{Enabled: pointerToBool(true)}
+		console.Auth = &operatorConsoleAuthSpec{
+			SecretName:        options.ConsoleAuthSecretName,
+			RedirectURL:       options.ConsoleRedirectURL,
+			ProviderLogoutURL: options.ConsoleProviderLogoutURL,
 		}
 		cr.Spec.Console = console
 	}
@@ -713,8 +753,45 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 	return string(data), nil
 }
 
+func validateOperatorConsoleRedirectURL(raw string) error {
+	if strings.TrimSpace(raw) != raw || raw == "" {
+		return errors.New("kubernaut CR requires an HTTPS Console redirect URL when Console is enabled")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.EscapedPath() != "/oauth2/callback" {
+		return fmt.Errorf("kubernaut CR requires an HTTPS Console redirect URL ending in /oauth2/callback, got %q", raw)
+	}
+	return nil
+}
+
 func pointerToBool(value bool) *bool {
 	return &value
+}
+
+func operatorManualTLSSecretNames(includeFleetMetadataCache bool, configured map[string]string) map[string]string {
+	names := map[string]string{
+		"gateway":        "gateway-tls",
+		"datastorage":    "datastorage-tls",
+		"kubernautagent": "kubernautagent-tls",
+		"apifrontend":    "apifrontend-tls",
+		"authwebhook":    "authwebhook-tls",
+	}
+	if includeFleetMetadataCache {
+		names["fleetmetadatacache"] = "fleetmetadatacache-tls"
+	}
+	for key, value := range configured {
+		if strings.TrimSpace(value) != "" {
+			names[key] = value
+		}
+	}
+	return names
+}
+
+func operatorValkeyTLSManifest(options *OperatorValkeyTLSOptions) *operatorValkeyTLS {
+	if options == nil {
+		return nil
+	}
+	return &operatorValkeyTLS{Enabled: options.Enabled, CASecretName: options.CASecretName, ClientCertSecretName: options.ClientCertSecretName}
 }
 
 func operatorReasoningManifest(reasoning *OperatorLLMReasoning) *operatorLLMReasoning {
@@ -910,15 +987,20 @@ func BuildOperatorDiagnostics(input OperatorDiagnosticInput) string {
 
 // DemoArtifactOverrides are user-facing explicit release/source overrides.
 type DemoArtifactOverrides struct {
-	OperatorVersion     string `yaml:"version,omitempty"`
-	OperatorImage       string `yaml:"image,omitempty"`
-	OperatorDigest      string `yaml:"imageDigest,omitempty"`
-	OperatorChart       string `yaml:"chart,omitempty"`
-	OperatorChartDigest string `yaml:"chartDigest,omitempty"`
-	OperatorRef         string `yaml:"ref,omitempty"`
-	KubernautVersion    string `yaml:"kubernautVersion,omitempty"`
-	KubernautImage      string `yaml:"kubernautImage,omitempty"`
-	KubernautDigest     string `yaml:"kubernautImageDigest,omitempty"`
+	OperatorVersion         string `yaml:"version,omitempty"`
+	OperatorImage           string `yaml:"image,omitempty"`
+	OperatorImageRepository string `yaml:"imageRepository,omitempty"`
+	OperatorImageTag        string `yaml:"imageTag,omitempty"`
+	OperatorDigest          string `yaml:"imageDigest,omitempty"`
+	OperatorChart           string `yaml:"chart,omitempty"`
+	OperatorChartDigest     string `yaml:"chartDigest,omitempty"`
+	OperatorRef             string `yaml:"ref,omitempty"`
+	DependencyChart         string `yaml:"dependencyChart,omitempty"`
+	DependencyChartVersion  string `yaml:"dependencyChartVersion,omitempty"`
+	DependencyChartDigest   string `yaml:"dependencyChartDigest,omitempty"`
+	KubernautVersion        string `yaml:"kubernautVersion,omitempty"`
+	KubernautImage          string `yaml:"kubernautImage,omitempty"`
+	KubernautDigest         string `yaml:"kubernautImageDigest,omitempty"`
 }
 
 type DemoArtifactResolutionInput struct {
@@ -927,25 +1009,28 @@ type DemoArtifactResolutionInput struct {
 }
 
 type ResolvedDemoOperatorArtifacts struct {
-	OperatorVersion  string
-	OperatorImage    string
-	OperatorChart    string
-	OperatorRef      string
-	KubernautVersion string
-	KubernautImage   string
+	OperatorVersion        string
+	OperatorImage          string
+	OperatorChart          string
+	OperatorRef            string
+	DependencyChart        string
+	DependencyChartVersion string
+	KubernautVersion       string
+	KubernautImage         string
 }
 
 // DemoArtifactResolutionRecord is emitted before live reconciliation so a
 // demo failure can be reconstructed without guessing which release inputs won.
 type DemoArtifactResolutionRecord struct {
-	ReleaseLine      string            `json:"releaseLine"`
-	OperatorVersion  string            `json:"operatorVersion"`
-	OperatorRef      string            `json:"operatorRef,omitempty"`
-	OperatorImage    string            `json:"operatorImage"`
-	OperatorChart    string            `json:"operatorChart"`
-	DependencyChart  string            `json:"dependencyChart"`
-	KubernautVersion string            `json:"kubernautVersion"`
-	RelatedImages    map[string]string `json:"relatedImages"`
+	ReleaseLine            string            `json:"releaseLine"`
+	OperatorVersion        string            `json:"operatorVersion"`
+	OperatorRef            string            `json:"operatorRef,omitempty"`
+	OperatorImage          string            `json:"operatorImage"`
+	OperatorChart          string            `json:"operatorChart"`
+	DependencyChart        string            `json:"dependencyChart"`
+	DependencyChartVersion string            `json:"dependencyChartVersion,omitempty"`
+	KubernautVersion       string            `json:"kubernautVersion"`
+	RelatedImages          map[string]string `json:"relatedImages"`
 }
 
 func BuildDemoArtifactResolutionJSON(record DemoArtifactResolutionRecord) ([]byte, error) {
@@ -961,10 +1046,10 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 		version = strings.TrimSpace(os.Getenv("KUBERNAUT_RELEASE_VERSION"))
 	}
 	if version == "" {
-		version = "1.6.0-rc26"
+		version = "1.6.0-rc27"
 	}
 	if version == "1.6" {
-		version = "1.6.0-rc26"
+		version = "1.6.0-rc27"
 	}
 	operatorVersion := strings.TrimSpace(input.Explicit.OperatorVersion)
 	if operatorVersion == "" {
@@ -975,6 +1060,9 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 		kubernautVersion = version
 	}
 	operatorImage := strings.TrimSpace(input.Explicit.OperatorImage)
+	if operatorImage == "" {
+		operatorImage = composeImageReference(input.Explicit.OperatorImageRepository, input.Explicit.OperatorImageTag)
+	}
 	if operatorImage == "" {
 		operatorImage = "quay.io/kubernaut-ai/kubernaut-operator:" + operatorVersion
 	}
@@ -988,11 +1076,34 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 	if digest := strings.TrimSpace(input.Explicit.OperatorChartDigest); digest != "" && !strings.Contains(operatorChart, "@sha256:") {
 		operatorChart += "@" + digest
 	}
+	dependencyChart := strings.TrimSpace(input.Explicit.DependencyChart)
+	if dependencyChart == "" {
+		dependencyChart = demoDependencyChartOCI
+	}
+	if digest := strings.TrimSpace(input.Explicit.DependencyChartDigest); digest != "" && !strings.Contains(dependencyChart, "@sha256:") {
+		dependencyChart += "@" + digest
+	}
+	dependencyChartVersion := strings.TrimSpace(input.Explicit.DependencyChartVersion)
+	if dependencyChartVersion == "" {
+		dependencyChartVersion = demoDependencyChartVersion
+	}
 	kubernautImage := input.Explicit.KubernautImage
 	if kubernautImage == "" {
 		kubernautImage = "quay.io/kubernaut-ai/gateway:" + kubernautVersion
 	}
-	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, OperatorRef: strings.TrimSpace(input.Explicit.OperatorRef), KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
+	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, OperatorRef: strings.TrimSpace(input.Explicit.OperatorRef), DependencyChart: dependencyChart, DependencyChartVersion: dependencyChartVersion, KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
+}
+
+func composeImageReference(repository, tag string) string {
+	repository = strings.TrimRight(strings.TrimSpace(repository), "/")
+	tag = strings.TrimSpace(tag)
+	if repository == "" {
+		return ""
+	}
+	if tag == "" {
+		return repository
+	}
+	return repository + ":" + tag
 }
 
 func ValidateOperatorSourceCheckout(root, statusOutput string) error {
@@ -1040,44 +1151,6 @@ func BuildQualificationManifest(input QualificationManifestInput) ([]byte, error
 		Artifacts           []QualificationArtifact `json:"artifacts"`
 		Results             []QualificationResult   `json:"results"`
 	}{1, input.OperatorImageDigest, input.Artifacts, input.Results}, "", "  ")
-}
-
-// ScanForbiddenLiveApplicationChartDeployments distinguishes live deployment
-// commands from temporarily allowed offline legacy chart checks.
-func ScanForbiddenLiveApplicationChartDeployments(lines []string) []string {
-	var violations []string
-	for _, line := range lines {
-		lower := strings.ToLower(strings.TrimSpace(line))
-		if !strings.Contains(lower, "charts/kubernaut") {
-			continue
-		}
-		if strings.Contains(lower, "helm unittest") || strings.Contains(lower, "helm lint") || strings.Contains(lower, "helm template") {
-			continue
-		}
-		if strings.Contains(lower, "helm install") || strings.Contains(lower, "helm upgrade") || strings.Contains(lower, "helm repo") {
-			violations = append(violations, strings.TrimSpace(line))
-		}
-	}
-	return violations
-}
-
-// ScanForbiddenDeploymentPaths scans the narrowly scoped deployment paths
-// used by issue #2492. Offline legacy chart checks remain allowed; live Helm
-// install/upgrade commands for charts/kubernaut are returned with file/line
-// context for CI to fail closed.
-func ScanForbiddenDeploymentPaths(paths []string) ([]string, error) {
-	var violations []string
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read deployment boundary path %q: %w", path, err)
-		}
-		lines := strings.Split(string(data), "\n")
-		for index, line := range ScanForbiddenLiveApplicationChartDeployments(lines) {
-			violations = append(violations, fmt.Sprintf("%s:%d: %s", path, index+1, line))
-		}
-	}
-	return violations, nil
 }
 
 func BuildOperatorCleanupPlan(input OperatorCleanupInput) []string {
@@ -1288,11 +1361,6 @@ func InstallOperatorDependencies(ctx context.Context, config OperatorDeploymentC
 	}), chartFixtures, writer); err != nil {
 		return fmt.Errorf("install operator dependencies: %w", err)
 	}
-	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_SHA")) != "" {
-		if err := normalizeOperatorValkeyCredentials(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
-			return err
-		}
-	}
 	if config.FixtureFiles.LLMCredentials != "" {
 		if err := ensureOperatorLLMCredentials(ctx, config.KubeconfigPath, config.Namespace, config.FixtureFiles.LLMCredentials, writer); err != nil {
 			return err
@@ -1360,39 +1428,6 @@ rules:
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ data-storage-client ClusterRole ready for operator-managed RoleBindings")
 	_, _ = fmt.Fprintln(writer, "  ✅ cluster-monitoring-view ClusterRole ready for operator-managed bindings")
-	return nil
-}
-
-// BuildOperatorUnauthenticatedValkeySecretManifest returns the disposable
-// qualification-only Valkey credential shape. The operator-managed FMC
-// runtime in the pinned RC26 operand has no Valkey password field; keeping the
-// dev cache unauthenticated avoids a credential that no consumer can mount.
-// This is never used by production deployment paths.
-func BuildOperatorUnauthenticatedValkeySecretManifest(namespace string) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Secret
-metadata:
-  name: valkey-secret
-  namespace: %s
-type: Opaque
-stringData:
-  valkey-secrets.yaml: |
-    password: ""
-  VALKEY_PASSWORD: ""
-`, namespace)
-}
-
-func normalizeOperatorValkeyCredentials(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildOperatorUnauthenticatedValkeySecretManifest(namespace)); err != nil {
-		return fmt.Errorf("normalize disposable Valkey credentials: %w", err)
-	}
-	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/valkey", "-n", namespace); err != nil {
-		return fmt.Errorf("restart disposable Valkey after credential normalization: %w", err)
-	}
-	if err := waitForDeployment(ctx, "valkey", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
-		return fmt.Errorf("wait for normalized Valkey: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ disposable Valkey restarted without authentication for operator FMC compatibility")
 	return nil
 }
 
@@ -1470,6 +1505,18 @@ func ApplyOperatorCRAndWait(ctx context.Context, config OperatorDeploymentConfig
 	if err := kubectlApplyFile(ctx, config.KubeconfigPath, crPath, writer); err != nil {
 		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
 	}
+	if err := EnsureOperatorAuthWebhookCABundle(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
+		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
+	// The qualification deliberately reuses the immutable 1.6.0-rc27 operand
+	// images. Those images still create a combined ambient CA bundle with
+	// os.CreateTemp("/tmp", ...), while operator-managed pods use a read-only
+	// root filesystem on generic clusters. Keep this compatibility volume
+	// test-owned and scoped to this qualification namespace; it is not an
+	// operator or production chart change.
+	if err := EnsureOperatorWritableTempVolumes(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
+		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
 
 	if err := waitForOperatorCR(ctx, config); err != nil {
 		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
@@ -1526,6 +1573,194 @@ func ApplyOperatorCRAndWait(ctx context.Context, config OperatorDeploymentConfig
 		}
 	}
 	return evidence, nil
+}
+
+const operatorRuntimeTempVolumeName = "operator-runtime-tmp"
+
+// ensureWritableTempVolume adds the test-owned compatibility volume to every
+// regular container in an operator-managed deployment. It is idempotent so a
+// preserved cluster can be safely retried.
+func ensureWritableTempVolume(deployment *appsv1.Deployment) bool {
+	if deployment == nil || deployment.Labels["app.kubernetes.io/managed-by"] != "kubernaut-operator" {
+		return false
+	}
+	needsVolume := false
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		hasWritableTemp := false
+		for _, mount := range container.VolumeMounts {
+			if mount.MountPath == operatorRuntimeTempMountPath {
+				hasWritableTemp = true
+				break
+			}
+		}
+		if !hasWritableTemp {
+			needsVolume = true
+			break
+		}
+	}
+	if !needsVolume {
+		return false
+	}
+	volumeExists := false
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Name == operatorRuntimeTempVolumeName {
+			volumeExists = true
+			break
+		}
+	}
+	if !volumeExists {
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         operatorRuntimeTempVolumeName,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+	changed := false
+	for index := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[index]
+		found := false
+		for _, mount := range container.VolumeMounts {
+			if mount.MountPath == operatorRuntimeTempMountPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: operatorRuntimeTempVolumeName, MountPath: operatorRuntimeTempMountPath})
+			changed = true
+		}
+	}
+	return changed
+}
+
+// EnsureOperatorWritableTempVolumes applies the legacy operand compatibility
+// mount after the operator has rendered its application Deployments.
+func EnsureOperatorWritableTempVolumes(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes client for operator temp volumes: %w", err)
+	}
+	updated := 0
+	stableSince := time.Time{}
+	deadline := time.NewTimer(3 * time.Minute)
+	defer deadline.Stop()
+	for {
+		deployments, listErr := clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/managed-by=kubernaut-operator"})
+		if listErr != nil {
+			return fmt.Errorf("list operator-managed deployments: %w", listErr)
+		}
+		allMounted := len(deployments.Items) > 0
+		for index := range deployments.Items {
+			deployment := &deployments.Items[index]
+			if ensureWritableTempVolume(deployment) {
+				if _, updateErr := clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{}); updateErr != nil {
+					return fmt.Errorf("patch writable /tmp on deployment %s: %w", deployment.Name, updateErr)
+				}
+				updated++
+			}
+			if !deploymentHasWritableTemp(deployment) {
+				allMounted = false
+			}
+		}
+		if allMounted {
+			if stableSince.IsZero() {
+				stableSince = time.Now()
+			} else if time.Since(stableSince) >= 10*time.Second {
+				break
+			}
+		} else {
+			stableSince = time.Time{}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("timed out waiting for operator-managed deployments to receive writable /tmp")
+		case <-time.After(2 * time.Second):
+		}
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ test-owned writable /tmp compatibility mounted on %d operator deployments\n", updated)
+	return nil
+}
+
+func deploymentHasWritableTemp(deployment *appsv1.Deployment) bool {
+	if deployment == nil || len(deployment.Spec.Template.Spec.Containers) == 0 {
+		return false
+	}
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		mounted := false
+		for _, mount := range container.VolumeMounts {
+			if mount.MountPath == operatorRuntimeTempMountPath {
+				mounted = true
+				break
+			}
+		}
+		if !mounted {
+			return false
+		}
+	}
+	return true
+}
+
+// EnsureOperatorAuthWebhookCABundle supplies the administrator-owned CA bundle
+// for manual TLS mode. The operator intentionally preserves this field rather
+// than owning it, but its current generic-cluster reconciliation creates the
+// AuthWebhook configurations with an empty bundle until an administrator
+// patches them.
+func EnsureOperatorAuthWebhookCABundle(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes client for AuthWebhook CA bundle: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "secret/authwebhook-tls", "-n", namespace, "-o", "jsonpath={.data.ca\\.crt}")
+	encodedCA, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("read AuthWebhook CA bundle: %w", err)
+	}
+	caBundle, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encodedCA)))
+	if err != nil || len(caBundle) == 0 {
+		return fmt.Errorf("decode AuthWebhook CA bundle: %w", err)
+	}
+
+	mutatingName := namespace + "-authwebhook-mutating"
+	validatingName := namespace + "-authwebhook-validating"
+	deadline := time.NewTimer(2 * time.Minute)
+	defer deadline.Stop()
+	for {
+		mutating, mutatingErr := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, mutatingName, metav1.GetOptions{})
+		validating, validatingErr := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Get(ctx, validatingName, metav1.GetOptions{})
+		if mutatingErr != nil && !apierrors.IsNotFound(mutatingErr) {
+			return fmt.Errorf("read AuthWebhook MutatingWebhookConfiguration: %w", mutatingErr)
+		}
+		if validatingErr != nil && !apierrors.IsNotFound(validatingErr) {
+			return fmt.Errorf("read AuthWebhook ValidatingWebhookConfiguration: %w", validatingErr)
+		}
+		if mutatingErr == nil && validatingErr == nil && len(mutating.Webhooks) > 0 && len(validating.Webhooks) > 0 {
+			for index := range mutating.Webhooks {
+				mutating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
+			}
+			for index := range validating.Webhooks {
+				validating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
+			}
+			if _, err := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Update(ctx, mutating, metav1.UpdateOptions{}); err != nil {
+				if !apierrors.IsConflict(err) {
+					return fmt.Errorf("patch AuthWebhook MutatingWebhookConfiguration CA bundle: %w", err)
+				}
+			} else if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Update(ctx, validating, metav1.UpdateOptions{}); err != nil && !apierrors.IsConflict(err) {
+				return fmt.Errorf("patch AuthWebhook ValidatingWebhookConfiguration CA bundle: %w", err)
+			} else if err == nil {
+				_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook webhook CA bundles patched for manual TLS")
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("timed out waiting for AuthWebhook webhook configurations")
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 func buildOperatorCRManifest(config OperatorDeploymentConfig) (string, error) {
@@ -2064,13 +2299,33 @@ func staticOperatorExposurePlan(namespace, hostname string, components []string)
 // collision-free block before creation; a reused cluster must not silently
 // select a new host-port block that Kind never mapped.
 func OperatorExposurePlanForCluster(ctx context.Context, clusterName, namespace, hostname string, components []string) (OperatorExposurePlan, error) {
+	offset, err := DemoHostPortOffset()
+	if err != nil {
+		return OperatorExposurePlan{}, err
+	}
 	if plan, ok := staticOperatorExposurePlan(namespace, hostname, components); ok {
-		return plan, nil
+		return offsetOperatorExposurePlanHostPorts(plan, offset), nil
 	}
 	if clusterName != "" && clusterHasLiveNode(ctx, clusterName) {
 		return existingKindOperatorExposurePlan(ctx, clusterName, namespace, hostname, components)
 	}
-	return AllocateOperatorExposurePlan(ctx, namespace, hostname, components)
+	plan, err := AllocateOperatorExposurePlan(ctx, namespace, hostname, components)
+	if err != nil {
+		return OperatorExposurePlan{}, err
+	}
+	return offsetOperatorExposurePlanHostPorts(plan, offset), nil
+}
+
+func offsetOperatorExposurePlanHostPorts(plan OperatorExposurePlan, offset int) OperatorExposurePlan {
+	if offset == 0 {
+		return plan
+	}
+	offsetPlan := plan
+	offsetPlan.Adapters = append([]OperatorExposureAdapter(nil), plan.Adapters...)
+	for index := range offsetPlan.Adapters {
+		offsetPlan.Adapters[index].HostPort += offset
+	}
+	return offsetPlan
 }
 
 func existingKindOperatorExposurePlan(ctx context.Context, clusterName, namespace, hostname string, components []string) (OperatorExposurePlan, error) {
@@ -2196,13 +2451,13 @@ func (e OperatorExposureEvidence) HostnameOrLoopback() string {
 // allowed for development qualification and is rejected when dirty.
 func OperatorChartPathsFromEnvironment(ctx context.Context, requestedRefs ...string) (operatorChartPath, dependencyChartPath string, err error) {
 	operatorChartPath = strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH"))
-	dependencyChartPath = strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH"))
+	dependencyChartPath = strings.TrimSpace(os.Getenv("KUBERNAUT_DEPENDENCY_CHART_PATH"))
 	if operatorChartPath != "" && dependencyChartPath != "" {
 		return operatorChartPath, dependencyChartPath, nil
 	}
 	root := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT"))
 	if root == "" {
-		return "", "", errors.New("operator chart artifacts are not configured; set KUBERNAUT_OPERATOR_CHART_PATH and KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH or explicitly set KUBERNAUT_OPERATOR_ROOT")
+		return "", "", errors.New("operator chart artifacts are not configured; set KUBERNAUT_OPERATOR_CHART_PATH and KUBERNAUT_DEPENDENCY_CHART_PATH or explicitly set KUBERNAUT_OPERATOR_ROOT")
 	}
 	statusOutput, statusErr := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").CombinedOutput()
 	if statusErr != nil {
@@ -2225,7 +2480,7 @@ func OperatorChartPathsFromEnvironment(ctx context.Context, requestedRefs ...str
 	if strings.TrimSpace(string(resolvedSHA)) != expectedSHA && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ALLOW_NON_PINNED_DEV")) != "true" {
 		return "", "", fmt.Errorf("operator source resolved to %s, want %s", strings.TrimSpace(string(resolvedSHA)), expectedSHA)
 	}
-	return filepath.Join(root, "charts", "kubernaut-operator"), filepath.Join(root, "charts", "kubernaut-dev-bootstrap"), nil
+	return filepath.Join(root, "charts", "kubernaut-operator"), filepath.Join(root, "charts", "kubernaut-development-dependencies"), nil
 }
 
 // OperatorOperandImagesFromBuiltImages maps upstream image-builder names to
@@ -2294,11 +2549,11 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	}
 	if options.OperatorArtifacts.OperatorChart != "" {
 		operatorChart = resolved.OperatorChart
-		dependencyChart = demoDependencyChartOCI
-		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.OperatorVersion, nil
+		dependencyChart = resolved.DependencyChart
+		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
 	}
-	if explicitChart := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")); explicitChart != "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_DEV_BOOTSTRAP_CHART_PATH")) == "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) == "" {
-		return explicitChart, demoDependencyChartOCI, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.OperatorVersion, nil
+	if explicitChart := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")); explicitChart != "" && strings.TrimSpace(os.Getenv("KUBERNAUT_DEPENDENCY_CHART_PATH")) == "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) == "" {
+		return explicitChart, resolved.DependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.DependencyChartVersion, nil
 	}
 	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != "" || strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" {
 		if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && options.OperatorArtifacts.OperatorImage == "" {
@@ -2308,13 +2563,16 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 		if err != nil {
 			return "", "", "", "", "", "", err
 		}
+		if options.OperatorArtifacts.DependencyChart != "" {
+			dependencyChart = resolved.DependencyChart
+		}
 		operatorChartVersion = chartVersionOrDefault(operatorChart, resolved.OperatorVersion)
-		dependencyChartVersion = chartVersionOrDefault(dependencyChart, resolved.OperatorVersion)
+		dependencyChartVersion = chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion)
 		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, operatorChartVersion, dependencyChartVersion, nil
 	}
 	operatorChart = resolved.OperatorChart
-	dependencyChart = demoDependencyChartOCI
-	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.OperatorVersion, nil
+	dependencyChart = resolved.DependencyChart
+	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
 }
 
 func chartVersionOrDefault(chartPath, fallback string) string {

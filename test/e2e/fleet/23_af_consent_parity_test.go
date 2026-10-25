@@ -105,10 +105,15 @@ func fleetSendTurnWithBody(body string, timeout time.Duration) afA2ATaskResult {
 // session rather than resuming a session that has no RR attached.
 func fleetSendInitialTurnUntilRR(targetNS, idPrefix, text string) (afA2ATaskResult, string) {
 	// The first turn is deliberately retryable: FMC may not have observed the
-	// freshly created managed namespace yet. Keep each failed scope attempt
-	// shorter than fmcSyncTimeout so Eventually can issue a fresh A2A session;
-	// subsequent consent turns retain their longer 180s budget.
-	const initialTurnTimeout = 30 * time.Second
+	// freshly created managed namespace yet. Consent discovery can also run the
+	// full investigation/discovery chain before returning its first response;
+	// observed Fleet runs needed 46-86s under parallel A2A load. Give one turn
+	// the same 180s budget as subsequent consent turns, while keeping a wider
+	// outer retry window for FMC scope-cache convergence.
+	const (
+		initialTurnTimeout     = 180 * time.Second
+		initialTurnSyncTimeout = 5 * time.Minute
+	)
 	var task afA2ATaskResult
 	var contextID string
 	attempt := 0
@@ -164,7 +169,7 @@ func fleetSendInitialTurnUntilRR(targetNS, idPrefix, text string) (afA2ATaskResu
 		}
 		g.Expect(created).To(BeTrue(),
 			"initial A2A attempt %d must create an RR for %s (retrying expected FMC scope-cache lag)", attempt, targetNS)
-	}, fmcSyncTimeout, 2*time.Second).Should(Succeed())
+	}, initialTurnSyncTimeout, 2*time.Second).Should(Succeed())
 
 	return task, contextID
 }

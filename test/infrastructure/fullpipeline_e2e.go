@@ -298,7 +298,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		time.Since(phase3Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: (removed, Issue #1737) -- charts/kubernaut/crds/ is installed
+	// PHASE 4: (removed, Issue #1737) -- config/crd/bases/ is installed
 	// automatically by `helm install` in PHASE 6 below. Manual `kubectl apply`
 	// of config/crd/bases/*.yaml is no longer needed for the chart-managed
 	// services. investigationsessions CRD (chart-only, unused by FullPipeline)
@@ -357,18 +357,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			PostgreSQLSSLMode: "require",
 			ValkeyHost:        "valkey." + namespace + ".svc.cluster.local",
 			PostgreSQLSecret:  "postgresql-secret", ValkeySecret: "valkey-secret",
+			ValkeyTLS:                        &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"},
 			LLM:                              OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm." + namespace + ".svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"},
 			MaxConcurrentInvestigations:      50,
 			InteractiveRateLimitPerUser:      100,
 			RemediationStabilizationWindow:   "10s",
 			EffectivenessStabilizationWindow: "30s",
 			EffectivenessValidityWindow:      "120s",
-			TLS:                              OperatorTLSOptions{Mode: "DevelopmentSelfSigned", ExtraSANs: []string{"localhost"}},
+			TLS:                              OperatorTLSOptions{Mode: "manual"},
 			PolicyConfigMaps:                 OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
 			// Prometheus/AlertManager are test-owned endpoints signed by the
 			// monitoring CA. Mount that CA into operator-managed clients instead
 			// of the application inter-service trust bundle.
-			Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093", TLSSource: "configMap", TLSCAConfigMapName: "monitoring-ca"},
+			Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093", TLSCASecretName: monitoringClientCASecretName},
 			// Kind host ingress is runtime test infrastructure. Apply the
 			// test-owned policy after reconciliation instead of putting the
 			// host bridge CIDR into the user CR.
@@ -389,8 +390,18 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to prepare operator Fleet TLS: %w", err)
 	}
+	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, fleetProvisioner != nil, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to prepare operator application TLS: %w", err)
+	}
 	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to prepare monitoring TLS: %w", err)
+	}
+	// The operator evaluates MonitoringReady during CR reconciliation and
+	// requires Prometheus Operator CRDs when monitoring integrations are enabled.
+	// Install the API/controller dependency before applying the CR; the actual
+	// test Prometheus and AlertManager workloads remain Go-managed in PHASE 7.
+	if err := InstallPrometheusOperator(ctx, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("failed to install Prometheus Operator dependency: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
@@ -416,6 +427,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		_, _ = fmt.Fprintf(writer, "✅ PHASE 5b complete (%s)\n", time.Since(phase5bStart).Round(time.Second))
 	}
 
+	// A preserved qualification cluster can retain CRs and fixture namespaces
+	// after a prior parallel run. Clear that test-owned state after the
+	// operator CRDs exist but before applying the next user-owned CR; otherwise
+	// fixed-name InvestigationSessions and old target namespaces cross-contaminate
+	// the next qualification run.
+	_, _ = fmt.Fprintln(writer, "\n🧹 Clearing retained FullPipeline test state before CR apply...")
+	CleanupFullPipelineTestResources(ctx, kubeconfigPath, writer)
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: apply the user-owned Kubernaut CR after dependencies/Fleet
 	// infrastructure are ready. The operator bootstrap and dependency chart
@@ -435,7 +454,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			operatorConfig.CR.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
 			operatorConfig.CR.IssuerURL = "https://keycloak:8443/realms/kubernaut-demo"
 			operatorConfig.CR.JWKSURL = "https://keycloak." + namespace + ".svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
-			operatorConfig.CR.TLS.ExtraSANs = []string{"localhost", "keycloak"}
 		}
 		evidence, deployErr := ApplyOperatorCRAndWait(ctx, operatorConfig, writer)
 		if deployErr == nil {
@@ -454,6 +472,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
+	// API Frontend keeps A2A session state in memory. A preserved cluster can
+	// therefore retain fixed qualification session IDs (for example
+	// ctx-fp-cg3-1) even after their CRs are deleted; restart the now-reconciled
+	// operator-owned session service so the next run starts with a clean driver
+	// pool.
+	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/apifrontend", "-n", namespace); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("restart API Frontend session service: %w", err)
+	}
+	if err := waitForDeployment(ctx, "apifrontend", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("API Frontend session service restart failed: %w", err)
+	}
 	if fleetProvisioner != nil {
 		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
 			return builtImages, nil, nil, fmt.Errorf("AF persona RBAC verification failed: %w", err)
@@ -462,30 +491,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("AF persona RBAC binding failed: %w", err)
 	}
 
-	// dex-tls (Issue #1737): the chart's pre-install tls-cert-gen hook has
-	// already run by this point (helm install above blocks on hooks), so
-	// authwebhook-tls's embedded ca.crt/ca.key are available to sign DEX's
-	// leaf cert. Must happen before PHASE 7's deployDexOIDCProviderForAF.
+	// The manual TLS material was prepared before the CR was applied. The
+	// operator now validates those administrator-owned Secrets instead of
+	// generating runtime certificates from removed hook/self-signed fields.
+	// DEX still needs its own leaf certificate before PHASE 7.
 	if shouldDeployDexForAF(fleetProvisioner) {
 		if err := ensureDexTLSFromOperatorCA(ctx, kubeconfigPath, namespace, writer); err != nil {
 			return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
 		}
 	}
 
-	// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernautagent's
-	// "localhost" SAN (needed for host-side E2E clients dialing their
-	// chart-pinned NodePorts with full hostname verification, Issue #785/
-	// #1737) is now baked into the ORIGINAL chart-issued certs via
-	// the operator CR's `tls.hooks.tlsCerts.extraSANs` setting
-	// localhost`, instead of being re-signed here post-install. The former
-	// re-sign-then-rolling-restart-4-deployments pass
-	// (resignHostAccessedTLSCertsWithLocalhostSAN, removed) was the
-	// deterministic root cause of fleet E2E's PHASE 6 rollout timeouts: its
-	// CPU burst on top of fleet's already-heavier Istio/Kuadrant/Keycloak/
-	// kube-mcp-server footprint made "gateway" deployment's old pod
-	// consistently fail to finish terminating within even a 720s wait
-	// (5/5 CI runs, identical failure). No restart is needed now since the
-	// certs are already correct from `helm install` onward.
+	// The host-accessed operator Services use test-owned NodePort adapters.
+	// Their manual serving Secrets are signed with the pre-created operator CA,
+	// so no post-reconciliation certificate rewrite or rollout is required.
 
 	// Issue #785 + #1737: suite_test.go's NewTLSAwareTransport (host-side E2E
 	// HTTP client) reads the inter-service CA from a local file that the
@@ -835,7 +853,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
 	promURL := fmt.Sprintf("https://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer, MonitoringCAPath(kubeconfigPath)); err != nil {
+	// Prometheus reloads the kubelet service-discovery target asynchronously
+	// after its TLS/web-config rollout. In rootless Kind the target can appear
+	// after several Prometheus/operator reconciliation cycles; keep this
+	// qualification-only gate long enough to observe the healthy target instead
+	// of rejecting the cluster during the operator replacement of the former
+	// chart deployment.
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 360*time.Second, writer, MonitoringCAPath(kubeconfigPath)); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
 	}
 	if !skipMockLLM() {
@@ -874,9 +898,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 // CleanupFullPipelineTestResources deletes all kubernaut CR instances and
 // test namespaces, leaving the cluster with deployed services but no test
 // state. This is called from SynchronizedAfterSuite so retries start clean.
-func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
+func CleanupFullPipelineTestResources(ctx context.Context, kubeconfigPath string, writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "\n🧹 Cleaning up test-created resources...")
-	if err := DeleteOperatorExposureAdapters(context.Background(), kubeconfigPath, kubernautSystem, writer); err != nil {
+	if err := DeleteOperatorExposureAdapters(ctx, kubeconfigPath, kubernautSystem, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  operator exposure cleanup: %v\n", err)
 	}
 
@@ -892,8 +916,8 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	for _, kind := range crdKinds {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
-			"delete", kind, "--all-namespaces", "--all", "--ignore-not-found", "--wait=false")
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"delete", kind, "--all-namespaces", "--all", "--ignore-not-found", "--wait=true", "--timeout=120s")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  %s cleanup: %s\n", kind, strings.TrimSpace(string(out)))
@@ -905,15 +929,16 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 		}
 	}
 
-	// Delete test namespaces matching known patterns (fp-am-*, fp-event-*)
-	nsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+	// Delete all test-owned FP/history/phase namespaces. The application and
+	// monitoring namespaces do not use these prefixes.
+	nsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
 	nsOut, err := nsCmd.Output()
 	if err == nil {
 		for _, ns := range strings.Fields(string(nsOut)) {
-			if strings.HasPrefix(ns, "fp-am-") || strings.HasPrefix(ns, "fp-event-") {
-				delCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
-					"delete", "namespace", ns, "--ignore-not-found", "--wait=false")
+			if strings.HasPrefix(ns, "fp-") || strings.HasPrefix(ns, "history-2496-") || strings.HasPrefix(ns, "phase-2498-") {
+				delCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+					"delete", "namespace", ns, "--ignore-not-found", "--wait=true", "--timeout=120s")
 				if delOut, delErr := delCmd.CombinedOutput(); delErr != nil {
 					_, _ = fmt.Fprintf(writer, "  ⚠️  namespace %s: %s\n", ns, strings.TrimSpace(string(delOut)))
 				} else {
@@ -924,6 +949,13 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	_, _ = fmt.Fprintln(writer, "✅ Test resource cleanup complete")
+	deleteCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"delete", "secret", "e2e-2390-snapshot-secret", "-n", ExecutionNamespace, "--ignore-not-found", "--wait=true")
+	if out, err := deleteCmd.CombinedOutput(); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  standalone execution fixture cleanup: %s\n", strings.TrimSpace(string(out)))
+	} else if trimmed := strings.TrimSpace(string(out)); trimmed != "" && trimmed != "No resources found" {
+		_, _ = fmt.Fprintf(writer, "  🗑️  standalone execution fixture: %s\n", trimmed)
+	}
 }
 
 // ============================================================================
@@ -1110,7 +1142,7 @@ subjects:
   name: event-exporter
   namespace: %[1]s
 ---
-# ConfigMap: route Warning events from fp-e2e-* and fp-approval-* namespaces to Gateway
+# ConfigMap: route Warning events from FullPipeline fixture namespaces to Gateway
 # fp-am-* namespaces are intentionally excluded: the AlertManager E2E test uses
 # Prometheus alerts (not K8s events) as signal source to prevent duplication.
 apiVersion: v1
@@ -1132,8 +1164,10 @@ data:
     kubeBurst: 100
     route:
       routes:
-        # Forward K8s events from fp-e2e-* (K8s event test), fp-approval-* (approval lifecycle),
-        # and fp-mcp-* (MCP interactive lifecycle) namespaces to Gateway.
+        # Forward K8s events from the static and dynamically generated
+        # FullPipeline fixture namespaces. The fp-fp-* family is emitted by
+        # direct-RR helpers that prefix their test ID; the explicit families
+        # cover autonomous, interactive, consent, and standalone journeys.
         # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test.
         - match:
             - namespace: "fp-e2e-*"
@@ -1141,6 +1175,28 @@ data:
             - namespace: "fp-approval-*"
               receiver: gateway-webhook
             - namespace: "fp-mcp-*"
+              receiver: gateway-webhook
+            - namespace: "fp-fp-*"
+              receiver: gateway-webhook
+            - namespace: "fp-auto-*"
+              receiver: gateway-webhook
+            - namespace: "fp-int-*"
+              receiver: gateway-webhook
+            - namespace: "fp-ints-*"
+              receiver: gateway-webhook
+            - namespace: "fp-comb-*"
+              receiver: gateway-webhook
+            - namespace: "fp-full-*"
+              receiver: gateway-webhook
+            - namespace: "fp-cg2-*"
+              receiver: gateway-webhook
+            - namespace: "fp-cg3-*"
+              receiver: gateway-webhook
+            - namespace: "fp-t1912-*"
+              receiver: gateway-webhook
+            - namespace: "fp-na1918-*"
+              receiver: gateway-webhook
+            - namespace: "fp-standalone-2378-*"
               receiver: gateway-webhook
           drop:
             - type: "Normal"

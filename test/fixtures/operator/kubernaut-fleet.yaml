@@ -15,6 +15,10 @@ spec:
   valkey:
     host: valkey.kubernaut-system.svc.cluster.local
     secretName: valkey-secret
+    tls:
+      enabled: true
+      caSecretName: valkey-ca
+      clientCertSecretName: valkey-tls-client
   aiAnalysis:
     policy:
       configMapName: aianalysis-policy
@@ -27,7 +31,9 @@ spec:
       model: mock-model
       endpoint: http://mock-llm.kubernaut-system.svc.cluster.local:8080
       credentialsSecretName: llm-credentials-primary
-  kubernautAgent: {}
+  kubernautAgent:
+    session:
+      maxConcurrentInvestigations: 50
   apiFrontend:
     enabled: true
     auth:
@@ -57,19 +63,26 @@ spec:
       validityWindow: 60s
   monitoring:
     prometheus:
+      enabled: true
       url: https://prometheus-svc.monitoring.svc.cluster.local:9090
     alertManager:
+      enabled: true
       url: https://alertmanager-svc.monitoring.svc.cluster.local:9093
     tls:
-      source: interService
+      caCertSecretRef:
+        name: monitoring-client-ca
+        key: ca.crt
   tls:
-    mode: DevelopmentSelfSigned
-    developmentSelfSigned: {}
-    hooks:
-      tlsCerts:
-        extraSANs:
-          - localhost
-          - keycloak
+    mode: manual
+    manual:
+      internalCASecretName: kubernaut-internal-ca
+      serviceTLSSecretNames:
+        gateway: gateway-tls
+        datastorage: datastorage-tls
+        kubernautagent: kubernautagent-tls
+        apifrontend: apifrontend-tls
+        authwebhook: authwebhook-tls
+        fleetmetadatacache: fleetmetadatacache-tls
   fleet:
     enabled: true
     mcpGateway:

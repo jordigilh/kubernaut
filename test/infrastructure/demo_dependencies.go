@@ -73,19 +73,28 @@ func MergeFleetGatewayVersionOverrides(file, explicit FleetGatewayVersionOverrid
 // It deliberately has no source-build default; an explicit source checkout is
 // handled only through KUBERNAUT_OPERATOR_ROOT with dirty-tree validation.
 type DemoDependencyOverrides struct {
-	EnvoyGatewayVersion string                   `yaml:"envoyGatewayVersion,omitempty"`
-	AgentRouterVersion  string                   `yaml:"agentRouterVersion,omitempty"`
-	Operator            DemoArtifactOverrideYAML `yaml:"operator,omitempty"`
-	Kubernaut           DemoArtifactOverrideYAML `yaml:"kubernaut,omitempty"`
+	EnvoyGatewayVersion string                     `yaml:"envoyGatewayVersion,omitempty"`
+	AgentRouterVersion  string                     `yaml:"agentRouterVersion,omitempty"`
+	Dependency          DemoDependencyOverrideYAML `yaml:"dependency,omitempty"`
+	Operator            DemoArtifactOverrideYAML   `yaml:"operator,omitempty"`
+	Kubernaut           DemoArtifactOverrideYAML   `yaml:"kubernaut,omitempty"`
 }
 
 type DemoArtifactOverrideYAML struct {
-	Version     string `yaml:"version,omitempty"`
-	Image       string `yaml:"image,omitempty"`
-	ImageDigest string `yaml:"imageDigest,omitempty"`
+	Version         string `yaml:"version,omitempty"`
+	Image           string `yaml:"image,omitempty"`
+	ImageRepository string `yaml:"imageRepository,omitempty"`
+	ImageTag        string `yaml:"imageTag,omitempty"`
+	ImageDigest     string `yaml:"imageDigest,omitempty"`
+	Chart           string `yaml:"chart,omitempty"`
+	ChartDigest     string `yaml:"chartDigest,omitempty"`
+	Ref             string `yaml:"ref,omitempty"`
+}
+
+type DemoDependencyOverrideYAML struct {
 	Chart       string `yaml:"chart,omitempty"`
+	Version     string `yaml:"version,omitempty"`
 	ChartDigest string `yaml:"chartDigest,omitempty"`
-	Ref         string `yaml:"ref,omitempty"`
 }
 
 func LoadDemoDependencyOverrides(path string) (DemoDependencyOverrides, error) {
@@ -114,8 +123,68 @@ func (o DemoDependencyOverrides) FleetGatewayVersions() FleetGatewayVersionOverr
 
 func (o DemoDependencyOverrides) ArtifactOverrides() DemoArtifactOverrides {
 	return DemoArtifactOverrides{
-		OperatorVersion: o.Operator.Version, OperatorImage: o.Operator.Image, OperatorDigest: o.Operator.ImageDigest,
-		OperatorChart: o.Operator.Chart, OperatorChartDigest: o.Operator.ChartDigest, OperatorRef: o.Operator.Ref,
-		KubernautVersion: o.Kubernaut.Version, KubernautImage: o.Kubernaut.Image, KubernautDigest: o.Kubernaut.ImageDigest,
+		OperatorVersion:         o.Operator.Version,
+		OperatorImage:           o.Operator.Image,
+		OperatorImageRepository: o.Operator.ImageRepository,
+		OperatorImageTag:        o.Operator.ImageTag,
+		OperatorDigest:          o.Operator.ImageDigest,
+		OperatorChart:           o.Operator.Chart,
+		OperatorChartDigest:     o.Operator.ChartDigest,
+		OperatorRef:             o.Operator.Ref,
+		DependencyChart:         o.Dependency.Chart,
+		DependencyChartVersion:  o.Dependency.Version,
+		DependencyChartDigest:   o.Dependency.ChartDigest,
+		KubernautVersion:        o.Kubernaut.Version,
+		KubernautImage:          o.Kubernaut.Image,
+		KubernautDigest:         o.Kubernaut.ImageDigest,
 	}
+}
+
+// MergeDemoArtifactOverrides applies explicit CLI values over the optional
+// dependency override file. Empty CLI fields preserve file-backed defaults.
+func MergeDemoArtifactOverrides(base, explicit DemoArtifactOverrides) DemoArtifactOverrides {
+	merged := base
+	if explicit.OperatorVersion != "" {
+		merged.OperatorVersion = explicit.OperatorVersion
+	}
+	if explicit.OperatorImage != "" {
+		merged.OperatorImage = explicit.OperatorImage
+	}
+	if explicit.OperatorImageRepository != "" {
+		merged.OperatorImageRepository = explicit.OperatorImageRepository
+	}
+	if explicit.OperatorImageTag != "" {
+		merged.OperatorImageTag = explicit.OperatorImageTag
+	}
+	if explicit.OperatorDigest != "" {
+		merged.OperatorDigest = explicit.OperatorDigest
+	}
+	if explicit.OperatorChart != "" {
+		merged.OperatorChart = explicit.OperatorChart
+	}
+	if explicit.OperatorChartDigest != "" {
+		merged.OperatorChartDigest = explicit.OperatorChartDigest
+	}
+	if explicit.OperatorRef != "" {
+		merged.OperatorRef = explicit.OperatorRef
+	}
+	if explicit.DependencyChart != "" {
+		merged.DependencyChart = explicit.DependencyChart
+	}
+	if explicit.DependencyChartVersion != "" {
+		merged.DependencyChartVersion = explicit.DependencyChartVersion
+	}
+	if explicit.DependencyChartDigest != "" {
+		merged.DependencyChartDigest = explicit.DependencyChartDigest
+	}
+	if explicit.KubernautVersion != "" {
+		merged.KubernautVersion = explicit.KubernautVersion
+	}
+	if explicit.KubernautImage != "" {
+		merged.KubernautImage = explicit.KubernautImage
+	}
+	if explicit.KubernautDigest != "" {
+		merged.KubernautDigest = explicit.KubernautDigest
+	}
+	return merged
 }

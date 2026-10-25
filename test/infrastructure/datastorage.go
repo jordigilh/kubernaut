@@ -2327,6 +2327,13 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 // certificate for audit export signing (AU-9). This is separate from the ECDSA inter-service
 // TLS certificates because the Signer requires RSA keys.
 func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	return generateSigningCertSecret(ctx, kubeconfigPath, namespace, "datastorage-signing", writer)
+}
+
+func generateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace, secretName string, writer io.Writer) error {
+	if strings.TrimSpace(secretName) == "" {
+		return fmt.Errorf("signing certificate Secret name is required")
+	}
 	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       "datastorage-signing",
 		Organization:     "Kubernaut",
@@ -2341,17 +2348,17 @@ func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace st
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-signing
+  name: %s
 type: kubernetes.io/tls
 stringData:
   tls.crt: |
 %s
   tls.key: |
-%s`, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
+%s`, secretName, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
 		return fmt.Errorf("failed to create signing cert Secret: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ datastorage-signing Secret created (RSA 2048)")
+	_, _ = fmt.Fprintf(writer, "  ✅ %s Secret created (RSA 2048)\n", secretName)
 	return nil
 }

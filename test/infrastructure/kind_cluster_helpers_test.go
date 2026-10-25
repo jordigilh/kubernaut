@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -147,6 +148,46 @@ nodes:
 		_, err := offsetKindHostPorts("hostPort: 60000\n", 5536)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("host port 65536 is outside"))
+	})
+})
+
+var _ = Describe("demo host-port isolation", func() {
+	It("UT-2492-DEMO-PORT-001 [BR-PLATFORM-014]: applies the configured demo offset without changing NodePorts", func() {
+		original, wasSet := os.LookupEnv(demoHostPortOffsetEnv)
+		DeferCleanup(func() {
+			if wasSet {
+				Expect(os.Setenv(demoHostPortOffsetEnv, original)).To(Succeed())
+				return
+			}
+			Expect(os.Unsetenv(demoHostPortOffsetEnv)).To(Succeed())
+		})
+		Expect(os.Setenv(demoHostPortOffsetEnv, "10000")).To(Succeed())
+
+		offset, err := DemoHostPortOffset()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offset).To(Equal(10000))
+		Expect(DemoHostPort(8843)).To(Equal(18843))
+
+		plan := offsetOperatorExposurePlanHostPorts(OperatorExposurePlan{
+			Adapters: []OperatorExposureAdapter{{NodePort: 30080, HostPort: 30080}},
+		}, offset)
+		Expect(plan.Adapters[0].NodePort).To(Equal(30080))
+		Expect(plan.Adapters[0].HostPort).To(Equal(40080))
+	})
+
+	It("UT-2492-DEMO-PORT-002 [BR-PLATFORM-014]: rejects invalid demo offsets", func() {
+		original, wasSet := os.LookupEnv(demoHostPortOffsetEnv)
+		DeferCleanup(func() {
+			if wasSet {
+				Expect(os.Setenv(demoHostPortOffsetEnv, original)).To(Succeed())
+				return
+			}
+			Expect(os.Unsetenv(demoHostPortOffsetEnv)).To(Succeed())
+		})
+		Expect(os.Setenv(demoHostPortOffsetEnv, "not-a-port-offset")).To(Succeed())
+
+		_, err := DemoHostPortOffset()
+		Expect(err).To(MatchError(ContainSubstring("KUBERNAUT_DEMO_HOST_PORT_OFFSET")))
 	})
 })
 

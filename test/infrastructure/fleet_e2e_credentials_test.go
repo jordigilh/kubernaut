@@ -100,7 +100,7 @@ var _ = Describe("addFleetWorkloadNamespaces", func() {
 var _ = Describe("buildAlertManagerManifest", func() {
 	It("UT-INFRA-FLEETDEMO-026: gateway-webhook URL uses gatewayNamespace, not namespace, when they differ", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 		Expect(manifest).NotTo(ContainSubstring("gateway-service.monitoring.svc.cluster.local"))
 	})
 
@@ -113,7 +113,7 @@ var _ = Describe("buildAlertManagerManifest", func() {
 
 	It("UT-INFRA-FLEETDEMO-028: single-cluster callers passing the same value for both still resolve correctly", func() {
 		manifest := buildAlertManagerManifest("kubernaut-system", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-029: BR-GATEWAY-036/037 bearer token is still added to the webhook's http_config when provided", func() {
@@ -123,7 +123,7 @@ var _ = Describe("buildAlertManagerManifest", func() {
 
 	It("UT-INFRA-FLEET-TLS-001: AlertManager uses the Gateway HTTPS endpoint and mounted CA", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 		Expect(manifest).To(ContainSubstring("tls_config:"))
 		Expect(manifest).To(ContainSubstring("ca_file: /etc/tls-ca/ca.crt"))
 		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))
@@ -202,6 +202,25 @@ var _ = Describe("FullPipeline event exporter resilience", func() {
 			"the event exporter must avoid cluster-wide metadata lookups that backlog Warning events")
 		Expect(manifest).To(ContainSubstring("maxEventAgeSeconds: 300"),
 			"the exporter window must stay aligned with Gateway's 5-minute event freshness guard")
+	})
+
+	It("UT-INFRA-FP-EVENT-002 [BR-E2E-001]: routes dynamic A2A fixture namespaces", func() {
+		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
+		for _, pattern := range []string{
+			`namespace: "fp-auto-*"`,
+			`namespace: "fp-int-*"`,
+			`namespace: "fp-ints-*"`,
+			`namespace: "fp-comb-*"`,
+			`namespace: "fp-full-*"`,
+			`namespace: "fp-cg2-*"`,
+			`namespace: "fp-cg3-*"`,
+			`namespace: "fp-t1912-*"`,
+			`namespace: "fp-na1918-*"`,
+			`namespace: "fp-standalone-2378-*"`,
+			`namespace: "fp-fp-*"`,
+		} {
+			Expect(manifest).To(ContainSubstring(pattern), "A2A Warning events must reach Gateway from %s", pattern)
+		}
 	})
 })
 

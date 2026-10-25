@@ -17,6 +17,8 @@ limitations under the License.
 package infrastructure
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -191,10 +193,14 @@ var _ = Describe("demoDefaultAAPolicyRego", func() {
 })
 
 var _ = Describe("operator-backed demo CR wiring", func() {
-	It("UT-2492-DEMO-003 [BR-PLATFORM-014]: creates a test-owned Console Service alias for the operator Ingress", func() {
-		manifest := BuildDemoConsoleServiceAliasManifest("kubernaut-system")
-		Expect(manifest).To(ContainSubstring("name: console"))
-		Expect(manifest).To(ContainSubstring("app: kubernaut-console"))
+	It("UT-2492-DEMO-003 [BR-PLATFORM-014]: creates a test-owned Console Ingress for the operator Service", func() {
+		manifest := BuildDemoConsoleIngressManifest("kubernaut-system")
+		Expect(manifest).To(ContainSubstring("kind: Ingress"))
+		Expect(manifest).To(ContainSubstring("name: kubernaut-console"))
+		Expect(manifest).To(ContainSubstring("ingressClassName: traefik"))
+		Expect(manifest).To(ContainSubstring("service:"))
+		Expect(strings.Count(manifest, "name: kubernaut-console")).To(Equal(2))
+		Expect(manifest).To(ContainSubstring("secretName: console-tls"))
 		Expect(manifest).To(ContainSubstring("kubernaut.ai/e2e-owner: upstream-2492"))
 		Expect(manifest).NotTo(ContainSubstring("ownerReferences:"))
 	})
@@ -212,9 +218,10 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 		Expect(cr).To(ContainSubstring("issuerURL: https://keycloak:8443/realms/kubernaut-demo"))
 		Expect(cr).To(ContainSubstring("jwksURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"))
 		Expect(cr).To(ContainSubstring("secretName: kubernaut-console-oidc"))
-		Expect(cr).To(ContainSubstring("ingressClassName: traefik"))
-		Expect(cr).To(ContainSubstring("host: kubernaut-console.local"))
-		Expect(cr).To(ContainSubstring("tlsSecretName: console-tls"))
+		Expect(cr).To(ContainSubstring("redirectURL: https://kubernaut-console.local:8843/oauth2/callback"))
+		Expect(cr).NotTo(ContainSubstring("ingressClassName:"))
+		Expect(cr).NotTo(ContainSubstring("tlsSecretName:"))
+		Expect(cr).NotTo(ContainSubstring("ingress:"))
 		Expect(cr).NotTo(ContainSubstring("dex"))
 		Expect(cr).NotTo(ContainSubstring("console-oauth-creds"))
 	})

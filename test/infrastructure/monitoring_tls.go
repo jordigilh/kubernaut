@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -25,8 +26,9 @@ import (
 )
 
 const (
-	monitoringTLSSecretName   = "monitoring-tls"
-	monitoringCAConfigMapName = "monitoring-ca"
+	monitoringTLSSecretName      = "monitoring-tls"
+	monitoringCAConfigMapName    = "monitoring-ca"
+	monitoringClientCASecretName = "monitoring-client-ca"
 )
 
 // MonitoringCAPath returns the host-side trust path for the monitoring CA.
@@ -52,27 +54,76 @@ func NewMonitoringTLSAwareClient(caPath string) (*http.Client, error) {
 	}, nil
 }
 
+func monitoringCABytesMatch(hostPEM []byte, encodedSecretCA string) bool {
+	secretPEM, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedSecretCA))
+	return err == nil && bytes.Equal(hostPEM, secretPEM)
+}
+
+func monitoringTLSCacheMatches(ctx context.Context, kubeconfigPath, applicationNamespace, monitoringNamespace string) (bool, error) {
+	hostPEM, err := os.ReadFile(MonitoringCAPath(kubeconfigPath))
+	if err != nil {
+		return false, fmt.Errorf("read host monitoring CA: %w", err)
+	}
+
+	monitoringSecretJSON, err := kubectlJSON(ctx, kubeconfigPath, "-n", monitoringNamespace, "get", "secret", monitoringTLSSecretName, "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("read monitoring TLS Secret: %w", err)
+	}
+	clientSecretJSON, err := kubectlJSON(ctx, kubeconfigPath, "-n", applicationNamespace, "get", "secret", monitoringClientCASecretName, "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("read monitoring client CA Secret: %w", err)
+	}
+	var monitoringSecret, clientSecret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(monitoringSecretJSON, &monitoringSecret); err != nil {
+		return false, fmt.Errorf("decode monitoring TLS Secret: %w", err)
+	}
+	if err := json.Unmarshal(clientSecretJSON, &clientSecret); err != nil {
+		return false, fmt.Errorf("decode monitoring client CA Secret: %w", err)
+	}
+	monitoringCA := monitoringSecret.Data["ca.crt"]
+	clientCA := clientSecret.Data["ca.crt"]
+	if !monitoringCABytesMatch(hostPEM, monitoringCA) {
+		return false, nil
+	}
+	decodedClientCA, err := base64.StdEncoding.DecodeString(strings.TrimSpace(clientCA))
+	if err != nil {
+		return false, fmt.Errorf("decode monitoring client CA: %w", err)
+	}
+	return bytes.Equal(hostPEM, decodedClientCA), nil
+}
+
 // EnsureMonitoringTLS creates an administrator-owned monitoring CA bundle and
 // signs the isolated monitoring endpoint certificate with it. The operator's
-// monitoring clients consume the bundle through monitoring.tls.source=configMap.
+// monitoring clients consume the bundle through monitoring.tls.caCertSecretRef;
+// the ConfigMap copy remains for monitoring-server fixtures and host tooling.
 func EnsureMonitoringTLS(ctx context.Context, kubeconfigPath, applicationNamespace, monitoringNamespace string, writer io.Writer) error {
-	_, _, operatorCAErr := readOperatorCASecret(ctx, kubeconfigPath, applicationNamespace)
 	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--ignore-not-found", "-o", "name")
-	if operatorCAErr != nil && !errors.Is(operatorCAErr, errOperatorCASecretMissing) {
-		return fmt.Errorf("inspect operator monitoring CA: %w", operatorCAErr)
+	clientCheckCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringClientCASecretName, "-n", applicationNamespace, "--ignore-not-found", "-o", "name")
+	monitoringReady := false
+	if output, err := checkCmd.Output(); err == nil {
+		monitoringReady = strings.TrimSpace(string(output)) != ""
 	}
-	if errors.Is(operatorCAErr, errOperatorCASecretMissing) {
-		if output, err := checkCmd.Output(); err == nil && strings.TrimSpace(string(output)) != "" {
-			if _, statErr := os.Stat(MonitoringCAPath(kubeconfigPath)); statErr == nil {
-				_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS already exists in %s\n", monitoringNamespace)
-				return nil
-			}
+	clientCAReady := false
+	if output, err := clientCheckCmd.Output(); err == nil {
+		clientCAReady = strings.TrimSpace(string(output)) != ""
+	}
+	if monitoringReady && clientCAReady {
+		cacheMatches, cacheErr := monitoringTLSCacheMatches(ctx, kubeconfigPath, applicationNamespace, monitoringNamespace)
+		switch {
+		case cacheErr != nil:
+			_, _ = fmt.Fprintf(writer, "  ⚠️  monitoring TLS cache validation failed; regenerating trust material: %v\n", cacheErr)
+		case cacheMatches:
+			_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS already exists in %s\n", monitoringNamespace)
+			return nil
+		default:
+			_, _ = fmt.Fprintln(writer, "  ⚠️  monitoring TLS cache is stale; regenerating trust material")
 		}
 	}
-	ca, err := monitoringCAFromOperator(ctx, kubeconfigPath, applicationNamespace)
-	if errors.Is(err, errOperatorCASecretMissing) {
-		ca, err = generateMonitoringCA()
-	}
+	// Issue #564: monitoring trust is a separate administrator-owned CA. Do
+	// not reuse the operator inter-service CA even when it is already present.
+	ca, err := generateMonitoringCA()
 	if err != nil {
 		return fmt.Errorf("prepare monitoring CA: %w", err)
 	}
@@ -168,6 +219,18 @@ data:
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, caManifest); err != nil {
 		return fmt.Errorf("create monitoring CA ConfigMap: %w", err)
 	}
+	clientCASecret := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: Opaque
+data:
+  ca.crt: %s
+`, monitoringClientCASecretName, applicationNamespace, base64.StdEncoding.EncodeToString(ca.certificatePEM))
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, clientCASecret); err != nil {
+		return fmt.Errorf("create monitoring client CA Secret: %w", err)
+	}
 	if err := os.WriteFile(MonitoringCAPath(kubeconfigPath), ca.certificatePEM, 0o600); err != nil {
 		return fmt.Errorf("write monitoring CA: %w", err)
 	}
@@ -240,34 +303,6 @@ func decodeMonitoringCA(value string) []byte {
 		return []byte(value)
 	}
 	return decoded
-}
-
-// monitoringCAFromOperator reuses the operator inter-service trust root when
-// the operator-managed application path is active. The monitoring endpoints
-// are then valid for spec.monitoring.tls.source=interService, while the host
-// probe and the in-cluster clients trust the same CA.
-func monitoringCAFromOperator(ctx context.Context, kubeconfigPath, namespace string) (monitoringCA, error) {
-	caPEM, keyPEM, err := readOperatorCASecret(ctx, kubeconfigPath, namespace)
-	if err != nil {
-		return monitoringCA{}, err
-	}
-	caBlock, _ := pem.Decode(caPEM)
-	if caBlock == nil {
-		return monitoringCA{}, fmt.Errorf("decode operator monitoring CA certificate")
-	}
-	certificate, err := x509.ParseCertificate(caBlock.Bytes)
-	if err != nil {
-		return monitoringCA{}, fmt.Errorf("parse operator monitoring CA certificate: %w", err)
-	}
-	keyBlock, _ := pem.Decode(keyPEM)
-	if keyBlock == nil {
-		return monitoringCA{}, fmt.Errorf("decode operator monitoring CA key")
-	}
-	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
-	if err != nil {
-		return monitoringCA{}, fmt.Errorf("parse operator monitoring CA key: %w", err)
-	}
-	return monitoringCA{certificate: certificate, certificatePEM: caPEM, key: key}, nil
 }
 
 type monitoringCA struct {

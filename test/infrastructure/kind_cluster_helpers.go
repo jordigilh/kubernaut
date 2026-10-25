@@ -424,7 +424,15 @@ func CreateKindClusterWithExtraMountsAndPortMappings(
 	if err != nil {
 		return fmt.Errorf("read Kind config for port mappings: %w", err)
 	}
-	mappedConfig, err := appendKindPortMappings(string(configData), portMappings)
+	hostPortOffset, err := DemoHostPortOffset()
+	if err != nil {
+		return fmt.Errorf("resolve demo host-port offset: %w", err)
+	}
+	offsetConfig, err := offsetKindHostPorts(string(configData), hostPortOffset)
+	if err != nil {
+		return fmt.Errorf("offset Kind host ports: %w", err)
+	}
+	mappedConfig, err := appendKindPortMappings(offsetConfig, portMappings)
 	if err != nil {
 		return fmt.Errorf("append Kind port mappings: %w", err)
 	}

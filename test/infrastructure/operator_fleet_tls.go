@@ -37,8 +37,10 @@ import (
 )
 
 const (
-	operatorInternalCASecretName = "kubernaut-internal-ca"
-	mcpGatewayTLSSecretName      = "mcp-gateway-tls"
+	operatorInternalCASecretName     = "kubernaut-internal-ca"
+	operatorDataStorageSigningSecret = "datastorage-signing-cert"
+	mcpGatewayTLSSecretName          = "mcp-gateway-tls"
+	operatorTrustBundleConfigMapName = "inter-service-trust-bundle"
 )
 
 // mcpGatewayTLSDNSNames covers both Gateway API implementations used by the
@@ -60,15 +62,10 @@ var mcpGatewayTLSDNSNames = []string{
 
 // EnsureOperatorFleetTLS creates the qualification CA before the Kubernaut CR
 // is applied and signs the MCP Gateway listener certificate with that CA. The
-// operator's DevelopmentSelfSigned mode reuses a valid pre-existing
-// kubernaut-internal-ca Secret, which makes the gateway and every
-// operator-managed workload share one explicit trust root without disabling
-// certificate verification.
+// latest v1alpha2 manual TLS contract keeps the CA and serving material
+// administrator-owned while sharing one explicit trust root.
 func EnsureOperatorFleetTLS(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	caPEM, caKeyPEM, err := readOperatorCASecret(ctx, kubeconfigPath, namespace)
-	if errors.Is(err, errOperatorCASecretMissing) {
-		caPEM, caKeyPEM, err = generateQualificationCA(time.Now())
-	}
+	caPEM, caKeyPEM, err := ensureOperatorInternalCA(ctx, kubeconfigPath, namespace, writer)
 	if err != nil {
 		return fmt.Errorf("prepare operator Fleet CA: %w", err)
 	}
@@ -83,28 +80,11 @@ kind: Secret
 metadata:
   name: %s
   namespace: %s
-  labels:
-    app.kubernetes.io/managed-by: kubernaut-operator
-    app.kubernetes.io/part-of: kubernaut
-    app.kubernetes.io/instance: kubernaut
-type: Opaque
-data:
-  ca.crt: %s
-  ca.key: %s
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: %s
-  namespace: %s
 type: kubernetes.io/tls
 data:
   tls.crt: %s
   tls.key: %s
-`, operatorInternalCASecretName, namespace,
-		base64.StdEncoding.EncodeToString(caPEM),
-		base64.StdEncoding.EncodeToString(caKeyPEM),
-		mcpGatewayTLSSecretName, namespace,
+`, mcpGatewayTLSSecretName, namespace,
 		base64.StdEncoding.EncodeToString(leafCertPEM),
 		base64.StdEncoding.EncodeToString(leafKeyPEM))
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
@@ -115,6 +95,171 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ operator Fleet CA and %s TLS Secret ready\n", mcpGatewayTLSSecretName)
 	return nil
+}
+
+// EnsureOperatorApplicationTLS prepares the read-only manual TLS material used
+// by the current v1alpha2 CR contract. The operator validates these Secrets but
+// does not own or rotate them; the demo owns this disposable material.
+func EnsureOperatorApplicationTLS(ctx context.Context, kubeconfigPath, namespace string, includeFleet bool, writer io.Writer) error {
+	caPEM, caKeyPEM, err := ensureOperatorInternalCA(ctx, kubeconfigPath, namespace, writer)
+	if err != nil {
+		return fmt.Errorf("prepare operator CA for manual service TLS: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildOperatorTLSTrustBundleManifest(namespace, caPEM)); err != nil {
+		return fmt.Errorf("apply manual operator TLS trust bundle: %w", err)
+	}
+	// Keep the legacy chart-owned ConfigMap name as a test-owned compatibility
+	// alias. Existing DEX/host-side E2E helpers consume inter-service-ca while
+	// operator-managed operands consume inter-service-trust-bundle; both must
+	// contain the same administrator-owned CA in this qualification profile.
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildOperatorInterServiceCAManifest(namespace, caPEM)); err != nil {
+		return fmt.Errorf("apply compatibility inter-service CA ConfigMap: %w", err)
+	}
+	services := operatorApplicationTLSServiceDefinitions(includeFleet)
+	var manifest strings.Builder
+	for _, service := range services {
+		dnsNames := qualificationServiceDNSNames(service.serviceName, namespace)
+		leafCert, leafKey, signErr := signQualificationLeafForDNS(caPEM, caKeyPEM, time.Now(), dnsNames, service.serviceName)
+		if signErr != nil {
+			return fmt.Errorf("sign %s: %w", service.secretName, signErr)
+		}
+		if manifest.Len() > 0 {
+			manifest.WriteString("---\n")
+		}
+		caData := ""
+		if service.secretName == "authwebhook-tls" {
+			caData = fmt.Sprintf("  ca.crt: %s\n  ca.key: %s\n",
+				base64.StdEncoding.EncodeToString(caPEM),
+				base64.StdEncoding.EncodeToString(caKeyPEM))
+		}
+		fmt.Fprintf(&manifest, `apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    kubernaut.ai/e2e-owner: upstream-2492
+type: kubernetes.io/tls
+data:
+  tls.crt: %s
+  tls.key: %s
+%s`, service.secretName, namespace, base64.StdEncoding.EncodeToString(leafCert), base64.StdEncoding.EncodeToString(leafKey), caData)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest.String()); err != nil {
+		return fmt.Errorf("apply manual operator service TLS: %w", err)
+	}
+	if err := generateSigningCertSecret(ctx, kubeconfigPath, namespace, operatorDataStorageSigningSecret, writer); err != nil {
+		return fmt.Errorf("apply operator DataStorage signing Secret: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ manual operator service TLS Secrets ready")
+	return nil
+}
+
+// BuildOperatorTLSTrustBundleManifest publishes the administrator-prepared
+// manual-TLS CA under both keys consumed by the generic operator workloads and
+// the qualification evidence reader. The pinned operator's API Frontend
+// volume expects service-ca.crt even in manual mode.
+func BuildOperatorTLSTrustBundleManifest(namespace string, caPEM []byte) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    kubernaut.ai/e2e-owner: upstream-2492
+data:
+  ca.crt: |
+%s
+  service-ca.crt: |
+%s
+`, operatorTrustBundleConfigMapName, namespace, indentPEM(string(caPEM)), indentPEM(string(caPEM)))
+}
+
+// BuildOperatorInterServiceCAManifest preserves the chart-era ConfigMap
+// contract consumed by existing qualification-only DEX and host probe helpers.
+func BuildOperatorInterServiceCAManifest(namespace string, caPEM []byte) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inter-service-ca
+  namespace: %s
+  labels:
+    kubernaut.ai/e2e-owner: upstream-2492
+data:
+  ca.crt: |
+%s
+`, namespace, indentPEM(string(caPEM)))
+}
+
+type operatorApplicationTLSService struct {
+	secretName  string
+	serviceName string
+}
+
+func operatorApplicationTLSServiceDefinitions(includeFleet bool) []operatorApplicationTLSService {
+	services := []operatorApplicationTLSService{
+		{secretName: "gateway-tls", serviceName: "gateway-service"},
+		{secretName: "datastorage-tls", serviceName: "data-storage-service"},
+		{secretName: "kubernautagent-tls", serviceName: "kubernaut-agent"},
+		{secretName: "apifrontend-tls", serviceName: "apifrontend"},
+		{secretName: "authwebhook-tls", serviceName: "authwebhook-service"},
+	}
+	if includeFleet {
+		services = append(services, operatorApplicationTLSService{secretName: "fleetmetadatacache-tls", serviceName: "fleetmetadatacache-service"})
+	}
+	return services
+}
+
+func qualificationServiceDNSNames(serviceName, namespace string) []string {
+	names := []string{
+		"localhost",
+		serviceName,
+		serviceName + "." + namespace,
+		serviceName + "." + namespace + ".svc",
+		serviceName + "." + namespace + ".svc.cluster.local",
+	}
+	if serviceName == "authwebhook-service" {
+		names = append(names,
+			"authwebhook",
+			"authwebhook."+namespace,
+			"authwebhook."+namespace+".svc",
+			"authwebhook."+namespace+".svc.cluster.local",
+		)
+	}
+	return names
+}
+
+func ensureOperatorInternalCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) ([]byte, []byte, error) {
+	caPEM, caKeyPEM, err := readOperatorCASecret(ctx, kubeconfigPath, namespace)
+	if err == nil {
+		return caPEM, caKeyPEM, nil
+	}
+	if !errors.Is(err, errOperatorCASecretMissing) {
+		return nil, nil, err
+	}
+	caPEM, caKeyPEM, err = generateQualificationCA(time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    kubernaut.ai/e2e-owner: upstream-2492
+type: Opaque
+data:
+  ca.crt: %s
+  ca.key: %s
+`, operatorInternalCASecretName, namespace,
+		base64.StdEncoding.EncodeToString(caPEM),
+		base64.StdEncoding.EncodeToString(caKeyPEM))
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return nil, nil, fmt.Errorf("apply operator internal CA Secret: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ operator internal CA Secret ready")
+	return caPEM, caKeyPEM, nil
 }
 
 // writeOperatorFleetCAPEMIfPresent restores the operator CA after the legacy
@@ -217,6 +362,10 @@ func generateQualificationCA(now time.Time) ([]byte, []byte, error) {
 }
 
 func signQualificationLeaf(caPEM, caKeyPEM []byte, now time.Time) ([]byte, []byte, error) {
+	return signQualificationLeafForDNS(caPEM, caKeyPEM, now, mcpGatewayTLSDNSNames, mcpGatewayTLSSecretName)
+}
+
+func signQualificationLeafForDNS(caPEM, caKeyPEM []byte, now time.Time, dnsNames []string, commonName string) ([]byte, []byte, error) {
 	caBlock, _ := pem.Decode(caPEM)
 	if caBlock == nil {
 		return nil, nil, errors.New("qualification CA certificate is not PEM encoded")
@@ -243,10 +392,10 @@ func signQualificationLeaf(caPEM, caKeyPEM []byte, now time.Time) ([]byte, []byt
 	}
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: mcpGatewayTLSSecretName},
+		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    now.Add(-5 * time.Minute),
 		NotAfter:     now.Add(30 * 24 * time.Hour),
-		DNSNames:     append([]string(nil), mcpGatewayTLSDNSNames...),
+		DNSNames:     append([]string(nil), dnsNames...),
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},

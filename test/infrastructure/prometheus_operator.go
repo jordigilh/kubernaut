@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -24,9 +25,15 @@ const (
 )
 
 func prometheusOperatorHelmInstallArgs() []string {
-	return []string{
+	args := []string{
 		"--repo", prometheusOperatorHelmRepoURL,
 		"--version", prometheusOperatorHelmVersion,
+	}
+	return append(args, prometheusOperatorHelmValueArgs()...)
+}
+
+func prometheusOperatorHelmValueArgs() []string {
+	return []string{
 		"--set", "prometheusOperator.fullnameOverride=prometheus-operator",
 		"--set", "defaultRules.create=false",
 		"--set", "alertmanager.enabled=false",
@@ -35,6 +42,16 @@ func prometheusOperatorHelmInstallArgs() []string {
 		"--set", "nodeExporter.enabled=false",
 		"--set", "prometheus.enabled=false",
 	}
+}
+
+// prometheusOperatorChartSource selects a test-provided local chart when the
+// qualification network namespace has no external DNS/egress. The default
+// remains the immutable repository URL and version used by normal runs.
+func prometheusOperatorChartSource() (string, []string) {
+	if localPath := strings.TrimSpace(os.Getenv("KUBERNAUT_PROMETHEUS_OPERATOR_CHART_PATH")); localPath != "" {
+		return localPath, prometheusOperatorHelmValueArgs()
+	}
+	return prometheusOperatorHelmChart, prometheusOperatorHelmInstallArgs()
 }
 
 type managedPrometheusOptions struct {
@@ -50,9 +67,9 @@ type managedPrometheusOptions struct {
 // demo monitoring clusters. Both hub and spoke use this same path.
 func InstallPrometheusOperator(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  Installing Prometheus Operator in namespace %s...\n", prometheusOperatorNamespace)
+	chartSource, chartArgs := prometheusOperatorChartSource()
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "prometheus-operator",
-		prometheusOperatorHelmChart, prometheusOperatorNamespace,
-		prometheusOperatorHelmInstallArgs()...,
+		chartSource, prometheusOperatorNamespace, chartArgs...,
 	); err != nil {
 		return fmt.Errorf("prometheus operator Helm install failed: %w", err)
 	}

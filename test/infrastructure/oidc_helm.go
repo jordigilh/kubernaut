@@ -68,7 +68,7 @@ func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer 
 			return fmt.Errorf("failed to stop Keycloak before certificate rotation: %w", err)
 		}
 	}
-	if err := DeployKeycloakInfra(ctx, idpNamespace, kubeconfigPath, keycloakHostPortDemo, true, writer); err != nil {
+	if err := DeployKeycloakInfra(ctx, idpNamespace, kubeconfigPath, DemoHostPort(keycloakHostPortDemo), true, writer); err != nil {
 		return fmt.Errorf("keycloak deployment failed: %w", err)
 	}
 	// Keep the browser-facing issuer stable as "https://keycloak" while the

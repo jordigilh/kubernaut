@@ -157,6 +157,31 @@ func buildAgentRouterHelmArgs(versions FleetGatewayVersions) []string {
 	}
 }
 
+// fleetLocalChartSource switches an isolated Fleet qualification run to a
+// host-cached chart when its network namespace intentionally has no registry
+// or GitHub DNS access. Default runs keep the immutable OCI/URL sources.
+func fleetLocalChartSource(_ string, envName string) (string, bool) {
+	path := strings.TrimSpace(os.Getenv(envName))
+	return path, path != ""
+}
+
+func fleetLocalChartArgs(args []string, _ string, valuesPath string) []string {
+	result := make([]string, 0, len(args)+2)
+	for index := 0; index < len(args); index++ {
+		if args[index] == "--version" && index+1 < len(args) {
+			index++
+			continue
+		}
+		if args[index] == "-f" && index+1 < len(args) && valuesPath != "" {
+			result = append(result, "-f", valuesPath)
+			index++
+			continue
+		}
+		result = append(result, args[index])
+	}
+	return result
+}
+
 const fleetMCPSessionSeedSecretName = "mcp-session-seed"
 
 // buildFleetMCPSessionSeedSecretManifest renders the stable Secret consumed by
@@ -1122,14 +1147,14 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 	gatewayLabel := gatewayLabelKuadrant
 	// DD-TEST-001-allocated NodePorts: 31975 (Kuadrant) / 31976 (EAIGW).
-	mcpGatewayNodePort := 31975
+	mcpGatewayNodePort := DemoHostPort(31975)
 	// The full-pipeline fleet suite keeps every registration remote. The demo
 	// additionally registers the hub-local server under its catalog identity.
 	remoteToolPrefix := "remote_cluster_"
 	hubToolPrefix := ""
 	if gatewayType == registry.GatewayEAIGW {
 		gatewayLabel = gatewayLabelEAIGW
-		mcpGatewayNodePort = eaigwGatewayNodePort
+		mcpGatewayNodePort = DemoHostPort(eaigwGatewayNodePort)
 		remoteToolPrefix = "remote-cluster__"
 	}
 	if opts.HubClusterID != "" {
@@ -1162,7 +1187,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 			return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", err)
 		}
 		_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
-		if err := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, keycloakHostPortDemo, false, writer); err != nil {
+		if err := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, DemoHostPort(keycloakHostPortDemo), false, writer); err != nil {
 			return nil, "", fmt.Errorf("failed to deploy Keycloak: %w", err)
 		}
 	}
@@ -1214,9 +1239,12 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		RemoteKubeconfigPath:  remoteKubeconfigPath,
 		MCPServerNamespace:    remoteMCPNamespace,
 		KeycloakIssuerURL:     oidcCfg.IssuerURL,
-		KeycloakNodePort:      keycloakHostPortDemo,
-		AuthConfig:            sharedAuthConfig,
-		ExtraWorkerNodes:      spokeWorkers,
+		// The remote bridge runs inside the remote Kind network and must target
+		// the primary cluster's in-cluster NodePort. Only host-side token URLs
+		// use DemoHostPort; the NodePort itself is never offset.
+		KeycloakNodePort: keycloakHostPortDemo,
+		AuthConfig:       sharedAuthConfig,
+		ExtraWorkerNodes: spokeWorkers,
 	}, writer)
 	if remoteErr != nil {
 		return nil, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
@@ -1331,7 +1359,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// minting a credential that would never be read.
 	if gatewayType != registry.GatewayEAIGW {
 		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(keycloakHostPortDemo)),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1380,7 +1408,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// entirely, instead of merely before a later kubectl-patch step.
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(keycloakHostPortDemo)),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1869,7 +1897,7 @@ func traefikHelmInstallArgs() []string {
 // controller, exposed via a fixed-NodePort Service matching the
 // kind-fullpipeline-config.yaml host port mappings (8880/8843, deliberately
 // unprivileged -- most CI runners can't bind a non-root process to 80/443).
-// charts/kubernaut's console.ingress.port field (see console.yaml's
+// the operator-exposure console port (see console.yaml's
 // oauth2-proxy --redirect-url) tells the chart to render the OIDC redirect
 // URL with the matching ":8843" suffix instead of assuming port-less HTTPS.
 //
@@ -1917,10 +1945,20 @@ func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath st
 	)
 
 	_, _ = fmt.Fprintln(writer, "    Installing Gateway API + Envoy Gateway CRDs...")
+	egChart, egLocal := fleetLocalChartSource(envoyGatewayCRDsHelmChart, "KUBERNAUT_ENVOY_GATEWAY_CRDS_CHART_PATH")
+	egArgs := buildEnvoyGatewayCRDsHelmArgs(versions)
+	if egLocal {
+		egArgs = fleetLocalChartArgs(egArgs, egChart, "")
+	}
 	if err := runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer,
-		"eg-crds", envoyGatewayCRDsHelmChart, egNamespace,
+		"eg-crds", func() string {
+			if egLocal {
+				return egChart
+			}
+			return envoyGatewayCRDsHelmChart
+		}(), egNamespace,
 		[]string{"--server-side", "--force-conflicts"},
-		buildEnvoyGatewayCRDsHelmArgs(versions)...,
+		egArgs...,
 	); err != nil {
 		return "", fmt.Errorf("envoy gateway CRDs install failed: %w", err)
 	}
@@ -1928,15 +1966,35 @@ func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath st
 	// Agent Router does NOT bundle its own CRDs (Spike S18 gap #2)
 	// -- the CRDs chart must be installed explicitly first.
 	_, _ = fmt.Fprintln(writer, "    Installing Envoy AI Gateway CRDs + controller...")
-	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", aiGatewayCRDsHelmChart, aiegNamespace,
-		buildAgentRouterCRDsHelmArgs(versions)...); err != nil {
+	aiCRDsChart, aiCRDsLocal := fleetLocalChartSource(aiGatewayCRDsHelmChart, "KUBERNAUT_AI_GATEWAY_CRDS_CHART_PATH")
+	aiCRDsArgs := buildAgentRouterCRDsHelmArgs(versions)
+	if aiCRDsLocal {
+		aiCRDsArgs = fleetLocalChartArgs(aiCRDsArgs, aiCRDsChart, "")
+	}
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", func() string {
+		if aiCRDsLocal {
+			return aiCRDsChart
+		}
+		return aiGatewayCRDsHelmChart
+	}(), aiegNamespace,
+		aiCRDsArgs...); err != nil {
 		return "", fmt.Errorf("ai-gateway CRDs helm install failed: %w", err)
 	}
 	if err := ensureFleetMCPSessionSeedSecret(ctx, aiegNamespace, kubeconfigPath, writer); err != nil {
 		return "", err
 	}
-	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", aiGatewayHelmChart, aiegNamespace,
-		buildAgentRouterHelmArgs(versions)...); err != nil {
+	aiChart, aiLocal := fleetLocalChartSource(aiGatewayHelmChart, "KUBERNAUT_AI_GATEWAY_CHART_PATH")
+	aiArgs := buildAgentRouterHelmArgs(versions)
+	if aiLocal {
+		aiArgs = fleetLocalChartArgs(aiArgs, aiChart, strings.TrimSpace(os.Getenv("KUBERNAUT_AGENT_ROUTER_VALUES_PATH")))
+	}
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", func() string {
+		if aiLocal {
+			return aiChart
+		}
+		return aiGatewayHelmChart
+	}(), aiegNamespace,
+		aiArgs...); err != nil {
 		return "", fmt.Errorf("ai-gateway helm install failed: %w", err)
 	}
 	if err := waitForDeployment(ctx, "ai-gateway-controller", aiegNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
@@ -1976,9 +2034,25 @@ subjects:
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Installing Envoy Gateway with MCPRoute extension configuration...")
-	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "eg", envoyGatewayHelmChart, egNamespace,
-		buildEnvoyGatewayHelmArgs(versions)...); err != nil {
-		return "", fmt.Errorf("envoy gateway helm install failed: %w", err)
+	egControllerChart, egControllerLocal := fleetLocalChartSource(envoyGatewayHelmChart, "KUBERNAUT_ENVOY_GATEWAY_CHART_PATH")
+	_, _ = fmt.Fprintf(writer, "      Envoy Gateway controller chart source: %s (local=%t)\n", egControllerChart, egControllerLocal)
+	egControllerArgs := buildEnvoyGatewayHelmArgs(versions)
+	if egControllerLocal {
+		egControllerArgs = fleetLocalChartArgs(egControllerArgs, egControllerChart, strings.TrimSpace(os.Getenv("KUBERNAUT_AGENT_ROUTER_VALUES_PATH")))
+	}
+	var egErr error
+	if egControllerLocal {
+		// The rendered Envoy Gateway controller release metadata exceeds the
+		// Kubernetes 1 MiB Secret/ConfigMap limit in this isolated qualification
+		// profile. Apply the same chart output without persisting Helm release
+		// state; the resources and version remain identical.
+		egErr = runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer, "eg", egControllerChart, egNamespace,
+			[]string{"--server-side", "--force-conflicts"}, egControllerArgs...)
+	} else {
+		egErr = runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "eg", envoyGatewayHelmChart, egNamespace, egControllerArgs...)
+	}
+	if egErr != nil {
+		return "", fmt.Errorf("envoy gateway helm install failed: %w", egErr)
 	}
 	if err := waitForDeployment(ctx, "envoy-gateway", egNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
 		return "", fmt.Errorf("envoy-gateway controller rollout failed: %w", err)
@@ -2838,7 +2912,7 @@ spec:
 // DeployFleetGatewayInfra directly, never reaching this function at all.)
 // The check below guards against the case where a chart-managed Valkey
 // Deployment/Service already exists in the target namespace regardless
-// (charts/kubernaut/templates/infrastructure/valkey.yaml, valkey.enabled
+// (operator-managed manifests/infrastructure/valkey.yaml, valkey.enabled
 // defaults true, backing APIFrontend's session/rate-limit cache): applying
 // this function's own minimal valkey manifest on top of the chart's richer
 // one (ServiceAccount, PVC, exec readinessProbe) previously caused a
@@ -2954,7 +3028,7 @@ func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage
 	// -- FMC's own auth middleware (wireFMCDependencies,
 	// cmd/fleetmetadatacache/main.go) needs these to validate the bearer
 	// token GW/RO present on every scope-check request. Mirrors
-	// charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml's
+	// operator-managed manifests/rbac/fmc-scope-check-client-rbac.yaml's
 	// fleetmetadatacache-auth-middleware ClusterRole (this lane deploys raw
 	// manifests, not the Helm chart, so that template never renders here).
 	fmcGatewayRBACRules := `
@@ -3044,7 +3118,7 @@ subjects:
 # Issue #1993 (ADR-068 gap closure, IA-2/AC-3): dedicated identity for the E2E
 # test harness itself to call FMC's now-authenticated scope-check API as a
 # real, RBAC-authorized caller -- structurally mirrors
-# charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml's
+# operator-managed manifests/rbac/fmc-scope-check-client-rbac.yaml's
 # fmc-scope-check-client (gateway/remediationorchestrator-controller
 # bindings), but this lane deploys raw manifests, not the Helm chart, and
 # has no gateway/RO ServiceAccount of its own to reuse (see
@@ -3208,7 +3282,7 @@ spec:
             # which the (pre-fix) handler indistinguishably reported as
             # managed=false, causing Gateway to reject alerts as unmanaged.
             # Raised to match/exceed the production Helm chart's default
-            # (charts/kubernaut/values.yaml fleetmetadatacache.resources:
+            # (the operator qualification persona contract fleetmetadatacache.resources:
             # 128Mi/200m) since this test infra was actually *tighter* than
             # production.
             memory: "128Mi"
@@ -3522,6 +3596,14 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	}
 	_, _ = fmt.Fprintf(writer, "  CA certificate written to Kind node at %s\n", nodeCAPath)
 
+	// Resolve the issuer Service while the API server is still stable, then
+	// persist its host alias before restarting the static pod. A post-restart
+	// lookup can race the API/RBAC cache and incorrectly report the bridged
+	// Keycloak Service as missing on retained remote clusters.
+	if err := patchAPIServerPodHostsForIssuer(ctx, nodeName, kubeconfigPath, cfg.IssuerURL, issuerServiceNamespace, writer); err != nil {
+		return fmt.Errorf("failed to patch API server pod hosts for OIDC issuer resolution: %w", err)
+	}
+
 	// Values ending with ':' must be quoted in YAML (otherwise parsed as mapping keys)
 	oidcFlags := []string{
 		fmt.Sprintf(`"--oidc-username-prefix=%s"`, cfg.UsernamePrefix),
@@ -3567,24 +3649,6 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 			break
 		}
 		time.Sleep(3 * time.Second)
-	}
-
-	// The static kube-apiserver pod runs with hostNetwork: true, but that only
-	// shares the node's network *namespace* (interfaces, routes, resolv.conf
-	// upstream servers) -- NOT its /etc/hosts. kubelet bind-mounts a
-	// per-pod-UID hosts file (/var/lib/kubelet/pods/<uid>/etc-hosts) into every
-	// pod, including hostNetwork ones, so the API server can never resolve the
-	// issuer's bare in-cluster Service name (e.g. "keycloak", "dex") via
-	// CoreDNS: it isn't on the pod network and the node's own DNS resolver has
-	// no knowledge of cluster-internal names. Discovered via a live 401 loop
-	// showing "oidc: authenticator not initialized" / "dial tcp: lookup
-	// keycloak ... no such host" even after the issuer was healthy and
-	// reachable from every actual cluster pod. Patch the *new* pod's
-	// kubelet-managed hosts file with a static entry so OIDC discovery
-	// (.well-known/openid-configuration + JWKS refresh) can resolve the
-	// issuer host directly, bypassing CoreDNS entirely.
-	if err := patchAPIServerPodHostsForIssuer(ctx, nodeName, kubeconfigPath, cfg.IssuerURL, issuerServiceNamespace, writer); err != nil {
-		return fmt.Errorf("failed to patch API server pod hosts file for OIDC issuer resolution: %w", err)
 	}
 
 	// Phase 2: Wait for the new API server to become fully ready (5 consecutive readyz)
@@ -4054,6 +4118,30 @@ func runHelmTemplateApply(ctx context.Context, kubeconfigPath string, writer io.
 func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, kubectlExtraArgs []string, extraArgs ...string) error {
 	helmArgs := []string{"template", releaseName, chart, "-n", namespace}
 	helmArgs = append(helmArgs, extraArgs...)
+	// Local chart artifacts are used by isolated qualification namespaces that
+	// intentionally have no registry/GitHub DNS. Render them completely before
+	// applying so a short-lived kubectl admission/readiness response cannot
+	// close Helm's stdout pipe and turn a valid render into "no objects".
+	if filepath.IsAbs(chart) {
+		var helmStderr bytes.Buffer
+		helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
+		helmCmd.Stderr = &helmStderr
+		helmOutput, renderErr := helmCmd.Output()
+		if renderErr != nil {
+			_, _ = writer.Write(helmStderr.Bytes())
+			return fmt.Errorf("helm template failed: %w", renderErr)
+		}
+		kubectlArgs := append([]string{"apply", "--kubeconfig", kubeconfigPath}, kubectlExtraArgs...)
+		kubectlArgs = append(kubectlArgs, "-f", "-")
+		kubectlCmd := exec.CommandContext(ctx, "kubectl", kubectlArgs...)
+		kubectlCmd.Stdin = bytes.NewReader(helmOutput)
+		kubectlCmd.Stdout = writer
+		kubectlCmd.Stderr = writer
+		if err := kubectlCmd.Run(); err != nil {
+			return fmt.Errorf("kubectl apply failed: %w", err)
+		}
+		return nil
+	}
 	helmCtx, cancelHelm := context.WithCancel(ctx)
 	defer cancelHelm()
 	helmCmd := exec.CommandContext(helmCtx, "helm", helmArgs...)

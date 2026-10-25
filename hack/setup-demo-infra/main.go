@@ -38,8 +38,14 @@ func main() {
 	llmReasoningEffort := flag.String("llm-reasoning-effort", "", "optional reasoning effort override")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional SignalProcessing Rego policy file")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional AIAnalysis Rego policy file")
-	imageTag := flag.String("image-tag", "", "optional shared Kubernaut image tag override")
-	imageRepository := flag.String("image-repository", "", "optional Kubernaut image repository override (for example, quay.io/jordigilh or localhost/kubernaut)")
+	imageTag := flag.String("image-tag", "", "optional Kubernaut service image tag override")
+	imageRepository := flag.String("image-repository", "", "optional Kubernaut service image repository override (for example, quay.io/jordigilh or localhost)")
+	operatorImage := flag.String("operator-image", "", "optional full operator image pullspec override")
+	operatorImageRepository := flag.String("operator-image-repository", "", "optional operator image repository override")
+	operatorImageTag := flag.String("operator-image-tag", "", "optional operator image tag override")
+	dependencyChart := flag.String("dependency-chart", "", "optional OCI dependency chart pullspec override")
+	dependencyChartVersion := flag.String("dependency-chart-version", "", "optional dependency chart version override")
+	dependencyChartDigest := flag.String("dependency-chart-digest", "", "optional dependency chart digest override")
 	vertexProject := flag.String("vertex-project", "", "required with -llm-provider=vertex_ai")
 	vertexLocation := flag.String("vertex-location", "", "required with -llm-provider=vertex_ai")
 	if flag.Lookup("kubeconfig") == nil {
@@ -83,6 +89,14 @@ func main() {
 		fail(fmt.Sprintf("invalid -gateway-type %q; must be one of: eaigw, kuadrant", *gatewayTypeFlag))
 	}
 
+	artifactOverrides := infrastructure.MergeDemoArtifactOverrides(fileOverrides.ArtifactOverrides(), infrastructure.DemoArtifactOverrides{
+		OperatorImage:           *operatorImage,
+		OperatorImageRepository: *operatorImageRepository,
+		OperatorImageTag:        *operatorImageTag,
+		DependencyChart:         *dependencyChart,
+		DependencyChartVersion:  *dependencyChartVersion,
+		DependencyChartDigest:   *dependencyChartDigest,
+	})
 	demoOpts := infrastructure.DemoHelmOptions{
 		Mode:                mode,
 		Autonomous:          *autonomous,
@@ -98,7 +112,7 @@ func main() {
 		ImageRepository:     *imageRepository,
 		VertexProject:       *vertexProject,
 		VertexLocation:      *vertexLocation,
-		OperatorArtifacts:   fileOverrides.ArtifactOverrides(),
+		OperatorArtifacts:   artifactOverrides,
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fail(err.Error())
@@ -171,8 +185,8 @@ func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPa
 	if err := infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout); err != nil {
 		return nil, err
 	}
-	// Pre-create the operator trust root before Keycloak and monitoring start so
-	// every HTTPS dependency shares the CR's inter-service CA.
+	// Pre-create the operator trust root before Keycloak starts. Monitoring uses
+	// its own administrator-owned CA, referenced separately by the CR.
 	if err := infrastructure.EnsureOperatorFleetTLS(ctx, kubeconfigPath, "kubernaut-system", os.Stdout); err != nil {
 		return nil, err
 	}

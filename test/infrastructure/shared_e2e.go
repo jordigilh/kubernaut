@@ -885,6 +885,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	kaGitOpsWorkflowDiscoveryYAML := fmt.Sprintf(`      - name: "ka_gitops_workflow_discovery_2390"
         caller: "ka"
         phase: "workflow_discovery"
+        keywords: ["FullPipelineA2ASeverityGrounding_fp_int_"]
         signal_patterns: ["FullPipelineA2ASeverityGrounding_fp_int_"]
         workflow_id: "%s"
         action_type: "IncreaseMemoryLimits"
@@ -1156,6 +1157,16 @@ spec:
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
+	}
+	// The scenario ConfigMap is intentionally regenerated for every isolated
+	// qualification run. A reused Deployment does not restart when only the
+	// mounted ConfigMap changes, so the process would keep serving stale A2A
+	// namespace arguments from the previous run.
+	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/mock-llm", "-n", namespace); err != nil {
+		return fmt.Errorf("restart Mock LLM after scenario update: %w", err)
+	}
+	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "status", "deployment/mock-llm", "-n", namespace, "--timeout=120s"); err != nil {
+		return fmt.Errorf("wait for restarted Mock LLM: %w", err)
 	}
 
 	clientset, err := getKubernetesClient(kubeconfigPath)

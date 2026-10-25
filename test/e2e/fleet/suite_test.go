@@ -113,12 +113,14 @@ const (
 
 	clusterName = "fleet-e2e"
 	namespace   = "kubernaut-system"
-
-	// mcpGatewayURL targets EAIGW's generated-Service NodePort (DD-TEST-001:
-	// 31976), not Kuadrant's 31975 -- this suite moved to EAIGW (kubernaut#2309).
-	// The operator-managed Gateway certificate has localhost as its host SAN.
-	mcpGatewayURL = "https://localhost:31976/mcp"
 )
+
+// mcpGatewayURL targets EAIGW's generated-Service NodePort (DD-TEST-001:
+// 31976), not Kuadrant's 31975 -- this suite moved to EAIGW (kubernaut#2309).
+// Apply the shared qualification offset so the isolated Fleet lane reaches
+// its +20000 host-port block. The operator-managed Gateway certificate has
+// localhost as its host SAN.
+var mcpGatewayURL = fmt.Sprintf("https://localhost:%d/mcp", infrastructure.DemoHostPort(31976))
 
 var (
 	ctx    context.Context
@@ -704,7 +706,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if !setupFailed {
-			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
+			infrastructure.CleanupFullPipelineTestResources(context.Background(), kubeconfigPath, GinkgoWriter)
 		}
 
 		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {

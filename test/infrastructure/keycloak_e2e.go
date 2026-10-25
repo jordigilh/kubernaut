@@ -145,7 +145,7 @@ type KeycloakUserTokenConfig struct {
 // for the Fleet API Frontend A2A tests.
 func DefaultKeycloakAFA2AConfig(hostPort int, kubeconfigPath string) KeycloakUserTokenConfig {
 	return KeycloakUserTokenConfig{
-		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", hostPort),
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(hostPort)),
 		ClientID:       "kubernaut-apifrontend",
 		ClientSecret:   "e2e-apifrontend-secret",
 		Username:       "sre-user",
@@ -211,7 +211,7 @@ func GetKeycloakPasswordToken(ctx context.Context, cfg KeycloakUserTokenConfig) 
 // Keycloak's certificate instead of skipping verification.
 func DefaultKeycloakFleetReadConfig(hostPort int, kubeconfigPath string) KeycloakFleetTokenConfig {
 	return KeycloakFleetTokenConfig{
-		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", hostPort),
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(hostPort)),
 		ClientID:       "kubernaut-fleet-read",
 		ClientSecret:   "e2e-fleet-secret",
 		KubeconfigPath: kubeconfigPath,
@@ -382,6 +382,21 @@ func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, 
 // call site) auto-restarts Keycloak when cert-manager renews keycloak-tls
 // -- safe now that a restart no longer loses state.
 func deployKeycloakInNamespace(ctx context.Context, namespace, kubeconfigPath string, persistent bool, writer io.Writer) error {
+	if !persistent {
+		// The Ginkgo Fleet/FullPipeline lanes use Keycloak's ephemeral dev-file
+		// database. A retained pod does not re-import an updated realm ConfigMap,
+		// so stale runs can keep missing clients such as kubernaut-fleet-write
+		// even though the authored realm fixture contains them. Recreate only the
+		// disposable qualification deployment; the persistent demo path retains
+		// its realm state by design.
+		deleteCmd := exec.CommandContext(ctx, "kubectl", "delete", "deployment/keycloak",
+			"-n", namespace, "--kubeconfig", kubeconfigPath, "--ignore-not-found", "--wait=true", "--timeout=120s")
+		deleteCmd.Stdout = writer
+		deleteCmd.Stderr = writer
+		if err := deleteCmd.Run(); err != nil {
+			return fmt.Errorf("reset retained qualification Keycloak: %w", err)
+		}
+	}
 	var pvcBlock, annotationsBlock, dataVolumeMount, dataVolume string
 	if persistent {
 		pvcBlock = fmt.Sprintf(`---

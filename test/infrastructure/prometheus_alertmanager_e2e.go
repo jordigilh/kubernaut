@@ -37,8 +37,10 @@ import (
 const (
 	// PrometheusNodePort is the Kind NodePort for Prometheus (DD-TEST-001 v2.8)
 	PrometheusNodePort = 30190
-	// PrometheusHostPort is the host port mapped to the Prometheus NodePort
-	PrometheusHostPort = 9190
+	// Default host ports remain the FullPipeline values. The exported runtime
+	// variables below apply the qualification namespace offset once, so Fleet
+	// helpers transparently address 29190/29193 when its +20000 block is active.
+	prometheusHostPortDefault = 9190
 
 	// AlertManagerNodePort is the Kind NodePort for AlertManager (DD-TEST-001 v3.8).
 	// Moved from 30193 (v2.8) after a "fleet" E2E CI failure ("Service
@@ -64,7 +66,7 @@ const (
 	// Gateway-API-provisioned Service port, or escalating upstream).
 	AlertManagerNodePort = 30191
 	// AlertManagerHostPort is the host port mapped to the AlertManager NodePort
-	AlertManagerHostPort = 9193
+	alertManagerHostPortDefault = 9193
 
 	// PrometheusImage is the official Prometheus container image
 	PrometheusImage = "prom/prometheus:latest"
@@ -92,6 +94,15 @@ const (
 	SkipGatewayRouteLabelKey   = "route_skip_gateway"
 	SkipGatewayRouteLabelValue = "true"
 )
+
+// PrometheusHostPort is the active host port mapped to the Prometheus NodePort.
+// It is computed before tests start, after the launcher has exported any Fleet
+// host-port offset, and keeps existing test callers unchanged.
+var PrometheusHostPort = DemoHostPort(prometheusHostPortDefault)
+
+// AlertManagerHostPort is the active host port mapped to the AlertManager
+// NodePort, with the same qualification offset behavior as PrometheusHostPort.
+var AlertManagerHostPort = DemoHostPort(alertManagerHostPortDefault)
 
 // fleetInteractiveBridgeGroundingRule is loaded by the Go-managed Prometheus
 // that AF queries in the FullPipeline and Fleet E2E suites. The explicit
@@ -559,6 +570,14 @@ spec:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy Prometheus: %w", err)
 	}
+	if tlsEnabled {
+		// Secret updates do not restart Prometheus. Restart the TLS variant so a
+		// rerun cannot keep serving a certificate signed by a previous CA while
+		// the host/client trust bundle has already been regenerated.
+		if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/prometheus", "-n", namespace); err != nil {
+			return fmt.Errorf("restart TLS Prometheus after Secret update: %w", err)
+		}
+	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Prometheus deployed (NodePort %d)\n", PrometheusNodePort)
 	return nil
@@ -621,6 +640,11 @@ func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
+	if tlsEnabled {
+		if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/alertmanager", "-n", namespace); err != nil {
+			return fmt.Errorf("restart TLS AlertManager after Secret update: %w", err)
+		}
+	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ AlertManager deployed (NodePort %d)\n", AlertManagerNodePort)
 	return nil
@@ -655,9 +679,9 @@ func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string,
           secretName: monitoring-tls`
 		monitoringProbeScheme = "\n             scheme: HTTPS"
 		// Operator-managed Gateway serves the application webhook on its
-		// HTTPS Service port. The operator-backed Gateway keeps the service
-		// port at 8080 while changing the transport to TLS.
-		gatewayWebhookURL = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
+		// dedicated HTTPS Service port 8443. Port 8080 is the legacy plaintext
+		// application-Helm endpoint and cannot carry the operator TLS listener.
+		gatewayWebhookURL = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8443/api/v1/signals/prometheus", gatewayNamespace)
 	}
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
 	webhookAuthYaml := `

@@ -18,7 +18,7 @@ This plan proves that issue #2492 uses an exact operator source revision and imm
 application/dependency inputs, installs only the operator bootstrap and independently
 owned development dependencies, applies a user/GitOps-style `kubernaut.ai/v1alpha2`
 `Kubernaut` resource, and preserves the real FullPipeline and Fleet journeys without
-installing `charts/kubernaut`.
+using the deprecated application Helm chart.
 
 ### 1.2 Objectives
 
@@ -29,8 +29,8 @@ installing `charts/kubernaut`.
 3. Prove CR reconciliation gates on `Running`, positive conditions, service readiness,
    and EndpointSlices, then verifies every effective Deployment image against the
    complete 16-key operand map.
-4. Prove FP, Fleet, and local/fleet demo paths have no live application Helm owner and
-   retain explicit cleanup and diagnostics.
+4. Prove FP, Fleet, and local/fleet demo paths use the operator as the sole application
+   owner and retain explicit cleanup and diagnostics.
 5. Prove the manual RC handoff model links per-artifact SBOM/signature/provenance data
    to both qualification lanes without adding cross-repository automation.
 
@@ -38,10 +38,10 @@ installing `charts/kubernaut`.
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Requirements-based unit scenarios | >=19/20 passing | Ginkgo/Gomega scenarios below |
-| Critical unit scenarios | 100% passing | Provenance, image integrity, ownership, TLS, and forbidden deployment tests |
+| Requirements-based unit scenarios | >=18/19 passing | Ginkgo/Gomega scenarios below |
+| Critical unit scenarios | 100% passing | Provenance, image integrity, ownership, and TLS tests |
 | Wiring points | 100% | Wiring manifest in the approved implementation plan |
-| FP/Fleet/demo live application Helm installs | 0 | Boundary scan and workflow review |
+| FP/Fleet/demo application owners | Operator only | Workflow review and operator qualification evidence |
 | Live operator qualification | FP and Fleet pass | Helios08 evidence plus CI artifacts |
 
 ---
@@ -54,7 +54,7 @@ installing `charts/kubernaut`.
 - `BR-PLATFORM-014`: preserve the stable Fleet demo/QE environment and lifecycle.
 - `DD-TEST-015`: provision Fleet infrastructure before the application configuration is reconciled.
 - Issue #2492: run FP and Fleet against an operator-built deployment.
-- Operator revision `c226705e24bef67fa947c535d59ea87d4251b483`.
+- Operator revision `2c021da02bd62aa9adf5c36d511b33c0483da359`.
 - `docs/testing/TEST_PLAN_TEMPLATE.md`.
 
 ### 2.2 Cross-References
@@ -100,8 +100,8 @@ installing `charts/kubernaut`.
 - CNI dataplane enforcement. This qualification checks rendered NetworkPolicy objects
   and successful traffic through the supported Kind host/node path only.
 - Cross-repository bot PR, repository-dispatch, or automatic operator release triggers.
-- Offline deprecated application-chart lint/template/helm-unittest behavior except for
-  confirming it is not used as a live qualification owner.
+- Application chart packaging and publication; the deprecated chart is removed from this
+  repository and is not a qualification input.
 
 ### 4.3 Design Decisions
 
@@ -119,9 +119,9 @@ installing `charts/kubernaut`.
 
 ### 5.1 Coverage Policy
 
-The frozen requirements-based unit denominator is 20 scenarios. At least 19/20 must
-pass (>90%), and all critical provenance, ownership, image, TLS, and forbidden-deployment
-scenarios must pass. Structural line coverage is diagnostic only.
+The frozen requirements-based unit denominator is 19 scenarios. At least 18/19 must
+pass (>90%), and all critical provenance, ownership, image, and TLS scenarios must
+pass. Structural line coverage is diagnostic only.
 
 ### 5.2 Two-Tier Minimum
 
@@ -130,13 +130,13 @@ integration/live contracts for workflow wiring. FP/Fleet E2E remains the journey
 
 ### 5.3 Pass/Fail Criteria
 
-**PASS** requires all P0 scenarios, at least 19/20 unit scenarios, all wiring rows,
+**PASS** requires all P0 scenarios, at least 18/19 unit scenarios, all wiring rows,
 the scoped build/lint/tests, and successful FP/Fleet qualification evidence. Any live
-application-chart installation in FP/Fleet/demo is a failure.
+non-operator application owner in FP/Fleet/demo is a failure.
 
 **FAIL** includes missing provenance, image mismatch, bootstrap-owned application
 resources, readiness without EndpointSlices, insecure TLS bypass, incomplete diagnostics,
-or a legacy live application-chart install.
+or a non-operator application deployment path.
 
 ---
 
@@ -164,10 +164,10 @@ or a legacy live application-chart install.
 
 | Item | Version/Commit | Notes |
 |------|----------------|-------|
-| Upstream operator | `c226705e24bef67fa947c535d59ea87d4251b483` | Exact qualification source |
+| Upstream operator | `2c021da02bd62aa9adf5c36d511b33c0483da359` | Exact qualification source |
 | Kind node | `kindest/node:v1.37.0@sha256:a1ed56cf...` | Existing pinned FP profile |
 | PostgreSQL | `docker.io/library/postgres:16.4@sha256:e62fbf9d...` | Operator harness Kind profile; record resolved digest per run |
-| Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | Operator dev-bootstrap profile; record resolved digest per run |
+| Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | `kubernaut-development-dependencies:0.1.0-run.1`; CR uses Valkey mTLS Secret references |
 
 ---
 
@@ -184,13 +184,13 @@ or a legacy live application-chart install.
 | BR-E2E-001 | CR readiness and dependencies | P0 | Unit/IT | UT-2492-008, IT-2492-CR-001, IT-2492-DEPENDENCY-001 | RED |
 | BR-E2E-001 | TLS-safe host boundary | P0 | Unit/IT | UT-2492-010, UT-2492-011, UT-2492-012, IT-2492-EXPOSURE-001 | RED |
 | BR-PLATFORM-014 | Demo prebuilt artifact resolution | P1 | Unit/IT | UT-2492-016, UT-2492-017, IT-2492-DEMO-001 | RED |
-| BR-PLATFORM-014 | Manual release handoff | P1 | Unit/IT | UT-2492-018, UT-2492-019, IT-2492-RELEASE-001 | RED |
+| BR-PLATFORM-014 | Manual release handoff | P1 | Unit/IT | UT-2492-018, IT-2492-RELEASE-001 | RED |
 
 ---
 
 ## 8. Test Scenarios
 
-### Tier 1: Unit Tests — frozen denominator 20
+### Tier 1: Unit Tests — frozen denominator 19
 
 | ID | Business Outcome Under Test | Priority | Critical | Phase |
 |----|----------------------------|----------|----------|-------|
@@ -212,7 +212,6 @@ or a legacy live application-chart install.
 | `UT-2492-016` | Explicit demo artifact/YAML overrides win over release defaults. | P1 | No | RED |
 | `UT-2492-017` | Dirty explicit operator source checkout is rejected; normal demo setup does not build source. | P0 | Yes | RED |
 | `UT-2492-018` | Qualification manifest requires operator digest and links per-artifact SBOM/signature/provenance. | P0 | Yes | RED |
-| `UT-2492-019` | Legacy live application-chart deployment is detected while offline deprecated checks remain allowed. | P0 | Yes | RED |
 | `UT-2492-020` | Operator adapters and dependency releases have explicit teardown actions. | P1 | No | RED |
 
 ### Tier 2: Integration Tests
@@ -296,10 +295,10 @@ or a legacy live application-chart install.
 
 | Location | Current Assertion | Required Change | Reason |
 |----------|-------------------|-----------------|--------|
-| `test/e2e/fullpipeline/suite_test.go` | Uses chart-pinned NodePorts and fixed URLs | Consume operator exposure evidence and CA-aware URLs | Operator Services remain ClusterIP |
-| `test/e2e/fleet/suite_test.go` | Assumes the shared Helm install owns app workloads | Consume operator CR/exposure evidence | Removes competing application owner |
-| `hack/setup-demo-infra/main.go` | Calls `InstallDemoHelmChart` | Calls shared operator bootstrap/CR flow | Demo is a supported operator path |
-| `Makefile` demo help | Says “helm install” | Says “operator bootstrap + CR” | User-facing contract update |
+| `test/e2e/fullpipeline/suite_test.go` | Uses fixed URLs | Consume operator exposure evidence and CA-aware URLs | Operator Services remain ClusterIP |
+| `test/e2e/fleet/suite_test.go` | Needs application readiness | Consume operator CR/exposure evidence | Operator is the sole application owner |
+| `hack/setup-demo-infra/main.go` | Needs deployment inputs | Uses shared operator bootstrap/CR flow | Demo is a supported operator path |
+| `Makefile` demo help | Must describe deployment ownership | Says “operator bootstrap + CR” | User-facing contract update |
 
 ---
 

@@ -17,6 +17,8 @@ limitations under the License.
 package infrastructure
 
 import (
+	"os"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -34,6 +36,25 @@ var _ = Describe("fleet demo Helm chart sources [BR-PLATFORM-014]", func() {
 			"--set", "nodeExporter.enabled=false",
 			"--set", "prometheus.enabled=false",
 		}))
+	})
+
+	It("UT-INFRA-FLEETDEMO-HELM-001A: accepts a cached Prometheus chart in an isolated qualification namespace", func() {
+		const localChart = "/qualification-cache/kube-prometheus-stack-88.1.5.tgz"
+		previous, hadPrevious := os.LookupEnv("KUBERNAUT_PROMETHEUS_OPERATOR_CHART_PATH")
+		Expect(os.Setenv("KUBERNAUT_PROMETHEUS_OPERATOR_CHART_PATH", localChart)).To(Succeed())
+		DeferCleanup(func() {
+			if hadPrevious {
+				Expect(os.Setenv("KUBERNAUT_PROMETHEUS_OPERATOR_CHART_PATH", previous)).To(Succeed())
+				return
+			}
+			Expect(os.Unsetenv("KUBERNAUT_PROMETHEUS_OPERATOR_CHART_PATH")).To(Succeed())
+		})
+
+		chart, args := prometheusOperatorChartSource()
+		Expect(chart).To(Equal(localChart))
+		Expect(args).NotTo(ContainElement("--repo"))
+		Expect(args).NotTo(ContainElement("--version"))
+		Expect(args).To(ContainElement("prometheusOperator.fullnameOverride=prometheus-operator"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-HELM-002: resolves Traefik directly from its repository URL", func() {
