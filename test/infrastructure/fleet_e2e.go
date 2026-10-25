@@ -291,7 +291,6 @@ const (
 	// with 401 -- demo team report, 2026-09-02). Distinct name from
 	// fullpipeline_e2e.go's "fullpipeline-gateway-sa" so both suites' RBAC
 	// bindings can coexist if ever run against the same cluster.
-	fleetAlertManagerGatewaySA = "fleet-alertmanager-gateway-sa"
 
 	// KubeMCPServerAuthModeKubeconfig makes kube-mcp-server ignore any
 	// caller-forwarded Authorization header and always use its own

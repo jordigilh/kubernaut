@@ -116,7 +116,7 @@ func RunMustGatherImage(ctx context.Context, opts RunMustGatherImageOptions, wri
 	}
 	if opts.DataStorage != nil {
 		u, err := url.Parse(opts.DataStorage.URL)
-		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		if err != nil || u.Scheme != interServiceHTTPS || u.Hostname() == "" || u.User != nil {
 			return fmt.Errorf("must-gather DataStorage requires an https authority without credentials")
 		}
 		for _, path := range []string{opts.DataStorage.CAFile, opts.DataStorage.TokenFile} {

@@ -44,6 +44,9 @@ import (
 
 // Gateway E2E service ports (DD-TEST-001 port allocation strategy)
 const (
+	containerRuntimePodman = "podman"
+	containerRuntimeDocker = "docker"
+
 	GatewayE2EHostPort     = 8080  // Gateway API (NodePort 30080 → host port 8080)
 	GatewayE2EHealthPort   = 28080 // Gateway health (NodePort 30180 → host port 28080) -- Issue #753
 	GatewayE2EMetricsPort  = 9090  // Gateway metrics (NodePort 30090 → host port 9090)
@@ -1184,9 +1187,9 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 		return fmt.Errorf("gateway Dockerfile not found at %s", dockerfilePath)
 	}
 
-	containerCmd := "podman"
-	if _, err := exec.LookPath("podman"); err != nil {
-		containerCmd = "docker"
+	containerCmd := containerRuntimePodman
+	if _, err := exec.LookPath(containerRuntimePodman); err != nil {
+		containerCmd = containerRuntimeDocker
 	}
 
 	// Use unique image tag with coverage suffix
@@ -1225,7 +1228,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	imageName := GetGatewayCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), containerRuntimePodman, "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -1252,7 +1255,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), containerRuntimePodman, "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {

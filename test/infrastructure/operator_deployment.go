@@ -809,9 +809,9 @@ func KindHostIngressCIDR(ctx context.Context, clusterName string) (string, error
 	if clusterName == "" {
 		return "", errors.New("kind host ingress CIDR requires a cluster name")
 	}
-	runtime := "docker"
-	if os.Getenv("KIND_EXPERIMENTAL_PROVIDER") == "podman" {
-		runtime = "podman"
+	runtime := containerRuntimeDocker
+	if os.Getenv("KIND_EXPERIMENTAL_PROVIDER") == containerRuntimePodman {
+		runtime = containerRuntimePodman
 	}
 	nodeName := clusterName + "-control-plane"
 	output, err := exec.CommandContext(ctx, runtime, "exec", nodeName, "ip", "-4", "route", "show", "default").CombinedOutput()
@@ -2197,8 +2197,8 @@ func offsetOperatorExposurePlanHostPorts(plan OperatorExposurePlan, offset int) 
 
 func existingKindOperatorExposurePlan(ctx context.Context, clusterName, namespace, hostname string, components []string) (OperatorExposurePlan, error) {
 	runtime := "docker"
-	if os.Getenv("KIND_EXPERIMENTAL_PROVIDER") == "podman" {
-		runtime = "podman"
+	if os.Getenv("KIND_EXPERIMENTAL_PROVIDER") == containerRuntimePodman {
+		runtime = containerRuntimePodman
 	}
 	nodeName := clusterName + "-control-plane"
 	output, err := exec.CommandContext(ctx, runtime, "inspect", nodeName, "--format", "{{json .NetworkSettings.Ports}}").Output()

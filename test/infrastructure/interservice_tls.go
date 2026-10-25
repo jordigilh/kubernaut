@@ -37,6 +37,11 @@ import (
 	"time"
 )
 
+const (
+	interServiceHTTP  = "http"
+	interServiceHTTPS = "https"
+)
+
 // InterServiceCAPath returns the deterministic file path where the inter-service
 // CA PEM is written. Derived from kubeconfigPath so all E2E suites can find it
 // without serialization changes in SynchronizedBeforeSuite.
@@ -429,11 +434,11 @@ type monitoringTLSRoundTripper struct {
 }
 
 func (t *monitoringTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.URL != nil && req.URL.Scheme == "http" {
+	if req.URL != nil && req.URL.Scheme == interServiceHTTP {
 		port := req.URL.Port()
 		if port == "9190" || port == "9193" {
 			clone := req.Clone(req.Context())
-			clone.URL.Scheme = "https"
+			clone.URL.Scheme = interServiceHTTPS
 			req = clone
 		}
 	}

@@ -261,7 +261,7 @@ func applyOptionalKindNodeCPUQuota(ctx context.Context, clusterName string, writ
 	if err != nil || cpus <= 0 {
 		return fmt.Errorf("invalid %s value %q: expected a positive CPU count", kindNodeCPUEnv, rawCPUs)
 	}
-	if strings.TrimSpace(os.Getenv("KIND_EXPERIMENTAL_PROVIDER")) != "podman" {
+	if strings.TrimSpace(os.Getenv("KIND_EXPERIMENTAL_PROVIDER")) != containerRuntimePodman {
 		return fmt.Errorf("%s requires KIND_EXPERIMENTAL_PROVIDER=podman", kindNodeCPUEnv)
 	}
 
