@@ -139,7 +139,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	awImage := builtImages["AuthWebhook"]
+	awImage := builtImages["authwebhook"]
 	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
 	}
@@ -595,7 +595,7 @@ func loadROImages(ctx context.Context, clusterName string, images map[string]str
 		name      string
 		imageKey  string
 		container string
-	}{{"RemediationOrchestrator coverage", "RemediationOrchestrator (coverage)", "remediationorchestrator-controller"}, {"DataStorage", "DataStorage", "datastorage"}, {"AuthWebhook", "AuthWebhook", "authwebhook"}}
+	}{{"RemediationOrchestrator coverage", "remediationorchestrator", "remediationorchestrator-controller"}, {"DataStorage", "datastorage", "datastorage"}, {"AuthWebhook", "authwebhook", "authwebhook"}}
 	for _, entry := range entries {
 		entry := entry
 		go func() {
@@ -662,7 +662,7 @@ func deployROServices(ctx context.Context, namespace, kubeconfigPath string, ima
 	go func() {
 		err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer)
 		if err == nil {
-			err = deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, images["DataStorage"], writer)
+			err = deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, images["datastorage"], writer)
 		}
 		results <- struct {
 			name string
@@ -673,7 +673,7 @@ func deployROServices(ctx context.Context, namespace, kubeconfigPath string, ima
 		results <- struct {
 			name string
 			err  error
-		}{"RemediationOrchestrator", DeployROCoverageManifest(ctx, kubeconfigPath, images["RemediationOrchestrator (coverage)"], writer, "5s")}
+		}{"RemediationOrchestrator", DeployROCoverageManifest(ctx, kubeconfigPath, images["remediationorchestrator"], writer, "5s")}
 	}()
 	var errs []error
 	for range 5 {
