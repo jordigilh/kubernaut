@@ -54,6 +54,16 @@ func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer 
 	if err := ensureDemoConsoleTLS(ctx, kubeconfigPath, appNamespace, writer); err != nil {
 		return fmt.Errorf("console TLS provisioning failed: %w", err)
 	}
+	if err := deployOIDCKeycloak(ctx, kubeconfigPath, appNamespace, writer); err != nil {
+		return err
+	}
+	if err := deployTraefikForKind(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("traefik installation failed: %w", err)
+	}
+	return nil
+}
+
+func deployOIDCKeycloak(ctx context.Context, kubeconfigPath, appNamespace string, writer io.Writer) error {
 	getDeployment := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "deployment/keycloak", "-n", idpNamespace, "--ignore-not-found", "-o", "name")
 	deploymentName, err := getDeployment.Output()
@@ -71,16 +81,12 @@ func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer 
 	if err := DeployKeycloakInfra(ctx, idpNamespace, kubeconfigPath, DemoHostPort(keycloakHostPortDemo), true, writer); err != nil {
 		return fmt.Errorf("keycloak deployment failed: %w", err)
 	}
-	// Keep the browser-facing issuer stable as "https://keycloak" while the
-	// actual provider remains in the dedicated idp namespace. The alias also
-	// makes in-cluster API Frontend JWKS/token requests resolve in local mode.
-	if aliasManifest := buildKeycloakServiceAliasManifest(appNamespace, idpNamespace); aliasManifest != "" {
-		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, aliasManifest); err != nil {
-			return fmt.Errorf("keycloak service alias creation failed: %w", err)
-		}
+	aliasManifest := buildKeycloakServiceAliasManifest(appNamespace, idpNamespace)
+	if aliasManifest == "" {
+		return nil
 	}
-	if err := deployTraefikForKind(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("traefik installation failed: %w", err)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, aliasManifest); err != nil {
+		return fmt.Errorf("keycloak service alias creation failed: %w", err)
 	}
 	return nil
 }

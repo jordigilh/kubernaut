@@ -176,6 +176,53 @@ func fullPipelineWorkflowSeeds(fleetMode bool) []WorkflowSeedSpec {
 	)
 }
 
+type fullPipelineOperatorInputs struct {
+	relatedImages       map[string]string
+	operatorChartPath   string
+	dependencyChartPath string
+	operatorImage       string
+	exposure            OperatorExposurePlan
+	fixtures            OperatorFixtureFiles
+	cleanup             func()
+}
+
+func prepareFullPipelineOperatorInputs(ctx context.Context, clusterName, namespace string, builtImages map[string]string, writer io.Writer) (fullPipelineOperatorInputs, error) {
+	dbMigrateImage, err := ensureDBMigrateImage(ctx, "operator-"+uuid.New().String()[:8], writer)
+	if err != nil {
+		return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: db-migrate image failed: %w", err)
+	}
+	builtImages["db-migrate"] = dbMigrateImage
+	relatedImages, err := OperatorOperandImagesFromBuiltImages(builtImages)
+	if err != nil {
+		return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: operator operand image map: %w", err)
+	}
+	operatorChartPath, dependencyChartPath, err := OperatorChartPathsFromEnvironment(ctx)
+	if err != nil {
+		return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: operator chart artifacts: %w", err)
+	}
+	operatorImage := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE"))
+	if operatorImage == "" {
+		return fullPipelineOperatorInputs{}, errors.New("PHASE 1: KUBERNAUT_OPERATOR_IMAGE is required for operator qualification")
+	}
+	exposure, err := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", []string{"gateway", "datastorage", "apifrontend", "kubernautagent"})
+	if err != nil {
+		return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: allocate operator exposure: %w", err)
+	}
+	fixtureDir, err := os.MkdirTemp("", "operator-fp-fixtures-*")
+	if err != nil {
+		return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: create operator fixture directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(fixtureDir) }
+	files := OperatorFixtureFiles{LLMCredentials: filepath.Join(fixtureDir, "llm-credentials"), AIAnalysisPolicy: filepath.Join(fixtureDir, "ai-analysis.rego"), SignalProcessingPolicy: filepath.Join(fixtureDir, "signal-processing.rego")}
+	for path, content := range map[string]string{files.LLMCredentials: "mock-llm-e2e-key", files.AIAnalysisPolicy: fullPipelineAIAnalysisPolicyRego, files.SignalProcessingPolicy: fullPipelineSignalProcessingPolicyRego} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			cleanup()
+			return fullPipelineOperatorInputs{}, fmt.Errorf("PHASE 1: write operator fixture %s: %w", path, err)
+		}
+	}
+	return fullPipelineOperatorInputs{relatedImages: relatedImages, operatorChartPath: operatorChartPath, dependencyChartPath: dependencyChartPath, operatorImage: operatorImage, exposure: exposure, fixtures: files, cleanup: cleanup}, nil
+}
+
 func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, fleetProvisioner FleetProvisioner, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Full Pipeline E2E Infrastructure (Issue #39)")
@@ -202,49 +249,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 complete: %d images ready (%s)\n",
 		len(builtImages), time.Since(startTime).Round(time.Second))
 
-	// The operator consumes one exact image reference per operand. Do not retag
-	// application images into a chart-wide tag: that would hide which artifact
-	// each reconciled Deployment actually runs.
-	dbMigrateImage, dbMigrateErr := ensureDBMigrateImage(ctx, "operator-"+uuid.New().String()[:8], writer)
-	if dbMigrateErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: db-migrate image failed: %w", dbMigrateErr)
+	operatorInputs, operatorErr := prepareFullPipelineOperatorInputs(ctx, clusterName, namespace, builtImages, writer)
+	if operatorErr != nil {
+		return builtImages, nil, nil, operatorErr
 	}
-	builtImages["db-migrate"] = dbMigrateImage
-	operatorImages, imageErr := OperatorOperandImagesFromBuiltImages(builtImages)
-	if imageErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: operator operand image map: %w", imageErr)
-	}
-	operatorChartPath, dependencyChartPath, chartErr := OperatorChartPathsFromEnvironment(ctx)
-	if chartErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: operator chart artifacts: %w", chartErr)
-	}
-	operatorImage := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE"))
-	if operatorImage == "" {
-		return builtImages, nil, nil, errors.New("PHASE 1: KUBERNAUT_OPERATOR_IMAGE is required for operator qualification")
-	}
-
-	operatorExposure, exposureErr := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", []string{"gateway", "datastorage", "apifrontend", "kubernautagent"})
-	if exposureErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: allocate operator exposure: %w", exposureErr)
-	}
-	operatorFixtureDir, fixtureErr := os.MkdirTemp("", "operator-fp-fixtures-*")
-	if fixtureErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 1: create operator fixture directory: %w", fixtureErr)
-	}
-	defer func() { _ = os.RemoveAll(operatorFixtureDir) }()
-	operatorLLMFile := filepath.Join(operatorFixtureDir, "llm-credentials")
-	operatorAIPolicyFile := filepath.Join(operatorFixtureDir, "ai-analysis.rego")
-	operatorSPPolicyFile := filepath.Join(operatorFixtureDir, "signal-processing.rego")
-	for path, content := range map[string]string{
-		operatorLLMFile:      "mock-llm-e2e-key",
-		operatorAIPolicyFile: fullPipelineAIAnalysisPolicyRego,
-		operatorSPPolicyFile: fullPipelineSignalProcessingPolicyRego,
-	} {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			return builtImages, nil, nil, fmt.Errorf("PHASE 1: write operator fixture %s: %w", path, err)
-		}
-	}
-	operatorFixtures := OperatorFixtureFiles{LLMCredentials: operatorLLMFile, AIAnalysisPolicy: operatorAIPolicyFile, SignalProcessingPolicy: operatorSPPolicyFile}
+	defer operatorInputs.cleanup()
+	operatorImages := operatorInputs.relatedImages
+	operatorChartPath := operatorInputs.operatorChartPath
+	dependencyChartPath := operatorInputs.dependencyChartPath
+	operatorImage := operatorInputs.operatorImage
+	operatorExposure := operatorInputs.exposure
+	operatorFixtures := operatorInputs.fixtures
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster
@@ -252,30 +267,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n🏗️  PHASE 2: Creating Kind cluster...")
 	phase2Start := time.Now()
 
-	// Coverage + notification file output mounts
-	coverdataPath := filepath.Join(projectRoot, "coverdata")
-	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to create coverdata directory: %w", err)
-	}
-
-	extraMounts := []ExtraMount{}
-	if os.Getenv("E2E_COVERAGE") == trueFixture {
-		extraMounts = append(extraMounts, ExtraMount{
-			HostPath:      coverdataPath,
-			ContainerPath: "/coverdata",
-			ReadOnly:      false,
-		})
-	}
-
-	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
-	if err := CreateKindClusterWithExtraMountsAndPortMappings(ctx,
-		clusterName, kubeconfigPath, kindConfigPath, extraMounts, OperatorPortMappings(operatorExposure), writer,
-	); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
-	}
-	hostIngressCIDR, ingressErr := KindHostIngressCIDR(ctx, clusterName)
-	if ingressErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 2: resolve Kind host ingress CIDR: %w", ingressErr)
+	_, hostIngressCIDR, err := createFullPipelineCluster(ctx, projectRoot, clusterName, kubeconfigPath, operatorExposure, writer)
+	if err != nil {
+		return builtImages, nil, nil, err
 	}
 	_, _ = fmt.Fprintf(writer, "  🔐 Operator NetworkPolicy host ingress peer: %s\n", hostIngressCIDR)
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 2 complete: Kind cluster ready (%s)\n",
@@ -378,30 +372,8 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			IssuerURL: "https://dex:5556/dex", JWKSURL: "https://dex:5556/dex/keys", Audience: "kubernaut-apifrontend",
 		},
 	}
-	if err := InstallOperatorDependencies(ctx, operatorConfig, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to install operator dependencies: %w", err)
-	}
-	if err := InstallOperatorBootstrap(ctx, operatorConfig, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to install operator bootstrap: %w", err)
-	}
-	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to prepare DataStorage client RBAC: %w", err)
-	}
-	if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to prepare operator Fleet TLS: %w", err)
-	}
-	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, fleetProvisioner != nil, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to prepare operator application TLS: %w", err)
-	}
-	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to prepare monitoring TLS: %w", err)
-	}
-	// The operator evaluates MonitoringReady during CR reconciliation and
-	// requires Prometheus Operator CRDs when monitoring integrations are enabled.
-	// Install the API/controller dependency before applying the CR; the actual
-	// test Prometheus and AlertManager workloads remain Go-managed in PHASE 7.
-	if err := InstallPrometheusOperator(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("failed to install Prometheus Operator dependency: %w", err)
+	if err := prepareFullPipelineOperatorResources(ctx, operatorConfig, kubeconfigPath, namespace, monitoringNamespace, fleetProvisioner != nil, writer); err != nil {
+		return builtImages, nil, nil, err
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
@@ -416,15 +388,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// Gateway to connect to, instead of racing infrastructure that gets
 	// deployed afterward. Nil for the FP suite (fleet stays disabled).
 	// ═══════════════════════════════════════════════════════════════════════
-	var fleetOpts *FleetHelmOptions
-	if fleetProvisioner != nil {
-		_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 5b: Provisioning fleet infrastructure (IdP + MCP Gateway)...")
-		phase5bStart := time.Now()
-		fleetOpts, err = fleetProvisioner(ctx, kubeconfigPath, namespace, writer)
-		if err != nil {
-			return builtImages, nil, nil, fmt.Errorf("PHASE 5b: fleet infrastructure provisioning failed: %w", err)
-		}
-		_, _ = fmt.Fprintf(writer, "✅ PHASE 5b complete (%s)\n", time.Since(phase5bStart).Round(time.Second))
+	fleetOpts, err := provisionFullPipelineFleet(ctx, kubeconfigPath, namespace, fleetProvisioner, writer)
+	if err != nil {
+		return builtImages, nil, nil, err
 	}
 
 	// A preserved qualification cluster can retain CRs and fixture namespaces
@@ -436,11 +402,147 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	CleanupFullPipelineTestResources(ctx, kubeconfigPath, writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 6: apply the user-owned Kubernaut CR after dependencies/Fleet
-	// infrastructure are ready. The operator bootstrap and dependency chart
-	// were installed in PHASE 5; this is the only application configuration
-	// path and there is no upstream application Helm release.
+	if err := applyFullPipelineOperatorPhase(ctx, operatorConfig, fleetOpts, fleetProvisioner, kubeconfigPath, namespace, writer); err != nil {
+		return builtImages, nil, nil, err
+	}
+
+	seededUUIDs, seedErr := seedFullPipelineWorkflowCatalog(ctx, namespace, kubeconfigPath, fleetProvisioner != nil, writer)
+	if seedErr != nil {
+		return builtImages, nil, nil, seedErr
+	}
+
+	afRemediateNS, err = runFullPipelineGoManagedInfrastructure(ctx, namespace, kubeconfigPath, monitoringNamespace, builtImages, seededUUIDs, fleetProvisioner, writer)
+	if err != nil {
+		return builtImages, seededUUIDs, nil, err
+	}
+
+	if err := verifyFullPipelineReadiness(ctx, namespace, kubeconfigPath, monitoringNamespace, fleetProvisioner, afRemediateNS, fleetOpts != nil, writer); err != nil {
+		return builtImages, seededUUIDs, nil, err
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
+	// DONE
+	// ═══════════════════════════════════════════════════════════════════════
+	totalDuration := time.Since(startTime).Round(time.Second)
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Full Pipeline E2E Infrastructure Ready!")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "  ⏱️  Total setup time: %s\n", totalDuration)
+	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     https://localhost:30080 (chart-pinned NodePort)\n")
+	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: https://localhost:30081 (chart-pinned NodePort)\n")
+	_, _ = fmt.Fprintf(writer, "  🖥️  APIFrontend: https://localhost:18443 (DD-TEST-001 host port)\n")
+	_, _ = fmt.Fprintf(writer, "  📦 Namespace:   %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "  🔑 Kubeconfig:  %s\n", kubeconfigPath)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return builtImages, seededUUIDs, afRemediateNS, nil
+}
+
+func provisionFullPipelineFleet(ctx context.Context, kubeconfigPath, namespace string, provisioner FleetProvisioner, writer io.Writer) (*FleetHelmOptions, error) {
+	if provisioner == nil {
+		return nil, nil
+	}
+	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 5b: Provisioning fleet infrastructure (IdP + MCP Gateway)...")
+	started := time.Now()
+	options, err := provisioner(ctx, kubeconfigPath, namespace, writer)
+	if err != nil {
+		return nil, fmt.Errorf("PHASE 5b: fleet infrastructure provisioning failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 5b complete (%s)\n", time.Since(started).Round(time.Second))
+	return options, nil
+}
+
+func createFullPipelineCluster(ctx context.Context, projectRoot, clusterName, kubeconfigPath string, exposure OperatorExposurePlan, writer io.Writer) (string, string, error) {
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+	extraMounts := []ExtraMount{}
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
+		extraMounts = append(extraMounts, ExtraMount{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false})
+	}
+	if err := CreateKindClusterWithExtraMountsAndPortMappings(ctx, clusterName, kubeconfigPath, "test/infrastructure/kind-fullpipeline-config.yaml", extraMounts, OperatorPortMappings(exposure), writer); err != nil {
+		return "", "", fmt.Errorf("PHASE 2 failed: %w", err)
+	}
+	hostIngressCIDR, err := KindHostIngressCIDR(ctx, clusterName)
+	if err != nil {
+		return "", "", fmt.Errorf("PHASE 2: resolve Kind host ingress CIDR: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  🔐 Operator NetworkPolicy host ingress peer: %s\n", hostIngressCIDR)
+	return coverdataPath, hostIngressCIDR, nil
+}
+
+func seedFullPipelineWorkflowCatalog(ctx context.Context, namespace, kubeconfigPath string, fleetMode bool, writer io.Writer) (map[string]string, error) {
+	// PHASE 6b: Seed workflow catalog (must complete BEFORE KA deployment)
+	//
+	// KA's buildWorkflowValidator blocks the HTTP server until at least one
+	// workflow exists in DataStorage. Seeding here — after DS + AuthWebhook
+	// are ready but before KA deploys — ensures the catalog is populated
+	// when KA starts, matching production deployment ordering.
+	//
+	// Pre-condition: DataStorage HTTP must be accepting connections.
+	// The deployment rollout may complete before the HTTP server is ready.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 6b: Seeding workflow catalog (before KA deployment)...")
+	phase6bStart := time.Now()
+
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage HTTP endpoint (pre-condition for seeding)...")
+	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
+	}
+
+	// #1985 (BR-AUDIT-005 v2.0): AuthWebhook's own /readyz now blocks on
+	// DataStorage's health endpoint being reachable, so it can no longer be
+	// assumed ready merely because `helm install` returned (the chart install
+	// does not --wait) or because DataStorage itself just became ready --
+	// AuthWebhook's readiness probe only starts succeeding some time *after*
+	// DataStorage's. SeedE2EActionTypes below creates/deletes ActionType CRs,
+	// which the actiontype.validate.kubernaut.ai ValidatingWebhookConfiguration
+	// routes to AuthWebhook's :443 endpoint -- if its pod isn't Ready yet, the
+	// Service has no endpoints and the apiserver's webhook call fails closed
+	// with "dial tcp ...:443: connect: connection refused" (confirmed via CI
+	// must-gather).
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook rollout (validating webhook pre-condition)...")
+	if err := waitForDeploymentRollout(ctx, namespace, kubeconfigPath, "authwebhook", 120*time.Second, writer); err != nil {
+		return nil, fmt.Errorf("PHASE 6b: AuthWebhook rollout not ready: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployment rolled out")
+
+	// Deployment rollout completing does not guarantee the Service's own
+	// Endpoints/kube-proxy DNAT are programmed yet (see
+	// waitForServiceEndpointReady doc comment) -- close that remaining gap
+	// before the apiserver's webhook call below can hit it.
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook Service endpoint (kube-proxy programming)...")
+	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "authwebhook-service", 60*time.Second, writer); err != nil {
+		return nil, fmt.Errorf("PHASE 6b: AuthWebhook service endpoint not ready: %w", err)
+	}
+
+	// The pinned operator RC admits ActionType CRs successfully but does not
+	// populate the legacy AuthWebhook registration status used by
+	// SeedE2EActionTypes. Use the direct CRD seeder here; it applies the same
+	// catalog status contract explicitly and keeps workflow seeding independent
+	// of that legacy admission-side effect.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
+	}
+
+	fpWorkflows := fullPipelineWorkflowSeeds(fleetMode)
+	// The pinned RC admits RemediationWorkflow CRs but does not populate the
+	// legacy AuthWebhook status.workflowId side effect. Stamp the same catalog
+	// status through the direct CRD path so workflow discovery sees the seeded
+	// catalog without depending on that legacy admission mutation.
+	seededUUIDs, seedErr := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
+	if seedErr != nil {
+		return nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 6b complete: %d workflows seeded (%s)\n",
+		len(seededUUIDs), time.Since(phase6bStart).Round(time.Second))
+
+	// ═══════════════════════════════════════════════════════════════════════
+	return seededUUIDs, nil
+}
+
+func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig OperatorDeploymentConfig, fleetOpts *FleetHelmOptions, fleetProvisioner FleetProvisioner, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 6: applying Kubernaut CR through the operator...")
 	phase6Start := time.Now()
 
@@ -468,7 +570,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	for i := 0; i < 2; i++ {
 		r := <-phase6Results
 		if r.err != nil {
-			return builtImages, nil, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
+			return fmt.Errorf("%s deployment failed: %w", r.name, r.err)
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
@@ -478,17 +580,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// operator-owned session service so the next run starts with a clean driver
 	// pool.
 	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/apifrontend", "-n", namespace); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("restart API Frontend session service: %w", err)
+		return fmt.Errorf("restart API Frontend session service: %w", err)
 	}
 	if err := waitForDeployment(ctx, "apifrontend", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("API Frontend session service restart failed: %w", err)
+		return fmt.Errorf("API Frontend session service restart failed: %w", err)
 	}
 	if fleetProvisioner != nil {
 		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
-			return builtImages, nil, nil, fmt.Errorf("AF persona RBAC verification failed: %w", err)
+			return fmt.Errorf("AF persona RBAC verification failed: %w", err)
 		}
 	} else if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("AF persona RBAC binding failed: %w", err)
+		return fmt.Errorf("AF persona RBAC binding failed: %w", err)
 	}
 
 	// The manual TLS material was prepared before the CR was applied. The
@@ -497,7 +599,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// DEX still needs its own leaf certificate before PHASE 7.
 	if shouldDeployDexForAF(fleetProvisioner) {
 		if err := ensureDexTLSFromOperatorCA(ctx, kubeconfigPath, namespace, writer); err != nil {
-			return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
+			return fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
 		}
 	}
 
@@ -511,81 +613,80 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// generating the CA itself; the chart generates the CA in-cluster now, so
 	// fetch it back out to the same expected path.
 	if err := writeInterServiceCAPEMFromOperator(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6: failed to write inter-service CA PEM: %w", err)
+		return fmt.Errorf("PHASE 6: failed to write inter-service CA PEM: %w", err)
 	}
 	if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, monitoringNamespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6: monitoring Gateway CA setup failed: %w", err)
+		return fmt.Errorf("PHASE 6: monitoring Gateway CA setup failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6 complete (%s)\n", time.Since(phase6Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 6b: Seed workflow catalog (must complete BEFORE KA deployment)
-	//
-	// KA's buildWorkflowValidator blocks the HTTP server until at least one
-	// workflow exists in DataStorage. Seeding here — after DS + AuthWebhook
-	// are ready but before KA deploys — ensures the catalog is populated
-	// when KA starts, matching production deployment ordering.
-	//
-	// Pre-condition: DataStorage HTTP must be accepting connections.
-	// The deployment rollout may complete before the HTTP server is ready.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 6b: Seeding workflow catalog (before KA deployment)...")
-	phase6bStart := time.Now()
+	return nil
+}
 
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage HTTP endpoint (pre-condition for seeding)...")
-	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
+func prepareFullPipelineOperatorResources(ctx context.Context, config OperatorDeploymentConfig, kubeconfigPath, namespace, monitoringNamespace string, fleetEnabled bool, writer io.Writer) error {
+	steps := []struct {
+		name string
+		fn   func() error
+	}{
+		{"operator dependencies", func() error { return InstallOperatorDependencies(ctx, config, writer) }},
+		{"operator bootstrap", func() error { return InstallOperatorBootstrap(ctx, config, writer) }},
+		{"DataStorage client RBAC", func() error { return EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer) }},
+		{"operator Fleet TLS", func() error { return EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer) }},
+		{"operator application TLS", func() error {
+			return EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, fleetEnabled, writer)
+		}},
+		{"monitoring TLS", func() error { return EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer) }},
+		{"Prometheus Operator dependency", func() error { return InstallPrometheusOperator(ctx, kubeconfigPath, writer) }},
 	}
-
-	// #1985 (BR-AUDIT-005 v2.0): AuthWebhook's own /readyz now blocks on
-	// DataStorage's health endpoint being reachable, so it can no longer be
-	// assumed ready merely because `helm install` returned (the chart install
-	// does not --wait) or because DataStorage itself just became ready --
-	// AuthWebhook's readiness probe only starts succeeding some time *after*
-	// DataStorage's. SeedE2EActionTypes below creates/deletes ActionType CRs,
-	// which the actiontype.validate.kubernaut.ai ValidatingWebhookConfiguration
-	// routes to AuthWebhook's :443 endpoint -- if its pod isn't Ready yet, the
-	// Service has no endpoints and the apiserver's webhook call fails closed
-	// with "dial tcp ...:443: connect: connection refused" (confirmed via CI
-	// must-gather).
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook rollout (validating webhook pre-condition)...")
-	if err := waitForDeploymentRollout(ctx, namespace, kubeconfigPath, "authwebhook", 120*time.Second, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook rollout not ready: %w", err)
+	for _, step := range steps {
+		if err := step.fn(); err != nil {
+			return fmt.Errorf("failed to prepare %s: %w", step.name, err)
+		}
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployment rolled out")
+	return nil
+}
 
-	// Deployment rollout completing does not guarantee the Service's own
-	// Endpoints/kube-proxy DNAT are programmed yet (see
-	// waitForServiceEndpointReady doc comment) -- close that remaining gap
-	// before the apiserver's webhook call below can hit it.
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook Service endpoint (kube-proxy programming)...")
-	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "authwebhook-service", 60*time.Second, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook service endpoint not ready: %w", err)
+func verifyFullPipelineReadiness(ctx context.Context, namespace, kubeconfigPath, monitoringNamespace string, fleetProvisioner FleetProvisioner, afRemediateNS map[string]string, fleetEnabled bool, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8: Waiting for all services ready...")
+	results := make(chan error, 2)
+	go func() {
+		results <- waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, fleetProvisioner, writer)
+	}()
+	go func() {
+		results <- waitForMonitoringDeploymentsReady(ctx, monitoringNamespace, kubeconfigPath, 3*time.Minute, writer)
+	}()
+	var errs []error
+	for range 2 {
+		if err := <-results; err != nil {
+			errs = append(errs, err)
+		}
 	}
-
-	// The pinned operator RC admits ActionType CRs successfully but does not
-	// populate the legacy AuthWebhook registration status used by
-	// SeedE2EActionTypes. Use the direct CRD seeder here; it applies the same
-	// catalog status contract explicitly and keeps workflow seeding independent
-	// of that legacy admission-side effect.
-	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
+	if len(errs) > 0 {
+		return fmt.Errorf("PHASE 8 failed: %w", errors.Join(errs...))
 	}
-
-	fpWorkflows := fullPipelineWorkflowSeeds(fleetProvisioner != nil)
-	// The pinned RC admits RemediationWorkflow CRs but does not populate the
-	// legacy AuthWebhook status.workflowId side effect. Stamp the same catalog
-	// status through the direct CRD path so workflow discovery sees the seeded
-	// catalog without depending on that legacy admission mutation.
-	seededUUIDs, seedErr := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
-	if seedErr != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
+	if fleetEnabled {
+		if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
+			return fmt.Errorf("PHASE 8 failed: fleetmetadatacache not ready: %w", err)
+		}
 	}
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 6b complete: %d workflows seeded (%s)\n",
-		len(seededUUIDs), time.Since(phase6bStart).Round(time.Second))
+	_, _ = fmt.Fprintln(writer, "✅ PHASE 8 complete")
+	if err := WaitForPrometheusCadvisorTarget(ctx, fmt.Sprintf("https://127.0.0.1:%d", PrometheusHostPort), 360*time.Second, writer, MonitoringCAPath(kubeconfigPath)); err != nil {
+		return fmt.Errorf("PHASE 8b failed: %w", err)
+	}
+	if !skipMockLLM() {
+		if err := SeedFullPipelineA2AGroundingRules(ctx, monitoringNamespace, kubeconfigPath, afRemediateNS, writer); err != nil {
+			return fmt.Errorf("PHASE 8c failed: A2A severity grounding: %w", err)
+		}
+	}
+	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
+	}
+	return nil
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
+func runFullPipelineGoManagedInfrastructure(ctx context.Context, namespace, kubeconfigPath, monitoringNamespace string, builtImages, seededUUIDs map[string]string, fleetProvisioner FleetProvisioner, writer io.Writer) (map[string]string, error) {
 	// PHASE 7: Go-managed test infrastructure (Issue #1737)
 	//
 	// Gateway, KubernautAgent, EffectivenessMonitor, AIAnalysis, SignalProcessing,
@@ -604,6 +705,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// TLS-only signal-source path; test/e2e/gateway covers BR-GATEWAY-036/037
 	// with an explicitly authenticated Gateway deployment.
 	gatewayToken := ""
+	var afRemediateNS map[string]string
 
 	type waveResult struct {
 		name string
@@ -800,99 +902,16 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 	}
 	if len(deployErrors) > 0 {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
+		return nil, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
 	}
 	if err := EnsureEventExporterGatewayNetworkPolicy(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, nil, err
+		return nil, err
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 8: Wait for all services ready (parallel readiness checks)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8: Waiting for all services ready...")
-	phase8Start := time.Now()
-
-	phase8Results := make(chan error, 2)
-	go func() {
-		if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, fleetProvisioner, writer); err != nil {
-			phase8Results <- fmt.Errorf("application services not ready: %w", err)
-			return
-		}
-		phase8Results <- nil
-	}()
-	go func() {
-		if err := waitForMonitoringDeploymentsReady(ctx, monitoringNamespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
-			phase8Results <- fmt.Errorf("monitoring deployments not ready: %w", err)
-			return
-		}
-		phase8Results <- nil
-	}()
-	var phase8Errors []error
-	for i := 0; i < 2; i++ {
-		if err := <-phase8Results; err != nil {
-			phase8Errors = append(phase8Errors, err)
-		}
-	}
-	if len(phase8Errors) > 0 {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: %w", errors.Join(phase8Errors...))
-	}
-	// fleetmetadatacache is chart-managed only when fleetOpts != nil (its
-	// enabled state is derived by the chart itself from global.fleet.enabled,
-	// PHASE 6 -- DD-PLATFORM-006 Decision Area 10) -- not part of the FP
-	// suite's fixed deployment list above.
-	if fleetOpts != nil {
-		if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
-			return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: fleetmetadatacache not ready: %w", err)
-		}
-	}
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 8b: Verify Prometheus cadvisor scrape target is UP
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
-	promURL := fmt.Sprintf("https://127.0.0.1:%d", PrometheusHostPort)
-	// Prometheus reloads the kubelet service-discovery target asynchronously
-	// after its TLS/web-config rollout. In rootless Kind the target can appear
-	// after several Prometheus/operator reconciliation cycles; keep this
-	// qualification-only gate long enough to observe the healthy target instead
-	// of rejecting the cluster during the operator replacement of the former
-	// chart deployment.
-	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 360*time.Second, writer, MonitoringCAPath(kubeconfigPath)); err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
-	}
-	if !skipMockLLM() {
-		_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8c: Seeding A2A severity-grounding alerts...")
-		if err := SeedFullPipelineA2AGroundingRules(ctx, monitoringNamespace, kubeconfigPath, afRemediateNS, writer); err != nil {
-			return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8c failed: A2A severity grounding: %w", err)
-		}
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 9: Create enrichment fixture resources (#704)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 9: Creating enrichment fixture resources (#704)...")
-	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// DONE
-	// ═══════════════════════════════════════════════════════════════════════
-	totalDuration := time.Since(startTime).Round(time.Second)
-	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "✅ Full Pipeline E2E Infrastructure Ready!")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintf(writer, "  ⏱️  Total setup time: %s\n", totalDuration)
-	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     https://localhost:30080 (chart-pinned NodePort)\n")
-	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: https://localhost:30081 (chart-pinned NodePort)\n")
-	_, _ = fmt.Fprintf(writer, "  🖥️  APIFrontend: https://localhost:18443 (DD-TEST-001 host port)\n")
-	_, _ = fmt.Fprintf(writer, "  📦 Namespace:   %s\n", namespace)
-	_, _ = fmt.Fprintf(writer, "  🔑 Kubeconfig:  %s\n", kubeconfigPath)
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	return builtImages, seededUUIDs, afRemediateNS, nil
+	return afRemediateNS, nil
 }
 
 // CleanupFullPipelineTestResources deletes all kubernaut CR instances and
@@ -1619,12 +1638,11 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	}
 
 	// Run all checks in parallel
-	type readyResult struct {
+	totalChecks := len(deployments) + len(controllers)
+	results := make(chan struct {
 		name string
 		err  error
-	}
-	totalChecks := len(deployments) + len(controllers)
-	results := make(chan readyResult, totalChecks)
+	}, totalChecks)
 
 	// PR #1790 round-15 RCA (run 30633836502, first time fleet's Helm E2E
 	// flow ever reached PHASE 8 -- round-14's DA17 fix eliminated the PHASE 6
@@ -1652,55 +1670,12 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 
 	// Deployment readiness checks
 	for _, deplName := range deployments {
-		deplName := deplName // capture
-		go func() {
-			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
-			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
-				depl, getErr := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
-				if getErr != nil {
-					return false
-				}
-				return depl.Status.ReadyReplicas >= 1
-			})
-			if pollErr != nil {
-				results <- readyResult{deplName, fmt.Errorf("%s not ready after %s", deplName, serviceReadyTimeout)}
-			} else {
-				_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", deplName)
-				results <- readyResult{deplName, nil}
-			}
-		}()
+		go checkFullPipelineDeployment(ctx, clientset, namespace, deplName, serviceReadyTimeout, writer, results)
 	}
 
 	// Controller readiness checks
 	for _, ctrl := range controllers {
-		ctrl := ctrl // capture
-		go func() {
-			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", ctrl.name)
-			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
-				pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-					LabelSelector: ctrl.selector,
-				})
-				if listErr != nil || len(pods.Items) == 0 {
-					return false
-				}
-				for _, pod := range pods.Items {
-					if pod.Status.Phase == corev1.PodRunning {
-						for _, c := range pod.Status.Conditions {
-							if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-								return true
-							}
-						}
-					}
-				}
-				return false
-			})
-			if pollErr != nil {
-				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after %s", ctrl.name, serviceReadyTimeout)}
-			} else {
-				_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", ctrl.name)
-				results <- readyResult{ctrl.name, nil}
-			}
-		}()
+		go checkFullPipelineController(ctx, clientset, namespace, ctrl.name, ctrl.selector, serviceReadyTimeout, writer, results)
 	}
 
 	// Collect all results
@@ -1716,6 +1691,52 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	}
 
 	return nil
+}
+
+func checkFullPipelineDeployment(ctx context.Context, clientset kubernetes.Interface, namespace, name string, timeout time.Duration, writer io.Writer, results chan<- struct {
+	name string
+	err  error
+}) {
+	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", name)
+	pollErr := pollUntilReady(ctx, timeout, 2*time.Second, func() bool {
+		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		return err == nil && deployment.Status.ReadyReplicas >= 1
+	})
+	if pollErr != nil {
+		results <- struct {
+			name string
+			err  error
+		}{name, fmt.Errorf("%s not ready after %s", name, timeout)}
+		return
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", name)
+	results <- struct {
+		name string
+		err  error
+	}{name, nil}
+}
+
+func checkFullPipelineController(ctx context.Context, clientset kubernetes.Interface, namespace, name, selector string, timeout time.Duration, writer io.Writer, results chan<- struct {
+	name string
+	err  error
+}) {
+	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", name)
+	pollErr := pollUntilReady(ctx, timeout, 2*time.Second, func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		return err == nil && anyPodReady(pods)
+	})
+	if pollErr != nil {
+		results <- struct {
+			name string
+			err  error
+		}{name, fmt.Errorf("%s controller not ready after %s", name, timeout)}
+		return
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", name)
+	results <- struct {
+		name string
+		err  error
+	}{name, nil}
 }
 
 // pollUntilReady polls condFn at the given interval until it returns true or

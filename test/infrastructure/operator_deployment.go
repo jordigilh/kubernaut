@@ -38,10 +38,12 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -611,6 +613,31 @@ type operatorFleetOAuth2Spec struct {
 // defaulting owns them; only BYO references, policies, the single LLM profile,
 // generic-cluster TLS, and explicit test/demo integrations are rendered.
 func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
+	if err := validateOperatorCROptions(&options); err != nil {
+		return "", err
+	}
+	audience := options.Audience
+	if audience == "" {
+		audience = "kubernaut-apifrontend"
+	}
+
+	cr := operatorCRManifest{
+		APIVersion: operatorCRAPIVersion,
+		Kind:       "Kubernaut",
+		Metadata:   operatorMetadata{Name: options.Name, Namespace: options.Namespace},
+		Spec:       buildOperatorCRSpec(options, audience),
+	}
+	if err := applyOperatorCRFeatureOverrides(&cr.Spec, options); err != nil {
+		return "", err
+	}
+	data, err := yaml.Marshal(cr)
+	if err != nil {
+		return "", fmt.Errorf("marshal Kubernaut CR: %w", err)
+	}
+	return string(data), nil
+}
+
+func validateOperatorCROptions(options *OperatorCROptions) error {
 	if options.Name == "" {
 		options.Name = operatorCRName
 	}
@@ -618,139 +645,134 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 		options.Namespace = applicationNamespace
 	}
 	if options.PostgreSQLSecret == "" || options.ValkeySecret == "" {
-		return "", errors.New("kubernaut CR requires PostgreSQL and Valkey Secret names")
+		return errors.New("kubernaut CR requires PostgreSQL and Valkey Secret names")
 	}
 	if options.LLM.Provider == "" || options.LLM.Model == "" || options.LLM.CredentialsSecret == "" {
-		return "", errors.New("kubernaut CR requires a complete LLM profile")
+		return errors.New("kubernaut CR requires a complete LLM profile")
 	}
 	if options.TLS.Mode == "" {
-		return "", errors.New("kubernaut CR requires an explicit TLS mode")
+		return errors.New("kubernaut CR requires an explicit TLS mode")
 	}
 	if options.TLS.Mode != "manual" {
-		return "", fmt.Errorf("kubernaut CR supports only the v1alpha2 manual TLS mode, got %q", options.TLS.Mode)
+		return fmt.Errorf("kubernaut CR supports only the v1alpha2 manual TLS mode, got %q", options.TLS.Mode)
 	}
 	if options.Fleet != nil && options.Fleet.Enabled && options.Fleet.WriteCredentialsSecret == "" {
-		return "", errors.New("fleet kubernaut CR requires a write OAuth2 Secret")
+		return errors.New("fleet kubernaut CR requires a write OAuth2 Secret")
 	}
 	if options.APIFrontendEnabled && options.IssuerURL == "" {
-		return "", errors.New("kubernaut CR requires an API Frontend issuer URL when API Frontend is enabled")
+		return errors.New("kubernaut CR requires an API Frontend issuer URL when API Frontend is enabled")
 	}
-	audience := options.Audience
-	if audience == "" {
-		audience = "kubernaut-apifrontend"
-	}
+	return nil
+}
 
-	var gateway *operatorGatewaySpec
-	if !options.GatewayEnabled {
-		gateway = &operatorGatewaySpec{Enabled: pointerToBool(false)}
+func buildOperatorCRSpec(options OperatorCROptions, audience string) operatorCRSpec {
+	return operatorCRSpec{
+		Image:            operatorImageSpec{Overrides: options.ImageOverrides},
+		PostgreSQL:       operatorPostgreSQLSpec{Host: options.PostgreSQLHost, SecretName: options.PostgreSQLSecret, SSLMode: options.PostgreSQLSSLMode},
+		Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret, TLS: operatorValkeyTLSManifest(options.ValkeyTLS)},
+		AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}},
+		SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
+		LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
+		KubernautAgent:   operatorAgentSpec{},
+		Gateway:          operatorGatewaySpecFor(options),
+		APIFrontend:      operatorAPIFrontendSpecFor(options, audience),
+		Monitoring:       operatorMonitoringSpecFor(options),
+		NetworkPolicies:  operatorNetworkPoliciesSpecFor(options),
+		TLS:              operatorTLSManifestFor(options),
 	}
+}
 
-	var apiFrontend *operatorAPIFrontendSpec
-	if options.APIFrontendEnabled {
-		auth := &operatorAPIAuthSpec{IssuerURL: options.IssuerURL, Audience: audience}
-		if options.JWKSURL != "" {
-			auth.JWKSURL = options.JWKSURL
-		}
-		apiFrontend = &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth}
-	} else {
-		apiFrontend = &operatorAPIFrontendSpec{Enabled: pointerToBool(false)}
+func operatorGatewaySpecFor(options OperatorCROptions) *operatorGatewaySpec {
+	if options.GatewayEnabled {
+		return nil
 	}
+	return &operatorGatewaySpec{Enabled: pointerToBool(false)}
+}
 
-	var monitoring *operatorMonitoringSpec
-	if options.Monitoring.PrometheusURL != "" || options.Monitoring.AlertManagerURL != "" {
-		monitoring = &operatorMonitoringSpec{}
-		if options.Monitoring.PrometheusURL != "" {
-			monitoring.Prometheus = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.PrometheusURL}
-		}
-		if options.Monitoring.AlertManagerURL != "" {
-			monitoring.AlertManager = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.AlertManagerURL}
-		}
-		if options.Monitoring.TLSCASecretName != "" {
-			monitoring.TLS = &operatorMonitoringTLS{CACertSecretRef: &operatorMonitoringCASecretRef{Name: options.Monitoring.TLSCASecretName, Key: "ca.crt"}}
-		}
+func operatorAPIFrontendSpecFor(options OperatorCROptions, audience string) *operatorAPIFrontendSpec {
+	if !options.APIFrontendEnabled {
+		return &operatorAPIFrontendSpec{Enabled: pointerToBool(false)}
 	}
-
-	var networkPolicies *operatorNetworkPoliciesSpec
-	if len(options.NetworkPolicies.IngressCIDRs) > 0 {
-		cidrs := append([]string(nil), options.NetworkPolicies.IngressCIDRs...)
-		networkPolicies = &operatorNetworkPoliciesSpec{
-			Gateway:        &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
-			APIFrontend:    &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
-			DataStorage:    &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
-			KubernautAgent: &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
-		}
+	auth := &operatorAPIAuthSpec{IssuerURL: options.IssuerURL, Audience: audience}
+	if options.JWKSURL != "" {
+		auth.JWKSURL = options.JWKSURL
 	}
+	return &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth}
+}
 
-	serviceTLSSecretNames := operatorManualTLSSecretNames(options.Fleet != nil && options.Fleet.Enabled, options.TLS.ServiceTLSSecretNames)
+func operatorMonitoringSpecFor(options OperatorCROptions) *operatorMonitoringSpec {
+	if options.Monitoring.PrometheusURL == "" && options.Monitoring.AlertManagerURL == "" {
+		return nil
+	}
+	monitoring := &operatorMonitoringSpec{}
+	if options.Monitoring.PrometheusURL != "" {
+		monitoring.Prometheus = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.PrometheusURL}
+	}
+	if options.Monitoring.AlertManagerURL != "" {
+		monitoring.AlertManager = &operatorMonitoringEndpoint{Enabled: pointerToBool(true), URL: options.Monitoring.AlertManagerURL}
+	}
+	if options.Monitoring.TLSCASecretName != "" {
+		monitoring.TLS = &operatorMonitoringTLS{CACertSecretRef: &operatorMonitoringCASecretRef{Name: options.Monitoring.TLSCASecretName, Key: "ca.crt"}}
+	}
+	return monitoring
+}
+
+func operatorNetworkPoliciesSpecFor(options OperatorCROptions) *operatorNetworkPoliciesSpec {
+	if len(options.NetworkPolicies.IngressCIDRs) == 0 {
+		return nil
+	}
+	cidrs := options.NetworkPolicies.IngressCIDRs
+	return &operatorNetworkPoliciesSpec{
+		Gateway:        &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
+		APIFrontend:    &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
+		DataStorage:    &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
+		KubernautAgent: &operatorNetworkPolicyIngress{IngressCIDRs: append([]string(nil), cidrs...)},
+	}
+}
+
+func operatorTLSManifestFor(options OperatorCROptions) operatorTLSManifest {
 	internalCASecret := options.TLS.ManualInternalCASecret
 	if internalCASecret == "" {
 		internalCASecret = operatorInternalCASecretName
 	}
-	tls := operatorTLSManifest{Mode: "manual", Manual: &operatorManualTLSConfig{InternalCASecretName: internalCASecret, ServiceTLSSecretNames: serviceTLSSecretNames}}
+	return operatorTLSManifest{Mode: "manual", Manual: &operatorManualTLSConfig{InternalCASecretName: internalCASecret, ServiceTLSSecretNames: operatorManualTLSSecretNames(options.Fleet != nil && options.Fleet.Enabled, options.TLS.ServiceTLSSecretNames)}}
+}
 
-	cr := operatorCRManifest{
-		APIVersion: operatorCRAPIVersion,
-		Kind:       "Kubernaut",
-		Metadata:   operatorMetadata{Name: options.Name, Namespace: options.Namespace},
-		Spec: operatorCRSpec{
-			Image: operatorImageSpec{Overrides: options.ImageOverrides},
-			// The disposable Kind profile may need a profile-specific SSL mode;
-			// keep it explicit instead of copying the operator's broader
-			// defaulted PostgreSQL block into every CR.
-			PostgreSQL:       operatorPostgreSQLSpec{Host: options.PostgreSQLHost, SecretName: options.PostgreSQLSecret, SSLMode: options.PostgreSQLSSLMode},
-			Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret, TLS: operatorValkeyTLSManifest(options.ValkeyTLS)},
-			AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}},
-			SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
-			LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
-			// The operator infers the sole LLM profile and owns its defaults. Keep
-			// the authored CR minimal instead of copying those defaults here.
-			KubernautAgent:  operatorAgentSpec{},
-			Gateway:         gateway,
-			APIFrontend:     apiFrontend,
-			Monitoring:      monitoring,
-			NetworkPolicies: networkPolicies,
-			TLS:             tls,
-		},
-	}
+func applyOperatorCRFeatureOverrides(spec *operatorCRSpec, options OperatorCROptions) error {
 	if options.InteractiveRateLimitPerUser > 0 {
-		cr.Spec.KubernautAgent.Interactive = &operatorInteractiveSpec{Enabled: true, RateLimitPerUser: options.InteractiveRateLimitPerUser}
+		spec.KubernautAgent.Interactive = &operatorInteractiveSpec{Enabled: true, RateLimitPerUser: options.InteractiveRateLimitPerUser}
 	}
 	if options.MaxConcurrentInvestigations > 0 {
-		cr.Spec.KubernautAgent.Session = &operatorSessionSpec{MaxConcurrentInvestigations: options.MaxConcurrentInvestigations}
+		spec.KubernautAgent.Session = &operatorSessionSpec{MaxConcurrentInvestigations: options.MaxConcurrentInvestigations}
 	}
 	if strings.TrimSpace(options.RemediationStabilizationWindow) != "" {
-		cr.Spec.RemediationOrchestrator = &operatorRemediationSpec{Effectiveness: operatorEffectivenessAssessment{StabilizationWindow: options.RemediationStabilizationWindow}}
+		spec.RemediationOrchestrator = &operatorRemediationSpec{Effectiveness: operatorEffectivenessAssessment{StabilizationWindow: options.RemediationStabilizationWindow}}
 	}
 	if strings.TrimSpace(options.EffectivenessStabilizationWindow) != "" || strings.TrimSpace(options.EffectivenessValidityWindow) != "" {
-		cr.Spec.EffectivenessMonitor = &operatorEffectivenessSpec{Assessment: operatorEffectivenessAssessment{
-			StabilizationWindow: options.EffectivenessStabilizationWindow,
-			ValidityWindow:      options.EffectivenessValidityWindow,
-		}}
+		spec.EffectivenessMonitor = &operatorEffectivenessSpec{Assessment: operatorEffectivenessAssessment{StabilizationWindow: options.EffectivenessStabilizationWindow, ValidityWindow: options.EffectivenessValidityWindow}}
 	}
-	if options.ConsoleEnabled {
-		if options.ConsoleAuthSecretName == "" {
-			return "", errors.New("kubernaut CR requires a Console OIDC Secret when Console is enabled")
-		}
-		if err := validateOperatorConsoleRedirectURL(options.ConsoleRedirectURL); err != nil {
-			return "", err
-		}
-		console := &operatorConsoleSpec{Enabled: pointerToBool(true)}
-		console.Auth = &operatorConsoleAuthSpec{
-			SecretName:        options.ConsoleAuthSecretName,
-			RedirectURL:       options.ConsoleRedirectURL,
-			ProviderLogoutURL: options.ConsoleProviderLogoutURL,
-		}
-		cr.Spec.Console = console
+	if err := applyOperatorConsoleSpec(spec, options); err != nil {
+		return err
 	}
 	if options.Fleet != nil && options.Fleet.Enabled {
-		cr.Spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, ScopeCheck: operatorFleetScopeSpec{Backend: options.Fleet.ScopeBackend}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}}
-		cr.Spec.WorkflowExecution = &operatorWorkflowExecutionSpec{Fleet: &operatorWorkflowFleetSpec{OAuth2CredentialsSecretRef: options.Fleet.WriteCredentialsSecret}}
+		spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, ScopeCheck: operatorFleetScopeSpec{Backend: options.Fleet.ScopeBackend}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}}
+		spec.WorkflowExecution = &operatorWorkflowExecutionSpec{Fleet: &operatorWorkflowFleetSpec{OAuth2CredentialsSecretRef: options.Fleet.WriteCredentialsSecret}}
 	}
-	data, err := yaml.Marshal(cr)
-	if err != nil {
-		return "", fmt.Errorf("marshal Kubernaut CR: %w", err)
+	return nil
+}
+
+func applyOperatorConsoleSpec(spec *operatorCRSpec, options OperatorCROptions) error {
+	if !options.ConsoleEnabled {
+		return nil
 	}
-	return string(data), nil
+	if options.ConsoleAuthSecretName == "" {
+		return errors.New("kubernaut CR requires a Console OIDC Secret when Console is enabled")
+	}
+	if err := validateOperatorConsoleRedirectURL(options.ConsoleRedirectURL); err != nil {
+		return err
+	}
+	spec.Console = &operatorConsoleSpec{Enabled: pointerToBool(true), Auth: &operatorConsoleAuthSpec{SecretName: options.ConsoleAuthSecretName, RedirectURL: options.ConsoleRedirectURL, ProviderLogoutURL: options.ConsoleProviderLogoutURL}}
+	return nil
 }
 
 func validateOperatorConsoleRedirectURL(raw string) error {
@@ -1061,59 +1083,76 @@ func appendKindPortMappings(config string, mappings []KindPortMapping) (string, 
 		return config, nil
 	}
 	existing := existingKindPortMappings(config)
+	filtered, err := filterKindPortMappings(existing, mappings)
+	if err != nil {
+		return "", err
+	}
+	if len(filtered) == 0 {
+		return config, nil
+	}
+	rendered := renderKindPortMappings(filtered)
+	return insertKindPortMappings(config, rendered), nil
+}
+
+func filterKindPortMappings(existing map[int]int, mappings []KindPortMapping) ([]KindPortMapping, error) {
 	seenContainer := make(map[int]struct{}, len(mappings))
 	seenHost := make(map[int]struct{}, len(mappings))
 	filtered := make([]KindPortMapping, 0, len(mappings))
 	for _, mapping := range mappings {
 		if mapping.ContainerPort < 30000 || mapping.ContainerPort > 32767 {
-			return "", fmt.Errorf("container port %d is outside the NodePort range", mapping.ContainerPort)
+			return nil, fmt.Errorf("container port %d is outside the NodePort range", mapping.ContainerPort)
 		}
 		if mapping.HostPort < 1 || mapping.HostPort > 65535 {
-			return "", fmt.Errorf("host port %d is outside the valid range", mapping.HostPort)
+			return nil, fmt.Errorf("host port %d is outside the valid range", mapping.HostPort)
 		}
 		if _, exists := seenContainer[mapping.ContainerPort]; exists {
-			return "", fmt.Errorf("duplicate container port %d", mapping.ContainerPort)
+			return nil, fmt.Errorf("duplicate container port %d", mapping.ContainerPort)
 		}
 		if _, exists := seenHost[mapping.HostPort]; exists {
-			return "", fmt.Errorf("duplicate host port %d", mapping.HostPort)
+			return nil, fmt.Errorf("duplicate host port %d", mapping.HostPort)
 		}
 		if existingHost, exists := existing[mapping.ContainerPort]; exists {
 			if existingHost != mapping.HostPort {
-				return "", fmt.Errorf("container port %d is already mapped to host port %d", mapping.ContainerPort, existingHost)
+				return nil, fmt.Errorf("container port %d is already mapped to host port %d", mapping.ContainerPort, existingHost)
 			}
 			continue
 		}
 		for existingContainer, existingHost := range existing {
 			if existingHost == mapping.HostPort && existingContainer != mapping.ContainerPort {
-				return "", fmt.Errorf("host port %d is already mapped from container port %d", mapping.HostPort, existingContainer)
+				return nil, fmt.Errorf("host port %d is already mapped from container port %d", mapping.HostPort, existingContainer)
 			}
 		}
 		seenContainer[mapping.ContainerPort] = struct{}{}
 		seenHost[mapping.HostPort] = struct{}{}
 		filtered = append(filtered, mapping)
 	}
-	if len(filtered) == 0 {
-		return config, nil
-	}
+	return filtered, nil
+}
+
+func renderKindPortMappings(mappings []KindPortMapping) string {
 	var rendered strings.Builder
-	for _, mapping := range filtered {
+	for _, mapping := range mappings {
 		protocol := mapping.Protocol
 		if protocol == "" {
 			protocol = "TCP"
 		}
 		fmt.Fprintf(&rendered, "  - containerPort: %d\n    hostPort: %d\n    protocol: %s\n", mapping.ContainerPort, mapping.HostPort, protocol)
 	}
+	return rendered.String()
+}
+
+func insertKindPortMappings(config, rendered string) string {
 	needle := "  kubeadmConfigPatches:"
 	if strings.Contains(config, "  extraPortMappings:") {
 		if index := strings.Index(config, needle); index >= 0 {
-			return config[:index] + rendered.String() + config[index:], nil
+			return config[:index] + rendered + config[index:]
 		}
-		return config + "\n" + rendered.String(), nil
+		return config + "\n" + rendered
 	}
 	if index := strings.Index(config, needle); index >= 0 {
-		return config[:index] + "  extraPortMappings:\n" + rendered.String() + config[index:], nil
+		return config[:index] + "  extraPortMappings:\n" + rendered + config[index:]
 	}
-	return config + "\n  extraPortMappings:\n" + rendered.String(), nil
+	return config + "\n  extraPortMappings:\n" + rendered
 }
 
 func existingKindPortMappings(config string) map[int]int {
@@ -1361,85 +1400,105 @@ func InstallOperatorBootstrap(ctx context.Context, config OperatorDeploymentConf
 // ApplyOperatorCRAndWait applies the user-owned CR after external Fleet
 // infrastructure is ready, then proves reconciliation and host exposure.
 func ApplyOperatorCRAndWait(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) (OperatorExposureEvidence, error) {
-	crManifest, err := buildOperatorCRManifest(config)
-	if err != nil {
-		return OperatorExposureEvidence{}, fmt.Errorf("build Kubernaut CR: %w", err)
-	}
-	crPath, err := writeOperatorArtifact(config.DiagnosticsDir, "kubernaut-cr.yaml", []byte(crManifest))
-	if err != nil {
-		return OperatorExposureEvidence{}, fmt.Errorf("write Kubernaut CR: %w", err)
-	}
-	if err := kubectlApplyFile(ctx, config.KubeconfigPath, crPath, writer); err != nil {
-		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
-	}
-	if err := EnsureOperatorAuthWebhookCABundle(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
-		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
-	}
-	// The qualification deliberately reuses the immutable 1.6.0-rc27 operand
-	// images. Those images still create a combined ambient CA bundle with
-	// os.CreateTemp("/tmp", ...), while operator-managed pods use a read-only
-	// root filesystem on generic clusters. Keep this compatibility volume
-	// test-owned and scoped to this qualification namespace; it is not an
-	// operator or production chart change.
-	if err := EnsureOperatorWritableTempVolumes(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
-		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	if err := prepareOperatorCRAndWait(ctx, config, writer); err != nil {
+		return OperatorExposureEvidence{}, err
 	}
 
-	if err := waitForOperatorCR(ctx, config); err != nil {
-		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
-	}
-	if err := verifyOperatorDeploymentImages(ctx, config, writer); err != nil {
-		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-IMAGE-001", err, writer)
-	}
-	if config.HostIngressCIDR != "" {
-		if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer,
-			BuildOperatorHostIngressNetworkPolicyManifest(config.Namespace, config.HostIngressCIDR)); err != nil {
-			return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-NETWORKPOLICY-001", err, writer)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ test-owned host ingress NetworkPolicy applied for %s\n", config.HostIngressCIDR)
-	}
-	if config.MonitoringNamespace != "" {
-		if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer,
-			BuildOperatorMonitoringIngressNetworkPolicyManifest(config.Namespace, config.MonitoringNamespace)); err != nil {
-			return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-NETWORKPOLICY-002", err, writer)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ test-owned monitoring ingress NetworkPolicy applied for %s\n", config.MonitoringNamespace)
-	}
-
-	evidence := OperatorExposureEvidence{CAPath: InterServiceCAPath(config.KubeconfigPath)}
-	if config.Exposure != nil && len(config.Exposure.Adapters) > 0 {
-		manifest, manifestErr := BuildOperatorExposureManifest(*config.Exposure)
-		if manifestErr != nil {
-			return OperatorExposureEvidence{}, manifestErr
-		}
-		if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, manifest); err != nil {
-			return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
-		}
-		if err := waitForOperatorExposure(ctx, config.KubeconfigPath, config.Namespace, *config.Exposure, writer); err != nil {
-			return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
-		}
-		evidence.NodeAddress, err = operatorNodeAddress(ctx, config.KubeconfigPath)
-		if err != nil {
-			return OperatorExposureEvidence{}, err
-		}
-		evidence.Hostname = config.Exposure.Hostname
-		evidence.Adapters = config.Exposure.Adapters
+	evidence, err := applyOperatorExposure(ctx, config, writer)
+	if err != nil {
+		return OperatorExposureEvidence{}, err
 	}
 	if err := writeOperatorInterServiceCA(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
 		return OperatorExposureEvidence{}, fmt.Errorf("write operator CA: %w", err)
 	}
-	if len(evidence.Adapters) > 0 {
-		if err := verifyOperatorExposureTLS(ctx, evidence, writer); err != nil {
-			return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
-		}
-	}
-	if config.DiagnosticsDir != "" {
-		evidenceData, evidenceErr := BuildOperatorExposureEvidenceJSON(evidence)
-		if evidenceErr == nil {
-			_, _ = writeOperatorArtifact(config.DiagnosticsDir, "operator-exposure.json", evidenceData)
-		}
+	if err := verifyAndPersistOperatorExposure(ctx, config, evidence, writer); err != nil {
+		return OperatorExposureEvidence{}, err
 	}
 	return evidence, nil
+}
+
+func prepareOperatorCRAndWait(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) error {
+	crManifest, err := buildOperatorCRManifest(config)
+	if err != nil {
+		return fmt.Errorf("build Kubernaut CR: %w", err)
+	}
+	crPath, err := writeOperatorArtifact(config.DiagnosticsDir, "kubernaut-cr.yaml", []byte(crManifest))
+	if err != nil {
+		return fmt.Errorf("write Kubernaut CR: %w", err)
+	}
+	if err := kubectlApplyFile(ctx, config.KubeconfigPath, crPath, writer); err != nil {
+		return operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
+	if err := EnsureOperatorAuthWebhookCABundle(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
+		return operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
+	if err := EnsureOperatorWritableTempVolumes(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
+		return operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
+	if err := waitForOperatorCR(ctx, config); err != nil {
+		return operatorDeploymentFailure(ctx, config, "IT-2492-CR-001", err, writer)
+	}
+	if err := verifyOperatorDeploymentImages(ctx, config, writer); err != nil {
+		return operatorDeploymentFailure(ctx, config, "IT-2492-IMAGE-001", err, writer)
+	}
+	return applyOperatorNetworkPolicies(ctx, config, writer)
+}
+
+func applyOperatorNetworkPolicies(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) error {
+	if config.HostIngressCIDR != "" {
+		if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, BuildOperatorHostIngressNetworkPolicyManifest(config.Namespace, config.HostIngressCIDR)); err != nil {
+			return operatorDeploymentFailure(ctx, config, "IT-2492-NETWORKPOLICY-001", err, writer)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ test-owned host ingress NetworkPolicy applied for %s\n", config.HostIngressCIDR)
+	}
+	if config.MonitoringNamespace != "" {
+		if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, BuildOperatorMonitoringIngressNetworkPolicyManifest(config.Namespace, config.MonitoringNamespace)); err != nil {
+			return operatorDeploymentFailure(ctx, config, "IT-2492-NETWORKPOLICY-002", err, writer)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ test-owned monitoring ingress NetworkPolicy applied for %s\n", config.MonitoringNamespace)
+	}
+	return nil
+}
+
+func applyOperatorExposure(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) (OperatorExposureEvidence, error) {
+	evidence := OperatorExposureEvidence{CAPath: InterServiceCAPath(config.KubeconfigPath)}
+	if config.Exposure == nil || len(config.Exposure.Adapters) == 0 {
+		return evidence, nil
+	}
+	manifest, err := BuildOperatorExposureManifest(*config.Exposure)
+	if err != nil {
+		return OperatorExposureEvidence{}, err
+	}
+	if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, manifest); err != nil {
+		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
+	}
+	if err := waitForOperatorExposure(ctx, config.KubeconfigPath, config.Namespace, *config.Exposure, writer); err != nil {
+		return OperatorExposureEvidence{}, operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
+	}
+	evidence.NodeAddress, err = operatorNodeAddress(ctx, config.KubeconfigPath)
+	if err != nil {
+		return OperatorExposureEvidence{}, err
+	}
+	evidence.Hostname = config.Exposure.Hostname
+	evidence.Adapters = config.Exposure.Adapters
+	return evidence, nil
+}
+
+func verifyAndPersistOperatorExposure(ctx context.Context, config OperatorDeploymentConfig, evidence OperatorExposureEvidence, writer io.Writer) error {
+	if len(evidence.Adapters) > 0 {
+		if err := verifyOperatorExposureTLS(ctx, evidence, writer); err != nil {
+			return operatorDeploymentFailure(ctx, config, "IT-2492-EXPOSURE-001", err, writer)
+		}
+	}
+	if config.DiagnosticsDir == "" {
+		return nil
+	}
+	evidenceData, err := BuildOperatorExposureEvidenceJSON(evidence)
+	if err != nil {
+		return err
+	}
+	_, _ = writeOperatorArtifact(config.DiagnosticsDir, "operator-exposure.json", evidenceData)
+	return nil
 }
 
 const operatorRuntimeTempVolumeName = "operator-runtime-tmp"
@@ -1578,44 +1637,42 @@ func EnsureOperatorAuthWebhookCABundle(ctx context.Context, kubeconfigPath, name
 	if err != nil {
 		return fmt.Errorf("create Kubernetes client for AuthWebhook CA bundle: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"get", "secret/authwebhook-tls", "-n", namespace, "-o", "jsonpath={.data.ca\\.crt}")
+	caBundle, err := readOperatorAuthWebhookCA(ctx, kubeconfigPath, namespace)
+	if err != nil {
+		return err
+	}
+	return waitAndPatchOperatorAuthWebhookCA(ctx, clientset, namespace, caBundle, writer)
+}
+
+func readOperatorAuthWebhookCA(ctx context.Context, kubeconfigPath, namespace string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/authwebhook-tls", "-n", namespace, "-o", "jsonpath={.data.ca\\.crt}")
 	encodedCA, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("read AuthWebhook CA bundle: %w", err)
+		return nil, fmt.Errorf("read AuthWebhook CA bundle: %w", err)
 	}
 	caBundle, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encodedCA)))
 	if err != nil || len(caBundle) == 0 {
-		return fmt.Errorf("decode AuthWebhook CA bundle: %w", err)
+		return nil, fmt.Errorf("decode AuthWebhook CA bundle: %w", err)
 	}
+	return caBundle, nil
+}
 
+func waitAndPatchOperatorAuthWebhookCA(ctx context.Context, clientset kubernetes.Interface, namespace string, caBundle []byte, writer io.Writer) error {
 	mutatingName := namespace + "-authwebhook-mutating"
 	validatingName := namespace + "-authwebhook-validating"
 	deadline := time.NewTimer(2 * time.Minute)
 	defer deadline.Stop()
 	for {
-		mutating, mutatingErr := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, mutatingName, metav1.GetOptions{})
-		validating, validatingErr := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Get(ctx, validatingName, metav1.GetOptions{})
-		if mutatingErr != nil && !apierrors.IsNotFound(mutatingErr) {
-			return fmt.Errorf("read AuthWebhook MutatingWebhookConfiguration: %w", mutatingErr)
+		mutating, validating, ready, err := getOperatorAuthWebhookConfigurations(ctx, clientset, mutatingName, validatingName)
+		if err != nil {
+			return err
 		}
-		if validatingErr != nil && !apierrors.IsNotFound(validatingErr) {
-			return fmt.Errorf("read AuthWebhook ValidatingWebhookConfiguration: %w", validatingErr)
-		}
-		if mutatingErr == nil && validatingErr == nil && len(mutating.Webhooks) > 0 && len(validating.Webhooks) > 0 {
-			for index := range mutating.Webhooks {
-				mutating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
+		if ready {
+			patched, err := patchOperatorAuthWebhookConfigurations(ctx, clientset, mutating, validating, caBundle)
+			if err != nil {
+				return err
 			}
-			for index := range validating.Webhooks {
-				validating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
-			}
-			if _, err := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Update(ctx, mutating, metav1.UpdateOptions{}); err != nil {
-				if !apierrors.IsConflict(err) {
-					return fmt.Errorf("patch AuthWebhook MutatingWebhookConfiguration CA bundle: %w", err)
-				}
-			} else if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Update(ctx, validating, metav1.UpdateOptions{}); err != nil && !apierrors.IsConflict(err) {
-				return fmt.Errorf("patch AuthWebhook ValidatingWebhookConfiguration CA bundle: %w", err)
-			} else if err == nil {
+			if patched {
 				_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook webhook CA bundles patched for manual TLS")
 				return nil
 			}
@@ -1628,6 +1685,41 @@ func EnsureOperatorAuthWebhookCABundle(ctx context.Context, kubeconfigPath, name
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+func getOperatorAuthWebhookConfigurations(ctx context.Context, clientset kubernetes.Interface, mutatingName, validatingName string) (*admissionregistrationv1.MutatingWebhookConfiguration, *admissionregistrationv1.ValidatingWebhookConfiguration, bool, error) {
+	mutating, mutatingErr := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, mutatingName, metav1.GetOptions{})
+	validating, validatingErr := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Get(ctx, validatingName, metav1.GetOptions{})
+	if mutatingErr != nil && !apierrors.IsNotFound(mutatingErr) {
+		return nil, nil, false, fmt.Errorf("read AuthWebhook MutatingWebhookConfiguration: %w", mutatingErr)
+	}
+	if validatingErr != nil && !apierrors.IsNotFound(validatingErr) {
+		return nil, nil, false, fmt.Errorf("read AuthWebhook ValidatingWebhookConfiguration: %w", validatingErr)
+	}
+	ready := mutatingErr == nil && validatingErr == nil && len(mutating.Webhooks) > 0 && len(validating.Webhooks) > 0
+	return mutating, validating, ready, nil
+}
+
+func patchOperatorAuthWebhookConfigurations(ctx context.Context, clientset kubernetes.Interface, mutating *admissionregistrationv1.MutatingWebhookConfiguration, validating *admissionregistrationv1.ValidatingWebhookConfiguration, caBundle []byte) (bool, error) {
+	for index := range mutating.Webhooks {
+		mutating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
+	}
+	for index := range validating.Webhooks {
+		validating.Webhooks[index].ClientConfig.CABundle = append([]byte(nil), caBundle...)
+	}
+	if _, err := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Update(ctx, mutating, metav1.UpdateOptions{}); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("patch AuthWebhook MutatingWebhookConfiguration CA bundle: %w", err)
+	}
+	if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Update(ctx, validating, metav1.UpdateOptions{}); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("patch AuthWebhook ValidatingWebhookConfiguration CA bundle: %w", err)
+	}
+	return true, nil
 }
 
 func buildOperatorCRManifest(config OperatorDeploymentConfig) (string, error) {

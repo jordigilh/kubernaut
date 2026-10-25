@@ -169,36 +169,47 @@ func LoadYAMLOverrides(path string) (*Overrides, error) {
 func validateScenarioSelectors(selectors []ScenarioSelectorOverride) error {
 	seen := make(map[string]struct{}, len(selectors))
 	for _, selector := range selectors {
-		if strings.TrimSpace(selector.Name) == "" {
-			return errors.New("scenario selector name is required")
-		}
 		name := strings.ToLower(strings.TrimSpace(selector.Name))
 		if _, exists := seen[name]; exists {
 			return errors.New("scenario selector names must be unique")
 		}
 		seen[name] = struct{}{}
+		if err := validateScenarioSelector(selector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		if selector.Caller != "" && selector.Caller != "af" && selector.Caller != "ka" {
-			return errors.New("scenario selector caller must be one of: af, ka")
-		}
-		if selector.Phase != "" && !validScenarioSelectorPhase(selector.Phase) {
-			return errors.New("scenario selector phase is invalid")
-		}
-		if len(selector.Keywords) == 0 && len(selector.SignalPatterns) == 0 {
-			return errors.New("scenario selector must define at least one keyword or signal pattern")
-		}
-		for _, keyword := range selector.Keywords {
-			if strings.TrimSpace(keyword) == "" {
-				return errors.New("scenario selector keyword must not be empty")
-			}
-		}
-		for _, pattern := range selector.SignalPatterns {
-			if strings.TrimSpace(pattern) == "" {
-				return errors.New("scenario selector signal pattern must not be empty")
-			}
-		}
-		if strings.TrimSpace(selector.ToolCall.Name) == "" {
-			return errors.New("scenario selector tool call name is required")
+func validateScenarioSelector(selector ScenarioSelectorOverride) error {
+	if strings.TrimSpace(selector.Name) == "" {
+		return errors.New("scenario selector name is required")
+	}
+	if selector.Caller != "" && selector.Caller != "af" && selector.Caller != "ka" {
+		return errors.New("scenario selector caller must be one of: af, ka")
+	}
+	if selector.Phase != "" && !validScenarioSelectorPhase(selector.Phase) {
+		return errors.New("scenario selector phase is invalid")
+	}
+	if len(selector.Keywords) == 0 && len(selector.SignalPatterns) == 0 {
+		return errors.New("scenario selector must define at least one keyword or signal pattern")
+	}
+	if err := validateNonEmptyScenarioValues(selector.Keywords, "scenario selector keyword must not be empty"); err != nil {
+		return err
+	}
+	if err := validateNonEmptyScenarioValues(selector.SignalPatterns, "scenario selector signal pattern must not be empty"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(selector.ToolCall.Name) == "" {
+		return errors.New("scenario selector tool call name is required")
+	}
+	return nil
+}
+
+func validateNonEmptyScenarioValues(values []string, message string) error {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return errors.New(message)
 		}
 	}
 	return nil

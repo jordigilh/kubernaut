@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // PrepareMustGatherDataStorage provisions a short-lived, get-only test identity.
@@ -26,38 +27,9 @@ func PrepareMustGatherDataStorage(ctx context.Context, opts *RunMustGatherImageO
 	if err != nil {
 		return noop, err
 	}
-	namespace := opts.Namespace
-	if namespace == "" {
-		namespace = kubernautSystem
-	}
-	service, err := client.CoreV1().Services(namespace).Get(ctx, "data-storage-service", metav1.GetOptions{})
-	if err != nil {
-		return noop, fmt.Errorf("resolve collector DataStorage service: %w", err)
-	}
-	var nodePort int32
-	for _, port := range service.Spec.Ports {
-		if port.Port == 8080 {
-			nodePort = port.NodePort
-			break
-		}
-	}
-	if nodePort == 0 {
-		return noop, fmt.Errorf("collector DataStorage service has no external nodeport")
-	}
-	bridgeIP, err := KindNodeBridgeIP(ctx, opts.ClusterName+"-control-plane")
+	namespace, nodePort, bridgeIP, ca, dir, err := prepareMustGatherDataStorageTarget(ctx, client, opts, caFile)
 	if err != nil {
 		return noop, err
-	}
-	if net.ParseIP(bridgeIP) == nil {
-		return noop, fmt.Errorf("collector node bridge address is invalid")
-	}
-	ca, err := os.ReadFile(caFile)
-	if err != nil {
-		return noop, fmt.Errorf("read collector ca: %w", err)
-	}
-	dir, err := os.MkdirTemp("", "must-gather-query-credentials-*")
-	if err != nil {
-		return noop, fmt.Errorf("create collector credential directory: %w", err)
 	}
 	name := "must-gather-query-" + uuid.NewString()
 	var saCreated, roleCreated, bindingCreated bool
@@ -89,25 +61,10 @@ func PrepareMustGatherDataStorage(ctx context.Context, opts *RunMustGatherImageO
 		return cleanupErr
 	}
 	fail := func(err error) (func() error, error) { return noop, errors.Join(err, cleanup()) }
-	_, err = client.CoreV1().ServiceAccounts(namespace).Create(ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}, metav1.CreateOptions{})
+	saCreated, roleCreated, bindingCreated, err = createMustGatherIdentity(ctx, client, namespace, name)
 	if err != nil {
-		return fail(fmt.Errorf("create collector serviceaccount: %w", err))
+		return fail(err)
 	}
-	saCreated = true
-	_, err = client.RbacV1().Roles(namespace).Create(ctx, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}, Rules: []rbacv1.PolicyRule{{
-		APIGroups: []string{""}, Resources: []string{"services"}, ResourceNames: []string{"data-storage-service"}, Verbs: []string{"get"},
-	}}}, metav1.CreateOptions{})
-	if err != nil {
-		return fail(fmt.Errorf("create get-only collector role: %w", err))
-	}
-	roleCreated = true
-	_, err = client.RbacV1().RoleBindings(namespace).Create(ctx, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		RoleRef: rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: name}, Subjects: []rbacv1.Subject{{Kind: "ServiceAccount", Name: name, Namespace: namespace}},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		return fail(fmt.Errorf("bind get-only collector role: %w", err))
-	}
-	bindingCreated = true
 	expiration := int64(600)
 	token, err := client.CoreV1().ServiceAccounts(namespace).CreateToken(ctx, name, &authnv1.TokenRequest{Spec: authnv1.TokenRequestSpec{ExpirationSeconds: &expiration}}, metav1.CreateOptions{})
 	if err != nil {
@@ -127,4 +84,57 @@ func PrepareMustGatherDataStorage(ctx context.Context, opts *RunMustGatherImageO
 	opts.DataStorage = &MustGatherDataStorageOptions{URL: "https://" + authority + ":8080", CAFile: caPath, TokenFile: tokenPath,
 		ConnectTo: authority + ":8080:" + bridgeIP + ":" + strconv.Itoa(int(nodePort))}
 	return cleanup, nil
+}
+
+func createMustGatherIdentity(ctx context.Context, client kubernetes.Interface, namespace, name string) (bool, bool, bool, error) {
+	_, err := client.CoreV1().ServiceAccounts(namespace).Create(ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}, metav1.CreateOptions{})
+	if err != nil {
+		return false, false, false, fmt.Errorf("create collector serviceaccount: %w", err)
+	}
+	_, err = client.RbacV1().Roles(namespace).Create(ctx, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}, Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"services"}, ResourceNames: []string{"data-storage-service"}, Verbs: []string{"get"}}}}, metav1.CreateOptions{})
+	if err != nil {
+		return true, false, false, fmt.Errorf("create get-only collector role: %w", err)
+	}
+	_, err = client.RbacV1().RoleBindings(namespace).Create(ctx, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}, RoleRef: rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: name}, Subjects: []rbacv1.Subject{{Kind: "ServiceAccount", Name: name, Namespace: namespace}}}, metav1.CreateOptions{})
+	if err != nil {
+		return true, true, false, fmt.Errorf("bind get-only collector role: %w", err)
+	}
+	return true, true, true, nil
+}
+
+func prepareMustGatherDataStorageTarget(ctx context.Context, client kubernetes.Interface, opts *RunMustGatherImageOptions, caFile string) (string, int32, string, []byte, string, error) {
+	namespace := opts.Namespace
+	if namespace == "" {
+		namespace = kubernautSystem
+	}
+	service, err := client.CoreV1().Services(namespace).Get(ctx, "data-storage-service", metav1.GetOptions{})
+	if err != nil {
+		return "", 0, "", nil, "", fmt.Errorf("resolve collector DataStorage service: %w", err)
+	}
+	var nodePort int32
+	for _, port := range service.Spec.Ports {
+		if port.Port == 8080 {
+			nodePort = port.NodePort
+			break
+		}
+	}
+	if nodePort == 0 {
+		return "", 0, "", nil, "", fmt.Errorf("collector DataStorage service has no external nodeport")
+	}
+	bridgeIP, err := KindNodeBridgeIP(ctx, opts.ClusterName+"-control-plane")
+	if err != nil {
+		return "", 0, "", nil, "", err
+	}
+	if net.ParseIP(bridgeIP) == nil {
+		return "", 0, "", nil, "", fmt.Errorf("collector node bridge address is invalid")
+	}
+	ca, err := os.ReadFile(caFile)
+	if err != nil {
+		return "", 0, "", nil, "", fmt.Errorf("read collector ca: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "must-gather-query-credentials-*")
+	if err != nil {
+		return "", 0, "", nil, "", fmt.Errorf("create collector credential directory: %w", err)
+	}
+	return namespace, nodePort, bridgeIP, ca, dir, nil
 }

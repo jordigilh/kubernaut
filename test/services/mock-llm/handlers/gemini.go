@@ -95,36 +95,29 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := h.registry.Detect(detCtx)
+	h.handleGeminiResult(w, r, start, req, detCtx, hasFunctionResults, result)
+}
+
+func (h *handler) handleGeminiResult(w http.ResponseWriter, r *http.Request, start time.Time, req response.GeminiRequest, detCtx *scenarios.DetectionContext, hasFunctionResults bool, result *scenarios.DetectionResult) {
 	if result == nil {
-		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(scenarios.MockScenarioConfig{
-			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning",
-			InvestigationOutcome: "actionable", IsActionable: scenarios.BoolPtr(true), Confidence: 0.5,
-		}))
+		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(scenarios.MockScenarioConfig{ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning", InvestigationOutcome: "actionable", IsActionable: scenarios.BoolPtr(true), Confidence: 0.5}))
 		h.recordRequestMetric(r.URL.Path, "default", time.Since(start).Seconds())
 		return
 	}
-
 	if h.tracker != nil {
 		h.tracker.RecordScenario(result.Scenario.Name())
 	}
-
 	cfg, ok := resolveScenarioConfig(result.Scenario, detCtx)
 	if !ok {
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(scenarios.MockScenarioConfig{}))
 		return
 	}
-
 	resolveGeminiTemplateArgs(req.Contents, &cfg)
-
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
-
 	hasSplit := geminiHasSubmitWithWorkflowTool(req.Tools)
 	resolved := isResolvedOutcome(cfg)
-
-	log.Printf("[mock-llm/gemini] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasFuncResults=%v",
-		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasFunctionResults)
-
+	log.Printf("[mock-llm/gemini] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasFuncResults=%v", scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasFunctionResults)
 	if cfg.SecondTurnDelay > 0 && hasFunctionResults {
 		log.Printf("[mock-llm/gemini] scenario=%s applying %v second-turn delay", scenarioName, cfg.SecondTurnDelay)
 		select {
@@ -133,7 +126,6 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(cfg.SecondTurnDelay):
 		}
 	}
-
 	useToolProtocol := shouldUseToolProtocol(h.mode, h.forceText, cfg, geminiHasThreeStepTools(req.Tools), len(req.Tools))
 	switch {
 	case useToolProtocol:
@@ -143,7 +135,6 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
 	}
-
 	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
 }
 
@@ -156,48 +147,7 @@ func (h *handler) handleGeminiToolResponse(
 	systemInstruction *response.GeminiContent,
 	hasFunctionResults, hasSplit, resolved bool,
 ) {
-	// Guard against infinite tool-call loops (#1189): if RepeatToolCall is
-	// enabled but the last content in the conversation is already a
-	// FunctionResponse (meaning we just executed the tool in this iteration),
-	// fall through to text response instead of re-emitting the tool call.
-	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
-	discoveryOverride := geminiHasThreeStepTools(tools) && hasDiscoveryOverride(cfg)
-
-	// NextToolCall chain: once N tool/function responses exist, fire the Nth
-	// chained call (1-indexed), resolving any $from_tool templates in its
-	// arguments against the conversation so far. Generalizes the original
-	// single-NextToolCall behavior to arbitrary depth (issue #1853), e.g.
-	// investigate -> discover_workflows -> select_workflow -> watch, while
-	// preserving the #1409 "fire at most once per link" guard: once
-	// priorResponseCount exceeds the chain length, nextChainCallByCount
-	// returns nil and this falls through to the normal DAG/text path.
-	if !discoveryOverride {
-		if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
-			if next := nextChainCallByCount(chain, response.CountFunctionResponses(contents)); next != nil {
-				args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
-					return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
-				})
-				h.trackToolCall(next.Name)
-				writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(next.Name, scenarios.MockScenarioConfig{
-					ToolCallName: next.Name,
-					ToolCallArgs: args,
-				}))
-				return
-			}
-		}
-	}
-
-	if !discoveryOverride && len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
-		for _, tc := range cfg.MultiToolCalls {
-			h.trackToolCall(tc.Name)
-		}
-		writeJSON(w, http.StatusOK, response.BuildGeminiMultiToolCallResponse(cfg.MultiToolCalls))
-		return
-	}
-
-	if !discoveryOverride && cfg.ToolCallName != "" && (!hasFunctionResults || repeatAllowed) {
-		h.trackToolCall(cfg.ToolCallName)
-		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.ToolCallName, cfg))
+	if h.handleGeminiConfiguredToolCalls(w, cfg, tools, contents, hasFunctionResults) {
 		return
 	}
 
@@ -229,6 +179,36 @@ func (h *handler) handleGeminiToolResponse(
 	} else {
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
 	}
+}
+
+func (h *handler) handleGeminiConfiguredToolCalls(w http.ResponseWriter, cfg scenarios.MockScenarioConfig, tools []response.GeminiToolDecl, contents []response.GeminiContent, hasFunctionResults bool) bool {
+	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
+	discoveryOverride := geminiHasThreeStepTools(tools) && hasDiscoveryOverride(cfg)
+	if !discoveryOverride {
+		if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
+			if next := nextChainCallByCount(chain, response.CountFunctionResponses(contents)); next != nil {
+				args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
+					return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
+				})
+				h.trackToolCall(next.Name)
+				writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(next.Name, scenarios.MockScenarioConfig{ToolCallName: next.Name, ToolCallArgs: args}))
+				return true
+			}
+		}
+	}
+	if !discoveryOverride && len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
+		for _, toolCall := range cfg.MultiToolCalls {
+			h.trackToolCall(toolCall.Name)
+		}
+		writeJSON(w, http.StatusOK, response.BuildGeminiMultiToolCallResponse(cfg.MultiToolCalls))
+		return true
+	}
+	if !discoveryOverride && cfg.ToolCallName != "" && (!hasFunctionResults || repeatAllowed) {
+		h.trackToolCall(cfg.ToolCallName)
+		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.ToolCallName, cfg))
+		return true
+	}
+	return false
 }
 
 func (h *handler) handleGeminiDiscoveryPlan(

@@ -388,54 +388,8 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		RemoteBridge:        remoteBridge,
 	}
 
-	// Only Kuadrant needs a static broker credential: its broker maintains
-	// its own upstream tool-discovery connection to kube-mcp-server,
-	// separate from per-request tools/call proxying, and that connection is
-	// itself subject to kube-mcp-server's RequireOAuth check. EAIGW has no
-	// separate broker component (MCPRoute.backendRefs aggregates natively),
-	// so there is no discovery connection needing its own credential.
-	if gatewayType != registry.GatewayEAIGW {
-		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:       fmcOAuth2Config.ClientID,
-			ClientSecret:   fmcOAuth2Config.ClientSecret,
-			Scopes:         fmcOAuth2Config.Scopes,
-			KubeconfigPath: kubeconfigPath,
-		})
-		if brokerCredErr != nil {
-			return "", "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
-		}
-		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
-	}
-
-	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, buildCfg.EnableCoverage, writer); coreErr != nil {
-		return "", "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
-	}
-
-	// ── Phase 7b: RBAC for the token-exchange-preserved FMC identity ────
-	// kube-mcp-server's exchanged token carries FMC's original identity
-	// (service-account-kubernaut-fleet-read, Spike S18), not kube-mcp-server's
-	// own. Bind that identity directly to "view" so the exchanged calls
-	// authorize the same way FMC's own dedicated ServiceAccount would have
-	// under cluster_auth_mode=kubeconfig.
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7b: Creating RBAC for the exchanged FMC identity...")
-	if rbacErr := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); rbacErr != nil {
-		return "", "", fmt.Errorf("exchanged-identity RBAC creation failed: %w", rbacErr)
-	}
-
-	// Keycloak-based token func for the readiness probe's authenticated
-	// tools/call, matching FMC's own runtime OAuth2 config above.
-	keycloakFleetReadTokenFunc := func() (string, error) {
-		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:       fmcOAuth2Config.ClientID,
-			ClientSecret:   fmcOAuth2Config.ClientSecret,
-			Scopes:         fmcOAuth2Config.Scopes,
-			KubeconfigPath: kubeconfigPath,
-		})
-	}
-	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, kubeconfigPath, writer); readyErr != nil {
-		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
+	if err := runFMCFleetCorePhase(ctx, namespace, kubeconfigPath, fmcImage, gatewayType, fmcOAuth2Config, &kubeMCPAuthConfig, buildCfg.EnableCoverage, mcpGatewayNodePort, loopbackToolPrefix, writer); err != nil {
+		return "", "", err
 	}
 
 	// ── Phase 8: Expose FMC's own API + health via NodePort ──────────────
@@ -485,6 +439,51 @@ spec:
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return fmcImage, remoteKubeconfigPath, nil
+}
+
+func configureKuadrantBrokerCredential(ctx context.Context, kubeconfigPath string, gatewayType registry.MCPGatewayType, oauth FMCOAuth2Config, auth *KubeMCPServerAuthConfig) error {
+	if gatewayType == registry.GatewayEAIGW {
+		return nil
+	}
+	token, err := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
+		ClientID:       oauth.ClientID,
+		ClientSecret:   oauth.ClientSecret,
+		Scopes:         oauth.Scopes,
+		KubeconfigPath: kubeconfigPath,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", err)
+	}
+	auth.BrokerCredentialToken = token
+	return nil
+}
+
+func deployFMCFleetCore(ctx context.Context, namespace, kubeconfigPath, fmcImage string, auth KubeMCPServerAuthConfig, oauth FMCOAuth2Config, coverage bool, writer io.Writer) error {
+	if err := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, auth, oauth, coverage, writer); err != nil {
+		return fmt.Errorf("fleet-core infra deployment failed: %w", err)
+	}
+	return nil
+}
+
+func runFMCFleetCorePhase(ctx context.Context, namespace, kubeconfigPath, fmcImage string, gatewayType registry.MCPGatewayType, oauth FMCOAuth2Config, auth *KubeMCPServerAuthConfig, coverage bool, nodePort int, toolPrefix string, writer io.Writer) error {
+	if err := configureKuadrantBrokerCredential(ctx, kubeconfigPath, gatewayType, oauth, auth); err != nil {
+		return err
+	}
+	if err := deployFMCFleetCore(ctx, namespace, kubeconfigPath, fmcImage, *auth, oauth, coverage, writer); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7b: Creating RBAC for the exchanged FMC identity...")
+	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("exchanged-identity RBAC creation failed: %w", err)
+	}
+	tokenFunc := func() (string, error) {
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC), ClientID: oauth.ClientID, ClientSecret: oauth.ClientSecret, Scopes: oauth.Scopes, KubeconfigPath: kubeconfigPath})
+	}
+	if err := WaitForFleetReady(ctx, tokenFunc, nodePort, toolPrefix, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("fleet readiness check failed: %w", err)
+	}
+	return nil
 }
 
 // applyExchangedIdentityRBAC binds the K8s identity that survives kube-mcp-server's

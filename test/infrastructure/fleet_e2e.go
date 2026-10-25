@@ -753,7 +753,6 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	mcpGatewayNamespace := effectiveMCPGatewayNamespace(namespace, opts.MCPGatewayNamespace)
 	remoteMCPNamespace := effectiveRemoteMCPServerNamespace(opts.RemoteMCPServerNamespace)
 	gatewayType := opts.GatewayType
-	spokeWorkers := opts.SpokeWorkers
 	var remoteKubeconfigPath string
 	// Backward-compatible default (all existing callers pre-dating this
 	// parameter expect Kuadrant), mirroring DeployFleetGatewayInfra's own
@@ -782,30 +781,8 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// Demo callers share the persistent Keycloak and certificate lifecycle
 	// with the local demo. Ginkgo callers retain their lightweight path.
 	isDemo := keycloakNamespace == idpNamespace
-	if isDemo {
-		// Gateway reconciliation consumes mcp-gateway-tls immediately. Create
-		// the operator CA and listener Secret before SetupOIDCInfrastructure or
-		// any Gateway API object is applied (BR-PLATFORM-014, DD-TEST-015).
-		if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-			return nil, "", fmt.Errorf("operator Fleet TLS preflight failed: %w", err)
-		}
-		if err := SetupOIDCInfrastructure(ctx, kubeconfigPath, writer); err != nil {
-			return nil, "", err
-		}
-	} else {
-		if err := provisionInterServiceCA(ctx, kubeconfigPath, namespace, writer); err != nil {
-			return nil, "", fmt.Errorf("inter-service CA provisioning failed: %w", err)
-		}
-		if err := writeOperatorFleetCAPEMIfPresent(ctx, kubeconfigPath, writer); err != nil {
-			return nil, "", err
-		}
-		if err := ensureKeycloakTLSFromOperatorCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); err != nil {
-			return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", err)
-		}
-		_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
-		if err := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, DemoHostPort(keycloakHostPortDemo), false, writer); err != nil {
-			return nil, "", fmt.Errorf("failed to deploy Keycloak: %w", err)
-		}
+	if err := prepareFleetIdentity(ctx, kubeconfigPath, namespace, keycloakNamespace, isDemo, writer); err != nil {
+		return nil, "", err
 	}
 
 	oidcCfg := OIDCPatchConfig{
@@ -838,88 +815,49 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		CAFilePath:          "/etc/tls-ca/ca.crt",
 	}
 	var remoteBridge *RemoteClusterBridgeConfig
-	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
-	// The full Fleet E2E topology backs every spoke registration with a
-	// genuinely separate Kubernetes control plane.
-	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
-	remoteClusterName := opts.RemoteClusterName
-	if remoteClusterName == "" {
-		remoteClusterName = clusterName + "-remote"
-	}
-	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
-	var remoteErr error
-	remoteBridge, remoteErr = SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
-		PrimaryClusterName:    clusterName,
-		PrimaryKubeconfigPath: kubeconfigPath,
-		RemoteClusterName:     remoteClusterName,
-		RemoteKubeconfigPath:  remoteKubeconfigPath,
-		MCPServerNamespace:    remoteMCPNamespace,
-		KeycloakIssuerURL:     oidcCfg.IssuerURL,
-		// The remote bridge runs inside the remote Kind network and must target
-		// the primary cluster's in-cluster NodePort. Only host-side token URLs
-		// use DemoHostPort; the NodePort itself is never offset.
-		KeycloakNodePort: keycloakHostPortDemo,
-		AuthConfig:       sharedAuthConfig,
-		ExtraWorkerNodes: spokeWorkers,
-	}, writer)
+	remotePath, remoteBridgeValue, remoteErr := provisionFleetRemoteCluster(ctx, opts, namespace, remoteMCPNamespace, sharedAuthConfig, isDemo, writer)
 	if remoteErr != nil {
-		return nil, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
+		return nil, "", remoteErr
 	}
+	remoteKubeconfigPath = remotePath
+	remoteBridge = remoteBridgeValue
 
-	// Issue #2314: SetupRemoteClusterForFMC only creates the configured remote
-	// MCP namespace (mcp-system by default) on the remote cluster --
-	// kubernaut-system (namespace) never existed there. That was harmless for
-	// the FMC-only lane (it never targets
-	// kubernaut-system on the remote cluster), but this suite's
-	// SynchronizedBeforeSuite labels kubernaut-system on BOTH kubeconfigs
-	// (suite_test.go) and shared/cross_cluster_isolation.go's
-	// E2E-FMC-054-015 creates a Service directly in it on the remote cluster --
-	// both fail with "namespaces \"kubernaut-system\" not found" once the
-	// remote cluster is genuinely separate (AllRegistrationsRemote) rather
-	// than the old loopback cluster, which had it via the primary's own Helm
-	// release.
-	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #2314)...\n", namespace)
-	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
-		return nil, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
+	state := fleetGatewayPhaseState{ClusterName: clusterName, KubeconfigPath: kubeconfigPath, Namespace: namespace, KeycloakNamespace: keycloakNamespace, MCPGatewayNamespace: mcpGatewayNamespace, GatewayType: gatewayType, GatewayLabel: gatewayLabel, MCPGatewayNodePort: mcpGatewayNodePort, RemoteToolPrefix: remoteToolPrefix, HubToolPrefix: hubToolPrefix, RemoteKubeconfigPath: remoteKubeconfigPath, RemoteBridge: remoteBridge, SharedAuthConfig: sharedAuthConfig, HubClusterID: opts.HubClusterID, GatewayVersions: opts.GatewayVersions}
+	fleetOptions, phaseErr := deployFleetGatewayPhase(ctx, state, writer)
+	if phaseErr != nil {
+		return nil, "", phaseErr
 	}
-	if isDemo {
-		if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
-			return nil, "", fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
-		}
-	}
+	return fleetOptions, remoteKubeconfigPath, nil
 
-	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
-	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
-	// set, via WE's mcpClientFactory routing. The "kubernaut-workflows"
-	// namespace only pre-existed on the hub cluster; without it, both the
-	// SA creation below and the Job itself would fail with "namespace not found".
-	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
-	if err := CreateTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
-		return nil, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
-	}
+}
 
-	// Without this, the Job pod's serviceAccountName: workflow-job-executor
-	// reference would fail to resolve on the remote cluster (SA only
-	// pre-existed on the hub).
-	_, _ = fmt.Fprintln(writer, "🔐 Creating workflow-job-executor SA + RBAC on the remote cluster (Issue #1542)...")
-	if err := createWorkflowJobExecutorRBAC(ctx, remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
-		return nil, "", fmt.Errorf("failed to create workflow-job-executor RBAC on remote cluster: %w", err)
-	}
+type fleetGatewayPhaseState struct {
+	ClusterName, KubeconfigPath, Namespace, KeycloakNamespace, MCPGatewayNamespace string
+	GatewayType                                                                    registry.MCPGatewayType
+	GatewayLabel                                                                   string
+	MCPGatewayNodePort                                                             int
+	RemoteToolPrefix, HubToolPrefix                                                string
+	RemoteKubeconfigPath                                                           string
+	RemoteBridge                                                                   *RemoteClusterBridgeConfig
+	SharedAuthConfig                                                               KubeMCPServerAuthConfig
+	HubClusterID                                                                   string
+	GatewayVersions                                                                FleetGatewayVersionOverrides
+}
 
-	// Issue #1542: the WE Job executor dispatches the Job to the remote
-	// cluster's API server via kube-mcp-server passthrough, authenticated as
-	// the exchanged Keycloak identity (keycloak:service-account-kubernaut-fleet-read).
-	// applyExchangedIdentityRBAC (below, inside SetupRemoteClusterForFMC) only
-	// grants read-only "view" access -- the FMC-only lane must stay read-only,
-	// so this ADDITIONAL grant is fleet-suite-only and strictly additive
-	// (batch/jobs create/delete, nothing else).
-	_, _ = fmt.Fprintln(writer, "🔐 Granting batch/jobs write access to the exchanged fleet identity (Issue #1542, fleet-only)...")
-	writeClientID := "kubernaut-fleet-write"
-	if err := applyExchangedIdentityWriteRBAC(ctx, remoteKubeconfigPath, writeClientID, writer); err != nil {
-		return nil, "", fmt.Errorf("failed to grant exchanged identity write RBAC on remote cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, writer io.Writer) (*FleetHelmOptions, error) {
+	clusterName := state.ClusterName
+	kubeconfigPath := state.KubeconfigPath
+	namespace := state.Namespace
+	keycloakNamespace := state.KeycloakNamespace
+	mcpGatewayNamespace := state.MCPGatewayNamespace
+	gatewayType := state.GatewayType
+	gatewayLabel := state.GatewayLabel
+	mcpGatewayNodePort := state.MCPGatewayNodePort
+	remoteToolPrefix := state.RemoteToolPrefix
+	hubToolPrefix := state.HubToolPrefix
+	remoteKubeconfigPath := state.RemoteKubeconfigPath
+	remoteBridge := state.RemoteBridge
+	sharedAuthConfig := state.SharedAuthConfig
 	_, _ = fmt.Fprintf(writer, "🌐 FLEET PHASE: Deploying %s infrastructure...\n", gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -929,31 +867,11 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// kube-mcp-server is the only image both gateways need preloaded. Keep the
 	// archive path for CI, where it avoids registry rate limits; local Podman
 	// Kind imports can leave containerd with an unusable temporary image alias.
-	var preloadedKubeMCPImage string
-	if shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
-		preloadImages := []string{KubeMCPServerImage}
-		if gatewayType != registry.GatewayEAIGW {
-			preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
-		}
-		for _, img := range preloadImages {
-			var loadErr error
-			if img == KubeMCPServerImage {
-				preloadedKubeMCPImage, loadErr = PreloadExternalImageWithReference(ctx, img, clusterName, writer)
-			} else {
-				loadErr = PreloadExternalImage(ctx, img, clusterName, writer)
-			}
-			if loadErr != nil {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
-			}
-		}
-	} else {
-		_, _ = fmt.Fprintln(writer, "  ℹ️  Local mode: skipping external image archive preload; Kind will pull images on demand")
-	}
-
+	preloadedKubeMCPImage := preloadFleetGatewayImages(ctx, clusterName, gatewayType, writer)
 	kubeMCPAuthConfig := sharedAuthConfig
 	kubeMCPAuthConfig.ImageReference = preloadedKubeMCPImage
 	kubeMCPAuthConfig.RemoteBridge = remoteBridge
-	kubeMCPAuthConfig.HubClusterID = opts.HubClusterID
+	kubeMCPAuthConfig.HubClusterID = state.HubClusterID
 	// Full Fleet E2E keeps every spoke registration backed by the genuinely
 	// remote cluster. Hub-only AF setup uses DeployFleetCoreInfra directly.
 	kubeMCPAuthConfig.AllRegistrationsRemote = true
@@ -967,41 +885,23 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	)
 	fleetScopes := []string{"kube-mcp-server-audience"}
 
-	// Kuadrant broker's own upstream discovery connection needs a static
-	// credential when RequireOAuth=true (see BrokerCredentialToken doc
-	// comment) -- mirrors the FMC E2E lane's Phase 7 broker credential.
-	// EAIGW has no equivalent broker hop (deployEnvoyAIGatewayRegistrations
-	// forwards the caller's own Authorization header instead), so skip
-	// minting a credential that would never be read.
-	if gatewayType != registry.GatewayEAIGW {
-		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(keycloakHostPortDemo)),
-			ClientID:       fleetClientID,
-			ClientSecret:   fleetClientSecret,
-			Scopes:         fleetScopes,
-			KubeconfigPath: kubeconfigPath,
-		})
-		if brokerCredErr != nil {
-			return nil, "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
-		}
+	if brokerCredToken, err := fleetBrokerCredential(ctx, gatewayType, kubeconfigPath, fleetClientID, fleetClientSecret, fleetScopes); err != nil {
+		return nil, err
+	} else if brokerCredToken != "" {
 		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 	}
 
-	mcpGatewayEndpoint, gwErr := deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, kubeMCPAuthConfig, opts.GatewayVersions, writer)
+	mcpGatewayEndpoint, gwErr := deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, kubeMCPAuthConfig, state.GatewayVersions, writer)
 	if gwErr != nil {
-		return nil, "", fmt.Errorf("fleet gateway infra deployment failed: %w", gwErr)
+		return nil, fmt.Errorf("fleet gateway infra deployment failed: %w", gwErr)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n  🔑 Creating RBAC for the exchanged Keycloak identity...")
 	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
-		return nil, "", fmt.Errorf("fleet exchanged-identity RBAC creation failed: %w", err)
+		return nil, fmt.Errorf("fleet exchanged-identity RBAC creation failed: %w", err)
 	}
-	if opts.HubClusterID != "" {
-		_, _ = fmt.Fprintln(writer, "  🔐 Granting hub workflow Job write access to the exchanged identity...")
-		writeClientID := "kubernaut-fleet-write"
-		if err := applyExchangedIdentityWriteRBAC(ctx, kubeconfigPath, writeClientID, writer); err != nil {
-			return nil, "", fmt.Errorf("hub exchanged-identity Job write RBAC creation failed: %w", err)
-		}
+	if err := applyFleetHubWriteRBAC(ctx, kubeconfigPath, state.HubClusterID, writer); err != nil {
+		return nil, err
 	}
 
 	// ── Gateway convergence gate (Issue #1737 regression) ────────────────
@@ -1032,13 +932,13 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		})
 	}
 	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, remoteToolPrefix, kubeconfigPath, writer); readyErr != nil {
-		return nil, "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
+		return nil, fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 	if hubToolPrefix != "" {
 		_, _ = fmt.Fprintf(writer, "  ⏳ Verifying authenticated hub tools/call (%s)...\n", hubToolPrefix)
 		hubGatewayURL := fmt.Sprintf("https://localhost:%d/mcp", mcpGatewayNodePort)
 		if err := waitForAuthenticatedMCPGateway(ctx, keycloakFleetReadTokenFunc, hubGatewayURL, hubToolPrefix, kubeconfigPath, writer); err != nil {
-			return nil, "", fmt.Errorf("hub MCP Gateway readiness check failed: %w", err)
+			return nil, fmt.Errorf("hub MCP Gateway readiness check failed: %w", err)
 		}
 	}
 
@@ -1051,13 +951,13 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// source).
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating shared fleet OAuth2 credentials Secret...")
 	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer, true); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet infrastructure ready")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:        https://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
-	if opts.HubClusterID != "" {
-		_, _ = fmt.Fprintf(writer, "  Hub cluster ID:     %s (%s)\n", opts.HubClusterID, hubToolPrefix)
+	if state.HubClusterID != "" {
+		_, _ = fmt.Fprintf(writer, "  Hub cluster ID:     %s (%s)\n", state.HubClusterID, hubToolPrefix)
 	}
 	_, _ = fmt.Fprintln(writer, "  Remote cluster ID:  remote-cluster (genuinely remote, DD-TEST-013)")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:  %s\n", remoteKubeconfigPath)
@@ -1078,7 +978,169 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		// -> deployKubeMCPServerAndRegister), so FMC's own watch must be
 		// scoped there too -- there's no safe default to fall back to.
 		FleetMetadataCacheNamespace: mcpGatewayNamespace,
-	}, remoteKubeconfigPath, nil
+	}, nil
+}
+
+func applyFleetHubWriteRBAC(ctx context.Context, kubeconfigPath, hubClusterID string, writer io.Writer) error {
+	if hubClusterID == "" {
+		return nil
+	}
+	_, _ = fmt.Fprintln(writer, "  🔐 Granting hub workflow Job write access to the exchanged identity...")
+	if err := applyExchangedIdentityWriteRBAC(ctx, kubeconfigPath, "kubernaut-fleet-write", writer); err != nil {
+		return fmt.Errorf("hub exchanged-identity Job write RBAC creation failed: %w", err)
+	}
+	return nil
+}
+
+func preloadFleetGatewayImages(ctx context.Context, clusterName string, gatewayType registry.MCPGatewayType, writer io.Writer) string {
+	var preloadedKubeMCPImage string
+	if shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
+		preloadImages := []string{KubeMCPServerImage}
+		if gatewayType != registry.GatewayEAIGW {
+			preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
+		}
+		for _, img := range preloadImages {
+			var loadErr error
+			if img == KubeMCPServerImage {
+				preloadedKubeMCPImage, loadErr = PreloadExternalImageWithReference(ctx, img, clusterName, writer)
+			} else {
+				loadErr = PreloadExternalImage(ctx, img, clusterName, writer)
+			}
+			if loadErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+			}
+		}
+	} else {
+		_, _ = fmt.Fprintln(writer, "  ℹ️  Local mode: skipping external image archive preload; Kind will pull images on demand")
+	}
+
+	return preloadedKubeMCPImage
+}
+
+func fleetBrokerCredential(ctx context.Context, gatewayType registry.MCPGatewayType, kubeconfigPath, clientID, clientSecret string, scopes []string) (string, error) {
+	if gatewayType == registry.GatewayEAIGW {
+		return "", nil
+	}
+	token, err := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", DemoHostPort(keycloakHostPortDemo)), ClientID: clientID, ClientSecret: clientSecret, Scopes: scopes, KubeconfigPath: kubeconfigPath})
+	if err != nil {
+		return "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", err)
+	}
+	return token, nil
+}
+
+func prepareFleetIdentity(ctx context.Context, kubeconfigPath, namespace, keycloakNamespace string, isDemo bool, writer io.Writer) error {
+	if isDemo {
+		if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return fmt.Errorf("operator Fleet TLS preflight failed: %w", err)
+		}
+		return SetupOIDCInfrastructure(ctx, kubeconfigPath, writer)
+	}
+	if err := provisionInterServiceCA(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("inter-service CA provisioning failed: %w", err)
+	}
+	if err := writeOperatorFleetCAPEMIfPresent(ctx, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	if err := ensureKeycloakTLSFromOperatorCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); err != nil {
+		return fmt.Errorf("keycloak-tls provisioning failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
+	if err := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, DemoHostPort(keycloakHostPortDemo), false, writer); err != nil {
+		return fmt.Errorf("failed to deploy Keycloak: %w", err)
+	}
+	return nil
+}
+
+func provisionFleetRemoteCluster(ctx context.Context, opts FleetCoreInfraOptions, namespace, remoteMCPNamespace string, sharedAuthConfig KubeMCPServerAuthConfig, isDemo bool, writer io.Writer) (string, *RemoteClusterBridgeConfig, error) {
+	clusterName := opts.ClusterName
+	kubeconfigPath := opts.KubeconfigPath
+	spokeWorkers := opts.SpokeWorkers
+	oidcCfg := OIDCPatchConfig{IssuerURL: "https://keycloak:8443/realms/kubernaut-demo", ClientID: "k8s-api", UsernameClaim: "preferred_username", UsernamePrefix: "keycloak:"}
+	var remoteKubeconfigPath string
+	var remoteBridge *RemoteClusterBridgeConfig
+	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
+	// The full Fleet E2E topology backs every spoke registration with a
+	// genuinely separate Kubernetes control plane.
+	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
+	remoteClusterName := opts.RemoteClusterName
+	if remoteClusterName == "" {
+		remoteClusterName = clusterName + "-remote"
+	}
+	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
+	var remoteErr error
+	remoteBridge, remoteErr = SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
+		PrimaryClusterName:    clusterName,
+		PrimaryKubeconfigPath: kubeconfigPath,
+		RemoteClusterName:     remoteClusterName,
+		RemoteKubeconfigPath:  remoteKubeconfigPath,
+		MCPServerNamespace:    remoteMCPNamespace,
+		KeycloakIssuerURL:     oidcCfg.IssuerURL,
+		// The remote bridge runs inside the remote Kind network and must target
+		// the primary cluster's in-cluster NodePort. Only host-side token URLs
+		// use DemoHostPort; the NodePort itself is never offset.
+		KeycloakNodePort: keycloakHostPortDemo,
+		AuthConfig:       sharedAuthConfig,
+		ExtraWorkerNodes: spokeWorkers,
+	}, writer)
+	if remoteErr != nil {
+		return "", nil, fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
+	}
+
+	// Issue #2314: SetupRemoteClusterForFMC only creates the configured remote
+	// MCP namespace (mcp-system by default) on the remote cluster --
+	// kubernaut-system (namespace) never existed there. That was harmless for
+	// the FMC-only lane (it never targets
+	// kubernaut-system on the remote cluster), but this suite's
+	// SynchronizedBeforeSuite labels kubernaut-system on BOTH kubeconfigs
+	// (suite_test.go) and shared/cross_cluster_isolation.go's
+	// E2E-FMC-054-015 creates a Service directly in it on the remote cluster --
+	// both fail with "namespaces \"kubernaut-system\" not found" once the
+	// remote cluster is genuinely separate (AllRegistrationsRemote) rather
+	// than the old loopback cluster, which had it via the primary's own Helm
+	// release.
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #2314)...\n", namespace)
+	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
+		return "", nil, fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
+	}
+	if isDemo {
+		if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
+			return "", nil, fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+		}
+	}
+
+	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
+	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
+	// set, via WE's mcpClientFactory routing. The "kubernaut-workflows"
+	// namespace only pre-existed on the hub cluster; without it, both the
+	// SA creation below and the Job itself would fail with "namespace not found".
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
+	if err := CreateTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
+		return "", nil, fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
+	}
+
+	// Without this, the Job pod's serviceAccountName: workflow-job-executor
+	// reference would fail to resolve on the remote cluster (SA only
+	// pre-existed on the hub).
+	_, _ = fmt.Fprintln(writer, "🔐 Creating workflow-job-executor SA + RBAC on the remote cluster (Issue #1542)...")
+	if err := createWorkflowJobExecutorRBAC(ctx, remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
+		return "", nil, fmt.Errorf("failed to create workflow-job-executor RBAC on remote cluster: %w", err)
+	}
+
+	// Issue #1542: the WE Job executor dispatches the Job to the remote
+	// cluster's API server via kube-mcp-server passthrough, authenticated as
+	// the exchanged Keycloak identity (keycloak:service-account-kubernaut-fleet-read).
+	// applyExchangedIdentityRBAC (below, inside SetupRemoteClusterForFMC) only
+	// grants read-only "view" access -- the FMC-only lane must stay read-only,
+	// so this ADDITIONAL grant is fleet-suite-only and strictly additive
+	// (batch/jobs create/delete, nothing else).
+	_, _ = fmt.Fprintln(writer, "🔐 Granting batch/jobs write access to the exchanged fleet identity (Issue #1542, fleet-only)...")
+	writeClientID := "kubernaut-fleet-write"
+	if err := applyExchangedIdentityWriteRBAC(ctx, remoteKubeconfigPath, writeClientID, writer); err != nil {
+		return "", nil, fmt.Errorf("failed to grant exchanged identity write RBAC on remote cluster: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return remoteKubeconfigPath, remoteBridge, nil
 }
 
 // fleetOAuth2SecretName is the shared Keycloak client_credentials Secret
@@ -1326,48 +1388,8 @@ func prepareMCPGatewayNamespace(ctx context.Context, appNamespace, kubeconfigPat
 // (Spike S18). The upstream overlay is pinned to mcp-system, so its rendered
 // namespace is rewritten before apply when callers select another namespace.
 func deployKuadrantGatewayInfra(ctx context.Context, kubeconfigPath, mcpGatewayNamespace string, writer io.Writer) error {
-	// ── Phase 1: CRDs and Istio ─────────────────────────────────────────
-	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
-
-	_, _ = fmt.Fprintln(writer, "    Installing Gateway API CRDs...")
-	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-f", gatewayAPICRDsURL); err != nil {
-		return fmt.Errorf("gateway API CRDs install failed: %w", err)
-	}
-
-	// Create istio-system namespace before applying Istio base CRDs.
-	// helm template renders namespaced resources (e.g. ValidatingWebhookConfiguration
-	// with service references) that fail if the namespace doesn't exist yet.
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: istio-system
-`); err != nil {
-		return fmt.Errorf("istio-system namespace creation failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
-	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"istio-base", "base", "istio-system",
-		istioHelmInstallArgs()...,
-	); err != nil {
-		return fmt.Errorf("istio base install failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "    Installing Istio control plane (mesh disabled)...")
-	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"istiod", "istiod", "istio-system",
-		append(istioHelmInstallArgs(),
-			"--set", "global.proxy.autoInject=disabled",
-			"--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false",
-		)...,
-	); err != nil {
-		return fmt.Errorf("istio istiod install failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "    Waiting for istiod to be ready...")
-	if err := waitForDeployment(ctx, "istiod", "istio-system", kubeconfigPath, 180*time.Second, writer); err != nil {
-		return fmt.Errorf("istiod rollout failed: %w", err)
+	if err := installKuadrantIstioControlPlane(ctx, kubeconfigPath, writer); err != nil {
+		return err
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Istio control plane ready")
 
@@ -1473,6 +1495,26 @@ spec:
 	return nil
 }
 
+func installKuadrantIstioControlPlane(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
+	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-f", gatewayAPICRDsURL); err != nil {
+		return fmt.Errorf("gateway API CRDs install failed: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: istio-system\n"); err != nil {
+		return fmt.Errorf("istio-system namespace creation failed: %w", err)
+	}
+	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer, "istio-base", "base", "istio-system", istioHelmInstallArgs()...); err != nil {
+		return fmt.Errorf("istio base install failed: %w", err)
+	}
+	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer, "istiod", "istiod", "istio-system", append(istioHelmInstallArgs(), "--set", "global.proxy.autoInject=disabled", "--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false")...); err != nil {
+		return fmt.Errorf("istio istiod install failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "istiod", "istio-system", kubeconfigPath, 180*time.Second, writer); err != nil {
+		return fmt.Errorf("istiod rollout failed: %w", err)
+	}
+	return nil
+}
+
 // applyKuadrantOverlay renders the pinned upstream overlay before applying it
 // so the test harness can preserve its namespace configurability. The v0.7.1
 // overlay intentionally hard-codes mcp-system in its namespace transformer,
@@ -1560,61 +1602,8 @@ func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath st
 		gatewayName   = "mcp-gateway"
 	)
 
-	_, _ = fmt.Fprintln(writer, "    Installing Gateway API + Envoy Gateway CRDs...")
-	egChart, egLocal := fleetLocalChartSource(envoyGatewayCRDsHelmChart, "KUBERNAUT_ENVOY_GATEWAY_CRDS_CHART_PATH")
-	egArgs := buildEnvoyGatewayCRDsHelmArgs(versions)
-	if egLocal {
-		egArgs = fleetLocalChartArgs(egArgs, egChart, "")
-	}
-	if err := runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer,
-		"eg-crds", func() string {
-			if egLocal {
-				return egChart
-			}
-			return envoyGatewayCRDsHelmChart
-		}(), egNamespace,
-		[]string{"--server-side", "--force-conflicts"},
-		egArgs...,
-	); err != nil {
-		return "", fmt.Errorf("envoy gateway CRDs install failed: %w", err)
-	}
-
-	// Agent Router does NOT bundle its own CRDs (Spike S18 gap #2)
-	// -- the CRDs chart must be installed explicitly first.
-	_, _ = fmt.Fprintln(writer, "    Installing Envoy AI Gateway CRDs + controller...")
-	aiCRDsChart, aiCRDsLocal := fleetLocalChartSource(aiGatewayCRDsHelmChart, "KUBERNAUT_AI_GATEWAY_CRDS_CHART_PATH")
-	aiCRDsArgs := buildAgentRouterCRDsHelmArgs(versions)
-	if aiCRDsLocal {
-		aiCRDsArgs = fleetLocalChartArgs(aiCRDsArgs, aiCRDsChart, "")
-	}
-	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", func() string {
-		if aiCRDsLocal {
-			return aiCRDsChart
-		}
-		return aiGatewayCRDsHelmChart
-	}(), aiegNamespace,
-		aiCRDsArgs...); err != nil {
-		return "", fmt.Errorf("ai-gateway CRDs helm install failed: %w", err)
-	}
-	if err := ensureFleetMCPSessionSeedSecret(ctx, aiegNamespace, kubeconfigPath, writer); err != nil {
+	if err := installEnvoyAIGatewayCharts(ctx, kubeconfigPath, versions, writer); err != nil {
 		return "", err
-	}
-	aiChart, aiLocal := fleetLocalChartSource(aiGatewayHelmChart, "KUBERNAUT_AI_GATEWAY_CHART_PATH")
-	aiArgs := buildAgentRouterHelmArgs(versions)
-	if aiLocal {
-		aiArgs = fleetLocalChartArgs(aiArgs, aiChart, strings.TrimSpace(os.Getenv("KUBERNAUT_AGENT_ROUTER_VALUES_PATH")))
-	}
-	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", func() string {
-		if aiLocal {
-			return aiChart
-		}
-		return aiGatewayHelmChart
-	}(), aiegNamespace,
-		aiArgs...); err != nil {
-		return "", fmt.Errorf("ai-gateway helm install failed: %w", err)
-	}
-	if err := waitForDeployment(ctx, "ai-gateway-controller", aiegNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
-		return "", fmt.Errorf("ai-gateway-controller rollout failed: %w", err)
 	}
 
 	// Spike S18 mini-spike gap #5: neither Helm chart grants the
@@ -1745,6 +1734,72 @@ spec:
 // BuildEAIGWStableServiceManifest returns the static Service alias used by
 // in-cluster Fleet clients. The generated proxy Service is selected by the
 // stable Gateway ownership labels rather than its hashed Service name.
+
+func installEnvoyAIGatewayCharts(ctx context.Context, kubeconfigPath string, versions FleetGatewayVersions, writer io.Writer) error {
+	const (
+		egNamespace   = "envoy-gateway-system"
+		aiegNamespace = "envoy-ai-gateway-system"
+	)
+	_, _ = fmt.Fprintln(writer, "    Installing Gateway API + Envoy Gateway CRDs...")
+	egChart, egLocal := fleetLocalChartSource(envoyGatewayCRDsHelmChart, "KUBERNAUT_ENVOY_GATEWAY_CRDS_CHART_PATH")
+	egArgs := buildEnvoyGatewayCRDsHelmArgs(versions)
+	if egLocal {
+		egArgs = fleetLocalChartArgs(egArgs, egChart, "")
+	}
+	if err := runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer,
+		"eg-crds", func() string {
+			if egLocal {
+				return egChart
+			}
+			return envoyGatewayCRDsHelmChart
+		}(), egNamespace,
+		[]string{"--server-side", "--force-conflicts"},
+		egArgs...,
+	); err != nil {
+		return fmt.Errorf("envoy gateway CRDs install failed: %w", err)
+	}
+
+	// Agent Router does NOT bundle its own CRDs (Spike S18 gap #2)
+	// -- the CRDs chart must be installed explicitly first.
+	_, _ = fmt.Fprintln(writer, "    Installing Envoy AI Gateway CRDs + controller...")
+	aiCRDsChart, aiCRDsLocal := fleetLocalChartSource(aiGatewayCRDsHelmChart, "KUBERNAUT_AI_GATEWAY_CRDS_CHART_PATH")
+	aiCRDsArgs := buildAgentRouterCRDsHelmArgs(versions)
+	if aiCRDsLocal {
+		aiCRDsArgs = fleetLocalChartArgs(aiCRDsArgs, aiCRDsChart, "")
+	}
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", func() string {
+		if aiCRDsLocal {
+			return aiCRDsChart
+		}
+		return aiGatewayCRDsHelmChart
+	}(), aiegNamespace,
+		aiCRDsArgs...); err != nil {
+		return fmt.Errorf("ai-gateway CRDs helm install failed: %w", err)
+	}
+	if err := ensureFleetMCPSessionSeedSecret(ctx, aiegNamespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	aiChart, aiLocal := fleetLocalChartSource(aiGatewayHelmChart, "KUBERNAUT_AI_GATEWAY_CHART_PATH")
+	aiArgs := buildAgentRouterHelmArgs(versions)
+	if aiLocal {
+		aiArgs = fleetLocalChartArgs(aiArgs, aiChart, strings.TrimSpace(os.Getenv("KUBERNAUT_AGENT_ROUTER_VALUES_PATH")))
+	}
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", func() string {
+		if aiLocal {
+			return aiChart
+		}
+		return aiGatewayHelmChart
+	}(), aiegNamespace,
+		aiArgs...); err != nil {
+		return fmt.Errorf("ai-gateway helm install failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "ai-gateway-controller", aiegNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
+		return fmt.Errorf("ai-gateway-controller rollout failed: %w", err)
+	}
+
+	return nil
+}
+
 func BuildEAIGWStableServiceManifest(gatewayNamespace string) string {
 	if gatewayNamespace == "" {
 		gatewayNamespace = eaigwStableGatewayNamespace
@@ -3433,11 +3488,8 @@ func runBoundedFleetCommand(ctx context.Context, args ...string) (string, error)
 // It only reads FMC's existing Service, never seeds its cache or posts a signal.
 // The owned Kind node already trusts the inter-service CA for fleet OIDC.
 func CheckFleetResourceScope(ctx context.Context, nodeName, kubeconfigPath, namespace, token string, resource scope.ResourceIdentity) (bool, error) {
-	if nodeName == "" || namespace == "" || token == "" || strings.ContainsAny(token, "\r\n") {
-		return false, fmt.Errorf("fmc scope probe requires an owned node, namespace and single-line token")
-	}
-	if resource.ClusterID == "" || resource.Kind == "" || resource.Name == "" {
-		return false, fmt.Errorf("fmc scope probe requires cluster, kind and name")
+	if err := validateFleetScopeProbe(nodeName, namespace, token, resource); err != nil {
+		return false, err
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -3488,6 +3540,16 @@ func CheckFleetResourceScope(ctx context.Context, nodeName, kubeconfigPath, name
 		return false, fmt.Errorf("fmc scope response is missing an explicit managed boolean")
 	}
 	return *response.Managed, nil
+}
+
+func validateFleetScopeProbe(nodeName, namespace, token string, resource scope.ResourceIdentity) error {
+	if nodeName == "" || namespace == "" || token == "" || strings.ContainsAny(token, "\r\n") {
+		return fmt.Errorf("fmc scope probe requires an owned node, namespace and single-line token")
+	}
+	if resource.ClusterID == "" || resource.Kind == "" || resource.Name == "" {
+		return fmt.Errorf("fmc scope probe requires cluster, kind and name")
+	}
+	return nil
 }
 
 func collectFleetServicePathDiagnostics(ctx context.Context, nodeName, kubeconfigPath, vipCommand string) string {

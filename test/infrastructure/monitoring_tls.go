@@ -99,27 +99,8 @@ func monitoringTLSCacheMatches(ctx context.Context, kubeconfigPath, applicationN
 // monitoring clients consume the bundle through monitoring.tls.caCertSecretRef;
 // the ConfigMap copy remains for monitoring-server fixtures and host tooling.
 func EnsureMonitoringTLS(ctx context.Context, kubeconfigPath, applicationNamespace, monitoringNamespace string, writer io.Writer) error {
-	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--ignore-not-found", "-o", "name")
-	clientCheckCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringClientCASecretName, "-n", applicationNamespace, "--ignore-not-found", "-o", "name")
-	monitoringReady := false
-	if output, err := checkCmd.Output(); err == nil {
-		monitoringReady = strings.TrimSpace(string(output)) != ""
-	}
-	clientCAReady := false
-	if output, err := clientCheckCmd.Output(); err == nil {
-		clientCAReady = strings.TrimSpace(string(output)) != ""
-	}
-	if monitoringReady && clientCAReady {
-		cacheMatches, cacheErr := monitoringTLSCacheMatches(ctx, kubeconfigPath, applicationNamespace, monitoringNamespace)
-		switch {
-		case cacheErr != nil:
-			_, _ = fmt.Fprintf(writer, "  ⚠️  monitoring TLS cache validation failed; regenerating trust material: %v\n", cacheErr)
-		case cacheMatches:
-			_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS already exists in %s\n", monitoringNamespace)
-			return nil
-		default:
-			_, _ = fmt.Fprintln(writer, "  ⚠️  monitoring TLS cache is stale; regenerating trust material")
-		}
+	if monitoringTLSReady(ctx, kubeconfigPath, applicationNamespace, monitoringNamespace, writer) {
+		return nil
 	}
 	// Issue #564: monitoring trust is a separate administrator-owned CA. Do
 	// not reuse the operator inter-service CA even when it is already present.
@@ -236,6 +217,32 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS Secret ready in %s\n", monitoringNamespace)
 	return nil
+}
+
+func monitoringTLSReady(ctx context.Context, kubeconfigPath, applicationNamespace, monitoringNamespace string, writer io.Writer) bool {
+	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--ignore-not-found", "-o", "name")
+	clientCheckCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "secret/"+monitoringClientCASecretName, "-n", applicationNamespace, "--ignore-not-found", "-o", "name")
+	monitoringReady := commandHasOutput(checkCmd)
+	clientCAReady := commandHasOutput(clientCheckCmd)
+	if !monitoringReady || !clientCAReady {
+		return false
+	}
+	cacheMatches, cacheErr := monitoringTLSCacheMatches(ctx, kubeconfigPath, applicationNamespace, monitoringNamespace)
+	switch {
+	case cacheErr != nil:
+		_, _ = fmt.Fprintf(writer, "  ⚠️  monitoring TLS cache validation failed; regenerating trust material: %v\n", cacheErr)
+	case cacheMatches:
+		_, _ = fmt.Fprintf(writer, "  ✅ monitoring TLS already exists in %s\n", monitoringNamespace)
+		return true
+	default:
+		_, _ = fmt.Fprintln(writer, "  ⚠️  monitoring TLS cache is stale; regenerating trust material")
+	}
+	return false
+}
+
+func commandHasOutput(cmd *exec.Cmd) bool {
+	output, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 // ReplicateMonitoringTLS copies the demo monitoring serving Secret and CA

@@ -112,6 +112,60 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	builtImages, _, err := buildEMImages(ctx, writer)
+	if err != nil {
+		return err
+	}
+
+	// PHASE 2: Create Kind cluster
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n  PHASE 2: Creating Kind cluster...")
+
+	extraMounts := []ExtraMount{
+		{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false},
+	}
+
+	if err := CreateKindClusterWithExtraMounts(ctx,
+		clusterName, kubeconfigPath, emE2EKindConfig, extraMounts, writer,
+	); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	if err := deployEMServices(ctx, clusterName, kubeconfigPath, namespace, projectRoot, builtImages, writer); err != nil {
+		return err
+	}
+
+	// PHASE 5: Wait for all services to be ready
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n  PHASE 5: Waiting for services to be ready...")
+
+	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
+	if err := WaitForPrometheusReady(ctx, promURL, emPrometheusReadyTimeout, writer); err != nil {
+		return fmt.Errorf("prometheus not ready: %w", err)
+	}
+
+	amURL := fmt.Sprintf("http://127.0.0.1:%d", AlertManagerHostPort)
+	if err := WaitForAlertManagerReady(ctx, amURL, emAlertManagerReadyTimeout, writer); err != nil {
+		return fmt.Errorf("alertmanager not ready: %w", err)
+	}
+
+	// Wait for EM controller pod to be ready
+	if err := waitForDeploymentReadyWithTimeout(ctx, kubeconfigPath, namespace, "effectivenessmonitor-controller", 120*time.Second, writer); err != nil {
+		return fmt.Errorf("EM controller not ready: %w", err)
+	}
+
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
+		return fmt.Errorf("prometheus cadvisor target not UP: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  EM E2E Infrastructure Ready")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+func buildEMImages(ctx context.Context, writer io.Writer) (map[string]string, bool, error) {
 	// PHASE 1: Build images in PARALLEL
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n  PHASE 1: Building images in parallel...")
@@ -176,26 +230,25 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		}
 	}
 	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %v", buildErrors)
+		return nil, false, fmt.Errorf("image builds failed: %v", buildErrors)
 	}
 	_, _ = fmt.Fprintln(writer, "  All images built successfully")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n  PHASE 2: Creating Kind cluster...")
+	return builtImages, enableCoverage, nil
+}
 
-	extraMounts := []ExtraMount{
-		{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false},
+func deployEMServices(ctx context.Context, clusterName, kubeconfigPath, namespace, projectRoot string, builtImages map[string]string, writer io.Writer) error {
+	if err := deployEMImagesAndCRDs(ctx, clusterName, kubeconfigPath, namespace, projectRoot, builtImages, writer); err != nil {
+		return err
 	}
-
-	if err := CreateKindClusterWithExtraMounts(ctx,
-		clusterName, kubeconfigPath, emE2EKindConfig, extraMounts, writer,
-	); err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	if err := deployEMApplicationServices(ctx, clusterName, kubeconfigPath, namespace, builtImages, writer); err != nil {
+		return err
 	}
+	return nil
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
+func deployEMImagesAndCRDs(ctx context.Context, clusterName, kubeconfigPath, namespace, projectRoot string, builtImages map[string]string, writer io.Writer) error {
 	// PHASE 3: Load images + Install CRDs
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n  PHASE 3: Loading images and installing CRDs...")
@@ -269,6 +322,10 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	return nil
+}
+
+func deployEMApplicationServices(ctx context.Context, clusterName, kubeconfigPath, namespace string, builtImages map[string]string, writer io.Writer) error {
 	// PHASE 4: Deploy services
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n  PHASE 4: Deploying services...")
@@ -317,32 +374,6 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5: Wait for all services to be ready
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n  PHASE 5: Waiting for services to be ready...")
-
-	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusReady(ctx, promURL, emPrometheusReadyTimeout, writer); err != nil {
-		return fmt.Errorf("prometheus not ready: %w", err)
-	}
-
-	amURL := fmt.Sprintf("http://127.0.0.1:%d", AlertManagerHostPort)
-	if err := WaitForAlertManagerReady(ctx, amURL, emAlertManagerReadyTimeout, writer); err != nil {
-		return fmt.Errorf("alertmanager not ready: %w", err)
-	}
-
-	// Wait for EM controller pod to be ready
-	if err := waitForDeploymentReadyWithTimeout(ctx, kubeconfigPath, namespace, "effectivenessmonitor-controller", 120*time.Second, writer); err != nil {
-		return fmt.Errorf("EM controller not ready: %w", err)
-	}
-
-	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
-		return fmt.Errorf("prometheus cadvisor target not UP: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  EM E2E Infrastructure Ready")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 

@@ -66,37 +66,49 @@ func SummarizePodsForDiagnostics(namespace string, pods *corev1.PodList) string 
 // report a non-zero Terminated state, while the BackOff event remains durable.
 // Callers should scope pods by label and events by namespace before invoking it.
 func CrashLoopEvidenceDetected(pods *corev1.PodList, events *corev1.EventList, appName string) bool {
-	if pods != nil {
-		for _, pod := range pods.Items {
-			for _, cs := range pod.Status.ContainerStatuses {
-				if cs.RestartCount == 0 {
-					continue
-				}
-				if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
-					return true
-				}
-				if cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0 {
-					return true
-				}
-				if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0 {
-					return true
-				}
+	if podCrashLoopEvidence(pods) {
+		return true
+	}
+	return eventCrashLoopEvidence(events, appName)
+}
+
+func podCrashLoopEvidence(pods *corev1.PodList) bool {
+	if pods == nil {
+		return false
+	}
+	for _, pod := range pods.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if containerCrashLoopEvidence(cs) {
+				return true
 			}
 		}
 	}
+	return false
+}
 
+func containerCrashLoopEvidence(cs corev1.ContainerStatus) bool {
+	if cs.RestartCount == 0 {
+		return false
+	}
+	return (cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") ||
+		(cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0) ||
+		(cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
+}
+
+func eventCrashLoopEvidence(events *corev1.EventList, appName string) bool {
 	if events == nil {
 		return false
 	}
 	for _, event := range events.Items {
-		if event.Reason != "BackOff" || event.InvolvedObject.Kind != "Pod" {
-			continue
-		}
-		if event.InvolvedObject.Name == appName || strings.HasPrefix(event.InvolvedObject.Name, appName+"-") {
+		if event.Reason == "BackOff" && event.InvolvedObject.Kind == "Pod" && isAppPodName(event.InvolvedObject.Name, appName) {
 			return true
 		}
 	}
 	return false
+}
+
+func isAppPodName(name, appName string) bool {
+	return name == appName || strings.HasPrefix(name, appName+"-")
 }
 
 func summarizeContainerState(cs corev1.ContainerStatus) string {

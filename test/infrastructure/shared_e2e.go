@@ -812,36 +812,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// Per-test namespace isolation: each entry in afRemediateNS produces a
 	// distinct kubernaut_remediate scenario with a unique keyword trigger,
 	// preventing parallel Ginkgo processes from cross-matching RRs.
-	var remediateScenarios string
-	if len(afRemediateNS) > 0 {
-		for key, ns := range afRemediateNS {
-			remediateScenarios += fmt.Sprintf(`      - name: "kubernaut_remediate_%s"
-        keywords: ["%s remediation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_remediate"
-          arguments:
-            namespace: "%s"
-            kind: "Deployment"
-            name: "memory-eater"
-            api_version: "apps/v1"
-            description: "FP E2E %s remediation request"
-`, key, key, ns, key)
-		}
-	} else {
-		remediateScenarios = `      - name: "kubernaut_remediate"
-        keywords: ["create a remediation request", "create remediation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_remediate"
-          arguments:
-            namespace: "default"
-            kind: "Deployment"
-            name: "memory-eater"
-            api_version: "apps/v1"
-            description: "FP E2E test remediation request"
-`
-	}
+	remediateScenarios := buildMockLLMRemediationScenarios(afRemediateNS)
 	// PR #1799 QE audit follow-up (tracked as #1834): af_select_workflow's workflow_id argument
 	// must be the *real* catalog UUID that discover_workflows will report
 	// back in its (nested, un-templatable via $from_tool) DiscoveryResult --
@@ -1196,6 +1167,39 @@ spec:
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM ready\n")
 
 	return nil
+}
+
+func buildMockLLMRemediationScenarios(namespaces map[string]string) string {
+	if len(namespaces) == 0 {
+		return `      - name: "kubernaut_remediate"
+        keywords: ["create a remediation request", "create remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "default"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E test remediation request"
+`
+	}
+	var scenarios string
+	for key, namespace := range namespaces {
+		scenarios += fmt.Sprintf(`      - name: "kubernaut_remediate_%s"
+        keywords: ["%s remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E %s remediation request"
+`, key, key, namespace, key)
+	}
+	return scenarios
 }
 
 func kaInteractiveFleetNamespace(namespaces map[string]string) string {

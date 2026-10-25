@@ -786,14 +786,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 			// Only application namespaces explicitly opted-in should have kubernaut.ai/managed=true.
 		},
 	}
-	_, err = clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create namespace: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  Namespace already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Namespace created\n")
+	if err = createIntegrationKubernetesResource(writer, "Namespace", "failed to create namespace", func() error {
+		_, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -812,14 +809,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create ServiceAccount: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  ServiceAccount already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ ServiceAccount created\n")
+	if err = createIntegrationKubernetesResource(writer, "ServiceAccount", "failed to create ServiceAccount", func() error {
+		_, err := clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -854,14 +848,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create ClusterRole: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  ClusterRole already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ ClusterRole created\n")
+	if err = createIntegrationKubernetesResource(writer, "ClusterRole", "failed to create ClusterRole", func() error {
+		_, err := clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -891,14 +882,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create ClusterRoleBinding: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  ClusterRoleBinding already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ ClusterRoleBinding created\n")
+	if err = createIntegrationKubernetesResource(writer, "ClusterRoleBinding", "failed to create ClusterRoleBinding", func() error {
+		_, err := clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -933,14 +921,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, dummyService, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create dummy Service: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  Service already exists (for SAR validation)\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Dummy Service created (enables SAR checks)\n")
+	if err = createIntegrationKubernetesResource(writer, "dummy Service", "failed to create dummy Service", func() error {
+		_, err := clientset.CoreV1().Services(namespace).Create(ctx, dummyService, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -965,14 +950,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, datastorageSA, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create DataStorage service ServiceAccount: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  DataStorage service ServiceAccount already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage service ServiceAccount created\n")
+	if err = createIntegrationKubernetesResource(writer, "DataStorage service ServiceAccount", "failed to create DataStorage service ServiceAccount", func() error {
+		_, err := clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, datastorageSA, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// Create ClusterRole for DataStorage service (TokenReview permission)
@@ -1010,14 +992,11 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, datastorageClusterRole, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create DataStorage TokenReview ClusterRole: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  DataStorage TokenReview ClusterRole already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage TokenReview ClusterRole created\n")
+	if err = createIntegrationKubernetesResource(writer, "DataStorage TokenReview ClusterRole", "failed to create DataStorage TokenReview ClusterRole", func() error {
+		_, err := clientset.RbacV1().ClusterRoles().Create(ctx, datastorageClusterRole, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
 	// Create ClusterRoleBinding for DataStorage service
@@ -1045,16 +1024,18 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 		},
 	}
 
-	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, datastorageClusterRoleBinding, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create DataStorage service ClusterRoleBinding: %w", err)
-	}
-	if apierrors.IsAlreadyExists(err) {
-		_, _ = fmt.Fprintf(writer, "   ℹ️  DataStorage service ClusterRoleBinding already exists\n")
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage service ClusterRoleBinding created\n")
+	if err = createIntegrationKubernetesResource(writer, "DataStorage service ClusterRoleBinding", "failed to create DataStorage service ClusterRoleBinding", func() error {
+		_, err := clientset.RbacV1().ClusterRoleBindings().Create(ctx, datastorageClusterRoleBinding, metav1.CreateOptions{})
+		return err
+	}); err != nil {
+		return nil, err
 	}
 
+	return finalizeIntegrationAuth(ctx, cfg, clientset, saName, datastorageSAName, namespace, writer)
+
+}
+
+func finalizeIntegrationAuth(ctx context.Context, cfg *rest.Config, clientset kubernetes.Interface, saName, datastorageSAName, namespace string, writer io.Writer) (*IntegrationAuthConfig, error) {
 	// Get token for DataStorage service (for kubeconfig)
 	_, _ = fmt.Fprintf(writer, "🎫 Requesting DataStorage service token...\n")
 	datastorageTokenRequest := &authenticationv1.TokenRequest{
@@ -1187,22 +1168,26 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	_, _ = fmt.Fprintf(writer, "   ✅ Kubeconfig written: %s (mode: 0644, Podman-compatible location)\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "   📍 API Server: %s\n", cfg.Host)
 
-	// ════════════════════════════════════════════════════════════════════════
-	// STEP 7: Return configuration
-	// ════════════════════════════════════════════════════════════════════════
 	authConfig := &IntegrationAuthConfig{
-		Token:                       token,
-		KubeconfigPath:              kubeconfigPath,
-		ServiceAccountName:          saName,
-		Namespace:                   namespace,
-		DataStorageServiceToken:     datastorageToken,
-		DataStorageServiceTokenPath: datastorageTokenPath,
+		Token: token, KubeconfigPath: kubeconfigPath, ServiceAccountName: saName, Namespace: namespace,
+		DataStorageServiceToken: datastorageToken, DataStorageServiceTokenPath: datastorageTokenPath,
 	}
-
 	_, _ = fmt.Fprintf(writer, "✅ Integration auth configured with real K8s TokenReview/SAR\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-
 	return authConfig, nil
+}
+
+func createIntegrationKubernetesResource(writer io.Writer, resourceName, errorPrefix string, create func() error) error {
+	err := create()
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("%s: %w", errorPrefix, err)
+	}
+	if apierrors.IsAlreadyExists(err) {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  %s already exists\n", resourceName)
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ %s created\n", resourceName)
+	}
+	return nil
 }
 
 // WriteEnvtestKubeconfigToFile writes envtest REST config to a kubeconfig file

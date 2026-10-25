@@ -105,36 +105,8 @@ type MustGatherDataStorageOptions struct {
 // teardown, or a wrapper that survives that process being killed on
 // timeout) -- the failure mode that motivated replacing MustGatherPodLogs.
 func RunMustGatherImage(ctx context.Context, opts RunMustGatherImageOptions, writer io.Writer) error {
-	if opts.ClusterName == "" {
-		return fmt.Errorf("RunMustGatherImage: ClusterName is required")
-	}
-	if opts.Image == "" {
-		return fmt.Errorf("RunMustGatherImage: Image is required")
-	}
-	if opts.OutputDir == "" {
-		return fmt.Errorf("RunMustGatherImage: OutputDir is required")
-	}
-	if opts.DataStorage != nil {
-		u, err := url.Parse(opts.DataStorage.URL)
-		if err != nil || u.Scheme != interServiceHTTPS || u.Hostname() == "" || u.User != nil {
-			return fmt.Errorf("must-gather DataStorage requires an https authority without credentials")
-		}
-		for _, path := range []string{opts.DataStorage.CAFile, opts.DataStorage.TokenFile} {
-			info, err := os.Stat(path)
-			if err != nil {
-				return fmt.Errorf("stat must-gather credential or ca file: %w", err)
-			}
-			if !filepath.IsAbs(path) || !info.Mode().IsRegular() {
-				return fmt.Errorf("must-gather credential and ca paths must be absolute regular files")
-			}
-			rel, err := filepath.Rel(opts.OutputDir, path)
-			if err != nil {
-				return fmt.Errorf("check must-gather credential isolation: %w", err)
-			}
-			if rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-				return fmt.Errorf("must-gather credential files must remain outside the output directory")
-			}
-		}
+	if err := validateMustGatherOptions(opts); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create must-gather output directory: %w", err)
@@ -157,6 +129,46 @@ func RunMustGatherImage(ctx context.Context, opts RunMustGatherImageOptions, wri
 	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Must-gather collection complete: %s\n", opts.OutputDir)
+	return nil
+}
+
+func validateMustGatherOptions(opts RunMustGatherImageOptions) error {
+	if opts.ClusterName == "" {
+		return fmt.Errorf("RunMustGatherImage: ClusterName is required")
+	}
+	if opts.Image == "" {
+		return fmt.Errorf("RunMustGatherImage: Image is required")
+	}
+	if opts.OutputDir == "" {
+		return fmt.Errorf("RunMustGatherImage: OutputDir is required")
+	}
+	return validateMustGatherDataStorage(opts)
+}
+
+func validateMustGatherDataStorage(opts RunMustGatherImageOptions) error {
+	if opts.DataStorage == nil {
+		return nil
+	}
+	u, err := url.Parse(opts.DataStorage.URL)
+	if err != nil || u.Scheme != interServiceHTTPS || u.Hostname() == "" || u.User != nil {
+		return fmt.Errorf("must-gather DataStorage requires an https authority without credentials")
+	}
+	for _, path := range []string{opts.DataStorage.CAFile, opts.DataStorage.TokenFile} {
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("stat must-gather credential or ca file: %w", err)
+		}
+		if !filepath.IsAbs(path) || !info.Mode().IsRegular() {
+			return fmt.Errorf("must-gather credential and ca paths must be absolute regular files")
+		}
+		rel, err := filepath.Rel(opts.OutputDir, path)
+		if err != nil {
+			return fmt.Errorf("check must-gather credential isolation: %w", err)
+		}
+		if rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("must-gather credential files must remain outside the output directory")
+		}
+	}
 	return nil
 }
 

@@ -41,65 +41,9 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	projectRoot := getProjectRoot()
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images in parallel (per DD-TEST-002)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-
-	type imageBuildResult struct {
-		name  string
-		image string
-		err   error
-	}
-
-	buildResults := make(chan imageBuildResult, 3)
-
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   false,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"datastorage", imageName, err}
-	}()
-
-	// ADR-027: Build KA from UBI10 go-toolset → ubi10-minimal (development stage)
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "kubernautagent",
-			ImageName:        "kubernautagent",
-			DockerfilePath:   "docker/kubernautagent.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
-	}()
-
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "mock-llm",
-			ImageName:        "mock-llm",
-			DockerfilePath:   "test/services/mock-llm/go.Dockerfile",
-			BuildContextPath: projectRoot,
-			EnableCoverage:   false,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"mock-llm", imageName, err}
-	}()
-
-	images := make(map[string]string, 3)
-	for i := 0; i < 3; i++ {
-		result := <-buildResults
-		if result.err != nil {
-			return fmt.Errorf("failed to build %s: %w", result.name, result.err)
-		}
-		images[result.name] = result.image
-		_, _ = fmt.Fprintf(writer, "  ✅ %s: %s\n", result.name, result.image)
+	images, err := buildKubernautAgentImages(ctx, projectRoot, writer)
+	if err != nil {
+		return err
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -113,84 +57,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into Kind
 	// ═══════════════════════════════════════════════════════════════════════
-	if os.Getenv("IMAGE_REGISTRY") != "" {
-		_, _ = fmt.Fprintln(writer, "\n⏭️  PHASE 3: Skipping local image loading (CI/CD: IMAGE_REGISTRY set, Kind pulls from registry)")
-	} else {
-		_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
-		for name, image := range images {
-			if err := loadImageToKind(ctx, clusterName, image, writer); err != nil {
-				return fmt.Errorf("failed to load %s image: %w", name, err)
-			}
-			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
-		}
+	if err := loadKubernautAgentImages(ctx, clusterName, images, writer); err != nil {
+		return err
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy DataStorage stack (PostgreSQL + Redis + DS + Migrations)
-	// Reuses the same inline pattern as CreateAIAnalysisClusterHybrid.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
-	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
-	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
-	// already be registered with the apiserver or DS's informer cache setup
-	// fails hard ("no matches for kind"), crash-looping the pod. Must run
-	// BEFORE DataStorage is deployed below (PHASE 5.5's installKAE2ECRDs
-	// runs too late -- after DS's own readiness wait already timed out).
-	_, _ = fmt.Fprintln(writer, "  📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
-	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
-	}
-
-	// Issue #785: Generate inter-service TLS before deploying services
-	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
-	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
-	}
-
-	// AU-9: Generate RSA signing certificate for audit exports
-	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate signing certificate: %w", err)
-	}
-
-	type deployResult struct {
-		name string
-		err  error
-	}
-	deployResults := make(chan deployResult, 4)
-
-	go func() {
-		deployResults <- deployResult{"PostgreSQL", deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)}
-	}()
-	go func() {
-		deployResults <- deployResult{"Redis", deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)}
-	}()
-	go func() {
-		deployResults <- deployResult{"Migrations", ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)}
-	}()
-	go func() {
-		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
-			deployResults <- deployResult{"DataStorage", rbacErr}
-			return
-		}
-		deployResults <- deployResult{"DataStorage",
-			deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, images["datastorage"], 30089, writer)}
-	}()
-
-	for i := 0; i < 4; i++ {
-		result := <-deployResults
-		if result.err != nil {
-			return fmt.Errorf("%s deployment failed: %w", result.name, result.err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", result.name)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
-	if err := waitForDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("DataStorage not ready: %w", err)
+	if err := deployKubernautAgentDataStorageStack(ctx, namespace, kubeconfigPath, images["datastorage"], writer); err != nil {
+		return err
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -243,49 +115,61 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to deploy Mock LLM Shadow: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5.5: Install CRDs required by interactive tests (#703)
-	// The RemediationRequest CRD is needed so createTestRemediationRequest()
-	// in interactive E2E tests can provision RR fixtures for the
-	// RRExistenceChecker (HARM-004). Without this, the K8s API rejects
-	// CR creation with "no matches for kubernaut.ai/v1alpha1".
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 5.5: Installing CRDs for interactive tests (#703)...")
+	if err := prepareKubernautAgentSupportingServices(ctx, clusterName, namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	if err := deployKubernautAgentServices(ctx, clusterName, namespace, kubeconfigPath, images["kubernautagent"], writer); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n✅ Kubernaut Agent E2E infrastructure ready")
+	return nil
+}
+
+func loadKubernautAgentImages(ctx context.Context, clusterName string, images map[string]string, writer io.Writer) error {
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "\n⏭️  PHASE 3: Skipping local image loading (CI/CD: IMAGE_REGISTRY set, Kind pulls from registry)")
+		return nil
+	}
+	_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
+	for name, image := range images {
+		if err := loadImageToKind(ctx, clusterName, image, writer); err != nil {
+			return fmt.Errorf("failed to load %s image: %w", name, err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
+	}
+	return nil
+}
+
+func deployKubernautAgentServices(ctx context.Context, clusterName, namespace, kubeconfigPath, image string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
+	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
+	}
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, image, true, writer); err != nil {
+		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Creating enrichment fixture resources (#704)...")
+	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
+	}
+	return nil
+}
+
+func prepareKubernautAgentSupportingServices(ctx context.Context, clusterName, namespace, kubeconfigPath string, writer io.Writer) error {
 	if err := installKAE2ECRDs(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install CRDs: %w", err)
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5.6: Install ambiguous-kind CRDs for apiVersion gate E2E (#1044)
-	// Two CRDs with Kind "TestWidget" in different API groups so the REST
-	// mapper reports the kind as ambiguous. Must be installed BEFORE KA
-	// starts so its mapper discovers both groups at init.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🔧 PHASE 5.6: Installing ambiguous-kind CRDs (#1044)...")
 	if err := createAmbiguousKindCRDs(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create ambiguous-kind CRDs: %w", err)
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5.7: Deploy Prometheus + AlertManager (#1507)
-	// Required for get_alerts/get_silences/nodes_log/nodes_stats_summary
-	// tool E2E validation. Uses existing DeployPrometheus/DeployAlertManager
-	// helpers from prometheus_alertmanager_e2e.go.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📊 PHASE 5.7: Deploying Prometheus + AlertManager (#1507)...")
 	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Prometheus: %w", err)
 	}
 	if err := DeployAlertManager(ctx, namespace, namespace, kubeconfigPath, "", writer); err != nil {
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5.8: Deploy DEX OIDC Provider for JWT E2E testing (#1009)
-	// Must be ready BEFORE KA starts so JWKS pre-warm succeeds.
-	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
 	if err := PreloadDexImage(ctx, clusterName, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
 	}
@@ -298,31 +182,99 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create DEX user RBAC: %w", err)
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 6: Deploy Kubernaut Agent
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
-	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
-	}
-	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
-		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 7: Create enrichment fixture resources (#704)
-	// Mock LLM scenarios reference resources in production/staging namespaces.
-	// These must exist so re-enrichment doesn't trigger HardFail (rca_incomplete)
-	// for scenarios that are NOT rca_incomplete.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Creating enrichment fixture resources (#704)...")
-	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n✅ Kubernaut Agent E2E infrastructure ready")
 	return nil
+}
+
+func deployKubernautAgentDataStorageStack(ctx context.Context, namespace, kubeconfigPath, image string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+	results := make(chan struct {
+		name string
+		err  error
+	}, 4)
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL", deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Redis", deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Migrations", ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer)
+		if err == nil {
+			err = deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, image, 30089, writer)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"DataStorage", err}
+	}()
+	for range 4 {
+		result := <-results
+		if result.err != nil {
+			return fmt.Errorf("%s deployment failed: %w", result.name, result.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", result.name)
+	}
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
+	if err := waitForDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage not ready: %w", err)
+	}
+	return nil
+}
+
+func buildKubernautAgentImages(ctx context.Context, projectRoot string, writer io.Writer) (map[string]string, error) {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	type imageBuildResult struct {
+		name  string
+		image string
+		err   error
+	}
+	results := make(chan imageBuildResult, 3)
+	configs := []E2EImageConfig{
+		{ServiceName: "datastorage", ImageName: "datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
+		{ServiceName: "kubernautagent", ImageName: "kubernautagent", DockerfilePath: "docker/kubernautagent.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture},
+		{ServiceName: "mock-llm", ImageName: "mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: projectRoot},
+	}
+	for _, cfg := range configs {
+		cfg := cfg
+		go func() {
+			imageName, err := BuildImageForKind(ctx, cfg, writer)
+			results <- imageBuildResult{cfg.ServiceName, imageName, err}
+		}()
+	}
+	images := make(map[string]string, len(configs))
+	for range configs {
+		result := <-results
+		if result.err != nil {
+			return nil, fmt.Errorf("failed to build %s: %w", result.name, result.err)
+		}
+		images[result.name] = result.image
+		_, _ = fmt.Fprintf(writer, "  ✅ %s: %s\n", result.name, result.image)
+	}
+	return images, nil
 }
 
 // installKAE2ECRDs installs the Kubernaut CRDs required by interactive E2E tests.

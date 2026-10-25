@@ -424,63 +424,10 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load image + Deploy infrastructure in PARALLEL
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading image + Deploying infrastructure in parallel...")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
-
-	type result struct {
-		name string
-		err  error
+	if err := loadAndDeployDataStorageDependencies(ctx, clusterName, kubeconfigPath, namespace, dsImageName, writer); err != nil {
+		return err
 	}
-
-	results := make(chan result, 3)
-
-	// Goroutine 1: Load pre-built DataStorage image to Kind
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("DS image load failed: %w", err)
-		}
-		results <- result{name: "DS image load", err: err}
-	}()
-
-	// Goroutine 2: Deploy PostgreSQL
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
-		if err != nil {
-			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
-		}
-		results <- result{name: "PostgreSQL", err: err}
-	}()
-
-	// Goroutine 3: Deploy Redis
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
-		if err != nil {
-			err = fmt.Errorf("redis deploy failed: %w", err)
-		}
-		results <- result{name: "Redis", err: err}
-	}()
-
-	// Wait for all parallel tasks to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
-	for i := 0; i < 3; i++ {
-		r := <-results
-		if r.err != nil {
-			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
-	}
-
-	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Apply migrations, THEN deploy DataStorage
@@ -514,6 +461,60 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	return nil
+}
+
+func loadAndDeployDataStorageDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace, imageName string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
+	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
+	results := make(chan struct {
+		name string
+		err  error
+	}, 3)
+	go func() {
+		defer GinkgoRecover()
+		err := LoadImageToKind(ctx, imageName, "datastorage", clusterName, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image load failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"DS image load", err}
+	}()
+	go func() {
+		defer GinkgoRecover()
+		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
+		if err != nil {
+			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL", err}
+	}()
+	go func() {
+		defer GinkgoRecover()
+		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
+		if err != nil {
+			err = fmt.Errorf("redis deploy failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"Redis", err}
+	}()
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
+	for range 3 {
+		result := <-results
+		if result.err != nil {
+			return fmt.Errorf("parallel setup failed (%s): %w", result.name, result.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", result.name)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 	return nil
 }
 
@@ -1321,68 +1322,17 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 
 	// Wait for PostgreSQL pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=postgresql",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=postgresql", 5*time.Minute, "PostgreSQL pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
 
 	// Wait for Redis pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=redis",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=redis", 5*time.Minute, "Redis pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
 
 	// Wait for Data Storage Service pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage Service pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 5*time.Minute, "Data Storage Service pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
 
 	return nil

@@ -241,13 +241,9 @@ type prometheusRulesResponse struct {
 // alert rule reaches the desired state or the timeout expires.
 func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName string, desired PrometheusRuleState, timeout time.Duration, caPath ...string) error {
 	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 5 * time.Second}
-	if len(caPath) > 0 && caPath[0] != "" {
-		var err error
-		client, err = NewMonitoringTLSAwareClient(caPath[0])
-		if err != nil {
-			return err
-		}
+	client, err := prometheusRulesHTTPClient(caPath)
+	if err != nil {
+		return err
 	}
 
 	for time.Now().Before(deadline) {
@@ -284,18 +280,32 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 			continue
 		}
 
-		for _, group := range rulesResp.Data.Groups {
-			for _, rule := range group.Rules {
-				if rule.Name == ruleName && PrometheusRuleState(rule.State) == desired {
-					return nil
-				}
-			}
+		if prometheusRuleStateReached(rulesResp, ruleName, desired) {
+			return nil
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 
 	return fmt.Errorf("rule %q did not reach state %q within %v", ruleName, desired, timeout)
+}
+
+func prometheusRulesHTTPClient(caPath []string) (*http.Client, error) {
+	if len(caPath) > 0 && caPath[0] != "" {
+		return NewMonitoringTLSAwareClient(caPath[0])
+	}
+	return &http.Client{Timeout: 5 * time.Second}, nil
+}
+
+func prometheusRuleStateReached(response prometheusRulesResponse, ruleName string, desired PrometheusRuleState) bool {
+	for _, group := range response.Data.Groups {
+		for _, rule := range group.Rules {
+			if rule.Name == ruleName && PrometheusRuleState(rule.State) == desired {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AFInjectOTLPMetrics sends a single gauge metric to Prometheus via the OTLP HTTP endpoint.

@@ -316,88 +316,9 @@ func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace stri
 	var caCert *x509.Certificate
 	var caKey *ecdsa.PrivateKey
 	var caCertPEM, caKeyPEM []byte
-	var err error
-
-	// Operator qualification pre-creates kubernaut-internal-ca so the MCP
-	// Gateway listener can be HTTPS before the Kubernaut CR is applied. Reuse
-	// that exact CA for authwebhook/Keycloak as well; otherwise operator pods
-	// trust one root while the Fleet IdP uses another and OAuth2 token fetches
-	// fail with an unknown-authority error.
-	operatorCAPEM, operatorCAKeyPEM, operatorCAErr := readOperatorCASecret(ctx, kubeconfigPath, namespace)
-	if operatorCAErr == nil {
-		caBlock, _ := pem.Decode(operatorCAPEM)
-		keyBlock, _ := pem.Decode(operatorCAKeyPEM)
-		if caBlock == nil || keyBlock == nil {
-			return errors.New("operator Fleet CA Secret contains invalid PEM material")
-		}
-		caCert, err = x509.ParseCertificate(caBlock.Bytes)
-		if err != nil {
-			return fmt.Errorf("parse operator Fleet CA certificate: %w", err)
-		}
-		caKey, err = x509.ParseECPrivateKey(keyBlock.Bytes)
-		if err != nil {
-			return fmt.Errorf("parse operator Fleet CA key: %w", err)
-		}
-		caCertPEM = operatorCAPEM
-		caKeyPEM = operatorCAKeyPEM
-		_, _ = fmt.Fprintln(writer, "  🔗 Reusing operator Fleet CA for authwebhook/Keycloak trust")
-	} else if !errors.Is(operatorCAErr, errOperatorCASecretMissing) {
-		return fmt.Errorf("read operator Fleet CA: %w", operatorCAErr)
-	}
-
-	if caCert == nil {
-		secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"get", "secret", "authwebhook-tls", "--ignore-not-found", "-o", "name")
-		existingSecret, err := secretCmd.Output()
-		if err != nil {
-			return fmt.Errorf("failed to check for an existing inter-service CA: %w", err)
-		}
-		if strings.TrimSpace(string(existingSecret)) != "" {
-			// Reusing a retained Kind cluster must preserve its existing trust root:
-			// operator-managed service certificates and the running API server already
-			// trust this CA. Rotating it here leaves retained pods with certificates
-			// signed by the previous root and makes the next Keycloak/OIDC bootstrap
-			// fail TLS verification.
-			caCert, caKey, err = loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
-			if err != nil {
-				return fmt.Errorf("failed to reuse existing inter-service CA: %w", err)
-			}
-			caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
-			caKeyDER, err := x509.MarshalECPrivateKey(caKey)
-			if err != nil {
-				return fmt.Errorf("failed to marshal reused CA private key: %w", err)
-			}
-			caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
-			_, _ = fmt.Fprintln(writer, "  ♻️ Reusing existing inter-service CA for retained cluster")
-		} else {
-			caKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-			if err != nil {
-				return fmt.Errorf("failed to generate CA key: %w", err)
-			}
-			caTemplate := &x509.Certificate{
-				SerialNumber:          big.NewInt(time.Now().UnixNano()),
-				Subject:               pkix.Name{CommonName: "authwebhook-ca"},
-				NotBefore:             time.Now().Add(-1 * time.Hour),
-				NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-				KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
-				BasicConstraintsValid: true,
-				IsCA:                  true,
-			}
-			caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-			if err != nil {
-				return fmt.Errorf("failed to self-sign CA certificate: %w", err)
-			}
-			caCert, err = x509.ParseCertificate(caDER)
-			if err != nil {
-				return fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
-			}
-			caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
-			caKeyDER, err := x509.MarshalECPrivateKey(caKey)
-			if err != nil {
-				return fmt.Errorf("failed to marshal CA private key: %w", err)
-			}
-			caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
-		}
+	caCert, caKey, caCertPEM, caKeyPEM, loadErr := loadOrCreateInterServiceCA(ctx, kubeconfigPath, namespace, writer)
+	if loadErr != nil {
+		return loadErr
 	}
 
 	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
@@ -470,6 +391,66 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ CA PEM written to %s (host-side TLS clients now trust this run's CA)\n", caPEMPath)
 	return nil
+}
+
+func loadOrCreateInterServiceCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
+	operatorCAPEM, operatorCAKeyPEM, operatorCAErr := readOperatorCASecret(ctx, kubeconfigPath, namespace)
+	if operatorCAErr == nil {
+		caBlock, _ := pem.Decode(operatorCAPEM)
+		keyBlock, _ := pem.Decode(operatorCAKeyPEM)
+		if caBlock == nil || keyBlock == nil {
+			return nil, nil, nil, nil, errors.New("operator Fleet CA Secret contains invalid PEM material")
+		}
+		caCert, err := x509.ParseCertificate(caBlock.Bytes)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("parse operator Fleet CA certificate: %w", err)
+		}
+		caKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("parse operator Fleet CA key: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  🔗 Reusing operator Fleet CA for authwebhook/Keycloak trust")
+		return caCert, caKey, operatorCAPEM, operatorCAKeyPEM, nil
+	}
+	if !errors.Is(operatorCAErr, errOperatorCASecretMissing) {
+		return nil, nil, nil, nil, fmt.Errorf("read operator Fleet CA: %w", operatorCAErr)
+	}
+	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace, "get", "secret", "authwebhook-tls", "--ignore-not-found", "-o", "name")
+	existingSecret, err := secretCmd.Output()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to check for an existing inter-service CA: %w", err)
+	}
+	if strings.TrimSpace(string(existingSecret)) != "" {
+		caCert, caKey, err := loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to reuse existing inter-service CA: %w", err)
+		}
+		caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to marshal reused CA private key: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  ♻️ Reusing existing inter-service CA for retained cluster")
+		return caCert, caKey, caCertPEM, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER}), nil
+	}
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to generate CA key: %w", err)
+	}
+	caTemplate := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: "authwebhook-ca"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour), KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, BasicConstraintsValid: true, IsCA: true}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to self-sign CA certificate: %w", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
+	}
+	caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to marshal CA private key: %w", err)
+	}
+	return caCert, caKey, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER}), nil
 }
 
 // ensureDexTLSFromOperatorCA creates the dex-tls Secret (tls.crt/tls.key) that
