@@ -1376,11 +1376,8 @@ func InstallOperatorBootstrap(ctx context.Context, config OperatorDeploymentConf
 		}
 	}
 	if config.ClusterName != "" && strings.HasPrefix(config.OperatorImage, "localhost/") {
-		cmd := exec.CommandContext(ctx, "kind", "load", "docker-image", config.OperatorImage, "--name", config.ClusterName)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("load operator image into Kind: %w", err)
+		if err := LoadImageToKind(ctx, config.OperatorImage, "kubernaut-operator", config.ClusterName, writer); err != nil {
+			return fmt.Errorf("load operator image into Kind via Podman archive: %w", err)
 		}
 	}
 	operatorNamespace := operatorNamespaceForConfig(config)
