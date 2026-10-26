@@ -17,7 +17,9 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"encoding/base64"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -42,5 +44,28 @@ var _ = Describe("Monitoring TLS cache validation", func() {
 		Expect(text).To(ContainSubstring("EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, namespace, writer)"))
 		Expect(text).To(ContainSubstring("DeployPrometheusTLS(ctx, namespace, kubeconfigPath, writer)"))
 		Expect(text).To(ContainSubstring("DeployAlertManagerTLS(ctx, namespace, namespace, kubeconfigPath, \"\", writer)"))
+	})
+
+	It("UT-INFRA-EM-TLS-002 [BR-EM-001, BR-PLATFORM-014]: gives EM HTTPS endpoints and the monitoring CA bundle", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "effectivenessmonitor_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).To(ContainSubstring("prometheusUrl: https://prometheus-svc:9090"))
+		Expect(text).To(ContainSubstring("alertManagerUrl: https://alertmanager-svc:9093"))
+		Expect(text).To(ContainSubstring("tlsCaFile: /etc/monitoring-ca/ca.crt"))
+		Expect(text).To(ContainSubstring("mountPath: /etc/monitoring-ca"))
+		Expect(text).To(ContainSubstring("name: monitoring-ca"))
+	})
+
+	It("UT-INFRA-EM-TLS-003 [BR-EM-001, BR-PLATFORM-014]: renders the monitoring CA volume in the EM deployment", func() {
+		manifest := captureKubectlManifest(func() error {
+			return DeployEMController(context.Background(), "kubernaut-system", "test-kubeconfig", "localhost/effectivenessmonitor:test", io.Discard)
+		})
+
+		Expect(manifest).To(ContainSubstring("prometheusUrl: https://prometheus-svc:9090"))
+		Expect(manifest).To(ContainSubstring("alertManagerUrl: https://alertmanager-svc:9093"))
+		Expect(manifest).To(ContainSubstring("tlsCaFile: /etc/monitoring-ca/ca.crt"))
+		Expect(manifest).To(ContainSubstring("mountPath: /etc/monitoring-ca"))
+		Expect(manifest).To(ContainSubstring("name: monitoring-ca"))
 	})
 })

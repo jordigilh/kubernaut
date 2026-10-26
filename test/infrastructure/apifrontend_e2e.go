@@ -1190,8 +1190,9 @@ func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, flee
 		return nil, fmt.Errorf("kubernaut agent config must contain an integrations mapping")
 	}
 	integrations["fleet"] = map[string]any{
-		"endpoint":    fleetOptions.MCPGatewayEndpoint,
-		"gatewayType": fleetOptions.MCPGatewayType,
+		"endpoint":            fleetOptions.MCPGatewayEndpoint,
+		"gatewayType":         fleetOptions.MCPGatewayType,
+		"mcpGatewayTLSCAFile": "/etc/tls-ca/ca.crt",
 		"oauth2": map[string]any{
 			"enabled":              true,
 			"tokenURL":             fleetOptions.OAuth2TokenURL,

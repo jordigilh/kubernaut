@@ -418,11 +418,12 @@ data:
       leaderElection: false
       leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
-      prometheusUrl: http://prometheus-svc:9090
+      prometheusUrl: https://prometheus-svc:9090
       prometheusEnabled: true
-      alertManagerUrl: http://alertmanager-svc:9093
+      alertManagerUrl: https://alertmanager-svc:9093
       alertManagerEnabled: true
       connectionTimeout: 10s
+      tlsCaFile: /etc/monitoring-ca/ca.crt
       prometheusLookback: 2m
 ---
 apiVersion: v1
@@ -517,6 +518,9 @@ spec:
         - name: tls-ca
           mountPath: /etc/tls-ca
           readOnly: true
+        - name: monitoring-ca
+          mountPath: /etc/monitoring-ca
+          readOnly: true
         env:
         - name: GOCOVERDIR
           value: /coverdata
@@ -540,7 +544,10 @@ spec:
       - name: tls-ca
         configMap:
           name: inter-service-ca
-`, namespace, imageName, pullPolicy)
+      - name: monitoring-ca
+        configMap:
+          name: %[4]s
+`, namespace, imageName, pullPolicy, monitoringCAConfigMapName)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewBufferString(manifest)
