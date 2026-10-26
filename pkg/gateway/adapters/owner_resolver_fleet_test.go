@@ -56,6 +56,28 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				"local signal must not have ClusterID")
 		})
 
+		It("UT-GW-2555-001 [BR-INTEGRATION-065, AC-4, AC-6, ASVS V4.1.1]: local Parse ignores common cluster attribution", func() {
+			localResolver := &stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "local-nginx",
+			}
+			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+
+			localSignal, err := adapter.Parse(ctx, buildAlertPayload(""))
+			Expect(err).ToNot(HaveOccurred())
+
+			clusteredSignal, err := adapter.Parse(ctx, buildAlertPayload("local"))
+			Expect(err).ToNot(HaveOccurred(),
+				"local mode must not attempt remote resolution for a common cluster label")
+			Expect(clusteredSignal).ToNot(BeNil())
+			Expect(clusteredSignal.ClusterID).To(BeEmpty(),
+				"local mode must discard common cluster attribution")
+			Expect(clusteredSignal.Fingerprint).To(Equal(localSignal.Fingerprint),
+				"local cluster attribution must not change local deduplication identity")
+			Expect(clusteredSignal.Resource.Name).To(Equal("local-nginx"),
+				"local mode must resolve ownership with the local owner resolver")
+		})
+
 		It("UT-GW-2394-001 [AC-4, SI-10]: fleet Parse rejects signals without cluster attribution", func() {
 			localResolver := &stubOwnerResolver{
 				ownerKind: "Deployment",
@@ -93,12 +115,15 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				"remote signal must preserve ClusterID")
 		})
 
-		It("UT-GW-2430-001 [AC-4, AC-6, ASVS V4.1.5]: Parse fails closed when a remote signal has no reader factory", func() {
+		It("UT-GW-2430-001 [AC-4, AC-6, SI-10, ASVS V4.1.5]: Parse fails closed for an unregistered Fleet cluster", func() {
 			localResolver := &stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{},
+			})
 
 			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
@@ -177,6 +202,29 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			Expect(signals).ToNot(BeEmpty())
 			Expect(signals[0].ClusterID).To(Equal("prod-east"),
 				"ParseBatch must preserve clusterID from remote alerts")
+		})
+
+		It("UT-GW-2555-002 [BR-INTEGRATION-065, AC-4, AC-6, ASVS V4.1.1]: local ParseBatch ignores per-alert cluster attribution", func() {
+			localResolver := &stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "local-nginx",
+			}
+			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+
+			localSignals, err := adapter.ParseBatch(ctx, buildAlertPayloadWithPerAlertCluster("", ""))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(localSignals).To(HaveLen(1))
+
+			clusteredSignals, err := adapter.ParseBatch(ctx, buildAlertPayloadWithPerAlertCluster("", "local"))
+			Expect(err).ToNot(HaveOccurred(),
+				"local mode must not attempt remote resolution for a per-alert cluster label")
+			Expect(clusteredSignals).To(HaveLen(1))
+			Expect(clusteredSignals[0].ClusterID).To(BeEmpty(),
+				"local mode must discard per-alert cluster attribution")
+			Expect(clusteredSignals[0].Fingerprint).To(Equal(localSignals[0].Fingerprint),
+				"local cluster attribution must not change local batch deduplication identity")
+			Expect(clusteredSignals[0].Resource.Name).To(Equal("local-nginx"),
+				"local mode must resolve ownership with the local owner resolver")
 		})
 	})
 

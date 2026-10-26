@@ -132,19 +132,16 @@ func (a *PrometheusAdapter) SetReaderFactory(rf readerFactory) {
 }
 
 // resolverForCluster returns the appropriate owner resolver for the given clusterID.
-// For single-cluster mode (no readerFactory), it returns the local resolver.
-// When fleet mode is enabled, an explicit registered clusterID is required
-// and every resolver, including the hub, is created through the MCP Gateway.
+// In local mode (no readerFactory), alert cluster attribution is ignored and
+// the local resolver is always used. In Fleet mode, an explicit registered
+// clusterID is required and every resolver is created through the MCP Gateway.
 // On error, it returns an error rather than selecting the local resolver.
 func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) (types.OwnerResolver, error) {
-	if clusterID == "" {
-		if a.readerFactory != nil {
-			return nil, errors.New("cluster ID required when fleet mode is enabled")
-		}
+	if a.readerFactory == nil {
 		return a.ownerResolver, nil
 	}
-	if a.readerFactory == nil {
-		return nil, fmt.Errorf("remote owner resolver unavailable for cluster %q", clusterID)
+	if clusterID == "" {
+		return nil, errors.New("cluster ID required when fleet mode is enabled")
 	}
 	reader, err := a.readerFactory.ReaderFor(ctx, clusterID)
 	if err != nil {
@@ -153,6 +150,16 @@ func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID st
 		return nil, fmt.Errorf("remote owner resolver for cluster %q: %w", clusterID, err)
 	}
 	return ownerchain.NewK8sOwnerResolver(reader, a.logger), nil
+}
+
+// effectiveClusterID returns the cluster identity that may cross the Gateway
+// boundary. Local mode intentionally discards alert-provided attribution;
+// Fleet mode preserves the validated registered identity.
+func (a *PrometheusAdapter) effectiveClusterID(clusterID string) string {
+	if a.readerFactory == nil {
+		return ""
+	}
+	return clusterID
 }
 
 // Name returns the adapter identifier
@@ -257,15 +264,16 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		// fall back to the per-alert label instead of misattributing the
 		// signal to the local hub cluster. commonLabels keeps precedence on
 		// conflict (group-level attribution wins).
-		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
-		if clusterID == "" {
-			clusterID = alert.Labels[types.ClusterLabelKey]
+		alertClusterID := webhook.CommonLabels[types.ClusterLabelKey]
+		if alertClusterID == "" {
+			alertClusterID = alert.Labels[types.ClusterLabelKey]
 		}
-		resolver, resolverErr := a.resolverForCluster(ctx, clusterID)
+		resolver, resolverErr := a.resolverForCluster(ctx, alertClusterID)
 		if resolverErr != nil {
 			lastErr = resolverErr
 			continue
 		}
+		clusterID := a.effectiveClusterID(alertClusterID)
 
 		fingerprint, resolvedResource, err := a.resolveAlertForParse(ctx, i, resource, clusterID, resolver)
 		if err != nil {
@@ -436,14 +444,15 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 
 	// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation),
 	// falling back to the per-alert label when grouping strips it (#2362).
-	clusterID := webhook.CommonLabels[types.ClusterLabelKey]
-	if clusterID == "" {
-		clusterID = alert.Labels[types.ClusterLabelKey]
+	alertClusterID := webhook.CommonLabels[types.ClusterLabelKey]
+	if alertClusterID == "" {
+		alertClusterID = alert.Labels[types.ClusterLabelKey]
 	}
-	resolver, resolverErr := a.resolverForCluster(ctx, clusterID)
+	resolver, resolverErr := a.resolverForCluster(ctx, alertClusterID)
 	if resolverErr != nil {
 		return nil, false, resolverErr
 	}
+	clusterID := a.effectiveClusterID(alertClusterID)
 
 	fingerprint, resolvedResource, ok := a.resolveAlertFingerprint(ctx, alertIndex, resource, clusterID, resolver)
 	if !ok {
