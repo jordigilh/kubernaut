@@ -108,9 +108,10 @@ integrations:
 		var config struct {
 			Integrations struct {
 				Fleet struct {
-					Endpoint    string `yaml:"endpoint"`
-					GatewayType string `yaml:"gatewayType"`
-					OAuth2      struct {
+					Endpoint            string `yaml:"endpoint"`
+					GatewayType         string `yaml:"gatewayType"`
+					MCPGatewayTLSCAFile string `yaml:"mcpGatewayTLSCAFile"`
+					OAuth2              struct {
 						Enabled              bool     `yaml:"enabled"`
 						TokenURL             string   `yaml:"tokenURL"`
 						CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
@@ -132,6 +133,7 @@ integrations:
 		Expect(yaml.Unmarshal(rendered, &config)).To(Succeed())
 		Expect(config.Integrations.Fleet.Endpoint).To(Equal(fleetOptions.MCPGatewayEndpoint))
 		Expect(config.Integrations.Fleet.GatewayType).To(Equal("eaigw"))
+		Expect(config.Integrations.Fleet.MCPGatewayTLSCAFile).To(Equal("/etc/tls-ca/ca.crt"))
 		Expect(config.Integrations.Fleet.OAuth2.Enabled).To(BeTrue())
 		Expect(config.Integrations.Fleet.OAuth2.TokenURL).To(Equal(fleetOptions.OAuth2TokenURL))
 		Expect(config.Integrations.Fleet.OAuth2.CredentialsSecretRef).To(Equal(fleetOAuth2SecretName))

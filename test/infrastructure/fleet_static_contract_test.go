@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -55,6 +56,14 @@ var _ = Describe("Fleet static operator contract", func() {
 })
 
 var _ = Describe("EAIGW stable Service alias", func() {
+	It("UT-2492-CR-STATIC-005 [BR-FLEET-004]: gives FMC's MCP client the gateway CA", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleet_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).To(ContainSubstring("namespace: \"%[14]s\"\n      tlsCAFile: \"/etc/fleetmetadatacache/tls-ca/ca.crt\""))
+		Expect(text).NotTo(ContainSubstring("namespace: \"%[14]s\"\n      tlsCaFile: \"/etc/fleetmetadatacache/tls-ca/ca.crt\""))
+	})
+
 	It("UT-2492-CR-STATIC-002 [BR-FLEET-004]: selects the generated proxy by stable ownership labels", func() {
 		manifest := BuildEAIGWStableServiceManifest("mcp-system")
 		Expect(manifest).To(ContainSubstring("name: mcp-gateway"))

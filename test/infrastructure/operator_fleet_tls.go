@@ -58,6 +58,8 @@ var mcpGatewayTLSDNSNames = []string{
 	"*.gateway-system.svc.cluster.local",
 	"*.envoy-gateway-system.svc",
 	"*.envoy-gateway-system.svc.cluster.local",
+	"kube-mcp-server.127-0-0-1.sslip.io",
+	"kube-mcp-server-remote.127-0-0-1.sslip.io",
 }
 
 // EnsureOperatorFleetTLS creates the qualification CA before the Kubernaut CR

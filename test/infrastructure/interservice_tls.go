@@ -168,23 +168,13 @@ data:
 			// The Fleet MCP Gateway terminates TLS at the Gateway API edge,
 			// not at Kubernaut's application gateway Service. Include both
 			// fixed Kuadrant names and namespace wildcards for Envoy Gateway's
-			// generated Service name so the same qualification CA works for
-			// in-cluster clients and host-side NodePort probes.
+			// generated Service name, plus the sslip.io hostnames used by
+			// Kuadrant MCPServerRegistrations, so the same qualification CA
+			// works for in-cluster clients and host-side NodePort probes.
 			name:       "mcp-gateway",
 			secretName: "mcp-gateway-tls",
-			dnsNames: []string{
-				"localhost",
-				"mcp-gateway",
-				"mcp-gateway.gateway-system.svc",
-				"mcp-gateway.gateway-system.svc.cluster.local",
-				"mcp-gateway-istio.gateway-system.svc",
-				"mcp-gateway-istio.gateway-system.svc.cluster.local",
-				"*.gateway-system.svc",
-				"*.gateway-system.svc.cluster.local",
-				"*.envoy-gateway-system.svc",
-				"*.envoy-gateway-system.svc.cluster.local",
-			},
-			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+			dnsNames:   append([]string(nil), mcpGatewayTLSDNSNames...),
+			ipAddrs:    []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
 			name:       "kubernaut-agent",

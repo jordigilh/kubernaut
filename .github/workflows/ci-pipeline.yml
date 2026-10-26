@@ -1040,6 +1040,7 @@ jobs:
           tar -xzf /tmp/operator-qualification/charts.tar.gz -C "$GITHUB_WORKSPACE"
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
+          echo "KUBERNAUT_OPERATOR_IMAGE_TAR=/tmp/operator-qualification/kubernaut-operator-amd64.tar" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-operator" >> "$GITHUB_ENV"
           echo "KUBERNAUT_DEPENDENCY_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-development-dependencies" >> "$GITHUB_ENV"
       - name: Run ${{ matrix.service }} integration tests
@@ -1363,6 +1364,7 @@ jobs:
           tar -xzf /tmp/operator-qualification/charts.tar.gz -C "$GITHUB_WORKSPACE"
           echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
+          echo "KUBERNAUT_OPERATOR_IMAGE_TAR=/tmp/operator-qualification/kubernaut-operator-amd64.tar" >> "$GITHUB_ENV"
           echo "KUBERNAUT_OPERATOR_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-operator" >> "$GITHUB_ENV"
           echo "KUBERNAUT_DEPENDENCY_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-development-dependencies" >> "$GITHUB_ENV"
       - name: Install Kind v0.32.0

@@ -1500,6 +1500,35 @@ data:
 	return nil
 }
 
+func operatorImageArtifactPath() string {
+	return strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE_TAR"))
+}
+
+func ensureOperatorImageAvailable(ctx context.Context, imageRef string, writer io.Writer) error {
+	check := exec.CommandContext(ctx, "podman", "image", "exists", imageRef)
+	if err := check.Run(); err == nil {
+		return nil
+	}
+
+	tarPath := operatorImageArtifactPath()
+	if tarPath == "" {
+		return fmt.Errorf("operator image %q is not available locally", imageRef)
+	}
+	_, _ = fmt.Fprintf(writer, "  📦 Reloading operator image artifact: %s\n", tarPath)
+	load := exec.CommandContext(ctx, "podman", "load", "-i", tarPath)
+	load.Stdout = writer
+	load.Stderr = writer
+	if err := load.Run(); err != nil {
+		return fmt.Errorf("reload operator image artifact: %w", err)
+	}
+
+	check = exec.CommandContext(ctx, "podman", "image", "exists", imageRef)
+	if err := check.Run(); err != nil {
+		return fmt.Errorf("operator image %q is still unavailable after loading %s: %w", imageRef, tarPath, err)
+	}
+	return nil
+}
+
 // InstallOperatorBootstrap installs the operator-only chart and waits for its
 // manager. The bootstrap chart does not create the application CR.
 func InstallOperatorBootstrap(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) error {
@@ -1509,6 +1538,9 @@ func InstallOperatorBootstrap(ctx context.Context, config OperatorDeploymentConf
 		}
 	}
 	if config.ClusterName != "" && strings.HasPrefix(config.OperatorImage, "localhost/") {
+		if err := ensureOperatorImageAvailable(ctx, config.OperatorImage, writer); err != nil {
+			return fmt.Errorf("ensure operator image is available: %w", err)
+		}
 		if err := LoadImageToKind(ctx, config.OperatorImage, "kubernaut-operator", config.ClusterName, writer); err != nil {
 			return fmt.Errorf("load operator image into Kind via Podman archive: %w", err)
 		}

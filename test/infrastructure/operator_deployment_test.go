@@ -34,12 +34,27 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(operatorRevision).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(operatorRevision).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
-		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator:1.6.0-rc27"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:1f2300d7631b6a1b5424b4c5d0678eb24b1b59eba95c677bc9d8b9cba187ec4b"))
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:cee572855fa1433a5fa056028d583fdd280cc549d1f9c69bc9c517909bf34064"))
 		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
 		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+	})
+
+	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {
+		previous, hadPrevious := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE_TAR")
+		defer func() {
+			if hadPrevious {
+				_ = os.Setenv("KUBERNAUT_OPERATOR_IMAGE_TAR", previous)
+			} else {
+				_ = os.Unsetenv("KUBERNAUT_OPERATOR_IMAGE_TAR")
+			}
+		}()
+
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_IMAGE_TAR", "/tmp/operator.tar")).To(Succeed())
+		Expect(operatorImageArtifactPath()).To(Equal("/tmp/operator.tar"))
 	})
 
 	It("UT-2492-012 [BR-E2E-001]: mounts writable /tmp only on operator-managed deployments", func() {

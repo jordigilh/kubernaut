@@ -48,6 +48,8 @@ var _ = Describe("operator Fleet TLS material", func() {
 			"localhost",
 			"mcp-gateway-istio.gateway-system.svc",
 			"generated.envoy-gateway-system.svc.cluster.local",
+			"kube-mcp-server.127-0-0-1.sslip.io",
+			"kube-mcp-server-remote.127-0-0-1.sslip.io",
 		} {
 			_, err = leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: name, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
 			Expect(err).NotTo(HaveOccurred(), "certificate must verify for %s", name)
