@@ -87,10 +87,11 @@ using the deprecated application Helm chart.
 - `test/infrastructure/operator_deployment.go`: provenance, chart arguments, minimal CR
   rendering, dependency bootstrap, readiness, image verification, exposure, and diagnostics.
 - `test/infrastructure/kind_cluster_helpers.go`: pre-creation port-mapping generation.
-- `test/infrastructure/fullpipeline_e2e.go`, `fleet_e2e.go`, and `demo_helm.go`:
-  operator wiring and cleanup ownership.
+- `test/infrastructure/fullpipeline_e2e.go` and `fleet_e2e.go`: operator wiring and
+  cleanup ownership.
 - `.github/workflows/ci-pipeline.yml` and release qualification inputs: exact-SHA artifact handoff.
-- `hack/setup-demo-infra` and Make targets: prebuilt operator/application demo flow.
+- The former application-chart demo helper is intentionally out of scope; disposable
+  demo validation uses the operator-backed Fleet E2E target.
 - `docs/tests/2492/TEST_PLAN.md` and qualification manifest format.
 
 ### 4.2 Features Not to be Tested
@@ -157,7 +158,7 @@ or a non-operator application deployment path.
 | `test/infrastructure/operator_deployment.go` | bootstrap install, CR apply, readiness, Deployment image verification, EndpointSlice exposure, cleanup |
 | `test/infrastructure/fullpipeline_e2e.go` | operator deployment entry point |
 | `test/infrastructure/fleet_e2e.go` | Fleet-first infrastructure and operator deployment |
-| `test/infrastructure/demo_helm.go` | local/fleet demo operator path |
+| `test/e2e/fleet/suite_test.go` | disposable Fleet operator qualification path |
 | `.github/workflows/ci-pipeline.yml` | exact-SHA build/artifact lane and FP/Fleet handoff |
 
 ### 6.3 Version Identification
@@ -297,7 +298,7 @@ or a non-operator application deployment path.
 |----------|-------------------|-----------------|--------|
 | `test/e2e/fullpipeline/suite_test.go` | Uses fixed URLs | Consume operator exposure evidence and CA-aware URLs | Operator Services remain ClusterIP |
 | `test/e2e/fleet/suite_test.go` | Needs application readiness | Consume operator CR/exposure evidence | Operator is the sole application owner |
-| `hack/setup-demo-infra/main.go` | Needs deployment inputs | Uses shared operator bootstrap/CR flow | Demo is a supported operator path |
+| `test/e2e/fleet/suite_test.go` | Needs deployment inputs | Uses shared operator bootstrap/CR flow | Disposable qualification is the supported demo path |
 | `Makefile` demo help | Must describe deployment ownership | Says “operator bootstrap + CR” | User-facing contract update |
 
 ---

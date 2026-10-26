@@ -59,6 +59,19 @@ func monitoringCABytesMatch(hostPEM []byte, encodedSecretCA string) bool {
 	return err == nil && bytes.Equal(hostPEM, secretPEM)
 }
 
+func monitoringCertificateValid(encoded string) bool {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return false
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	return err == nil && time.Until(certificate.NotAfter) >= time.Hour
+}
+
 func monitoringTLSCacheMatches(ctx context.Context, kubeconfigPath, applicationNamespace, monitoringNamespace string) (bool, error) {
 	hostPEM, err := os.ReadFile(MonitoringCAPath(kubeconfigPath))
 	if err != nil {
@@ -85,6 +98,9 @@ func monitoringTLSCacheMatches(ctx context.Context, kubeconfigPath, applicationN
 	monitoringCA := monitoringSecret.Data["ca.crt"]
 	clientCA := clientSecret.Data["ca.crt"]
 	if !monitoringCABytesMatch(hostPEM, monitoringCA) {
+		return false, nil
+	}
+	if !monitoringCertificateValid(monitoringCA) || !monitoringCertificateValid(monitoringSecret.Data["tls.crt"]) {
 		return false, nil
 	}
 	decodedClientCA, err := base64.StdEncoding.DecodeString(strings.TrimSpace(clientCA))

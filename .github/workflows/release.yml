@@ -147,17 +147,17 @@ jobs:
             fi
             SHA='${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}'
             [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::operator_ref fallback must be an exact SHA"; exit 1; }
-           IMAGE="localhost/kubernaut-operator:$SHA"
+            IMAGE="localhost/kubernaut-operator:$SHA"
             cat > operator-candidate.yaml <<EOF
           schemaVersion: 1
           repository: jordigilh/kubernaut-operator
           sha: $SHA
-           image:
-             ref: $IMAGE
-           chart:
-             ref: development-source
-           dependencyChart:
-             ref: development-source
+          image:
+            ref: $IMAGE
+          chart:
+            ref: development-source
+          dependencyChart:
+            ref: development-source
           qualificationProfile: generic-kind-v1.6
           EOF
           fi
@@ -200,7 +200,7 @@ jobs:
 
   operator-qualification:
     name: Operator FP/Fleet qualification
-    needs: [prepare, prepare-operator-candidate, build-amd64]
+    needs: [prepare, prepare-operator-candidate, build-amd64, create-manifests]
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
@@ -358,6 +358,7 @@ jobs:
           make image-build-${{ matrix.service }}
 
       - name: Push image
+        if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
         run: |
@@ -450,6 +451,7 @@ jobs:
           echo "Image built in $(($END - $START))s"
 
       - name: Push image
+        if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
         run: |
@@ -543,6 +545,7 @@ jobs:
           exit $BUILD_EXIT
 
       - name: Push image
+        if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
         run: |
@@ -560,6 +563,7 @@ jobs:
   security-scan-amd64:
     name: "Security Scan ${{ matrix.service }} (amd64)"
     needs: [prepare, build-amd64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -616,6 +620,7 @@ jobs:
   security-scan-arm64:
     name: "Security Scan ${{ matrix.service }} (arm64)"
     needs: [prepare, build-arm64, build-arm64-qemu]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -668,6 +673,7 @@ jobs:
   create-manifests:
     name: Create Multi-Arch Manifests
     needs: [prepare, build-amd64, build-arm64, build-arm64-qemu]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -719,6 +725,7 @@ jobs:
   sign-and-attest:
     name: "Sign & Attest SBOM ${{ matrix.service }}"
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -842,6 +849,7 @@ jobs:
   provenance:
     name: "Attest ${{ matrix.service }}"
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     permissions:
       contents: read
       actions: read
@@ -887,6 +895,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -311,9 +311,12 @@ func readOperatorCASecret(ctx context.Context, kubeconfigPath, namespace string)
 	readKey := func(key string) ([]byte, error) {
 		jsonPath := "{.data." + strings.ReplaceAll(key, ".", `\.`) + "}"
 		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"get", "secret", operatorInternalCASecretName, "-n", namespace, "-o", "jsonpath="+jsonPath)
+			"get", "secret", operatorInternalCASecretName, "-n", namespace, "--ignore-not-found", "-o", "jsonpath="+jsonPath)
 		output, err := cmd.Output()
-		if err != nil || strings.TrimSpace(string(output)) == "" {
+		if err != nil {
+			return nil, fmt.Errorf("read %s from operator CA Secret: %w", key, err)
+		}
+		if strings.TrimSpace(string(output)) == "" {
 			return nil, errOperatorCASecretMissing
 		}
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(output)))

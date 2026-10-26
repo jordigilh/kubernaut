@@ -764,7 +764,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jordigilh/kubernaut-operator
-          ref: ${{ needs.resolve-operator.outputs.ref }}
+          ref: ${{ needs.resolve-operator.outputs.operator_sha }}
           path: kubernaut-operator
           fetch-depth: 0
 
@@ -780,7 +780,7 @@ jobs:
             kubernaut-operator/Dockerfile.ci
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.11.1
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Build amd64 Docker artifact
         if: matrix.arch == 'amd64'
@@ -827,7 +827,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jordigilh/kubernaut-operator
-          ref: ${{ needs.resolve-operator.outputs.ref }}
+          ref: ${{ needs.resolve-operator.outputs.operator_sha }}
           path: kubernaut-operator
           fetch-depth: 0
 
@@ -906,7 +906,7 @@ jobs:
 
   integration-tests:
     name: Integration (${{ matrix.service }})
-    needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
+    needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
@@ -1024,25 +1024,6 @@ jobs:
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
-      - name: Load exact-SHA operator artifact for FP/Fleet
-        if: matrix.service == 'fullpipeline' || matrix.service == 'fleet'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: operator-qualification-${{ github.run_id }}
-          path: /tmp/operator-qualification
-      - name: Install exact-SHA operator artifact for FP/Fleet
-        if: matrix.service == 'fullpipeline' || matrix.service == 'fleet'
-        shell: bash
-        run: |
-          set -euo pipefail
-          tarball=/tmp/operator-qualification/kubernaut-operator-amd64.tar
-          podman load -i "$tarball"
-          tar -xzf /tmp/operator-qualification/charts.tar.gz -C "$GITHUB_WORKSPACE"
-          echo "KUBERNAUT_OPERATOR_IMAGE=${{ needs.build-operator.outputs.operator_image }}" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_OPERATOR_SHA=${{ needs.build-operator.outputs.operator_sha }}" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_OPERATOR_IMAGE_TAR=/tmp/operator-qualification/kubernaut-operator-amd64.tar" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_OPERATOR_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-operator" >> "$GITHUB_ENV"
-          echo "KUBERNAUT_DEPENDENCY_CHART_PATH=$GITHUB_WORKSPACE/charts/kubernaut-development-dependencies" >> "$GITHUB_ENV"
       - name: Run ${{ matrix.service }} integration tests
         run: |
           make test-integration-${{ matrix.service }} 2>&1 | tee integration-${{ matrix.service }}.log

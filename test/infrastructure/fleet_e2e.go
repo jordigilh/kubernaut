@@ -715,7 +715,7 @@ type FleetCoreInfraOptions struct {
 	// Empty (the default, and every existing Ginkgo-suite caller) falls
 	// back to the long-standing ClusterName+"-remote" convention -- this
 	// keeps CI's "fleet-e2e"/"fleet-e2e-remote" pair byte-for-byte
-	// unchanged. The demo entry point (hack/setup-demo-infra -mode=fleet) sets this
+	// unchanged. The operator-backed demo/qualification entry point sets this
 	// explicitly so the spoke's Kind cluster name can read as
 	// "kubernaut-remote-cluster" -- matching the "remote-cluster" identity
 	// every fleet MCPServerRegistration/AlertManager label already uses for

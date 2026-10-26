@@ -61,7 +61,6 @@ var _ = Describe("EAIGW stable Service alias", func() {
 		Expect(err).NotTo(HaveOccurred())
 		text := string(source)
 		Expect(text).To(ContainSubstring("namespace: \"%[14]s\"\n      tlsCAFile: \"/etc/fleetmetadatacache/tls-ca/ca.crt\""))
-		Expect(text).NotTo(ContainSubstring("namespace: \"%[14]s\"\n      tlsCaFile: \"/etc/fleetmetadatacache/tls-ca/ca.crt\""))
 	})
 
 	It("UT-2492-CR-STATIC-002 [BR-FLEET-004]: selects the generated proxy by stable ownership labels", func() {

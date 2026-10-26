@@ -33,6 +33,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -426,7 +427,7 @@ type monitoringTLSRoundTripper struct {
 func (t *monitoringTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL != nil && req.URL.Scheme == interServiceHTTP {
 		port := req.URL.Port()
-		if port == "9190" || port == "9193" {
+		if port == strconv.Itoa(PrometheusHostPort) || port == strconv.Itoa(AlertManagerHostPort) || port == "9190" || port == "9193" {
 			clone := req.Clone(req.Context())
 			clone.URL.Scheme = interServiceHTTPS
 			req = clone

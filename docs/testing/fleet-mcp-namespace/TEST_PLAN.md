@@ -32,12 +32,12 @@ Success requires:
 
 - **BR-PLATFORM-014** — stable, production-parity fleet demo infrastructure.
 - **ADR-068** — MCP Gateway is external infrastructure deployed before Kubernaut.
-- **DD-TEST-015** — provision fleet infrastructure before the single Helm install.
+- **DD-TEST-015** — provision fleet infrastructure before the operator reconciles the application CR.
 - `test/infrastructure/fleet_e2e.go`
 - `test/infrastructure/fleetmetadatacache_remote_cluster.go`
-- `test/infrastructure/demo_helm.go`
+- `test/infrastructure/fleet_e2e.go`
 
-Out of scope: changing production Helm resources or moving Kubernaut workloads
+Out of scope: changing production operator resources or moving Kubernaut workloads
 out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 
 ## 3. Risks and mitigations
@@ -66,7 +66,7 @@ out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 |---|---|---|---|
 | MCP namespace resolution | Fleet demo and fleet E2E setup | `provisionFleetCoreInfra` | `UT-INFRA-FLEET-MCP-002/003/004` |
 | Hub MCP/Gateway resources | `DeployFleetGatewayInfra` | `fleet_e2e.go` | `IT-INFRA-FLEET-MCP-005/006` |
-| Helm fleet namespace wiring | `InstallDemoHelmChart` | `buildFleetOAuth2HelmArgs` | `UT-INFRA-FLEET-MCP-001` |
+| Operator Fleet namespace wiring | `SetupFleetE2EInfrastructure` | Fleet CR and gateway namespace builders | `UT-INFRA-FLEET-MCP-001` |
 
 ## 5. Verification
 

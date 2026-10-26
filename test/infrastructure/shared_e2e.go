@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -1185,7 +1186,13 @@ func buildMockLLMRemediationScenarios(namespaces map[string]string) string {
 `
 	}
 	var scenarios string
-	for key, namespace := range namespaces {
+	keys := make([]string, 0, len(namespaces))
+	for key := range namespaces {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		namespace := namespaces[key]
 		scenarios += fmt.Sprintf(`      - name: "kubernaut_remediate_%s"
         keywords: ["%s remediation"]
         match_last_only: true

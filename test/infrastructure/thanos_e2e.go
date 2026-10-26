@@ -296,7 +296,7 @@ spec:
         args:
         - "query"
         - "--http-address=0.0.0.0:9090"
-        - "--http.config-file=/etc/monitoring-tls/web-config.yml"
+        - "--http.config=/etc/monitoring-tls/web-config.yml"
         - "--grpc-address=0.0.0.0:%[3]d"
         - "--query.replica-label=replica"%[4]s
         ports:

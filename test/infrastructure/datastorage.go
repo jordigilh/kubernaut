@@ -143,11 +143,20 @@ func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writ
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
+	preserve := testsFailed && inCICD
 	// Issue #2492: remove upstream test-owned NodePort adapters before the
 	// cluster teardown. The selector is restricted to the explicit owner label;
 	// operator-owned Services are never patched or deleted by this cleanup.
-	if kubeconfigPath := os.Getenv("KUBECONFIG"); kubeconfigPath != "" {
-		if err := DeleteOperatorExposureAdapters(context.Background(), kubeconfigPath, kubernautSystem, writer); err != nil {
+	if kubeconfigPath := os.Getenv("KUBECONFIG"); kubeconfigPath != "" && !preserve {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		currentContext, contextErr := currentKubeconfigContext(cleanupCtx, kubeconfigPath)
+		if contextErr != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  skipping operator exposure cleanup: %v\n", contextErr)
+		} else if currentContext != "kind-"+clusterName {
+			_, _ = fmt.Fprintf(writer, "⚠️  skipping operator exposure cleanup: kubeconfig context %q is not kind-%s\n", currentContext, clusterName)
+		} else if err := DeleteOperatorExposureAdapters(cleanupCtx, kubeconfigPath, kubernautSystem, writer); err != nil {
 			_, _ = fmt.Fprintf(writer, "⚠️  operator exposure cleanup before cluster deletion: %v\n", err)
 		}
 	}
@@ -160,8 +169,6 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	//
 	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
 	// then delete cluster to free resources.
-	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
-
 	if testsFailed {
 		if inCICD {
 			// ═══════════════════════════════════════════════════════════════════════
@@ -218,6 +225,14 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	}
 	_, _ = fmt.Fprintf(writer, "✅ Kind cluster deleted\n")
 	return nil
+}
+
+func currentKubeconfigContext(ctx context.Context, kubeconfigPath string) (string, error) {
+	output, err := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "config", "current-context").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("read kubeconfig current-context: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 // ExportMustGatherLogs exports Kind cluster logs to a local directory for debugging.
