@@ -1052,6 +1052,26 @@ jobs:
           path: provenance/
           merge-multiple: true
 
+      - name: Validate or create release tag at built commit
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            TAG_SHA=$(git rev-list -n 1 "refs/tags/${TAG}")
+            if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+              echo "::error::${TAG} points to ${TAG_SHA}, expected built commit ${GITHUB_SHA}"
+              exit 1
+            fi
+            echo "Validated existing ${TAG} at ${GITHUB_SHA}"
+          else
+            git tag "${TAG}" "$GITHUB_SHA"
+            git push origin "refs/tags/${TAG}"
+            echo "Created ${TAG} at ${GITHUB_SHA}"
+          fi
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
