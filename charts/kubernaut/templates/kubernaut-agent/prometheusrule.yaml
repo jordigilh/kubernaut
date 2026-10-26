@@ -1,0 +1,73 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+{{- $mV := include "kubernaut.mergedValues" (dict "root" $ "service" "monitoring") | fromYaml }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-interactive-slos
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: kubernaut-agent
+    {{- with .Values.monitoring.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kubernaut-interactive-slos
+      rules:
+        - alert: KubernautInteractiveSessionsHigh
+          expr: aiagent_mcp_interactive_sessions_active > {{ $mV.prometheusRule.thresholds.activeSessionsMax }}
+          for: {{ $mV.prometheusRule.thresholds.activeSessionsFor }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "High number of active interactive sessions"
+            description: "Kubernaut Agent has {{ "{{" }} $value {{ "}}" }} active interactive sessions (threshold: {{ $mV.prometheusRule.thresholds.activeSessionsMax }})."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#1-session-stuck-in-analyzing"
+
+        - alert: KubernautLeaseContentionSpike
+          expr: rate(aiagent_mcp_interactive_lease_contention_total[5m]) > {{ $mV.prometheusRule.thresholds.leaseContentionRateMax }}
+          for: {{ $mV.prometheusRule.thresholds.leaseContentionFor }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "Interactive session Lease contention spike"
+            description: "Lease contention rate is {{ "{{" }} $value | humanize {{ "}}" }}/s over 5m (threshold: {{ $mV.prometheusRule.thresholds.leaseContentionRateMax }}/s)."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#2-lease-contention"
+
+        - alert: KubernautInteractiveCommandLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(aiagent_mcp_interactive_command_duration_seconds_bucket[5m])) by (le, tool)) > {{ $mV.prometheusRule.thresholds.commandDurationP99Max }}
+          for: {{ $mV.prometheusRule.thresholds.commandDurationFor }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "Interactive MCP command p99 latency exceeds SLO"
+            description: "Tool {{ "{{" }} $labels.tool {{ "}}" }} p99 latency is {{ "{{" }} $value | humanize {{ "}}" }}s (SLO: {{ $mV.prometheusRule.thresholds.commandDurationP99Max }}s)."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#9-command-latency-high"
+
+        - alert: KubernautTakeoverRateHigh
+          expr: rate(aiagent_mcp_interactive_takeover_total[5m]) > {{ $mV.prometheusRule.thresholds.takeoverRateMax }}
+          for: {{ $mV.prometheusRule.thresholds.takeoverRateFor }}
+          labels:
+            severity: info
+            service: kubernaut-agent
+          annotations:
+            summary: "High interactive takeover rate (potential session quality issue)"
+            description: "Takeover rate is {{ "{{" }} $value | humanize {{ "}}" }}/s over 5m (threshold: {{ $mV.prometheusRule.thresholds.takeoverRateMax }}/s). Frequent takeovers may indicate autonomous investigation quality issues."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#3-takeover-failures"
+
+    - name: kubernaut-agent-availability
+      rules:
+        - alert: KubernautAgentDown
+          expr: absent(up{job=~"kubernaut-agent.*"}) or up{job=~"kubernaut-agent.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: kubernaut-agent
+          annotations:
+            summary: "Kubernaut Agent is down"
+            description: "No healthy Kubernaut Agent instance detected for 2 minutes. Autonomous investigations and interactive sessions are unavailable."
+{{- end }}

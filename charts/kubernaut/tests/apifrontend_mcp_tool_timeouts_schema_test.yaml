@@ -1,0 +1,109 @@
+suite: "Issue #2221: mcp.toolTimeout / mcp.toolTimeouts never exposed via schema or template"
+# AF's MCPConfig.ToolTimeout / ToolTimeouts (pkg/apifrontend/config/config.go)
+# are both actively wired into the MCP bridge
+# (cmd/apifrontend/mcp_a2a_handlers.go:44-45) and have real built-in
+# defaults in config.DefaultConfig() (ToolTimeout: 30s; ToolTimeouts: a
+# 4-entry per-tool map), but values.schema.json had no mcp.toolTimeout /
+# mcp.toolTimeouts entries at all, and the template's mcp: block only
+# rendered enabled/sessionIdleTimeout. A chart-only install had no way to
+# override per-tool MCP timeouts, and the rendered ConfigMap never made
+# these Go-level defaults visible/auditable.
+#
+# toolTimeouts is modeled as 4 named schema properties (not an arbitrary
+# additionalProperties map) specifically so each of the 4 known tool names
+# carries its own materializable per-key default (hack/gen-helm-defaults
+# intentionally never materializes defaults for arbitrary-key map schemas
+# -- see its buildDefaultsTree/walkDefaults doc comments) and so a partial
+# override of one tool's timeout cannot silently wipe out the other 3
+# defaults.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install renders mcp.toolTimeout and all 4 mcp.toolTimeouts entries, matching config.DefaultConfig() exactly"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'toolTimeout: "30s"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_investigate: "15m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_await_session: "3m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_watch: "15m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_discover_workflows: "60s"'
+
+  - it: "an explicit mcp.toolTimeout override renders through"
+    set:
+      apifrontend:
+        config:
+          mcp:
+            toolTimeout: "45s"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'toolTimeout: "45s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'toolTimeout: "30s"'
+
+  - it: "PARTIAL-OVERRIDE PROOF: overriding only kubernaut_investigate's timeout leaves the other 3 tool defaults intact (named-property fields, not a wholesale-replaced arbitrary map)"
+    set:
+      apifrontend:
+        config:
+          mcp:
+            toolTimeouts:
+              kubernaut_investigate: "20m"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_investigate: "20m"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_investigate: "15m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_await_session: "3m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_watch: "15m"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'kubernaut_discover_workflows: "60s"'

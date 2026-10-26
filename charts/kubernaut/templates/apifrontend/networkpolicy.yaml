@@ -1,0 +1,113 @@
+{{/*
+BR-PLATFORM-005 (Issue #1589 follow-up, Kubernaut Operator parity).
+Every other component (gateway, datastorage, aianalysis, signalprocessing,
+remediationorchestrator, workflowexecution, notification, effectivenessmonitor,
+authwebhook, kubernaut-agent) has a NetworkPolicy — APIFrontend was the one
+externally-facing gap. Ported from the Operator's apifrontendNetworkPolicy()
+(kubernaut-operator/internal/resources/networkpolicies.go).
+*/}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
+{{- if $v.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "apifrontend" "appLabel" "apifrontend") }}
+spec:
+  podSelector:
+    matchLabels:
+      app: apifrontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same-namespace callers (port-forward, in-cluster MCP clients, kagenti gateway).
+    - ports:
+        - port: {{ $v.config.server.httpPort }}
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    {{- range .Values.networkPolicies.apifrontend.ingressNamespaces }}
+    # External ingress-controller / route namespace (user-configured).
+    - ports:
+        - port: {{ $v.config.server.httpPort }}
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+    {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.apifrontend.ingressCIDRs "port" $v.config.server.httpPort) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.apifrontend.ingressNamespaceSelectors "port" $v.config.server.httpPort) | nindent 4 }}
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- /* Issue #1795 gap found: AF's own KubernautAgent MCP clients (pooled
+    session-per-call AND the dedicated per-investigation streaming client --
+    see cmd/apifrontend/backend_deps.go's buildKAClientDeps) call KA directly
+    at kaMCPEndpoint (kubernaut-agent:8443) for kubernaut_investigate/
+    select_workflow/discover_workflows/etc. KA's own NetworkPolicy
+    (kubernaut-agent/networkpolicy-agent.yaml) already allows this ingress FROM
+    apifrontend, and aianalysis/networkpolicy.yaml has the reciprocal AA->KA
+    egress rule below -- but AF's NetworkPolicy never had the matching AF->KA
+    egress rule, a one-sided wiring gap identical in shape to the FMC/Gateway/
+    RO fleet-OAuth2 gap and AF's own llmEgress/idpEgress gaps documented
+    elsewhere in this file. Confirmed via E2E-FP-1189-005 (Console-equivalent
+    SSE interactive remediation): every dial from AF to KA:8443 timed out at
+    exactly ~60s ("dial tcp ... i/o timeout"), consistent with a silently
+    dropped SYN rather than an application-level failure. */}}
+    - ports:
+        - port: 8443
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: kubernaut-agent
+    {{- /* Issue #1737 gap found: agent.llm.endpoint (apifrontend.yaml ConfigMap)
+    is mandatory AF config -- the A2A launcher agent calls it directly for
+    planning/reasoning -- yet the NetworkPolicy never allowed this egress,
+    silently dropping every LLM call once auth got past the OIDC 401 fix. */}}
+    {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
+    {{- /* Issue #1839 gap found: apifrontend.config.severityTriage's direct
+    Prometheus calls (GetAlerts/GetRules/InstantQuery) never had a matching
+    egress rule -- see kubernaut.np.prometheusEgress's doc comment for the
+    full RCA. Gated on the same condition that renders the severityTriage
+    config block itself (monitoring.prometheus.enabled), since a Prometheus
+    egress rule is meaningless when severity triage has no Prometheus URL to
+    call in the first place. */}}
+    {{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+    {{- include "kubernaut.np.prometheusEgress" . | nindent 4 }}
+    {{- end }}
+    {{- if $v.config.auth.replayCache.enabled }}
+    # GAP-08 (#1505): JWT replay-cache egress to Valkey.
+    # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
+    - ports:
+        - port: 6380
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: valkey
+    {{- end }}
+    {{- /* #1755 DD-TEST-015 RCA: AF's own fleet OAuth2 token fetch to
+    global.fleet.oauth2.tokenURL (same missing-egress gap fixed for FMC/
+    Gateway/SP/EM/WE/RO -- see fleetmetadatacache.yaml's comment for the full
+    RCA) also needs this rule whenever global.fleet.enabled=true, independent
+    of the JWT-issuer condition below (which happens to also gate this same
+    rule today only because this E2E harness points both auth.issuerURL and
+    global.fleet.oauth2.tokenURL at the same Keycloak instance -- a
+    coincidence, not a guarantee, for a real deployment with distinct
+    providers). `or` avoids rendering the identical rule twice when both
+    conditions are true. */}}
+    {{- if or .Values.apifrontend.config.auth.issuerURL (gt (len (.Values.apifrontend.config.auth.jwtProviders | default list)) 0) .Values.global.fleet.enabled }}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.fleet.enabled }}
+    {{- /* #1755 DD-TEST-015 RCA (5th finding): AF's own MCP client
+    (buildFleetReaderDeps -> mcpclient.NewResilient) also needs direct
+    egress to the MCP Gateway itself -- see kubernaut.np.mcpGatewayEgress's
+    doc comment for the full RCA. */}}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+    {{- end }}
+{{- end }}

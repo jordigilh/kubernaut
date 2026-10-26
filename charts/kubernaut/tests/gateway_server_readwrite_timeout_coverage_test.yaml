@@ -1,0 +1,52 @@
+suite: "BR-PLATFORM-011 (issue #2226): gateway server.readTimeout/writeTimeout test-coverage backfill"
+# templates/gateway/gateway.yaml's server block renders readTimeout/
+# writeTimeout from gateway.config.server.{readTimeout,writeTimeout} (both
+# schema-driven since before #2216-#2221's audit), but neither had a
+# helm-unittest assertion proving it. Confirmed correctly wired already
+# (no bug, unlike #2219's counter-example) -- this is a pure coverage
+# backfill, no template/schema changes.
+templates:
+  - templates/gateway/gateway.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no server.readTimeout/writeTimeout override) renders both at their schema default of 30s"
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 30s'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 30s'
+
+  - it: "explicit server.readTimeout/writeTimeout overrides render through instead of being silently discarded"
+    set:
+      gateway:
+        config:
+          server:
+            readTimeout: "45s"
+            writeTimeout: "15s"
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 45s'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 15s'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 30s'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 30s'

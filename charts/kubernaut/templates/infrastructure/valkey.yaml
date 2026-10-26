@@ -1,0 +1,183 @@
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "valkey") | fromYaml }}
+{{- if $v.enabled }}
+# DD-PLATFORM-003: Valkey renders in ArgoCD's "-1" sync-wave (ahead of the
+# default "0" application controllers) -- DataStorage needs it Ready before
+# its own wave can proceed, and running it concurrently with ~14 application
+# controllers was a measured contributor to CI resource-contention pod
+# restarts.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+spec:
+  type: ClusterIP
+  ports:
+    # DD-PLATFORM-006 DA8: TLS-only (plaintext port disabled below) -- 6380
+    # matches the --tls-port set on the container.
+    - name: valkey
+      port: 6380
+      targetPort: 6380
+      protocol: TCP
+  selector:
+    app: valkey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+    spec:
+      serviceAccountName: valkey
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.podSecurityContext "defaults" (dict "runAsNonRoot" true "runAsUser" 999 "fsGroup" 999 "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.valkey "matchLabels" (dict "app" "valkey")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: valkey
+          image: {{ $v.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "runAsNonRoot" true "runAsUser" 999)) | nindent 12 }}
+          # DD-PLATFORM-006 DA8/DA19: Valkey is TLS-only -- the plaintext port
+          # is disabled (--port 0). tls.crt/tls.key come from the valkey-tls
+          # Secret (also reused below as Valkey's own client identity when it
+          # authenticates to itself for probes), but the CA cert comes from
+          # the shared tls-ca volume (the inter-service-ca ConfigMap) like
+          # every other service (datastorage/gateway/apifrontend/
+          # kubernaut-agent via kubernaut.tlsCaVolumeMount) -- NOT from a
+          # "ca.crt" key inside valkey-tls itself.
+          #
+          # PR #1790 round-9 RCA: valkey-tls previously carried the CA under
+          # /certs/ca.crt sourced from its own Secret, which happened to work
+          # in tls.mode=cert-manager only because cert-manager auto-populates
+          # a "ca.crt" key in every Certificate-issued Secret. In
+          # tls.mode=hook, tls-cert-job.yaml's inter-service loop creates
+          # valkey-tls via a plain `kubectl create secret tls` (tls.crt/
+          # tls.key only, no ca.crt -- only authwebhook-tls gets that
+          # patched in separately), so valkey's --tls-ca-cert-file pointed at
+          # a file that never existed, and valkey-server refused to start
+          # ("Failed to configure CA certificate(s)... Failed to configure
+          # TLS"), crash-looping deterministically on every hook-mode
+          # install. This was misdiagnosed as CI CPU-contention flakiness
+          # across several prior RCA rounds (ST-CHART-VERIFY-001/-003,
+          # ST-CHART-UPG-001d, ST-CHART-MON-003 "not ok" + fullpipeline/fleet
+          # E2E "PHASE 6 TLS re-sign" rollout timeouts, both downstream of
+          # datastorage/etc never being able to reach a healthy Valkey) --
+          # the recovery loop's force-delete-and-rewait could never actually
+          # fix it because the bug was deterministic, not transient.
+          #
+          # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): mutual TLS
+          # is now mandatory (--tls-auth-clients yes) -- Valkey used to be
+          # one-way TLS only (clients verified Valkey's server cert, but any
+          # in-namespace pod could connect without presenting one of its
+          # own). DataStorage/FMC/APIFrontend already had all the client-side
+          # certFile/keyFile plumbing in place (unused until now), so closing
+          # this gap needed zero Go code changes -- only this flag flip plus
+          # pointing each client's already-live certFile/keyFile at its own
+          # already-issued, already-mounted per-service secret (see
+          # datastorage.yaml/fleetmetadatacache.yaml/apifrontend.yaml).
+          args:
+            - "--port"
+            - "0"
+            - "--tls-port"
+            - "6380"
+            - "--tls-cert-file"
+            - "/certs/tls.crt"
+            - "--tls-key-file"
+            - "/certs/tls.key"
+            - "--tls-ca-cert-file"
+            - "/etc/tls-ca/ca.crt"
+            - "--tls-auth-clients"
+            - "yes"
+          ports:
+            - name: valkey
+              containerPort: 6380
+          volumeMounts:
+            - name: valkey-data
+              mountPath: {{ include "kubernaut.valkey.dataDir" . }}
+            - name: valkey-tls
+              mountPath: /certs
+              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.valkey.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              # DA19: Valkey now requires client certs even from itself --
+              # the probe must present the same valkey-tls cert/key it serves
+              # with, or it fails its own liveness/readiness checks.
+              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: valkey-data
+          persistentVolumeClaim:
+            claimName: valkey-data
+        - name: valkey-tls
+          secret:
+            secretName: valkey-tls
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: valkey-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+    "argocd.argoproj.io/sync-wave": "-1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $v.storage.storageClassName }}
+  storageClassName: {{ $v.storage.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $v.storage.size }}
+{{- end }}

@@ -1,0 +1,156 @@
+{{- /* caBundle is NOT managed by Helm (avoids SSA field manager conflicts on upgrade).
+     In hook mode: post-install/post-upgrade tls-cabundle-patch hook injects it via kubectl patch.
+     In cert-manager mode: cainjector writes it via the inject-ca-from annotation. */ -}}
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml -}}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: authwebhook-mutating
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- if eq $tlsV.mode "cert-manager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
+  {{- end }}
+webhooks:
+  - name: workflowexecution.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-workflowexecution
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["workflowexecutions/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+  - name: remediationapprovalrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-remediationapprovalrequest
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-remediationrequest
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: authwebhook-validating
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- if eq $tlsV.mode "cert-manager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
+  {{- end }}
+webhooks:
+  - name: notificationrequest.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-notificationrequest-delete
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["notificationrequests"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+  - name: remediationworkflow.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-remediationworkflow
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["remediationworkflows"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15
+  - name: actiontype.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-actiontype
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["actiontypes"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15
+  - name: agentsession.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-agentsession
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["agentsessions"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15

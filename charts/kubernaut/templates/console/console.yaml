@@ -1,0 +1,328 @@
+{{/*
+BR-PLATFORM-006 (Kubernaut Operator parity): standalone web console (A2A chat UI).
+Ported from the Operator's ConsoleDeployment/ConsoleService/ConsoleNginxConfigMap
+(kubernaut-operator/internal/resources/console.go). Opt-in — disabled by default,
+since it requires a pre-existing OIDC client Secret and an OIDC issuer configured
+on APIFrontend.
+*/}}
+{{- /*
+checksum/config (Issue #1737 gap) needs both nginx config blocks reachable
+from the Deployment's pod template annotations, a separate `include` call
+site from the ConfigMap below -- named templates need their own top-level
+define (Go templates forbid nesting `define` inside an open `if`, and this
+whole file is wrapped in `.Values.console.enabled`).
+*/}}
+{{- define "kubernaut.console.httpConfYAML" -}}
+limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
+limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
+
+gzip on;
+gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
+gzip_min_length 256;
+gzip_vary on;
+{{- end }}
+{{- define "kubernaut.console.serverConfYAML" -}}
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+proxy_ssl_trusted_certificate /etc/tls-ca/ca.crt;
+proxy_ssl_verify on;
+proxy_ssl_server_name on;
+
+location /a2a/ {
+  limit_req zone=api burst=50 nodelay;
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+  proxy_buffering off;
+  proxy_cache off;
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+  send_timeout 3600s;
+  keepalive_timeout 3600s;
+}
+
+location = /mcp {
+  limit_req zone=mcp burst=20 nodelay;
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+  proxy_set_header Mcp-Session-Id $http_mcp_session_id;
+  proxy_read_timeout 30s;
+  proxy_hide_header Access-Control-Expose-Headers;
+  add_header Access-Control-Expose-Headers "Mcp-Session-Id" always;
+}
+
+location /.well-known/ {
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+}
+
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
+  expires 1y;
+  add_header Cache-Control "public, immutable";
+  try_files $uri =404;
+}
+
+location / {
+  add_header Cache-Control "no-cache, must-revalidate";
+  try_files $uri $uri/ /index.html;
+}
+{{- end }}
+{{- if .Values.console.enabled }}
+{{- /*
+Issue #1984 Phase C: console.enabled=true's dependency on apifrontend.enabled,
+console.auth.secretName, an OIDC issuer, and console.ingress.host all moved
+from fail() guards here to values.schema.json if/then blocks (BR-PLATFORM-010).
+*/}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: console-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  http.conf: |
+    {{- include "kubernaut.console.httpConfYAML" . | nindent 4 }}
+  server.conf: |
+    {{- include "kubernaut.console.serverConfYAML" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "console") | fromYaml }}
+  {{- $consoleImage := .Values.console.imageOverride | default (include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion)) }}
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: console
+  template:
+    metadata:
+      labels:
+        app: console
+      annotations:
+        checksum/config: {{ printf "%s%s" (include "kubernaut.console.httpConfYAML" .) (include "kubernaut.console.serverConfYAML" .) | sha256sum }}
+    spec:
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.console | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.console "matchLabels" (dict "app" "console")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.console "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: oauth2-proxy
+          image: {{ $v.oauth2Proxy.image | quote }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url={{ include "kubernaut.console.issuerURL" . }}
+            {{- if $v.oauth2Proxy.backendLogoutURL }}
+            {{- /*
+            Issue #2448: terminate the provider session after OAuth2 Proxy clears
+            its own cookie. OAuth2 Proxy replaces the literal {id_token} placeholder
+            server-side; the Console SPA never receives the token or logout URL.
+            */}}
+            - --backend-logout-url={{ $v.oauth2Proxy.backendLogoutURL }}
+            {{- end }}
+            {{- /*
+            skipDiscovery: only needed when the IdP isn't reachable via the
+            SAME hostname from both the browser and in-cluster pods (e.g. IdP
+            in its own namespace/cluster, separate from Console's). Verified
+            against oauth2-proxy v7.15.3 source (provider_verifier.go):
+            SkipDiscovery builds the token verifier directly from
+            --oidc-issuer-url + --oidc-jwks-url with NO HTTP call to the
+            issuer's discovery document, so there's no risk of the returned
+            "issuer" field mismatching a different --login-url/--redeem-url
+            hostname -- --oidc-issuer-url stays whatever the IdP's tokens
+            actually carry as "iss", used for string comparison only.
+            */}}
+            {{- if $v.oauth2Proxy.skipDiscovery }}
+            - --skip-oidc-discovery=true
+            - --login-url={{ $v.oauth2Proxy.loginURL }}
+            - --redeem-url={{ $v.oauth2Proxy.redeemURL }}
+            - --oidc-jwks-url={{ $v.oauth2Proxy.jwksURL }}
+            {{- end }}
+            {{- /*
+            console.ingress.port: the Ingress resource itself has no port field
+            (the real listener port is whatever the controller's own Service/LB
+            exposes) -- this only lets the redirect URL match a non-standard
+            port when that's not 443, e.g. a NodePort-exposed controller in a
+            local/CI Kind cluster where binding the host to privileged port 443
+            isn't possible. Defaults to 0 (omit port, standard HTTPS); 443 is
+            also omitted since it's HTTPS's implicit default (same as a browser
+            omitting :443 from a URL bar).
+            */}}
+            {{- $consolePort := int .Values.console.ingress.port }}
+            - --redirect-url=https://{{ .Values.console.ingress.host }}{{ if and $consolePort (ne $consolePort 443) }}:{{ $consolePort }}{{ end }}/oauth2/callback
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://localhost:8080
+            - --pass-access-token=true
+            - --skip-provider-button=true
+            - --cookie-name=_kubernaut_console
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --email-domain=*
+            - --scope=openid email profile
+            - --skip-jwt-bearer-tokens=true
+            - --cookie-refresh=25m
+            {{- /*
+            Issue #1988: verify the OIDC issuer's TLS cert instead of skipping
+            verification outright. --provider-ca-file alone would replace Go's
+            default trust store, breaking issuers with a publicly-trusted cert,
+            so --use-system-trust-store=true keeps that path working while also
+            trusting the chart's own inter-service CA (kubernaut.tlsCaVolume/
+            VolumeMount below) for genuinely self-signed/dev-only issuers --
+            same pattern already fixed for FMC's OAuth2 client in #1755.
+            */}}
+            - --provider-ca-file={{ include "kubernaut.interServiceTLS.caFile" . }}
+            - --use-system-trust-store=true
+            - --ping-path=/oauth2/ping
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.console | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /oauth2/ping
+              port: 4180
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /oauth2/ping
+              port: 4180
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+        - name: console
+          image: {{ $consoleImage }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          ports:
+            - name: static
+              containerPort: 8080
+              protocol: TCP
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.console | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.console.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-tmp
+              mountPath: /tmp
+            - name: nginx-var-log
+              mountPath: /var/log/nginx
+            - name: nginx-run
+              mountPath: /run
+            - name: nginx-var-lib
+              mountPath: /var/lib/nginx/tmp
+            - name: nginx-config
+              mountPath: /opt/app-root/etc/nginx.d/kubernaut-http.conf
+              subPath: http.conf
+              readOnly: true
+            - name: nginx-config
+              mountPath: /opt/app-root/etc/nginx.default.d/kubernaut-server.conf
+              subPath: server.conf
+              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+      volumes:
+        - name: nginx-tmp
+          emptyDir: {}
+        {{- /*
+        quay.io/kubernaut-ai/kubernaut-console ships the stock RHEL/Fedora
+        "nginx" package's nginx.conf unmodified (error_log/access_log under
+        /var/log/nginx, pid under /run/nginx.pid, client/proxy/fastcgi temp
+        dirs under /var/lib/nginx/tmp/*) -- none of it redirected to /tmp for
+        read-only-root compatibility. containerSecurityContext (above) sets
+        readOnlyRootFilesystem: true, so nginx's own mkdir()/open() calls
+        against those stock paths fail outright (confirmed via manual fleet
+        E2E QE run, 2026-08-29: CrashLoopBackOff, "Read-only file system" on
+        both paths) unless each is its own writable emptyDir, same pattern as
+        the existing nginx-tmp mount.
+        */}}
+        - name: nginx-var-log
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-var-lib
+          emptyDir: {}
+        - name: nginx-config
+          configMap:
+            name: console-nginx
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: console
+  ports:
+    - name: http
+      port: 4180
+      targetPort: http
+      protocol: TCP
+{{- end }}

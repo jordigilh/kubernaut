@@ -1,0 +1,60 @@
+# Air-gapped / disconnected overlay for Kubernaut Helm chart.
+#
+# Airgapped installs have no live internet access, so pull and extract the
+# chart locally first rather than referencing it by OCI URL at install time.
+# Combine this overlay with your own values file supplying the chart's
+# mandatory fields (Rego policies + LLM profile -- see README's "Quick Start"
+# for the minimal example) and your mirror registry:
+#
+# 1. Pull and extract the chart version you're deploying:
+#      helm pull oci://quay.io/kubernaut-ai/charts/kubernaut --version <X.Y.Z> --untar
+#
+# 2. Install from the now-local directory (nested registry — Harbor, Artifactory, generic Docker v2):
+#      helm install kubernaut ./kubernaut \
+#        -f my-values.yaml \
+#        -f ./kubernaut/values-airgap.yaml \
+#        --set global.image.registry=harbor.corp
+#
+#    Flat registry (quay.io, Docker Hub):
+#      helm install kubernaut ./kubernaut \
+#        -f my-values.yaml \
+#        -f ./kubernaut/values-airgap.yaml \
+#        --set global.image.registry=quay.io/myorg \
+#        --set global.image.separator=-
+#
+# Prerequisites:
+#   1. Mirror all images listed by hack/airgap/generate-image-list.sh
+#      to your internal registry using `skopeo copy` (or an equivalent mirroring tool).
+
+# Override the registry for all Kubernaut service images (including db-migrate).
+# Replace <mirror-registry> with your internal registry hostname.
+#
+# Nested registries (Harbor, Artifactory, generic Docker v2):
+#   Images are stored as <mirror-registry>/kubernaut-ai/gateway:tag
+#   → separator stays "/"
+#
+# Flat registries (quay.io, Docker Hub):
+#   Images are stored as <mirror-registry>/kubernaut-ai-gateway:tag
+#   → set separator to "-"
+global:
+  image:
+    registry: <mirror-registry>
+    namespace: kubernaut-ai
+    separator: "/"  # change to "-" for flat registries (quay.io, Docker Hub)
+    # Optionally pin by digest for immutable references:
+    # digest: "sha256:<digest-from-mirror-tool-output>"
+
+# Override each third-party image to point to your mirror.
+# These images are NOT governed by global.image settings.
+#
+# For flat registries, adjust paths to single-level repos, e.g.:
+#   postgresql.image: <mirror-registry>/rhel10-postgresql-16
+postgresql:
+  image: <mirror-registry>/rhel10/postgresql-16
+
+valkey:
+  image: <mirror-registry>/rhel10/valkey-8
+
+hooks:
+  tlsCerts:
+    image: <mirror-registry>/bitnami/kubectl:latest

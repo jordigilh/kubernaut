@@ -197,10 +197,9 @@ gh run watch
 
 Expected duration: ~25–40 minutes end-to-end (measured across the six
 v1.6.0-rc runs on record). The image builds are not the bottleneck — they run
-in parallel and finish in 3-5 minutes each. The `hook`-mode Helm smoke test is
-consistently the longest single job (~15-20 minutes) and sits on the critical
-path for manifests, Helm publish, and the GitHub Release, so it's usually
-what you're waiting on.
+in parallel and finish in 3-5 minutes each. The operator qualification job
+runs the operator-managed FullPipeline and Fleet smoke lanes and is usually
+the longest job on the critical path, so it is usually what you're waiting on.
 
 ### Step 9: Verify
 
@@ -427,9 +426,7 @@ signing, and SLSA provenance all gate the release now, not just the image builds
 
 Node names below are the actual job IDs from `release.yml`. Arrows only run
 phase-to-phase, not job-to-job — see the "Stage N" sections below the diagram
-for the exact per-job `needs:`, since a couple of jobs skip a dependency their
-phase-mates have (e.g. `create-manifests`/`helm-publish` need `helm-smoke-test`
-but not the two `security-scan-*` jobs next to it):
+for the exact per-job `needs:` relationships:
 
 ```mermaid
 flowchart LR
@@ -445,19 +442,19 @@ flowchart LR
         buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
     end
 
-    subgraph P2["Phase 2: Scan & Smoke Test"]
+    subgraph P2["Phase 2: Scan & Qualification"]
         direction TB
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
-        smoketest["helm-smoke-test\n2 jobs"]
-        scanamd64 ~~~ scanarm64 ~~~ smoketest
+        candidate["prepare-operator-candidate"]
+        qualification["operator-qualification"]
+        candidate --> qualification
+        scanamd64 ~~~ scanarm64 ~~~ candidate
     end
 
-    subgraph P3["Phase 3: Manifests & Chart"]
+    subgraph P3["Phase 3: Multi-Arch Manifests"]
         direction TB
         manifests["create-manifests"]
-        helmpublish["helm-publish"]
-        manifests ~~~ helmpublish
     end
 
     subgraph P4["Phase 4: Sign & Provenance"]
@@ -474,8 +471,8 @@ flowchart LR
     P0 --> P1 --> P2 --> P3 --> P4 --> P5
 ```
 
-Security scanning and Helm smoke tests both gate the release: a failing scan
-or smoke test blocks the GitHub Release from being created. Note
+Security scanning and operator qualification both gate the release: a failing
+scan or qualification lane blocks the GitHub Release from being created. Note
 `build-arm64` (native cross-compile, 12 Go services) and `build-arm64-qemu`
 (`must-gather`, `db-migrate`) are separate jobs — everything past that phase
 needs both to finish, not just "arm64 is done."
@@ -520,17 +517,15 @@ that arch's build completes. Each job:
 2. Generates a CycloneDX SBOM, uploaded as a workflow artifact for the
    sign-and-attest and release stages to pick up later.
 
-### Stage 3: Helm Smoke Test
+### Stage 3: Operator Qualification
 
-Depends only on the amd64 build (arm64 keeps building in parallel and isn't
-blocked by this). Spins up a Kind cluster, pulls the amd64 images, and runs
-the full Helm smoke test suite twice — once with hook-based TLS, once with
-cert-manager — since both are supported install modes and #334 burned us
-once for only covering the default. A failing smoke test blocks the release.
+Runs the operator-managed FullPipeline and Fleet qualification lanes against the
+resolved operator candidate and its dependency charts. A failing qualification
+lane blocks the release.
 
 ### Stage 4: Multi-Arch Manifests
 
-Needs both build stages *and* the smoke tests to pass. For each service:
+Needs both image build stages to pass. For each service:
 1. Creates a manifest list so a single tag resolves to the correct arch automatically.
 2. **GA only** (`is_prerelease == false`): tags the manifest as `:latest`.
 
@@ -679,10 +674,9 @@ Individual build failures do not block other services (`fail-fast: false`).
    gh run rerun <run-id> --failed
    ```
 
-### Partial release (manifests created, Helm failed)
+### Partial release (manifests created, signing or provenance failed)
 
-The `helm-publish` job depends on `build-image` but not on `create-manifests`.
-If Helm publish fails:
+If a signing, attestation, or provenance job fails:
 
 1. Verify robot account permissions on Quay.io (`Creator` role required).
 2. Re-run only the failed job:
@@ -797,7 +791,7 @@ Every released image carries build-time version metadata:
 
 ## Related
 
-- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Operator release workflow (tag `v*`)
+- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Kubernaut application release workflow (tag `v*`)
 - Kubernaut Operator release workflow — publishes the application owner and its charts
 - [`.github/workflows/slsa-provenance.yml`](../../../.github/workflows/slsa-provenance.yml) — Isolated SLSA Build L3 provenance workflow
 - [`Makefile`](../../../Makefile) — `image-build`, `image-push`, `image-manifest` targets

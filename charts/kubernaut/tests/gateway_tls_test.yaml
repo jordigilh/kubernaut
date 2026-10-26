@@ -1,0 +1,50 @@
+suite: Gateway inter-service TLS wiring
+templates:
+  - templates/gateway/gateway.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "ConfigMap configures Gateway serving TLS at the shared cert dir"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'server:\s*\n(?:\s+.*\n)*\s+tls:\s*\n\s+certDir:\s+"/etc/tls"'
+
+  - it: "Deployment mounts the gateway-tls Secret at the shared cert dir"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-certs
+            mountPath: /etc/tls
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-certs
+            secret:
+              secretName: gateway-tls

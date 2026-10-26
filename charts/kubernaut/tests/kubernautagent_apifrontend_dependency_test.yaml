@@ -1,0 +1,55 @@
+suite: "DD-PLATFORM-006 Decision Area 11 (revised): kubernautAgent's interactive MCP block is fully derived from apifrontend's effective enabled value, not a separately settable field"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "apifrontend.enabled left at its default (true) means KA's interactive MCP block renders with no extra opt-in needed -- APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint, so 'AF is on' already implies 'KA must accept its requests'"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'interactive:\s*\n\s*enabled:\s*true'
+
+  - it: "apifrontend.enabled=false derives KA's interactive block to disabled too -- no config drift between AF being down and KA still exposing an endpoint with no possible caller"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    set:
+      apifrontend:
+        enabled: false
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'interactive:'
+
+  - it: "there is no kubernautAgent.interactive.enabled field left to set independently -- additionalProperties:false on the interactive schema object rejects it, proving the field was actually removed rather than merely undocumented"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+    asserts:
+      - failedTemplate: {}

@@ -648,6 +648,18 @@ var _ = Describe("fleet external image preload policy", func() {
 	})
 })
 
+var _ = Describe("Kuadrant broker TLS wiring", func() {
+	It("UT-INFRA-FLEET-TLS-005 [BR-INTEGRATION-065]: mounts the private gateway CA and passes the broker flag", func() {
+		patch := kuadrantBrokerGatewayCAPatch()
+
+		Expect(patch).To(ContainSubstring(`"path":"/spec/template/spec/volumes/-"`))
+		Expect(patch).To(ContainSubstring(`"configMap":{"name":"inter-service-ca"}`))
+		Expect(patch).To(ContainSubstring(`"mountPath":"/certs/gateway-ca.crt"`))
+		Expect(patch).To(ContainSubstring(`"subPath":"ca.crt"`))
+		Expect(patch).To(ContainSubstring(`--gateway-ca-cert=/certs/gateway-ca.crt`))
+	})
+})
+
 func expectValidYAMLDocuments(manifest string) {
 	decoder := yaml.NewDecoder(strings.NewReader(manifest))
 	for {

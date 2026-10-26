@@ -1,0 +1,63 @@
+suite: "BR-PLATFORM-011 (issue #2226): datastorage database.{connMaxLifetime,maxIdleConns,maxOpenConns} test-coverage backfill"
+# templates/datastorage/datastorage.yaml's database block renders all four
+# pool-tuning fields from datastorage.config.database.* -- connMaxIdleTime
+# already has coverage (datastorage_conn_max_idle_time_schema_test.yaml,
+# #2218). Its 3 siblings (connMaxLifetime/maxIdleConns/maxOpenConns) were
+# already schema-driven before #2216-#2221's audit but had no assertion
+# proving it. Confirmed correctly wired already -- pure coverage backfill,
+# no template/schema changes.
+templates:
+  - templates/datastorage/datastorage.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no database pool overrides) renders connMaxLifetime/maxIdleConns/maxOpenConns at their schema defaults"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxLifetime: 1h'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxIdleConns: 20'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxOpenConns: 100'
+
+  - it: "explicit database pool overrides render through instead of being silently discarded"
+    set:
+      datastorage:
+        config:
+          database:
+            connMaxLifetime: "30m"
+            maxIdleConns: 5
+            maxOpenConns: 50
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxLifetime: 30m'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxIdleConns: 5'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxOpenConns: 50'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxLifetime: 1h'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'maxIdleConns: 20'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'maxOpenConns: 100'

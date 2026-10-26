@@ -1,0 +1,52 @@
+suite: "APIFrontend->KubernautAgent egress NetworkPolicy (#1795 RCA): AF's own MCP clients (pooled AND dedicated streaming) call KA directly at kaMCPEndpoint:8443, but AF's NetworkPolicy never had the matching egress rule -- a one-sided wiring gap identical in shape to the FMC/Gateway/RO fleet-OAuth2 gap and AF's own llmEgress/idpEgress gaps"
+templates:
+  - templates/apifrontend/networkpolicy.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "apifrontend NetworkPolicy allows egress to kubernaut-agent on port 8443 (StartInvestigation/select_workflow/discover_workflows MCP calls)"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: kubernaut-agent
+
+  - it: "kubernaut-agent NetworkPolicy reciprocally allows ingress from apifrontend on port 8443 (pre-existing #1287 rule, proving the pairing is now two-sided)"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            from:
+              - podSelector:
+                  matchLabels:
+                    app: apifrontend

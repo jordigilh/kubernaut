@@ -1,0 +1,787 @@
+suite: Fleet ClusterRegistry RBAC least-privilege split (#1686, BR-RBAC-020)
+templates:
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+    # Issue #1984 Phase D: OAuth2 is schema-mandatory whenever
+    # mcpGatewayEndpoint is set (the FMC/AF/EM cases below all set it).
+    fleet:
+      oauth2:
+        enabled: true
+        tokenURL: "https://dex.example.com/token"
+        credentialsSecretRef: fleet-oauth2-creds
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+  # values.yaml ships a default "sre" persona, which renders a second,
+  # unrelated ClusterRole (kubernaut-tool-sre) for SAR-based tool
+  # authorization. Cleared once here (suite-level) rather than in every AF
+  # test case below, so the `documentSelector: {path: kind, value:
+  # ClusterRole}` used by the AF tests stays unambiguous (exactly one
+  # ClusterRole document) without repeating this override per test.
+  apifrontend:
+    config:
+      rbac:
+        personas: null
+tests:
+  # ---------------------------------------------------------------------
+  # SP (IT-HELM-020-001/002)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-001: SP namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-001b: SP ClusterRole does NOT contain the fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-002: SP retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-002b: SP does not render a Role for the fleet registry when namespace is unset"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # FMC — kuadrant branch (IT-HELM-020-003/004)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-003: FMC (kuadrant) namespace-scoped Role replaces the ClusterRole rules when namespace is set"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: team-a
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.networking.k8s.io"]
+            resources: ["gateways", "httproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-003b: FMC ClusterRole/ClusterRoleBinding are not rendered at all when namespace is set (kuadrant)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: team-a
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  - it: "IT-HELM-020-004: FMC (kuadrant) fails the render rather than granting cluster-wide ClusterRole/Role RBAC for the CRD watch when namespace is unset (#2298: cluster-wide fallback removed, least privilege -- see fleet_mcp_gateway_namespace_test.yaml IT-PLATFORM-1730-002d)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: ""
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two."
+
+  # ---------------------------------------------------------------------
+  # FMC — eaigw branch (IT-HELM-020-005/006)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-005: FMC (eaigw) namespace-scoped Role replaces the ClusterRole rules when namespace is set"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: team-a
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-005b: FMC ClusterRole/ClusterRoleBinding are not rendered at all when namespace is set (eaigw)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: team-a
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  - it: "IT-HELM-020-006: FMC (eaigw) fails the render rather than granting cluster-wide ClusterRole/Role RBAC for the CRD watch when namespace is unset (#2298: cluster-wide fallback removed, least privilege -- see fleet_mcp_gateway_namespace_test.yaml IT-PLATFORM-1730-002d)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: ""
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two."
+
+  # ---------------------------------------------------------------------
+  # AF (IT-HELM-020-007/008)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-007: AF namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-007b: AF ClusterRole does NOT contain the fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    # #1919 added a second, unconditional ClusterRole (kubernaut-console-access)
+    # to this template that `personas: null` (suite-level set above) cannot
+    # clear, so neither `path: kind, value: ClusterRole` (2 ClusterRoles) nor
+    # `path: metadata.name, value: apifrontend` (shared by the ServiceAccount/
+    # ConfigMap/ClusterRoleBinding/RoleBinding/Service/Deployment in this same
+    # template) is unique anymore. rules[0].resources[0] is: the fleet-registry
+    # ClusterRole's first rule is always investigationsessions, vs.
+    # kubernaut-console-access's only rule being resources=["console"].
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-008: AF retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    # #1919: see IT-HELM-020-007b comment above -- select by rules[0].resources[0]
+    # to disambiguate from the also-unconditional kubernaut-console-access ClusterRole.
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-008b: AF does not render a Role for the fleet registry when namespace is unset"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # EM (IT-HELM-020-009/010)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-009: EM namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-009b: EM ClusterRole does NOT contain the fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-010: EM retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-010b: EM does not render a Role for the fleet registry when namespace is unset"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # SP — eaigw branch (IT-HELM-020-011/012)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-011: SP (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-011b: SP ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-012: SP (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-012b: SP does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # AF — eaigw branch (IT-HELM-020-013/014)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-013: AF (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-013b: AF ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    # #1919: see IT-HELM-020-007b comment above -- select by rules[0].resources[0]
+    # to disambiguate from the also-unconditional kubernaut-console-access ClusterRole.
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-014: AF (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-014b: AF does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # EM — eaigw branch (IT-HELM-020-015/016)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-015: EM (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-015b: EM ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-016: EM (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-016b: EM does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true

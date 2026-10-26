@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "aianalysis" "appLabel" "aianalysis-controller") }}
+spec:
+  podSelector:
+    matchLabels:
+      app: aianalysis-controller
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    - ports:
+        - port: 8443
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: kubernaut-agent

@@ -1,0 +1,111 @@
+suite: "Issue #1984 Phase D (schema): OAuth2 is mandatory whenever global.fleet.mcpGatewayEndpoint is set -- closes the ADR-068 gap where oauth2.enabled defaulted to false, permitting unauthenticated MCP Gateway access for 7 of 8 fleet-capable services. Moves from per-service fail() guards (gated on oauth2.enabled=true, never on mcpGatewayEndpoint being set) to a values.schema.json if/then block requiring oauth2.enabled/tokenURL/credentialsSecretRef whenever the shared endpoint is non-empty, plus a second dedicated block for WorkflowExecution's own non-fallback-able oauth2.credentialsSecretRef (BR-PLATFORM-010, IA-2/AC-3/AC-17)."
+templates:
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # Shared global.fleet.oauth2 block
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-301: global.fleet.mcpGatewayEndpoint set + oauth2.enabled unset (defaults false) is schema-rejected -- closes the ADR-068 gap (unauthenticated MCP Gateway access)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-302: global.fleet.mcpGatewayEndpoint set + oauth2.enabled=true but tokenURL empty is schema-rejected"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-303: global.fleet.mcpGatewayEndpoint set + oauth2.enabled=true + tokenURL set but credentialsSecretRef empty is schema-rejected"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-304: global.fleet.mcpGatewayEndpoint set + complete oauth2 (enabled/tokenURL/credentialsSecretRef, including WE's own dedicated credentialsSecretRef) renders NOTES.txt cleanly"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"
+
+  - it: "IT-HELM-1984-305: global.fleet.mcpGatewayEndpoint unset (default) does not require oauth2 -- NOTES.txt renders cleanly with oauth2.enabled left at its false default"
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"
+
+  # ---------------------------------------------------------------------
+  # WorkflowExecution's dedicated, non-fallback-able oauth2.credentialsSecretRef
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-306: global.fleet.mcpGatewayEndpoint set + complete shared oauth2 block but workflowexecution.fleet.oauth2.credentialsSecretRef unset is schema-rejected -- WE does NOT fall back to global.fleet.oauth2.credentialsSecretRef (least privilege, AC-6)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-307: global.fleet.mcpGatewayEndpoint unset (default) does not require workflowexecution.fleet.oauth2.credentialsSecretRef either -- NOTES.txt renders cleanly"
+    set:
+      global:
+        fleet:
+          oauth2:
+            enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"

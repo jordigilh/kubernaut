@@ -1,0 +1,266 @@
+Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Namespace }}.
+
+=== Post-Install Verification ===
+
+1. Verify all pods are running:
+
+   kubectl get pods -n {{ .Release.Namespace }}
+
+2. Verify LLM credentials secret exists:
+{{- $kaNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
+{{- $kaNotesEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaNotesV.llmProfileRef) }}
+{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaNotesEffectiveRef) | fromYaml }}
+
+   kubectl get secret {{ $kaNotesProfile.credentialsSecretName }} -n {{ .Release.Namespace }}
+
+   If missing, create it with your LLM provider API key:
+
+   kubectl create secret generic {{ $kaNotesProfile.credentialsSecretName }} \
+     --from-literal=api_key=sk-... \
+     -n {{ .Release.Namespace }}
+
+   Then restart the Kubernaut Agent to pick it up:
+
+   kubectl rollout restart deployment/kubernaut-agent -n {{ .Release.Namespace }}
+
+3. Check the workflow catalog:
+
+   kubectl port-forward -n {{ .Release.Namespace }} svc/data-storage-service 8080:8080
+   curl -s http://localhost:8080/api/v1/workflows | jq '.'
+
+=== Rego Policies ===
+
+Rego policies are required and must be provided at install time:
+
+  --set-file signalprocessing.policies.content=path/to/policy.rego
+  --set-file aianalysis.policies.content=path/to/approval.rego
+
+Alternatively, create ConfigMaps manually and reference them:
+
+  --set signalprocessing.policies.existingConfigMap=my-sp-policy
+  --set aianalysis.policies.existingConfigMap=my-aa-policy
+
+For reference policies, see: https://github.com/jordigilh/kubernaut-demo-scenarios
+
+=== ActionTypes & RemediationWorkflows ===
+
+The chart does not bundle ActionTypes or RemediationWorkflows.
+Deploy your own after install:
+
+  kubectl rollout status deploy/authwebhook -n {{ .Release.Namespace }} --timeout=120s
+  kubectl apply -f <your-action-types/> -n {{ .Release.Namespace }}
+  kubectl apply -f <your-workflows/> -n {{ .Release.Namespace }}
+
+For demo scenarios, see: https://github.com/jordigilh/kubernaut-demo-scenarios
+
+{{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (or .Values.kubernautAgent.existingSdkConfigMap .Values.kubernautAgent.sdkConfigContent) }}
+=== IMPORTANT: Prometheus Configuration ===
+
+You have enabled monitoring.prometheus but are using a custom SDK config
+({{ if .Values.kubernautAgent.existingSdkConfigMap }}existingSdkConfigMap: {{ .Values.kubernautAgent.existingSdkConfigMap }}{{ else }}sdkConfigContent{{ end }}).
+
+The chart has created the RBAC bindings and TLS CA volume mounts, and has
+configured Prometheus in the agent's config.yaml (tools.prometheus.url).
+No additional SDK config changes are needed for Prometheus access.
+
+{{- end }}
+{{- if and .Values.console.enabled (not .Values.console.ingress.enabled) }}
+=== Console Access ===
+
+The web console is enabled but its Ingress is not (console.ingress.enabled=false,
+the default -- DD-PLATFORM-006 Decision Area 9, matching Gateway/APIFrontend's
+own opt-in Ingress posture, BR-PLATFORM-009). To reach it, either:
+
+  --set console.ingress.enabled=true
+
+  or, without exposing it externally:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/console 4180:4180
+
+{{- end }}
+{{- /*
+DD-PLATFORM-006 Decision Area 14: reads apifrontend's own merged value
+(schema default true, once apifrontend.enabled is removed from values.yaml),
+not a raw .Values.apifrontend.enabled, which would incorrectly skip this
+warning for any user relying on the schema's default -- see console.yaml's
+identical guard for the same rationale.
+*/}}
+{{- $afNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
+{{- if $afNotesV.enabled }}
+{{- $personas := .Values.apifrontend.config.rbac.personas | default dict }}
+{{- $consoleGroups := .Values.apifrontend.config.rbac.consoleAccessGroups | default list }}
+{{- $missingConsoleAccess := list }}
+{{- range $persona, $tools := $personas }}
+{{- if not (has $persona $consoleGroups) }}
+{{- $missingConsoleAccess = append $missingConsoleAccess $persona }}
+{{- end }}
+{{- end }}
+{{- if $missingConsoleAccess }}
+=== RBAC WARNING: console-access gate (#1919) ===
+
+apifrontend.config.rbac.personas group(s) below have per-tool RBAC grants but
+are NOT listed in apifrontend.config.rbac.consoleAccessGroups:
+
+{{- range $missingConsoleAccess }}
+  - {{ . }}
+{{- end }}
+
+Every AF tool call (/mcp and /a2a/invoke) additionally requires the
+coarse-grained kubernaut.ai/console "use" grant. Users in the group(s) above
+will have ALL tool calls denied until you add them to consoleAccessGroups,
+even though their per-tool grants above remain intact and unchanged.
+
+{{- end }}
+{{- if not $afNotesV.config.rbac.consoleAccessAuthorizationCheckEnabled }}
+=== RBAC NOTICE: console-access gate is authentication-only (#2150) ===
+
+apifrontend.config.rbac.consoleAccessAuthorizationCheckEnabled is false
+(the default). The coarse-grained kubernaut.ai/console "use" grant is NOT
+enforced via an authorization check -- any authenticated user is granted
+console access, with no RBAC bindings required. This is convenient for
+dev/eval installs, but for production:
+
+  1. Configure apifrontend.config.rbac.personas/consoleAccessGroups
+  2. Set apifrontend.config.rbac.consoleAccessAuthorizationCheckEnabled=true
+
+Per-tool authorization (the actual security boundary for individual tool
+calls) is unaffected either way and remains unconditionally fail-closed.
+
+{{- end }}
+{{- end }}
+=== Monitoring ===
+
+Kubernaut is designed to work with kube-prometheus-stack.
+If deployed, configure AlertManager to send alerts to the Gateway:
+
+  receivers:
+    - name: kubernaut
+      webhook_configs:
+        - url: "http://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080/api/v1/signals/prometheus"
+          send_resolved: true
+          http_config:
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+{{- if or (not (include "kubernaut.monitoring.prometheus.enabled" .)) (not (include "kubernaut.monitoring.alertManager.enabled" .)) }}
+
+IMPORTANT -- monitoring.prometheus/alertManager integration is OFF by default
+(separate from the webhook wiring above, which only covers Kubernaut
+*receiving* alerts). This is a real cost to remediation quality, not just an
+optional integration -- KubernautAgent investigates with fewer live signals,
+and EffectivenessMonitor cannot fully confirm whether remediations worked.
+The chart does not deploy or auto-discover Prometheus/AlertManager -- point
+it at your own. Without this:
+{{- if not (include "kubernaut.monitoring.prometheus.enabled" .) }}
+  - EffectivenessMonitor cannot score metric-based remediation effectiveness (BR-EM-002).
+  - KubernautAgent's RCA loses its Prometheus MCP investigation tool.
+  - APIFrontend's severity triage falls back to its non-Prometheus default.
+{{- end }}
+{{- if not (include "kubernaut.monitoring.alertManager.enabled" .) }}
+  - EffectivenessMonitor cannot confirm whether the triggering alert actually
+    resolved after a remediation (BR-EM-002 alert-resolution scoring).
+  - KubernautAgent's RCA loses its AlertManager MCP investigation tool.
+{{- end }}
+
+To enable:
+
+  --set monitoring.prometheus.enabled=true --set monitoring.prometheus.url=http://<prometheus-host>:9090
+  --set monitoring.alertManager.enabled=true --set monitoring.alertManager.url=http://<alertmanager-host>:9093
+{{- end }}
+{{- if and (not .Values.global.additionalClusterRoles) (not .Values.gateway.additionalClusterRoles) (not .Values.effectivenessmonitor.additionalClusterRoles) (not .Values.kubernautAgent.additionalClusterRoles) }}
+
+=== Optional: Ecosystem RBAC for Owner-Chain Resolution (Issue #1069) ===
+
+Gateway and EffectivenessMonitor bind to the built-in `view` ClusterRole for
+owner-chain resolution, which automatically covers "well-behaved" operators
+that publish `rbac.authorization.k8s.io/aggregate-to-view: "true"` (cert-manager,
+Istio, KubeVirt, etc.). It does NOT cover OLM (Subscription/ClusterServiceVersion)
+or other ecosystem CRDs that manage their own RBAC without aggregating to view.
+If your cluster runs OLM-managed operators (or similar) under Kubernaut's
+remediation scope, owner-chain resolution for resources they own will hit RBAC
+Forbidden errors and silently truncate the chain.
+
+No additionalClusterRoles are configured (the default). To grant access
+to a specific ecosystem, create a narrowly-scoped ClusterRole and reference it
+by name -- no Kubernaut upgrade required:
+
+  --set global.additionalClusterRoles[0]=my-olm-reader
+
+See the chart README's "Extending owner-chain-resolution RBAC" section for a
+full ClusterRole example and per-service override options.
+{{- end }}
+
+=== Upgrading ===
+
+CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
+
+   helm pull oci://quay.io/kubernaut-ai/charts/kubernaut --version <new-version> --untar
+   kubectl apply --server-side --force-conflicts -f kubernaut/crds/
+
+Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
+
+{{- $tlsNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsNotesV.mode "hook" }}
+TLS mode: hook (self-signed certificates via Helm hooks).
+Certificates are automatically renewed during upgrade if they expire within 30 days.
+{{- else if eq $tlsNotesV.mode "cert-manager" }}
+TLS mode: cert-manager (certificates managed by cert-manager).
+The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
+The datastorage-signing-cert Certificate resource provisions DataStorage's AU-9
+audit-signing key (#334). A dedicated internal CA (kubernaut-interservice-ca,
+DD-PLATFORM-001) auto-provisions inter-service mTLS: gateway-tls, datastorage-tls,
+kubernautagent-tls, and the inter-service-ca ConfigMap. cert-manager handles
+renewal automatically for all of these.
+{{- else if eq $tlsNotesV.mode "manual" }}
+TLS mode: manual (user-managed certificates).
+You must create the authwebhook-tls Secret (type kubernetes.io/tls) and patch the
+MutatingWebhookConfiguration and ValidatingWebhookConfiguration with the CA bundle:
+
+   CA_B64=$(kubectl get secret authwebhook-tls -n {{ .Release.Namespace }} \
+     -o jsonpath='{.data.ca\.crt}' 2>/dev/null || \
+     kubectl get configmap authwebhook-ca -n {{ .Release.Namespace }} \
+     -o go-template='{{"{{"}}.data.ca\.crt{{"}}"}}' | base64 | tr -d '\n')
+
+   kubectl patch mutatingwebhookconfigurations authwebhook-mutating --type=json \
+     -p "[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_B64}\"}]"
+
+You must also create the datastorage-signing-cert Secret (type kubernetes.io/tls,
+RSA 2048 key) for DataStorage's AU-9 audit-signing key -- DataStorage fails to
+start without it, with no fallback (#334):
+
+   openssl genrsa -out /tmp/signing-tls.key 2048
+   openssl req -new -x509 -days 365 -key /tmp/signing-tls.key \
+     -out /tmp/signing-tls.crt -subj "/CN=datastorage-signing-cert"
+   kubectl create secret tls datastorage-signing-cert \
+     --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n {{ .Release.Namespace }}
+
+You must also create gateway-tls, datastorage-tls, kubernautagent-tls, valkey-tls
+Secrets (type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt)
+for inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
+silently falls back to plain HTTP (SC-8 gap), and Valkey (TLS-only, DD-PLATFORM-006
+Decision Area 8) will refuse all connections. See the chart README's
+"Inter-service mTLS prerequisite" section for full openssl commands.
+{{- end }}
+
+=== Uninstalling ===
+
+   helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+IMPORTANT -- Data Retention:
+  - PostgreSQL and Valkey PVCs are RETAINED after uninstall (helm.sh/resource-policy: keep).
+    To remove them manually:
+
+      kubectl delete pvc postgresql-data valkey-data -n {{ .Release.Namespace }}
+
+  - CRDs and their data are NOT removed. To delete all Kubernaut CRDs:
+
+      kubectl delete crd $(kubectl get crd -o name | grep kubernaut.ai)
+
+  - The {{ include "kubernaut.workflowNamespace" . }} namespace may contain active Jobs or PipelineRuns.
+    Verify it is empty or clean up before uninstalling if it gets stuck:
+
+      kubectl get jobs -n {{ include "kubernaut.workflowNamespace" . }}
+
+=== Known Limitations ===
+
+  - Single installation per cluster: cluster-scoped resources (ClusterRoles,
+    WebhookConfigurations) use static names and will conflict if multiple
+    releases are installed in different namespaces.

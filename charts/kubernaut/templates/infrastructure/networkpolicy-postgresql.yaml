@@ -1,0 +1,25 @@
+{{- if (include "kubernaut.mergedValues" (dict "root" $ "service" "postgresql") | fromYaml).enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "postgresql" "appLabel" "postgresql") }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 5432
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: datastorage
+        - podSelector:
+            matchLabels:
+              app: db-migration
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+{{- end }}

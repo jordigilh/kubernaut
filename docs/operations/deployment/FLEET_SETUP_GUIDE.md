@@ -18,7 +18,7 @@ the Kuadrant dependencies in #2309 are being addressed.
 
 ```
 +-------------------------------- hub cluster -------------------------------+
-| Kubernaut (Helm, global.fleet.enabled=true)       Keycloak                 |
+| Kubernaut Operator + Fleet-enabled Kubernaut CR   Keycloak                 |
 | GW · SP · RO · WE · AA · EM · KA · AF · DS         (kubernaut-demo)         |
 |          | MCP tool calls (Bearer token)             | OIDC issuer            |
 |          v                                           v                       |
@@ -63,44 +63,27 @@ SSH tunnel, no separate IdP per cluster.
   provider — set `KIND_EXPERIMENTAL_PROVIDER=podman`)
 - `openssl`, `curl`, `python3`
 - ~4 GB free RAM across both clusters
-- An API key from an LLM provider, if you intend to install the full Kubernaut chart
-  on the hub (Path B's last step) rather than just exercising the gateway/spoke wiring
-  on its own
+- An LLM credential and the PostgreSQL, Valkey, policy, and fleet Secrets required by
+  the Fleet-enabled `Kubernaut` CR
 
 ---
 
-## Automated demo path
+## Disposable qualification path
 
-If the goal is a disposable, ready-to-browse Kind demo rather than learning each
-hub/spoke component manually, use the dedicated
-[Fleet Demo Quick Start](./FLEET_DEMO_QUICKSTART.md):
+This repository no longer ships the `setup-fleet-demo-infra` or
+`hack/setup-demo-infra` helpers. The supported disposable path is the same
+operator-backed journey used by CI:
 
 ```bash
-make setup-fleet-demo-infra \
-  LLM_PROVIDER=openai_compatible \
-  LLM_MODEL=gpt-4o \
-  LLM_ENDPOINT=https://api.openai.com/v1 \
-  LLM_CREDENTIALS_FILE=/tmp/llm-credentials
+PRESERVE_E2E_CLUSTER=true make test-e2e-fleet
 ```
 
-That path provisions the hub, spoke, Keycloak, Envoy AI Gateway (EAIGW), hub-local and
-spoke `kube-mcp-server` instances, the `hub` and `remote-cluster` Gateway backends,
-monitoring, Helm installation, Console access, generated Secrets, default Rego
-policies, and fleet demo instructions. It is Console-first by default; set
-`AUTONOMOUS=true` to enable Gateway-driven remediation. Continue with Path A for
-the contributor E2E harness or Path B for the manual architecture walkthrough.
-
-The automated path keeps Kubernaut workloads in `kubernaut-system` and places the
-hub MCP Gateway/server and Gateway-managed registrations in the dedicated
-`mcp-system` namespace. The remote MCP server has its own independently
-configurable namespace and defaults to `mcp-system` as well.
-
-The EAIGW compatibility defaults are Agent Router v1.2.0, Envoy Gateway v1.9.2,
-Envoy proxy v1.39.1, and Gateway API v1.6.1. Override the upstream versions for
-compatibility testing with `ENVOY_GATEWAY_VERSION` and `AGENT_ROUTER_VERSION` on
-`make setup-fleet-demo-infra`; the setup output reports the effective matrix.
-The long-lived standalone SSE reset near 120 seconds remains an upstream Agent
-Router blocker and is not fixed by the version override alone.
+That path provisions the hub, spoke, Keycloak, Envoy AI Gateway (EAIGW), MCP servers,
+Gateway registrations, monitoring, and the operator-managed Kubernaut workloads. It
+leaves the clusters running for inspection; delete `fleet-e2e` and
+`fleet-e2e-remote` when finished. For a persistent user-managed environment, install
+the [Kubernaut Operator](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+and apply a Fleet-enabled `Kubernaut` CR as described in Path B below.
 
 ### Validate the registrations
 
@@ -119,27 +102,12 @@ The authenticated readiness checks run during setup and probe both `hub__` and
 `WorkflowExecution` with `spec.clusterID: hub`; the resulting Job is created on the
 hub while the alert and `demo-webui` workload remain on the spoke.
 
-The Quick Start is the canonical operator entry point for the throwaway demo;
-this guide remains the detailed topology and troubleshooting reference.
+The Fleet Demo Quick Start points to the disposable qualification path; this guide
+remains the detailed topology and troubleshooting reference.
 
-The automated setup also supports model-aware reasoning configuration. For first-party
-OpenAI reasoning models, the demo infers conservative defaults from `LLM_PROVIDER=openai`
-and `LLM_MODEL`; for an `openai_compatible` endpoint, reasoning is never inferred from a
-GPT-like name. Override either behavior explicitly when the endpoint supports it:
-
-```bash
-make setup-fleet-demo-infra \
-  LLM_PROVIDER=openai_compatible \
-  LLM_MODEL=custom-reasoning-model \
-  LLM_ENDPOINT=https://llm.example.com/v1 \
-  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
-  LLM_REASONING_ENABLED=true \
-  LLM_REASONING_EFFORT=low
-```
-
-The flags are rendered into `global.llmProfiles.primary.reasoning`, the shared profile
-consumed by both API Frontend and Kubernaut Agent. After changing the profile, restart
-both deployments because their LLM clients are constructed at startup.
+For model-aware reasoning, set `spec.llmProfiles.primary.reasoning` in the user-owned
+`Kubernaut` CR. The profile is consumed by API Frontend and Kubernaut Agent; restart
+those workloads after changing it because their LLM clients are constructed at startup.
 
 ---
 
@@ -185,8 +153,8 @@ continue reading for the manual walkthrough.
 ## Path B: Manual walkthrough (Kuadrant reference only)
 
 The following Kuadrant steps are retained for future operator/integration work. They
-are not a supported Kind configuration for the v1.6 release. Use the automated EAIGW
-path above, or the EAIGW-specific manual variant in Path C, for Kind.
+are not a supported Kind configuration for the v1.6 release. Use the disposable
+qualification path above, or the EAIGW-specific manual variant in Path C, for Kind.
 
 ### B1. Create the hub cluster
 
@@ -497,14 +465,31 @@ stringData:
 EOF
 ```
 
+WorkflowExecution uses a separate least-privilege Secret for MCP write calls:
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" apply -n kubernaut-system -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fleet-workflowexecution-oauth2-creds
+  namespace: kubernaut-system
+  labels: {component: fleet}
+type: Opaque
+stringData:
+  client-id: "kubernaut-fleet-read"
+  client-secret: "e2e-fleet-secret"
+EOF
+```
+
 Install the Kubernaut Operator and apply a Fleet-enabled `Kubernaut` CR using the
 [operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
 Map the MCP Gateway endpoint and separate read/write OAuth2 Secret references into the
 CR; the application Helm chart is no longer shipped by this repository.
 
-`workflowexecution.fleet.oauth2.credentialsSecretRef` is called out explicitly because
+`spec.workflowExecution.fleet.oauth2CredentialsSecretRef` is called out explicitly because
 WE is the only fleet-integration-capable service that does **not** fall back to
-`global.fleet.oauth2.credentialsSecretRef` — it's the sole service calling MCP *write*
+`spec.fleet.oauth2.credentialsSecretRef` — it's the sole service calling MCP *write*
 tools (`resources_create_or_update`/`resources_delete`), so it keeps its own,
 independently-settable credential for least-privilege.
 
@@ -514,11 +499,11 @@ Fleet wiring only configures the MCP Gateway plumbing — it doesn't put anythin
 of Kubernaut that can start an investigation. Enable one of the other two modes in the
 same `Kubernaut` CR:
 
-- **Autonomous** (alert-driven): `gateway.enabled` defaults to `true` already; add
-  `gateway.auth.signalSources` for your AlertManager instance. See
+- **Autonomous** (alert-driven): `spec.gateway.enabled` defaults to `true` already; add
+  `spec.gateway.auth.signalSources` for your AlertManager instance. See
   [AUTONOMOUS_MODE_SETUP_GUIDE.md](./AUTONOMOUS_MODE_SETUP_GUIDE.md).
-- **Interactive** (chat-driven): `console.enabled=true` plus `console.auth.secretName`
-  and `apifrontend.config.auth.issuerURL`/`jwtProviders` for your OIDC provider. See
+- **Interactive** (chat-driven): `spec.apiFrontend.enabled=true` plus the
+  `spec.apiFrontend.auth` fields for your OIDC provider. See
   [INTERACTIVE_MODE_SETUP_GUIDE.md](./INTERACTIVE_MODE_SETUP_GUIDE.md).
 
 Both work with fleet mode simultaneously — the full `test-e2e-fleet` suite (Path A)

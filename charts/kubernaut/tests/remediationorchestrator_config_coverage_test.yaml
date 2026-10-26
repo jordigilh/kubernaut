@@ -1,0 +1,160 @@
+suite: "BR-PLATFORM-011 (issue #2226): remediationorchestrator config-knob test-coverage backfill (RO's first-ever chart test file)"
+# RO had zero helm-unittest coverage before this BR -- every one of its 17
+# schema-defaulted config fields (timeouts.*, routing.*,
+# effectivenessAssessment.stabilizationWindow, asyncPropagation.*,
+# notifications.notifySelfResolved, retention.period) rendered correctly
+# via templates/remediationorchestrator/remediationorchestrator.yaml but had
+# no assertion proving it. Confirmed correctly wired already by direct
+# template inspection -- pure coverage backfill, no template/schema changes.
+templates:
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no overrides) renders all 17 config fields at their schema defaults"
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'global: "1h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'processing: "5m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'analyzing: "10m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'executing: "30m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'verifying: "30m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'consecutiveFailureThreshold: 3'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'consecutiveFailureCooldown: "1h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'recentlyRemediatedCooldown: "5m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'ineffectiveChainThreshold: 3'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'recurrenceCountThreshold: 5'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'ineffectiveTimeWindow: "4h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'stabilizationWindow: "5m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'gitOpsSyncDelay: "3m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'operatorReconcileDelay: "1m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'proactiveAlertDelay: "5m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'notifySelfResolved: false'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'period: "24h"'
+
+  - it: "explicit overrides for all 17 config fields render through instead of being silently discarded"
+    set:
+      remediationorchestrator:
+        config:
+          timeouts:
+            global: "2h"
+            processing: "10m"
+            analyzing: "20m"
+            executing: "45m"
+            verifying: "45m"
+          routing:
+            consecutiveFailureThreshold: 7
+            consecutiveFailureCooldown: "2h"
+            recentlyRemediatedCooldown: "10m"
+            ineffectiveChainThreshold: 6
+            recurrenceCountThreshold: 9
+            ineffectiveTimeWindow: "8h"
+          effectivenessAssessment:
+            stabilizationWindow: "15m"
+          asyncPropagation:
+            gitOpsSyncDelay: "6m"
+            operatorReconcileDelay: "2m"
+            proactiveAlertDelay: "10m"
+          notifications:
+            notifySelfResolved: true
+          retention:
+            period: "48h"
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'global: "2h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'processing: "10m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'analyzing: "20m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'executing: "45m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'verifying: "45m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'consecutiveFailureThreshold: 7'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'consecutiveFailureCooldown: "2h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'recentlyRemediatedCooldown: "10m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'ineffectiveChainThreshold: 6'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'recurrenceCountThreshold: 9'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'ineffectiveTimeWindow: "8h"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'stabilizationWindow: "15m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'gitOpsSyncDelay: "6m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'operatorReconcileDelay: "2m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'proactiveAlertDelay: "10m"'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'notifySelfResolved: true'
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'period: "48h"'
+      - notMatchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'global: "1h"'

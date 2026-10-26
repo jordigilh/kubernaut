@@ -17,7 +17,9 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +29,11 @@ import (
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
@@ -78,6 +84,36 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		existing := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"}}}
 		existing.Spec.Template.Spec.Containers = []corev1.Container{{Name: "data-storage", VolumeMounts: []corev1.VolumeMount{{Name: "existing-tmp", MountPath: "/tmp"}}}}
 		Expect(ensureWritableTempVolume(existing)).To(BeFalse())
+	})
+	It("IT-2492-CR-002 [BR-E2E-001]: retries writable /tmp patch conflicts against operator reconciliation", func() {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "apifrontend",
+				Namespace: "kubernaut-system",
+				Labels:    map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "apifrontend"}}}},
+			},
+		}
+		clientset := fake.NewSimpleClientset(deployment)
+		conflict := true
+		clientset.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			if conflict {
+				conflict = false
+				return true, nil, apierrors.NewConflict(appsv1.Resource("deployments"), deployment.Name, errors.New("operator reconciliation won the update race"))
+			}
+			return false, nil, nil
+		})
+
+		updated, changed, err := ensureWritableTempVolumeWithRetry(context.Background(), clientset, deployment.Namespace, deployment.Name)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(changed).To(BeTrue())
+		Expect(deploymentHasWritableTemp(updated)).To(BeTrue())
+		persisted, getErr := clientset.AppsV1().Deployments(deployment.Namespace).Get(context.Background(), deployment.Name, metav1.GetOptions{})
+		Expect(getErr).NotTo(HaveOccurred())
+		Expect(deploymentHasWritableTemp(persisted)).To(BeTrue())
 	})
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{

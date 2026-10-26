@@ -21,12 +21,12 @@ real remediation journey.
 - [BR-PLATFORM-014](../../requirements/BR-PLATFORM-014-demo-environment-cert-lifecycle.md)
 - [DD-LLM-005](../../architecture/decisions/DD-LLM-005-model-aware-reasoning-support.md)
 - Issue #2437
-- `hack/setup-demo-infra/main.go`
-- `test/infrastructure/demo_helm.go`
+- `test/fixtures/operator/kubernaut-fleet.yaml`
+- `test/infrastructure/operator_deployment.go`
 - `charts/kubernaut/tests/llm_profiles_test.yaml`
 
-In scope: Make-to-CLI flag wiring, model-family inference, explicit overrides, Helm profile
-rendering, AF/KA configuration parity, documentation, and the fleet demo remediation journey.
+In scope: operator CR field wiring, model-family inference, explicit overrides, operator
+profile rendering, AF/KA configuration parity, documentation, and the fleet remediation journey.
 Out of scope: provider-specific model quality benchmarking and the OpenAI Responses API.
 
 ## 3. Pyramid Coverage
@@ -34,15 +34,15 @@ Out of scope: provider-specific model quality benchmarking and the OpenAI Respon
 | Tier | Test IDs | Proof |
 |---|---|---|
 | Unit | `UT-INFRA-FLEETDEMO-052` through `UT-INFRA-FLEETDEMO-066` | Resolver, CLI parsing, topology defaults, and validation behavior for GPT 5.6+ version-based defaults across variants, older GPT-5, o1/o3/o4, non-reasoning models, custom endpoints, overrides, and SI-10 invalid input |
-| Integration | `IT-PLATFORM-LLM-2437-001`, `IT-PLATFORM-LLM-2437-002` | Helm renders the resolved reasoning block into KA and AF production ConfigMaps |
-| E2E | `E2E-PLATFORM-2437-001` | `make setup-fleet-demo-infra` installs the configured fleet demo; a crashloop scenario is investigated and remediated through the real fleet path |
+| Integration | `IT-PLATFORM-LLM-2437-001`, `IT-PLATFORM-LLM-2437-002` | Operator reconciliation renders the resolved reasoning block into KA and AF production ConfigMaps |
+| E2E | `E2E-PLATFORM-2437-001` | `PRESERVE_E2E_CLUSTER=true make test-e2e-fleet` qualifies the operator-managed fleet path; a crashloop scenario is investigated and remediated through the real fleet journey |
 
 ## 4. Wiring Manifest
 
 | Component | Production entry point | Wiring location | Test |
 |---|---|---|---|
-| Demo reasoning flags | `make setup-fleet-demo-infra` / `make setup-local-demo-infra` | `Makefile` → `hack/setup-demo-infra/main.go` | `UT-INFRA-FLEETDEMO-052` through `061` |
-| Reasoning profile rendering | Helm install from `InstallDemoHelmChart` | `test/infrastructure/demo_helm.go` → `global.llmProfiles.primary.reasoning` | `IT-PLATFORM-LLM-2437-001/002` |
+| Demo reasoning fields | User-owned `Kubernaut` CR | Operator CR schema → `spec.llmProfiles.primary.reasoning` | `UT-INFRA-FLEETDEMO-052` through `061` |
+| Reasoning profile rendering | Operator reconciliation from the `Kubernaut` CR | `test/fixtures/operator/kubernaut-fleet.yaml` → runtime ConfigMaps | `IT-PLATFORM-LLM-2437-001/002` |
 | AF/KA reasoning consumption | Deployed AF and KA clients | `charts/kubernaut/templates/*` → runtime ConfigMaps | `E2E-PLATFORM-2437-001` |
 
 ## 5. E2E Procedure

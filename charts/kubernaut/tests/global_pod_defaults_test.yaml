@@ -1,0 +1,87 @@
+suite: "Decision Area 1/2 (DD-PLATFORM-006): global.podDefaults.pdb consolidation + global.defaultResources fallback"
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/pdb.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "pdb renders global.podDefaults.pdb values when a service sets no pdb block at all (values.yaml no longer sets one, per-service pdb: is entirely absent by default)"
+    template: templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: "per-service pdb.maxUnavailable override still wins over global.podDefaults.pdb"
+    set:
+      gateway:
+        pdb:
+          maxUnavailable: 2
+    template: templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 2
+
+  - it: "per-service pdb.enabled=false opt-out still wins over global.podDefaults.pdb.enabled=true (hasKey, not coalesce -- false is not 'unset'); total PDB count drops by exactly one (gateway's) out of the 11 rendered by default"
+    set:
+      gateway:
+        pdb:
+          enabled: false
+    template: templates/pdb.yaml
+    asserts:
+      - hasDocuments:
+          count: 10
+
+  - it: "global.defaultResources exists in schema but does not override gateway's explicit resources.requests/limits (regression guard)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+
+  - it: "global.defaultResources exists in schema but does not override datastorage's explicit resources.requests/limits (regression guard, distinct cpu request from gateway)"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m

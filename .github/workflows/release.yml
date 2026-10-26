@@ -71,6 +71,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       build_date: ${{ steps.version.outputs.build_date }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      qualification_tag: ${{ steps.version.outputs.qualification_tag }}
     steps:
       - name: Extract version from tag
         id: version
@@ -84,6 +85,11 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -z "${{ inputs.operator_candidate_manifest }}" ]]; then
+            echo "qualification_tag=${VERSION}-qualification-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
+          else
+            echo "qualification_tag=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
           if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
@@ -147,17 +153,17 @@ jobs:
             fi
             SHA='${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}'
             [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::operator_ref fallback must be an exact SHA"; exit 1; }
-           IMAGE="localhost/kubernaut-operator:$SHA"
+            IMAGE="localhost/kubernaut-operator:$SHA"
             cat > operator-candidate.yaml <<EOF
           schemaVersion: 1
           repository: jordigilh/kubernaut-operator
           sha: $SHA
-           image:
-             ref: $IMAGE
-           chart:
-             ref: development-source
-           dependencyChart:
-             ref: development-source
+          image:
+            ref: $IMAGE
+          chart:
+            ref: development-source
+          dependencyChart:
+            ref: development-source
           qualificationProfile: generic-kind-v1.6
           EOF
           fi
@@ -200,7 +206,7 @@ jobs:
 
   operator-qualification:
     name: Operator FP/Fleet qualification
-    needs: [prepare, prepare-operator-candidate, build-amd64]
+    needs: [prepare, prepare-operator-candidate, build-amd64, create-manifests]
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
@@ -247,7 +253,7 @@ jobs:
         shell: bash
         env:
           OPERATOR_CANDIDATE: /tmp/operator-candidate/operator-candidate.yaml
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_REGISTRY: quay.io/kubernaut-ai
         run: |
           set -euo pipefail
@@ -346,7 +352,7 @@ jobs:
 
       - name: Build image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: amd64
           IMAGE_TARGET: production
           CONTAINER_TOOL: podman
@@ -357,9 +363,11 @@ jobs:
           echo "Building ${{ matrix.service }} for amd64..."
           make image-build-${{ matrix.service }}
 
+      # Development fallback uses a unique run-scoped tag so qualification can
+      # consume the locally-built images without overwriting a release tag.
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-amd64"
           echo "Pushing ${IMAGE}..."
@@ -436,7 +444,7 @@ jobs:
 
       - name: Build runtime image (no QEMU)
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: arm64
           CONTAINER_TOOL: podman
           APP_VERSION: ${{ needs.prepare.outputs.version }}
@@ -451,7 +459,7 @@ jobs:
 
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
           echo "Pushing ${IMAGE}..."
@@ -509,7 +517,7 @@ jobs:
 
       - name: Build image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: arm64
           IMAGE_TARGET: production
           CONTAINER_TOOL: podman
@@ -544,7 +552,7 @@ jobs:
 
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
           echo "Pushing ${IMAGE}..."
@@ -560,6 +568,7 @@ jobs:
   security-scan-amd64:
     name: "Security Scan ${{ matrix.service }} (amd64)"
     needs: [prepare, build-amd64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -616,6 +625,7 @@ jobs:
   security-scan-arm64:
     name: "Security Scan ${{ matrix.service }} (arm64)"
     needs: [prepare, build-arm64, build-arm64-qemu]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -682,13 +692,34 @@ jobs:
 
       - name: Create and push multi-arch manifests
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           CONTAINER_TOOL: podman
         run: |
           echo "Creating multi-arch manifests (amd64 + arm64)..."
           make image-manifest
 
-      - name: Tag images as latest
+  tag-latest:
+    name: Tag GA images as latest
+    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    if: >-
+      always() &&
+      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      needs.operator-qualification.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Tag images as latest after qualification
         if: needs.prepare.outputs.is_prerelease == 'false'
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
@@ -719,6 +750,7 @@ jobs:
   sign-and-attest:
     name: "Sign & Attest SBOM ${{ matrix.service }}"
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -842,6 +874,7 @@ jobs:
   provenance:
     name: "Attest ${{ matrix.service }}"
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     permissions:
       contents: read
       actions: read
@@ -886,7 +919,19 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, tag-latest]
+    if: >-
+      always() &&
+      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      needs.prepare.result == 'success' &&
+      needs.prepare-operator-candidate.result == 'success' &&
+      needs.operator-qualification.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success' &&
+      needs.tag-latest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

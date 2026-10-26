@@ -1,0 +1,34 @@
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsV.mode "cert-manager" }}
+# #334: datastorage-signing-cert is DataStorage's AU-9 audit-signing key
+# (pkg/cert.Signer), not a network-facing TLS cert -- no dnsNames needed,
+# just a stable RSA keypair signed by the configured issuer. Mirrors what the
+# hook-mode tls-cert-gen Job creates via
+# `openssl req -x509 -subj "/CN=datastorage-signing-cert"`. Without this,
+# tls.mode=cert-manager never provisions the secret and DataStorage's
+# loadSigningCertificate fails hard (no fallback, by AU-9 design).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-signing-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    # DD-PLATFORM-003: renders in ArgoCD's "-1" sync-wave alongside the
+    # DataStorage Deployment that hard-requires this secret at startup
+    # (no fallback, by AU-9 design -- see comment above).
+    "argocd.argoproj.io/sync-wave": "-1"
+spec:
+  secretName: datastorage-signing-cert
+  duration: 8760h   # 365 days
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "kubernaut.tls.issuerName" . }}
+    kind: {{ $tlsV.certManager.issuerRef.kind }}
+    group: {{ $tlsV.certManager.issuerRef.group }}
+  commonName: datastorage-signing-cert
+{{- end }}

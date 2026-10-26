@@ -1,0 +1,62 @@
+suite: "DataStorage NetworkPolicy readiness-probe egress (DD-PLATFORM-010, BR-AUDIT-005 v2.0): supersedes the original #1985 fix, which allowlisted a second port (8081) on every one of the 10 audit-writing services' own egress side (kubernaut.np.datastorageEgress) because DataStorage's readiness probe lived on a dedicated kubelet-only health port. DD-PLATFORM-010 moved that cross-service /readyz check onto the main API port (8080) instead -- an unauthenticated top-level route on the same chi router as /api/v1 -- specifically so no second port needs opening anywhere, on any of the 10 callers or on DataStorage's own NetworkPolicy. This suite proves the egress helper reverted to exactly the pre-#1985 single-port (8080) shape, with no 8081 regression."
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/aianalysis/networkpolicy.yaml
+  - templates/signalprocessing/networkpolicy.yaml
+  - templates/remediationorchestrator/networkpolicy.yaml
+  - templates/workflowexecution/networkpolicy.yaml
+  - templates/notification/networkpolicy.yaml
+  - templates/effectivenessmonitor/networkpolicy.yaml
+  - templates/authwebhook/networkpolicy.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
+  - templates/apifrontend/networkpolicy.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+tests:
+  - it: "allows egress on port 8080 only (API writes + DD-PLATFORM-010 /readyz) to DataStorage pods -- for every one of the 10 audit-writing services"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: datastorage
+
+  - it: "regression guard: never re-opens egress on port 8081 to DataStorage (DD-PLATFORM-010 deliberately keeps the kubelet-only health port off every cross-pod policy)"
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8081
+                protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: datastorage

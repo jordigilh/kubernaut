@@ -1,0 +1,234 @@
+suite: "Issue #2545 no-write ambient CA deployment contract"
+
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/authwebhook/authwebhook.yaml
+  - templates/aianalysis/aianalysis.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/notification/notification.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/workflowexecution/workflowexecution.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/datastorage/datastorage.yaml
+
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    config:
+      ansible:
+        apiURL: https://awx.example.com
+        caCertSecretRef:
+          name: aap-ca-secret
+          key: ca.crt
+
+tests:
+  - it: "gateway has no ambient-only writable /tmp and keeps CA mount read-only"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+
+  - it: "apifrontend has no ambient-only writable /tmp"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "authwebhook keeps serving certs read-only without ambient /tmp"
+    template: templates/authwebhook/authwebhook.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: webhook-certs
+            mountPath: /tmp/k8s-webhook-server/serving-certs
+            readOnly: true
+
+  - it: "aianalysis has no ambient-only writable /tmp"
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "effectivenessmonitor has no ambient-only writable /tmp"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "notification retains output storage but has no ambient-only /tmp"
+    template: templates/notification/notification.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: notification-output
+            mountPath: /tmp/notifications
+
+  - it: "remediationorchestrator has no ambient-only writable /tmp"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "signalprocessing has no ambient-only writable /tmp"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "workflowexecution has no ambient-only writable /tmp"
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "kubernaut-agent has no ambient-only writable /tmp"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: "datastorage retains its pre-existing scratch volume as a regression guard"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 64Mi

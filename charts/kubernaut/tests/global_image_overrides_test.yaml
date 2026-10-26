@@ -1,0 +1,136 @@
+suite: global.image registry/tag overrides render into container images
+templates:
+  - templates/apifrontend/apifrontend.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/gateway/gateway.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  fleetmetadatacache:
+    enabled: true
+    namespace: "mcp-gateway-system"
+    oauth2:
+      credentialsSecretRef: "fmc-creds"
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      oauth2:
+        enabled: true
+        tokenURL: "http://oauth.example.com"
+        credentialsSecretRef: "fleet-oauth2-creds"
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+tests:
+  - it: "default (no global.image.tag): apifrontend image falls back to the chart appVersion, never an empty tag"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^quay\.io/kubernaut-ai/apifrontend:.+$'
+
+  - it: "global.image.tag override wins over the chart appVersion (apifrontend)"
+    set:
+      global:
+        image:
+          tag: test-tag-1.2.3
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/kubernaut-ai/apifrontend:test-tag-1.2.3
+
+  - it: "global.image.registry override is honored (apifrontend)"
+    set:
+      global:
+        image:
+          registry: harbor.corp
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^harbor\.corp/kubernaut-ai/apifrontend:.+$'
+
+  - it: "global.image.registry + tag combine (apifrontend)"
+    set:
+      global:
+        image:
+          registry: harbor.corp
+          tag: test-tag-1.2.3
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: harbor.corp/kubernaut-ai/apifrontend:test-tag-1.2.3
+
+  - it: "fleetmetadatacache honors the global.image.tag override (kubernaut.image helper, not a per-service field)"
+    set:
+      global:
+        image:
+          tag: test-tag-1.2.3
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/kubernaut-ai/fleetmetadatacache:test-tag-1.2.3
+
+  - it: "datastorage honors the global.image.tag override"
+    set:
+      global:
+        image:
+          tag: test-tag-1.2.3
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/kubernaut-ai/datastorage:test-tag-1.2.3
+
+  - it: "gateway honors the global.image.tag override"
+    set:
+      global:
+        image:
+          tag: test-tag-1.2.3
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/kubernaut-ai/gateway:test-tag-1.2.3

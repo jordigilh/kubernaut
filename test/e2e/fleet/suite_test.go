@@ -460,7 +460,8 @@ var _ = SynchronizedBeforeSuite(
 		var exposureOK bool
 		operatorExposure, exposureOK = infrastructure.OperatorExposureForKubeconfig(tempKubeconfigPath)
 		Expect(exposureOK).To(BeTrue(), "operator exposure evidence must be recorded")
-		Expect(fleetGatewayURL()).NotTo(BeEmpty(), "operator gateway exposure URL must be available to Fleet specs")
+		Expect(infrastructure.OperatorExposureURL(operatorExposure, "gateway")).NotTo(BeEmpty(),
+			"operator gateway exposure adapter must be recorded")
 		GinkgoWriter.Printf("Fleet Gateway test URL: %s\n", fleetGatewayURL())
 
 		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
@@ -549,7 +550,8 @@ var _ = SynchronizedBeforeSuite(
 			Expect(json.Unmarshal([]byte(parts[6]), &operatorExposure)).To(Succeed(),
 				"Failed to decode operator exposure evidence from Process 1")
 		}
-		Expect(fleetGatewayURL()).NotTo(BeEmpty(), "operator gateway exposure URL must be available to Fleet specs")
+		Expect(infrastructure.OperatorExposureURL(operatorExposure, "gateway")).NotTo(BeEmpty(),
+			"operator gateway exposure adapter must be recorded")
 
 		ctx, cancel = context.WithCancel(context.TODO())
 

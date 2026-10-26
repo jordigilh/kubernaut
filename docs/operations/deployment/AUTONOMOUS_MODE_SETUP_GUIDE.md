@@ -58,18 +58,32 @@ Install the Kubernaut Operator and apply a `Kubernaut` CR using the
 Set the CR's LLM, policy, Gateway, and monitoring fields for this mode; the
 application Helm chart is no longer shipped by this repository.
 
-`gateway.enabled` defaults to `true` — no need to set it. `apifrontend.enabled=false` above
-is optional; it's set here to keep this a minimal, Gateway-only footprint (no
-Console/AF Deployment, Service, RBAC, or NetworkPolicy at all) matching this guide's scope.
-Leave it at its default (`true`) if you might add [Interactive
-mode](./INTERACTIVE_MODE_SETUP_GUIDE.md) later without a redeploy.
+For a minimal Gateway-only deployment, apply a CR like this after installing the
+Operator. Set `apiFrontend.enabled: false` only when Interactive mode is not
+needed. The `gateway.auth.signalSources` entry is required for AlertManager to
+call Gateway; without it, valid tokens receive `403`.
 
-`gateway.auth.signalSources` is the actual authorization gate for who can call Gateway's
-webhook endpoint — it defaults to an empty list, so **nothing** can POST a signal to
-Gateway until you add an entry here. Each entry creates a `ClusterRoleBinding` granting
-that `ServiceAccount` `create` on `services/gateway-service`, checked via a real
-`TokenReview`+`SubjectAccessReview` on every request (401 for a missing/invalid token, 403
-for a valid token with no matching binding).
+```yaml
+apiVersion: kubernaut.ai/v1alpha2
+kind: Kubernaut
+metadata:
+  name: kubernaut
+  namespace: kubernaut-system
+spec:
+  apiFrontend:
+    enabled: false
+  gateway:
+    auth:
+      enabled: true
+      signalSources:
+        - name: alertmanager
+          serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+          namespace: monitoring
+```
+
+Each signal source creates the RBAC binding used by Gateway's
+`TokenReview`/`SubjectAccessReview` check. Missing or invalid tokens receive
+`401`; valid tokens without a matching binding receive `403`.
 
 ## 2. Point AlertManager at Gateway
 

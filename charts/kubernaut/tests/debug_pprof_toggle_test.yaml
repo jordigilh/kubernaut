@@ -1,0 +1,320 @@
+suite: "BR-PLATFORM-012, Issue #2275: shared debug.pprofEnabled toggle (secure-by-default) across all 12 Go services"
+# Every Go service's config.yaml now renders a debug.pprofEnabled key
+# (internal/config.DebugConfig, or internal/kubernautagent/config for KA's
+# nested runtime.debug), defaulting to false (AC-6 least privilege) via the
+# shared values.schema.json #/definitions/debug ref. The 7 controller-
+# runtime-managed services additionally gate a :6060 containerPort on the
+# same flag (ctrl.Options.PprofBindAddress via internal/config.PprofBindAddress
+# only starts that listener when the flag is true).
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/aianalysis/aianalysis.yaml
+  - templates/authwebhook/authwebhook.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/notification/notification.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/workflowexecution/workflowexecution.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Default (secure-by-default: pprofEnabled false) -----------------
+  - it: "gateway.debug.pprofEnabled defaults to false"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "datastorage.debug.pprofEnabled defaults to false"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "apifrontend.debug.pprofEnabled defaults to false"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "kubernautAgent.debug.pprofEnabled (rendered as runtime.debug.pprofEnabled) defaults to false"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "aianalysis.debug.pprofEnabled defaults to false, and the pprof containerPort is absent"
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: metadata.name
+      value: aianalysis-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+  - it: "aianalysis Deployment has no :6060 pprof containerPort by default"
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 6060
+
+  - it: "authwebhook.debug.pprofEnabled defaults to false"
+    template: templates/authwebhook/authwebhook.yaml
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-config
+    asserts:
+      - matchRegex:
+          path: data['authwebhook.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "effectivenessmonitor.debug.pprofEnabled defaults to false"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-config
+    asserts:
+      - matchRegex:
+          path: data['effectivenessmonitor.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "notification.debug.pprofEnabled defaults to false"
+    template: templates/notification/notification.yaml
+    documentSelector:
+      path: metadata.name
+      value: notification-controller-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "remediationorchestrator.debug.pprofEnabled defaults to false"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data['remediationorchestrator.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "signalprocessing.debug.pprofEnabled defaults to false"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "workflowexecution.debug.pprofEnabled defaults to false"
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data['workflowexecution.yaml']
+          pattern: 'pprofEnabled: false'
+
+  # --- Opt-in (explicit debug.pprofEnabled: true) -----------------------
+  - it: "gateway.debug.pprofEnabled: true renders through instead of being silently discarded"
+    set:
+      gateway:
+        debug:
+          pprofEnabled: true
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: true'
+
+  - it: "kubernautAgent.debug.pprofEnabled: true renders through as runtime.debug.pprofEnabled"
+    set:
+      kubernautAgent:
+        debug:
+          pprofEnabled: true
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: true'
+
+  - it: "aianalysis.debug.pprofEnabled: true renders through, and the Deployment gains a :6060 pprof containerPort matching internal/config.PprofBindAddress"
+    set:
+      aianalysis:
+        debug:
+          pprofEnabled: true
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: metadata.name
+      value: aianalysis-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: true'
+  - it: "aianalysis Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      aianalysis:
+        debug:
+          pprofEnabled: true
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+
+  - it: "authwebhook Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      authwebhook:
+        debug:
+          pprofEnabled: true
+    template: templates/authwebhook/authwebhook.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+            protocol: TCP
+
+  - it: "effectivenessmonitor Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      effectivenessmonitor:
+        debug:
+          pprofEnabled: true
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+
+  - it: "notification Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      notification:
+        debug:
+          pprofEnabled: true
+    template: templates/notification/notification.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+            protocol: TCP
+
+  - it: "remediationorchestrator Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      remediationorchestrator:
+        debug:
+          pprofEnabled: true
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+            protocol: TCP
+
+  - it: "signalprocessing Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      signalprocessing:
+        debug:
+          pprofEnabled: true
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+            protocol: TCP
+
+  - it: "workflowexecution Deployment gains the :6060 pprof containerPort when enabled"
+    set:
+      workflowexecution:
+        debug:
+          pprofEnabled: true
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: pprof
+            containerPort: 6060
+            protocol: TCP

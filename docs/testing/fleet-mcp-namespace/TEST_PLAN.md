@@ -32,12 +32,12 @@ Success requires:
 
 - **BR-PLATFORM-014** — stable, production-parity fleet demo infrastructure.
 - **ADR-068** — MCP Gateway is external infrastructure deployed before Kubernaut.
-- **DD-TEST-015** — provision fleet infrastructure before the single Helm install.
+- **DD-TEST-015** — provision fleet infrastructure before the operator reconciles the application CR.
 - `test/infrastructure/fleet_e2e.go`
 - `test/infrastructure/fleetmetadatacache_remote_cluster.go`
-- `test/infrastructure/demo_helm.go`
+- `test/infrastructure/fleet_e2e.go`
 
-Out of scope: changing production Helm resources or moving Kubernaut workloads
+Out of scope: changing production operator resources or moving Kubernaut workloads
 out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 
 ## 3. Risks and mitigations
@@ -46,27 +46,27 @@ out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 |---|---|---|
 | R1 | Hub server remains coupled to the application namespace. | Assert the resolved MCP namespace and generated Gateway/registration namespace. |
 | R2 | The server starts without its CA or Keycloak alias. | Exercise namespace prerequisite provisioning and manifest assertions. |
-| R3 | FMC watches the old namespace after registration resources move. | Assert `global.fleet.mcpGatewayNamespace` and FMC namespace Helm arguments. |
+| R3 | FMC watches the old namespace after registration resources move. | Assert `spec.fleet.mcpGateway.namespace` and the generated FMC namespace wiring. |
 | R4 | Existing same-namespace callers regress. | Preserve the resolver fallback and run the focused infrastructure suite. |
 
 ## 4. TDD scenarios and wiring manifest
 
 | ID | Tier | Business outcome | Phase |
 |---|---|---|---|
-| `UT-INFRA-FLEET-MCP-001` | Unit | Helm args include the dedicated MCP namespace when configured. | GREEN |
+| `UT-INFRA-FLEET-MCP-001` | Unit | Operator Fleet CR and gateway builders include the dedicated MCP namespace when configured. | GREEN |
 | `UT-INFRA-FLEET-MCP-002` | Unit | Empty MCP namespace preserves the caller's existing namespace. | GREEN |
 | `UT-INFRA-FLEET-MCP-003` | Unit | Explicit MCP namespace overrides the application namespace. | GREEN |
 | `UT-INFRA-FLEET-MCP-004` | Unit | Remote MCP namespace has an independent default and override. | GREEN |
 | `IT-INFRA-FLEET-MCP-005` | Integration | EAIGW registration manifests target the dedicated MCP namespace and server DNS. | GREEN |
 | `IT-INFRA-FLEET-MCP-006` | Integration | Kuadrant registration manifests target the dedicated MCP namespace. | GREEN |
 | `UT-INFRA-FLEET-MCP-007` | Unit | Custom Kuadrant rendering rewrites namespace references consistently. | GREEN |
-| `E2E-INFRA-FLEET-MCP-008` | E2E | MCP/Gateway becomes ready before Kubernaut Helm starts. | Follow-up |
+| `E2E-INFRA-FLEET-MCP-008` | E2E | MCP/Gateway becomes ready before the operator reconciles the Kubernaut CR. | Follow-up |
 
 | Component | Production entry point | Wiring location | Proving test |
 |---|---|---|---|
 | MCP namespace resolution | Fleet demo and fleet E2E setup | `provisionFleetCoreInfra` | `UT-INFRA-FLEET-MCP-002/003/004` |
 | Hub MCP/Gateway resources | `DeployFleetGatewayInfra` | `fleet_e2e.go` | `IT-INFRA-FLEET-MCP-005/006` |
-| Helm fleet namespace wiring | `InstallDemoHelmChart` | `buildFleetOAuth2HelmArgs` | `UT-INFRA-FLEET-MCP-001` |
+| Operator Fleet namespace wiring | `SetupFleetE2EInfrastructure` | Fleet CR and gateway namespace builders | `UT-INFRA-FLEET-MCP-001` |
 
 ## 5. Verification
 

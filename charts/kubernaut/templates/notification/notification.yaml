@@ -1,0 +1,296 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+# ClusterRole: CRD access (cluster-wide watch on NotificationRequests)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: notification-controller-role
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # controller-runtime leader election requires lease RBAC (#687)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: notification-controller-rolebinding
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: notification-controller-role
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-controller-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "kubernaut.notification.configYAML" . | nindent 4 }}
+---
+{{- if not .Values.notification.routing.existingConfigMap }}
+# Routing ConfigMap: Alertmanager-compatible routing rules (BR-NOT-066, #207)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-routing-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  routing.yaml: |
+    {{- include "kubernaut.notification.routingYAML" . | nindent 4 }}
+{{- end }}
+{{- define "kubernaut.notification.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "notification") | fromYaml -}}
+logging:
+  level: {{ $v.logging.level | quote }}
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "notification.kubernaut.ai"
+delivery:
+  console:
+    enabled: true
+  file:
+    outputDir: "/tmp/notifications"
+    format: "json"
+    timeout: 5s
+  log:
+    enabled: true
+    format: "json"
+  slack:
+    timeout: 10s
+  credentials:
+    dir: "/etc/notification/credentials"
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+{{- end }}
+{{- define "kubernaut.notification.routingYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "notification") | fromYaml -}}
+{{- if .Values.notification.routing.content -}}
+{{ .Values.notification.routing.content }}
+{{- else if .Values.notification.slack.secretName -}}
+route:
+  receiver: slack-and-console
+receivers:
+  - name: slack-and-console
+    consoleConfigs:
+      - enabled: true
+    slackConfigs:
+      - channel: {{ $v.slack.channel | quote }}
+        credentialRef: slack-webhook
+{{- else -}}
+route:
+  receiver: default-console
+receivers:
+  - name: default-console
+    consoleConfigs:
+      - enabled: true
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    control-plane: controller-manager
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "notification") | fromYaml }}
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: notification-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app: notification-controller
+        control-plane: controller-manager
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.notification.configYAML" . | sha256sum }}
+        {{- if not .Values.notification.routing.existingConfigMap }}
+        checksum/routing-config: {{ include "kubernaut.notification.routingYAML" . | sha256sum }}
+        {{- end }}
+    spec:
+      serviceAccountName: notification-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.notification | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.notification "matchLabels" (dict "app" "notification-controller")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.notification "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: manager
+          image: {{ include "kubernaut.image" (dict "service" "notification" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.notification | nindent 12 }}
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/notification/config.yaml"
+            - name: ROUTING_CONFIG_PATH
+              value: "/etc/notification-routing/routing.yaml"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          args:
+            - "-config"
+            - "$(CONFIG_PATH)"
+          ports:
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - containerPort: 6060
+              name: pprof
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: config
+              mountPath: /etc/notification
+              readOnly: true
+            - name: routing-config
+              mountPath: /etc/notification-routing
+              readOnly: true
+            - name: credentials
+              mountPath: /etc/notification/credentials
+              readOnly: true
+            - name: notification-output
+              mountPath: /tmp/notifications
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.notification.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: notification-controller-config
+        - name: routing-config
+          configMap:
+            name: notification-routing-config
+        - name: credentials
+          {{- if .Values.notification.credentials }}
+          projected:
+            sources:
+            {{- range .Values.notification.credentials }}
+              - secret:
+                  name: {{ .secretName }}
+                  items:
+                    - key: {{ .secretKey | default "webhook-url" }}
+                      path: {{ .name }}
+            {{- end }}
+          {{- else if .Values.notification.slack.secretName }}
+          projected:
+            sources:
+              - secret:
+                  name: {{ .Values.notification.slack.secretName }}
+                  items:
+                    - key: {{ $v.slack.secretKey }}
+                      path: slack-webhook
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: notification-output
+          emptyDir: {}
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+      terminationGracePeriodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-controller
+    control-plane: controller-manager
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090

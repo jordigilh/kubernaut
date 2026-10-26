@@ -266,6 +266,10 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 
 		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if resp.StatusCode >= http.StatusInternalServerError {
+			time.Sleep(2 * time.Second)
+			continue
+		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 			return fmt.Errorf("prometheus rules endpoint returned status %d: %s", resp.StatusCode, string(body))
 		}

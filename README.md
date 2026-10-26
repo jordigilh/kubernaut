@@ -102,28 +102,17 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 ## Try It Out
 
 Don't have a cluster yet? Follow the
-[Fleet Demo Quick Start](docs/operations/deployment/FLEET_DEMO_QUICKSTART.md) to spin up
-a self-contained hub+spoke Kind environment, install Kubernaut, and run a real
-fault-injection demo scenario yourself. All you need is an LLM provider API key, ~16 GB
-of memory, 4 CPU cores, and ~50 GB of disk space.
+[Fleet Demo Quick Start](docs/operations/deployment/FLEET_DEMO_QUICKSTART.md) for the
+operator-backed qualification path or the user-managed Fleet setup. The repository no
+longer ships a one-command application demo installer.
 
-For the simpler single-cluster demo, run the one-command local setup (the executable
-defaults to `-mode=local`):
-
-```bash
-make setup-local-demo-infra \
-  LLM_PROVIDER=openai_compatible \
-  LLM_MODEL=gpt-4o \
-  LLM_ENDPOINT=https://api.openai.com/v1 \
-  LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt
-```
-
-This creates one Kind cluster, installs Keycloak, Traefik, Kubernaut, and the Console,
-while leaving fleet disabled. The setup command prints the Console URL/login, kubeconfig,
-and the next commands for running scenarios from `kubernaut-demo-scenarios`.
-
-To test images built outside the release repository, pass their common image base path and
-tag, for example `IMAGE_REPOSITORY=quay.io/jordigilh IMAGE_TAG=dev`.
+The former one-command local and Fleet demo helpers were removed with the application
+Helm deployment path. For a disposable two-cluster qualification environment, run the
+repository's real Fleet journey with `PRESERVE_E2E_CLUSTER=true make test-e2e-fleet`.
+For a user-managed deployment, follow the [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md),
+then use the [Autonomous](docs/operations/deployment/AUTONOMOUS_MODE_SETUP_GUIDE.md),
+[Interactive](docs/operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md), or
+[Fleet setup](docs/operations/deployment/FLEET_SETUP_GUIDE.md) guide.
 
 ---
 

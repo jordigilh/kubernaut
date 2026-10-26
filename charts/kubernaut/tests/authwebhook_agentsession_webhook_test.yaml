@@ -1,0 +1,167 @@
+suite: "Issue #2244 (BR-AA-KA-065.13): AgentSession CREATE existence-gate ValidatingWebhookConfiguration entry"
+# charts/kubernaut/templates/authwebhook/webhooks.yaml gains a new
+# agentsession.validate.kubernaut.ai entry (AgentSessionHandler) alongside
+# the existing remediationworkflow/actiontype entries. This must intercept
+# CREATE only (AgentSessionSpec is CEL-immutable, so UPDATE/DELETE need no
+# gate) with failurePolicy: Fail, matching the RW/ActionType precedent
+# (DD-WEBHOOK-001 v1.5).
+templates:
+  - templates/authwebhook/webhooks.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+tests:
+  - it: "IT-HELM-2244-001: agentsession.validate.kubernaut.ai entry intercepts CREATE only"
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-validating
+    asserts:
+      - isKind:
+          of: ValidatingWebhookConfiguration
+      - contains:
+          path: webhooks
+          content:
+            name: agentsession.validate.kubernaut.ai
+            admissionReviewVersions: ["v1"]
+            clientConfig:
+              service:
+                name: authwebhook
+                namespace: NAMESPACE
+                path: /validate-agentsession
+            failurePolicy: Fail
+            matchPolicy: Equivalent
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: NAMESPACE
+            rules:
+              - apiGroups: ["kubernaut.ai"]
+                apiVersions: ["v1alpha1"]
+                operations: ["CREATE"]
+                resources: ["agentsessions"]
+                scope: "Namespaced"
+            sideEffects: NoneOnDryRun
+            timeoutSeconds: 15
+
+  - it: "IT-HELM-2244-002: agentsession entry does NOT intercept UPDATE or DELETE (AgentSessionSpec is CEL-immutable)"
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-validating
+    asserts:
+      - notContains:
+          path: webhooks
+          content:
+            name: agentsession.validate.kubernaut.ai
+            admissionReviewVersions: ["v1"]
+            clientConfig:
+              service:
+                name: authwebhook
+                namespace: NAMESPACE
+                path: /validate-agentsession
+            failurePolicy: Fail
+            matchPolicy: Equivalent
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: NAMESPACE
+            rules:
+              - apiGroups: ["kubernaut.ai"]
+                apiVersions: ["v1alpha1"]
+                operations: ["CREATE", "UPDATE", "DELETE"]
+                resources: ["agentsessions"]
+                scope: "Namespaced"
+            sideEffects: NoneOnDryRun
+            timeoutSeconds: 15
+
+  - it: "IT-HELM-2244-003: rendered namespace defaults to the release namespace when installed into a custom namespace"
+    release:
+      namespace: kubernaut-prod
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-validating
+    asserts:
+      - contains:
+          path: webhooks
+          content:
+            name: agentsession.validate.kubernaut.ai
+            admissionReviewVersions: ["v1"]
+            clientConfig:
+              service:
+                name: authwebhook
+                namespace: kubernaut-prod
+                path: /validate-agentsession
+            failurePolicy: Fail
+            matchPolicy: Equivalent
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kubernaut-prod
+            rules:
+              - apiGroups: ["kubernaut.ai"]
+                apiVersions: ["v1alpha1"]
+                operations: ["CREATE"]
+                resources: ["agentsessions"]
+                scope: "Namespaced"
+            sideEffects: NoneOnDryRun
+            timeoutSeconds: 15
+
+  - it: "IT-HELM-2244-004: RemediationWorkflow and ActionType entries are unaffected (regression guard)"
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-validating
+    asserts:
+      - contains:
+          path: webhooks
+          content:
+            name: remediationworkflow.validate.kubernaut.ai
+            admissionReviewVersions: ["v1"]
+            clientConfig:
+              service:
+                name: authwebhook
+                namespace: NAMESPACE
+                path: /validate-remediationworkflow
+            failurePolicy: Fail
+            matchPolicy: Equivalent
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: NAMESPACE
+            rules:
+              - apiGroups: ["kubernaut.ai"]
+                apiVersions: ["v1alpha1"]
+                operations: ["CREATE", "UPDATE", "DELETE"]
+                resources: ["remediationworkflows"]
+                scope: "Namespaced"
+            sideEffects: NoneOnDryRun
+            timeoutSeconds: 15
+      - contains:
+          path: webhooks
+          content:
+            name: actiontype.validate.kubernaut.ai
+            admissionReviewVersions: ["v1"]
+            clientConfig:
+              service:
+                name: authwebhook
+                namespace: NAMESPACE
+                path: /validate-actiontype
+            failurePolicy: Fail
+            matchPolicy: Equivalent
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: NAMESPACE
+            rules:
+              - apiGroups: ["kubernaut.ai"]
+                apiVersions: ["v1alpha1"]
+                operations: ["CREATE", "UPDATE", "DELETE"]
+                resources: ["actiontypes"]
+                scope: "Namespaced"
+            sideEffects: NoneOnDryRun
+            timeoutSeconds: 15

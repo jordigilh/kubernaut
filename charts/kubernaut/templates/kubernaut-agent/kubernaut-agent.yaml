@@ -1,0 +1,907 @@
+{{- /*
+LLM profile resolution (DD-PLATFORM-007 / BR-PLATFORM-008). Computed once
+at the top of this multi-document template so every ConfigMap/Deployment
+section below shares identical resolution -- avoids re-deriving (and
+potentially drifting) the same lookups per-section.
+*/}}
+{{- /*
+DD-PLATFORM-006 DA4: llmProfileRef defaults to "primary" (values.yaml/schema),
+so there is no separate "field is required" fail() here anymore -- an
+undefined profile (including an explicit empty-string override) is caught by
+kubernaut.llm.resolveProfile's own fail() below, with a message naming the
+actual (possibly empty) reference.
+*/}}
+{{- /*
+DD-PLATFORM-006 Decision Area 11 (revised): APIFrontend's ka.NewSDKMCPClient
+(pkg/apifrontend/ka/) is the only MCP client anywhere in the codebase that
+connects to KA's interactive /api/v1/mcp endpoint (verified: zero other
+callers). Rather than a separately settable kubernautAgent.interactive.enabled
+field requiring a schema if/then guard against apifrontend.enabled (its
+former shape, Issue #1984 Phase C), the interactive block (rendered inside
+kubernaut.kubernautAgent.configYAML below) is now fully derived from
+apifrontend's own effective enabled value -- removes the possibility of
+drift (AF enabled but KA interactive disabled, or vice versa) entirely
+instead of just detecting one direction of it. Reads the merged value
+(schema default true), not a raw .Values.apifrontend.enabled, for the same
+reason as console.yaml's/NOTES.txt's identical guards: values.yaml doesn't
+set apifrontend.enabled explicitly (DA14 zero/non-zero trim), so the raw
+value is nil/falsy until merged with the schema default.
+*/}}
+{{- $kaV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
+{{- /*
+Issue #1729: KA's fleet MCP Gateway client (cmd/kubernautagent/toolregistry.go
+registerFleetTools) was fully wired in Go but had no Helm-exposed
+kubernautAgent.fleet block at all, so a fleet-tagged investigation always
+fell back to hub-local tools regardless of global.fleet.enabled. Computed
+once here (used by the guard below and the Deployment's fleet-oauth2
+volume/volumeMount further down); configYAML recomputes its own copy since
+named templates don't inherit file-top variables (see the comment above
+kubernaut.kubernautAgent.configYAML's define).
+*/}}
+{{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- $kaBaseAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaProfile.provider) }}
+{{- $validPhases := list "rca" "workflow_discovery" "validation" }}
+{{- $kaPhaseProfiles := dict }}
+{{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
+{{- if not (has $phase $validPhases) }}
+{{- fail (printf "kubernautAgent.phaseModels: unrecognized phase name %q (valid: %s)" $phase (join ", " $validPhases)) }}
+{{- end }}
+{{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
+{{- $_ := set $kaPhaseProfiles $phase $p }}
+{{- end }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaEffectiveRef }}
+{{- $kaAlignmentProfile := dict }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+{{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
+{{- end }}
+{{- /*
+Multi-Secret-volume mounting (DD-LLM-012): complete sibling profiles get
+dedicated API-key and/or OAuth2 credential mounts whenever their selected
+Secret differs from the base profile. Sorted iteration keeps the rendered
+Deployment deterministic.
+*/}}
+{{- $kaPhaseMounts := list }}
+{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
+{{- $p := index $kaPhaseProfiles $phase }}
+{{- $pOAuth2 := $p.oauth2 | default dict }}
+{{- if and $pOAuth2.enabled (not $pOAuth2.credentialsSecretRef) }}
+{{- fail (printf "phaseModels.%s profile oauth2.credentialsSecretRef is required when oauth2.enabled=true" $phase) }}
+{{- end }}
+{{- $needsAPI := ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $needsOAuth2 := and $pOAuth2.enabled (ne $pOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- if or $needsAPI $needsOAuth2 }}
+{{- $kaPhaseMounts = append $kaPhaseMounts (dict "phase" $phase "profile" $p "needsAPI" $needsAPI "needsOAuth2" $needsOAuth2) }}
+{{- end }}
+{{- end }}
+{{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
+{{- $kaAlignmentAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- if $kaAlignmentNeedsMount }}
+{{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end }}
+{{- $kaAlignmentOAuth2 := $kaAlignmentProfile.oauth2 | default dict }}
+{{- if and .Values.kubernautAgent.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (not $kaAlignmentOAuth2.credentialsSecretRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true" $kaAlignmentProfileRef) }}
+{{- end }}
+{{- $kaAlignmentOAuth2NeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (ne $kaAlignmentOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $kaAlignmentOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+{{- $kaAlignmentOAuth2Dir = "/etc/kubernaut-agent/alignment-check-oauth2" }}
+{{- end }}
+{{- /*
+checksum/config + checksum/llm-runtime (Issue #1737 gap) need this content
+reachable from the Deployment's pod template annotations, a separate
+`include` call site from the two ConfigMaps below -- named templates don't
+inherit $-scoped variables from their caller, so the LLM profile resolution
+above must be recomputed here rather than reused from the file-top
+declarations.
+*/}}
+{{- define "kubernaut.kubernautAgent.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- /*
+DD-PLATFORM-006 Decision Area 11 (revised, see file-top comment): named
+templates don't inherit file-top variables, so this is recomputed here
+rather than reusing a single file-top $afInteractiveV.
+*/}}
+{{- $afInteractiveV := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
+{{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- $kaBaseAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaProfile.provider) }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaEffectiveRef }}
+{{- $kaAlignmentProfile := dict }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+{{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
+{{- end }}
+{{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
+{{- $kaAlignmentAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- if $kaAlignmentNeedsMount }}
+{{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end -}}
+{{- $kaAlignmentOAuth2 := $kaAlignmentProfile.oauth2 | default dict }}
+{{- if and $v.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (not $kaAlignmentOAuth2.credentialsSecretRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true" $kaAlignmentProfileRef) }}
+{{- end }}
+{{- $kaAlignmentOAuth2NeedsMount := and $v.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (ne $kaAlignmentOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $kaAlignmentOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+{{- $kaAlignmentOAuth2Dir = "/etc/kubernaut-agent/alignment-check-oauth2" }}
+{{- end -}}
+runtime:
+  logging:
+    level: {{ $v.logging.level | quote }}
+  session:
+    maxConcurrentInvestigations: {{ $v.session.maxConcurrentInvestigations }}
+  # GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
+  # Shared across Gateway/DataStorage/KubernautAgent (top-level .Values.telemetry).
+  # Empty endpoint + logSink=false (default) disables tracing entirely. Network
+  # OTLP export is always TLS-protected.
+  telemetry:
+    endpoint: {{ .Values.telemetry.endpoint | default "" | quote }}
+    logSink: {{ .Values.telemetry.logSink | default false }}
+    tls:
+      caFile: {{ .Values.telemetry.tls.caFile | default "" | quote }}
+      certFile: {{ .Values.telemetry.tls.certFile | default "" | quote }}
+      keyFile: {{ .Values.telemetry.tls.keyFile | default "" | quote }}
+  server:
+    address: "0.0.0.0"
+    port: 8443
+    healthAddr: ":8081"
+    metricsAddr: ":9090"
+    tls:
+      certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+    # Issue #2276: ambient CA trust is now sourced from resolved config
+    # (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+    # instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+    # class of bug where two independently chart-rendered components declare
+    # the same env var name and the Pod spec is rejected.
+    tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+  audit:
+    flushIntervalSeconds: 1.0
+    bufferSize: 10000
+    batchSize: 50
+  # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+  debug:
+    pprofEnabled: {{ $v.debug.pprofEnabled }}
+ai:
+  llm:
+    provider: {{ $kaProfile.provider | quote }}
+    apiKeyFile: {{ $kaBaseAPIKeyFile | quote }}
+{{- $kaOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- if $kaOAuth2.enabled }}
+    oauth2:
+      enabled: true
+      tokenURL: {{ $kaOAuth2.tokenURL | quote }}
+      credentialsDir: "/etc/kubernaut-agent/oauth2"
+{{- if $kaOAuth2.scopes }}
+      scopes:
+{{- range (splitList " " $kaOAuth2.scopes) }}
+        - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $kaProfile.vertexProject }}
+    vertexProject: {{ $kaProfile.vertexProject | quote }}
+{{- end }}
+{{- if $kaProfile.vertexLocation }}
+    vertexLocation: {{ $kaProfile.vertexLocation | quote }}
+{{- end }}
+{{- if $kaProfile.azureApiVersion }}
+    azureApiVersion: {{ $kaProfile.azureApiVersion | quote }}
+{{- end }}
+{{- if $kaProfile.bedrockRegion }}
+    bedrockRegion: {{ $kaProfile.bedrockRegion | quote }}
+{{- end }}
+{{- if $kaProfile.tlsCaFile }}
+    tlsCaFile: {{ $kaProfile.tlsCaFile | quote }}
+{{- end }}
+{{- if $kaProfile.tlsCertFile }}
+    tlsCertFile: {{ $kaProfile.tlsCertFile | quote }}
+{{- end }}
+{{- if $kaProfile.tlsKeyFile }}
+    tlsKeyFile: {{ $kaProfile.tlsKeyFile | quote }}
+{{- end }}
+{{- $kaReasoning := $kaProfile.reasoning | default dict }}
+{{- if or $kaReasoning.enabled $kaReasoning.capabilityOverride $kaReasoning.effort }}
+    reasoning:
+{{- if $kaReasoning.enabled }}
+      enabled: true
+{{- end }}
+{{- if $kaReasoning.budgetTokens }}
+      budgetTokens: {{ $kaReasoning.budgetTokens }}
+{{- end }}
+{{- if $kaReasoning.effort }}
+      effort: {{ $kaReasoning.effort | quote }}
+{{- end }}
+{{- if $kaReasoning.capabilityOverride }}
+      capabilityOverride: {{ $kaReasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
+  investigation:
+    maxTurns: 40
+    maxEvidenceHandoffBytes: {{ $v.investigation.maxEvidenceHandoffBytes }}
+    resolvedConfidenceThreshold: {{ $v.investigation.resolvedConfidenceThreshold }}
+    inconclusiveConfidenceThreshold: {{ $v.investigation.inconclusiveConfidenceThreshold }}
+    safety:
+      anomaly:
+        maxTotalToolCalls: {{ $v.ai.safety.anomaly.maxTotalToolCalls }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+  alignmentCheck:
+    enabled: true
+    timeout: {{ $v.alignmentCheck.timeout }}
+    maxStepTokens: {{ $v.alignmentCheck.maxStepTokens }}
+    llm:
+      {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile "oauth2CredentialsDir" $kaAlignmentOAuth2Dir) | nindent 6 }}
+{{- end }}
+{{- if $afInteractiveV.enabled }}
+interactive:
+  enabled: true
+  sessionTTL: {{ $v.interactive.sessionTTL | quote }}
+  inactivityTimeout: {{ $v.interactive.inactivityTimeout | quote }}
+  # Issue #1737 gap found: default of 5 was too low even for realistic
+  # production use, confirmed via full-suite E2E failing nearly every
+  # interactive/MCP spec with "max_sessions: Maximum concurrent sessions
+  # reached" from Ginkgo's own test parallelism alone (see values.yaml
+  # comment for kubernautAgent.interactive.maxConcurrentSessions).
+  maxConcurrentSessions: {{ $v.interactive.maxConcurrentSessions }}
+  rateLimitPerUser: {{ $v.interactive.rateLimitPerUser }}
+  maxAnalyzingTimeout: {{ $v.interactive.maxAnalyzingTimeout | quote }}
+{{- with .Values.kubernautAgent.interactive.jwtProviders }}
+  jwtProviders:
+{{- range . }}
+    - name: {{ .name | quote }}
+      issuer: {{ .issuer | quote }}
+      jwksURL: {{ .jwksURL | quote }}
+      audience: {{ .audience | quote }}
+{{- if .claimMappings }}
+      claimMappings:
+        username: {{ .claimMappings.username | default "preferred_username" | quote }}
+        groups: {{ .claimMappings.groups | default "groups" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+integrations:
+  dataStorage:
+    url: "{{ include "kubernaut.datastorage.url" . }}"
+    healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+    tls:
+      caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
+{{- end }}
+{{- if or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .) }}
+  tools:
+{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+    prometheus:
+      url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+{{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
+      tlsCaFile: {{ include "kubernaut.monitoring.prometheus.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- if include "kubernaut.monitoring.alertManager.enabled" . }}
+    alertmanager:
+      url: {{ include "kubernaut.monitoring.alertManager.url" . | quote }}
+{{- if include "kubernaut.monitoring.alertManager.tlsCaFile" . }}
+      tlsCaFile: {{ include "kubernaut.monitoring.alertManager.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /*
+Issue #1729: closes the Helm-wiring parity gap versus apifrontend.fleet/
+effectivenessmonitor.fleet -- kubernautAgent.fleet.{endpoint,gatewayType}
+map directly onto FleetConfig.{Endpoint,GatewayType}'s yaml tags
+(internal/kubernautagent/config/config_types.go), which registerFleetTools
+(cmd/kubernautagent/toolregistry.go) requires BOTH non-empty to connect to
+the MCP Gateway at all. Rendered unconditionally (not only when both are
+set) so an operator who enables global.fleet but leaves mcpGatewayType
+unset gets the same graceful "fleet disabled" fallback already built into
+registerFleetTools, rather than a materially different (and undocumented)
+Helm-side behavior.
+*/}}
+{{- if .Values.global.fleet.enabled }}
+  fleet:
+    endpoint: {{ $kaFleetPreamble.config.mcpGatewayEndpoint | quote }}
+    gatewayType: {{ $kaFleetPreamble.config.mcpGatewayType | quote }}
+    mcpGatewayTLSCAFile: {{ $kaFleetPreamble.config.mcpGatewayTLSCAFile | quote }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+    oauth2:
+      enabled: true
+      tokenURL: {{ $kaFleetPreamble.oauth2.tokenURL | quote }}
+      credentialsSecretRef: {{ $kaFleetPreamble.oauth2.credentialsSecretRef | quote }}
+{{- if $kaFleetPreamble.oauth2.scopes }}
+      scopes:
+{{- range $kaFleetPreamble.oauth2.scopes }}
+        - {{ . | quote }}
+{{- end }}
+{{- end }}
+      {{- /*
+      PR #1820 CI RCA (E2E-FLEET-017, run 30712261367): without this, KA's
+      OAuth2 token-fetch HTTP client fell back to the system CA trust store
+      and failed to verify a cluster-local IdP's cert-manager-issued
+      certificate ("x509: certificate signed by unknown authority"),
+      leaving the fleet readiness gate permanently NotReady. Mirrors
+      apifrontend/effectivenessmonitor's fleet oauth2.tlsCAFile rendering:
+      $kaFleetPreamble.oauth2.tlsCAFile already resolves from the
+      global-only global.fleet.oauth2.tlsCAFile (kubernaut.fleet.oauth2
+      helper) -- defaulting to the same CA bundle already mounted for
+      inter-service mTLS trust when unset.
+      */}}
+      tlsCaFile: {{ $kaFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+{{- end }}
+{{- /* Issue #2262 Phase 2: only render keys the operator actually set --
+an unset field keeps mcpclient.DefaultResilienceConfig()'s pre-#2262
+default unchanged (see mcpclient.ResilienceConfigFromFleet). */}}
+{{- if $kaFleetPreamble.resilience }}
+    resilience:
+      {{- $kaFleetPreamble.resilience | toYaml | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- define "kubernaut.kubernautAgent.llmRuntimeYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- $validPhases := list "rca" "workflow_discovery" "validation" }}
+{{- $kaPhaseProfiles := dict }}
+{{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
+{{- if not (has $phase $validPhases) }}
+{{- fail (printf "kubernautAgent.phaseModels: unrecognized phase name %q (valid: %s)" $phase (join ", " $validPhases)) }}
+{{- end }}
+{{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
+{{- $_ := set $kaPhaseProfiles $phase $p }}
+{{- end -}}
+model: {{ $kaProfile.model | quote }}
+endpoint: {{ $kaProfile.endpoint | default "" | quote }}
+{{- /* #1749: only render temperature when explicitly set. Some models
+   (e.g. claude-opus-4-8) reject the parameter outright with a 400 if
+   it is present at all — omit it by default rather than forcing 0.7.
+   hasKey (not a truthy `if`) so an explicit `temperature: 0` still
+   renders (BR-HAPI-199 — explicit zero must still be sent). */}}
+{{- if hasKey $kaProfile "temperature" }}
+temperature: {{ $kaProfile.temperature }}
+{{- end }}
+{{- if hasKey $kaProfile "maxRetries" }}
+maxRetries: {{ $kaProfile.maxRetries }}
+{{- else }}
+maxRetries: 3
+{{- end }}
+{{- if hasKey $kaProfile "timeoutSeconds" }}
+timeoutSeconds: {{ $kaProfile.timeoutSeconds }}
+{{- else }}
+timeoutSeconds: 120
+{{- end }}
+{{- if $kaPhaseProfiles }}
+phaseModels:
+{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
+{{- $p := index $kaPhaseProfiles $phase }}
+{{- $phaseAPIKeyFile := "" }}
+{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $p.provider) }}
+{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" (printf "/etc/kubernaut-agent/phase-credentials/%s" $phase) "provider" $p.provider) }}
+{{- end }}
+{{- $phaseOAuth2 := $p.oauth2 | default dict }}
+{{- $phaseOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if and $phaseOAuth2.enabled (ne $phaseOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $phaseOAuth2Dir = printf "/etc/kubernaut-agent/phase-oauth2/%s" $phase }}
+{{- end }}
+  {{ $phase }}:
+    {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile "oauth2CredentialsDir" $phaseOAuth2Dir) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-agent-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+# BR-PLATFORM-005: kubernaut-agent is the highest-risk component (LLM-driven,
+# broadest investigative RBAC). Disable the default long-lived (~1yr) SA token
+# automount; the Deployment instead mounts a short-TTL projected token below.
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-agent-investigator
+  labels:
+    app: kubernaut-agent
+    component: investigation
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  # ── Core Kubernetes ──────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - nodes
+      - namespaces
+      - replicationcontrollers
+      - persistentvolumeclaims
+      - persistentvolumes
+      - resourcequotas
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ── Storage (#872) ─────────────────────────────────────────────────────────
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers", "csinodes", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  # ── Discovery (#872) ───────────────────────────────────────────────────────
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  # ── cert-manager ─────────────────────────────────────────────────────────
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "clusterissuers", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  # ── ArgoCD ───────────────────────────────────────────────────────────────
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  # ── Linkerd ──────────────────────────────────────────────────────────────
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["servers", "authorizationpolicies", "meshtlsauthentications"]
+    verbs: ["get", "list", "watch"]
+  # ── Istio ───────────────────────────────────────────────────────────────
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list", "watch"]
+  # ── Metrics API (#770) ────────────────────────────────────────────────────
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  # ── Prometheus Operator ──────────────────────────────────────────────────
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
+    verbs: ["get", "list", "watch"]
+  # ── Kubernaut CRDs (#1287) ──────────────────────────────────────────────
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list"]
+  # ── AgentSession (DD-AA-KA-001, #2170): dispatch watcher + Status writer.
+  # Unconditional -- every investigation flows through AgentSession
+  # dispatch regardless of interactive.enabled. KA never writes Spec.
+  # "update"/"patch" (#2231, DD-AA-KA-001 Amendment): the Dispatcher
+  # Reconciler's dispatchCleanupFinalizer is a metadata-only write on the
+  # base resource, not the status subresource.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions/status"]
+    verbs: ["get", "update", "patch"]
+  # ── InvestigationSession (DD-AA-KA-001 Amendment Gap 1, #2170): read-only,
+  # dispatch-time existence check ONLY -- KA never writes InvestigationSession
+  # and never uses it for anything but deciding autonomous-vs-interactive
+  # dispatch (BR-AA-KA-065.5). AA's own InvestigationSession RBAC is narrowed
+  # to write-only for the unrelated cascade-cancel/terminal-close concern.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch"]
+  # ── Workflow catalog (#1677, DD-WORKFLOW-019): KA owns discovery directly
+  # via its own informer-backed cache instead of proxying through DataStorage.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows", "actiontypes"]
+    verbs: ["get", "list", "watch"]
+  # ── KubeVirt (BR-PLATFORM-005: VM-backed workload investigation) ──────────
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines", "virtualmachineinstances", "virtualmachineinstancemigrations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["datavolumes"]
+    verbs: ["get", "list", "watch"]
+  # ── Scheduling (BR-PLATFORM-005: priority/preemption investigation) ──────
+  - apiGroups: ["scheduling.k8s.io"]
+    resources: ["priorityclasses"]
+    verbs: ["get", "list", "watch"]
+  # #1288: Impersonation RBAC removed — KA uses its own SA for all K8s API
+  # calls. User identity is passed in MCP tool arguments for audit only.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-investigator-binding
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-agent-investigator
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+---
+# Issue #1069 (DD-GATEWAY-018): operator-supplied ClusterRole references,
+# generalizing kubernaut-operator's KA-only AdditionalClusterRoleBindings
+# mechanism to the Helm chart, for resource kinds not already covered above.
+# global.additionalClusterRoles covers the common case (same grant
+# across Gateway/EM/KA); merged here with KA's own list (deduplicated). Use
+# kubernautAgent.additionalClusterRoles alone (leave global unset) to
+# withhold an ecosystem grant from KA specifically -- the highest-risk,
+# LLM-driven component (BR-PLATFORM-005).
+{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "kubernaut-agent" "serviceAccount" "kubernaut-agent-sa" "names" (concat .Values.global.additionalClusterRoles .Values.kubernautAgent.additionalClusterRoles | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-auth-middleware
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+---
+# HELM-03 (#703): Lease RBAC is namespace-scoped (least privilege).
+# DD-AA-KA-001 (#2170): unconditional (not gated on interactive.enabled) --
+# the AgentSession dispatch Lease (dispatch-<agentsession-name>) is used by
+# every investigation, autonomous or interactive. The interactive-driver
+# Lease (per-RR, one human driver at a time) remains the other consumer of
+# this same Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-agent-leases
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: session
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  # list required by ReconcileOrphanedLeases startup loop (interactive-driver
+  # Leases) and by the AgentSession dispatcher's stale-Lease reclaim check.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-agent-leases-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: session
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernaut-agent-leases
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "kubernaut.kubernautAgent.configYAML" . | nindent 4 }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- if $kaBaseOAuth2.enabled }}
+{{- if not $kaBaseOAuth2.tokenURL }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" $kaEffectiveRef) }}
+{{- end }}
+{{- if not $kaBaseOAuth2.credentialsSecretRef }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" $kaEffectiveRef) }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-llm-runtime
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  llm-runtime.yaml: |
+    {{- include "kubernaut.kubernautAgent.llmRuntimeYAML" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $kaV.replicas }}
+  # PR #1790 round-13 RCA: see gateway.yaml's progressDeadlineSeconds comment
+  # -- K8s's Deployment controller enforces this SERVER-SIDE (default 600s)
+  # independently of `kubectl rollout status --timeout`, which is why round-12's
+  # 480s->720s CLI timeout bump had no effect. 750s makes that 720s CLI
+  # timeout the real ceiling again.
+  progressDeadlineSeconds: 750
+  selector:
+    matchLabels:
+      app: kubernaut-agent
+  template:
+    metadata:
+      labels:
+        app: kubernaut-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.kubernautAgent.configYAML" . | sha256sum }}
+        checksum/llm-runtime: {{ include "kubernaut.kubernautAgent.llmRuntimeYAML" . | sha256sum }}
+    spec:
+      serviceAccountName: kubernaut-agent-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.kubernautAgent | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.kubernautAgent "matchLabels" (dict "app" "kubernaut-agent")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.kubernautAgent "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: kubernaut-agent
+          image: {{ include "kubernaut.image" (dict "service" "kubernautagent" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: health
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9090
+          args:
+            - "-config"
+            - "/etc/kubernaut-agent/config.yaml"
+            - "-llm-runtime"
+            - "/etc/kubernaut-agent/llm-runtime/llm-runtime.yaml"
+          volumeMounts:
+            - name: llm-runtime
+              mountPath: /etc/kubernaut-agent/llm-runtime
+              readOnly: true
+            - name: config
+              mountPath: /etc/kubernaut-agent
+              readOnly: true
+            - name: llm-credentials-file
+              mountPath: /etc/kubernaut-agent/credentials
+              readOnly: true
+{{- if $kaBaseOAuth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: /etc/kubernaut-agent/oauth2
+              readOnly: true
+{{- end }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+            - name: fleet-oauth2-credentials
+              mountPath: "/etc/kubernaut-agent/{{ $kaFleetPreamble.oauth2.credentialsSecretRef }}"
+              readOnly: true
+{{- end }}
+{{- range $kaPhaseMounts }}
+{{- if .needsAPI }}
+            - name: phase-credentials-{{ .phase }}
+              mountPath: /etc/kubernaut-agent/phase-credentials/{{ .phase }}
+              readOnly: true
+{{- end }}
+{{- if .needsOAuth2 }}
+            - name: phase-oauth2-credentials-{{ .phase }}
+              mountPath: /etc/kubernaut-agent/phase-oauth2/{{ .phase }}
+              readOnly: true
+{{- end }}
+{{- end }}
+{{- if $kaAlignmentNeedsMount }}
+            - name: alignment-check-credentials
+              mountPath: /etc/kubernaut-agent/alignment-check-credentials
+              readOnly: true
+{{- end }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+            - name: alignment-check-oauth2-credentials
+              mountPath: /etc/kubernaut-agent/alignment-check-oauth2
+              readOnly: true
+{{- end }}
+            {{- if include "kubernaut.agent.tlsEnabled" . }}
+            - name: service-ca
+              mountPath: {{ include "kubernaut.agent.tlsCaDir" . }}
+              readOnly: true
+            {{- end }}
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            # BR-PLATFORM-005: short-TTL projected token, replacing the SA's
+            # disabled default automount (see ServiceAccount above).
+            - name: sa-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml (.Values.kubernautAgent.resources | default dict) | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: kubernaut-agent-config
+        - name: llm-runtime
+          configMap:
+            name: kubernaut-agent-llm-runtime
+        - name: llm-credentials-file
+          secret:
+            secretName: {{ $kaProfile.credentialsSecretName }}
+{{- if $kaBaseOAuth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ $kaBaseOAuth2.credentialsSecretRef }}
+{{- end }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+        - name: fleet-oauth2-credentials
+          secret:
+            secretName: {{ $kaFleetPreamble.oauth2.credentialsSecretRef }}
+{{- end }}
+{{- range $kaPhaseMounts }}
+{{- if .needsAPI }}
+        - name: phase-credentials-{{ .phase }}
+          secret:
+            secretName: {{ .profile.credentialsSecretName }}
+{{- end }}
+{{- if .needsOAuth2 }}
+        - name: phase-oauth2-credentials-{{ .phase }}
+          secret:
+            secretName: {{ .profile.oauth2.credentialsSecretRef }}
+{{- end }}
+{{- end }}
+{{- if $kaAlignmentNeedsMount }}
+        - name: alignment-check-credentials
+          secret:
+            secretName: {{ $kaAlignmentProfile.credentialsSecretName }}
+{{- end }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+        - name: alignment-check-oauth2-credentials
+          secret:
+            secretName: {{ $kaAlignmentOAuth2.credentialsSecretRef }}
+{{- end }}
+        {{- if include "kubernaut.agent.tlsEnabled" . }}
+        {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap
+             (it previously relied on an OCP-only service-ca auto-injection annotation, which
+             never populated real CA data on non-OCP clusters). When monitoring.prometheus.tlsCaFile
+             or monitoring.alertManager.tlsCaFile is set, pre-create a ConfigMap named
+             kubernaut-agent-service-ca in this namespace containing the CA bundle. */}}
+        - name: service-ca
+          configMap:
+            name: {{ include "kubernaut.agent.tlsCaConfigMapName" . }}
+        {{- end }}
+        - name: tls-certs
+          secret:
+            secretName: kubernautagent-tls
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
+        # (much longer-lived) automounted SA token for this high-risk component.
+        #
+        # #1677 hardening fix: audience MUST match the cluster's actual
+        # --service-account-issuer (which --api-audiences defaults to when
+        # unset -- see kube-apiserver docs), not an assumed literal. kubeadm
+        # (and therefore Kind, which every Helm smoke test in CI runs
+        # against) defaults --service-account-issuer to
+        # "https://kubernetes.default.svc.cluster.local" (WITH the
+        # .cluster.local suffix). The previous value here
+        # ("https://kubernetes.default.svc", no suffix) didn't match that
+        # audience, so the apiserver's ServiceAccount token authenticator
+        # rejected every token this Deployment presented with 401
+        # Unauthorized -- for every K8s API call KA itself makes (discovery,
+        # the #1677 workflow catalog informer's List/Watch, etc.), 100% of
+        # the time, on every retry, with no window in which it ever
+        # succeeded. This was masked pre-#1677 because KA never needed to
+        # make its own K8s API calls during startup (workflow discovery
+        # went through DataStorage's REST API instead); the #1677 informer
+        # cache was the first code path to depend on it, and readinessHandler
+        # gating /readyz on wfCatalog.Ready() is what surfaced it as a hard
+        # CI failure (Helm Smoke Tests, both tls=cert-manager and tls=hook
+        # variants) instead of a silent no-op. RCA: PR #1718 CI run
+        # 30081410278 must-gather (helm-smoke-must-gather-cert-manager /
+        # -hook), confirmed reproducible with Restart Count: 0 (i.e. not a
+        # startup-timing race) -- the token is rejected identically on every
+        # single attempt for the pod's entire lifetime.
+        - name: sa-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+                  audience: https://kubernetes.default.svc.cluster.local
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: {{ $kaV.service.type }}
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+      {{- if and (eq $kaV.service.type "NodePort") $kaV.service.nodePort }}
+      nodePort: {{ $kaV.service.nodePort }}
+      {{- end }}
+    - name: health
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  selector:
+    app: kubernaut-agent
