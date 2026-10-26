@@ -19,6 +19,7 @@ package fleet_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/fleettest"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
@@ -86,6 +88,9 @@ var _ = Describe("GW Fleet Remote Owner Chain Resolution (BR-INTEGRATION-065)", 
 		logger := zap.New(zap.UseDevMode(true))
 		localResolver := ownerchain.NewK8sOwnerResolver(localClient, logger)
 		adapter := adapters.NewPrometheusAdapter(localResolver, nil, logger)
+		adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+			Err: fmt.Errorf("MCP Gateway unavailable"),
+		})
 
 		payload := buildWebhookPayload("prod-east-1", "prod", "Pod", "api-server-abc")
 		signal, err := adapter.Parse(ctx, payload)
