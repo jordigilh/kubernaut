@@ -41,7 +41,8 @@ type NormalizedSignal struct {
 
 	// ClusterID identifies the source cluster for multi-cluster federation (BR-INTEGRATION-065).
 	// Empty string means local hub cluster (backward compatible with pre-federation behavior).
-	// Populated from Thanos/Alertmanager commonLabels["cluster"] or K8s event source annotation.
+	// Fleet signals preserve the validated Thanos/Alertmanager commonLabels["cluster"]
+	// attribution; local-mode signals ignore alert cluster labels and remain empty.
 	ClusterID string
 
 	// SignalName is the human-readable signal name

@@ -276,6 +276,60 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		})
 	})
 
+	Context("E2E-GW-2555: Local mode ignores alert cluster attribution", func() {
+		It("E2E-GW-2555-001 [BR-INTEGRATION-065, AC-4, AC-6, AU-3, CC7.2, ASVS V4.1.1]: ignores common cluster attribution", func() {
+			payload := buildLocalClusterAttributionPayload(
+				"LocalCommonClusterAttribution2555",
+				prodNamespace,
+				"payment-api-123",
+				"local",
+				"",
+			)
+
+			webhookResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
+			var gatewayResp GatewayResponse
+			Expect(json.Unmarshal(webhookResp.Body, &gatewayResp)).To(Succeed())
+			Expect(gatewayResp.RemediationRequestName).NotTo(BeEmpty(),
+				"local cluster attribution must still create a RemediationRequest")
+
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      gatewayResp.RemediationRequestName,
+				}, &crd)
+			}, 30*time.Second, 1*time.Second).Should(Succeed())
+			Expect(crd.Spec.ClusterID).To(BeEmpty(),
+				"local mode must not persist common cluster attribution")
+		})
+
+		It("E2E-GW-2555-002 [BR-INTEGRATION-065, AC-4, AC-6, AU-3, CC7.2, ASVS V4.1.1]: ignores per-alert cluster attribution", func() {
+			payload := buildLocalClusterAttributionPayload(
+				"LocalPerAlertClusterAttribution2555",
+				stagingNamespace,
+				"database-replica-2",
+				"",
+				"local",
+			)
+
+			webhookResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
+			var gatewayResp GatewayResponse
+			Expect(json.Unmarshal(webhookResp.Body, &gatewayResp)).To(Succeed())
+			Expect(gatewayResp.RemediationRequestName).NotTo(BeEmpty(),
+				"local per-alert cluster attribution must still create a RemediationRequest")
+
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      gatewayResp.RemediationRequestName,
+				}, &crd)
+			}, 30*time.Second, 1*time.Second).Should(Succeed())
+			Expect(crd.Spec.ClusterID).To(BeEmpty(),
+				"local mode must not persist per-alert cluster attribution")
+		})
+	})
+
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-GATEWAY-005: Deduplication Using Prometheus Alert Fingerprint
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -487,3 +541,45 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		})
 	})
 })
+
+// buildLocalClusterAttributionPayload builds an Alertmanager webhook carrying
+// optional common-label or per-alert cluster attribution for local-mode E2E.
+func buildLocalClusterAttributionPayload(alertName, namespace, podName, commonCluster, perAlertCluster string) []byte {
+	commonLabels := map[string]string{
+		"alertname": alertName,
+	}
+	if commonCluster != "" {
+		commonLabels["cluster"] = commonCluster
+	}
+
+	labels := map[string]string{
+		"alertname": alertName,
+		"severity":  "warning",
+		"namespace": namespace,
+		"pod":       podName,
+	}
+	if perAlertCluster != "" {
+		labels["cluster"] = perAlertCluster
+	}
+
+	payload := map[string]interface{}{
+		"version":      "4",
+		"groupKey":     fmt.Sprintf("{}:{alertname=\"%s\"}", alertName),
+		"status":       "firing",
+		"commonLabels": commonLabels,
+		"alerts": []map[string]interface{}{
+			{
+				"status": "firing",
+				"labels": labels,
+				"annotations": map[string]string{
+					"summary": fmt.Sprintf("Local cluster attribution regression for %s", podName),
+				},
+				"startsAt": time.Now().Format(time.RFC3339),
+			},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	return payloadBytes
+}
