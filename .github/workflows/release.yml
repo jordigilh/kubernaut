@@ -21,15 +21,10 @@ on:
   workflow_dispatch:
     inputs:
       operator_candidate_manifest:
-        description: Immutable kubernaut-operator candidate manifest URL (required for promotion)
+        description: Optional immutable kubernaut-operator candidate manifest for compatibility qualification
         required: false
         type: string
         default: ''
-      operator_ref:
-        description: Exact operator SHA fallback for development qualification
-        required: false
-        type: string
-        default: 2c021da02bd62aa9adf5c36d511b33c0483da359
       release_version:
         description: Application release version for manual qualification
         required: false
@@ -49,7 +44,6 @@ permissions:
 
 env:
   IMAGE_REGISTRY: quay.io/kubernaut-ai
-  KUBERNAUT_OPERATOR_REF: 2c021da02bd62aa9adf5c36d511b33c0483da359
 
 jobs:
   # ========================================
@@ -104,6 +98,7 @@ jobs:
   prepare-operator-candidate:
     name: Verify operator candidate input
     needs: prepare
+    if: inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -118,49 +113,24 @@ jobs:
           chmod +x yq
           sudo mv yq /usr/local/bin/yq
           yq --version
-      - name: Checkout exact operator source for development fallback
-        if: inputs.operator_candidate_manifest == ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: jordigilh/kubernaut-operator
-          ref: ${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}
-          path: kubernaut-operator
-          fetch-depth: 0
-      - name: Resolve immutable candidate manifest or exact development SHA
+      - name: Resolve immutable candidate manifest
         id: candidate
         shell: bash
         env:
           OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
-          OPERATOR_REF: ${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}
         run: |
           set -euo pipefail
           MANIFEST_URL="$OPERATOR_CANDIDATE_MANIFEST"
-          if [[ -n "$MANIFEST_URL" ]]; then
-            curl --fail --location --retry 3 "$MANIFEST_URL" -o operator-candidate.yaml
-            test -s operator-candidate.yaml
-            SHA=$(yq -r '.sha' operator-candidate.yaml)
-            IMAGE=$(yq -r '.image.ref' operator-candidate.yaml)
-            CHART=$(yq -r '.chart.ref' operator-candidate.yaml)
-            [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate SHA is not immutable"; exit 1; }
-            [[ "$IMAGE" == *@sha256:* ]] || { echo "::error::candidate operator image must be digest-pinned"; exit 1; }
-            [[ -n "$CHART" ]] || { echo "::error::candidate chart ref is missing"; exit 1; }
-          else
-            SHA="$OPERATOR_REF"
-            [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::operator_ref fallback must be an exact SHA"; exit 1; }
-            IMAGE="localhost/kubernaut-operator:$SHA"
-            cat > operator-candidate.yaml <<EOF
-          schemaVersion: 1
-          repository: jordigilh/kubernaut-operator
-          sha: $SHA
-          image:
-            ref: $IMAGE
-          chart:
-            ref: development-source
-          dependencyChart:
-            ref: development-source
-          qualificationProfile: generic-kind-v1.6
-          EOF
-          fi
+          curl --fail --location --retry 3 "$MANIFEST_URL" -o operator-candidate.yaml
+          test -s operator-candidate.yaml
+          SHA=$(yq -r '.sha' operator-candidate.yaml)
+          IMAGE=$(yq -r '.image.ref' operator-candidate.yaml)
+          CHART=$(yq -r '.chart.ref' operator-candidate.yaml)
+          DEPENDENCY_CHART=$(yq -r '.dependencyChart.ref // empty' operator-candidate.yaml)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate SHA is not immutable"; exit 1; }
+          [[ "$IMAGE" == *@sha256:* ]] || { echo "::error::candidate operator image must be digest-pinned"; exit 1; }
+          [[ -n "$CHART" ]] || { echo "::error::candidate chart ref is missing"; exit 1; }
+          [[ -n "$DEPENDENCY_CHART" ]] || { echo "::error::candidate dependency chart ref is missing"; exit 1; }
           echo "operator_sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "operator_image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "candidate_manifest=$GITHUB_WORKSPACE/operator-candidate.yaml" >> "$GITHUB_OUTPUT"
@@ -172,35 +142,10 @@ jobs:
           path: operator-candidate.yaml
           retention-days: 90
 
-      - name: Build development operator fallback artifact
-        if: inputs.operator_candidate_manifest == ''
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-      - name: Build development operator image and charts
-        if: inputs.operator_candidate_manifest == ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          SHA=$(yq -r '.sha' operator-candidate.yaml)
-          IMAGE="localhost/kubernaut-operator:${SHA}"
-          docker build --pull=false -t "$IMAGE" -f kubernaut-operator/Dockerfile kubernaut-operator
-          mkdir -p operator-development
-          docker save -o operator-development/kubernaut-operator.tar "$IMAGE"
-          helm package kubernaut-operator/charts/kubernaut-operator --destination operator-development
-          helm package kubernaut-operator/charts/kubernaut-development-dependencies --destination operator-development
-          cp operator-candidate.yaml operator-development/
-      - name: Upload development operator artifact
-        if: inputs.operator_candidate_manifest == ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: operator-development-${{ github.run_id }}
-          path: operator-development
-          retention-days: 2
-
   operator-qualification:
     name: Operator FP/Fleet qualification
     needs: [prepare, prepare-operator-candidate, build-amd64, create-manifests]
+    if: inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
@@ -220,12 +165,6 @@ jobs:
         with:
           name: operator-candidate-${{ github.run_id }}
           path: /tmp/operator-candidate
-      - name: Download development operator artifact
-        if: inputs.operator_candidate_manifest == ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: operator-development-${{ github.run_id }}
-          path: /tmp/operator-development
       - name: Install qualification tools
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
@@ -249,7 +188,6 @@ jobs:
           OPERATOR_CANDIDATE: /tmp/operator-candidate/operator-candidate.yaml
           IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_REGISTRY: quay.io/kubernaut-ai
-          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
         run: |
           set -euo pipefail
            OPERATOR_IMAGE=$(yq -r '.image.ref' "$OPERATOR_CANDIDATE")
@@ -259,17 +197,8 @@ jobs:
           test "$OPERATOR_SHA" = "${{ needs.prepare-operator-candidate.outputs.operator_sha }}"
           export KUBERNAUT_OPERATOR_IMAGE="$OPERATOR_IMAGE"
           export KUBERNAUT_OPERATOR_SHA="$OPERATOR_SHA"
-          if [[ -z "$OPERATOR_CANDIDATE_MANIFEST" ]]; then
-            podman load -i /tmp/operator-development/kubernaut-operator.tar
-            mkdir -p "$PWD/operator-charts"
-            tar -xzf /tmp/operator-development/kubernaut-operator-*.tgz -C "$PWD/operator-charts"
-            tar -xzf /tmp/operator-development/kubernaut-development-dependencies-*.tgz -C "$PWD/operator-charts"
-            export KUBERNAUT_OPERATOR_CHART_PATH="$PWD/operator-charts/kubernaut-operator"
-            export KUBERNAUT_DEPENDENCY_CHART_PATH="$PWD/operator-charts/kubernaut-development-dependencies"
-           else
-             export KUBERNAUT_OPERATOR_CHART_PATH="$OPERATOR_CHART"
-             export KUBERNAUT_DEPENDENCY_CHART_PATH="${DEPENDENCY_CHART:-oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a}"
-           fi
+          export KUBERNAUT_OPERATOR_CHART_PATH="$OPERATOR_CHART"
+          export KUBERNAUT_DEPENDENCY_CHART_PATH="$DEPENDENCY_CHART"
           export KUBERNAUT_QUALIFICATION_DIR="$PWD/qualification-2492"
           export KUBERNAUT_BUILD_MOCK_LLM=true
           make test-e2e-fullpipeline
@@ -691,11 +620,10 @@ jobs:
 
   tag-latest:
     name: Tag GA images as latest
-    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release]
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release]
     if: >-
       always() &&
       inputs.operator_candidate_manifest != '' &&
-      needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
       needs.security-scan-amd64.result == 'success' &&
       needs.security-scan-arm64.result == 'success' &&
@@ -741,15 +669,7 @@ jobs:
 
   sign-and-attest:
     name: "Sign & Attest SBOM ${{ matrix.service }}"
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
-    if: >-
-      always() &&
-      inputs.operator_candidate_manifest != '' &&
-      needs.prepare-operator-candidate.result == 'success' &&
-      needs.operator-qualification.result == 'success' &&
-      needs.create-manifests.result == 'success' &&
-      needs.security-scan-amd64.result == 'success' &&
-      needs.security-scan-arm64.result == 'success'
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -872,15 +792,7 @@ jobs:
 
   provenance:
     name: "Attest ${{ matrix.service }}"
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
-    if: >-
-      always() &&
-      inputs.operator_candidate_manifest != '' &&
-      needs.prepare-operator-candidate.result == 'success' &&
-      needs.operator-qualification.result == 'success' &&
-      needs.create-manifests.result == 'success' &&
-      needs.security-scan-amd64.result == 'success' &&
-      needs.security-scan-arm64.result == 'success'
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
     permissions:
       contents: read
       actions: read
@@ -924,13 +836,11 @@ jobs:
 
   promote-release:
     name: Promote qualified release images
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
     if: >-
       always() &&
-      inputs.operator_candidate_manifest != '' &&
+      (inputs.operator_candidate_manifest == '' || needs.operator-qualification.result == 'success') &&
       needs.prepare.result == 'success' &&
-      needs.prepare-operator-candidate.result == 'success' &&
-      needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
       needs.security-scan-amd64.result == 'success' &&
       needs.security-scan-arm64.result == 'success' &&
@@ -1010,19 +920,16 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release, tag-latest]
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release, tag-latest]
     if: >-
       always() &&
-      inputs.operator_candidate_manifest != '' &&
+      needs.promote-release.result == 'success' &&
       needs.prepare.result == 'success' &&
-      needs.prepare-operator-candidate.result == 'success' &&
-      needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
       needs.security-scan-amd64.result == 'success' &&
       needs.security-scan-arm64.result == 'success' &&
       needs.sign-and-attest.result == 'success' &&
       needs.provenance.result == 'success' &&
-      needs.promote-release.result == 'success' &&
       needs.tag-latest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -183,13 +183,21 @@ Wait for CI to pass, then merge. Record the merge commit SHA.
 
 ```bash
 gh workflow run release.yml \
+  -f release_version=X.Y.0
+```
+
+This publishes the Kubernaut application images without requiring an Operator release.
+To add compatibility qualification, provide an immutable candidate manifest containing
+the exact operator image, bootstrap chart, dependency chart, and resolved source SHA:
+
+```bash
+gh workflow run release.yml \
   -f release_version=X.Y.0 \
   -f operator_candidate_manifest=https://example.invalid/operator-candidate.yaml
 ```
 
-The candidate manifest URL must be immutable and include the exact operator image,
-bootstrap chart, dependency chart, and resolved source SHA. The release workflow
-creates the GitHub release only after promotion and all qualification gates pass.
+The release workflow creates the GitHub release only after promotion and all application
+gates pass. Operator publication remains a separate coordinated release step.
 
 ### Step 8: Monitor the release workflow
 
