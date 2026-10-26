@@ -31,6 +31,20 @@ import (
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {
+		previous, hadPrevious := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE_TAR")
+		defer func() {
+			if hadPrevious {
+				_ = os.Setenv("KUBERNAUT_OPERATOR_IMAGE_TAR", previous)
+			} else {
+				_ = os.Unsetenv("KUBERNAUT_OPERATOR_IMAGE_TAR")
+			}
+		}()
+
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_IMAGE_TAR", "/tmp/operator.tar")).To(Succeed())
+		Expect(operatorImageArtifactPath()).To(Equal("/tmp/operator.tar"))
+	})
+
 	It("UT-2492-012 [BR-E2E-001]: mounts writable /tmp only on operator-managed deployments", func() {
 		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/managed-by": "kubernaut-operator"}}}
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "gateway"}}

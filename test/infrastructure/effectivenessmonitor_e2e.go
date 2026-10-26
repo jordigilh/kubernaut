@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,6 +136,11 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	if err := deployEMServices(ctx, clusterName, kubeconfigPath, namespace, projectRoot, builtImages, writer); err != nil {
 		return err
 	}
+	tlsTransport, tlsErr := NewTLSAwareTransport(kubeconfigPath)
+	if tlsErr != nil {
+		return fmt.Errorf("configure monitoring TLS client: %w", tlsErr)
+	}
+	http.DefaultTransport = tlsTransport
 
 	// PHASE 5: Wait for all services to be ready
 	// ═══════════════════════════════════════════════════════════════════════
@@ -315,6 +321,9 @@ func deployEMImagesAndCRDs(ctx context.Context, clusterName, kubeconfigPath, nam
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
+	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate monitoring TLS: %w", err)
+	}
 
 	// AU-9: Generate RSA signing certificate for audit exports
 	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
@@ -343,13 +352,13 @@ func deployEMApplicationServices(ctx context.Context, clusterName, kubeconfigPat
 	}
 
 	// Deploy Prometheus (real instance for metric comparison)
-	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := DeployPrometheusTLS(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Prometheus: %w", err)
 	}
 
 	// Deploy AlertManager (real instance for alert resolution)
 	// EM suite does not deploy Gateway; pass empty token (webhook targets gateway-service which may not exist)
-	if err := DeployAlertManager(ctx, namespace, namespace, kubeconfigPath, "", writer); err != nil {
+	if err := DeployAlertManagerTLS(ctx, namespace, namespace, kubeconfigPath, "", writer); err != nil {
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
 

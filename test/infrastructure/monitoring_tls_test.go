@@ -18,6 +18,8 @@ package infrastructure
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,5 +33,14 @@ var _ = Describe("Monitoring TLS cache validation", func() {
 		Expect(monitoringCABytesMatch(caPEM, encoded)).To(BeTrue())
 		Expect(monitoringCABytesMatch([]byte("stale-ca"), encoded)).To(BeFalse())
 		Expect(monitoringCABytesMatch(caPEM, "not-base64")).To(BeFalse())
+	})
+
+	It("UT-INFRA-EM-TLS-001 [BR-EM-001]: deploys TLS monitoring endpoints for the HTTPS-aware harness", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "effectivenessmonitor_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).To(ContainSubstring("EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, namespace, writer)"))
+		Expect(text).To(ContainSubstring("DeployPrometheusTLS(ctx, namespace, kubeconfigPath, writer)"))
+		Expect(text).To(ContainSubstring("DeployAlertManagerTLS(ctx, namespace, namespace, kubeconfigPath, \"\", writer)"))
 	})
 })

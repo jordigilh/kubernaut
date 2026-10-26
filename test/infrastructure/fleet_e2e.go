@@ -2858,6 +2858,7 @@ data:
       endpoint: "%[7]s"
       gatewayType: "%[8]s"
       namespace: "%[14]s"
+      tlsCAFile: "/etc/fleetmetadatacache/tls-ca/ca.crt"
     valkey:
       addr: "valkey.%[1]s.svc:6379"
     sync:
