@@ -7,9 +7,9 @@ agentRouterVersion: v1.2.0
 # published v1.6 line. Digests are preferred for qualification evidence.
 operator:
   version: 1.6.0-rcN
-  image: quay.io/kubernaut-ai/kubernaut-operator@sha256:<operator-image-digest>
+  image: quay.io/kubernaut-ai/kubernaut-operator-image@sha256:<operator-image-digest>
   imageDigest: sha256:<operator-image-digest>
-  chart: oci://quay.io/kubernaut-ai/charts/kubernaut-operator
+  chart: oci://quay.io/kubernaut-ai/kubernaut-operator
   chartDigest: sha256:<operator-chart-digest>
   ref: <operator-commit-sha>
 

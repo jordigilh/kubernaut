@@ -51,13 +51,15 @@ const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision             = "2c021da02bd62aa9adf5c36d511b33c0483da359"
+	operatorRevision             = "9dc9394fd1844be4f4d4adb89db9a881dbc066ed"
 	operatorRepository           = "jordigilh/kubernaut-operator"
 	applicationNamespace         = "kubernaut-system"
 	operatorNamespace            = "kubernaut-operator-system"
 	operatorCRName               = "kubernaut"
 	operatorCRAPIVersion         = "kubernaut.ai/v1alpha2"
 	operatorOwnerLabel           = "upstream-2492"
+	demoOperatorChartOCI         = "oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"
+	demoOperatorImageRC27        = "quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"
 	demoDependencyChartOCI       = "oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"
 	demoDependencyChartVersion   = "0.1.0-run.1"
 	operatorDataStorageOperand   = "datastorage"
@@ -1086,14 +1088,18 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 		operatorImage = composeImageReference(input.Explicit.OperatorImageRepository, input.Explicit.OperatorImageTag)
 	}
 	if operatorImage == "" {
-		operatorImage = "quay.io/kubernaut-ai/kubernaut-operator:" + operatorVersion
+		if operatorVersion == "1.6.0-rc27" {
+			operatorImage = demoOperatorImageRC27
+		} else {
+			operatorImage = "quay.io/kubernaut-ai/kubernaut-operator-image:" + operatorVersion
+		}
 	}
 	if digest := strings.TrimSpace(input.Explicit.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
 		operatorImage += "@" + digest
 	}
 	operatorChart := strings.TrimSpace(input.Explicit.OperatorChart)
 	if operatorChart == "" {
-		operatorChart = "oci://quay.io/kubernaut-ai/charts/kubernaut-operator"
+		operatorChart = demoOperatorChartOCI
 	}
 	if digest := strings.TrimSpace(input.Explicit.OperatorChartDigest); digest != "" && !strings.Contains(operatorChart, "@sha256:") {
 		operatorChart += "@" + digest

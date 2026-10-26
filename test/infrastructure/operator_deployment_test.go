@@ -31,14 +31,20 @@ import (
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc27"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
+	})
 	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(operatorRevision).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
-		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:1f2300d7631b6a1b5424b4c5d0678eb24b1b59eba95c677bc9d8b9cba187ec4b"))
-		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:cee572855fa1433a5fa056028d583fdd280cc549d1f9c69bc9c517909bf34064"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
 		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
 		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
 	})
@@ -76,11 +82,11 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "2c021da02bd62aa9adf5c36d511b33c0483da359",
-			ResolvedSHA:   "2c021da02bd62aa9adf5c36d511b33c0483da359",
+			RequestedRef:  "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
+			ResolvedSHA:   "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "2c021da02bd62aa9adf5c36d511b33c0483da359",
+			ChartRevision: "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -88,7 +94,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
@@ -399,14 +405,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 				OperatorDigest:      "sha256:operator",
 				OperatorChart:       "oci://quay.io/example/operator",
 				OperatorChartDigest: "sha256:chart",
-				OperatorRef:         "2c021da02bd62aa9adf5c36d511b33c0483da359",
+				OperatorRef:         "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
 				KubernautVersion:    "1.6.0-rc9",
 			},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.OperatorImage).To(Equal("quay.io/example/operator@sha256:operator"))
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/example/operator@sha256:chart"))
-		Expect(resolved.OperatorRef).To(Equal("2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(resolved.OperatorRef).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
 	})
 
