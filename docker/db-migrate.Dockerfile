@@ -30,7 +30,7 @@ ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:321516119f1b2487e114ee09a8ae29cfa81c959449a0fc63c8c94e1a2dcf69f5 AS goose-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:557f358c83892a8b94fb72649a99e1c303a625d240547fb97a9cbc1620e808c0 AS goose-builder
 USER root
 ARG TARGETARCH
 ENV GOTOOLCHAIN=go1.26.10+auto
@@ -56,7 +56,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
       -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:c769ab6615ab32d02d5b3d65ff2eae6bc668ba823e77f46b78a4181f54d17a27 AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e AS production
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
