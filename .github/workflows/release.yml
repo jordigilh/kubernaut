@@ -1,13 +1,11 @@
 name: Release
 
-# Triggered by version tag push (e.g., v1.0.0, v1.1.0-rc0)
-# Builds multi-arch images (amd64 + arm64) for all 13 services in parallel,
-# runs Helm smoke tests against the amd64 images, scans all images for CVEs
-# (Trivy) and generates SBOMs (CycloneDX), signs images with Cosign (keyless),
-# generates SLSA v1.0 Build L3 provenance (via an isolated reusable workflow,
-# slsa-provenance.yml), publishes Helm chart to OCI registry, and creates a
-# GitHub Release gated on smoke test + security scan success.
-# Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
+# Triggered manually with an immutable operator candidate manifest.
+# Builds run-scoped multi-arch images for all application components, runs
+# operator-managed FullPipeline/Fleet qualification, scans images for CVEs,
+# generates SBOMs, signs the staging digests, generates SLSA v1.0 Build L3
+# provenance, promotes only qualified digests to release tags, and creates a
+# GitHub Release. GA runs additionally update :latest.
 #
 # Prerequisites:
 #   - Quay.io robot account with Creator role in kubernaut-ai org
@@ -285,9 +283,9 @@ jobs:
           retention-days: 90
 
   # ========================================
-  # STAGE 1a: BUILD & PUSH amd64 IMAGES
+  # STAGE 1a: BUILD & PUSH amd64 STAGING IMAGES
   # 14 parallel jobs: one per service, amd64 only.
-  # Helm smoke tests depend on this stage completing (Issue #569).
+  # Operator qualification consumes the resulting staging tags.
   #
   # Services (14):
   #   Go (13): gateway, signalprocessing, aianalysis, authwebhook,
@@ -371,7 +369,7 @@ jobs:
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 1b: BUILD & PUSH arm64 IMAGES (Go services)
+  # STAGE 1b: BUILD & PUSH arm64 STAGING IMAGES (Go services)
   # 11 parallel jobs: one per Go service, arm64 via host-native cross-compile.
   # No QEMU needed — CGO_ENABLED=0 GOARCH=arm64 runs natively on amd64.
   # Runtime images use FROM scratch with pre-built binary.
@@ -463,7 +461,7 @@ jobs:
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 1c: BUILD & PUSH arm64 IMAGES (non-Go services)
+  # STAGE 1c: BUILD & PUSH arm64 STAGING IMAGES (non-Go services)
   # must-gather (Bash) and db-migrate (downloads goose binary) still need QEMU
   # for package installation in their respective base images.
   # ========================================
@@ -664,10 +662,8 @@ jobs:
           artifact-name: sbom-${{ matrix.service }}-arm64.cdx.json
 
   # ========================================
-  # STAGE 3: MULTI-ARCH MANIFESTS
-  # After both architecture builds complete, create manifest
-  # lists so a single tag (e.g., 1.0.0) resolves to the correct arch
-  # automatically. Also tags every image as :latest for GA releases.
+  # STAGE 3: STAGING MULTI-ARCH MANIFESTS
+  # After both architecture builds complete, create run-scoped manifests.
   # ========================================
 
   create-manifests:
@@ -736,7 +732,7 @@ jobs:
 
   # ========================================
   # STAGE 3b: COSIGN SIGNING & SBOM ATTESTATION
-  # Signs all arch-tagged images and manifest lists with Cosign (keyless),
+  # Signs all staging arch-tagged images and manifest lists with Cosign (keyless),
   # and attests each arch's SBOM. SLSA build provenance is generated
   # separately by the `provenance` job below, via an isolated reusable
   # workflow (Build L3) -- see #1109.
