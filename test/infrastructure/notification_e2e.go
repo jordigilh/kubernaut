@@ -261,29 +261,10 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage access RoleBinding created\n")
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for controller pod to be created...\n")
-	podCreatedCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	for {
-		checkCmd := exec.CommandContext(podCreatedCtx, "kubectl", "get",
-			"-n", namespace,
-			"pod",
-			"-l", "app=notification-controller",
-			"--no-headers")
-		checkCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-		output, err := checkCmd.CombinedOutput()
-
-		if err == nil && len(output) > 0 {
-			_, _ = fmt.Fprintf(writer, "   ✅ Controller pod created\n")
-			break
-		}
-
-		select {
-		case <-podCreatedCtx.Done():
-			return fmt.Errorf("timeout waiting for controller pod to be created")
-		case <-time.After(2 * time.Second):
-		}
+	if err := waitForNotificationPodCreation(ctx, namespace, kubeconfigPath); err != nil {
+		return err
 	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Controller pod created\n")
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for controller pod ready...\n")
 	waitCmd := exec.CommandContext(ctx, "kubectl", "wait",
@@ -303,6 +284,24 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	_, _ = fmt.Fprintf(writer, "✅ Notification Controller deployed and ready in namespace: %s\n", namespace)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
+}
+
+func waitForNotificationPodCreation(ctx context.Context, namespace, kubeconfigPath string) error {
+	podCreatedCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	for {
+		checkCmd := exec.CommandContext(podCreatedCtx, "kubectl", "get", "-n", namespace, "pod", "-l", "app=notification-controller", "--no-headers")
+		checkCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+		output, err := checkCmd.CombinedOutput()
+		if err == nil && len(output) > 0 {
+			return nil
+		}
+		select {
+		case <-podCreatedCtx.Done():
+			return fmt.Errorf("timeout waiting for controller pod to be created")
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {

@@ -73,9 +73,9 @@ func SeedFullPipelineA2AGroundingRules(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("wait for Prometheus grounding-rule rollout: %w", err)
 	}
 
-	prometheusURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
+	prometheusURL := fmt.Sprintf("https://127.0.0.1:%d", PrometheusHostPort)
 	for _, ruleName := range ruleNames {
-		if err := WaitForPrometheusRuleState(ctx, prometheusURL, ruleName, RuleStateFiring, 60*time.Second); err != nil {
+		if err := WaitForPrometheusRuleState(ctx, prometheusURL, ruleName, RuleStateFiring, 60*time.Second, MonitoringCAPath(kubeconfigPath)); err != nil {
 			return fmt.Errorf("wait for fullpipeline A2A grounding rule %q to fire: %w", ruleName, err)
 		}
 	}

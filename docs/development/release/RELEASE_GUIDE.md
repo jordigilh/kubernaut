@@ -59,26 +59,9 @@ Key behaviors driven by the `is_prerelease` flag in the release workflow:
 - **Stable tags**: GitHub Release is marked as stable (shown as "Latest");
   images **are** tagged as `:latest`.
 
-The `v` prefix is stripped for image tags and Helm chart versions
-(e.g., git tag `v1.1.0` produces images tagged `1.1.0` and chart version `1.1.0`).
-
-### Chart Version vs App Version
-
-The Helm chart has two independent version fields:
-
-- **`version`** (chart packaging version) — tracked in the `CHART_VERSION` file at repo root.
-  Bumped for any chart change (values, templates, schema) regardless of operator changes.
-- **`appVersion`** (operator binary version) — tracked in the `VERSION` file at repo root.
-  Bumped only for operator/Go code changes.
-
-**When to bump each:**
-
-| Change type | `VERSION` | `CHART_VERSION` | Tag | Workflow |
-|-------------|-----------|-----------------|-----|----------|
-| Operator release | Bump | Bump (match) | `v1.5.0` | `release.yml` (full) |
-| Chart-only fix | No change | Bump | `chart-v1.4.1` | `chart-release.yml` (chart only) |
-
-`make sync-version` reads both files and propagates them to `Chart.yaml` independently.
+The `v` prefix is stripped for image tags (e.g., git tag `v1.1.0` produces images tagged
+`1.1.0`). Application deployment and operator chart versioning are owned by the
+Kubernaut Operator repository.
 
 ---
 
@@ -159,20 +142,15 @@ git checkout -b release/vX.Y.0
 
 ### Step 3: Bump version files
 
-Update both `VERSION` and `CHART_VERSION` at repo root to the GA version:
+Update `VERSION` at repo root to the GA version:
 
 ```bash
 echo "X.Y.0" > VERSION
-echo "X.Y.0" > CHART_VERSION
 ```
 
-Then run `make sync-version` to propagate to `Chart.yaml` (sets `version` from
-`CHART_VERSION` and `appVersion` from `VERSION`).
-
-> **Why bump here?** The release workflow overwrites these fields from the git tag
-> and `CHART_VERSION` file, but committing the correct values ensures the chart is
-> accurate in the repository even outside of CI (e.g., `helm template` from a
-> local checkout).
+> **Why bump here?** The release workflow derives application image tags from the
+> Git tag. Operator chart publication and versioning remain owned by the operator
+> release pipeline.
 
 ### Step 4: Stamp CHANGELOG.md
 
@@ -191,7 +169,7 @@ Ensure the comparison link at the bottom of the file is correct:
 ### Step 5: Commit, push, and open PR
 
 ```bash
-git add charts/kubernaut/Chart.yaml CHANGELOG.md
+git add VERSION CHANGELOG.md
 git commit -m "release: prepare v1.1.0 GA"
 git push -u origin release/vX.Y.0
 gh pr create --title "release: vX.Y.0 GA" --body "..."
@@ -201,14 +179,25 @@ gh pr create --title "release: vX.Y.0 GA" --body "..."
 
 Wait for CI to pass, then merge. Record the merge commit SHA.
 
-### Step 7: Tag the merge commit
+### Step 7: Dispatch release promotion
 
 ```bash
-git checkout main && git pull origin main
-MERGE_SHA=$(git log --oneline -1 --format='%H')
-git tag -a vX.Y.0 "$MERGE_SHA" -m "vX.Y.0"
-git push origin vX.Y.0
+gh workflow run release.yml \
+  -f release_version=X.Y.0
 ```
+
+This publishes the Kubernaut application images without requiring an Operator release.
+To add compatibility qualification, provide an immutable candidate manifest containing
+the exact operator image, bootstrap chart, dependency chart, and resolved source SHA:
+
+```bash
+gh workflow run release.yml \
+  -f release_version=X.Y.0 \
+  -f operator_candidate_manifest=https://example.invalid/operator-candidate.yaml
+```
+
+The release workflow creates the GitHub release only after promotion and all application
+gates pass. Operator publication remains a separate coordinated release step.
 
 ### Step 8: Monitor the release workflow
 
@@ -219,10 +208,9 @@ gh run watch
 
 Expected duration: ~25–40 minutes end-to-end (measured across the six
 v1.6.0-rc runs on record). The image builds are not the bottleneck — they run
-in parallel and finish in 3-5 minutes each. The `hook`-mode Helm smoke test is
-consistently the longest single job (~15-20 minutes) and sits on the critical
-path for manifests, Helm publish, and the GitHub Release, so it's usually
-what you're waiting on.
+in parallel and finish in 3-5 minutes each. The operator qualification job
+runs the operator-managed FullPipeline and Fleet smoke lanes and is usually
+the longest job on the critical path, so it is usually what you're waiting on.
 
 ### Step 9: Verify
 
@@ -437,22 +425,19 @@ The Helm migration hook will detect fresh vs. upgrade by checking for the
 
 - Design decision: [DD-012](../../architecture/decisions/DD-012-goose-database-migration-management.md)
 - Migration files: [`migrations/`](../../../migrations/)
-- Helm hook: [`charts/kubernaut/templates/hooks/migration-job.yaml`](../../../charts/kubernaut/templates/hooks/migration-job.yaml)
+- Operator-managed migration workload and dependency chart artifacts
 
 ---
 
 ## Release Pipeline Stages
 
 The release workflow (`.github/workflows/release.yml`) is a lot more than
-build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
-signing, and SLSA provenance all gate the release now, not just the image
-builds:
+build-and-publish at this point — CVE scanning, operator qualification, Cosign
+signing, and SLSA provenance all gate the release now, not just the image builds:
 
 Node names below are the actual job IDs from `release.yml`. Arrows only run
 phase-to-phase, not job-to-job — see the "Stage N" sections below the diagram
-for the exact per-job `needs:`, since a couple of jobs skip a dependency their
-phase-mates have (e.g. `create-manifests`/`helm-publish` need `helm-smoke-test`
-but not the two `security-scan-*` jobs next to it):
+for the exact per-job `needs:` relationships:
 
 ```mermaid
 flowchart LR
@@ -460,7 +445,7 @@ flowchart LR
         prepare(["prepare"])
     end
 
-    subgraph P1["Phase 1: Build & Push"]
+    subgraph P1["Phase 1: Build & Push Staging Tags"]
         direction TB
         buildamd64["build-amd64\n14 jobs"]
         buildarm64["build-arm64\n12 jobs"]
@@ -468,19 +453,19 @@ flowchart LR
         buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
     end
 
-    subgraph P2["Phase 2: Scan & Smoke Test"]
+    subgraph P2["Phase 2: Scan & Staging Manifests"]
         direction TB
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
-        smoketest["helm-smoke-test\n2 jobs"]
-        scanamd64 ~~~ scanarm64 ~~~ smoketest
+        manifests["create-manifests"]
+        scanamd64 ~~~ scanarm64 ~~~ manifests
     end
 
-    subgraph P3["Phase 3: Manifests & Chart"]
+    subgraph P3["Phase 3: Operator Qualification"]
         direction TB
-        manifests["create-manifests"]
-        helmpublish["helm-publish"]
-        manifests ~~~ helmpublish
+        candidate["prepare-operator-candidate"]
+        qualification["operator-qualification"]
+        candidate --> qualification
     end
 
     subgraph P4["Phase 4: Sign & Provenance"]
@@ -491,14 +476,17 @@ flowchart LR
     end
 
     subgraph P5["Phase 5: Release"]
+        promote["promote-release"]
+        latest["tag-latest"]
         release(["release"])
+        promote --> latest --> release
     end
 
     P0 --> P1 --> P2 --> P3 --> P4 --> P5
 ```
 
-Security scanning and Helm smoke tests both gate the release: a failing scan
-or smoke test blocks the GitHub Release from being created. Note
+Security scanning and operator qualification both gate the release: a failing
+scan or qualification lane blocks the GitHub Release from being created. Note
 `build-arm64` (native cross-compile, 12 Go services) and `build-arm64-qemu`
 (`must-gather`, `db-migrate`) are separate jobs — everything past that phase
 needs both to finish, not just "arm64 is done."
@@ -511,6 +499,7 @@ downstream jobs:
 - `tag` — full git tag (e.g., `v1.1.0`)
 - `build_date` — UTC timestamp
 - `is_prerelease` — `true` if tag contains `-rc`, `-alpha`, or `-beta`
+- `qualification_tag` — unique run-scoped image tag consumed before promotion
 
 ### Stage 1: Build & Push Images
 
@@ -520,7 +509,7 @@ Each job:
 1. Checks out code (with submodules)
 2. Runs `make generate` for code generation
 3. Logs in to Quay.io
-4. Builds the image and pushes `quay.io/kubernaut-ai/<service>:<version>-<arch>`
+4. Builds the image and pushes `quay.io/kubernaut-ai/<service>:<qualification_tag>-<arch>`
 
 Three build paths, depending on the service:
 - **12 Go services** (everything except `must-gather` and `db-migrate`): no
@@ -537,29 +526,28 @@ Three build paths, depending on the service:
 
 Runs once per image per arch (28 jobs, same matrix as the build stage), after
 that arch's build completes. Each job:
-1. Scans the pushed image with Trivy — a CRITICAL/HIGH CVE with a fix
+1. Scans the pushed staging image with Trivy — a CRITICAL/HIGH CVE with a fix
    available blocks the release. `must-gather` has a standing, time-bound
    `.trivyignore` for kubectl CVEs with no upstream fix yet (DD-PLATFORM-003).
 2. Generates a CycloneDX SBOM, uploaded as a workflow artifact for the
    sign-and-attest and release stages to pick up later.
 
-### Stage 3: Helm Smoke Test
+### Stage 3: Staging Multi-Arch Manifests
 
-Depends only on the amd64 build (arm64 keeps building in parallel and isn't
-blocked by this). Spins up a Kind cluster, pulls the amd64 images, and runs
-the full Helm smoke test suite twice — once with hook-based TLS, once with
-cert-manager — since both are supported install modes and #334 burned us
-once for only covering the default. A failing smoke test blocks the release.
+Needs both image build stages to pass. For each service, creates a manifest list
+under the unique `qualification_tag`. No release-version or `:latest` tag is
+published at this stage.
 
-### Stage 4: Multi-Arch Manifests
+### Stage 4: Operator Qualification
 
-Needs both build stages *and* the smoke tests to pass. For each service:
-1. Creates a manifest list so a single tag resolves to the correct arch automatically.
-2. **GA only** (`is_prerelease == false`): tags the manifest as `:latest`.
+Runs after the staging manifests are available. The operator-managed FullPipeline
+and Fleet qualification lanes consume the resolved operator candidate and its
+dependency charts. A failing qualification lane blocks the release.
 
 ### Stage 5: Sign & Attest / SLSA Provenance
 
-Needs the manifests plus both security-scan stages. Two jobs run per service:
+Needs the staging manifests, operator qualification, and both security-scan stages.
+Two jobs run per service:
 - **Cosign sign & attest**: keyless-signs the amd64 image, arm64 image, and
   the manifest list (GitHub OIDC, no stored keys), then attests each arch's
   SBOM against its own digest.
@@ -569,22 +557,19 @@ Needs the manifests plus both security-scan stages. Two jobs run per service:
   makes it Build L3 (non-falsifiable) instead of self-asserted Build L2
   (issue #1109).
 
-### Stage 6: Helm Chart Publish
+### Stage 6: Release Promotion
 
-Runs in parallel with signing/provenance (same dependencies: both build
-stages + smoke tests).
-
-1. Reads chart version from `CHART_VERSION` and app version from the git tag.
-2. Overwrites `Chart.yaml`'s `version` and `appVersion` accordingly.
-3. Packages and pushes to `oci://quay.io/kubernaut-ai/charts`.
-
-For chart-only releases (tag `chart-v*`), a separate `chart-release.yml`
-workflow handles publishing without building container images.
+After qualification, scans, signing, and provenance succeed, `promote-release`
+copies the staging image digests to immutable release-version architecture tags
+and creates the release-version manifest list. `tag-latest` then updates `:latest`
+only for GA candidates. Kubernaut release CI no longer packages or publishes an
+application chart; operator publication remains owned by the
+[Kubernaut Operator release pipeline](https://github.com/jordigilh/kubernaut-operator).
 
 ### Stage 7: GitHub Release
 
-Needs smoke tests, manifests, Helm publish, both security scans,
-sign-and-attest, and provenance — i.e. everything above has to pass first.
+Needs promotion, `tag-latest`, both security scans, sign-and-attest, and provenance
+— i.e. everything above has to pass first.
 Creates the GitHub Release with auto-generated notes, then downloads and
 attaches every SBOM and SLSA provenance bundle as release assets (required by
 OpenSSF Scorecard's Signed-Releases check — signatures need to be attached to
@@ -637,15 +622,6 @@ Expect 28 SBOMs (14 services × 2 arch) and 14 provenance bundles (one per
 service — the provenance job covers the manifest list, not each arch
 separately) attached to the release.
 
-### Helm Chart (all releases)
-
-```bash
-helm show chart oci://quay.io/kubernaut-ai/charts/kubernaut --version $CHART_VERSION
-```
-
-Verify `version` matches `CHART_VERSION` and `appVersion` matches `VERSION`.
-For operator releases these are the same; for chart-only releases they may differ.
-
 ### GitHub Release (all releases)
 
 ```bash
@@ -669,13 +645,6 @@ done
 ```
 
 Expected output: every service reports the GA version (e.g., `1.1.0`).
-
-### Install smoke test (optional)
-
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --version $VERSION --namespace kubernaut-system --create-namespace --dry-run
-```
 
 ---
 
@@ -723,10 +692,9 @@ Individual build failures do not block other services (`fail-fast: false`).
    gh run rerun <run-id> --failed
    ```
 
-### Partial release (manifests created, Helm failed)
+### Partial release (manifests created, signing or provenance failed)
 
-The `helm-publish` job depends on `build-image` but not on `create-manifests`.
-If Helm publish fails:
+If a signing, attestation, or provenance job fails:
 
 1. Verify robot account permissions on Quay.io (`Creator` role required).
 2. Re-run only the failed job:
@@ -803,18 +771,12 @@ over REST, per ADR-068) were added later and were never added to this table.
 
 `mock-llm` is **not** released — it is a test-only artifact.
 
-### Helm Chart
+### Operator Candidate Artifacts
 
-Published to `oci://quay.io/kubernaut-ai/charts/kubernaut`. The chart's `version`
-is set from the `CHART_VERSION` file and `appVersion` from the git tag (operator
-releases) or `VERSION` file (chart-only releases). These may differ when a
-chart-only fix is shipped independently of an operator release.
-
-Install with:
-
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version <version>
-```
+Kubernaut release qualification consumes the exact operator candidate image,
+bootstrap chart, and development-dependency chart recorded in the immutable
+qualification manifest. Operator publication and promotion are owned by the
+[Kubernaut Operator release workflow](https://github.com/jordigilh/kubernaut-operator).
 
 ### Version Injection
 
@@ -847,8 +809,8 @@ Every released image carries build-time version metadata:
 
 ## Related
 
-- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Operator release workflow (tag `v*`)
-- [`.github/workflows/chart-release.yml`](../../../.github/workflows/chart-release.yml) — Chart-only release workflow (tag `chart-v*`)
+- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Kubernaut application release workflow (tag `v*`)
+- Kubernaut Operator release workflow — publishes the application owner and its charts
 - [`.github/workflows/slsa-provenance.yml`](../../../.github/workflows/slsa-provenance.yml) — Isolated SLSA Build L3 provenance workflow
 - [`Makefile`](../../../Makefile) — `image-build`, `image-push`, `image-manifest` targets
 - [`CHANGELOG.md`](../../../CHANGELOG.md) — Release history

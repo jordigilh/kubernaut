@@ -822,7 +822,7 @@ golangci-lint run --timeout=5m
 make test                          # Unit tests
 make test-integration-[service]    # Integration tests
 make test-e2e-[service]           # E2E tests
-make test-helm                    # Helm chart unit tests (helm-unittest, charts/kubernaut/tests/)
+make test                          # Unit test suite
 
 # Validation
 make lint-test-patterns           # Test anti-patterns

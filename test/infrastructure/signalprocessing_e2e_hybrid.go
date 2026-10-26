@@ -10,9 +10,6 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -58,118 +55,18 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images IN PARALLEL (before cluster creation)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Per Consolidated API Migration (January 2026):
-	// - Uses BuildImageForKind() for all images
-	// - Returns dynamic image names for later use
-	// - No manual tag generation (PHASE 0 removed)
 	phase1Start := time.Now()
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase1Start.Format("15:04:05.000"))
-	_, _ = fmt.Fprintln(writer, "  ├── SignalProcessing controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
-
-	type buildResult struct {
-		name      string
-		imageName string
-		err       error
+	builtImages, err := buildSignalProcessingImages(ctx, writer)
+	if err != nil {
+		return err
 	}
-
-	buildResults := make(chan buildResult, 2)
-	builtImages := make(map[string]string)
-
-	// Build SignalProcessing with coverage in parallel
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "signalprocessing", // Operator SDK convention: no -controller suffix in image name
-			ImageName:        "kubernaut/signalprocessing",
-			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile", // Dockerfile can have suffix
-			BuildContextPath: "",
-			EnableCoverage:   true,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- buildResult{name: "SignalProcessing (coverage)", imageName: imageName, err: err}
-	}()
-
-	// Build DataStorage in parallel
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
-	}()
-
-	// Wait for all 3 builds to complete (TD-E2E-001: Now includes OAuth2-Proxy)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
-	var buildErrors []error
-	for i := 0; i < 2; i++ {
-		result := <-buildResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
-			buildErrors = append(buildErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.imageName)
-			builtImages[result.name] = result.imageName
-		}
-	}
-
-	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %v", buildErrors)
-	}
-
-	phase1End := time.Now()
-	phase1Duration := phase1End.Sub(phase1Start)
+	phase1Duration := time.Since(phase1Start)
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 1 Duration: %.1f seconds\n", phase1Duration.Seconds())
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster (now that images are ready)
-	// ═══════════════════════════════════════════════════════════════════════
 	phase2Start := time.Now()
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
-	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase2Start.Format("15:04:05.000"))
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
-
-	if err := createSignalProcessingKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
-	}
-
-	// OPTIMIZATION #2: Install both CRDs in a single kubectl apply (3-5s savings)
-	_, _ = fmt.Fprintln(writer, "📋 Installing CRDs (batched: SignalProcessing + RemediationRequest)...")
-	if err := installSignalProcessingCRDsBatched(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to install CRDs (batched): %w", err)
-	}
-
-	// Create kubernaut-system namespace
-	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createSignalProcessingNamespace(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
-	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
-	// already be registered with the apiserver or DS's informer cache setup
-	// fails hard ("no matches for kind"), crash-looping the pod.
-	// installSignalProcessingCRDsBatched above only applies the two CRDs
-	// this suite's own tests need (SignalProcessing + RemediationRequest);
-	// DataStorage is deployed later in PHASE 4 below and needs the full set.
-	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
-	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
-	}
-
-	// Deploy Rego policy ConfigMaps
-	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
-	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy policies: %w", err)
+	if err := prepareSignalProcessingCluster(ctx, clusterName, kubeconfigPath, namespace, writer); err != nil {
+		return err
 	}
 
 	phase2End := time.Now()
@@ -268,70 +165,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
-	// ═══════════════════════════════════════════════════════════════════════
 	phase4Start := time.Now()
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase4Start.Format("15:04:05.000"))
-	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
-
-	type deployResult struct {
-		name string
-		err  error
-	}
-	deployResults := make(chan deployResult, 5)
-
-	// Launch ALL kubectl apply commands concurrently
-	go func() {
-		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"PostgreSQL", err}
-	}()
-	go func() {
-		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Redis", err}
-	}()
-	go func() {
-		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Migrations", err}
-	}()
-	go func() {
-		// Per Consolidated API Migration (January 2026):
-		// Use DataStorage image name from builtImages map (built in Phase 1)
-		dsImage := builtImages["DataStorage"]
-		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
-		deployResults <- deployResult{"DataStorage", err}
-	}()
-	go func() {
-		// Per Consolidated API Migration (January 2026):
-		// Use SignalProcessing image name from builtImages map (built in Phase 1)
-		spImage := builtImages["SignalProcessing (coverage)"]
-		err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, spImage, writer)
-		deployResults <- deployResult{"SignalProcessing", err}
-	}()
-
-	// Collect ALL results before proceeding (MANDATORY)
-	var deployErrors []error
-	for i := 0; i < 5; i++ {
-		result := <-deployResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
-			deployErrors = append(deployErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
-		}
-	}
-
-	if len(deployErrors) > 0 {
-		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
-
-	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
-	if err := waitForSPServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("services not ready: %w", err)
+	if err := deploySignalProcessingServices(ctx, namespace, kubeconfigPath, builtImages, writer); err != nil {
+		return err
 	}
 
 	phase4End := time.Now()
@@ -368,6 +204,130 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	return nil
 }
 
+func prepareSignalProcessingCluster(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
+	if err := createSignalProcessingKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "📋 Installing CRDs (batched: SignalProcessing + RemediationRequest)...")
+	if err := installSignalProcessingCRDsBatched(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install CRDs (batched): %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createSignalProcessingNamespace(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy policies: %w", err)
+	}
+	return nil
+}
+
+func deploySignalProcessingServices(ctx context.Context, namespace, kubeconfigPath string, images map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+	results := make(chan struct {
+		name string
+		err  error
+	}, 5)
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL", deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Redis", deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Migrations", ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"DataStorage", deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, images["DataStorage"], writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"SignalProcessing", DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, images["SignalProcessing (coverage)"], writer)}
+	}()
+	var deployErrors []error
+	for range 5 {
+		result := <-results
+		if result.err != nil {
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			deployErrors = append(deployErrors, result.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+	}
+	if len(deployErrors) > 0 {
+		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	if err := waitForSPServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("services not ready: %w", err)
+	}
+	return nil
+}
+
+func buildSignalProcessingImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── SignalProcessing controller (WITH COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
+	type buildResult struct {
+		name      string
+		imageName string
+		err       error
+	}
+	results := make(chan buildResult, 2)
+	go func() {
+		cfg := E2EImageConfig{ServiceName: "signalprocessing", ImageName: "kubernaut/signalprocessing", DockerfilePath: "docker/signalprocessing-controller.Dockerfile", EnableCoverage: true}
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		results <- buildResult{"SignalProcessing (coverage)", imageName, err}
+	}()
+	go func() {
+		cfg := E2EImageConfig{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture}
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		results <- buildResult{"DataStorage", imageName, err}
+	}()
+	images := make(map[string]string, 2)
+	var buildErrors []error
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			buildErrors = append(buildErrors, result.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.imageName)
+		images[result.name] = result.imageName
+	}
+	if len(buildErrors) > 0 {
+		return nil, fmt.Errorf("image builds failed: %v", buildErrors)
+	}
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	return images, nil
+}
+
 // waitForSPServicesReady waits for DataStorage and SignalProcessing pods to be ready
 // Per DD-TEST-002: Single readiness check after parallel deployment
 func waitForSPServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -384,46 +344,12 @@ func waitForSPServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 
 	// Wait for DataStorage pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 2*time.Minute, "DataStorage pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for SignalProcessing pod to be ready (coverage-enabled may take longer)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for SignalProcessing pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=signalprocessing-controller",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "SignalProcessing pod should become ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=signalprocessing-controller", 3*time.Minute, "SignalProcessing pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ SignalProcessing ready\n")
 
 	return nil

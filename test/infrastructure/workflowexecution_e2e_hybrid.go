@@ -27,9 +27,6 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -100,6 +97,101 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// ═══════════════════════════════════════════════════════════════════════
+	builtImages, err := buildWorkflowExecutionImages(ctx, writer)
+	if err != nil {
+		return err
+	}
+
+	// PHASE 2: Create Kind cluster (now that images are ready)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~15-20 seconds")
+
+	// Find Kind config file
+	configPath, err := findKindConfig("kind-workflowexecution-config.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to find Kind config: %w", err)
+	}
+
+	// Create Kind cluster (Issue #1769: retry on transient runtime errors)
+	err = retryTransientKindRuntimeError(writer, func() (string, error) {
+		var captured strings.Builder
+		createCmd := exec.CommandContext(ctx, "kind", "create", "cluster",
+			"--name", clusterName,
+			"--config", configPath,
+			"--kubeconfig", kubeconfigPath,
+		)
+		createCmd.Stdout = io.MultiWriter(writer, &captured)
+		createCmd.Stderr = io.MultiWriter(writer, &captured)
+		runErr := createCmd.Run()
+		return captured.String(), runErr
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// Deploy ALL kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow,
+	// ActionType, etc.), not just WorkflowExecution. Issue #1661
+	// (DD-WORKFLOW-018): DataStorage's workflow cache is a controller-runtime
+	// informer directly over RemediationWorkflow/ActionType CRDs, so its
+	// startup fails outright ("failed to build workflow cache: ... no
+	// matches for kind \"RemediationWorkflow\"") if those definitions aren't
+	// registered yet -- this suite deploys a real DataStorage instance
+	// (helpers_test.go) but, unlike authwebhook_shared.go, never applied the
+	// full CRD set itself.
+	_, _ = fmt.Fprintln(writer, "📋 Installing kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow, ActionType, ...)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install kubernaut.ai CRDs: %w", err)
+	}
+
+	// Create namespaces (idempotent - ignore AlreadyExists errors)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
+	nsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", WorkflowExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	nsOutput, nsErr := nsCmd.CombinedOutput()
+	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", WorkflowExecutionNamespace, string(nsOutput))
+		return fmt.Errorf("failed to create namespace %s: %w", WorkflowExecutionNamespace, nsErr)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", WorkflowExecutionNamespace)
+	// BR-SCOPE-002: Infrastructure namespace (kubernaut-system) must NOT be labeled as managed.
+	// Only application/workload namespaces should have kubernaut.ai/managed=true.
+
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
+	execNsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	execNsOutput, execNsErr := execNsCmd.CombinedOutput()
+	if execNsErr != nil && !strings.Contains(string(execNsOutput), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", ExecutionNamespace, string(execNsOutput))
+		return fmt.Errorf("failed to create namespace %s: %w", ExecutionNamespace, execNsErr)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", ExecutionNamespace)
+	// BR-SCOPE-001: Label namespace as managed by Kubernaut
+	_ = exec.CommandContext(ctx, "kubectl", "label", "namespace", ExecutionNamespace,
+		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
+
+	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	if err := loadWorkflowExecutionImages(ctx, clusterName, builtImages, writer); err != nil {
+		return err
+	}
+
+	if err := prepareWorkflowExecutionServices(ctx, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	if err := deployWorkflowExecutionServices(ctx, clusterName, kubeconfigPath, builtImages, writer); err != nil {
+		return err
+	}
+
+	if err := completeWorkflowExecutionPostDeployment(ctx, clusterName, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	return nil
+}
+
+func buildWorkflowExecutionImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per Consolidated API Migration (January 2026):
@@ -178,83 +270,16 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %v", buildErrors)
+		return nil, fmt.Errorf("image builds failed: %v", buildErrors)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster (now that images are ready)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~15-20 seconds")
+	return builtImages, nil
+}
 
-	// Find Kind config file
-	configPath, err := findKindConfig("kind-workflowexecution-config.yaml")
-	if err != nil {
-		return fmt.Errorf("failed to find Kind config: %w", err)
-	}
-
-	// Create Kind cluster (Issue #1769: retry on transient runtime errors)
-	err = retryTransientKindRuntimeError(writer, func() (string, error) {
-		var captured strings.Builder
-		createCmd := exec.CommandContext(ctx, "kind", "create", "cluster",
-			"--name", clusterName,
-			"--config", configPath,
-			"--kubeconfig", kubeconfigPath,
-		)
-		createCmd.Stdout = io.MultiWriter(writer, &captured)
-		createCmd.Stderr = io.MultiWriter(writer, &captured)
-		runErr := createCmd.Run()
-		return captured.String(), runErr
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
-	}
-
-	// Deploy ALL kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow,
-	// ActionType, etc.), not just WorkflowExecution. Issue #1661
-	// (DD-WORKFLOW-018): DataStorage's workflow cache is a controller-runtime
-	// informer directly over RemediationWorkflow/ActionType CRDs, so its
-	// startup fails outright ("failed to build workflow cache: ... no
-	// matches for kind \"RemediationWorkflow\"") if those definitions aren't
-	// registered yet -- this suite deploys a real DataStorage instance
-	// (helpers_test.go) but, unlike authwebhook_shared.go, never applied the
-	// full CRD set itself.
-	_, _ = fmt.Fprintln(writer, "📋 Installing kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow, ActionType, ...)...")
-	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to install kubernaut.ai CRDs: %w", err)
-	}
-
-	// Create namespaces (idempotent - ignore AlreadyExists errors)
-	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
-	nsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", WorkflowExecutionNamespace,
-		"--kubeconfig", kubeconfigPath)
-	nsOutput, nsErr := nsCmd.CombinedOutput()
-	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", WorkflowExecutionNamespace, string(nsOutput))
-		return fmt.Errorf("failed to create namespace %s: %w", WorkflowExecutionNamespace, nsErr)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", WorkflowExecutionNamespace)
-	// BR-SCOPE-002: Infrastructure namespace (kubernaut-system) must NOT be labeled as managed.
-	// Only application/workload namespaces should have kubernaut.ai/managed=true.
-
-	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
-	execNsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", ExecutionNamespace,
-		"--kubeconfig", kubeconfigPath)
-	execNsOutput, execNsErr := execNsCmd.CombinedOutput()
-	if execNsErr != nil && !strings.Contains(string(execNsOutput), "AlreadyExists") {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", ExecutionNamespace, string(execNsOutput))
-		return fmt.Errorf("failed to create namespace %s: %w", ExecutionNamespace, execNsErr)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", ExecutionNamespace)
-	// BR-SCOPE-001: Label namespace as managed by Kubernaut
-	_ = exec.CommandContext(ctx, "kubectl", "label", "namespace", ExecutionNamespace,
-		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
-
-	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
-
-	// ═══════════════════════════════════════════════════════════════════════
+func loadWorkflowExecutionImages(ctx context.Context, clusterName string, images map[string]string, writer io.Writer) error {
 	// PHASE 3: Load images into fresh cluster (parallel)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per Consolidated API Migration (January 2026):
@@ -275,21 +300,21 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// Load WorkflowExecution controller image
 	go func() {
-		wfeImage := builtImages["WorkflowExecution (coverage)"]
+		wfeImage := images["WorkflowExecution (coverage)"]
 		err := LoadImageToKind(ctx, wfeImage, "workflowexecution-controller", clusterName, writer)
 		loadResults <- loadResult{name: "WorkflowExecution coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
-		dsImage := builtImages["DataStorage"]
+		dsImage := images["DataStorage"]
 		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
-		awImage := builtImages["AuthWebhook"]
+		awImage := images["AuthWebhook"]
 		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
@@ -335,6 +360,10 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
+	return nil
+}
+
+func prepareWorkflowExecutionServices(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
@@ -377,6 +406,10 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	return nil
+}
+
+func deployWorkflowExecutionServices(ctx context.Context, clusterName, kubeconfigPath string, images map[string]string, writer io.Writer) error {
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per Consolidated API Migration (January 2026):
@@ -408,12 +441,12 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
-		dsImage := builtImages["DataStorage"]
+		dsImage := images["DataStorage"]
 		err := deployDataStorageServiceInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
-		wfeImage := builtImages["WorkflowExecution (coverage)"]
+		wfeImage := images["WorkflowExecution (coverage)"]
 		err := DeployWorkflowExecutionController(ctx, WorkflowExecutionNamespace, kubeconfigPath, wfeImage, writer)
 		deployResults <- deployResult{"WorkflowExecution", err}
 	}()
@@ -455,122 +488,49 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	awImage := builtImages["AuthWebhook"]
+	awImage := images["AuthWebhook"]
 	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, WorkflowExecutionNamespace, kubeconfigPath, awImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 block clearance attribution enabled")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// POST-DEPLOYMENT: Build workflow bundles & create pipeline (requires DataStorage ready)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")
+	return nil
+}
 
-	// DD-AUTH-014: Create ServiceAccount for workflow registration with DataStorage
-	workflowRegSAName := "workflow-registration-sa"
-	_, _ = fmt.Fprintf(writer, "🔐 Creating ServiceAccount for workflow registration (DD-AUTH-014)...\n")
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, writer); err != nil {
-		return fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
-	}
-
-	// Get ServiceAccount token for authenticated workflow registration
-	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
+// waitForWEServicesReady waits for DataStorage and WorkflowExecution pods to be ready
+// Per DD-TEST-002: Single readiness check after parallel deployment
+func waitForWEServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Build Kubernetes clientset
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
-
-	// DD-WE-006: Grant data-storage-sa permission to read secrets in the execution
-	// namespace so dependency validation (ValidateDependencies) can verify that
-	// declared secret dependencies exist at registration time.
-	_, _ = fmt.Fprintf(writer, "🔐 Granting data-storage-sa secret read access in %s (DD-WE-006)...\n", ExecutionNamespace)
-	depRBACYAML := fmt.Sprintf(`---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: data-storage-dep-validator
-  namespace: %[1]s
-rules:
-  - apiGroups: [""]
-    resources: ["secrets", "configmaps"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: data-storage-dep-validator
-  namespace: %[1]s
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: data-storage-dep-validator
-subjects:
-  - kind: ServiceAccount
-    name: data-storage-sa
-    namespace: %[2]s
-`, ExecutionNamespace, WorkflowExecutionNamespace)
-	depRBACCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath,
-		"--server-side", "--field-manager=e2e-test", "-f", "-")
-	depRBACCmd.Stdin = strings.NewReader(depRBACYAML)
-	depRBACCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	depRBACOut, depRBACErr := depRBACCmd.CombinedOutput()
-	if depRBACErr != nil {
-		return fmt.Errorf("failed to create DD-WE-006 dep validator RBAC: %s", string(depRBACOut))
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ data-storage-sa can read secrets/configmaps in %s\n", ExecutionNamespace)
-
-	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
-	// DS validates that declared dependencies exist at registration time; the Secret must
-	// be present for the dep-secret-job workflow to register successfully.
-	_, _ = fmt.Fprintf(writer, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
-	depSecretCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret",
-		"--from-literal=token=e2e-test-value",
-		"--namespace", ExecutionNamespace,
-		"--kubeconfig", kubeconfigPath)
-	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
-	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
-		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
+		return fmt.Errorf("failed to build kubeconfig: %w", err)
 	}
 
-	// DD-WE-006: Separate secret for the Tekton dependency injection test so that
-	// the drift test (E2E-WE-006-002) can delete e2e-dep-secret without racing
-	// against E2E-WE-006-004 running in a parallel Ginkgo process.
-	depSecretTektonCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
-		"--from-literal=token=e2e-test-value-tekton",
-		"--namespace", ExecutionNamespace,
-		"--kubeconfig", kubeconfigPath)
-	depSecretTektonOut, depSecretTektonErr := depSecretTektonCmd.CombinedOutput()
-	if depSecretTektonErr != nil && !strings.Contains(string(depSecretTektonOut), "AlreadyExists") {
-		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 Tekton dep Secret (non-fatal): %s\n", string(depSecretTektonOut))
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	// DD-WE-006: ConfigMap dependencies for Job and Tekton ConfigMap injection tests.
-	_, _ = fmt.Fprintf(writer, "📦 Creating DD-WE-006 dependency ConfigMaps and Ansible deps in %s...\n", ExecutionNamespace)
-	depResources := []struct {
-		args []string
-		desc string
-	}{
-		{[]string{"create", "configmap", "e2e-dep-configmap", "--from-literal=setting=e2e-configmap-value"}, "ConfigMap e2e-dep-configmap"},
-		{[]string{"create", "configmap", "e2e-dep-configmap-tekton", "--from-literal=setting=e2e-configmap-value-tekton"}, "ConfigMap e2e-dep-configmap-tekton"},
-		{[]string{"create", "secret", "generic", "e2e-dep-secret-ansible", "--from-literal=token=e2e-ansible-secret-value"}, "Secret e2e-dep-secret-ansible"},
-		{[]string{"create", "configmap", "e2e-dep-configmap-ansible", "--from-literal=setting=e2e-ansible-configmap-value"}, "ConfigMap e2e-dep-configmap-ansible"},
-	}
-	for _, res := range depResources {
-		fullArgs := append(res.args, "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
-		cmd := exec.CommandContext(ctx, "kubectl", fullArgs...)
-		out, err := cmd.CombinedOutput()
-		if err != nil && !strings.Contains(string(out), "AlreadyExists") {
-			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create %s (non-fatal): %s\n", res.desc, string(out))
-		} else {
-			_, _ = fmt.Fprintf(writer, "   ✅ %s ready in %s\n", res.desc, ExecutionNamespace)
-		}
+	// Wait for DataStorage pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 2*time.Minute, "DataStorage pod should become ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+
+	// Wait for WorkflowExecution controller pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for WorkflowExecution controller pod to be ready...\n")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=workflowexecution-controller", 3*time.Minute, "WorkflowExecution controller pod should become ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ WorkflowExecution controller ready\n")
+
+	return nil
+}
+
+func completeWorkflowExecutionPostDeployment(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	saToken, err := prepareWorkflowExecutionDependencies(ctx, kubeconfigPath, writer)
+	if err != nil {
+		return err
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	// POST-DEPLOYMENT PARALLEL: Workflow seeding + AWX config run concurrently.
 	// Workflow registration only needs DataStorage; AWX config only needs AWX.
 	// ═══════════════════════════════════════════════════════════════════════
@@ -723,65 +683,117 @@ func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer 
 	return nil
 }
 
-// waitForWEServicesReady waits for DataStorage and WorkflowExecution pods to be ready
-// Per DD-TEST-002: Single readiness check after parallel deployment
-func waitForWEServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// Build Kubernetes clientset
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to build kubeconfig: %w", err)
+func prepareWorkflowExecutionDependencies(ctx context.Context, kubeconfigPath string, writer io.Writer) (string, error) {
+	// POST-DEPLOYMENT: Build workflow bundles & create pipeline (requires DataStorage ready)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")
+
+	// DD-AUTH-014: Create ServiceAccount for workflow registration with DataStorage
+	workflowRegSAName := "workflow-registration-sa"
+	_, _ = fmt.Fprintf(writer, "🔐 Creating ServiceAccount for workflow registration (DD-AUTH-014)...\n")
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, writer); err != nil {
+		return "", fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
+	// Get ServiceAccount token for authenticated workflow registration
+	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to create clientset: %w", err)
+		return "", fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
+
+	// DD-WE-006: Grant data-storage-sa permission to read secrets in the execution
+	// namespace so dependency validation (ValidateDependencies) can verify that
+	// declared secret dependencies exist at registration time.
+	_, _ = fmt.Fprintf(writer, "🔐 Granting data-storage-sa secret read access in %s (DD-WE-006)...\n", ExecutionNamespace)
+	depRBACYAML := fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: data-storage-dep-validator
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: %[2]s
+`, ExecutionNamespace, WorkflowExecutionNamespace)
+	depRBACCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath,
+		"--server-side", "--field-manager=e2e-test", "-f", "-")
+	depRBACCmd.Stdin = strings.NewReader(depRBACYAML)
+	depRBACCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	depRBACOut, depRBACErr := depRBACCmd.CombinedOutput()
+	if depRBACErr != nil {
+		return "", fmt.Errorf("failed to create DD-WE-006 dep validator RBAC: %s", string(depRBACOut))
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ data-storage-sa can read secrets/configmaps in %s\n", ExecutionNamespace)
+
+	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
+	// DS validates that declared dependencies exist at registration time; the Secret must
+	// be present for the dep-secret-job workflow to register successfully.
+	_, _ = fmt.Fprintf(writer, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
+	depSecretCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret",
+		"--from-literal=token=e2e-test-value",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
+	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
 	}
 
-	// Wait for DataStorage pod to be ready
-	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+	// DD-WE-006: Separate secret for the Tekton dependency injection test so that
+	// the drift test (E2E-WE-006-002) can delete e2e-dep-secret without racing
+	// against E2E-WE-006-004 running in a parallel Ginkgo process.
+	depSecretTektonCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
+		"--from-literal=token=e2e-test-value-tekton",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretTektonOut, depSecretTektonErr := depSecretTektonCmd.CombinedOutput()
+	if depSecretTektonErr != nil && !strings.Contains(string(depSecretTektonOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 Tekton dep Secret (non-fatal): %s\n", string(depSecretTektonOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
+	}
 
-	// Wait for WorkflowExecution controller pod to be ready
-	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for WorkflowExecution controller pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=workflowexecution-controller",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
+	// DD-WE-006: ConfigMap dependencies for Job and Tekton ConfigMap injection tests.
+	_, _ = fmt.Fprintf(writer, "📦 Creating DD-WE-006 dependency ConfigMaps and Ansible deps in %s...\n", ExecutionNamespace)
+	depResources := []struct {
+		args []string
+		desc string
+	}{
+		{[]string{"create", "configmap", "e2e-dep-configmap", "--from-literal=setting=e2e-configmap-value"}, "ConfigMap e2e-dep-configmap"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-tekton", "--from-literal=setting=e2e-configmap-value-tekton"}, "ConfigMap e2e-dep-configmap-tekton"},
+		{[]string{"create", "secret", "generic", "e2e-dep-secret-ansible", "--from-literal=token=e2e-ansible-secret-value"}, "Secret e2e-dep-secret-ansible"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-ansible", "--from-literal=setting=e2e-ansible-configmap-value"}, "ConfigMap e2e-dep-configmap-ansible"},
+	}
+	for _, res := range depResources {
+		fullArgs := append(res.args, "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
+		cmd := exec.CommandContext(ctx, "kubectl", fullArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil && !strings.Contains(string(out), "AlreadyExists") {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create %s (non-fatal): %s\n", res.desc, string(out))
+		} else {
+			_, _ = fmt.Fprintf(writer, "   ✅ %s ready in %s\n", res.desc, ExecutionNamespace)
 		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "WorkflowExecution controller pod should become ready")
-	_, _ = fmt.Fprintf(writer, "   ✅ WorkflowExecution controller ready\n")
+	}
 
-	return nil
+	// ═══════════════════════════════════════════════════════════════════════
+	return saToken, nil
 }
 
 // buildDataStorageImageWithTag and loadDataStorageImageWithTag are defined in datastorage.go

@@ -143,6 +143,23 @@ func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writ
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
+	preserve := testsFailed && inCICD
+	// Issue #2492: remove upstream test-owned NodePort adapters before the
+	// cluster teardown. The selector is restricted to the explicit owner label;
+	// operator-owned Services are never patched or deleted by this cleanup.
+	if kubeconfigPath := os.Getenv("KUBECONFIG"); kubeconfigPath != "" && !preserve {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		currentContext, contextErr := currentKubeconfigContext(cleanupCtx, kubeconfigPath)
+		if contextErr != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  skipping operator exposure cleanup: %v\n", contextErr)
+		} else if currentContext != "kind-"+clusterName {
+			_, _ = fmt.Fprintf(writer, "⚠️  skipping operator exposure cleanup: kubeconfig context %q is not kind-%s\n", currentContext, clusterName)
+		} else if err := DeleteOperatorExposureAdapters(cleanupCtx, kubeconfigPath, kubernautSystem, writer); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  operator exposure cleanup before cluster deletion: %v\n", err)
+		}
+	}
 	// ═══════════════════════════════════════════════════════════════════════
 	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -152,8 +169,6 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	//
 	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
 	// then delete cluster to free resources.
-	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
-
 	if testsFailed {
 		if inCICD {
 			// ═══════════════════════════════════════════════════════════════════════
@@ -210,6 +225,14 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	}
 	_, _ = fmt.Fprintf(writer, "✅ Kind cluster deleted\n")
 	return nil
+}
+
+func currentKubeconfigContext(ctx context.Context, kubeconfigPath string) (string, error) {
+	output, err := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "config", "current-context").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("read kubeconfig current-context: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 // ExportMustGatherLogs exports Kind cluster logs to a local directory for debugging.
@@ -416,63 +439,10 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load image + Deploy infrastructure in PARALLEL
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading image + Deploying infrastructure in parallel...")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
-
-	type result struct {
-		name string
-		err  error
+	if err := loadAndDeployDataStorageDependencies(ctx, clusterName, kubeconfigPath, namespace, dsImageName, writer); err != nil {
+		return err
 	}
-
-	results := make(chan result, 3)
-
-	// Goroutine 1: Load pre-built DataStorage image to Kind
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("DS image load failed: %w", err)
-		}
-		results <- result{name: "DS image load", err: err}
-	}()
-
-	// Goroutine 2: Deploy PostgreSQL
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
-		if err != nil {
-			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
-		}
-		results <- result{name: "PostgreSQL", err: err}
-	}()
-
-	// Goroutine 3: Deploy Redis
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
-		if err != nil {
-			err = fmt.Errorf("redis deploy failed: %w", err)
-		}
-		results <- result{name: "Redis", err: err}
-	}()
-
-	// Wait for all parallel tasks to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
-	for i := 0; i < 3; i++ {
-		r := <-results
-		if r.err != nil {
-			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
-	}
-
-	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Apply migrations, THEN deploy DataStorage
@@ -506,6 +476,60 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	return nil
+}
+
+func loadAndDeployDataStorageDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace, imageName string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
+	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
+	results := make(chan struct {
+		name string
+		err  error
+	}, 3)
+	go func() {
+		defer GinkgoRecover()
+		err := LoadImageToKind(ctx, imageName, "datastorage", clusterName, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image load failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"DS image load", err}
+	}()
+	go func() {
+		defer GinkgoRecover()
+		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
+		if err != nil {
+			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL", err}
+	}()
+	go func() {
+		defer GinkgoRecover()
+		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
+		if err != nil {
+			err = fmt.Errorf("redis deploy failed: %w", err)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"Redis", err}
+	}()
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
+	for range 3 {
+		result := <-results
+		if result.err != nil {
+			return fmt.Errorf("parallel setup failed (%s): %w", result.name, result.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", result.name)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 	return nil
 }
 
@@ -1313,68 +1337,17 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 
 	// Wait for PostgreSQL pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=postgresql",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=postgresql", 5*time.Minute, "PostgreSQL pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
 
 	// Wait for Redis pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=redis",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=redis", 5*time.Minute, "Redis pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
 
 	// Wait for Data Storage Service pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage Service pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 5*time.Minute, "Data Storage Service pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
 
 	return nil
@@ -2319,6 +2292,13 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 // certificate for audit export signing (AU-9). This is separate from the ECDSA inter-service
 // TLS certificates because the Signer requires RSA keys.
 func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	return generateSigningCertSecret(ctx, kubeconfigPath, namespace, "datastorage-signing", writer)
+}
+
+func generateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace, secretName string, writer io.Writer) error {
+	if strings.TrimSpace(secretName) == "" {
+		return fmt.Errorf("signing certificate Secret name is required")
+	}
 	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       "datastorage-signing",
 		Organization:     "Kubernaut",
@@ -2333,17 +2313,17 @@ func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace st
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-signing
+  name: %s
 type: kubernetes.io/tls
 stringData:
   tls.crt: |
 %s
   tls.key: |
-%s`, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
+%s`, secretName, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
 		return fmt.Errorf("failed to create signing cert Secret: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ datastorage-signing Secret created (RSA 2048)")
+	_, _ = fmt.Fprintf(writer, "  ✅ %s Secret created (RSA 2048)\n", secretName)
 	return nil
 }

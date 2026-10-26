@@ -296,17 +296,23 @@ spec:
         args:
         - "query"
         - "--http-address=0.0.0.0:9090"
+        - "--http.config=/etc/monitoring-tls/web-config.yml"
         - "--grpc-address=0.0.0.0:%[3]d"
         - "--query.replica-label=replica"%[4]s
         ports:
         - containerPort: 9090
-          name: http
+          name: https
         readinessProbe:
           httpGet:
             path: /-/ready
             port: 9090
+            scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 5
+        volumeMounts:
+        - name: monitoring-tls
+          mountPath: /etc/monitoring-tls
+          readOnly: true
         resources:
           requests:
             memory: "64Mi"
@@ -314,6 +320,10 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "250m"
+      volumes:
+      - name: monitoring-tls
+        secret:
+          secretName: monitoring-tls
 ---
 apiVersion: v1
 kind: Service
@@ -325,7 +335,7 @@ spec:
   selector:
     app: thanos-querier
   ports:
-  - name: http
+  - name: https
     port: 9090
     targetPort: 9090
     nodePort: %[5]d

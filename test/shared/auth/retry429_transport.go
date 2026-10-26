@@ -64,16 +64,8 @@ func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, erro
 	// Ogen-generated clients don't set GetBody, so the standard
 	// GetBody-based reset doesn't work. We eagerly buffer the body
 	// (test payloads are small) and install a synthetic GetBody.
-	if req.Body != nil && req.GetBody == nil {
-		bodyBytes, err := io.ReadAll(req.Body)
-		_ = req.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("retry429: buffer request body: %w", err)
-		}
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		req.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-		}
+	if err := installReplayableRequestBody(req); err != nil {
+		return nil, err
 	}
 
 	for attempt := 0; ; attempt++ {
@@ -96,12 +88,7 @@ func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, erro
 			}
 		}
 
-		wait := delay
-		if ra := resp.Header.Get("Retry-After"); ra != "" {
-			if secs, parseErr := strconv.Atoi(ra); parseErr == nil && secs > 0 {
-				wait = time.Duration(secs) * time.Second
-			}
-		}
+		wait := retryDelay(resp, delay)
 
 		select {
 		case <-req.Context().Done():
@@ -114,4 +101,29 @@ func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, erro
 			delay = maxDelay
 		}
 	}
+}
+
+func installReplayableRequestBody(req *http.Request) error {
+	if req.Body == nil || req.GetBody != nil {
+		return nil
+	}
+	bodyBytes, err := io.ReadAll(req.Body)
+	_ = req.Body.Close()
+	if err != nil {
+		return fmt.Errorf("retry429: buffer request body: %w", err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+	}
+	return nil
+}
+
+func retryDelay(resp *http.Response, defaultDelay time.Duration) time.Duration {
+	ra := resp.Header.Get("Retry-After")
+	secs, err := strconv.Atoi(ra)
+	if ra != "" && err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return defaultDelay
 }

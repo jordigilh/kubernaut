@@ -11,9 +11,6 @@ import (
 	"runtime"
 	"time"
 
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -57,83 +54,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images IN PARALLEL (before cluster creation)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
-	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
-	_, _ = fmt.Fprintln(writer, "  Note: Notification controller NOT needed - only CRD validation required")
-
-	type imageBuildResult struct {
-		name  string
-		image string
-		err   error
+	builtImages, err := buildROImages(ctx, writer)
+	if err != nil {
+		return err
 	}
-
-	buildResults := make(chan imageBuildResult, 3)
-
-	// Build RemediationOrchestrator with coverage in parallel using consolidated API
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "remediationorchestrator", // Operator SDK convention: no -controller suffix in image name
-			ImageName:        "kubernaut/remediationorchestrator",
-			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile", // Dockerfile can have suffix
-			BuildContextPath: "",                                                     // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != "",
-		}
-		roImage, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
-	}()
-
-	// Build DataStorage in parallel using consolidated API
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		dsImage, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
-	}()
-
-	// Build AuthWebhook in parallel using consolidated API
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "authwebhook",
-			ImageName:        "authwebhook",
-			DockerfilePath:   "docker/authwebhook.Dockerfile",
-			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		awImage, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
-	}()
-
-	// Wait for all three builds to complete and collect image names
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
-	builtImages := make(map[string]string) // name -> full image name
-	var buildErrors []error
-	for i := 0; i < 3; i++ {
-		result := <-buildResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
-			buildErrors = append(buildErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.image)
-			builtImages[result.name] = result.image
-		}
-	}
-
-	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %v", buildErrors)
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster (now that images are ready)
@@ -201,191 +125,12 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load images into fresh cluster (parallel)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
-	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator coverage image")
-	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
-	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image (SOC2 CC8.1 user attribution)")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
-	_, _ = fmt.Fprintln(writer, "  Note: OAuth2-Proxy pulled automatically from quay.io during deployment")
-
-	type loadResult struct {
-		name string
-		err  error
-	}
-	loadResults := make(chan loadResult, 3)
-
-	// Load RemediationOrchestrator coverage image using consolidated API
-	go func() {
-		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := LoadImageToKind(ctx, roImage, "remediationorchestrator-controller", clusterName, writer)
-		loadResults <- loadResult{name: "RemediationOrchestrator coverage", err: err}
-	}()
-
-	// Load DataStorage image using consolidated API
-	go func() {
-		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
-		loadResults <- loadResult{name: "DataStorage", err: err}
-	}()
-
-	// Load AuthWebhook image
-	go func() {
-		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
-		loadResults <- loadResult{name: "AuthWebhook", err: err}
-	}()
-
-	// Wait for all three loads to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
-	var loadErrors []error
-	for i := 0; i < 3; i++ {
-		result := <-loadResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
-			loadErrors = append(loadErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
-		}
+	if err := loadROImages(ctx, clusterName, builtImages, writer); err != nil {
+		return err
 	}
 
-	if len(loadErrors) > 0 {
-		return fmt.Errorf("image loads failed: %v", loadErrors)
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
-	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
-	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
-	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
-	}
-
-	// Step 1: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
-	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
-	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
-		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
-	}
-
-	// Step 2: Create RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)
-	// CRITICAL: RO controller needs this to emit audit events to DataStorage
-	// Authority: DD-AUTH-014 (Middleware-based SAR Authentication)
-	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)...\n")
-	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "remediationorchestrator-controller", writer); err != nil {
-		return fmt.Errorf("failed to create RemediationOrchestrator controller RoleBinding: %w", err)
-	}
-
-	// Step 3: Create RoleBinding for AuthWebhook (DD-AUTH-014)
-	// CRITICAL: AuthWebhook needs this to emit audit events to DataStorage (Gap #8)
-	// Per RCA (Jan 30, 2026): AuthWebhook was missing DataStorage RBAC, causing Gap #8 failure
-	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for AuthWebhook (DD-AUTH-014)...\n")
-	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "authwebhook", writer); err != nil {
-		return fmt.Errorf("failed to create AuthWebhook RoleBinding: %w", err)
-	}
-
-	// Issue #785: Inter-service TLS before DataStorage/RemedationOrchestrator deploy.
-	_, _ = fmt.Fprintf(writer, "\n🔐 Issue #785: Generating inter-service TLS certificates...\n")
-	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
-	}
-
-	// AU-9: Generate RSA signing certificate for audit exports
-	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate signing certificate: %w", err)
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
-	// ═══════════════════════════════════════════════════════════════════════
-	// NOTE: Using dynamically generated image names from consolidated API (BuildImageForKind)
-	// This ensures we deploy the SAME images we just built with latest code
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
-
-	type deployResult struct {
-		name string
-		err  error
-	}
-	deployResults := make(chan deployResult, 5)
-
-	// Launch ALL kubectl apply commands concurrently
-	go func() {
-		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"PostgreSQL", err}
-	}()
-	go func() {
-		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Redis", err}
-	}()
-	go func() {
-		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Migrations", err}
-	}()
-	go func() {
-		// DD-AUTH-014: Deploy client ClusterRole FIRST (required for SAR checks)
-		// This enables all services to pass SAR checks when calling DataStorage
-		_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
-		if clientRBACErr := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); clientRBACErr != nil {
-			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy client ClusterRole: %w", clientRBACErr)}
-			return
-		}
-
-		// Use the dynamically generated image from build phase
-		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-		dsImage := builtImages["DataStorage"]
-
-		// DD-AUTH-014: Deploy ServiceAccount and RBAC (required for pod creation)
-		_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
-		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
-			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy service RBAC: %w", rbacErr)}
-			return
-		}
-
-		// DD-AUTH-014: Deploy DataStorage with middleware-based auth
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
-		deployResults <- deployResult{"DataStorage", err}
-	}()
-	go func() {
-		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := DeployROCoverageManifest(ctx, kubeconfigPath, roImage, writer, "5s")
-		deployResults <- deployResult{"RemediationOrchestrator", err}
-	}()
-
-	// Collect ALL results before proceeding (MANDATORY)
-	var deployErrors []error
-	for i := 0; i < 5; i++ {
-		result := <-deployResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
-			deployErrors = append(deployErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
-		}
-	}
-
-	if len(deployErrors) > 0 {
-		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
-
-	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
-	if err := waitForROServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("services not ready: %w", err)
-	}
-
-	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
-	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
-	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
-	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to seed action types: %w", err)
+	if err := deployROServices(ctx, namespace, kubeconfigPath, builtImages, writer); err != nil {
+		return err
 	}
 
 	// PHASE 4.5: Deploy AuthWebhook manifests (using pre-built + pre-loaded image)
@@ -394,7 +139,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	awImage := builtImages["AuthWebhook"]
+	awImage := builtImages["authwebhook"]
 	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
 	}
@@ -798,6 +543,160 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 	return fmt.Errorf("RemediationOrchestrator not ready within timeout")
 }
 
+func buildROImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	configs := []E2EImageConfig{
+		{ServiceName: "remediationorchestrator", ImageName: "kubernaut/remediationorchestrator", DockerfilePath: "docker/remediationorchestrator-controller.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != ""},
+		{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture},
+		{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture},
+	}
+	results := make(chan struct {
+		name  string
+		image string
+		err   error
+	}, len(configs))
+	for _, cfg := range configs {
+		cfg := cfg
+		go func() {
+			image, err := BuildImageForKind(ctx, cfg, writer)
+			results <- struct {
+				name  string
+				image string
+				err   error
+			}{cfg.ServiceName, image, err}
+		}()
+	}
+	images := make(map[string]string, len(configs))
+	var errs []error
+	for range configs {
+		result := <-results
+		if result.err != nil {
+			errs = append(errs, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			continue
+		}
+		images[result.name] = result.image
+		_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.image)
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("image builds failed: %v", errs)
+	}
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	return images, nil
+}
+
+func loadROImages(ctx context.Context, clusterName string, images map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
+	results := make(chan struct {
+		name string
+		err  error
+	}, 3)
+	entries := []struct {
+		name      string
+		imageKey  string
+		container string
+	}{{"RemediationOrchestrator coverage", "remediationorchestrator", "remediationorchestrator-controller"}, {"DataStorage", "datastorage", "datastorage"}, {"AuthWebhook", "authwebhook", "authwebhook"}}
+	for _, entry := range entries {
+		entry := entry
+		go func() {
+			results <- struct {
+				name string
+				err  error
+			}{entry.name, LoadImageToKind(ctx, images[entry.imageKey], entry.container, clusterName, writer)}
+		}()
+	}
+	var errs []error
+	for range entries {
+		result := <-results
+		if result.err != nil {
+			errs = append(errs, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("image loads failed: %v", errs)
+	}
+	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
+	return nil
+}
+
+func deployROServices(ctx context.Context, namespace, kubeconfigPath string, images map[string]string, writer io.Writer) error {
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+	for _, service := range []string{"data-storage-service", "remediationorchestrator-controller", "authwebhook"} {
+		if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, service, writer); err != nil {
+			return fmt.Errorf("create %s DataStorage RoleBinding: %w", service, err)
+		}
+	}
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+	results := make(chan struct {
+		name string
+		err  error
+	}, 5)
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL", deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Redis", deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Migrations", ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer)
+		if err == nil {
+			err = deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, images["datastorage"], writer)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"DataStorage", err}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"RemediationOrchestrator", DeployROCoverageManifest(ctx, kubeconfigPath, images["remediationorchestrator"], writer, "5s")}
+	}()
+	var errs []error
+	for range 5 {
+		result := <-results
+		if result.err != nil {
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			errs = append(errs, result.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("one or more service deployments failed: %v", errs)
+	}
+	if err := waitForROServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("services not ready: %w", err)
+	}
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+	return nil
+}
+
 // waitForROServicesReady waits for DataStorage and RemediationOrchestrator pods to be ready
 // Per DD-TEST-002: Single readiness check after parallel deployment
 func waitForROServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -814,46 +713,12 @@ func waitForROServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 
 	// Wait for DataStorage pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 2*time.Minute, "DataStorage pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for RemediationOrchestrator pod to be ready (coverage-enabled may take longer)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for RemediationOrchestrator pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=remediationorchestrator-controller",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "RemediationOrchestrator pod should become ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=remediationorchestrator-controller", 3*time.Minute, "RemediationOrchestrator pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ RemediationOrchestrator ready\n")
 
 	return nil

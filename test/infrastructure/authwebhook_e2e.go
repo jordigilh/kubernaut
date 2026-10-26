@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -63,180 +64,23 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  Authority: Gateway/DataStorage hybrid pattern migration (Jan 7, 2026)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images in PARALLEL (BEFORE cluster creation)
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel (NO CLUSTER YET)...")
-	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
-	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~1-2 minutes")
-
-	type buildResult struct {
-		name      string
-		imageName string
-		err       error
-	}
-	buildResults := make(chan buildResult, 2)
-
-	// Goroutine 1: Build DataStorage image
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		dsImageName, err := BuildImageForKind(ctx, cfg, writer)
-		if err != nil {
-			err = fmt.Errorf("DS image build failed: %w", err)
-		}
-		buildResults <- buildResult{name: "DataStorage", imageName: dsImageName, err: err}
-	}()
-
-	// Goroutine 2: Build AuthWebhook image using standardized BuildImageForKind (with registry pull fallback)
-	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "authwebhook",
-			ImageName:        "authwebhook", // No repo prefix, just service name
-			DockerfilePath:   "docker/authwebhook.Dockerfile",
-			BuildContextPath: "", // Empty = project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		awImageName, err := BuildImageForKind(ctx, cfg, writer)
-		if err != nil {
-			err = fmt.Errorf("AuthWebhook image build failed: %w", err)
-		}
-		buildResults <- buildResult{name: "AuthWebhook", imageName: awImageName, err: err}
-	}()
-
-	// Collect build results
-	var dsImageName, awImageName string
-	var buildErrors []string
-	for i := 0; i < 2; i++ {
-		r := <-buildResults
-		if r.err != nil {
-			buildErrors = append(buildErrors, fmt.Sprintf("%s: %v", r.name, r.err))
-			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", r.name, r.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", r.name)
-			switch r.name {
-			case "DataStorage":
-				dsImageName = r.imageName
-			case "AuthWebhook":
-				awImageName = r.imageName
-			}
-		}
-	}
-	if len(buildErrors) > 0 {
-		return "", "", fmt.Errorf("image builds failed: %v", buildErrors)
+	dsImageName, awImageName, err := buildAuthWebhookImages(ctx, writer)
+	if err != nil {
+		return "", "", err
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster + namespace
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster + namespace...")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
-
-	// Create ./coverdata directory for coverage collection (required by kind-config.yaml)
-	// Kind interprets relative paths relative to where the config file is located
-	// So ./coverdata in test/e2e/authwebhook/kind-config.yaml means test/e2e/authwebhook/coverdata
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to find workspace root: %w", err)
-	}
-	coverdataPath := filepath.Join(workspaceRoot, "test", "e2e", "authwebhook", "coverdata")
-	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
-	}
-	// CRITICAL: os.MkdirAll applies umask (0022), resulting in 0755 (rwxr-xr-x).
-	// Container processes (UID 1001) need write access to /coverdata via hostPath volume.
-	// os.Chmod bypasses umask, ensuring world-writable permissions propagate through
-	// the Kind bind mount → pod hostPath chain.
-	if err := os.Chmod(coverdataPath, 0777); err != nil {
-		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to chmod coverdata directory: %v\n", err)
-	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection (mode=0777)\n", coverdataPath)
-
-	// Create Kind cluster with authwebhook-specific config
-	if err := createKindClusterWithConfig(ctx, clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
-		return "", "", fmt.Errorf("failed to create Kind cluster: %w", err)
+	if err := prepareAuthWebhookCluster(ctx, clusterName, kubeconfigPath, namespace, writer); err != nil {
+		return "", "", err
 	}
 
-	// Create namespace
-	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return "", "", fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load images + Deploy infrastructure in PARALLEL
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading images + Deploying infrastructure in parallel...")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading AuthWebhook image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
-
-	type result struct {
-		name string
-		err  error
+	if err := loadAndDeployAuthWebhookDependencies(ctx, clusterName, kubeconfigPath, namespace, dsImageName, awImageName, writer); err != nil {
+		return "", "", err
 	}
-
-	results := make(chan result, 4)
-
-	// Goroutine 1: Load pre-built DataStorage image
-	go func() {
-		err := LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("DS image load failed: %w", err)
-		}
-		results <- result{name: "DS image load", err: err}
-	}()
-
-	// Goroutine 2: Load pre-built AuthWebhook image
-	go func() {
-		err := loadAuthWebhookImageOnly(ctx, awImageName, clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("AuthWebhook image load failed: %w", err)
-		}
-		results <- result{name: "AuthWebhook image load", err: err}
-	}()
-
-	// Goroutine 3: Deploy PostgreSQL (E2E ports per DD-TEST-001)
-	go func() {
-		err := deployPostgreSQLToKind(ctx, kubeconfigPath, namespace, "30442", writer)
-		results <- result{name: "PostgreSQL", err: err}
-	}()
-
-	// Goroutine 4: Deploy Redis (E2E ports per DD-TEST-001)
-	go func() {
-		err := deployRedisToKind(ctx, kubeconfigPath, namespace, "30386", writer)
-		results <- result{name: "Redis", err: err}
-	}()
-
-	// Collect results from all goroutines
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for parallel tasks to complete...")
-	var errors []string
-	for i := 0; i < 4; i++ {
-		res := <-results
-		if res.err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", res.name, res.err))
-			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", res.name, res.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", res.name)
-		}
-	}
-
-	if len(errors) > 0 {
-		return "", "", fmt.Errorf("parallel load/deploy failed: %v", errors)
-	}
-
-	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - images loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Run database migrations (Sequential - depends on PostgreSQL)
@@ -314,6 +158,117 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "  🖼️  DataStorage image: %s\n", dsImageName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return awImageName, dsImageName, nil
+}
+
+func prepareAuthWebhookCluster(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+	coverdataPath := filepath.Join(workspaceRoot, "test", "e2e", "authwebhook", "coverdata")
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+	if err := os.Chmod(coverdataPath, 0777); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to chmod coverdata directory: %v\n", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection (mode=0777)\n", coverdataPath)
+	if err := createKindClusterWithConfig(ctx, clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+	return nil
+}
+
+func loadAndDeployAuthWebhookDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace, dsImageName, awImageName string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
+	_, _ = fmt.Fprintln(writer, "  ├── Loading AuthWebhook image to Kind")
+	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
+	type result struct {
+		name string
+		err  error
+	}
+	results := make(chan result, 4)
+	go func() {
+		results <- result{"DS image load", LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)}
+	}()
+	go func() {
+		results <- result{"AuthWebhook image load", loadAuthWebhookImageOnly(ctx, awImageName, clusterName, writer)}
+	}()
+	go func() {
+		results <- result{"PostgreSQL", deployPostgreSQLToKind(ctx, kubeconfigPath, namespace, "30442", writer)}
+	}()
+	go func() { results <- result{"Redis", deployRedisToKind(ctx, kubeconfigPath, namespace, "30386", writer)} }()
+
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for parallel tasks to complete...")
+	var taskErrors []string
+	for range 4 {
+		res := <-results
+		if res.err != nil {
+			taskErrors = append(taskErrors, fmt.Sprintf("%s: %v", res.name, res.err))
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", res.name, res.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", res.name)
+	}
+	if len(taskErrors) > 0 {
+		return fmt.Errorf("parallel load/deploy failed: %v", taskErrors)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - images loaded + infrastructure deployed")
+	return nil
+}
+
+func buildAuthWebhookImages(ctx context.Context, writer io.Writer) (string, string, error) {
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~1-2 minutes")
+
+	type buildResult struct {
+		name      string
+		imageName string
+		err       error
+	}
+	buildResults := make(chan buildResult, 2)
+	go func() {
+		cfg := E2EImageConfig{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture}
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image build failed: %w", err)
+		}
+		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
+	}()
+	go func() {
+		cfg := E2EImageConfig{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile", EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture}
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("AuthWebhook image build failed: %w", err)
+		}
+		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
+	}()
+
+	images := make(map[string]string, 2)
+	var buildErrors []string
+	for range 2 {
+		result := <-buildResults
+		if result.err != nil {
+			buildErrors = append(buildErrors, fmt.Sprintf("%s: %v", result.name, result.err))
+			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			continue
+		}
+		images[result.name] = result.imageName
+		_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+	}
+	if len(buildErrors) > 0 {
+		return "", "", fmt.Errorf("image builds failed: %v", buildErrors)
+	}
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	return images["DataStorage"], images["AuthWebhook"], nil
 }
 
 // loadAuthWebhookImageOnly loads a pre-built AuthWebhook image to Kind cluster.
@@ -1284,47 +1239,44 @@ func waitForServicesReady(ctx context.Context, kubeconfigPath, namespace string,
 
 	// Wait for Data Storage pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=datastorage",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app=datastorage", 5*time.Minute, "Data Storage pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage pod ready\n")
 
 	// Wait for AuthWebhook pod to be ready
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for AuthWebhook pod to be ready...\n")
-	Eventually(func() bool {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app.kubernetes.io/name=authwebhook",
-		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return true
-					}
-				}
-			}
-		}
-		return false
-	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "AuthWebhook pod should be ready")
+	waitForReadyServicePod(ctx, clientset, namespace, "app.kubernetes.io/name=authwebhook", 5*time.Minute, "AuthWebhook pod should be ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ AuthWebhook pod ready\n")
 
 	return nil
+}
+
+func waitForReadyServicePod(ctx context.Context, clientset kubernetes.Interface, namespace, selector string, timeout time.Duration, message string) {
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		return err == nil && anyPodReady(pods)
+	}, timeout, 5*time.Second).Should(BeTrue(), message)
+}
+
+func anyPodReady(pods *corev1.PodList) bool {
+	if len(pods.Items) == 0 {
+		return false
+	}
+	for _, pod := range pods.Items {
+		if podReady(pod) {
+			return true
+		}
+	}
+	return false
+}
+
+func podReady(pod corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }

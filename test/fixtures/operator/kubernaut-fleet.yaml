@@ -1,0 +1,101 @@
+# Static Fleet qualification CR.
+#
+# Operator defaults intentionally remain absent. The only runtime substitution
+# is the Kind node ingress CIDR used by host-side NodePort probes.
+apiVersion: kubernaut.ai/v1alpha2
+kind: Kubernaut
+metadata:
+  name: kubernaut
+  namespace: kubernaut-system
+spec:
+  postgresql:
+    host: postgresql.kubernaut-system.svc.cluster.local
+    secretName: postgresql-secret
+    sslMode: require
+  valkey:
+    host: valkey.kubernaut-system.svc.cluster.local
+    secretName: valkey-secret
+    tls:
+      enabled: true
+      caSecretName: valkey-ca
+      clientCertSecretName: valkey-tls-client
+  aiAnalysis:
+    policy:
+      configMapName: aianalysis-policy
+  signalProcessing:
+    policy:
+      configMapName: signalprocessing-policy
+  llmProfiles:
+    primary:
+      provider: openai
+      model: mock-model
+      endpoint: http://mock-llm.kubernaut-system.svc.cluster.local:8080
+      credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    session:
+      maxConcurrentInvestigations: 50
+  apiFrontend:
+    enabled: true
+    auth:
+      issuerURL: https://keycloak:8443/realms/kubernaut-demo
+      jwksURL: https://keycloak.kubernaut-system.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs
+      audience: kubernaut-apifrontend
+      jwtProviders:
+        - name: keycloak
+          issuerURL: https://keycloak:8443/realms/kubernaut-demo
+          jwksURL: https://keycloak.kubernaut-system.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs
+          audiences:
+            - kubernaut-apifrontend
+          claimMappings:
+            username: claims.preferred_username
+            groups: claims.groups
+    rbac:
+      roleBindings:
+        - role: sre
+          groups:
+            - sre
+  remediationOrchestrator:
+    effectivenessAssessment:
+      stabilizationWindow: 30s
+  effectivenessMonitor:
+    assessment:
+      stabilizationWindow: 30s
+      validityWindow: 60s
+  monitoring:
+    prometheus:
+      enabled: true
+      url: https://prometheus-svc.monitoring.svc.cluster.local:9090
+    alertManager:
+      enabled: true
+      url: https://alertmanager-svc.monitoring.svc.cluster.local:9093
+    tls:
+      caCertSecretRef:
+        name: monitoring-client-ca
+        key: ca.crt
+  tls:
+    mode: manual
+    manual:
+      internalCASecretName: kubernaut-internal-ca
+      serviceTLSSecretNames:
+        gateway: gateway-tls
+        datastorage: datastorage-tls
+        kubernautagent: kubernautagent-tls
+        apifrontend: apifrontend-tls
+        authwebhook: authwebhook-tls
+        fleetmetadatacache: fleetmetadatacache-tls
+  fleet:
+    enabled: true
+    mcpGateway:
+      endpoint: https://mcp-gateway.envoy-gateway-system.svc.cluster.local:8080/mcp
+      type: eaigw
+      namespace: mcp-system
+    scopeCheck:
+      backend: fleetmetadatacache
+    oauth2:
+      tokenURL: https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token
+      credentialsSecretRef: fleet-oauth2-creds
+      scopes:
+        - kube-mcp-server-audience
+  workflowExecution:
+    fleet:
+      oauth2CredentialsSecretRef: fleet-workflowexecution-oauth2-creds

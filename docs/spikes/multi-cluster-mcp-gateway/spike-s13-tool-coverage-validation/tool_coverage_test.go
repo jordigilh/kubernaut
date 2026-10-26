@@ -37,13 +37,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestSpikeS13(t *testing.T) {
@@ -513,11 +510,4 @@ func findFreePort() string {
 	port := l.Addr().(*net.TCPAddr).Port
 	l.Close()
 	return fmt.Sprintf("%d", port)
-}
-
-// addScheme registers core types — only needed if we create test resources.
-func addScheme() *runtime.Scheme {
-	scheme := runtime.NewScheme()
-	Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	return scheme
 }

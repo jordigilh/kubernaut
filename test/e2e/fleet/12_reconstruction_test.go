@@ -38,9 +38,7 @@ import (
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
-const (
-	urlLocalhost30080 = "https://localhost:30080"
-)
+var fleetGatewayFallbackURL = "https://localhost:30080"
 
 // E2E-FLEET-CC81-001: SOC2 CC8.1 Fleet Reconstruction Compliance
 // Validates that ReconstructRemediationRequest returns cluster_id
@@ -228,7 +226,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			By("Submitting a signal with cluster_id=hub to create a hub-routed RR")
 			payload := buildPrometheusAlertWithClusterInNamespace("HubOnlyReconstruction", "warning",
 				targetName, targetNS, "hub")
-			gatewayURL := urlLocalhost30080
+			gatewayURL := fleetGatewayURL()
 			body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 			var response map[string]interface{}

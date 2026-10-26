@@ -25,6 +25,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -35,99 +36,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	authorizationv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Full Pipeline E2E — Helm Chart Deployment (Issue #1737)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Operator-backed FullPipeline support (Issue #2492).
 //
-// Replaces the manual Go-managed deployment of the 12 chart-managed Kubernaut
-// services with a single `helm install charts/kubernaut`. This validates that
-// the Helm chart itself deploys and configures a working system, closing the
-// gap left by helm-smoke-test.sh (deployment-only, no functional assertions).
-//
-// Split-infra design (spike-validated, Issue #1737):
-//   Chart-managed (this file):   Gateway, DataStorage, AuthWebhook, SignalProcessing,
-//                                RemediationOrchestrator, AIAnalysis, WorkflowExecution,
-//                                Notification, KubernautAgent, EffectivenessMonitor,
-//                                APIFrontend, FleetMetadataCache, PostgreSQL, Redis/Valkey,
-//                                DB migrations, inter-service TLS, AU-9 signing cert,
-//                                DataStorage audit RBAC, CRDs (chart's own crds/ dir).
-//   Go-managed (unchanged):      Mock LLM (+Shadow), mock-slack, Prometheus, AlertManager,
-//                                kubernetes-event-exporter, memory-eater, workflow catalog
-//                                seeding, workflow-job-executor RBAC (test fixture SA),
-//                                Gateway SA/token for event-exporter+AlertManager webhooks.
-//
-// Image strategy: regardless of how Phase 1 obtained each image (local build,
-// registry pull, or CI-artifact reuse), all 12 chart-managed images are retagged
-// to one shared `localhost/<service>:<sharedTag>` reference before `helm install`,
-// because the chart's `global.image.tag` is a single value shared by every
-// service template. See ensureSharedChartImageTag.
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// fullPipelineChartServices lists the fullPipelineImageConfigs ServiceName keys
-// that map onto the Helm chart's per-service image overrides (i.e., everything
-// EXCEPT mock-llm, which stays Go-managed test infrastructure).
-var fullPipelineChartServices = []string{
-	"gateway",
-	"signalprocessing",
-	"remediationorchestrator",
-	"aianalysis",
-	"workflowexecution",
-	"notification",
-	"datastorage",
-	"authwebhook",
-	"kubernautagent",
-	"effectivenessmonitor",
-	"apifrontend",
-	"fleetmetadatacache",
-}
-
-// ensureSharedChartImageTag retags all fullPipelineChartServices entries in
-// builtImages to a single shared `localhost/<service>:<tag>` reference and
-// mutates builtImages in place so the existing loadFullPipelineImages (Phase 3)
-// loads the retagged images into Kind unchanged.
-//
-// Why: Helm's global.image.tag is one value applied to every service template.
-// buildFullPipelineImages/BuildImageForKind may hand back per-service registry
-// refs (CI/CD mode), a shared CI-artifact tag, or per-service random local-build
-// tags — retagging here normalizes all three into one shared local reference,
-// regardless of source, so the chart's image resolution is always exercised the
-// same well-understood way (validated by the Issue #1737 spike pilot).
-//
-// Returns the registry ("localhost") and shared tag to pass as
-// --set global.image.registry / --set global.image.tag.
-func ensureSharedChartImageTag(ctx context.Context, builtImages map[string]string, writer io.Writer) (registry, tag string, err error) {
-	sharedTag := "fp-helm-" + uuid.New().String()[:8]
-	_, _ = fmt.Fprintf(writer, "  🏷️  Normalizing %d chart-managed images to shared tag localhost/*:%s...\n",
-		len(fullPipelineChartServices), sharedTag)
-
-	for _, svc := range fullPipelineChartServices {
-		src, ok := builtImages[svc]
-		if !ok || src == "" {
-			return "", "", fmt.Errorf("no built image found for chart-managed service %q", svc)
-		}
-		dst := fmt.Sprintf("localhost/%s:%s", svc, sharedTag)
-		cmd := exec.CommandContext(ctx, "podman", "tag", src, dst)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		if runErr := cmd.Run(); runErr != nil {
-			return "", "", fmt.Errorf("failed to retag %s (%s -> %s): %w", svc, src, dst, runErr)
-		}
-		builtImages[svc] = dst
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Retagged %d images to shared tag %s\n", len(fullPipelineChartServices), sharedTag)
-	return "localhost", sharedTag, nil
-}
+// This file contains only shared test infrastructure that is still needed
+// around the operator-managed application: dependency/Fleet fixtures, TLS
+// material for external test IdPs, API Frontend RBAC, and the test-owned
+// migration image. The application is deployed exclusively by the pinned
+// operator bootstrap chart plus the user-owned Kubernaut CR.
 
 // ensureDBMigrateImage builds (or reuses a CI-prebuilt artifact for) the
-// db-migrate image (docker/db-migrate.Dockerfile) and retags it to the same
-// shared `localhost/db-migrate:<sharedTag>` reference as the 12 app images,
-// so the chart's post-install migration-job hook
-// (charts/kubernaut/templates/hooks/migration-job.yaml, `kubernaut.image`
-// helper) resolves it via the same global.image.registry/tag override.
+// db-migrate image used by the operator's migration workload.
 //
 // db-migrate is NOT one of the fullPipelineImageConfigs/buildFullPipelineImages
 // app images -- it's a standalone infra image built from its own Dockerfile
@@ -149,6 +71,13 @@ func ensureDBMigrateImage(ctx context.Context, sharedTag string, writer io.Write
 		}
 		return dst, nil
 	}
+	if registry := strings.TrimSpace(os.Getenv("IMAGE_REGISTRY")); registry != "" {
+		if tag := strings.TrimSpace(os.Getenv("IMAGE_TAG")); tag != "" {
+			image := fmt.Sprintf("%s/db-migrate:%s", strings.TrimRight(registry, "/"), tag)
+			_, _ = fmt.Fprintf(writer, "  📦 Using published db-migrate operand %s (no local build)\n", image)
+			return image, nil
+		}
+	}
 
 	_, _ = fmt.Fprintln(writer, "  🔨 Building db-migrate image (docker/db-migrate.Dockerfile, infra image not covered by buildFullPipelineImages)...")
 	projectRoot := getProjectRoot()
@@ -166,11 +95,11 @@ func ensureDBMigrateImage(ctx context.Context, sharedTag string, writer io.Write
 	return dst, nil
 }
 
-// loadChartCAFromAuthwebhookTLS extracts the CA certificate + private key that
-// the Helm chart's tls-cert-gen pre-install hook embeds in authwebhook-tls
+// loadOperatorCAFromAuthwebhookTLS extracts the CA certificate + private key that
+// the operator's tls-cert-gen pre-install hook embeds in authwebhook-tls
 // (ca.crt/ca.key, base64) so downstream consumers can mint additional leaf
 // certs signed by the SAME CA without regenerating it.
-func loadChartCAFromAuthwebhookTLS(ctx context.Context, kubeconfigPath, namespace string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+func loadOperatorCAFromAuthwebhookTLS(ctx context.Context, kubeconfigPath, namespace string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	getField := func(field string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
 			"get", "secret", "authwebhook-tls", "-o", fmt.Sprintf("jsonpath={.data.%s}", field))
@@ -277,21 +206,21 @@ stringData:
 
 // FleetHelmOptions carries the pre-provisioned fleet infrastructure
 // (MCP Gateway + OAuth2 IdP) endpoints and credentials needed to render
-// global.fleet.* correctly on the FIRST `helm install`, instead of patching
-// it in afterward via kubectl once the chart-managed pods are already
+// global.fleet.* correctly on the FIRST `operator reconciliation`, instead of patching
+// it in afterward via kubectl once the operator-managed pods are already
 // running (DD-TEST-015, "deploy correctly the first time" -- see
 // SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
 // SetupFullPipelineInfrastructure's fleetProvisioner=nil) leaves fleet
 // disabled, matching the chart's own global.fleet.enabled=false default.
 //
 // Every referenced Secret (OAuth2CredentialsSecret/WEOAuth2CredentialsSecret)
-// MUST already exist in the target namespace before InstallFullPipelineHelmChart
+// MUST already exist in the target namespace before operator-backed deployment
 // runs, and the MCP Gateway (MCPGatewayEndpoint) MUST already be reachable
 // and AuthPolicy-converged -- see FleetProvisioner's doc comment for why.
 type FleetHelmOptions struct {
 	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL
 	// (global.fleet.mcpGatewayEndpoint), e.g.
-	// "http://mcp-gateway-istio.gateway-system.svc:8080/mcp".
+	// "https://mcp-gateway-istio.gateway-system.svc:8080/mcp".
 	MCPGatewayEndpoint string
 	// MCPGatewayType is "kuadrant" or "eaigw" (global.fleet.mcpGatewayType).
 	MCPGatewayType string
@@ -320,7 +249,7 @@ type FleetHelmOptions struct {
 	SignalProcessingNamespace string
 	// FleetMetadataCacheNamespace is the namespace where the MCP Gateway
 	// manages its MCPServerRegistration/Backend CRs
-	// (fleetmetadatacache.namespace) for chart-managed FMC. Issue #2298:
+	// (fleetmetadatacache.namespace) for operator-managed FMC. Issue #2298:
 	// unlike SignalProcessingNamespace above, this has no safe empty-string
 	// fallback -- pkg/fleet/fmc/config.Validate() refuses to start FMC
 	// without it, so chart callers MUST set it. Hub-only AF E2E reuses this
@@ -329,70 +258,22 @@ type FleetHelmOptions struct {
 	FleetMetadataCacheNamespace string
 
 	ImageTag string
-}
 
-// buildFleetOAuth2HelmArgs renders the global.fleet.*/workflowexecution.fleet.*/
-// fleetmetadatacache.namespace `--set` block common to every helm install
-// that enables fleet federation. Shared between InstallFullPipelineHelmChart
-// (fleet E2E, via SetupFleetE2EInfrastructure) and InstallDemoHelmChart
-// (demo/QE entry point, demo_helm.go, Issue #2337) so a regression in
-// this block is caught by fleet E2E CI on every run, not just a demo-only
-// code path nobody runs in CI.
-//
-// Deliberately excludes fleetmetadatacache.image.* (E2E-only: needs the
-// locally-built image tag the demo entry point never overrides) and any
-// networkPolicies.idp.* override (callers need different port strategies --
-// the FP suite also runs DEX on a separate port from Keycloak's fleet-OAuth2
-// endpoint, the demo doesn't) -- callers append those separately.
-//
-// Returns nil when fleetOpts is nil, so callers can safely
-// `args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)` unconditionally.
-func buildFleetOAuth2HelmArgs(fleetOpts *FleetHelmOptions) []string {
-	if fleetOpts == nil {
-		return nil
-	}
-	args := []string{
-		"--set", "global.fleet.enabled=true",
-		"--set", "global.fleet.mcpGatewayEndpoint=" + fleetOpts.MCPGatewayEndpoint,
-		"--set", "global.fleet.mcpGatewayType=" + fleetOpts.MCPGatewayType,
-		"--set", "global.fleet.oauth2.enabled=true",
-		"--set", "global.fleet.oauth2.tokenURL=" + fleetOpts.OAuth2TokenURL,
-		"--set", "global.fleet.oauth2.credentialsSecretRef=" + fleetOpts.OAuth2CredentialsSecret,
-		"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef=" + fleetOpts.WEOAuth2CredentialsSecret,
-	}
-	if fleetOpts.MCPGatewayNamespace != "" {
-		args = append(args, "--set", "global.fleet.mcpGatewayNamespace="+fleetOpts.MCPGatewayNamespace)
-	}
-	for i, scope := range fleetOpts.OAuth2Scopes {
-		args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))
-	}
-	if fleetOpts.SignalProcessingNamespace != "" {
-		args = append(args, "--set", "signalprocessing.fleet.namespace="+fleetOpts.SignalProcessingNamespace)
-	}
-	// Issue #2298: fleetmetadatacache.namespace has no safe default -- FMC
-	// refuses to start without it (pkg/fleet/fmc/config.Validate()), so this
-	// is set unconditionally here, unlike SignalProcessingNamespace above
-	// (which may legitimately watch cluster-wide).
-	args = append(args, "--set", "fleetmetadatacache.namespace="+fleetOpts.FleetMetadataCacheNamespace)
-	if fleetOpts.ImageTag != "" {
-		// Optional tag override only: an unconditional empty --set here would
-		// clobber an earlier global.image.tag (helm --set is last-wins),
-		// silently forcing the chart's .Chart.AppVersion fallback.
-		args = append(args, "--set", "global.image.tag="+fleetOpts.ImageTag)
-	}
-	return args
+	// OperatorExposure is the upstream test-owned host boundary allocated
+	// before Kind creation for the operator-managed application.
+	OperatorExposure *OperatorExposurePlan
 }
 
 // FleetProvisioner, when non-nil, is invoked by SetupFullPipelineInfrastructure
-// once the target namespace exists (end of PHASE 5) but before `helm install`
+// once the target namespace exists (end of PHASE 5) but before `operator reconciliation`
 // (PHASE 6), to deploy fleet-specific infrastructure (IdP, MCP Gateway,
 // remote cluster) that must already be reachable and AuthPolicy-converged
-// BEFORE any chart-managed pod boots with global.fleet.enabled=true --
+// BEFORE any operator-managed pod boots with global.fleet.enabled=true --
 // otherwise AF/EM/WE/GW/RO/SP would spend their first boot racing an MCP
 // Gateway that doesn't exist yet, the exact race the old patch-after-deploy
 // design (kubectl-patching fleet config into already-running pods once
 // infra was ready) worked around instead of resolving. Returns the
-// global.fleet.* values InstallFullPipelineHelmChart should render with.
+// global.fleet.* values operator-backed deployment should render with.
 //
 // Kept as a callback (not a pre-computed *FleetHelmOptions) specifically
 // because fleet infrastructure deployment needs a live Kind cluster + the
@@ -406,18 +287,18 @@ type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string
 // the authwebhook-tls Secret (tls.crt/tls.key/ca.crt/ca.key) AND the
 // inter-service-ca ConfigMap (ca.crt) from it, matching exactly the shapes
 // the chart's own tls-cert-gen pre-install hook
-// (charts/kubernaut/templates/hooks/tls-cert-job.yaml, Sections 1-2) would
-// otherwise generate on its own -- but doing it here, BEFORE `helm install`
+// (the retired application chart templates/hooks/tls-cert-job.yaml, Sections 1-2) would
+// otherwise generate on its own -- but doing it here, BEFORE `operator reconciliation`
 // runs, serves two purposes:
 //
-//  1. Keycloak (ensureKeycloakTLSFromChartCA) can get a leaf cert signed
+//  1. Keycloak (ensureKeycloakTLSFromOperatorCA) can get a leaf cert signed
 //     from the SAME CA and be fully deployed and AuthPolicy-converged
-//     before any chart-managed pod boots with global.fleet.enabled=true.
+//     before any operator-managed pod boots with global.fleet.enabled=true.
 //  2. kube-mcp-server (deployKubeMCPServer, via DeployFleetGatewayInfra)
 //     mounts the inter-service-ca ConfigMap as a REQUIRED (non-optional)
 //     volume -- without pre-creating it here, that Deployment would sit in
 //     ContainerCreating ("configmap \"inter-service-ca\" not found") since
-//     it now deploys before `helm install`'s hook would otherwise create it.
+//     it now deploys before `operator reconciliation`'s hook would otherwise create it.
 //
 // See FleetProvisioner's doc comment for why this ordering matters.
 //
@@ -427,7 +308,7 @@ type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string
 // for authwebhook's own cert and makes it reuse THIS CA for Section 2
 // (gateway-tls/datastorage-tls/kubernautagent-tls/fleetmetadatacache-tls/
 // apifrontend-tls generation, plus re-applying the same inter-service-ca
-// ConfigMap content it finds already there), keeping every chart-managed
+// ConfigMap content it finds already there), keeping every operator-managed
 // service, kube-mcp-server, and Keycloak on one shared root of trust.
 func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Pre-provisioning inter-service CA + authwebhook-tls (deploy fleet correctly the first time)...")
@@ -435,58 +316,9 @@ func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace stri
 	var caCert *x509.Certificate
 	var caKey *ecdsa.PrivateKey
 	var caCertPEM, caKeyPEM []byte
-
-	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-		"get", "secret", "authwebhook-tls", "--ignore-not-found", "-o", "name")
-	existingSecret, err := secretCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to check for an existing inter-service CA: %w", err)
-	}
-	if strings.TrimSpace(string(existingSecret)) != "" {
-		// Reusing a retained Kind cluster must preserve its existing trust root:
-		// chart-managed service certificates and the running API server already
-		// trust this CA. Rotating it here leaves retained pods with certificates
-		// signed by the previous root and makes the next Keycloak/OIDC bootstrap
-		// fail TLS verification.
-		caCert, caKey, err = loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
-		if err != nil {
-			return fmt.Errorf("failed to reuse existing inter-service CA: %w", err)
-		}
-		caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
-		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
-		if err != nil {
-			return fmt.Errorf("failed to marshal reused CA private key: %w", err)
-		}
-		caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
-		_, _ = fmt.Fprintln(writer, "  ♻️ Reusing existing inter-service CA for retained cluster")
-	} else {
-		caKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return fmt.Errorf("failed to generate CA key: %w", err)
-		}
-		caTemplate := &x509.Certificate{
-			SerialNumber:          big.NewInt(time.Now().UnixNano()),
-			Subject:               pkix.Name{CommonName: "authwebhook-ca"},
-			NotBefore:             time.Now().Add(-1 * time.Hour),
-			NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
-			BasicConstraintsValid: true,
-			IsCA:                  true,
-		}
-		caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-		if err != nil {
-			return fmt.Errorf("failed to self-sign CA certificate: %w", err)
-		}
-		caCert, err = x509.ParseCertificate(caDER)
-		if err != nil {
-			return fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
-		}
-		caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
-		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
-		if err != nil {
-			return fmt.Errorf("failed to marshal CA private key: %w", err)
-		}
-		caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
+	caCert, caKey, caCertPEM, caKeyPEM, loadErr := loadOrCreateInterServiceCA(ctx, kubeconfigPath, namespace, writer)
+	if loadErr != nil {
+		return loadErr
 	}
 
 	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
@@ -507,6 +339,10 @@ kind: Secret
 metadata:
   name: authwebhook-tls
   namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: kubernaut-operator
+    app.kubernetes.io/part-of: kubernaut
+    app.kubernetes.io/instance: kubernaut
 type: kubernetes.io/tls
 stringData:
   tls.crt: |
@@ -530,6 +366,10 @@ kind: ConfigMap
 metadata:
   name: inter-service-ca
   namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: kubernaut-operator
+    app.kubernetes.io/part-of: kubernaut
+    app.kubernetes.io/instance: kubernaut
 data:
   ca.crt: |
 %s`, namespace, indentPEM(string(caCertPEM)))
@@ -553,25 +393,85 @@ data:
 	return nil
 }
 
-// ensureDexTLSFromChartCA creates the dex-tls Secret (tls.crt/tls.key) that
+func loadOrCreateInterServiceCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
+	operatorCAPEM, operatorCAKeyPEM, operatorCAErr := readOperatorCASecret(ctx, kubeconfigPath, namespace)
+	if operatorCAErr == nil {
+		caBlock, _ := pem.Decode(operatorCAPEM)
+		keyBlock, _ := pem.Decode(operatorCAKeyPEM)
+		if caBlock == nil || keyBlock == nil {
+			return nil, nil, nil, nil, errors.New("operator Fleet CA Secret contains invalid PEM material")
+		}
+		caCert, err := x509.ParseCertificate(caBlock.Bytes)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("parse operator Fleet CA certificate: %w", err)
+		}
+		caKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("parse operator Fleet CA key: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  🔗 Reusing operator Fleet CA for authwebhook/Keycloak trust")
+		return caCert, caKey, operatorCAPEM, operatorCAKeyPEM, nil
+	}
+	if !errors.Is(operatorCAErr, errOperatorCASecretMissing) {
+		return nil, nil, nil, nil, fmt.Errorf("read operator Fleet CA: %w", operatorCAErr)
+	}
+	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace, "get", "secret", "authwebhook-tls", "--ignore-not-found", "-o", "name")
+	existingSecret, err := secretCmd.Output()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to check for an existing inter-service CA: %w", err)
+	}
+	if strings.TrimSpace(string(existingSecret)) != "" {
+		caCert, caKey, err := loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to reuse existing inter-service CA: %w", err)
+		}
+		caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to marshal reused CA private key: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  ♻️ Reusing existing inter-service CA for retained cluster")
+		return caCert, caKey, caCertPEM, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER}), nil
+	}
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to generate CA key: %w", err)
+	}
+	caTemplate := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: "authwebhook-ca"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour), KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, BasicConstraintsValid: true, IsCA: true}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to self-sign CA certificate: %w", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
+	}
+	caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to marshal CA private key: %w", err)
+	}
+	return caCert, caKey, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER}), nil
+}
+
+// ensureDexTLSFromOperatorCA creates the dex-tls Secret (tls.crt/tls.key) that
 // deployDexOIDCProviderForAF's dex.yaml mounts, signed by the SAME
-// inter-service CA the Helm chart's own tls-cert-job.yaml pre-install hook
+// inter-service CA the operator's own tls-cert-job.yaml pre-install hook
 // generates for gateway-tls/datastorage-tls/kubernautagent-tls/
-// fleetmetadatacache-tls (see charts/kubernaut/templates/hooks/tls-cert-job.yaml
+// fleetmetadatacache-tls (see the retired application chart templates/hooks/tls-cert-job.yaml
 // Section 2). This is required, not cosmetic: KubernautAgent's JWT provider
 // config (test/infrastructure/kubernautagent.go, tlsCaFile: /etc/tls-ca/ca.crt)
 // validates DEX's JWKS endpoint against the chart's "inter-service-ca"
 // ConfigMap -- a DEX cert signed by an unrelated/standalone CA would leave
 // KubernautAgent unable to verify DEX's TLS handshake at all.
 //
-// Must run AFTER `helm install` (Phase 6): the chart's tls-cert-gen hook is
+// Must run AFTER `operator reconciliation` (Phase 6): the chart's tls-cert-gen hook is
 // pre-install and stores the CA's private key alongside authwebhook-tls
 // (ca.crt/ca.key, base64) specifically so downstream consumers can mint
 // additional leaf certs without regenerating the CA -- this mirrors that
 // same pattern for the one leaf cert (dex) the chart itself doesn't need.
-func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+func ensureDexTLSFromOperatorCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Signing dex-tls leaf cert from the chart's inter-service CA...")
-	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+	caCert, caKey, err := loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
 	if err != nil {
 		return err
 	}
@@ -584,10 +484,10 @@ func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace stri
 	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
 }
 
-// ensureKeycloakTLSFromChartCA creates the keycloak-tls Secret (tls.crt/
+// ensureKeycloakTLSFromOperatorCA creates the keycloak-tls Secret (tls.crt/
 // tls.key) that DeployKeycloakInfra's Deployment mounts, signed by the SAME
-// inter-service CA the Helm chart's tls-cert-job.yaml pre-install hook
-// generates (see ensureDexTLSFromChartCA above -- this is the "fleet" suite's
+// inter-service CA the operator's tls-cert-job.yaml pre-install hook
+// generates (see ensureDexTLSFromOperatorCA above -- this is the "fleet" suite's
 // exact counterpart to that DEX fix, Issue #1737 regression). Without this,
 // keycloak-tls is never created (the Go-native harness's GenerateInterServiceTLS,
 // which used to create it as a side effect of minting its own standalone CA,
@@ -596,8 +496,8 @@ func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace stri
 // ("FailedMount ... secret \"keycloak-tls\" not found") until the 180s
 // rollout-status wait in DeployKeycloakInfra times out.
 //
-// Must run AFTER `helm install` (Phase 6, via SetupFullPipelineInfrastructure)
-// and BEFORE DeployKeycloakInfra -- mirrors ensureDexTLSFromChartCA's ordering
+// Must run AFTER `operator reconciliation` (Phase 6, via SetupFullPipelineInfrastructure)
+// and BEFORE DeployKeycloakInfra -- mirrors ensureDexTLSFromOperatorCA's ordering
 // constraint for the same reason (authwebhook-tls's ca.crt/ca.key must exist).
 //
 // namespace is where authwebhook-tls (and thus the chart CA) lives;
@@ -607,9 +507,9 @@ func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace stri
 // equal namespace there, unchanged). DNS SANs cover BOTH namespace and
 // secretNamespace so the leaf cert verifies regardless of which one the
 // caller ends up dialing "keycloak" through.
-func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace, secretNamespace string, writer io.Writer) error {
+func ensureKeycloakTLSFromOperatorCA(ctx context.Context, kubeconfigPath, namespace, secretNamespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Signing keycloak-tls leaf cert from the chart's inter-service CA...")
-	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+	caCert, caKey, err := loadOperatorCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
 	if err != nil {
 		return err
 	}
@@ -635,12 +535,12 @@ func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace
 // re-signed gateway-tls/datastorage-tls/apifrontend-tls/kubernautagent-tls
 // post-install, then did a rolling restart+wait per deployment to pick them
 // up) was removed. Its restart pass was the deterministic root cause of
-// fleet E2E's PHASE 6 rollout timeouts -- see InstallFullPipelineHelmChart's
+// fleet E2E's PHASE 6 rollout timeouts -- see operator-backed deployment's
 // `hooks.tlsCerts.extraSANs` comment for the full RCA. "localhost" SAN is
-// now baked into the ORIGINAL chart-issued certs at `helm install` time via
+// now baked into the ORIGINAL operator-issued certs at `operator reconciliation` time via
 // that values override, so no re-sign or restart is needed at all.
 
-// writeInterServiceCAPEMFromCluster copies the chart-generated "inter-service-ca"
+// writeInterServiceCAPEMFromOperator copies the chart-generated "inter-service-ca"
 // ConfigMap's ca.crt (created by the pre-install tls-cert-gen hook, PHASE 6) to
 // the host-side path InterServiceCAPath expects (Issue #785). Host-side E2E test
 // clients (suite_test.go's NewTLSAwareTransport, NewTLSAwareClient) read the CA
@@ -648,7 +548,7 @@ func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace
 // harness this file was a side effect of GenerateInterServiceTLS generating the
 // CA itself; now that the chart generates the CA in-cluster, this is the missing
 // counterpart that fetches it back out for host-side use (Issue #1737).
-func writeInterServiceCAPEMFromCluster(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+func writeInterServiceCAPEMFromOperator(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
 		"get", "configmap", "inter-service-ca", "-o", `jsonpath={.data.ca\.crt}`)
 	caPEM, err := cmd.Output()
@@ -656,7 +556,7 @@ func writeInterServiceCAPEMFromCluster(ctx context.Context, kubeconfigPath, name
 		return fmt.Errorf("failed to read inter-service-ca ConfigMap: %w", err)
 	}
 	caPEMPath := InterServiceCAPath(kubeconfigPath)
-	if err := os.WriteFile(caPEMPath, caPEM, 0o600); err != nil {
+	if err := writeCombinedInterServiceCAPEM(caPEMPath, caPEM); err != nil {
 		return fmt.Errorf("failed to write CA PEM to %s: %w", caPEMPath, err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ inter-service CA PEM written to %s (Issue #785)\n", caPEMPath)
@@ -665,10 +565,10 @@ func writeInterServiceCAPEMFromCluster(ctx context.Context, kubeconfigPath, name
 
 // deployDexOIDCProviderForAF deploys the DEX OIDC provider test double that
 // APIFrontend authenticates against (Issue #1189). DEX is test-only
-// infrastructure -- it is not part of the production Helm chart -- extracted
+// infrastructure -- it is not part of the production operator deployment -- extracted
 // unchanged from the DEX step of the old (now removed) deployAPIFrontendInFP
 // so it keeps working now that AF's Deployment/Service/CRD/RBAC come from
-// `helm install` instead (Issue #1737).
+// `operator reconciliation` instead (Issue #1737).
 func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Deploying DEX OIDC provider (Issue #1189, AF auth test double)...")
 	projectRoot := getProjectRoot()
@@ -684,7 +584,7 @@ func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writ
 }
 
 // afPersonaGroupNames lists the persona names AF's SAR-based tool
-// authorization recognizes (must match charts/kubernaut/values.yaml's
+// authorization recognizes (must match the retired application chart values's
 // apifrontend.config.rbac.personas keys exactly -- see
 // bindAFPersonaToolClusterRoles doc comment for why this list is duplicated
 // here instead of read from the chart).
@@ -695,7 +595,7 @@ var afPersonaGroupNames = []string{
 // bindAFPersonaToolClusterRoles creates the ClusterRoleBindings that map each
 // DEX-issued OIDC "groups" claim (e.g. "sre") to the chart's own
 // per-persona ClusterRoles (kubernaut-tool-<persona>, see
-// charts/kubernaut/templates/apifrontend/apifrontend.yaml).
+// the retired application chart templates/apifrontend/apifrontend.yaml).
 //
 // Issue #1737 gap found: the chart deliberately creates only the ClusterRoles
 // -- its own comment says "Bind these ClusterRoles to OIDC groups via
@@ -705,7 +605,7 @@ var afPersonaGroupNames = []string{
 // step for E2E via afDeployE2ERBAC -> PersonaToolClusterRolesYAML (which
 // also duplicated the ClusterRoles themselves, now superseded by the chart).
 // That whole call was dropped when deployAPIFrontendInFP was replaced by
-// `helm install`, with nothing standing in for the ClusterRoleBinding half --
+// `operator reconciliation`, with nothing standing in for the ClusterRoleBinding half --
 // leaving every kubernaut-tool-<persona> ClusterRole with zero subjects
 // bound to it. AF's SAR checks (pkg/apifrontend/auth/sar.go) therefore denied
 // every tool call regardless of persona; the denial is only *observable* for
@@ -717,7 +617,7 @@ var afPersonaGroupNames = []string{
 // kubernaut_investigate/discover_workflows/select_workflow/watch.
 //
 // The persona name list is intentionally re-declared here (afPersonaGroupNames)
-// rather than parsed out of charts/kubernaut/values.yaml: this is Go test
+// rather than parsed out of the retired application chart values: this is Go test
 // infrastructure binding to chart-owned ClusterRoles by name/convention (same
 // pattern as every other kubernaut-tool-<persona> reference in this package),
 // not a second source of truth for which *tools* each persona can call --
@@ -725,6 +625,17 @@ var afPersonaGroupNames = []string{
 func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to DEX OIDC groups (Issue #1737 RBAC gap)...")
 
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildAFPersonaToolClusterRoleBindingsManifest()); err != nil {
+		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
+	}
+	return nil
+}
+
+// BuildAFPersonaToolClusterRoleBindingsManifest returns the OIDC group bindings
+// required by AF's SAR-based A2A tool guard. The operator creates the persona
+// ClusterRoles, while this qualification wiring supplies the deployment-specific
+// identity-to-persona mapping.
+func BuildAFPersonaToolClusterRoleBindingsManifest() string {
 	var b strings.Builder
 	for _, persona := range afPersonaGroupNames {
 		fmt.Fprintf(&b, `---
@@ -742,17 +653,13 @@ subjects:
     apiGroup: rbac.authorization.k8s.io
 `, persona, persona, persona)
 	}
-
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, b.String()); err != nil {
-		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
-	}
-	return nil
+	return b.String()
 }
 
-// BindAFPersonaRBAC is the exported, post-`helm install` entry point for
+// BindAFPersonaRBAC is the exported, post-`operator reconciliation` entry point for
 // `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the chart's
 // kubernaut-tool-<persona> ClusterRoles (only ever *created*, never *bound*,
-// by charts/kubernaut/templates/apifrontend -- see
+// by the retired application chart templates/apifrontend -- see
 // bindAFPersonaToolClusterRoles's doc comment, Issue #1737) to the OIDC
 // groups issued by the Keycloak realm's kubernaut-console client
 // (test/infrastructure/keycloak-realm-demo.json's "sre" group/user).
@@ -764,83 +671,64 @@ subjects:
 // per-tool personas above, that one's genuinely self-contained, no manual
 // step needed.
 //
-// Must run AFTER `helm install charts/kubernaut` -- the ClusterRoles this
+// Must run after operator reconciliation -- the ClusterRoles this
 // binds don't exist until the chart's apifrontend templates render them.
 // Reuses bindAFPersonaToolClusterRoles unchanged (same binding shape works
 // for any IdP's "groups" claim, not just DEX's) rather than duplicating it.
 func BindAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	return bindAFPersonaToolClusterRoles(ctx, kubeconfigPath, writer)
+	_, _ = fmt.Fprintln(writer, "  🔑 Creating and binding AF persona ClusterRoles for operator-managed AF...")
+	personaToolRBAC, err := PersonaToolClusterRolesYAML()
+	if err != nil {
+		return fmt.Errorf("failed to generate persona tool ClusterRoles: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, personaToolRBAC); err != nil {
+		return fmt.Errorf("failed to apply persona tool ClusterRoles and bindings: %w", err)
+	}
+	if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	return nil
 }
 
-// createFullPipelineHelmSecrets creates the Secrets the Helm chart expects to
+func waitForAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes client for AF persona RBAC verification: %w", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		result, sarErr := clientset.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authorizationv1.SubjectAccessReview{
+			Spec: authorizationv1.SubjectAccessReviewSpec{
+				User:   "sre-user",
+				Groups: []string{"sre"},
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Verb:     "use",
+					Group:    "kubernaut.ai",
+					Resource: "tools",
+					Name:     "kubectl_get",
+				},
+			},
+		}, metav1.CreateOptions{})
+		if sarErr == nil && result.Status.Allowed {
+			_, _ = fmt.Fprintln(writer, "  ✅ AF persona RBAC SAR verified for sre/kubectl_get")
+			return nil
+		}
+		if sarErr != nil {
+			err = sarErr
+		} else {
+			err = fmt.Errorf("SubjectAccessReview denied sre/kubectl_get: %s", result.Status.Reason)
+		}
+		if sleepErr := sleepOrDone(ctx, 2*time.Second); sleepErr != nil {
+			return fmt.Errorf("wait for AF persona RBAC SAR: %w", sleepErr)
+		}
+	}
+	return fmt.Errorf("AF persona RBAC SAR did not allow sre/kubectl_get within 60s: %w", err)
+}
+
+// createFullPipelineHelmSecrets creates the Secrets the operator expects to
 // already exist (the chart deliberately does not generate credential material —
 // original #239 audit finding #4, unchanged by this migration). Idempotent:
 // uses `kubectl apply` so re-running (retry after failure) does not error.
-func createFullPipelineHelmSecrets(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🔑 Creating pre-req Secrets for Helm chart (postgresql, valkey, llm-credentials)...")
-
-	// Key names are the chart's own documented contract
-	// (charts/kubernaut/templates/infrastructure/secrets.yaml): postgresql-secret
-	// needs POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB (consumed directly by the
-	// postgres:16-alpine container) plus db-secrets.yaml (YAML, consumed by
-	// DataStorage); valkey-secret needs valkey-secrets.yaml (YAML).
-	//
-	// slm_user (not an arbitrary name): charts/kubernaut/templates/_helpers.tpl's
-	// kubernaut.postgresql.username defaults to "slm_user" (.Values.postgresql.
-	// auth.username not overridden here), and the db-migration hook's PGUSER/GRANT
-	// target both resolve through that same helper. postgres:16-alpine only ever
-	// creates the ONE role named by POSTGRES_USER at bootstrap, so this secret's
-	// username MUST match the helper's default exactly or the migration Job's
-	// `goose ... postgres ...` connection fails with "password authentication
-	// failed" (role doesn't exist) -- confirmed during Issue #1737 validation.
-	// "slm_user" also matches the pre-existing convention used by every other
-	// Go-managed E2E/IT harness in this package (datastorage.go, migrations.go,
-	// authwebhook_e2e.go, etc.) rather than introducing a second one.
-	manifest := fmt.Sprintf(`---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgresql-secret
-  namespace: %[1]s
-type: Opaque
-stringData:
-  POSTGRES_USER: slm_user
-  POSTGRES_PASSWORD: kubernaut-e2e-password
-  # action_history is DataStorage's hardcoded default database name
-  # (DD-ADR-030 config.yaml), independent of the secret's own naming --
-  # POSTGRES_DB must match it exactly so the postgres:16-alpine container
-  # auto-creates the database DataStorage will actually connect to.
-  POSTGRES_DB: action_history
-  db-secrets.yaml: |
-    username: slm_user
-    password: kubernaut-e2e-password
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: valkey-secret
-  namespace: %[1]s
-type: Opaque
-stringData:
-  valkey-secrets.yaml: |
-    password: ""
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: llm-credentials-primary
-  namespace: %[1]s
-type: Opaque
-stringData:
-  api_key: mock-llm-e2e-key
-`, namespace)
-
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
-		return fmt.Errorf("failed to create Helm chart prerequisite secrets: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Secrets ready")
-	return nil
-}
 
 // fullPipelineSignalProcessingPolicyRego and fullPipelineProactiveSignalMappingsYAML
 // and fullPipelineAIAnalysisPolicyRego mirror EXACTLY the policy content the
@@ -939,14 +827,6 @@ cluster := input.cluster.labels.environment if {
 }
 `
 
-const fullPipelineProactiveSignalMappingsYAML = `# BR-SP-106: Proactive Signal Mode Classification (E2E test config)
-proactive_signal_mappings:
-  PredictedOOMKill: OOMKilled
-  PredictedCPUThrottling: CPUThrottling
-  PredictedDiskPressure: DiskPressure
-  PredictedNodeNotReady: NodeNotReady
-`
-
 const fullPipelineAIAnalysisPolicyRego = `package aianalysis.approval
 import rego.v1
 
@@ -976,343 +856,3 @@ max_risk_score := max(all_scores) if { count(all_scores) > 0 }
 reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
 default reason := "Auto-approved"
 `
-
-// InstallFullPipelineHelmChart runs `helm install` for all 12 chart-managed
-// Full Pipeline services using charts/kubernaut, replacing the manual
-// PostgreSQL/Redis/DataStorage/AuthWebhook/controllers/Gateway/KA/EM/APIFrontend
-// deployment phases. Namespace must already exist (createTestNamespace) and
-// prerequisite Secrets must already be applied (createFullPipelineHelmSecrets).
-//
-// registry/tag: from ensureSharedChartImageTag (always "localhost"/<sharedTag>).
-//
-// fleetOpts, when non-nil (from FleetProvisioner, see SetupFullPipelineInfrastructure),
-// renders global.fleet.* fleet-enabled from this SAME install instead of the
-// chart's own default-disabled state -- DD-TEST-015 "deploy correctly
-// the first time". Nil (FP's default) leaves fleet disabled, identical to
-// pre-refactor behavior.
-func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace, registry, tag string, fleetOpts *FleetHelmOptions, writer io.Writer) error {
-	projectRoot := getProjectRoot()
-	chartPath := filepath.Join(projectRoot, "charts", "kubernaut")
-
-	tmpDir, err := os.MkdirTemp("", "fp-helm-policies-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp dir for policy files: %w", err)
-	}
-	defer func() {
-		if rmErr := os.RemoveAll(tmpDir); rmErr != nil {
-			_, _ = fmt.Fprintf(writer, "⚠️  Failed to clean up temp policy dir %s: %v\n", tmpDir, rmErr)
-		}
-	}()
-
-	spPolicyFile := filepath.Join(tmpDir, "sp-policy.rego")
-	spMappingsFile := filepath.Join(tmpDir, "sp-proactive-mappings.yaml")
-	aaPolicyFile := filepath.Join(tmpDir, "aa-policy.rego")
-	for path, content := range map[string]string{
-		spPolicyFile:   fullPipelineSignalProcessingPolicyRego,
-		spMappingsFile: fullPipelineProactiveSignalMappingsYAML,
-		aaPolicyFile:   fullPipelineAIAnalysisPolicyRego,
-	} {
-		if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
-			return fmt.Errorf("failed to write policy file %s: %w", path, writeErr)
-		}
-	}
-
-	args := []string{
-		"--kubeconfig", kubeconfigPath,
-		"upgrade", "--install", "kubernaut", chartPath,
-		"--namespace", namespace,
-		"--timeout", "8m",
-		// Deliberately no --wait: charts/kubernaut/templates/hooks/migration-job.yaml
-		// is a post-install hook (helm.sh/hook: post-install). Helm's --wait only
-		// waits for the *main* release resources (Deployments) to become ready and
-		// only runs post-install hooks AFTER that wait succeeds -- but DataStorage's
-		// Deployment can never become ready without the migration having already
-		// run (missing tables), which deadlocks --wait until the timeout (confirmed
-		// empirically during Issue #1737 validation). Hooks always block for their
-		// own completion regardless of --wait, so omitting it here still guarantees
-		// the migration Job finishes before this function returns; DataStorage's
-		// own crash-loop-and-retry self-heals once the migration lands, and PHASE 8
-		// (waitForFullPipelineServicesReady) confirms actual readiness afterward.
-		"--set", "global.image.registry=" + registry,
-		"--set", "global.image.namespace=",
-		"--set", "global.image.tag=" + tag,
-		// IfNotPresent (not Never): global.image.pullPolicy also governs the
-		// public postgres/valkey/db-migrate images the chart pulls itself,
-		// which are NOT loaded into Kind and must remain pullable.
-		"--set", "global.image.pullPolicy=IfNotPresent",
-		"--set", "global.llmProfiles.primary.provider=openai_compatible",
-		"--set", "global.llmProfiles.primary.model=mock-model",
-		"--set", "global.llmProfiles.primary.endpoint=http://mock-llm." + namespace + ".svc.cluster.local:8080",
-		"--set", "global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary",
-		// Retain failed execution resources so CI must-gather can collect the
-		// Job/PipelineRun diagnostics after an E2E failure.
-		"--set", "workflowexecution.config.execution.retainFailedExecutions=true",
-		// Keep successful execution Jobs available long enough for full-pipeline
-		// assertions; the WorkflowExecution controller cleans them up after the
-		// cooldown period, not through the Job's native TTL when retention is on.
-		"--set", "workflowexecution.config.execution.cooldownPeriod=10m",
-		// kubernautAgent.llmProfileRef is deliberately NOT set here -- it defaults
-		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
-		// Addendum 2), so this install exercises that default instead of shadowing
-		// it with a redundant override.
-		// MCP interactive mode (#703): no longer a separately settable flag
-		// (DD-PLATFORM-006 Decision Area 11, revised) -- it's derived from
-		// apifrontend.enabled, which this install leaves at its schema default
-		// (true), so KA registers the POST /api/v1/mcp Streamable HTTP handler
-		// with no override needed here. Previously required an explicit
-		// `--set kubernautAgent.interactive.enabled=true` (Issue #1737 gap:
-		// every interactive/mcp-labeled FP E2E spec failed against the
-		// Helm-deployed chart otherwise, since the old default left it off
-		// even with AF enabled).
-		// #1894 gap found via must-gather RCA on E2E-FP-1853-002: the chart's
-		// own default for interactive.rateLimitPerUser is 20 req/s (burst 40,
-		// see _generated_defaults.tpl), never overridden here -- unlike the
-		// raw-manifest KA deployment path (test/infrastructure/
-		// kubernautagent.go, used by the standalone kubernautagent/apifrontend
-		// E2E suites), which was already bumped 20->40 for this exact
-		// symptom by #1853 (commit 3f9a5a102). fullpipeline (and fleet, which
-		// bootstraps from this same helm install) were missed, so every
-		// parallel Ginkgo spec sharing the "e2e-user-sre" JWT identity still
-		// contends for a 20rps/40-burst bucket: confirmed by the KA pod's own
-		// startup log ("rateLimitPerUser":20) and by kubernaut_discover_workflows/
-		// kubernaut_select_workflow failing with 429 "Too Many Requests" mid
-		// MCP-session-pool reuse, which starves kubernaut_watch of a selected
-		// workflow -- the RemediationRequest never reaches a terminal phase,
-		// so watch blocks until the test's 6-minute client timeout fires
-		// ("context deadline exceeded"), well before its own internal
-		// 15-minute maxWatchDuration.
-		//
-		// Round 2 (same RCA, next CI run): bumping to 40 alone did take
-		// effect (confirmed via the KA pod's startup log) but was still
-		// insufficient -- fullpipeline's own kubernaut_select_workflow AND a
-		// concurrent spec's session-pool "ping" both got 429'd again in the
-		// same ~500ms window, just by a smaller margin (~4 requests over an
-		// 80-token burst instead of over a 40-token one). fullpipeline runs
-		// 31 specs across TEST_PROCS Ginkgo processes, each churning
-		// multiple MCP session (re)negotiations under the single shared
-		// "e2e-user-sre" identity -- a materially higher concurrent-MCP-call
-		// footprint than the smaller suites #1853's 40 was tuned against.
-		// Raised to 100 (the schema-enforced ceiling,
-		// internal/kubernautagent/config/config.go's
-		// "rateLimitPerUser must not exceed 100" check), giving a 200-token
-		// burst bucket -- 2.5x the headroom of the 80-token bucket that just
-		// missed by ~4 requests. Test-infra-only knob with zero production
-		// impact (this whole block is E2E chart-install overrides).
-		"--set", "kubernautAgent.interactive.rateLimitPerUser=100",
-		// Gateway/DataStorage/APIFrontend: pinned chart-level NodePort (DD-TEST-001
-		// port allocation: 30080/30081/30443, pre-mapped host-reachable in
-		// kind-fullpipeline-config.yaml's extraPortMappings) + ipBlock ingressCIDRs
-		// to admit that NodePort-sourced traffic through the default-deny
-		// NetworkPolicy (SNAT'd to the node's own IP by kube-proxy, so it matches
-		// no podSelector/namespaceSelector no matter how broadly scoped -- Issue
-		// #1737). This is a production-safe, default-off chart knob (type stays
-		// ClusterIP, nodePort stays 0/unset unless explicitly overridden), not
-		// test-only chart surface: it's the same "type=NodePort + ipBlock" pattern
-		// a real bare-metal/on-prem install with fixed firewall/LB rules would use.
-		"--set", "gateway.service.type=NodePort",
-		"--set", "gateway.service.nodePort=30080",
-		"--set", "datastorage.service.type=NodePort",
-		"--set", "datastorage.service.nodePort=30081",
-		"--set", "apifrontend.service.type=NodePort",
-		"--set", "apifrontend.service.nodePort=30443",
-		// AF OIDC auth (Issue #1737 gap found): the chart mounts apifrontend-tls
-		// but never told AF's own auth middleware about an OIDC provider, so it
-		// always fell back to K8s TokenReview-only mode -- every DEX-token-based
-		// A2A test got 401 regardless of the TLS fix above. issuerURL/jwksURL
-		// match deploy/apifrontend/overlays/e2e/dex.yaml's hardcoded
-		// `issuer: https://dex:5556/dex` (DEX stamps this exact string into the
-		// JWT's iss claim, so it must match verbatim -- not a namespace-qualified
-		// FQDN) and audience matches AF_FP_CLIENT_ID's default
-		// ("kubernaut-apifrontend") in suite_test.go/06_af_audit_trace_test.go.
-		// oidcCaFile trusts DEX's leaf cert, which ensureDexTLSFromChartCA signs
-		// with the chart's own inter-service CA (mounted automatically by the
-		// chart once oidcCaFile is set -- see apifrontend.yaml's tlsCaVolume(Mount)
-		// inclusion). This is the same DEX test double the pre-#1737 Go-native
-		// harness (deployAPIFrontendInFP, Issue #1189) wired up directly; Fleet
-		// E2E is the one using Keycloak, for FMC's token-exchange-dependent OAuth2
-		// flow that these AF auth-middleware tests don't exercise.
-		"--set", "apifrontend.config.auth.oidcCaFile=/etc/tls-ca/ca.crt",
-		// #1999 (BR-SECURITY-1505, DD-PLATFORM-006 DA18): enable the distributed
-		// jti replay cache against the chart's own bundled Valkey so this suite
-		// exercises source-bound replay detection end-to-end against real
-		// infrastructure, not just IT-level httptest wiring. This is the exact
-		// configuration that caused a confirmed production incident pre-fix:
-		// every FP test in this process shares one cached DEX token
-		// (getAFToken(), suite_test.go) across dozens of MCP calls -- with the
-		// old Seen(jti)-only semantics, the SECOND such call in the whole
-		// process would have 401'd as a false-positive replay. Leaving this
-		// enabled for the entire suite (rather than a narrowly-scoped test)
-		// means every existing AF test that reuses getAFToken() now also acts
-		// as an implicit regression check, in addition to the dedicated
-		// 19_af_replay_cache_test.go. tls.enabled=true is required because the
-		// chart's own Valkey is TLS-only by default (DD-PLATFORM-006 DA8);
-		// redisAddr/redisDB/credentialsPath are chart-computed once enabled=true
-		// (apifrontend.yaml), no override needed.
-		"--set", "apifrontend.config.auth.replayCache.enabled=true",
-		"--set", "apifrontend.config.auth.replayCache.tls.enabled=true",
-		// #1839 RCA (must-gather logs, PR #1841 CI): AF's severity-triage
-		// GetAlerts/GetRules calls to Prometheus were consistently timing out
-		// at the 10s Go default (pkg/apifrontend/config.defaultResilienceConfig)
-		// throughout this suite's run, causing kubernaut_remediate to fail
-		// closed with ErrSeverityUndetermined. Raising DeployPrometheus's own
-		// CPU limit (twice, up to a confirmed GOMAXPROCS=3) had zero effect,
-		// and Gateway's audit-store showed the identical symptom against a
-		// completely different service (DataStorage) in the same run --
-		// evidence of broader E2E-environment latency rather than a
-		// Prometheus-specific compute bottleneck. 30s gives real-but-slow
-		// calls enough headroom without masking a truly hung dependency.
-		"--set", "apifrontend.config.resilience.prometheus.requestTimeout=30s",
-		// Setting auth.issuerURL above also activates AF's NetworkPolicy
-		// kubernaut.np.idpEgress egress rule (networkpolicy.yaml), but that rule
-		// defaults to port 443 (values.yaml's networkPolicies.idp.port) -- DEX
-		// listens on 5556, so without this override AF's egress to DEX's JWKS
-		// endpoint is silently dropped by the default-deny NetworkPolicy even
-		// though the OIDC config itself is fully correct (confirmed via AF pod
-		// logs showing "auth mode: OIDC/JWKS" yet still 401ing every DEX-signed
-		// token -- Issue #1737 gap found).
-		// AF LLM egress (Issue #1737 gap found, distinct from the OIDC 401 fix
-		// above): apifrontend.config.agent.llm.endpoint is mandatory AF config
-		// (the A2A launcher agent calls its LLM directly, not just via KA), but
-		// AF's NetworkPolicy egress allowlist never included it -- every A2A
-		// call timed out with a TCP dial timeout once the 401 fix let requests
-		// reach this stage. mock-llm listens on 8080 in-cluster; a real LLM
-		// provider (OpenAI/Vertex AI/etc.) would use the chart's own default of
-		// 443, so this override is E2E-specific, not a chart bug.
-		"--set", "networkPolicies.llm.port=8080",
-		// Kubernaut Agent: same pinned-NodePort + ipBlock pattern as above, for
-		// the MCP interactive-session E2E tests that dial https://localhost:8088
-		// directly (Kind's extraPortMappings maps hostPort 8088 -> containerPort
-		// 30088, per DD-TEST-001). Without this KA stays ClusterIP-only (no
-		// listener on 30088 for Kind to forward to) and every MCP/interactive
-		// spec fails with "connection reset by peer" (Issue #1737 gap found
-		// during first full-suite run against the Helm-deployed chart).
-		"--set", "kubernautAgent.service.type=NodePort",
-		"--set", "kubernautAgent.service.nodePort=30088",
-		"--set", `networkPolicies.gateway.ingressCIDRs[0]=0.0.0.0/0`,
-		"--set", `networkPolicies.datastorage.ingressCIDRs[0]=0.0.0.0/0`,
-		"--set", `networkPolicies.apifrontend.ingressCIDRs[0]=0.0.0.0/0`,
-		"--set", `networkPolicies.kubernautAgent.ingressCIDRs[0]=0.0.0.0/0`,
-		// Event-exporter (Go-managed test infra) lives in the same namespace and
-		// sends signals to Gateway in-cluster; without this the default-deny
-		// NetworkPolicy blocks it (Issue #1737 spike finding).
-		"--set", "networkPolicies.gateway.ingressNamespaces[0]=" + namespace,
-		// Prometheus/AlertManager are Go-managed test infra (chart-external,
-		// ADR-EM-001) deployed into the same namespace by DeployPrometheus/
-		// DeployAlertManager.
-		"--set", "monitoring.prometheus.enabled=true",
-		"--set", "monitoring.prometheus.url=http://prometheus-svc." + namespace + ".svc.cluster.local:9090",
-		"--set", "monitoring.alertManager.enabled=true",
-		"--set", "monitoring.alertManager.url=http://alertmanager-svc." + namespace + ".svc.cluster.local:9093",
-		"--set", "networkPolicies.monitoring.namespace=" + namespace,
-		// EffectivenessAssessment stabilization window (Issue #1737 gap found):
-		// RO stamps this value onto every EA CRD it creates (spec.stabilizationWindow,
-		// see pkg/remediationorchestrator/creator/effectivenessassessment.go); EM's
-		// controller then blocks assessment until this window elapses. The chart's
-		// production default (remediationorchestrator.config.effectivenessAssessment.
-		// stabilizationWindow, values.yaml) is "5m" -- correct for real workloads,
-		// where health/alert/metric signals need time to settle -- but the old
-		// (now-removed) Go-native FP harness's RO ConfigMap
-		// (remediationorchestrator_e2e_hybrid.go) used "10s" specifically for fast
-		// E2E cycles. Without this override every EA blocked for the full 5m
-		// chart default, confirmed via full-suite E2E to add 5-7.5m of pure wait
-		// time to both "Full Remediation Lifecycle" specs (BR-E2E-001) alone. EM's
-		// own config.assessment.{stabilizationWindow,validityWindow} chart defaults
-		// (30s/120s) already match the old Go-native harness's
-		// effectivenessmonitor_e2e.go values verbatim, so no override needed there.
-		"--set", "remediationorchestrator.config.effectivenessAssessment.stabilizationWindow=10s",
-		// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernaut-agent
-		// leaf certs need "localhost" (+ auto-appended IP:127.0.0.1) in their
-		// SAN for host-side E2E clients dialing their chart-pinned NodePorts
-		// ("https://localhost:30081" etc. with full hostname verification --
-		// Issue #785/#1737). Setting this AT INSTALL TIME (hooks.tlsCerts.
-		// extraSANs) bakes it into the ORIGINAL chart-issued certs, replacing
-		// the previous post-install re-sign + 4-deployment rolling-restart
-		// pass (resignHostAccessedTLSCertsWithLocalhostSAN, removed) that was
-		// the deterministic root cause of fleet E2E's PHASE 6 rollout timeouts
-		// (5/5 CI runs failed identically at "gateway ... 1 old replicas are
-		// pending termination" even after raising the wait to 720s -- the
-		// restart's CPU burst on top of fleet's already-heavier Istio/
-		// Kuadrant/Keycloak/kube-mcp-server footprint was the actual
-		// bottleneck, not an insufficient timeout). Zero effect on production
-		// installs: this value defaults to an empty list (values.schema.json).
-		"--set", `hooks.tlsCerts.extraSANs[0]=localhost`,
-		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
-		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
-		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
-	}
-	oidcOptions := OIDCConsoleHelmOptions{
-		IssuerURL: "https://dex:5556/dex",
-		JWKSURL:   "https://dex:5556/dex/keys",
-		Audience:  "kubernaut-apifrontend",
-		IDPPort:   5556,
-	}
-	if fleetOpts != nil {
-		// Fleet provisions Keycloak, not the DEX test double used by the
-		// non-fleet full-pipeline suite. Keep this selection next to the
-		// shared argument appender so AF and Console receive identical OIDC
-		// realm, audience, and JWKS configuration.
-		oidcOptions = keycloakOIDCConsoleHelmOptions(namespace)
-	}
-	args = appendOIDCConsoleHelmArgs(args, oidcOptions)
-
-	// Fleet federation (DD-TEST-015, Issue #54): rendering global.fleet.*
-	// on THIS install (instead of kubectl-patching it in after the fact)
-	// means the chart's own fleet templates -- RBAC, ConfigMap fleet blocks,
-	// oauth2-credentials/inter-service-ca volume mounts -- are the ones
-	// actually exercised by this suite, closing the gap where a regression
-	// in the chart's fleet templating could hide behind the Go harness's own
-	// (now-removed) kubectl patches. fleetmetadatacache.enabled is
-	// deliberately NOT set here: DD-PLATFORM-006 Decision Area 10 derives it
-	// from global.fleet.enabled=true + global.fleet.backend defaulting to
-	// "fleetmetadatacache" (kubernaut.fleetmetadatacache.effectiveEnabled in
-	// _helpers.tpl) -- this install exercises that derivation for real
-	// against a live cluster instead of shadowing it with a redundant
-	// override. FMC does not resolve its image via global.image.* (see
-	// kubernaut.image helper vs. this service's dedicated image.repository/
-	// tag values), so it still needs an explicit override reusing the SAME
-	// registry/tag every other chart-managed service already got above.
-	if fleetOpts != nil {
-		args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)
-		args = append(args,
-			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
-			"--set", "fleetmetadatacache.image.tag="+tag,
-			// #1755 DD-TEST-015 RCA (3rd finding, live PRESERVE_E2E_CLUSTER=true
-			// re-validation): FMC/Gateway/SP/EM/WE/RO's fleet OAuth2 token fetch
-			// all POST to global.fleet.oauth2.tokenURL (Keycloak, :8443 in this
-			// harness -- see fleet_e2e.go's DeployKeycloakInfra), but every one of
-			// those services' kubernaut.np.idpEgress inclusion (just added to
-			// their networkpolicy.yaml templates) defaults to port 443 (values.
-			// yaml's networkPolicies.idp.port) -- this Kind cluster's kindnet
-			// build enforces NetworkPolicy (contrary to this investigation's
-			// earlier assumption otherwise), so every FMC/SP/Gateway
-			// token-fetch TCP SYN to :8443 was silently dropped, confirmed via
-			// `curl --connect-timeout` to both the Service ClusterIP and Pod IP
-			// directly (both time out identically) and via SP's own error log:
-			// `Post "https://keycloak:8443/...": context deadline exceeded`.
-			//
-			// Issue #1782 RCA (E2E-FLEET-016 deterministic 401s): this used to
-			// set networkPolicies.idp.port=8443, clobbering the
-			// networkPolicies.idp.port=5556 override set above for AF/DEX in
-			// the FP suite (same --set key, last one wins) -- since AF alone
-			// needs BOTH: :5556 to validate incoming end-user JWTs against DEX,
-			// and :8443 to fetch its own fleet-MCP OAuth2 token from Keycloak
-			// (apifrontend.fleet-mcp.reloadable-oauth2). Losing the :5556 rule
-			// silently dropped AF's own JWKS-fetch egress to DEX, so every A2A
-			// call 401'd with no diagnostic trail (JWKS-fetch failures are
-			// logged at V(1)/debug, and circuit-breaker trips only update a
-			// metric, never log). Fixed by adding Keycloak's :8443 as an
-			// *additional* port (extraPorts) instead of replacing :5556.
-			"--set", "networkPolicies.idp.extraPorts[0]=8443",
-		)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  🚀 helm install kubernaut charts/kubernaut ...")
-	cmd := exec.CommandContext(ctx, "helm", args...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("helm install failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Helm chart installed (12 chart-managed services + PostgreSQL/Redis)")
-	return nil
-}

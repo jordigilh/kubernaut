@@ -1,0 +1,144 @@
+# Unified SignalProcessing Rego Policy (ADR-060)
+#
+# This single file contains all classification rules for the SignalProcessing controller.
+# The operator qualification harness writes this fixture to an administrator-owned
+# ConfigMap and references it from the user-owned Kubernaut resource. For a direct
+# Kubernetes test setup, create a ConfigMap:
+#   kubectl create configmap signalprocessing-policy --from-file=policy.rego=signalprocessing-policy.rego
+#
+# Input schema (type-safe from Go):
+#   input.namespace.name         string
+#   input.namespace.labels       map[string]string
+#   input.namespace.annotations  map[string]string
+#   input.signal.severity        string
+#   input.signal.type            string
+#   input.signal.source          string
+#   input.signal.labels          map[string]string
+#   input.workload.kind          string
+#   input.workload.name          string
+#   input.workload.labels        map[string]string
+#   input.workload.annotations   map[string]string
+#   input.cluster.labels         map[string]string  # BR-FLEET-003 (#1511), fleet deployments only
+
+package signalprocessing
+
+import rego.v1
+
+# ========== Environment Classification (BR-SP-051-053) ==========
+# Returns: {"environment": string, "source": string}
+# Specific namespace rules take precedence over this concrete catch-all.
+# The value is illustrative: operators should choose a safe environment that
+# reflects their workflow-routing policy. It is not a Go/SP fallback.
+
+default environment := {"environment": "Development", "source": "operator-catch-all"}
+
+# Normalize known tier names to PascalCase for output; pass through other label values (evaluator normalizes at boundary).
+environment := {"environment": env_out, "source": "namespace-labels"} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
+    env != ""
+    env_out := object.get(
+        {"production": "Production", "staging": "Staging", "development": "Development", "test": "Test", "unknown": "Unknown"},
+        lower(env),
+        env,
+    )
+}
+environment := {"environment": "Production", "source": "namespace-labels"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    lower(input.namespace.labels["env"]) == "production"
+}
+environment := {"environment": "Staging", "source": "namespace-labels"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    lower(input.namespace.labels["env"]) == "staging"
+}
+environment := {"environment": "Development", "source": "namespace-labels"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    lower(input.namespace.labels["env"]) == "development"
+}
+
+# ========== Severity Determination (BR-SP-105) ==========
+# Returns: string (critical/high/warning/info/unknown)
+# Maps external monitoring severity values to kubernaut-normalized values (ADR-066).
+# Specific mappings take precedence over this concrete catch-all. The value is
+# illustrative: operators should choose a safe severity for workflow routing.
+# It is a policy result, not an SP/controller fallback.
+
+default severity := "warning"
+
+severity := "critical" if { lower(input.signal.severity) == "critical" }
+severity := "critical" if { lower(input.signal.severity) == "sev1" }
+severity := "critical" if { lower(input.signal.severity) == "p0" }
+severity := "high" if { lower(input.signal.severity) == "high" }
+severity := "high" if { lower(input.signal.severity) == "sev2" }
+severity := "high" if { lower(input.signal.severity) == "p2" }
+severity := "warning" if { lower(input.signal.severity) == "warning" }
+severity := "warning" if { lower(input.signal.severity) == "medium" }
+severity := "warning" if { lower(input.signal.severity) == "sev3" }
+severity := "info" if { lower(input.signal.severity) == "info" }
+severity := "info" if { lower(input.signal.severity) == "low" }
+severity := "info" if { lower(input.signal.severity) == "sev4" }
+
+# ========== Priority Assignment (BR-SP-070) ==========
+# Returns: {"priority": string, "policy_name": string}
+# References `environment` and `severity` rules above -- Rego resolves internally.
+# This concrete catch-all applies when no specific priority rule matches. P3 is
+# illustrative; operators should choose a workflow-routing priority appropriate
+# to their policy. The controller does not supply or substitute this value.
+
+default priority := {"priority": "P3", "policy_name": "operator-catch-all"}
+
+priority := {"priority": "P0", "policy_name": "production-critical"} if {
+    environment.environment == "Production"
+    severity == "critical"
+}
+priority := {"priority": "P1", "policy_name": "production-high"} if {
+    environment.environment == "Production"
+    severity == "high"
+}
+priority := {"priority": "P1", "policy_name": "staging-critical"} if {
+    environment.environment == "Staging"
+    severity == "critical"
+}
+priority := {"priority": "P2", "policy_name": "staging-any"} if {
+    environment.environment == "Staging"
+    severity != "critical"
+}
+
+# ========== Custom Labels (BR-SP-102) ==========
+# Returns: map[string][]string
+# Extract operator-defined labels from namespace metadata.
+# Reserved prefixes ("kubernaut.ai/", "system/") are stripped by Go after evaluation.
+
+default labels := {}
+
+labels := {"team": [team], "tier": [tier]} if {
+    team := input.namespace.labels["kubernaut.ai/team"]
+    tier := input.namespace.labels["kubernaut.ai/tier"]
+    team != ""
+    tier != ""
+}
+
+labels := {"team": [team]} if {
+    team := input.namespace.labels["kubernaut.ai/team"]
+    team != ""
+    not input.namespace.labels["kubernaut.ai/tier"]
+}
+
+# ========== Cluster Classification (BR-FLEET-003, #1511) ==========
+# Returns: string -- the cluster's business classification (e.g. "production").
+# OPTIONAL: only meaningful for fleet (multi-cluster) deployments. `input.cluster.labels`
+# is populated from the MCP Gateway's cluster-registration CRD (EAIGW `Backend` /
+# Kuadrant `MCPServerRegistration`) labels, set by the fleet operator at cluster
+# onboarding time -- NOT from this cluster's own namespace/workload labels.
+#
+# No `default cluster := ...` rule is defined here on purpose: an undefined result
+# (no matching rule, or `input.cluster.labels` absent/empty in non-fleet deployments)
+# is evaluated as "no classification" by the SP controller -- a normal, non-error
+# outcome, unlike `severity` which is mandatory. Add a `default` only if you want a
+# fallback classification for unregistered/unlabeled clusters instead.
+#
+# Example: classify by the fleet onboarding label `environment` set on the
+# cluster's Backend/MCPServerRegistration CR (see the Fleet Onboarding Prerequisite
+# in BR-FLEET-003 for how to apply it).
+cluster := input.cluster.labels.environment if {
+    input.cluster.labels.environment != ""
+}

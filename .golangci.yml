@@ -501,18 +501,24 @@ linters:
           - prealloc
           - revive
         text: "Consider preallocating|argument-limit"
-      # funlen/gocyclo/gocognit/nestif/maintidx: per the plan behind Issue
-      # #1532, these 5 complexity linters apply to production code only.
+      # funlen/gocognit/nestif/maintidx: per the plan behind Issue
+      # #1532, these complexity linters apply to production code and remain
+      # excluded from test helpers for now.
       # Ginkgo BDD test files/suites are long and branchy by nature (table-
       # driven DescribeTable entries, multi-scenario Context/When nesting)
       # and were never in scope for the remediation baseline.
       - path: (_test\.go|^test/)
         linters:
           - funlen
-          - gocyclo
           - gocognit
           - nestif
           - maintidx
+      # gocyclo also applies to non-test helper libraries under test/. Those
+      # helpers orchestrate real cluster/service lifecycles and must not be
+      # hidden behind the BDD-spec exclusion above.
+      - path: _test\.go
+        linters:
+          - gocyclo
       # containedctx: test doubles that embed context.Context to satisfy an
       # interface (e.g. tool.Context, agent.ReadonlyContext fakes) are not the
       # long-lived-context anti-pattern this linter targets. Also covers

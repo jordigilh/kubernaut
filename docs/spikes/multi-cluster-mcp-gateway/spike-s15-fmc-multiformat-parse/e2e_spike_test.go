@@ -35,7 +35,7 @@ func startMCPServer(t *testing.T, listOutput string) *mcp.ClientSession {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start kube-mcp-server: %v", err)
 	}
-	t.Cleanup(func() { cmd.Process.Kill() })
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
 
 	mcpClient := mcp.NewClient(
 		&mcp.Implementation{Name: "fmc-spike-e2e", Version: "v0.0.1"},
@@ -45,7 +45,7 @@ func startMCPServer(t *testing.T, listOutput string) *mcp.ClientSession {
 	if err != nil {
 		t.Fatalf("connect (list_output=%s): %v", listOutput, err)
 	}
-	t.Cleanup(func() { session.Close() })
+	t.Cleanup(func() { _ = session.Close() })
 	return session
 }
 
@@ -96,11 +96,12 @@ func fullPriorityChain(result *mcp.CallToolResult) ([]unstructured.Unstructured,
 	// Determine which format was used
 	format := "unknown"
 	if len(text) > 0 {
-		if text[0] == '{' || text[0] == '[' {
+		switch {
+		case text[0] == '{' || text[0] == '[':
 			format = "json"
-		} else if looksLikeTable(text) {
+		case looksLikeTable(text):
 			format = "table"
-		} else {
+		default:
 			format = "yaml"
 		}
 	}

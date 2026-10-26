@@ -1,17 +1,17 @@
 // Command bind-fleet-af-rbac binds the per-tool kubernaut-tool-<persona>
-// ClusterRoles that `helm install charts/kubernaut` creates for API Frontend
+// ClusterRoles that the Kubernaut Operator creates for API Frontend
 // to the OIDC groups issued by the fleet-core Keycloak realm's
 // "kubernaut-console" client (test/infrastructure/keycloak-realm-demo.json's
 // "sre" group/user).
 //
-// The chart deliberately creates only these ClusterRoles, never the
+// The operator deliberately creates only these ClusterRoles, never the
 // bindings (it can't presume to know a real deployer's IdP group names) --
 // see infrastructure.bindAFPersonaToolClusterRoles's doc comment (Issue
 // #1737). The coarse-grained kubernaut-console-access ClusterRole is NOT
 // handled here: the chart already binds it directly from
-// apifrontend.config.rbac.consoleAccessGroups (default includes "sre"), no
+// the user-applied CR's consoleAccessGroups (default includes "sre"), no
 // manual step needed for that one.
-// Run this once, AFTER `helm install`, against the fleet-core cluster set up
+// Run this once, AFTER the operator bootstrap and Kubernaut CR, against the fleet-core cluster set up
 // by `make setup-e2e-fleet-infra`:
 //
 //	make bind-fleet-af-rbac KUBECONFIG=~/.kube/fleet-e2e-config

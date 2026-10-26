@@ -107,7 +107,7 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 	// Fingerprints use the target identity, not alertname. The caller supplies a
 	// unique target when multiple cases use the same remote cluster.
 	payload := buildPrometheusAlertWithClusterInNamespace(alertName, "high", targetName, targetNamespace, clusterID)
-	body := postFleetAlertUntilAccepted(urlLocalhost30080, payload)
+	body := postFleetAlertUntilAccepted(fleetGatewayURL(), payload)
 
 	var response map[string]interface{}
 	Expect(json.Unmarshal(body, &response)).To(Succeed())

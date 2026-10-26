@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
@@ -144,7 +146,7 @@ var _ = Describe("PrometheusRule manifest", func() {
 })
 
 // ---------------------------------------------------------------------------
-// TC-A-RBAC-01: Tool names in Helm values.yaml personas must match bridge registration
+// TC-A-RBAC-01: Tool names in the operator persona contract must match bridge registration
 // ---------------------------------------------------------------------------
 
 var _ = Describe("RBAC tool name alignment", func() {
@@ -196,26 +198,13 @@ var _ = Describe("RBAC tool name alignment", func() {
 		allKnownTools[k] = v
 	}
 
-	type helmValues struct {
-		Apifrontend struct {
-			Config struct {
-				RBAC struct {
-					Personas map[string][]string `yaml:"personas"`
-				} `yaml:"rbac"`
-			} `yaml:"config"`
-		} `yaml:"apifrontend"`
-	}
-
 	loadPersonas := func() map[string][]string {
-		path := filepath.Join(repoRoot(), "charts", "kubernaut", "values.yaml")
-		raw, err := os.ReadFile(path)
+		personas, err := kinfra.LoadPersonaTools()
 		Expect(err).NotTo(HaveOccurred())
-		var v helmValues
-		Expect(yaml.Unmarshal(raw, &v)).To(Succeed())
-		return v.Apifrontend.Config.RBAC.Personas
+		return personas
 	}
 
-	It("TC-A-RBAC-01a: every tool in Helm persona definitions must exist in bridge or A2A registration", func() {
+	It("TC-A-RBAC-01a: every tool in operator persona definitions must exist in bridge or A2A registration", func() {
 		personas := loadPersonas()
 		for persona, tools := range personas {
 			for _, tool := range tools {
@@ -225,7 +214,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 	})
 
-	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one persona", func() {
+	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one operator persona", func() {
 		personas := loadPersonas()
 		allPersonaTools := map[string]bool{}
 		for _, tools := range personas {
@@ -235,7 +224,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 		for tool := range registeredTools {
 			Expect(allPersonaTools).To(HaveKey(tool),
-				"registered tool %q has no persona assignment in Helm values", tool)
+				"registered tool %q has no persona assignment in operator contract", tool)
 		}
 	})
 
@@ -249,16 +238,20 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 		for tool := range a2aInternalTools {
 			Expect(allPersonaTools).To(HaveKey(tool),
-				"A2A internal tool %q has no persona assignment in Helm values", tool)
+				"A2A internal tool %q has no persona assignment in operator contract", tool)
 		}
 	})
 
-	It("TC-A-RBAC-01c: Helm personas must use kubernaut_present_decision (MCP bridge name)", func() {
-		path := filepath.Join(repoRoot(), "charts", "kubernaut", "values.yaml")
-		raw, err := os.ReadFile(path)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(string(raw)).NotTo(MatchRegexp(`(?m)^\s*-\s+present_decision\s*$`),
-			"Helm values should use 'kubernaut_present_decision' (MCP bridge registration name), not bare 'present_decision'")
+	It("TC-A-RBAC-01c: operator personas must use kubernaut_present_decision (MCP bridge name)", func() {
+		foundCanonicalName := false
+		for persona, tools := range loadPersonas() {
+			Expect(tools).NotTo(ContainElement("present_decision"),
+				"persona %q must not use the bare MCP tool name", persona)
+			if slices.Contains(tools, "kubernaut_present_decision") {
+				foundCanonicalName = true
+			}
+		}
+		Expect(foundCanonicalName).To(BeTrue(), "at least one operator persona must use the registered MCP bridge tool name")
 	})
 })
 
@@ -389,15 +382,6 @@ var _ = Describe("Impersonation ClusterRole manifests", func() {
 		}
 		return false
 	}
-
-	It("UT-AF-1226-030: Helm ClusterRole must not include serviceaccounts in impersonation", func() {
-		path := filepath.Join(repoRoot(), "charts", "kubernaut", "templates", "apifrontend", "apifrontend.yaml")
-		raw, err := os.ReadFile(path)
-		Expect(err).NotTo(HaveOccurred())
-		content := string(raw)
-		Expect(content).NotTo(ContainSubstring("serviceaccounts"),
-			"Helm ClusterRole template must not reference serviceaccounts in impersonation rules")
-	})
 
 	It("UT-AF-1226-031: Deploy base ClusterRole must not include serviceaccounts in impersonation", func() {
 		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "02-rbac.yaml")

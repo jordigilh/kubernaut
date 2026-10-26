@@ -25,6 +25,8 @@ import (
 	"strings"
 )
 
+const kubernautAgentServiceName = "kubernaut-agent"
+
 // IsolatedKubernautAgentConfig describes a KA Deployment that owns only the
 // test namespace's AgentSessions. The shared E2E infrastructure must already
 // provide the referenced ClusterRoles and service endpoints.
@@ -241,7 +243,7 @@ func normalizeIsolatedKubernautAgentConfig(cfg IsolatedKubernautAgentConfig, kub
 		cfg.CAPath = InterServiceCAPath(kubeconfigPath)
 	}
 	if cfg.ServiceName == "" {
-		cfg.ServiceName = "kubernaut-agent"
+		cfg.ServiceName = kubernautAgentServiceName
 	}
 	return cfg
 }

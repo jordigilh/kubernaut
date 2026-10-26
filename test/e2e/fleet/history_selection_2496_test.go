@@ -18,6 +18,7 @@ package fleet
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -212,12 +213,12 @@ func fleetHistoryMetrics2496(targetNS, clusterID string) {
 		"container":                    "workload",
 		infrastructure.ClusterLabelKey: clusterID,
 	}
-	Expect(infrastructure.InjectMetrics(ctx, "http://localhost:9190", []infrastructure.TestMetric{
+	Expect(infrastructure.InjectMetrics(ctx, fleetPrometheusURL(), []infrastructure.TestMetric{
 		{Name: "container_memory_working_set_bytes", Labels: labels, Value: 500_000_000, Timestamp: now.Add(-20 * time.Second)},
 		{Name: "container_memory_working_set_bytes", Labels: labels, Value: 200_000_000, Timestamp: now},
 		{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 100, Timestamp: now.Add(-20 * time.Second), IsCounter: true},
 		{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 110, Timestamp: now, IsCounter: true},
-	})).To(Succeed(), "cluster-scoped EM metrics must be available before the prior lifecycle")
+	}, fleetMonitoringCAPath())).To(Succeed(), "cluster-scoped EM metrics must be available before the prior lifecycle")
 }
 
 func fleetScopedHistory2496(targetNS, origin, hash string) (*ogenclient.RemediationHistoryContext, error) {
@@ -342,8 +343,24 @@ func fleetHistoricalSnapshot2496(ids ...string) string {
 
 func fleetHistoricalSQL2496(sql string) string {
 	GinkgoHelper()
+	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"get", "secret", "postgresql-secret", "-o", "json")
+	secretOut, secretErr := secretCmd.Output()
+	Expect(secretErr).NotTo(HaveOccurred(), "read operator PostgreSQL Secret")
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	Expect(json.Unmarshal(secretOut, &secret)).To(Succeed())
+	decode := func(key string) string {
+		encoded := secret.Data[key]
+		value, err := base64.StdEncoding.DecodeString(encoded)
+		Expect(err).NotTo(HaveOccurred(), "decode PostgreSQL Secret field %s", key)
+		return string(value)
+	}
+	postgresUser := decode("POSTGRES_USER")
+	postgresDatabase := decode("POSTGRES_DB")
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-		"exec", "-i", "deployment/postgresql", "--", "psql", "-U", "slm_user", "-d", "action_history", "-v", "ON_ERROR_STOP=1", "-At")
+		"exec", "-i", "deployment/postgresql", "--", "psql", "-U", postgresUser, "-d", postgresDatabase, "-v", "ON_ERROR_STOP=1", "-At")
 	cmd.Stdin = strings.NewReader(sql)
 	out, err := cmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "isolated historical fixture/query failed: %s", out)

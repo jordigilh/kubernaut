@@ -32,6 +32,8 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+const readyConditionTrue = "True"
+
 // waitForDataStorageReady waits for DataStorage pod to be ready and responsive
 // Pattern: Matches AA E2E waitForDataStorageReady logic
 func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -62,7 +64,7 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 		if len(pods.Items) > 0 {
 			pod := pods.Items[0]
 			for _, cond := range pod.Status.Conditions {
-				if cond.Type == "Ready" && cond.Status == "True" {
+				if cond.Type == "Ready" && cond.Status == readyConditionTrue {
 					_, _ = fmt.Fprintf(writer, "  ✅ DataStorage pod ready: %s\n", pod.Name)
 
 					// Also verify HTTP endpoint is responsive

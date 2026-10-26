@@ -39,7 +39,6 @@ package fullpipeline
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -105,10 +104,9 @@ var (
 	dataStorageClient *ogenclient.Client
 
 	// gatewayBaseURL is the host-reachable base URL for fpPostSignalToGateway
-	// (af_helpers_test.go), via the chart's pinned NodePort (30080, DD-TEST-001,
-	// Issue #1737). Gateway still serves plain HTTP internally (TLS wiring is a
-	// separate, tracked follow-up).
-	gatewayBaseURL string
+	// (af_helpers_test.go), via the test-owned operator NodePort adapter.
+	gatewayBaseURL   string
+	operatorExposure infrastructure.OperatorExposureEvidence
 
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
@@ -158,6 +156,9 @@ var _ = SynchronizedBeforeSuite(
 			ctx, clusterName, tempKubeconfigPath, nil, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Full pipeline infrastructure setup failed")
+		var exposureOK bool
+		operatorExposure, exposureOK = infrastructure.OperatorExposureForKubeconfig(tempKubeconfigPath)
+		Expect(exposureOK).To(BeTrue(), "operator exposure evidence must be recorded")
 		_ = images // builtImages stored locally on process 1 for cleanup
 
 		// Validate workflow catalog was seeded (Phase 6b of infrastructure setup)
@@ -218,11 +219,13 @@ var _ = SynchronizedBeforeSuite(
 		Expect(jsonErr).ToNot(HaveOccurred())
 		remediateNSJSON, nsErr := json.Marshal(remediateNS)
 		Expect(nsErr).ToNot(HaveOccurred())
-		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON)))
+		exposureJSON, exposureErr := json.Marshal(operatorExposure)
+		Expect(exposureErr).ToNot(HaveOccurred())
+		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON), string(exposureJSON)))
 	},
 	// ALL processes: connect to the cluster
 	func(data []byte) {
-		parts := strings.SplitN(string(data), "|", 5)
+		parts := strings.SplitN(string(data), "|", 6)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
@@ -237,6 +240,10 @@ var _ = SynchronizedBeforeSuite(
 		if len(parts) > 4 {
 			Expect(json.Unmarshal([]byte(parts[4]), &fpRemediateNS)).To(Succeed(),
 				"Failed to decode remediate namespaces from Process 1")
+		}
+		if len(parts) > 5 {
+			Expect(json.Unmarshal([]byte(parts[5]), &operatorExposure)).To(Succeed(),
+				"Failed to decode operator exposure evidence from Process 1")
 		}
 
 		ctx, cancel = context.WithCancel(context.TODO())
@@ -274,18 +281,13 @@ var _ = SynchronizedBeforeSuite(
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Gateway/DataStorage/APIFrontend are reached via the chart's pinned
-		// NodePort (DD-TEST-001 v2.8, Issue #1737): gateway/datastorage/
-		// apifrontend.service.{type,nodePort} + networkPolicies.<svc>.
-		// ingressCIDRs=0.0.0.0/0 (both set at `helm install` time in
-		// InstallFullPipelineHelmChart) admit the NodePort-sourced,
-		// SNAT'd-to-node-IP traffic through the otherwise default-deny
-		// NetworkPolicy, and kind-fullpipeline-config.yaml's extraPortMappings
-		// map those exact ports (30080/30081/30443) to the same host ports.
-		gatewayBaseURL = "https://localhost:30080"
+		// Gateway/DataStorage/APIFrontend are reached through the explicit
+		// test-owned NodePort adapters. The operator-owned Services remain
+		// ClusterIP and are never patched.
+		gatewayBaseURL = infrastructure.OperatorExposureURL(operatorExposure, "gateway")
 
 		By("Setting up authenticated DataStorage client (DD-TEST-001 exception, Issue #785: HTTPS)")
-		dataStorageURL := "https://localhost:30081"
+		dataStorageURL := infrastructure.OperatorExposureURL(operatorExposure, "datastorage")
 		tlsBase, tlsCErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
 		Expect(tlsCErr).ToNot(HaveOccurred(), "TLS transport for DataStorage client")
 		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
@@ -297,7 +299,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Setting up API Frontend HTTP client (chart-pinned NodePort, self-signed TLS)")
-		afBaseURL = "https://localhost:30443"
+		afBaseURL = infrastructure.OperatorExposureURL(operatorExposure, "apifrontend")
 		// 06_af_audit_trace_test.go reads this via envOrDefault("AF_FP_BASE_URL", ...)
 		// -- set per-process so its fallback default stays in sync.
 		Expect(os.Setenv("AF_FP_BASE_URL", afBaseURL)).To(Succeed())
@@ -309,12 +311,7 @@ var _ = SynchronizedBeforeSuite(
 		// run of E2E-FP-AF-001 dials a port nothing listens on and self-skips via
 		// "DEX not available" -- a pre-existing bug, not a Helm-migration regression.
 		Expect(os.Setenv("AF_FP_DEX_URL", "https://localhost:30556/dex")).To(Succeed())
-		afHTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed cert
-			},
-			Timeout: 30 * time.Second,
-		}
+		afHTTPClient = &http.Client{Transport: tlsTransport, Timeout: 30 * time.Second}
 
 		GinkgoWriter.Printf("✅ Setup Complete - Process %d ready\n", GinkgoParallelProcess())
 	},
@@ -426,7 +423,7 @@ var _ = SynchronizedAfterSuite(
 		// Clean up all test-created CRs and namespaces so the cluster
 		// is ready for a retry run. Must-gather has already collected logs.
 		if !setupFailed {
-			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
+			infrastructure.CleanupFullPipelineTestResources(context.Background(), kubeconfigPath, GinkgoWriter)
 		}
 
 		// DD-TEST-007: Collect coverage before cluster deletion

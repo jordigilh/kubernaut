@@ -37,8 +37,10 @@ import (
 const (
 	// PrometheusNodePort is the Kind NodePort for Prometheus (DD-TEST-001 v2.8)
 	PrometheusNodePort = 30190
-	// PrometheusHostPort is the host port mapped to the Prometheus NodePort
-	PrometheusHostPort = 9190
+	// Default host ports remain the FullPipeline values. The exported runtime
+	// variables below apply the qualification namespace offset once, so Fleet
+	// helpers transparently address 29190/29193 when its +20000 block is active.
+	prometheusHostPortDefault = 9190
 
 	// AlertManagerNodePort is the Kind NodePort for AlertManager (DD-TEST-001 v3.8).
 	// Moved from 30193 (v2.8) after a "fleet" E2E CI failure ("Service
@@ -64,7 +66,7 @@ const (
 	// Gateway-API-provisioned Service port, or escalating upstream).
 	AlertManagerNodePort = 30191
 	// AlertManagerHostPort is the host port mapped to the AlertManager NodePort
-	AlertManagerHostPort = 9193
+	alertManagerHostPortDefault = 9193
 
 	// PrometheusImage is the official Prometheus container image
 	PrometheusImage = "prom/prometheus:latest"
@@ -92,6 +94,15 @@ const (
 	SkipGatewayRouteLabelKey   = "route_skip_gateway"
 	SkipGatewayRouteLabelValue = "true"
 )
+
+// PrometheusHostPort is the active host port mapped to the Prometheus NodePort.
+// It is computed before tests start, after the launcher has exported any Fleet
+// host-port offset, and keeps existing test callers unchanged.
+var PrometheusHostPort = DemoHostPort(prometheusHostPortDefault)
+
+// AlertManagerHostPort is the active host port mapped to the AlertManager
+// NodePort, with the same qualification offset behavior as PrometheusHostPort.
+var AlertManagerHostPort = DemoHostPort(alertManagerHostPortDefault)
 
 // fleetInteractiveBridgeGroundingRule is loaded by the Go-managed Prometheus
 // that AF queries in the FullPipeline and Fleet E2E suites. The explicit
@@ -186,11 +197,40 @@ func fleetInteractiveBridgeGroundingRule() string {
 //
 // Parameters:
 //   - ctx: Context for cancellation
-//   - namespace: Target namespace (e.g., "kubernaut-system")
+//   - namespace: Target namespace (normally the dedicated "monitoring" namespace)
 //   - kubeconfigPath: Path to kubeconfig for kubectl commands
 //   - writer: Output writer for progress logging
 func DeployPrometheus(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	return deployPrometheus(ctx, namespace, kubeconfigPath, writer, false)
+}
+
+func DeployPrometheusTLS(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	return deployPrometheus(ctx, namespace, kubeconfigPath, writer, true)
+}
+
+func deployPrometheus(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer, tlsEnabled bool) error {
 	_, _ = fmt.Fprintf(writer, "  📊 Deploying Prometheus in namespace %s...\n", namespace)
+	webArgs := ""
+	monitoringMount := ""
+	monitoringVolume := ""
+	probeScheme := ""
+	alertManagerConfig := fmt.Sprintf("        - targets: ['alertmanager-svc.%s.svc.cluster.local:9093']", namespace)
+	if tlsEnabled {
+		webArgs = "\n        - \"--web.config.file=/etc/monitoring-tls/web-config.yml\""
+		monitoringMount = `
+        - name: monitoring-tls
+          mountPath: /etc/monitoring-tls
+          readOnly: true`
+		monitoringVolume = `
+      - name: monitoring-tls
+        secret:
+          secretName: monitoring-tls`
+		probeScheme = "\n             scheme: HTTPS"
+		alertManagerConfig += `
+        scheme: https
+        tls_config:
+          ca_file: /etc/monitoring-tls/ca.crt`
+	}
 
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
@@ -257,7 +297,7 @@ data:
     alerting:
       alertmanagers:
       - static_configs:
-        - targets: ['alertmanager-svc.%[1]s.svc.cluster.local:9093']
+%[5]s
     rule_files:
     - /etc/prometheus/rules/*.yml
 ---
@@ -445,21 +485,23 @@ spec:
         - "--web.enable-otlp-receiver"
         - "--storage.tsdb.retention.time=1h"
         - "--storage.tsdb.min-block-duration=5m"
-        - "--web.listen-address=:9090"
+        - "--web.listen-address=:9090"%[6]s
         ports:
         - containerPort: 9090
           name: http
           protocol: TCP
         readinessProbe:
           httpGet:
-            path: /-/ready
-            port: 9090
+             path: /-/ready
+             port: 9090
+%[9]s
           initialDelaySeconds: 5
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /-/healthy
-            port: 9090
+             path: /-/healthy
+             port: 9090
+%[9]s
           initialDelaySeconds: 10
           periodSeconds: 10
         volumeMounts:
@@ -467,6 +509,7 @@ spec:
           mountPath: /etc/prometheus
         - name: rules
           mountPath: /etc/prometheus/rules
+%[7]s
         resources:
           requests:
             memory: "256Mi"
@@ -501,6 +544,7 @@ spec:
       - name: rules
         configMap:
           name: prometheus-rules
+%[8]s
 ---
 apiVersion: v1
 kind: Service
@@ -517,7 +561,7 @@ spec:
     targetPort: 9090
     nodePort: %[3]d
     protocol: TCP
-`, namespace, PrometheusImage, PrometheusNodePort, fleetInteractiveBridgeGroundingRule())
+`, namespace, PrometheusImage, PrometheusNodePort, fleetInteractiveBridgeGroundingRule(), alertManagerConfig, webArgs, monitoringMount, monitoringVolume, probeScheme)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewBufferString(manifest)
@@ -525,6 +569,14 @@ spec:
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy Prometheus: %w", err)
+	}
+	if tlsEnabled {
+		// Secret updates do not restart Prometheus. Restart the TLS variant so a
+		// rerun cannot keep serving a certificate signed by a previous CA while
+		// the host/client trust bundle has already been regenerated.
+		if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/prometheus", "-n", namespace); err != nil {
+			return fmt.Errorf("restart TLS Prometheus after Secret update: %w", err)
+		}
 	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Prometheus deployed (NodePort %d)\n", PrometheusNodePort)
@@ -568,9 +620,17 @@ spec:
 // carrying label SkipGatewayRouteLabelKey=SkipGatewayRouteLabelValue, which
 // AlertManager instead routes to a null receiver (see route config below).
 func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, false)
+}
+
+func DeployAlertManagerTLS(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, true)
+}
+
+func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer, tlsEnabled bool) error {
 	_, _ = fmt.Fprintf(writer, "  🔔 Deploying AlertManager in namespace %s...\n", namespace)
 
-	manifest := buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken)
+	manifest := buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken, tlsEnabled)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewBufferString(manifest)
@@ -579,6 +639,11 @@ func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 	if err := cmd.Run(); err != nil {
 		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
+	}
+	if tlsEnabled {
+		if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/alertmanager", "-n", namespace); err != nil {
+			return fmt.Errorf("restart TLS AlertManager after Secret update: %w", err)
+		}
 	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ AlertManager deployed (NodePort %d)\n", AlertManagerNodePort)
@@ -592,7 +657,32 @@ func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 // uses gatewayNamespace and not namespace even when they differ (the fleet
 // case this bug was found in). See DeployAlertManager's doc comment for the
 // namespace/gatewayNamespace distinction.
-func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string) string {
+func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string, tlsEnabled ...bool) string {
+	monitoringTLSArgs := ""
+	monitoringTLSMount := ""
+	monitoringTLSVolume := ""
+	monitoringProbeScheme := ""
+	gatewayWebhookURL := fmt.Sprintf("http://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
+	useTLS := true
+	if len(tlsEnabled) > 0 {
+		useTLS = tlsEnabled[0]
+	}
+	if useTLS {
+		monitoringTLSArgs = "\n        - \"--web.config.file=/etc/monitoring-tls/web-config.yml\""
+		monitoringTLSMount = `
+        - name: monitoring-tls
+          mountPath: /etc/monitoring-tls
+          readOnly: true`
+		monitoringTLSVolume = `
+      - name: monitoring-tls
+        secret:
+          secretName: monitoring-tls`
+		monitoringProbeScheme = "\n             scheme: HTTPS"
+		// Operator-managed Gateway serves the application webhook on its
+		// dedicated HTTPS Service port 8443. Port 8080 is the legacy plaintext
+		// application-Helm endpoint and cannot carry the operator TLS listener.
+		gatewayWebhookURL = fmt.Sprintf("https://gateway-service.%s.svc.cluster.local:8443/api/v1/signals/prometheus", gatewayNamespace)
+	}
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
 	webhookAuthYaml := `
           http_config:
@@ -638,7 +728,7 @@ data:
     receivers:
     - name: gateway-webhook
       webhook_configs:
-        - url: 'https://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
+        - url: '%[9]s'
           send_resolved: false`+webhookAuthYaml+`
     - name: null-receiver
 ---
@@ -664,7 +754,7 @@ spec:
         image: %[2]s
         args:
         - "--config.file=/etc/alertmanager/alertmanager.yml"
-        - "--web.listen-address=:9093"
+        - "--web.listen-address=:9093"%[5]s
         - "--log.level=debug"
         ports:
         - containerPort: 9093
@@ -672,14 +762,16 @@ spec:
           protocol: TCP
         readinessProbe:
           httpGet:
-            path: /-/ready
-            port: 9093
+             path: /-/ready
+             port: 9093
+%[8]s
           initialDelaySeconds: 5
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /-/healthy
-            port: 9093
+             path: /-/healthy
+             port: 9093
+%[8]s
           initialDelaySeconds: 10
           periodSeconds: 10
         volumeMounts:
@@ -688,6 +780,7 @@ spec:
         - name: inter-service-ca
           mountPath: /etc/tls-ca
           readOnly: true
+%[6]s
         resources:
           requests:
             memory: "64Mi"
@@ -702,6 +795,7 @@ spec:
       - name: inter-service-ca
         configMap:
           name: inter-service-ca
+%[7]s
 ---
 apiVersion: v1
 kind: Service
@@ -718,7 +812,7 @@ spec:
     targetPort: 9093
     nodePort: %[3]d
     protocol: TCP
-`, namespace, AlertManagerImage, AlertManagerNodePort, gatewayNamespace)
+`, namespace, AlertManagerImage, AlertManagerNodePort, gatewayNamespace, monitoringTLSArgs, monitoringTLSMount, monitoringTLSVolume, monitoringProbeScheme, gatewayWebhookURL)
 }
 
 // dumpNodePortAllocations lists every Service (all namespaces) with its
@@ -787,10 +881,17 @@ func waitForHTTPReady(ctx context.Context, url, serviceName string, timeout time
 // kubelet-cadvisor scrape job has at least one target in "up" state.
 // This detects cadvisor scraping failures early (within seconds of setup)
 // rather than surfacing as a mysterious metrics timeout minutes later in the EM.
-func WaitForPrometheusCadvisorTarget(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForPrometheusCadvisorTarget(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer, caPath ...string) error {
 	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for Prometheus cadvisor scrape target to be UP...\n")
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
+	if len(caPath) > 0 && caPath[0] != "" {
+		var err error
+		client, err = NewMonitoringTLSAwareClient(caPath[0])
+		if err != nil {
+			return err
+		}
+	}
 
 	type targetResult struct {
 		ActiveTargets []struct {
@@ -878,7 +979,7 @@ type TestAlert struct {
 // Parameters:
 //   - amURL: AlertManager base URL (e.g., "http://127.0.0.1:9193")
 //   - alerts: Slice of test alerts to inject
-func InjectAlerts(amURL string, alerts []TestAlert) error {
+func InjectAlerts(amURL string, alerts []TestAlert, caPath ...string) error {
 	type amAlert struct {
 		Labels       map[string]string `json:"labels"`
 		Annotations  map[string]string `json:"annotations,omitempty"`
@@ -924,7 +1025,14 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 		return fmt.Errorf("failed to build POST alerts request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	client := http.DefaultClient
+	if len(caPath) > 0 && caPath[0] != "" {
+		client, err = NewMonitoringTLSAwareClient(caPath[0])
+		if err != nil {
+			return err
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST alerts to AlertManager: %w", err)
 	}
@@ -1033,7 +1141,7 @@ func HasActiveAlerts(amURL string) bool {
 // Parameters:
 //   - promURL: Prometheus base URL (e.g., "http://127.0.0.1:9190")
 //   - metrics: Slice of test metrics to inject
-func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric) error {
+func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric, caPath ...string) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -1103,7 +1211,14 @@ func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric) er
 		return fmt.Errorf("failed to build OTLP metrics request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	client := http.DefaultClient
+	if len(caPath) > 0 && caPath[0] != "" {
+		client, err = NewMonitoringTLSAwareClient(caPath[0])
+		if err != nil {
+			return err
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST OTLP metrics to Prometheus: %w", err)
 	}

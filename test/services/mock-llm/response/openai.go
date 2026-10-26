@@ -171,11 +171,7 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case openai.ToolListAvailableActions:
 		return map[string]interface{}{"limit": 100}
 	case openai.ToolListWorkflows:
-		actionType := cfg.ActionType
-		if actionType == "" {
-			actionType = "remediation"
-		}
-		return map[string]interface{}{"action_type": actionType}
+		return buildListWorkflowsArguments(cfg)
 	case openai.ToolGetWorkflow:
 		return map[string]interface{}{"workflow_id": cfg.WorkflowID}
 	case openai.ToolGetResourceContext:
@@ -183,13 +179,7 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"kind": cfg.ResourceKind, "namespace": cfg.ResourceNS, "name": cfg.ResourceName,
 		}
 	case openai.ToolKubectlGetYAML, openai.ToolKubectlGetByName:
-		args := map[string]interface{}{
-			"kind": cfg.ResourceKind, "name": cfg.ResourceName, "namespace": cfg.ResourceNS,
-		}
-		if cfg.APIGroup != "" {
-			args["api_group"] = cfg.APIGroup
-		}
-		return args
+		return buildKubectlArguments(cfg)
 	case openai.ToolSubmitResult:
 		return rcaOnlyJSON(cfg)
 	case openai.ToolSubmitResultWithWorkflow:
@@ -207,22 +197,42 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case "kubernaut_list_remediations":
 		return map[string]interface{}{"namespace": cfg.ResourceNS}
 	case "kubernaut_remediate":
-		args := map[string]interface{}{
-			"namespace":   cfg.ResourceNS,
-			"kind":        cfg.ResourceKind,
-			"name":        cfg.ResourceName,
-			"description": "Auto-remediation triggered by AI analysis",
-		}
-		if cfg.ClusterID != "" {
-			args["cluster_id"] = cfg.ClusterID
-		}
-		if cfg.APIVersion != "" {
-			args["api_version"] = cfg.APIVersion
-		}
-		return args
+		return buildRemediateArguments(cfg)
 	default:
 		return map[string]interface{}{}
 	}
+}
+
+func buildListWorkflowsArguments(cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	actionType := cfg.ActionType
+	if actionType == "" {
+		actionType = "remediation"
+	}
+	return map[string]interface{}{"action_type": actionType}
+}
+
+func buildKubectlArguments(cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	args := map[string]interface{}{"kind": cfg.ResourceKind, "name": cfg.ResourceName, "namespace": cfg.ResourceNS}
+	if cfg.APIGroup != "" {
+		args["api_group"] = cfg.APIGroup
+	}
+	return args
+}
+
+func buildRemediateArguments(cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	args := map[string]interface{}{
+		"namespace":   cfg.ResourceNS,
+		"kind":        cfg.ResourceKind,
+		"name":        cfg.ResourceName,
+		"description": "Auto-remediation triggered by AI analysis",
+	}
+	if cfg.ClusterID != "" {
+		args["cluster_id"] = cfg.ClusterID
+	}
+	if cfg.APIVersion != "" {
+		args["api_version"] = cfg.APIVersion
+	}
+	return args
 }
 
 // analysisJSON builds a structured response that KA's parser can fully extract.
@@ -399,40 +409,53 @@ func ExtractFieldFromToolResult(messages []openai.Message, toolName, field strin
 	callNamesByID := make(map[string]string)
 	for _, m := range messages {
 		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			pendingCalls = pendingCalls[:0]
-			for _, tc := range m.ToolCalls {
-				callNamesByID[tc.ID] = tc.Function.Name
-				pendingCalls = append(pendingCalls, tc.Function.Name)
-			}
+			pendingCalls = recordPendingToolCalls(m.ToolCalls, callNamesByID, pendingCalls)
 			continue
 		}
-		if m.Role == "tool" && m.Content != nil && (m.ToolCallID != "" || len(pendingCalls) > 0) {
-			callName := callNamesByID[m.ToolCallID]
-			if m.ToolCallID == "" {
-				if len(pendingCalls) == 0 {
-					continue
-				}
-				callName = pendingCalls[0]
-				pendingCalls = pendingCalls[1:]
-			}
-			if callName != toolName {
-				continue
-			}
-			content := *m.Content
-			idx := strings.Index(content, "{")
-			if idx < 0 {
-				continue
-			}
-			var obj map[string]interface{}
-			if err := json.Unmarshal([]byte(content[idx:]), &obj); err != nil {
-				continue
-			}
-			if val, ok := obj[field]; ok {
-				if s, ok := val.(string); ok {
-					return s
-				}
-			}
+		callName, remaining, ok := resolvePendingToolCall(m, pendingCalls, callNamesByID)
+		pendingCalls = remaining
+		if !ok || callName != toolName {
+			continue
+		}
+		if value := extractStringField(*m.Content, field); value != "" {
+			return value
 		}
 	}
 	return ""
+}
+
+func recordPendingToolCalls(toolCalls []openai.ToolCall, callNamesByID map[string]string, pending []string) []string {
+	pending = pending[:0]
+	for _, tc := range toolCalls {
+		callNamesByID[tc.ID] = tc.Function.Name
+		pending = append(pending, tc.Function.Name)
+	}
+	return pending
+}
+
+func resolvePendingToolCall(message openai.Message, pending []string, namesByID map[string]string) (string, []string, bool) {
+	if message.Role != "tool" || message.Content == nil || (message.ToolCallID == "" && len(pending) == 0) {
+		return "", pending, false
+	}
+	if message.ToolCallID != "" {
+		return namesByID[message.ToolCallID], pending, true
+	}
+	callName := pending[0]
+	return callName, pending[1:], true
+}
+
+func extractStringField(content, field string) string {
+	idx := strings.Index(content, "{")
+	if idx < 0 {
+		return ""
+	}
+	var object map[string]interface{}
+	if err := json.Unmarshal([]byte(content[idx:]), &object); err != nil {
+		return ""
+	}
+	value, ok := object[field].(string)
+	if !ok {
+		return ""
+	}
+	return value
 }

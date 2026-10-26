@@ -32,6 +32,7 @@ type MappingFile struct {
 	Mappings []Mapping `yaml:"mappings"`
 }
 
+//nolint:funlen,gocognit,gocyclo // Validation CLI keeps the ordered report stages together.
 func main() {
 	repoRoot := "."
 	if len(os.Args) > 1 {
@@ -139,6 +140,8 @@ func main() {
 
 // extractAllCRDEnums parses all CRD YAMLs and returns enum values keyed by
 // "filename:json.path".
+//
+//nolint:gocognit,gocyclo,nestif // Recursive schema traversal is intentionally explicit.
 func extractAllCRDEnums(dir string) (map[string][]string, error) {
 	result := make(map[string][]string)
 
@@ -233,6 +236,8 @@ func walkCRDProperties(node interface{}, path string, filename string, result ma
 
 // collectEnum extracts enum values from a field map, handling both direct enum
 // and allOf-wrapped enum patterns (controller-gen emits allOf for shared types).
+//
+//nolint:gocognit,nestif // Handles controller-gen's direct and allOf enum shapes.
 func collectEnum(fieldMap map[string]interface{}, filename, path string, result map[string][]string) {
 	if enumVal, exists := fieldMap["enum"]; exists {
 		if vals := toStringSlice(enumVal); vals != nil {
@@ -295,6 +300,7 @@ func extractOpenAPIEnums(path string) (map[string][]string, error) {
 	return result, nil
 }
 
+//nolint:gocognit,nestif // Recursively walks nested OpenAPI properties and items.
 func walkOpenAPIProperties(node interface{}, prefix string, result map[string][]string) {
 	propsMap, ok := node.(map[string]interface{})
 	if !ok {

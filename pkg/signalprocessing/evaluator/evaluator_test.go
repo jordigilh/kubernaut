@@ -177,7 +177,7 @@ default labels := {}
 			Entry("production namespace", map[string]string{"env": "production"}, signalprocessingv1alpha1.EnvironmentProduction, "namespace-labels"),
 			Entry("staging namespace", map[string]string{"env": "staging"}, signalprocessingv1alpha1.EnvironmentStaging, "namespace-labels"),
 			Entry("development namespace", map[string]string{"env": "development"}, signalprocessingv1alpha1.EnvironmentDevelopment, "namespace-labels"),
-Entry("unmatched namespace (concrete operator catch-all)", map[string]string{}, signalprocessingv1alpha1.EnvironmentDevelopment, "operator-catch-all"),
+			Entry("unmatched namespace (concrete operator catch-all)", map[string]string{}, signalprocessingv1alpha1.EnvironmentDevelopment, "operator-catch-all"),
 		)
 
 		It("should fail when policy not loaded", func() {
@@ -218,8 +218,8 @@ Entry("unmatched namespace (concrete operator catch-all)", map[string]string{}, 
 	})
 
 	Describe("Issue #2467: required classifications fail closed", func() {
-		It("UT-SP-2467-001: evaluates the chart example's concrete operator catch-alls", func() {
-			policy, err := os.ReadFile("../../../charts/kubernaut/examples/signalprocessing-policy.rego")
+		It("UT-SP-2467-001: evaluates the operator qualification fixture's concrete operator catch-alls", func() {
+			policy, err := os.ReadFile("../../../test/fixtures/signalprocessing-policy.rego")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.ToLower(string(policy))).To(ContainSubstring("catch-all"),
 				"the example must explain its operator-owned catch-all behavior")

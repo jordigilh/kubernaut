@@ -215,14 +215,9 @@ The Data Storage service requires an RSA 2048-bit signing certificate (`tls.crt`
 
 ### Resolution
 
-1. **Regenerate the certificate** (Helm environments):
-   The `tls-cert-job` Helm hook automatically generates a new RSA 2048-bit certificate if the secret is missing or within 30 days of expiry. Force regeneration:
-   ```bash
-   kubectl delete secret datastorage-signing-cert -n kubernaut-system
-   helm upgrade kubernaut charts/kubernaut -n kubernaut-system
-   ```
-
-2. **Production (operator)**: Follow the operator's cert rotation procedure. The operator manages certificate lifecycle via cert-manager ([#84](https://github.com/jordigilh/kubernaut-operator/issues/84)).
+1. **Operator-managed deployment**: Follow the operator's certificate rotation procedure.
+   The operator manages certificate lifecycle via cert-manager
+   ([#84](https://github.com/jordigilh/kubernaut-operator/issues/84)).
 
 ### Important Notes
 

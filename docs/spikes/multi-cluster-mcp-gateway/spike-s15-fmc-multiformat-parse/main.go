@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+//nolint:gocritic // This standalone spike exits immediately on setup failures.
 func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("usage: fmc-spike <table|yaml>")
@@ -21,6 +22,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	//nolint:gosec // The spike intentionally invokes its fixed local test binary.
 	cmd := exec.CommandContext(ctx, "/tmp/kube-mcp-server",
 		"--list-output", listOutput,
 		"--log-level", "0",
@@ -40,7 +42,7 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("start kube-mcp-server: %v", err)
 	}
-	defer cmd.Process.Kill()
+	defer func() { _ = cmd.Process.Kill() }()
 
 	mcpClient := mcp.NewClient(
 		&mcp.Implementation{Name: "fmc-spike", Version: "v0.0.1"},
@@ -56,7 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect: %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	// Test 1: Namespaced resource (Deployment) with label selector
 	fmt.Printf("\n=== %s: Deployment (namespaced, labelSelector=kubernaut.ai/managed=true) ===\n", listOutput)

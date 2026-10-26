@@ -405,38 +405,8 @@ fi
 
 	// Step 4: Wait for the launcher's SIGUSR1 handler to flush .coverage file.
 	// The handler calls cov.stop() + cov.save() and keeps the process running.
-	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
 	covPath := "/coverdata/.coverage"
-	const maxPollIterations = 20
-	for i := 0; i < maxPollIterations; i++ {
-		time.Sleep(1 * time.Second)
-		checkCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
-			"exec", "-n", opts.Namespace, podName, "--",
-			"sh", "-c", fmt.Sprintf("test -f %s && stat -c '%%s' %s 2>/dev/null || echo 'not_found'", covPath, covPath))
-		checkOutput, checkErr := checkCmd.CombinedOutput()
-		result := string(checkOutput)
-		if checkErr != nil {
-			// Pod may have terminated (container restarted or deleted)
-			// This is expected: after double-wait, bash exits → container terminates.
-			// The .coverage file should be on the hostPath volume - try kubectl cp or fallback.
-			_, _ = fmt.Fprintf(writer, "   Pod no longer responding (iteration %d), proceeding to extract\n", i+1)
-			break
-		}
-		if result != "" && result != "not_found\n" && result != "not_found" {
-			_, _ = fmt.Fprintf(writer, "   ✅ .coverage file detected (%s bytes) after %ds\n", strings.TrimSpace(result), i+1)
-			break
-		}
-		if i == maxPollIterations-1 {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  .coverage not detected after %ds\n", maxPollIterations)
-			// Final diagnostic: check if Python process is still running
-			psCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
-				"exec", "-n", opts.Namespace, podName, "--",
-				"sh", "-c", "ps aux 2>/dev/null || echo 'ps not available'")
-			if psOutput, psErr := psCmd.CombinedOutput(); psErr == nil {
-				_, _ = fmt.Fprintf(writer, "   Process state:\n%s\n", psOutput)
-			}
-		}
-	}
+	waitForPythonCoverageFlush(opts, podName, writer)
 
 	// Step 5: kubectl cp the .coverage file from the pod
 	_, _ = fmt.Fprintln(writer, "📦 Extracting .coverage via kubectl cp...")
@@ -473,6 +443,35 @@ fi
 	_, _ = fmt.Fprintf(writer, "✅ Python coverage report written to %s\n", outputFile)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 	return nil
+}
+
+func waitForPythonCoverageFlush(opts E2EPythonCoverageOptions, podName string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
+	const maxPollIterations = 20
+	for i := 0; i < maxPollIterations; i++ {
+		time.Sleep(time.Second)
+		checkCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
+			"exec", "-n", opts.Namespace, podName, "--", "sh", "-c",
+			"test -f /coverdata/.coverage && stat -c '%s' /coverdata/.coverage 2>/dev/null || echo 'not_found'")
+		checkOutput, checkErr := checkCmd.CombinedOutput()
+		result := string(checkOutput)
+		if checkErr != nil {
+			_, _ = fmt.Fprintf(writer, "   Pod no longer responding (iteration %d), proceeding to extract\n", i+1)
+			return
+		}
+		if result != "" && result != "not_found\n" && result != "not_found" {
+			_, _ = fmt.Fprintf(writer, "   ✅ .coverage file detected (%s bytes) after %ds\n", strings.TrimSpace(result), i+1)
+			return
+		}
+		if i == maxPollIterations-1 {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  .coverage not detected after %ds\n", maxPollIterations)
+			psCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
+				"exec", "-n", opts.Namespace, podName, "--", "sh", "-c", "ps aux 2>/dev/null || echo 'ps not available'")
+			if psOutput, psErr := psCmd.CombinedOutput(); psErr == nil {
+				_, _ = fmt.Fprintf(writer, "   Process state:\n%s\n", psOutput)
+			}
+		}
+	}
 }
 
 // collectPythonCoverageFallback uses the original Kind node extraction as a fallback.

@@ -59,33 +59,8 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 
 	// Apply overrides if provided
 	if len(opts) > 0 {
-		opt := opts[0]
-		if opt.SignalFingerprint != "" {
-			fingerprint = opt.SignalFingerprint
-		}
-		if opt.SignalName != "" {
-			signalName = opt.SignalName
-		}
-		if opt.Severity != "" {
-			severity = opt.Severity
-		}
-		// NOTE: Environment and Priority overrides removed per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
-		if opt.SignalType != "" {
-			signalType = opt.SignalType
-		}
-		if opt.TargetKind != "" {
-			targetKind = opt.TargetKind
-		}
-		if opt.TargetName != "" {
-			targetName = opt.TargetName
-		}
-		// TargetNamespace: explicitly set (even to empty for cluster-scoped)
-		if opt.TargetNamespace != "" {
-			targetNamespace = opt.TargetNamespace
-		} else if opt.TargetKind == "Node" || opt.TargetKind == "PersistentVolume" || opt.TargetKind == "ClusterRole" {
-			// Cluster-scoped resources have no namespace
-			targetNamespace = ""
-		}
+		fingerprint, signalName, severity, signalType, targetKind, targetName, targetNamespace = applyRemediationOverrides(
+			fingerprint, signalName, severity, signalType, targetKind, targetName, targetNamespace, opts[0])
 	}
 
 	rr := &remediationv1.RemediationRequest{
@@ -133,6 +108,42 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	}
 
 	return rr
+}
+
+func applyRemediationOverrides(fingerprint, signalName, severity, signalType, targetKind, targetName, targetNamespace string, opt RemediationRequestOpts) (string, string, string, string, string, string, string) {
+	if opt.SignalFingerprint != "" {
+		fingerprint = opt.SignalFingerprint
+	}
+	if opt.SignalName != "" {
+		signalName = opt.SignalName
+	}
+	if opt.Severity != "" {
+		severity = opt.Severity
+	}
+	if opt.SignalType != "" {
+		signalType = opt.SignalType
+	}
+	if opt.TargetKind != "" {
+		targetKind = opt.TargetKind
+	}
+	if opt.TargetName != "" {
+		targetName = opt.TargetName
+	}
+	if opt.TargetNamespace != "" {
+		targetNamespace = opt.TargetNamespace
+	} else if isClusterScopedRemediationKind(opt.TargetKind) {
+		targetNamespace = ""
+	}
+	return fingerprint, signalName, severity, signalType, targetKind, targetName, targetNamespace
+}
+
+func isClusterScopedRemediationKind(kind string) bool {
+	switch kind {
+	case "Node", "PersistentVolume", "ClusterRole":
+		return true
+	default:
+		return false
+	}
 }
 
 // ============================================================================

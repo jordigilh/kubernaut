@@ -19,35 +19,24 @@ package infrastructure
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("GitOps smoke LLM credentials", func() {
-	It("UT-INFRA-CI-2390-001 [BR-PLATFORM-008]: provisions the chart's mounted credential key", func() {
+var _ = Describe("operator qualification workflow credentials", func() {
+	It("UT-INFRA-CI-2390-001 [BR-PLATFORM-008]: uses operator qualification without application-chart jobs", func() {
 		workflowPath := filepath.Join(getProjectRoot(), ".github", "workflows", "ci-pipeline.yml")
 		workflow, err := os.ReadFile(workflowPath) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-
-		const (
-			startMarker = "Provision GitOps prerequisite namespace and secrets"
-			endMarker   = "Create ArgoCD Application"
-		)
-		start := strings.Index(string(workflow), startMarker)
-		Expect(start).To(BeNumerically(">=", 0))
-		if start < 0 {
-			return
-		}
-		endOffset := strings.Index(string(workflow[start:]), endMarker)
-		Expect(endOffset).To(BeNumerically(">=", 0))
-		if endOffset < 0 {
-			return
-		}
-
-		provisioningStep := string(workflow[start : start+endOffset])
-		Expect(provisioningStep).To(ContainSubstring("--from-literal=api_key=sk-gitops-smoke-placeholder"))
-		Expect(provisioningStep).NotTo(ContainSubstring("--from-literal=OPENAI_API_KEY="))
+		body := string(workflow)
+		Expect(body).To(ContainSubstring("build-operator:"))
+		Expect(body).To(ContainSubstring("KUBERNAUT_OPERATOR_IMAGE"))
+		Expect(body).To(ContainSubstring("KUBERNAUT_OPERATOR_CHART_PATH"))
+		Expect(body).To(ContainSubstring("KUBERNAUT_DEPENDENCY_CHART_PATH"))
+		Expect(body).NotTo(ContainSubstring("deprecated-chart-validation:"))
+		Expect(body).NotTo(ContainSubstring("helm-unittest"))
+		Expect(body).NotTo(ContainSubstring("Create ArgoCD Application"))
+		Expect(body).NotTo(ContainSubstring("--from-literal=OPENAI_API_KEY="))
 	})
 })

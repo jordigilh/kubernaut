@@ -44,6 +44,9 @@ import (
 
 // Gateway E2E service ports (DD-TEST-001 port allocation strategy)
 const (
+	containerRuntimePodman = "podman"
+	containerRuntimeDocker = "docker"
+
 	GatewayE2EHostPort     = 8080  // Gateway API (NodePort 30080 → host port 8080)
 	GatewayE2EHealthPort   = 28080 // Gateway health (NodePort 30180 → host port 28080) -- Issue #753
 	GatewayE2EMetricsPort  = 9090  // Gateway metrics (NodePort 30090 → host port 9090)
@@ -98,79 +101,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		}
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images in PARALLEL (BEFORE cluster creation)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel (NO CLUSTER YET)...")
-	_, _ = fmt.Fprintln(writer, "  ├── Gateway image (direct podman build)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes")
-
-	type buildResult struct {
-		name      string
-		imageName string
-		err       error
+	gatewayImageName, dataStorageImageName, err := buildGatewayImages(ctx, enableCoverage, writer)
+	if err != nil {
+		return err
 	}
-
-	buildResults := make(chan buildResult, 2)
-
-	// Build Gateway image using standardized BuildImageForKind (with registry pull fallback)
-	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "gateway",
-			ImageName:        "gateway", // No repo prefix, just service name
-			DockerfilePath:   "docker/gateway.Dockerfile",
-			BuildContextPath: "", // Empty = project root
-			EnableCoverage:   enableCoverage,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		if err != nil {
-			err = fmt.Errorf("gateway image build failed: %w", err)
-		}
-		buildResults <- buildResult{name: "Gateway", imageName: imageName, err: err}
-	}()
-
-	// Build DataStorage image using new split API
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "",             // Empty = project root
-			EnableCoverage:   enableCoverage, // Use parameter instead of env var
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		if err != nil {
-			err = fmt.Errorf("DS image build failed: %w", err)
-		}
-		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
-	}()
-
-	// Collect build results
-	var gatewayImageName, dataStorageImageName string
-	var buildErrors []string
-	for i := 0; i < 2; i++ {
-		r := <-buildResults
-		if r.err != nil {
-			buildErrors = append(buildErrors, fmt.Sprintf("%s: %v", r.name, r.err))
-			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", r.name, r.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", r.name)
-			switch r.name {
-			case "DataStorage":
-				dataStorageImageName = r.imageName
-			case "Gateway":
-				gatewayImageName = r.imageName
-			}
-		}
-	}
-
-	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %s", strings.Join(buildErrors, "; "))
-	}
-
-	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster + CRDs + namespace (images ready, no idle time)
@@ -215,155 +149,12 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	_, _ = fmt.Fprintln(writer, "✅ Kind cluster ready!")
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load images + Deploy infrastructure in PARALLEL
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading images + Deploying infrastructure...")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading Gateway image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
-	_, _ = fmt.Fprintln(writer, "  ├── Pre-loading third-party images (postgres, redis)")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
-
-	type result struct {
-		name string
-		err  error
+	if err := loadAndDeployGatewayDependencies(ctx, clusterName, namespace, kubeconfigPath, gatewayImageName, dataStorageImageName, writer); err != nil {
+		return err
 	}
 
-	results := make(chan result, 4)
-
-	// Goroutine 1: Load Gateway image (FIXED: Now uses split API!)
-	go func() {
-		err := loadGatewayImageToKind(ctx, gatewayImageName, clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("gateway image load failed: %w", err)
-		}
-		results <- result{name: "Gateway image", err: err}
-	}()
-
-	// Goroutine 2: Load DataStorage image using new split API
-	go func() {
-		err := LoadImageToKind(ctx, dataStorageImageName, "datastorage", clusterName, writer)
-		if err != nil {
-			err = fmt.Errorf("ds image load failed: %w", err)
-		}
-		results <- result{name: "DataStorage image", err: err}
-	}()
-
-	// Goroutine 3: Pre-load third-party images into Kind to avoid Docker Hub
-	// rate-limit / slow-pull timeouts during pod startup in CI.
-	go func() {
-		thirdPartyImages := []string{
-			"docker.io/library/postgres:16-alpine",
-			"quay.io/jordigilh/redis:7-alpine",
-		}
-		for _, img := range thirdPartyImages {
-			if err := PreloadExternalImage(ctx, img, clusterName, writer); err != nil {
-				results <- result{name: "Third-party images", err: fmt.Errorf("preload %s: %w", img, err)}
-				return
-			}
-		}
-		results <- result{name: "Third-party images", err: nil}
-	}()
-
-	// Goroutine 4: Deploy PostgreSQL and Redis (kubectl apply; pods will start
-	// pulling images which are now cached thanks to goroutine 3)
-	go func() {
-		var err error
-		if pgErr := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); pgErr != nil {
-			err = fmt.Errorf("postgresql deploy failed: %w", pgErr)
-		} else if redisErr := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); redisErr != nil {
-			err = fmt.Errorf("redis deploy failed: %w", redisErr)
-		}
-		results <- result{name: "PostgreSQL+Redis", err: err}
-	}()
-
-	// Wait for all goroutines
-	var errors []string
-	for i := 0; i < 4; i++ {
-		r := <-results
-		if r.err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("parallel load/deploy failed: %s", strings.Join(errors, "; "))
-	}
-
-	_, _ = fmt.Fprintln(writer, "✅ Images loaded + Infrastructure deployed!")
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Apply migrations + Deploy DataStorage (requires PostgreSQL)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Applying migrations + Deploying DataStorage...")
-
-	// 4a. Apply database migrations
-	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
-	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to apply migrations: %w", err)
-	}
-
-	// 4b. Deploy client ClusterRole for SAR permissions (DD-AUTH-014)
-	// This enables Gateway ServiceAccount to pass SAR checks when calling DataStorage
-	_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
-	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
-	}
-
-	// 4c. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
-	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
-	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy service RBAC: %w", err)
-	}
-
-	// 4c2. Create RoleBinding for Gateway ServiceAccount to access DataStorage (DD-AUTH-014)
-	// This grants Gateway pod permission to emit audit events to DataStorage
-	// Without this, Gateway's audit client will get 403 Forbidden from DataStorage middleware
-	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for Gateway → DataStorage access (DD-AUTH-014)...\n")
-	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "gateway", writer); err != nil {
-		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
-	}
-
-	// 4c3. Issue #785: Generate inter-service TLS certificates (ECDSA P-256)
-	// Must be BEFORE service deployments so Secrets/ConfigMap exist when pods start.
-	_, _ = fmt.Fprintf(writer, "🔐 Generating inter-service TLS certificates (Issue #785)...\n")
-	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
-	}
-
-	// AU-9: Generate RSA signing certificate for audit exports
-	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate signing certificate: %w", err)
-	}
-
-	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
-	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
-		return fmt.Errorf("failed to deploy DataStorage: %w", err)
-	}
-
-	// 4e. Wait for DataStorage Service DNS + endpoints (Gateway dependency)
-	// Root cause: Gateway starts → tries to emit audit events → "no such host" DNS errors
-	// Pattern: DataStorage E2E (test/infrastructure/datastorage.go:waitForDataStorageServicesReady)
-	// This function waits for:
-	// 1. Pod Running + Ready
-	// 2. Service endpoints populated
-	// 3. Internal cluster DNS resolution working
-	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage Service readiness (pod + endpoints + DNS)...\n")
-	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("DataStorage readiness check failed: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
-
-	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
-	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
-	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
-	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to seed action types: %w", err)
+	if err := deployGatewayDataStorage(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
+		return err
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -395,6 +186,139 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintf(writer, "  • DataStorage: https://localhost:%d (TLS, NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	return nil
+}
+
+func deployGatewayDataStorage(ctx context.Context, namespace, kubeconfigPath, image string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Applying migrations + Deploying DataStorage...")
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "gateway", writer); err != nil {
+		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
+	}
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, image, writer); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage readiness check failed: %w", err)
+	}
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+	return nil
+}
+
+func buildGatewayImages(ctx context.Context, enableCoverage bool, writer io.Writer) (string, string, error) {
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel (NO CLUSTER YET)...")
+	_, _ = fmt.Fprintln(writer, "  ├── Gateway image (direct podman build)\n  └── DataStorage image (with dynamic tag)")
+	results := make(chan struct {
+		name  string
+		image string
+		err   error
+	}, 2)
+	configs := []E2EImageConfig{{ServiceName: "gateway", ImageName: "gateway", DockerfilePath: "docker/gateway.Dockerfile", EnableCoverage: enableCoverage}, {ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile", EnableCoverage: enableCoverage}}
+	for _, cfg := range configs {
+		cfg := cfg
+		go func() {
+			image, err := BuildImageForKind(ctx, cfg, writer)
+			if err != nil {
+				err = fmt.Errorf("%s image build failed: %w", cfg.ServiceName, err)
+			}
+			results <- struct {
+				name  string
+				image string
+				err   error
+			}{cfg.ServiceName, image, err}
+		}()
+	}
+	images := make(map[string]string, 2)
+	var errs []string
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", result.name, result.err))
+			continue
+		}
+		images[result.name] = result.image
+		_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+	}
+	if len(errs) > 0 {
+		return "", "", fmt.Errorf("image builds failed: %s", strings.Join(errs, "; "))
+	}
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	return images["gateway"], images["datastorage"], nil
+}
+
+func loadAndDeployGatewayDependencies(ctx context.Context, clusterName, namespace, kubeconfigPath, gatewayImage, dataStorageImage string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading images + Deploying infrastructure...")
+	results := make(chan struct {
+		name string
+		err  error
+	}, 4)
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"Gateway image", loadGatewayImageToKind(ctx, gatewayImage, clusterName, writer)}
+	}()
+	go func() {
+		results <- struct {
+			name string
+			err  error
+		}{"DataStorage image", LoadImageToKind(ctx, dataStorageImage, "datastorage", clusterName, writer)}
+	}()
+	go func() {
+		for _, image := range []string{"docker.io/library/postgres:16-alpine", "quay.io/jordigilh/redis:7-alpine"} {
+			if err := PreloadExternalImage(ctx, image, clusterName, writer); err != nil {
+				results <- struct {
+					name string
+					err  error
+				}{"Third-party images", fmt.Errorf("preload %s: %w", image, err)}
+				return
+			}
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"Third-party images", nil}
+	}()
+	go func() {
+		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
+		if err == nil {
+			err = deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL+Redis", err}
+	}()
+	var errs []string
+	for range 4 {
+		result := <-results
+		if result.err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", result.name, result.err))
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", result.name, result.err)
+			continue
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", result.name)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("parallel load/deploy failed: %s", strings.Join(errs, "; "))
+	}
+	_, _ = fmt.Fprintln(writer, "✅ Images loaded + Infrastructure deployed!")
 	return nil
 }
 
@@ -1184,9 +1108,9 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 		return fmt.Errorf("gateway Dockerfile not found at %s", dockerfilePath)
 	}
 
-	containerCmd := "podman"
-	if _, err := exec.LookPath("podman"); err != nil {
-		containerCmd = "docker"
+	containerCmd := containerRuntimePodman
+	if _, err := exec.LookPath(containerRuntimePodman); err != nil {
+		containerCmd = containerRuntimeDocker
 	}
 
 	// Use unique image tag with coverage suffix
@@ -1225,7 +1149,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	imageName := GetGatewayCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), containerRuntimePodman, "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -1252,7 +1176,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), containerRuntimePodman, "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {

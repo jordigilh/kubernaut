@@ -1,4 +1,0 @@
-# Optional fleet-demo dependency overrides.
-# Built-in defaults remain in the Go infrastructure code when this file is omitted.
-envoyGatewayVersion: v1.9.2
-agentRouterVersion: v1.2.0

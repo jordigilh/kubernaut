@@ -65,9 +65,6 @@ import (
 // alert masks the real resolution (alerts case).
 var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fleet cluster collision (BR-EM-002, BR-EM-003, BR-FLEET-054, DD-EM-005 v1.3, Issue #2274)", Label("fleet"), func() {
 	const (
-		prometheusURL   = "http://localhost:9190"
-		alertManagerURL = "http://localhost:9193"
-
 		// matchingClusterID is the fleet cluster identity the EA under test
 		// claims to belong to (ea.Spec.ClusterID). It doesn't need to be one
 		// of the suite's real MCP-registered identities (remote-cluster/
@@ -188,6 +185,8 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 	// E2E-FLEET-019a: Metrics collision (BR-EM-003)
 	// ========================================================================
 	It("E2E-FLEET-019a: cluster-scoped PromQL prevents blending memory readings across colliding fleet clusters", func() {
+		prometheusURL := fleetPrometheusURL()
+		monitoringCAPath := fleetMonitoringCAPath()
 		targetNS := uniqueSuffix("em-2274-fleet-ns")
 		correlationID := uniqueSuffix("corr-2274-metrics")
 		eaName := uniqueSuffix("ea-2274-metrics")
@@ -217,7 +216,7 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 			{Name: "container_memory_working_set_bytes", Labels: matchingLabels, Value: 500_000_000, Timestamp: now.Add(-20 * time.Second)},
 			{Name: "container_memory_working_set_bytes", Labels: matchingLabels, Value: 200_000_000, Timestamp: now},
 		}
-		Expect(infrastructure.InjectMetrics(ctx, prometheusURL, matchingSeries)).To(Succeed(),
+		Expect(infrastructure.InjectMetrics(ctx, prometheusURL, matchingSeries, monitoringCAPath)).To(Succeed(),
 			"failed to inject matching-cluster metric series")
 
 		By("Injecting an unrelated memory REGRESSION for the colliding fleet cluster (same namespace label)")
@@ -225,7 +224,7 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 			{Name: "container_memory_working_set_bytes", Labels: collisionLabels, Value: 100_000_000, Timestamp: now.Add(-20 * time.Second)},
 			{Name: "container_memory_working_set_bytes", Labels: collisionLabels, Value: 800_000_000, Timestamp: now},
 		}
-		Expect(infrastructure.InjectMetrics(ctx, prometheusURL, collisionSeries)).To(Succeed(),
+		Expect(infrastructure.InjectMetrics(ctx, prometheusURL, collisionSeries, monitoringCAPath)).To(Succeed(),
 			"failed to inject collision-cluster metric series")
 
 		// Unscoped sum() would see: early = 500M+100M = 600M, late = 200M+800M = 1000M
@@ -254,6 +253,8 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 	// E2E-FLEET-019b: Alert resolution collision (BR-EM-002)
 	// ========================================================================
 	It("E2E-FLEET-019b: cluster-scoped AlertManager query prevents a colliding cluster's firing alert from masking resolution", func() {
+		alertManagerURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.AlertManagerHostPort)
+		monitoringCAPath := fleetMonitoringCAPath()
 		correlationID := uniqueSuffix("corr-2274-alert")
 		eaName := uniqueSuffix("ea-2274-alert")
 		targetNS := uniqueSuffix("em-2274-fleet-alert-ns")
@@ -278,7 +279,7 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 				EndsAt:      time.Now().Add(-1 * time.Minute),
 			},
 		}
-		Expect(infrastructure.InjectAlerts(alertManagerURL, resolvedAlert)).To(Succeed(),
+		Expect(infrastructure.InjectAlerts(alertManagerURL, resolvedAlert, monitoringCAPath)).To(Succeed(),
 			"failed to inject resolved matching-cluster alert")
 
 		By("Injecting a still-FIRING alert with the SAME alertname for the colliding fleet cluster")
@@ -296,7 +297,7 @@ var _ = Describe("E2E-FLEET-019 [AU-3]: EM cluster-scoped assessment prevents fl
 				EndsAt:      time.Now().Add(10 * time.Minute), // keep firing beyond resolve_timeout (1m)
 			},
 		}
-		Expect(infrastructure.InjectAlerts(alertManagerURL, firingAlert)).To(Succeed(),
+		Expect(infrastructure.InjectAlerts(alertManagerURL, firingAlert, monitoringCAPath)).To(Succeed(),
 			"failed to inject firing collision-cluster alert")
 
 		By("Seeding workflow audit events (no_execution guard + #573 G4 full scope)")

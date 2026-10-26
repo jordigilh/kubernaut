@@ -1,13 +1,12 @@
 # Autonomous Mode Setup Guide (Gateway + AlertManager)
 
-**Status**: Operator-facing setup guide, condensed from the Helm chart's own reference
-(`charts/kubernaut/README.md`).
+**Status**: Operator-facing setup guide for the Kubernaut Operator deployment.
 **Audience**: Operators and SREs who want alert-driven, webhook-triggered remediation —
 Prometheus/AlertManager fires, Gateway ingests it as a signal, and Kubernaut investigates
 and (subject to your approval policy) remediates, with no human chat interaction required
 to kick it off.
-**Authority**: `charts/kubernaut/README.md` ("Enable Monitoring Integration",
-"Enable/Disable Gateway or APIFrontend"), Issue #2162.
+**Authority**: [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md),
+Issue #2162.
 
 ---
 
@@ -38,7 +37,6 @@ independent and can both be enabled on the same install.
 ## Prerequisites
 
 - A Kubernetes cluster with a dynamic-provisioning `StorageClass` (for PostgreSQL/Valkey)
-- Helm 3.12+
 - An API key from an LLM provider (OpenAI, Anthropic, etc.)
 - [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
   installed (or an existing Prometheus + AlertManager you control the config for)
@@ -55,42 +53,37 @@ helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 
 ## 1. Install Kubernaut with Gateway + monitoring enabled
 
-Follow [charts/kubernaut/README.md](../../../charts/kubernaut/README.md)'s Quick Start for
-the namespace and the three credential Secrets (PostgreSQL, Valkey, LLM provider API key),
-plus your Rego policies, then install with monitoring wired to your Prometheus/AlertManager:
+Install the Kubernaut Operator and apply a `Kubernaut` CR using the
+[operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+Set the CR's LLM, policy, Gateway, and monitoring fields for this mode; the
+application Helm chart is no longer shipped by this repository.
 
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system \
-  --set global.llmProfiles.primary.provider=openai \
-  --set global.llmProfiles.primary.model=gpt-4o \
-  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
-  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
-  --set kubernautAgent.llmProfileRef=primary \
-  --set-file signalprocessing.policies.content=path/to/policy.rego \
-  --set-file aianalysis.policies.content=path/to/approval.rego \
-  --set apifrontend.enabled=false \
-  --set monitoring.prometheus.enabled=true \
-  --set monitoring.prometheus.url=http://kube-prometheus-stack-prometheus.monitoring.svc:9090 \
-  --set monitoring.alertManager.enabled=true \
-  --set monitoring.alertManager.url=http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 \
-  --set gateway.auth.signalSources[0].name=alertmanager \
-  --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
-  --set gateway.auth.signalSources[0].namespace=monitoring
+For a minimal Gateway-only deployment, apply a CR like this after installing the
+Operator. Set `apiFrontend.enabled: false` only when Interactive mode is not
+needed. The `gateway.auth.signalSources` entry is required for AlertManager to
+call Gateway; without it, valid tokens receive `403`.
+
+```yaml
+apiVersion: kubernaut.ai/v1alpha2
+kind: Kubernaut
+metadata:
+  name: kubernaut
+  namespace: kubernaut-system
+spec:
+  apiFrontend:
+    enabled: false
+  gateway:
+    auth:
+      enabled: true
+      signalSources:
+        - name: alertmanager
+          serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+          namespace: monitoring
 ```
 
-`gateway.enabled` defaults to `true` — no need to set it. `apifrontend.enabled=false` above
-is optional; it's set here to keep this a minimal, Gateway-only footprint (no
-Console/AF Deployment, Service, RBAC, or NetworkPolicy at all) matching this guide's scope.
-Leave it at its default (`true`) if you might add [Interactive
-mode](./INTERACTIVE_MODE_SETUP_GUIDE.md) later without a redeploy.
-
-`gateway.auth.signalSources` is the actual authorization gate for who can call Gateway's
-webhook endpoint — it defaults to an empty list, so **nothing** can POST a signal to
-Gateway until you add an entry here. Each entry creates a `ClusterRoleBinding` granting
-that `ServiceAccount` `create` on `services/gateway-service`, checked via a real
-`TokenReview`+`SubjectAccessReview` on every request (401 for a missing/invalid token, 403
-for a valid token with no matching binding).
+Each signal source creates the RBAC binding used by Gateway's
+`TokenReview`/`SubjectAccessReview` check. Missing or invalid tokens receive
+`401`; valid tokens without a matching binding receive `403`.
 
 ## 2. Point AlertManager at Gateway
 
@@ -118,20 +111,9 @@ identity `gateway.auth.signalSources[0].serviceAccount` above authorizes.
 
 ## 3. (Optional) ServiceMonitor + PrometheusRule + autoscaling
 
-If the Prometheus Operator CRDs are installed, the chart can generate its own
-`ServiceMonitor`/`PrometheusRule` for observability parity with the Kubernaut Operator, and
-`HorizontalPodAutoscaler`s for DataStorage/APIFrontend:
-
-```bash
-helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system --reuse-values \
-  --set monitoring.serviceMonitor.enabled=true \
-  --set monitoring.prometheusRule.enabled=true \
-  --set datastorage.autoscaling.enabled=true
-```
-
-Both `serviceMonitor`/`prometheusRule` are safe to leave `true` even on clusters without the
-Prometheus Operator CRDs installed — they no-op (render nothing) rather than fail.
+If the Prometheus Operator CRDs are installed, configure the corresponding
+`ServiceMonitor`/`PrometheusRule` and autoscaling behavior through the Operator CR
+and its dependency stack.
 
 ---
 
@@ -170,8 +152,7 @@ For an end-to-end example with a real fault (not just a synthetic test alert), s
 
 ## References
 
-- [charts/kubernaut/README.md](../../../charts/kubernaut/README.md) — full Helm chart reference
-- [Enable/Disable Gateway or APIFrontend](../../../charts/kubernaut/README.md#enable-disable-gateway-or-apifrontend-issue-2162)
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
 - [INTERACTIVE_MODE_SETUP_GUIDE.md](./INTERACTIVE_MODE_SETUP_GUIDE.md) — the complementary chat-driven entry point
 - [FLEET_SETUP_GUIDE.md](./FLEET_SETUP_GUIDE.md) — layering multi-cluster fleet mode on top of this
 - [Issue #2162: Gateway/APIFrontend independent enable toggles](https://github.com/jordigilh/kubernaut/issues/2162)

@@ -97,6 +97,64 @@ type CrashLoopConfigFixScenarioConfig struct {
 	Interval time.Duration
 }
 
+func crashLoopSignalProcessingPhase(ctx context.Context, cfg CrashLoopConfigFixScenarioConfig) string {
+	list := &signalprocessingv1.SignalProcessingList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return string(item.Status.Phase)
+		}
+	}
+	return ""
+}
+
+func crashLoopAIAnalysisPhase(ctx context.Context, cfg CrashLoopConfigFixScenarioConfig) (string, string) {
+	list := &aianalysisv1.AIAnalysisList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return "", ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return item.Status.Phase, item.Name
+		}
+	}
+	return "", ""
+}
+
+func crashLoopWorkflowExecutionEngine(ctx context.Context, cfg CrashLoopConfigFixScenarioConfig) (string, string) {
+	list := &workflowexecutionv1.WorkflowExecutionList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return "", ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return item.Spec.WorkflowRef.ExecutionEngine, item.Name
+		}
+	}
+	return "", ""
+}
+
+func crashLoopWorkflowExecutionPhase(ctx context.Context, cfg CrashLoopConfigFixScenarioConfig, name string) string {
+	item := &workflowexecutionv1.WorkflowExecution{}
+	if err := cfg.CRDClient.Get(ctx, client.ObjectKey{Name: name, Namespace: cfg.CRDNamespace}, item); err != nil {
+		return ""
+	}
+	return item.Status.Phase
+}
+
+func crashLoopRemediationPhase(ctx context.Context, cfg CrashLoopConfigFixScenarioConfig) string {
+	item := &remediationv1.RemediationRequest{}
+	if err := cfg.CRDClient.Get(ctx, client.ObjectKey{Name: cfg.RemediationRequestName, Namespace: cfg.CRDNamespace}, item); err != nil {
+		return ""
+	}
+	return string(item.Status.OverallPhase)
+}
+
 // RunCrashLoopConfigFixScenario drives and asserts the shared outcome for
 // Issue #1542: RR -> SP -> AA (selects crashloop-config-fix-v1) -> WE (job
 // engine) -> K8s Job -> real ConfigMap fix + Deployment recovery -> EA health
@@ -120,36 +178,15 @@ func RunCrashLoopConfigFixScenario(cfg CrashLoopConfigFixScenarioConfig) {
 	}
 
 	By("Waiting for SignalProcessing to complete")
-	Eventually(func() string {
-		spList := &signalprocessingv1.SignalProcessingList{}
-		if err := cfg.CRDClient.List(ctx, spList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range spList.Items {
-			sp := &spList.Items[i]
-			if sp.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				return string(sp.Status.Phase)
-			}
-		}
-		return ""
-	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
+	Eventually(func() string { return crashLoopSignalProcessingPhase(ctx, cfg) }, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"SignalProcessing should reach Completed phase")
 
 	By("Waiting for AIAnalysis to select crashloop-config-fix-v1 (job engine)")
 	var aaName string
 	Eventually(func() string {
-		aaList := &aianalysisv1.AIAnalysisList{}
-		if err := cfg.CRDClient.List(ctx, aaList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range aaList.Items {
-			aa := &aaList.Items[i]
-			if aa.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				aaName = aa.Name
-				return aa.Status.Phase
-			}
-		}
-		return ""
+		var phase string
+		phase, aaName = crashLoopAIAnalysisPhase(ctx, cfg)
+		return phase
 	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"AIAnalysis should reach Completed phase")
 
@@ -168,18 +205,9 @@ func RunCrashLoopConfigFixScenario(cfg CrashLoopConfigFixScenarioConfig) {
 	By("Waiting for WorkflowExecution to be created with job execution engine")
 	var weName string
 	Eventually(func() string {
-		weList := &workflowexecutionv1.WorkflowExecutionList{}
-		if err := cfg.CRDClient.List(ctx, weList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range weList.Items {
-			we := &weList.Items[i]
-			if we.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				weName = we.Name
-				return we.Spec.WorkflowRef.ExecutionEngine
-			}
-		}
-		return ""
+		var engine string
+		engine, weName = crashLoopWorkflowExecutionEngine(ctx, cfg)
+		return engine
 	}, cfg.Timeout, cfg.Interval).Should(Equal("job"),
 		"WorkflowExecution should use job execution engine")
 
@@ -205,13 +233,7 @@ func RunCrashLoopConfigFixScenario(cfg CrashLoopConfigFixScenarioConfig) {
 	}, cfg.Timeout, cfg.Interval).Should(Succeed(), "K8s Job should complete successfully")
 
 	By("Waiting for WorkflowExecution to reach Completed phase")
-	Eventually(func() string {
-		we := &workflowexecutionv1.WorkflowExecution{}
-		if err := cfg.CRDClient.Get(ctx, client.ObjectKey{Name: weName, Namespace: cfg.CRDNamespace}, we); err != nil {
-			return ""
-		}
-		return we.Status.Phase
-	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
+	Eventually(func() string { return crashLoopWorkflowExecutionPhase(ctx, cfg, weName) }, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"WorkflowExecution should reach Completed phase")
 
 	By("Verifying the ConfigMap was actually patched back to the known-good value (real fix, not a simulation)")
@@ -241,15 +263,7 @@ func RunCrashLoopConfigFixScenario(cfg CrashLoopConfigFixScenarioConfig) {
 	}, cfg.Timeout, cfg.Interval).Should(Succeed(), "crashloop-app deployment should recover to steady Running state")
 
 	By("Waiting for RemediationRequest to reach Completed phase")
-	Eventually(func() string {
-		fetched := &remediationv1.RemediationRequest{}
-		if err := cfg.CRDClient.Get(ctx, client.ObjectKey{
-			Name: cfg.RemediationRequestName, Namespace: cfg.CRDNamespace,
-		}, fetched); err != nil {
-			return ""
-		}
-		return string(fetched.Status.OverallPhase)
-	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
+	Eventually(func() string { return crashLoopRemediationPhase(ctx, cfg) }, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"RemediationRequest should reach Completed phase")
 
 	By("Verifying EffectivenessAssessment reports a positive health score (hard assertion — real recovery)")

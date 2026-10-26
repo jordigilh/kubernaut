@@ -17,6 +17,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -77,8 +78,6 @@ import (
 var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped list_alerts (BR-FLEET-054, Issue #2274)", Label("fleet", "af", "a2a", "issue-2274"), func() {
 
 	const (
-		prometheusURL = "http://localhost:9190"
-
 		// Markers are lowercase: the mock-LLM's ConfigForContext echoes back
 		// ctx.AllText, which the mock-llm request handler always lowercases
 		// before scenario matching (test/services/mock-llm/handlers/
@@ -94,6 +93,8 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 	)
 
 	It("should call list_alerts(cluster_id=remote-cluster) via a real A2A request and surface ONLY the matching cluster's alert", func() {
+		prometheusURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.PrometheusHostPort)
+		monitoringCAPath := infrastructure.MonitoringCAPath(kubeconfigPath)
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -106,11 +107,11 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 		ctx := context.Background()
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, matchingRuleName,
-				infrastructure.RuleStateFiring, 5*time.Second)
+				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "matching-cluster alert must be firing before driving AF")
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, collisionRuleName,
-				infrastructure.RuleStateFiring, 5*time.Second)
+				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "colliding-cluster alert must be firing before driving AF")
 
 		By("Sending A2A message: fleet-alerts-e2e-test (selects list_alerts scenario)")

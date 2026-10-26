@@ -31,12 +31,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
@@ -51,10 +50,9 @@ const (
 // classification label(s), isolating `cluster` as the only discriminating
 // filter dimension for E2E-FLEET-1511-001 below.
 //
-// #1661 Phase 55b: registers via direct CRD creation and waits for the real
-// AuthWebhook (deployed in this suite via SetupFullPipelineInfrastructure) to
-// stamp .status.workflowId, replacing the retired createWorkflow REST call
-// (DD-WORKFLOW-018 -- AuthWebhook is the sole write path).
+// The pinned operator RC admits RemediationWorkflow CRs but does not perform
+// the legacy AuthWebhook status.workflowId mutation, so use the shared direct
+// CRD seeder that computes and stamps the catalog status contract locally.
 func registerFleetClusterWorkflow(name string, cluster []string) {
 	crd := testutil.NewTestWorkflowCRD(name, "ScaleReplicas", "tekton")
 	crd.Spec.Labels.Severity = []string{"*"}
@@ -66,20 +64,9 @@ func registerFleetClusterWorkflow(name string, cluster []string) {
 	crd.Spec.Description.WhenToUse = "E2E-FLEET-1511-001 cluster-scoped workflow targeting"
 
 	content := testutil.MarshalWorkflowCRD(crd)
-
-	rw := &rwv1alpha1.RemediationWorkflow{}
-	Expect(yaml.Unmarshal([]byte(content), rw)).To(Succeed(), "unmarshal workflow CRD fixture for %s", name)
-	rw.Namespace = namespace
-
-	if createErr := k8sClient.Create(ctx, rw); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
-		Expect(createErr).ToNot(HaveOccurred(), "create RemediationWorkflow %s", name)
-	}
-
-	Eventually(func(g Gomega) {
-		g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, rw)).To(Succeed())
-		g.Expect(rw.Status.WorkflowID).ToNot(BeEmpty(),
-			"AuthWebhook should stamp .status.workflowId for %s", name)
-	}, timeout, interval).Should(Succeed())
+	workflowID, err := infrastructure.SeedWorkflowContentViaDirectCRDCreation(ctx, k8sClient, namespace, content, GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "seed RemediationWorkflow %s through direct CRD status path", name)
+	Expect(workflowID).NotTo(BeEmpty())
 }
 
 // E2E-FLEET-1511-001: Cluster-scoped workflow targeting full chain.
@@ -150,7 +137,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		payload := buildPrometheusAlertWithClusterInNamespace("FleetClusterScoped", "critical",
 			targetName, targetNS, remoteCluster)
 
-		gatewayURL := urlLocalhost30080
+		gatewayURL := fleetGatewayURL()
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

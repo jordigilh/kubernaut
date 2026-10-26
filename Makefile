@@ -111,13 +111,8 @@ help: ## Display this help
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen sync-version ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
-	@echo "📋 Syncing CRDs to Helm chart..."
-	@cp -f config/crd/bases/*.yaml charts/kubernaut/crds/
-	@mkdir -p charts/kubernaut/files/crds
-	@cp -f config/crd/bases/*.yaml charts/kubernaut/files/crds/
-	@echo "✅ charts/kubernaut/crds/ and files/crds/ updated"
 	@$(MAKE) sync-embed
 
 .PHONY: sync-embed
@@ -157,31 +152,8 @@ validate-embed: sync-embed ## Validate embedded assets are in sync with source f
 	fi
 	@echo "✅ No duplicate migration versions"
 
-.PHONY: sync-version
-sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values, Dockerfiles, and docs
-	@test -f VERSION || (echo "ERROR: VERSION file not found at repo root" && exit 1)
-	@test -f CHART_VERSION || (echo "ERROR: CHART_VERSION file not found at repo root" && exit 1)
-	@VER=$$(cat VERSION) && \
-	CHART_VER=$$(cat CHART_VERSION) && \
-	echo "📌 Syncing version v$$VER (chart $$CHART_VER) from VERSION/CHART_VERSION files..." && \
-	sed -i.bak "s/^version: .*/version: $$CHART_VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
-	sed -i.bak "s/^appVersion: .*/appVersion: \"$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
-	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
-		charts/kubernaut/values.yaml \
-		charts/kubernaut/values.schema.json \
-		charts/kubernaut/values-airgap.yaml \
-		charts/kubernaut/README.md \
-		hack/airgap/imageset-config.yaml.tmpl && \
-	rm -f charts/kubernaut/values.yaml.bak charts/kubernaut/values.schema.json.bak \
-		charts/kubernaut/values-airgap.yaml.bak charts/kubernaut/README.md.bak \
-		hack/airgap/imageset-config.yaml.tmpl.bak && \
-	for df in docker/*.Dockerfile; do \
-		sed -i.bak "s/^ARG APP_VERSION=v[0-9][0-9a-zA-Z._-]*/ARG APP_VERSION=v$$VER/" "$$df" && rm -f "$$df.bak"; \
-	done && \
-	echo "✅ Version v$$VER synced to all targets"
-
 .PHONY: generate
-generate: controller-gen ogen generate-helm-config-docs generate-helm-defaults ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
@@ -221,36 +193,6 @@ generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
 	@hack/crd-ref-docs/clean-output.sh docs/generated/crds.md
 	@echo "✅ CRD docs generated: docs/generated/crds.md"
 
-.PHONY: generate-helm-config-docs
-generate-helm-config-docs: ## Generate Helm chart configuration reference from values.schema.json (DD-PLATFORM-006)
-	@echo "📋 Generating Helm values reference from charts/kubernaut/values.schema.json..."
-	@mkdir -p docs/generated
-	@go run ./hack/gen-helm-config-docs \
-		--schema charts/kubernaut/values.schema.json \
-		--output docs/generated/helm-values-reference.md
-	@echo "✅ Helm values reference generated: docs/generated/helm-values-reference.md"
-
-.PHONY: generate-helm-defaults
-generate-helm-defaults: ## Generate materialized Helm chart defaults template from values.schema.json (DD-PLATFORM-006 Decision Area 14)
-	@echo "📋 Generating Helm materialized defaults from charts/kubernaut/values.schema.json..."
-	@go run ./hack/gen-helm-defaults \
-		--schema charts/kubernaut/values.schema.json \
-		--output charts/kubernaut/templates/_generated_defaults.tpl
-	@echo "✅ Helm materialized defaults generated: charts/kubernaut/templates/_generated_defaults.tpl"
-
-.PHONY: check-helm-coverage
-check-helm-coverage: ## Fail if a schema-defaulted/map config field has no helm-unittest assertion proving it renders and isn't allowlisted (BR-PLATFORM-011, issue #2226)
-	@echo "📋 Checking Helm chart config-knob test coverage..."
-	@go run ./hack/check-helm-coverage \
-		--schema charts/kubernaut/values.schema.json \
-		--tests charts/kubernaut/tests \
-		--allowlist charts/kubernaut/.helm-coverage-allowlist.yaml
-
-.PHONY: verify-helm-defaults-parity
-verify-helm-defaults-parity: generate-helm-defaults ## Prove trimmed values.yaml renders identically to explicit-full-defaults (DD-PLATFORM-006 Decision Area 14)
-	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
-	@hack/verify-helm-defaults-parity.sh
-
 .PHONY: fmt
 fmt: ## Format code
 	@echo "Formatting Go code..."
@@ -263,12 +205,6 @@ vet: ## Run go vet against code
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint
 	$(GOLANGCI_LINT) run cmd/... pkg/... internal/... test/...
-
-.PHONY: test-helm
-test-helm: ## Run helm-unittest specs for charts/kubernaut (requires the helm-unittest plugin: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false)
-	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
-	@helm plugin list 2>/dev/null | grep -q unittest || { echo "❌ helm-unittest plugin not installed; run: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false"; exit 1; }
-	helm unittest charts/kubernaut/
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -962,8 +898,8 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 	@podman network rm authwebhook_test-network 2>/dev/null || true
 	@echo "✅ Cleanup complete"
 
-# Full Pipeline E2E: Complete remediation lifecycle test (Issue #39)
-# Deploys ALL services in a single Kind cluster - requires ~6GB RAM
+# Full Pipeline E2E: Complete remediation lifecycle test (Issue #39/#2492)
+# Deploys the operator bootstrap, dependencies, and Kubernaut CR in one Kind cluster - requires ~6GB RAM
 # CI/CD: Set IMAGE_REGISTRY + IMAGE_TAG to use pre-built images (fast)
 # Local: Builds 3 images at a time (slow, ~20-30 min)
 .PHONY: test-e2e-fullpipeline
@@ -991,92 +927,8 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
-# Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337):
-# hub+spoke Kind clusters + Keycloak + MCP Gateway + kube-mcp-server +
-# Traefik, THEN `helm upgrade --install charts/kubernaut` itself, wired up
-# Console-first -- Gateway starts disabled (AUTONOMOUS=true to enable it) so
-# you investigate the first demo scenario via Console chat before opting
-# into the fully autonomous flow. Leaves the clusters running -- tear down
-# with `kind delete cluster --name kubernaut-hub` (and `kubernaut-remote-cluster`)
-# when done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name
-# read as CI-only test tooling to demo readers, when this is the same
-# "fleet demo/QE environment" BR-PLATFORM-014 already documents by that name.
-# Cluster names default to kubernaut-hub/kubernaut-remote-cluster (2026-09-01,
-# kubernaut-demo-scenarios#427): "fleet-e2e" is CI's own test cluster name
-# (test/e2e/fleet/suite_test.go), reused here only by coincidence of the old
-# default -- this entry point is a separate binary and was never coupled to
-# it. "kubernaut-remote-cluster" matches the "remote-cluster" identity every
-# fleet MCPServerRegistration/AlertManager label already uses for this same
-# physical cluster.
-.PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
-	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
-		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
-		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
-		echo "     LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
-		echo "   make setup-fleet-demo-infra LLM_PROVIDER=vertex_ai LLM_MODEL=claude-haiku-4-5@20251001 \\"; \
-		echo "     LLM_CREDENTIALS_FILE=~/.config/gcloud/key.json VERTEX_PROJECT=my-project VERTEX_LOCATION=us-central1"; \
-		echo ""; \
-		echo "LLM_CREDENTIALS_FILE is a file holding your raw LLM credential (a plain API"; \
-		echo "key, or a JSON blob for vertex_ai) -- it becomes the llm-credentials-primary"; \
-		echo "Secret's content once the hub cluster exists. Never put credential material"; \
-		echo "directly on the command line."; \
-		exit 1; \
-	fi
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Fleet demo/QE setup: infra + helm install (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
-	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway ($(if $(GATEWAY_TYPE),$(GATEWAY_TYPE),eaigw) by default), kube-mcp-server, Traefik"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	go run ./hack/setup-demo-infra \
-		-mode fleet \
-		-llm-provider "$(LLM_PROVIDER)" \
-		-llm-model "$(LLM_MODEL)" \
-		-llm-endpoint "$(LLM_ENDPOINT)" \
-		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
-		$(if $(LLM_REASONING_ENABLED),-llm-reasoning-enabled "$(LLM_REASONING_ENABLED)") \
-		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
-		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
-		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
-		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
-		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
-		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
-		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
-		$(if $(DEPENDENCY_OVERRIDES),-dependency-overrides-file "$(DEPENDENCY_OVERRIDES)") \
-		$(if $(ENVOY_GATEWAY_VERSION),-envoy-gateway-version "$(ENVOY_GATEWAY_VERSION)") \
-		$(if $(AGENT_ROUTER_VERSION),-agent-router-version "$(AGENT_ROUTER_VERSION)") \
-		$(if $(MCP_GATEWAY_NAMESPACE),-mcp-gateway-namespace "$(MCP_GATEWAY_NAMESPACE)") \
-		$(if $(REMOTE_MCP_SERVER_NAMESPACE),-remote-mcp-server-namespace "$(REMOTE_MCP_SERVER_NAMESPACE)") \
-		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
-		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
-		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
-		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
-		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
-
-.PHONY: setup-local-demo-infra
-setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG
-	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
-		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai"; \
-		echo "   make setup-local-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
-		exit 1; \
-	fi
-	go run ./hack/setup-demo-infra \
-		-llm-provider "$(LLM_PROVIDER)" \
-		-llm-model "$(LLM_MODEL)" \
-		-llm-endpoint "$(LLM_ENDPOINT)" \
-		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
-		$(if $(LLM_REASONING_ENABLED),-llm-reasoning-enabled "$(LLM_REASONING_ENABLED)") \
-		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
-		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
-		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
-		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
-		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
-		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
-		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
-		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
-		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
-
 .PHONY: bind-fleet-af-rbac
-bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)
+bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (legacy/manual helper; demo CR wiring is preferred)
 	@if [ -z "$(KUBECONFIG)" ]; then \
 		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/kubernaut-hub-config"; \
 		exit 1; \

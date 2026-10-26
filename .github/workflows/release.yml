@@ -1,13 +1,11 @@
 name: Release
 
-# Triggered by version tag push (e.g., v1.0.0, v1.1.0-rc0)
-# Builds multi-arch images (amd64 + arm64) for all 13 services in parallel,
-# runs Helm smoke tests against the amd64 images, scans all images for CVEs
-# (Trivy) and generates SBOMs (CycloneDX), signs images with Cosign (keyless),
-# generates SLSA v1.0 Build L3 provenance (via an isolated reusable workflow,
-# slsa-provenance.yml), publishes Helm chart to OCI registry, and creates a
-# GitHub Release gated on smoke test + security scan success.
-# Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
+# Triggered manually with an immutable operator candidate manifest.
+# Builds run-scoped multi-arch images for all application components, runs
+# operator-managed FullPipeline/Fleet qualification, scans images for CVEs,
+# generates SBOMs, signs the staging digests, generates SLSA v1.0 Build L3
+# provenance, promotes only qualified digests to release tags, and creates a
+# GitHub Release. GA runs additionally update :latest.
 #
 # Prerequisites:
 #   - Quay.io robot account with Creator role in kubernaut-ai org
@@ -20,8 +18,18 @@ name: Release
 #                   CM-14 (Signed Components), AU-3 (Audit Content)
 
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      operator_candidate_manifest:
+        description: Optional immutable kubernaut-operator candidate manifest for compatibility qualification
+        required: false
+        type: string
+        default: ''
+      release_version:
+        description: Application release version for manual qualification
+        required: false
+        type: string
+        default: 1.6.0-rc27
 
 
 # Least-privilege default for every job. All image push/pull in this workflow
@@ -53,15 +61,24 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       build_date: ${{ steps.version.outputs.build_date }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      qualification_tag: ${{ steps.version.outputs.qualification_tag }}
     steps:
       - name: Extract version from tag
         id: version
+        env:
+          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[0-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::release_version must be a semantic version"
+            exit 1
+          fi
+          TAG="v${RELEASE_VERSION}"
           VERSION=${TAG#v}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "qualification_tag=${VERSION}-qualification-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
 
           if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
@@ -72,9 +89,132 @@ jobs:
           fi
 
   # ========================================
-  # STAGE 1a: BUILD & PUSH amd64 IMAGES
+  # OPERATOR CANDIDATE INPUT
+  # Release promotion consumes the manual operator handoff manifest. A direct
+  # SHA is retained only for development qualification and is never treated as
+  # a promotion artifact.
+  # ========================================
+
+  prepare-operator-candidate:
+    name: Verify operator candidate input
+    needs: prepare
+    if: inputs.operator_candidate_manifest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      operator_sha: ${{ steps.candidate.outputs.operator_sha }}
+      operator_image: ${{ steps.candidate.outputs.operator_image }}
+      candidate_manifest: ${{ steps.candidate.outputs.candidate_manifest }}
+    steps:
+      - name: Install yq
+        run: |
+          YQ_VERSION="v4.47.2"
+          curl --fail --location --retry 3 "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          chmod +x yq
+          sudo mv yq /usr/local/bin/yq
+          yq --version
+      - name: Resolve immutable candidate manifest
+        id: candidate
+        shell: bash
+        env:
+          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="$OPERATOR_CANDIDATE_MANIFEST"
+          curl --fail --location --retry 3 "$MANIFEST_URL" -o operator-candidate.yaml
+          test -s operator-candidate.yaml
+          SHA=$(yq -r '.sha' operator-candidate.yaml)
+          IMAGE=$(yq -r '.image.ref' operator-candidate.yaml)
+          CHART=$(yq -r '.chart.ref' operator-candidate.yaml)
+          DEPENDENCY_CHART=$(yq -r '.dependencyChart.ref // empty' operator-candidate.yaml)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate SHA is not immutable"; exit 1; }
+          [[ "$IMAGE" == *@sha256:* ]] || { echo "::error::candidate operator image must be digest-pinned"; exit 1; }
+          [[ -n "$CHART" ]] || { echo "::error::candidate chart ref is missing"; exit 1; }
+          [[ -n "$DEPENDENCY_CHART" ]] || { echo "::error::candidate dependency chart ref is missing"; exit 1; }
+          echo "operator_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "operator_image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "candidate_manifest=$GITHUB_WORKSPACE/operator-candidate.yaml" >> "$GITHUB_OUTPUT"
+
+      - name: Upload operator candidate input
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: operator-candidate-${{ github.run_id }}
+          path: operator-candidate.yaml
+          retention-days: 90
+
+  operator-qualification:
+    name: Operator FP/Fleet qualification
+    needs: [prepare, prepare-operator-candidate, build-amd64, create-manifests]
+    if: inputs.operator_candidate_manifest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - name: Install yq
+        run: |
+          YQ_VERSION="v4.47.2"
+          curl --fail --location --retry 3 "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          chmod +x yq
+          sudo mv yq /usr/local/bin/yq
+          yq --version
+      - name: Download candidate manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: operator-candidate-${{ github.run_id }}
+          path: /tmp/operator-candidate
+      - name: Install qualification tools
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.10'
+      - name: Install Podman
+        uses: ./.github/actions/install-podman
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.32.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+      - name: Run operator-managed FP and Fleet smoke lanes
+        shell: bash
+        env:
+          OPERATOR_CANDIDATE: /tmp/operator-candidate/operator-candidate.yaml
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
+          IMAGE_REGISTRY: quay.io/kubernaut-ai
+        run: |
+          set -euo pipefail
+           OPERATOR_IMAGE=$(yq -r '.image.ref' "$OPERATOR_CANDIDATE")
+           OPERATOR_CHART=$(yq -r '.chart.ref' "$OPERATOR_CANDIDATE")
+           DEPENDENCY_CHART=$(yq -r '.dependencyChart.ref // empty' "$OPERATOR_CANDIDATE")
+           OPERATOR_SHA=$(yq -r '.sha' "$OPERATOR_CANDIDATE")
+          test "$OPERATOR_SHA" = "${{ needs.prepare-operator-candidate.outputs.operator_sha }}"
+          export KUBERNAUT_OPERATOR_IMAGE="$OPERATOR_IMAGE"
+          export KUBERNAUT_OPERATOR_SHA="$OPERATOR_SHA"
+          export KUBERNAUT_OPERATOR_CHART_PATH="$OPERATOR_CHART"
+          export KUBERNAUT_DEPENDENCY_CHART_PATH="$DEPENDENCY_CHART"
+          export KUBERNAUT_QUALIFICATION_DIR="$PWD/qualification-2492"
+          export KUBERNAUT_BUILD_MOCK_LLM=true
+          make test-e2e-fullpipeline
+          FLEET_E2E=true make test-e2e-fleet
+      - name: Upload operator qualification manifest
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: operator-qualification-release-${{ github.run_id }}
+          path: qualification-2492
+          retention-days: 90
+
+  # ========================================
+  # STAGE 1a: BUILD & PUSH amd64 STAGING IMAGES
   # 14 parallel jobs: one per service, amd64 only.
-  # Helm smoke tests depend on this stage completing (Issue #569).
+  # Operator qualification consumes the resulting staging tags.
   #
   # Services (14):
   #   Go (13): gateway, signalprocessing, aianalysis, authwebhook,
@@ -136,7 +276,7 @@ jobs:
 
       - name: Build image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: amd64
           IMAGE_TARGET: production
           CONTAINER_TOOL: podman
@@ -147,16 +287,18 @@ jobs:
           echo "Building ${{ matrix.service }} for amd64..."
           make image-build-${{ matrix.service }}
 
+      # Development fallback uses a unique run-scoped tag so qualification can
+      # consume the locally-built images without overwriting a release tag.
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-amd64"
           echo "Pushing ${IMAGE}..."
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 1b: BUILD & PUSH arm64 IMAGES (Go services)
+  # STAGE 1b: BUILD & PUSH arm64 STAGING IMAGES (Go services)
   # 11 parallel jobs: one per Go service, arm64 via host-native cross-compile.
   # No QEMU needed — CGO_ENABLED=0 GOARCH=arm64 runs natively on amd64.
   # Runtime images use FROM scratch with pre-built binary.
@@ -226,7 +368,7 @@ jobs:
 
       - name: Build runtime image (no QEMU)
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: arm64
           CONTAINER_TOOL: podman
           APP_VERSION: ${{ needs.prepare.outputs.version }}
@@ -241,14 +383,14 @@ jobs:
 
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
           echo "Pushing ${IMAGE}..."
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 1c: BUILD & PUSH arm64 IMAGES (non-Go services)
+  # STAGE 1c: BUILD & PUSH arm64 STAGING IMAGES (non-Go services)
   # must-gather (Bash) and db-migrate (downloads goose binary) still need QEMU
   # for package installation in their respective base images.
   # ========================================
@@ -299,7 +441,7 @@ jobs:
 
       - name: Build image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_ARCH: arm64
           IMAGE_TARGET: production
           CONTAINER_TOOL: podman
@@ -334,7 +476,7 @@ jobs:
 
       - name: Push image
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
         run: |
           IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
           echo "Pushing ${IMAGE}..."
@@ -377,7 +519,7 @@ jobs:
       - name: Scan for CVEs (Trivy)
         uses: ./.github/actions/trivy-scan-with-retry
         with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-amd64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
           # acceptance entries expire between 2027-04-11 and 2027-04-21,
           # scoped to must-gather (not service images).
@@ -386,7 +528,7 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-amd64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-amd64.cdx.json
           # anchore/sbom-action uploads the workflow artifact's file under
@@ -433,7 +575,7 @@ jobs:
       - name: Scan for CVEs (Trivy)
         uses: ./.github/actions/trivy-scan-with-retry
         with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-arm64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
           # acceptance entries expire between 2027-04-11 and 2027-04-21,
           # scoped to must-gather (not service images).
@@ -442,148 +584,20 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-arm64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-arm64.cdx.json
           # See the amd64 job's identical comment above (#2038).
           artifact-name: sbom-${{ matrix.service }}-arm64.cdx.json
 
   # ========================================
-  # STAGE 2: HELM SMOKE TESTS (Issue #569)
-  # Depends ONLY on build-amd64. Runs as soon as amd64 images are in Quay.
-  # arm64 builds continue in parallel and do NOT block this stage.
-  #
-  # Pulls amd64 images from Quay into a Kind cluster and runs the full
-  # smoke test suite. Gates the GitHub Release — a failing smoke test
-  # prevents the release from being published.
-  #
-  # Uses the same script and pattern as ci-pipeline.yml's helm-smoke-test
-  # job, adapted for Quay (public registry, no pull secret needed).
-  # ========================================
-
-  helm-smoke-test:
-    name: Helm Smoke Tests (Kind, tls=${{ matrix.tls_mode }})
-    needs: [prepare, build-amd64]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # #334 + DD-PLATFORM-001: release gate must cover cert-manager mode
-        # too, not just the hook-mode default.
-        tls_mode: [hook, cert-manager]
-    env:
-      KIND_EXPERIMENTAL_PROVIDER: podman
-      KIND_CLUSTER_NAME: helm-smoke-release-${{ matrix.tls_mode }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          submodules: recursive
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.26.10'
-          cache: true
-
-      - name: Install Podman
-        uses: ./.github/actions/install-podman
-
-      - name: Install Kind
-        run: |
-          KIND_VERSION="v0.32.0"
-          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-          kind version
-
-      - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: latest
-
-      - name: Create Kind cluster
-        run: |
-          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
-          kubectl cluster-info
-          kubectl get nodes -o wide
-
-      - name: Pull amd64 images from Quay and load into Kind
-        env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
-        run: |
-          for svc in gateway signalprocessing aianalysis authwebhook \
-                     remediationorchestrator workflowexecution notification \
-                     datastorage effectivenessmonitor kubernautagent \
-                     apifrontend must-gather db-migrate; do
-            IMAGE="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}-amd64"
-            echo "Pulling ${IMAGE}..."
-            podman pull "${IMAGE}"
-            echo "Loading into Kind..."
-            podman save "${IMAGE}" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
-          done
-
-      - name: Install cert-manager
-        if: matrix.tls_mode == 'cert-manager'
-        run: |
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml
-          kubectl wait --for=condition=Available --timeout=120s deployment --all -n cert-manager
-          kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
-          kubectl wait --for=condition=Ready --timeout=60s clusterissuer/selfsigned-issuer
-
-      - name: Run smoke tests
-        run: |
-          scripts/helm-smoke-test.sh \
-            --platform kind \
-            --image-tag "${{ needs.prepare.outputs.version }}-amd64" \
-            --chart-path charts/kubernaut/ \
-            --tls-mode "${{ matrix.tls_mode }}"
-
-      - name: Collect diagnostics on failure
-        if: failure()
-        run: |
-          echo "=== Pod status ==="
-          kubectl get pods -A --no-headers 2>/dev/null || true
-          echo "=== Events ==="
-          kubectl get events -n kubernaut-system --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
-          echo "=== Describe failing pods ==="
-          kubectl get pods -n kubernaut-system --no-headers 2>/dev/null \
-            | grep -v Running \
-            | awk '{print $1}' \
-            | xargs -r -I {} kubectl describe pod {} -n kubernaut-system 2>/dev/null || true
-          echo "=== Kind logs ==="
-          kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
-
-      - name: Upload diagnostics
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: helm-smoke-diagnostics-${{ matrix.tls_mode }}-${{ github.run_id }}
-          path: /tmp/kind-smoke-logs/
-          retention-days: 7
-          if-no-files-found: warn
-
-      - name: Cleanup Kind cluster
-        if: always()
-        run: |
-          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
-
-      - name: Cleanup Podman
-        if: always()
-        run: |
-          podman system prune -a -f 2>/dev/null || true
-
-  # ========================================
-  # STAGE 3: MULTI-ARCH MANIFESTS
-  # After both arch builds AND helm smoke tests complete, create manifest
-  # lists so a single tag (e.g., 1.0.0) resolves to the correct arch
-  # automatically. Also tags every image as :latest for GA releases.
+  # STAGE 3: STAGING MULTI-ARCH MANIFESTS
+  # After both architecture builds complete, create run-scoped manifests.
   # ========================================
 
   create-manifests:
     name: Create Multi-Arch Manifests
-    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -598,13 +612,34 @@ jobs:
 
       - name: Create and push multi-arch manifests
         env:
-          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           CONTAINER_TOOL: podman
         run: |
           echo "Creating multi-arch manifests (amd64 + arm64)..."
           make image-manifest
 
-      - name: Tag images as latest
+  tag-latest:
+    name: Tag GA images as latest
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release]
+    if: >-
+      always() &&
+      inputs.operator_candidate_manifest != '' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success' &&
+      needs.promote-release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Tag images as latest after qualification
         if: needs.prepare.outputs.is_prerelease == 'false'
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
@@ -625,7 +660,7 @@ jobs:
 
   # ========================================
   # STAGE 3b: COSIGN SIGNING & SBOM ATTESTATION
-  # Signs all arch-tagged images and manifest lists with Cosign (keyless),
+  # Signs all staging arch-tagged images and manifest lists with Cosign (keyless),
   # and attests each arch's SBOM. SLSA build provenance is generated
   # separately by the `provenance` job below, via an isolated reusable
   # workflow (Build L3) -- see #1109.
@@ -673,10 +708,10 @@ jobs:
 
       - name: Resolve image digests
         id: digests
+        env:
+          VERSION: ${{ needs.prepare.outputs.qualification_tag }}
+          SVC: ${{ matrix.service }}
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-          SVC="${{ matrix.service }}"
-
           AMD64_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}-amd64")
           ARM64_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}-arm64")
           MANIFEST_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}")
@@ -788,56 +823,96 @@ jobs:
       # The `env` context (IMAGE_REGISTRY) is not available to the inputs of
       # a reusable workflow call, so the registry is spelled out here.
       image: quay.io/kubernaut-ai/${{ matrix.service }}
-      version: ${{ needs.prepare.outputs.version }}
+      version: ${{ needs.prepare.outputs.qualification_tag }}
     secrets: inherit
 
   # ========================================
-  # STAGE 4: HELM CHART PUBLISH
-  # Gated on all image builds AND helm smoke tests (Issue #569).
-  # Packages the Helm chart with the release version and pushes
-  # to the OCI registry at oci://quay.io/kubernaut-ai/charts
-  #
-  # Users install with:
-  #   helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version <version>
+  # STAGE 5: PROMOTE QUALIFIED IMAGE DIGESTS
+  # Build and qualification tags are unique to this run. Only after all
+  # qualification, scan, signing, and provenance gates pass are the immutable
+  # release-version architecture tags and manifest list created.
+  # DD-RELEASE-001 | BR-PLATFORM-RELEASE-001
   # ========================================
 
-  helm-publish:
-    name: Publish Helm Chart
-    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
+  promote-release:
+    name: Promote qualified release images
+    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    if: >-
+      always() &&
+      (inputs.operator_candidate_manifest == '' || needs.operator-qualification.result == 'success') &&
+      needs.prepare.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
 
-      - name: Update Chart.yaml with release version
+      - name: Promote architecture images and manifest lists
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          STAGING_TAG: ${{ needs.prepare.outputs.qualification_tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.version }}
+        shell: bash
         run: |
-          CHART_VERSION=$(cat CHART_VERSION)
-          sed -i "s/^version:.*/version: ${CHART_VERSION}/" charts/kubernaut/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/kubernaut/Chart.yaml
-
-          echo "Updated Chart.yaml (chart=${CHART_VERSION}, app=${VERSION}):"
-          head -6 charts/kubernaut/Chart.yaml
-
-      - name: Login to Quay.io OCI registry
-        run: |
-          echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | helm registry login quay.io \
-            -u "${{ secrets.QUAY_ROBOT_USERNAME }}" --password-stdin
-
-      - name: Package and push Helm chart
-        run: |
-          CHART_VERSION=$(cat CHART_VERSION)
-          helm package charts/kubernaut/
-          helm push kubernaut-${CHART_VERSION}.tgz oci://quay.io/kubernaut-ai/charts
-          echo "Helm chart published: oci://quay.io/kubernaut-ai/charts/kubernaut:${CHART_VERSION}"
+          set -euo pipefail
+          services=(gateway signalprocessing aianalysis authwebhook remediationorchestrator workflowexecution notification datastorage effectivenessmonitor kubernautagent apifrontend fleetmetadatacache must-gather db-migrate)
+          is_not_found_error() {
+            grep -Eqi 'manifest unknown|name unknown|not found|does not exist' <<<"$1"
+          }
+          for service in "${services[@]}"; do
+            for arch in amd64 arm64; do
+              source="docker://${IMAGE_REGISTRY}/${service}:${STAGING_TAG}-${arch}"
+              target="docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-${arch}"
+              src_digest=$(skopeo inspect --format '{{.Digest}}' "$source")
+              inspect_error=$(mktemp)
+              if dst_digest=$(skopeo inspect --format '{{.Digest}}' "$target" 2>"$inspect_error"); then
+                if [[ "$dst_digest" != "$src_digest" ]]; then
+                  echo "::error::release image exists with different digest: ${service}:${RELEASE_TAG}-${arch}"
+                  exit 1
+                fi
+                rm -f "$inspect_error"
+                continue
+              fi
+              target_error=$(cat "$inspect_error")
+              rm -f "$inspect_error"
+              if ! is_not_found_error "$target_error"; then
+                echo "::error::unable to inspect release image ${service}:${RELEASE_TAG}-${arch}: ${target_error}"
+                exit 1
+              fi
+              skopeo copy --retry-times 3 --preserve-digests "$source" "$target"
+            done
+            staging_manifest="docker://${IMAGE_REGISTRY}/${service}:${STAGING_TAG}"
+            release_manifest="docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}"
+            staging_digest=$(skopeo inspect --format '{{.Digest}}' "$staging_manifest")
+            inspect_error=$(mktemp)
+            if release_digest=$(skopeo inspect --format '{{.Digest}}' "$release_manifest" 2>"$inspect_error"); then
+              if [[ "$release_digest" != "$staging_digest" ]]; then
+                echo "::error::release manifest exists with different digest: ${service}:${RELEASE_TAG}"
+                exit 1
+              fi
+              rm -f "$inspect_error"
+              continue
+            fi
+            target_error=$(cat "$inspect_error")
+            rm -f "$inspect_error"
+            if ! is_not_found_error "$target_error"; then
+              echo "::error::unable to inspect release manifest ${service}:${RELEASE_TAG}: ${target_error}"
+              exit 1
+            fi
+            skopeo copy --all --preserve-digests --retry-times 3 "$staging_manifest" "$release_manifest"
+          done
 
   # ========================================
   # STAGE 6: GITHUB RELEASE
   # Creates a GitHub Release with auto-generated release notes.
-  # Gated on smoke tests, manifests, security scans, signing,
-  # AND Helm publish.
+  # Gated on manifests, security scans, signing, and provenance.
   # Downloads SBOMs from security scan jobs and attaches them
   # to the release for customer consumption.
   # Authority: Issue #569, #1315 | FedRAMP SA-12
@@ -845,7 +920,17 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, helm-smoke-test, create-manifests, helm-publish, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release, tag-latest]
+    if: >-
+      always() &&
+      needs.promote-release.result == 'success' &&
+      needs.prepare.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success' &&
+      needs.tag-latest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -869,6 +954,26 @@ jobs:
           pattern: provenance-*
           path: provenance/
           merge-multiple: true
+
+      - name: Validate or create release tag at built commit
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            TAG_SHA=$(git rev-list -n 1 "refs/tags/${TAG}")
+            if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+              echo "::error::${TAG} points to ${TAG_SHA}, expected built commit ${GITHUB_SHA}"
+              exit 1
+            fi
+            echo "Validated existing ${TAG} at ${GITHUB_SHA}"
+          else
+            git tag "${TAG}" "$GITHUB_SHA"
+            git push origin "refs/tags/${TAG}"
+            echo "Created ${TAG} at ${GITHUB_SHA}"
+          fi
 
       - name: Create GitHub Release
         env:
@@ -931,10 +1036,6 @@ jobs:
             echo ""
             echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
           fi
-
-          echo ""
-          echo "Install with:"
-          echo "  helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version ${VERSION}"
 
       - name: Attach SBOMs to release
         env:

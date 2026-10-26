@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -347,6 +348,51 @@ func LoadImageToKindRetainingImage(ctx context.Context, imageName, serviceName, 
 	return loadImageToKindIntoCluster(ctx, imageName, serviceName, clusterName, false, writer)
 }
 
+// LoadImagesToKindBatch exports local images into one archive and imports that
+// archive once. Kind image imports are intentionally kept serial; batching
+// removes repeated Podman/Kind process and containerd setup without adding
+// concurrent load pressure to a single-node runner.
+func LoadImagesToKindBatch(ctx context.Context, imageNames []string, clusterName string, writer io.Writer) error {
+	if len(imageNames) == 0 {
+		return nil
+	}
+
+	archive, err := os.CreateTemp("", "kubernaut-kind-images-*.tar")
+	if err != nil {
+		return fmt.Errorf("create batch image archive: %w", err)
+	}
+	archivePath := archive.Name()
+	if err := archive.Close(); err != nil {
+		_ = os.Remove(archivePath)
+		return fmt.Errorf("close batch image archive: %w", err)
+	}
+	defer func() { _ = os.Remove(archivePath) }()
+
+	args := []string{"save", "-o", archivePath}
+	args = append(args, imageNames...)
+	_, _ = fmt.Fprintf(writer, "📦 Exporting %d local images as one Kind archive\n", len(imageNames))
+	saveCmd := exec.CommandContext(ctx, "podman", args...)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("export batch image archive: %w", err)
+	}
+
+	if err := loadImageArchiveWithRetry(ctx, archivePath, clusterName, writer); err != nil {
+		return fmt.Errorf("load batch image archive into Kind: %w", err)
+	}
+
+	removeArgs := append([]string{"rmi", "-f"}, imageNames...)
+	removeCmd := exec.CommandContext(ctx, "podman", removeArgs...)
+	removeCmd.Stdout = writer
+	removeCmd.Stderr = writer
+	if err := removeCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove batch Podman images (non-fatal): %v\n", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Loaded %d local images to Kind in one archive\n", len(imageNames))
+	return nil
+}
+
 func loadImageToKindIntoCluster(ctx context.Context, imageName, serviceName, clusterName string, removePodmanImage bool, writer io.Writer) error {
 	// In CI mode (IMAGE_REGISTRY set), pull the image onto the runner first
 	// then load it into Kind. Kind nodes lack GHCR credentials so on-demand
@@ -469,23 +515,42 @@ func loadImageArchiveWithRetry(ctx context.Context, tarPath, clusterName string,
 // Kind so the in-cluster pull resolves from the pre-loaded cache. This prevents Docker Hub
 // rate-limit or slow-pull failures during E2E setup in CI.
 func PreloadExternalImage(ctx context.Context, imageName, clusterName string, writer io.Writer) error {
+	_, err := PreloadExternalImageWithReference(ctx, imageName, clusterName, writer)
+	return err
+}
+
+// PreloadExternalImageWithReference loads an external image and returns the
+// deterministic local tag that was imported into Kind. Digest-only Podman
+// saves have no RepoTags, so Kind/containerd invents an ephemeral import name
+// that kubelet cannot reliably resolve by image ID. The returned tag gives the
+// archive a stable name while the caller retains the original immutable digest
+// as provenance.
+func PreloadExternalImageWithReference(ctx context.Context, imageName, clusterName string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "   📥 Pre-loading external image: %s\n", imageName)
 
 	pullCmd := exec.CommandContext(ctx, "podman", "pull", "--quiet", imageName)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
 	if err := pullCmd.Run(); err != nil {
-		return fmt.Errorf("failed to pull %s: %w", imageName, err)
+		return "", fmt.Errorf("failed to pull %s: %w", imageName, err)
+	}
+
+	archiveImage := preloadedExternalImageReference(imageName)
+	tagCmd := exec.CommandContext(ctx, "podman", "tag", imageName, archiveImage)
+	tagCmd.Stdout = writer
+	tagCmd.Stderr = writer
+	if err := tagCmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to tag %s as %s: %w", imageName, archiveImage, err)
 	}
 
 	sanitized := strings.NewReplacer("/", "_", ":", "_").Replace(imageName)
 	tmpFile := fmt.Sprintf("/tmp/preload-%s.tar", sanitized)
 
-	saveCmd := exec.CommandContext(ctx, "podman", "save", "-o", tmpFile, imageName)
+	saveCmd := exec.CommandContext(ctx, "podman", "save", "-o", tmpFile, archiveImage)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
-		return fmt.Errorf("failed to save %s: %w", imageName, err)
+		return "", fmt.Errorf("failed to save %s: %w", imageName, err)
 	}
 
 	// Remove Podman copy immediately after save — the tar has the bits and
@@ -503,12 +568,28 @@ func PreloadExternalImage(ctx context.Context, imageName, clusterName string, wr
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
 		_ = os.Remove(tmpFile)
-		return fmt.Errorf("failed to load %s into Kind: %w", imageName, err)
+		return "", fmt.Errorf("failed to load %s into Kind: %w", imageName, err)
 	}
 
 	_ = os.Remove(tmpFile)
-	_, _ = fmt.Fprintf(writer, "   ✅ Pre-loaded %s into Kind\n", imageName)
-	return nil
+	for _, ref := range []string{archiveImage, imageName} {
+		rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", ref)
+		rmiCmd.Stdout = writer
+		rmiCmd.Stderr = writer
+		if err := rmiCmd.Run(); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove preloaded Podman reference %s (non-fatal): %v\n", ref, err)
+		}
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Pre-loaded %s into Kind as %s\n", imageName, archiveImage)
+	return archiveImage, nil
+}
+
+func preloadedExternalImageReference(imageName string) string {
+	if _, digest, found := strings.Cut(imageName, "@sha256:"); found && digest != "" {
+		return "localhost/kind-preload:sha256-" + digest
+	}
+	hash := sha256.Sum256([]byte(imageName))
+	return fmt.Sprintf("localhost/kind-preload:ref-%x", hash[:])
 }
 
 // BuildAndLoadImageToKind builds and loads an image to Kind in one step.

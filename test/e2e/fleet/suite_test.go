@@ -56,7 +56,6 @@ package fleet
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -114,11 +113,14 @@ const (
 
 	clusterName = "fleet-e2e"
 	namespace   = "kubernaut-system"
-
-	// mcpGatewayURL targets EAIGW's generated-Service NodePort (DD-TEST-001:
-	// 31976), not Kuadrant's 31975 -- this suite moved to EAIGW (kubernaut#2309).
-	mcpGatewayURL = "http://localhost:31976/mcp"
 )
+
+// mcpGatewayURL targets EAIGW's generated-Service NodePort (DD-TEST-001:
+// 31976), not Kuadrant's 31975 -- this suite moved to EAIGW (kubernaut#2309).
+// Apply the shared qualification offset so the isolated Fleet lane reaches
+// its +20000 host-port block. The operator-managed Gateway certificate has
+// localhost as its host SAN.
+var mcpGatewayURL = fmt.Sprintf("https://localhost:%d/mcp", infrastructure.DemoHostPort(31976))
 
 var (
 	ctx    context.Context
@@ -144,14 +146,33 @@ var (
 	e2eAuthToken      string
 	fpAuthToken       string
 
-	afBaseURL    string
-	afHTTPClient *http.Client
+	afBaseURL        string
+	afHTTPClient     *http.Client
+	operatorExposure infrastructure.OperatorExposureEvidence
 
 	workflowUUIDs map[string]string
 	fpRemediateNS map[string]string
 
 	anyTestFailed bool
 )
+
+func fleetPrometheusURL() string {
+	return fmt.Sprintf("https://127.0.0.1:%d", infrastructure.PrometheusHostPort)
+}
+
+func fleetMonitoringCAPath() string {
+	return infrastructure.MonitoringCAPath(kubeconfigPath)
+}
+
+// fleetGatewayURL resolves the operator-created host adapter at call time.
+// The fallback is retained for legacy fixtures, but operator qualification
+// must use the dynamically allocated NodePort block rather than chart port 30080.
+func fleetGatewayURL() string {
+	if url := infrastructure.OperatorExposureURL(operatorExposure, "gateway"); url != "" {
+		return url
+	}
+	return fleetGatewayFallbackURL
+}
 
 // postWithFleetAuth sends an authenticated POST request to the Gateway with a
 // fixed "application/json" content type (the only content type used across
@@ -276,7 +297,11 @@ func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("acquire Keycloak client_credentials token: %w", err)
 	}
-	return &http.Client{Transport: testauth.NewStaticTokenTransport(token)}, nil
+	tlsTransport, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Fleet MCP Gateway CA: %w", err)
+	}
+	return &http.Client{Transport: testauth.NewStaticTokenTransportWithBase(token, tlsTransport)}, nil
 }
 
 // newFleetMCPClient creates an MCP client for the remote-cluster registration,
@@ -432,6 +457,12 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Fleet E2E infrastructure setup failed")
 		_ = images
+		var exposureOK bool
+		operatorExposure, exposureOK = infrastructure.OperatorExposureForKubeconfig(tempKubeconfigPath)
+		Expect(exposureOK).To(BeTrue(), "operator exposure evidence must be recorded")
+		Expect(infrastructure.OperatorExposureURL(operatorExposure, "gateway")).NotTo(BeEmpty(),
+			"operator gateway exposure adapter must be recorded")
+		GinkgoWriter.Printf("Fleet Gateway test URL: %s\n", fleetGatewayURL())
 
 		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
@@ -491,10 +522,12 @@ var _ = SynchronizedBeforeSuite(
 		Expect(jsonErr).ToNot(HaveOccurred())
 		remediateNSJSON, nsErr := json.Marshal(remediateNS)
 		Expect(nsErr).ToNot(HaveOccurred())
-		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON), remoteKcPath))
+		exposureJSON, exposureErr := json.Marshal(operatorExposure)
+		Expect(exposureErr).ToNot(HaveOccurred())
+		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON), remoteKcPath, string(exposureJSON)))
 	},
 	func(data []byte) {
-		parts := strings.SplitN(string(data), "|", 6)
+		parts := strings.SplitN(string(data), "|", 7)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
@@ -513,6 +546,12 @@ var _ = SynchronizedBeforeSuite(
 		if len(parts) > 5 {
 			remoteKubeconfigPath = parts[5]
 		}
+		if len(parts) > 6 {
+			Expect(json.Unmarshal([]byte(parts[6]), &operatorExposure)).To(Succeed(),
+				"Failed to decode operator exposure evidence from Process 1")
+		}
+		Expect(infrastructure.OperatorExposureURL(operatorExposure, "gateway")).NotTo(BeEmpty(),
+			"operator gateway exposure adapter must be recorded")
 
 		ctx, cancel = context.WithCancel(context.TODO())
 
@@ -556,7 +595,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Setting up authenticated DataStorage client (DD-TEST-001: port 30081, Issue #785: HTTPS)")
-		dataStorageURL := "https://localhost:30081"
+		dataStorageURL := infrastructure.OperatorExposureURL(operatorExposure, "datastorage")
 		tlsBase, tlsCErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
 		Expect(tlsCErr).ToNot(HaveOccurred(), "TLS transport for DataStorage client")
 		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
@@ -568,12 +607,16 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Setting up API Frontend HTTP client (NodePort 30443, self-signed TLS)")
-		afBaseURL = "https://localhost:30443"
+		afBaseURL = infrastructure.OperatorExposureURL(operatorExposure, "apifrontend")
+		// A2A consent journeys can legitimately spend longer than the shared
+		// transport's 30s response-header budget while AF waits for the
+		// investigation/consent state transition. Keep CA verification, but let
+		// afA2AInvokeWithTimeout's per-request deadline govern the long turn.
+		afTransport, afTransportErr := infrastructure.NewTLSAwareTransportWithResponseHeaderTimeout(kubeconfigPath, 0)
+		Expect(afTransportErr).ToNot(HaveOccurred(), "TLS transport for long-running A2A turns")
 		afHTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed cert
-			},
-			Timeout: 30 * time.Second,
+			Transport: afTransport,
+			Timeout:   30 * time.Second,
 		}
 
 		GinkgoWriter.Printf("Fleet E2E Setup Complete - Process %d ready\n", GinkgoParallelProcess())
@@ -665,7 +708,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if !setupFailed {
-			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
+			infrastructure.CleanupFullPipelineTestResources(context.Background(), kubeconfigPath, GinkgoWriter)
 		}
 
 		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {

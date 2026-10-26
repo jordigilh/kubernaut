@@ -123,57 +123,7 @@ type ContainerInstance struct {
 func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*ContainerInstance, error) {
 	_, _ = fmt.Fprintf(writer, "🚀 Starting container: %s\n", cfg.Name)
 
-	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
-	// this service under the agreed-upon fixed tag (artifact-based CI mode,
-	// no registry involved). Delegates to resolvePrebuiltCIArtifact
-	// (e2e_images.go); see #1738.
-	if cfg.BuildContext != "" {
-		serviceName := extractServiceNameFromImage(cfg.Image)
-		if prebuilt, ok := resolvePrebuiltCIArtifact(context.Background(), serviceName, writer); ok {
-			cfg.Image = prebuilt
-			cfg.BuildContext = ""
-			cfg.BuildDockerfile = ""
-		}
-	}
-
-	// Step 0: Try registry pull if configured (CI/CD optimization)
-	registry := os.Getenv("IMAGE_REGISTRY")
-	tag := os.Getenv("IMAGE_TAG")
-
-	if registry != "" && tag != "" && !isExternalImage(cfg.Image, registry) {
-		_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-
-		// Extract service name from image name
-		// Examples:
-		//   "localhost/datastorage:aianalysis-a3b5c7d9" → "datastorage"
-		//   "kubernaut/kubernaut-agent" → "kubernaut-agent"
-		serviceName := extractServiceNameFromImage(cfg.Image)
-
-		if serviceName != "" {
-			registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
-
-			// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
-			// Benefits:
-			// - No disk space used (metadata only, ~2KB vs multi-GB image)
-			// - No network transfer of layers (90%+ bandwidth savings)
-			// - Faster execution (~1s vs 10-30s for full pull)
-			// - Podman will pull automatically during container deployment
-			exists, verifyErr := VerifyImageExistsInRegistry(context.Background(), registryImage, writer)
-
-			if verifyErr == nil && exists {
-				// Image verified in registry - no need to pull!
-				// Podman will pull it automatically when starting the container
-				_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping build)\n")
-				_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Podman will fetch during deployment\n")
-				// Skip build step below by clearing BuildContext
-				cfg.BuildContext = ""
-				cfg.BuildDockerfile = ""
-			} else {
-				_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", verifyErr)
-				_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-			}
-		}
-	}
+	prepareGenericContainerImage(&cfg, writer)
 
 	// Step 1: Build image if needed (fallback if registry pull failed/disabled)
 	if cfg.BuildContext != "" && cfg.BuildDockerfile != "" {
@@ -197,91 +147,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	rmCmd := exec.CommandContext(context.Background(), "podman", "rm", cfg.Name)
 	_ = rmCmd.Run() // Ignore errors
 
-	// Step 3: Build podman run command
-	args := []string{"run", "-d", "--name", cfg.Name}
-
-	// Add network
-	if cfg.Network != "" {
-		args = append(args, "--network", cfg.Network)
-	}
-
-	// Add extra host entries (for host.containers.internal on Linux)
-	for _, host := range cfg.ExtraHosts {
-		args = append(args, "--add-host", host)
-	}
-
-	// Add port mappings. Podman rejects "-p" combined with "--network host"
-	// ("cannot set port bindings when using host network mode") -- under
-	// host networking the container's own ports already are the host ports,
-	// so cfg.Ports is just bookkeeping for ContainerInstance.Ports in that case.
-	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
-	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	if cfg.Network != host2 {
-		for containerPort, hostPort := range cfg.Ports {
-			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
-		}
-	}
-
-	// Add environment variables
-	for key, value := range cfg.Env {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// Add volumes. ":z" relabels the host path with a shared SELinux
-	// context so containers can read it on enforcing hosts (e.g. RHEL);
-	// harmless no-op on non-SELinux hosts (macOS Podman VM). "z" (not "Z")
-	// because these host paths are commonly mounted read-only into more
-	// than one per-process container (e.g. envtest kubeconfig shared by
-	// DataStorage and the per-process KA container).
-	//
-	// CI RCA (2026-08-19, "Integration (fleetmetadatacache)" job,
-	// IT-FLEET-EAIGW-001, confirmed via `podman inspect` on helios08): the
-	// short `-v` form is host:container[:options], colon-delimited -- a
-	// COMMA before "z" (as this line previously read, "%s:%s,z") is not a
-	// field separator at all, so podman folds ",z" into the *container
-	// path* itself instead of parsing it as the relabel option (observed
-	// firsthand: `podman inspect` reported the actual bind Destination as
-	// the literal string "/etc/aigw,z", not "/etc/aigw"). Every container
-	// started through this function ends up bind-mounted one path off
-	// from what its own Cmd/config expects it to read, silently, with no
-	// error from podman itself -- only surfaced once EAIGWImage's `aigw`
-	// process failed fast with "no such file or directory" trying to open
-	// the (correct, comma-free) path it was told to use. Introduced by
-	// 7da8fa4fac ("fix(test-infra): add SELinux relabel to podman bind
-	// mounts", this same PR) -- a same-PR regression, not a pre-existing
-	// or external flake, despite passing intermittently elsewhere in this
-	// PR's own CI history (destinations that happen to already exist as a
-	// directory, or whose owning process tolerates/recreates a missing
-	// file, mask the same off-by-one-field mount on other services).
-	//
-	// CI RCA round 2 (2026-08-19, "Integration (aianalysis)" job,
-	// SynchronizedBeforeSuite, run 32273056176): the unconditional ":z"
-	// above assumed containerPath is always a bare directory, but several
-	// callers (test/integration/aianalysis/suite_test.go,
-	// test/integration/apifrontend/suite_test.go) bake an inline option
-	// straight into the map's containerPath value, e.g.
-	// "/etc/kubernautagent:ro". Blindly appending ":z" to that produced
-	// "hostPath:/etc/kubernautagent:ro:z" -- FOUR colon-delimited fields,
-	// which podman rejects outright ("incorrect volume format, should be
-	// [host-dir:]ctr-dir[:option]"), immediately failing every KA
-	// container start. containerPath already containing a colon means an
-	// OPTIONS field is already present, so "z" must join it as a second,
-	// comma-separated option (matching the working ":ro,z" pattern used
-	// directly in mock_llm.go/datastorage_bootstrap.go) rather than open a
-	// new colon field.
-	for hostPath, containerPath := range cfg.Volumes {
-		if strings.Contains(containerPath, ":") {
-			args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
-		} else {
-			args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
-		}
-	}
-
-	// Add image
-	args = append(args, cfg.Image)
-
-	// Add command arguments (after image)
-	args = append(args, cfg.Cmd...)
+	args := buildGenericContainerRunArgs(cfg)
 
 	// Start container
 	_, _ = fmt.Fprintf(writer, "   🐳 Starting container with image: %s\n", cfg.Image)
@@ -309,17 +175,9 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Step 4: Health check
 	if cfg.HealthCheck != nil {
-		_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for health check: %s\n", cfg.HealthCheck.URL)
-		if err := waitForContainerHealth(cfg.HealthCheck, writer); err != nil {
-			// Print container logs for debugging
-			_, _ = fmt.Fprintf(writer, "\n⚠️  Container failed health check. Logs:\n")
-			logsCmd := exec.CommandContext(context.Background(), "podman", "logs", cfg.Name)
-			logsCmd.Stdout = writer
-			logsCmd.Stderr = writer
-			_ = logsCmd.Run()
-			return nil, fmt.Errorf("container health check failed: %w", err)
+		if err := checkGenericContainerHealth(cfg, writer); err != nil {
+			return nil, err
 		}
-		_, _ = fmt.Fprintf(writer, "   ✅ Health check passed\n")
 	}
 
 	// Step 5: Start streaming container logs in background (for runtime debugging)
@@ -334,6 +192,79 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	_, _ = fmt.Fprintf(writer, "✅ Container ready: %s (ID: %s)\n\n", cfg.Name, containerID[:12])
 	return instance, nil
+}
+
+func checkGenericContainerHealth(cfg GenericContainerConfig, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for health check: %s\n", cfg.HealthCheck.URL)
+	if err := waitForContainerHealth(cfg.HealthCheck, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "\n⚠️  Container failed health check. Logs:\n")
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", cfg.Name)
+		logsCmd.Stdout = writer
+		logsCmd.Stderr = writer
+		_ = logsCmd.Run()
+		return fmt.Errorf("container health check failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Health check passed\n")
+	return nil
+}
+
+func prepareGenericContainerImage(cfg *GenericContainerConfig, writer io.Writer) {
+	if cfg.BuildContext != "" {
+		serviceName := extractServiceNameFromImage(cfg.Image)
+		if prebuilt, ok := resolvePrebuiltCIArtifact(context.Background(), serviceName, writer); ok {
+			cfg.Image = prebuilt
+			cfg.BuildContext = ""
+			cfg.BuildDockerfile = ""
+		}
+	}
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	if registry == "" || tag == "" || isExternalImage(cfg.Image, registry) {
+		return
+	}
+	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
+	serviceName := extractServiceNameFromImage(cfg.Image)
+	if serviceName == "" {
+		return
+	}
+	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+	exists, verifyErr := VerifyImageExistsInRegistry(context.Background(), registryImage, writer)
+	if verifyErr == nil && exists {
+		_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping build)\n")
+		_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Podman will fetch during deployment\n")
+		cfg.BuildContext = ""
+		cfg.BuildDockerfile = ""
+		return
+	}
+	_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", verifyErr)
+	_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
+}
+
+func buildGenericContainerRunArgs(cfg GenericContainerConfig) []string {
+	args := []string{"run", "-d", "--name", cfg.Name}
+	if cfg.Network != "" {
+		args = append(args, "--network", cfg.Network)
+	}
+	for _, host := range cfg.ExtraHosts {
+		args = append(args, "--add-host", host)
+	}
+	if cfg.Network != host2 {
+		for containerPort, hostPort := range cfg.Ports {
+			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
+		}
+	}
+	for key, value := range cfg.Env {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
+	}
+	for hostPath, containerPath := range cfg.Volumes {
+		if strings.Contains(containerPath, ":") {
+			args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
+		} else {
+			args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
+		}
+	}
+	args = append(args, cfg.Image)
+	return append(args, cfg.Cmd...)
 }
 
 // StopGenericContainer stops and removes a container

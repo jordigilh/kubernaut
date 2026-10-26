@@ -169,25 +169,9 @@ Dockerfile mappings (from `docker/`):
 
 ## 📦 Deployment
 
-Services are deployed via the Helm chart:
-
-```bash
-# Install/upgrade via Helm
-helm upgrade --install kubernaut ./charts/kubernaut -n kubernaut-system --create-namespace
-```
-
-Chart templates (in `charts/kubernaut/templates/`):
-
-- `gateway/gateway.yaml`
-- `datastorage/datastorage.yaml`
-- `authwebhook/authwebhook.yaml`
-- `remediationorchestrator/remediationorchestrator.yaml`
-- `signalprocessing/signalprocessing.yaml`
-- `aianalysis/aianalysis.yaml`
-- `workflowexecution/workflowexecution.yaml`
-- `effectivenessmonitor/effectivenessmonitor.yaml`
-- `notification/notification.yaml`
-- `kubernaut-agent/kubernaut-agent.yaml`
+Services are deployed by the Kubernaut Operator. See the
+[operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+for bootstrap, dependency-chart, and Kubernaut CR configuration.
 
 ---
 

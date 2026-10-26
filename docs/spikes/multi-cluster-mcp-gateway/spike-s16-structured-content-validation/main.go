@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+//nolint:gocritic // This standalone spike exits immediately on setup failures.
 func main() {
 	endpoint := "http://localhost:31975/mcp"
 	if v := os.Getenv("MCP_ENDPOINT"); v != "" {
@@ -32,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect: %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	fmt.Println("Connected.")
 
 	tests := []struct {

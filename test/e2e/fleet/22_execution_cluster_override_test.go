@@ -114,7 +114,7 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		payload := buildPrometheusAlertWithClusterInNamespace("FleetExecClusterOverride2326", "critical",
 			targetName, targetNS, "prod-west")
 
-		gatewayURL := urlLocalhost30080
+		gatewayURL := fleetGatewayURL()
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

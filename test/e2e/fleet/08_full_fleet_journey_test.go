@@ -90,7 +90,7 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		payload := buildPrometheusAlertWithClusterInNamespace("FleetJourney", "critical",
 			targetName, targetNS, "remote-cluster")
 
-		gatewayURL := urlLocalhost30080
+		gatewayURL := fleetGatewayURL()
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

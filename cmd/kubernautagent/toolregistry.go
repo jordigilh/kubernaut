@@ -323,7 +323,7 @@ func (g *genericNameTool) Execute(ctx context.Context, args json.RawMessage) (st
 // fleetOAuth2CredentialsDefaultSecretName is the fleet OAuth2 Secret name
 // assumed when oauth2.CredentialsSecretRef is not explicitly overridden --
 // matches fleetmetadatacache's own default (/etc/fleetmetadatacache/
-// fleet-oauth2, see charts/kubernaut/templates/fleetmetadatacache/
+// fleet-oauth2, see operator-managed manifests/fleetmetadatacache/
 // fleetmetadatacache.yaml) so the "fleet-oauth2" Secret name convention is
 // shared across every fleet-aware service.
 const fleetOAuth2CredentialsDefaultSecretName = "fleet-oauth2"
@@ -332,7 +332,7 @@ const fleetOAuth2CredentialsDefaultSecretName = "fleet-oauth2"
 // OAuth2 client-id/client-secret files are mounted at, matching the Helm
 // chart's "/etc/kubernaut-agent/..." mount convention used for every other
 // KA credential (base LLM OAuth2, phase credentials, alignment-check
-// credentials -- see charts/kubernaut/templates/kubernaut-agent/
+// credentials -- see operator-managed manifests/kubernaut-agent/
 // kubernaut-agent.yaml).
 //
 // Issue #1729: this previously hardcoded the un-hyphenated

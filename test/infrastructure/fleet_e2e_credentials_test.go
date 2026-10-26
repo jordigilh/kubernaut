@@ -18,7 +18,6 @@ package infrastructure
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"io"
 	"os"
@@ -31,40 +30,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
-
-// Issue found 2026-09-01 (FLEET_DEMO_QUICKSTART.md): the docs told users to
-// pre-create the llm-credentials-primary Secret before running
-// `setup-fleet-demo-infra` at all -- impossible, since the cluster meant to
-// hold it doesn't exist yet at that point. SetupFleetCoreInfrastructureWithGateway
-// always creates a mock placeholder regardless (createFullPipelineHelmSecrets),
-// so the "actionable error if missing" InstallDemoHelmChart's
-// checkSecretExists promised was actually unreachable. buildLLMCredentialsSecretManifest
-// is the pure builder behind the fix: -llm-credentials-file overwrites that
-// placeholder with real content once the cluster exists, closing the gap in
-// one command instead of two.
-var _ = Describe("buildLLMCredentialsSecretManifest", func() {
-	It("UT-INFRA-FLEETDEMO-023: base64-encodes the credentials into both data.api_key and data[credentials.json]", func() {
-		manifest := buildLLMCredentialsSecretManifest("kubernaut-system", []byte(`{"type":"authorized_user"}`))
-		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":"authorized_user"}`))
-		Expect(manifest).To(ContainSubstring("name: llm-credentials-primary"))
-		Expect(manifest).To(ContainSubstring("namespace: kubernaut-system"))
-		Expect(manifest).To(ContainSubstring("data:"))
-		Expect(manifest).To(ContainSubstring("api_key: " + encoded))
-		Expect(manifest).To(ContainSubstring("credentials.json: " + encoded))
-	})
-
-	It("UT-INFRA-FLEETDEMO-024: scopes the Secret to the namespace passed in", func() {
-		manifest := buildLLMCredentialsSecretManifest("some-other-namespace", []byte("a-plain-api-key"))
-		Expect(manifest).To(ContainSubstring("namespace: some-other-namespace"))
-		Expect(manifest).NotTo(ContainSubstring("namespace: kubernaut-system"))
-	})
-
-	It("UT-INFRA-FLEETDEMO-025: round-trips credential bytes containing YAML-unsafe characters (quotes, newlines)", func() {
-		tricky := []byte("{\n  \"private_key\": \"-----BEGIN KEY-----\\nabc\\n-----END KEY-----\"\n}\n")
-		manifest := buildLLMCredentialsSecretManifest("kubernaut-system", tricky)
-		Expect(manifest).To(ContainSubstring("api_key: " + base64.StdEncoding.EncodeToString(tricky)))
-	})
-})
 
 var _ = Describe("addFleetWorkloadNamespaces", func() {
 	It("UT-INFRA-FLEET-026: allocates isolated workload namespaces outside kubernaut-system", func() {
@@ -100,7 +65,7 @@ var _ = Describe("addFleetWorkloadNamespaces", func() {
 var _ = Describe("buildAlertManagerManifest", func() {
 	It("UT-INFRA-FLEETDEMO-026: gateway-webhook URL uses gatewayNamespace, not namespace, when they differ", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 		Expect(manifest).NotTo(ContainSubstring("gateway-service.monitoring.svc.cluster.local"))
 	})
 
@@ -113,7 +78,7 @@ var _ = Describe("buildAlertManagerManifest", func() {
 
 	It("UT-INFRA-FLEETDEMO-028: single-cluster callers passing the same value for both still resolve correctly", func() {
 		manifest := buildAlertManagerManifest("kubernaut-system", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-029: BR-GATEWAY-036/037 bearer token is still added to the webhook's http_config when provided", func() {
@@ -123,7 +88,7 @@ var _ = Describe("buildAlertManagerManifest", func() {
 
 	It("UT-INFRA-FLEET-TLS-001: AlertManager uses the Gateway HTTPS endpoint and mounted CA", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
-		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8443/api/v1/signals/prometheus"))
 		Expect(manifest).To(ContainSubstring("tls_config:"))
 		Expect(manifest).To(ContainSubstring("ca_file: /etc/tls-ca/ca.crt"))
 		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))
@@ -168,6 +133,8 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 
 		fullPipelineDeployments := fullPipelineReadinessDeployments(nil)
 		Expect(fullPipelineDeployments).To(ContainElement("dex"))
+		Expect(fullPipelineDeployments).ToNot(ContainElement("prometheus"))
+		Expect(fullPipelineDeployments).ToNot(ContainElement("alertmanager"))
 	})
 
 	It("UT-INFRA-FLEET-TLS-002: event exporter uses the Gateway HTTPS endpoint and mounted CA", func() {
@@ -181,6 +148,18 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 	})
 })
 
+var _ = Describe("Fleet OAuth2 credential ownership", func() {
+	It("UT-2492-FLEET-OAUTH-001 [BR-FLEET-054]: keeps read and WorkflowExecution write Secret contracts separate", func() {
+		read := buildFleetOAuth2SecretManifest("kubernaut-system", fleetOAuth2SecretName, "kubernaut-fleet-read", "e2e-fleet-secret")
+		write := buildFleetOAuth2SecretManifest("kubernaut-system", fleetOAuth2WriteSecretName, "kubernaut-fleet-write", "e2e-fleet-write-secret")
+		Expect(read).To(ContainSubstring("name: fleet-oauth2-creds"))
+		Expect(read).To(ContainSubstring("client-id: \"kubernaut-fleet-read\""))
+		Expect(write).To(ContainSubstring("name: fleet-workflowexecution-oauth2-creds"))
+		Expect(write).To(ContainSubstring("client-id: \"kubernaut-fleet-write\""))
+		Expect(write).NotTo(Equal(read))
+	})
+})
+
 var _ = Describe("FullPipeline event exporter resilience", func() {
 	It("UT-INFRA-FP-EVENT-001: keeps Warning events fresh for the full lifecycle budget", func() {
 		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
@@ -189,11 +168,39 @@ var _ = Describe("FullPipeline event exporter resilience", func() {
 		Expect(manifest).To(ContainSubstring("maxEventAgeSeconds: 300"),
 			"the exporter window must stay aligned with Gateway's 5-minute event freshness guard")
 	})
+
+	It("UT-INFRA-FP-EVENT-002 [BR-E2E-001]: routes dynamic A2A fixture namespaces", func() {
+		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
+		for _, pattern := range []string{
+			`namespace: "fp-auto-*"`,
+			`namespace: "fp-int-*"`,
+			`namespace: "fp-ints-*"`,
+			`namespace: "fp-comb-*"`,
+			`namespace: "fp-full-*"`,
+			`namespace: "fp-cg2-*"`,
+			`namespace: "fp-cg3-*"`,
+			`namespace: "fp-t1912-*"`,
+			`namespace: "fp-na1918-*"`,
+			`namespace: "fp-standalone-2378-*"`,
+			`namespace: "fp-fp-*"`,
+		} {
+			Expect(manifest).To(ContainSubstring(pattern), "A2A Warning events must reach Gateway from %s", pattern)
+		}
+	})
 })
 
 var _ = Describe("kube-mcp-server E2E configuration", func() {
 	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
 		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+	})
+
+	It("UT-INFRA-FLEET-032: gives preloaded MCP images a deterministic local tag", func() {
+		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+	})
+
+	It("UT-INFRA-FLEET-033: uses the preloaded reference only when supplied", func() {
+		Expect(kubeMCPServerImageReference(KubeMCPServerAuthConfig{})).To(Equal(KubeMCPServerImage))
+		Expect(kubeMCPServerImageReference(KubeMCPServerAuthConfig{ImageReference: "localhost/kind-preload:sha256-test"})).To(Equal("localhost/kind-preload:sha256-test"))
 	})
 
 	It("UT-INFRA-FLEET-031: renders the current RFC 8693 token exchange schema", func() {
@@ -529,6 +536,19 @@ var _ = Describe("EAIGW version overrides", func() {
 			"--version", "v1.9.2",
 			"--set", "crds.enabled=false",
 			"-f", "https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml",
+			"--set", "config.envoyGateway.provider.type=Kubernetes",
+			"--set", "config.envoyGateway.extensionApis.enableEnvoyPatchPolicy=true",
+			"--set", "config.envoyGateway.extensionApis.enableBackend=true",
+			"--set", "config.envoyGateway.extensionManager.service.fqdn.hostname=ai-gateway-controller.envoy-ai-gateway-system.svc.cluster.local",
+			"--set", "config.envoyGateway.extensionManager.service.fqdn.port=1063",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.listener.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.route.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.cluster.includeAll=true",
+			"--set", "config.envoyGateway.extensionManager.hooks.xdsTranslator.translation.secret.includeAll=true",
+			"--set-json", `config.envoyGateway.extensionManager.hooks.xdsTranslator.post=["Translation","Cluster","Route"]`,
+			"--set-json", `config.envoyGateway.extensionManager.resources=[{"group":"aigateway.envoyproxy.io","version":"v1beta1","kind":"MCPRoute"}]`,
+			"--set", "config.envoyGateway.gateway.controllerName=gateway.envoyproxy.io/gatewayclass-controller",
+			"--set", "config.envoyGateway.logging.level.default=info",
 		}))
 		Expect(buildAgentRouterHelmArgs(versions)).To(Equal([]string{
 			"--version", "v1.2.0",
@@ -590,6 +610,18 @@ var _ = Describe("fleet external image preload policy", func() {
 
 	It("UT-INFRA-FLEETDEMO-027 [BR-PLATFORM-014]: preloads external images in CI mode", func() {
 		Expect(shouldPreloadFleetExternalImages("quay.io/kubernaut-ai")).To(BeTrue())
+	})
+})
+
+var _ = Describe("Kuadrant broker TLS wiring", func() {
+	It("UT-INFRA-FLEET-TLS-005 [BR-INTEGRATION-065]: mounts the private gateway CA and passes the broker flag", func() {
+		patch := kuadrantBrokerGatewayCAPatch()
+
+		Expect(patch).To(ContainSubstring(`"path":"/spec/template/spec/volumes/-"`))
+		Expect(patch).To(ContainSubstring(`"configMap":{"name":"inter-service-ca"}`))
+		Expect(patch).To(ContainSubstring(`"mountPath":"/certs/gateway-ca.crt"`))
+		Expect(patch).To(ContainSubstring(`"subPath":"ca.crt"`))
+		Expect(patch).To(ContainSubstring(`--gateway-ca-cert=/certs/gateway-ca.crt`))
 	})
 })
 

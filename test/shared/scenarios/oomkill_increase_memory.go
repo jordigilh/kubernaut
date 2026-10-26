@@ -106,6 +106,56 @@ type OOMKillIncreaseMemoryScenarioConfig struct {
 	Interval time.Duration
 }
 
+func oomKillSignalProcessingPhase(ctx context.Context, cfg OOMKillIncreaseMemoryScenarioConfig) string {
+	list := &signalprocessingv1.SignalProcessingList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return string(item.Status.Phase)
+		}
+	}
+	return ""
+}
+
+func oomKillAIAnalysisPhase(ctx context.Context, cfg OOMKillIncreaseMemoryScenarioConfig) (string, string) {
+	list := &aianalysisv1.AIAnalysisList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return "", ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return item.Status.Phase, item.Name
+		}
+	}
+	return "", ""
+}
+
+func oomKillWorkflowExecutionEngine(ctx context.Context, cfg OOMKillIncreaseMemoryScenarioConfig) (string, string) {
+	list := &workflowexecutionv1.WorkflowExecutionList{}
+	if err := cfg.CRDClient.List(ctx, list, client.InNamespace(cfg.CRDNamespace)); err != nil {
+		return "", ""
+	}
+	for index := range list.Items {
+		item := &list.Items[index]
+		if item.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
+			return item.Spec.WorkflowRef.ExecutionEngine, item.Name
+		}
+	}
+	return "", ""
+}
+
+func oomKillWorkflowExecutionPhase(ctx context.Context, cfg OOMKillIncreaseMemoryScenarioConfig, name string) string {
+	item := &workflowexecutionv1.WorkflowExecution{}
+	if err := cfg.CRDClient.Get(ctx, client.ObjectKey{Name: name, Namespace: cfg.CRDNamespace}, item); err != nil {
+		return ""
+	}
+	return item.Status.Phase
+}
+
 // RunOOMKillIncreaseMemoryScenario drives and asserts the shared outcome for
 // Issue #1542 follow-up: RR -> SP -> AA (selects oomkill-increase-memory-v1)
 // -> WE (job engine) -> K8s Job -> real memory-limit patch + Deployment
@@ -129,36 +179,15 @@ func RunOOMKillIncreaseMemoryScenario(cfg OOMKillIncreaseMemoryScenarioConfig) {
 	}
 
 	By("Waiting for SignalProcessing to complete")
-	Eventually(func() string {
-		spList := &signalprocessingv1.SignalProcessingList{}
-		if err := cfg.CRDClient.List(ctx, spList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range spList.Items {
-			sp := &spList.Items[i]
-			if sp.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				return string(sp.Status.Phase)
-			}
-		}
-		return ""
-	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
+	Eventually(func() string { return oomKillSignalProcessingPhase(ctx, cfg) }, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"SignalProcessing should reach Completed phase")
 
 	By("Waiting for AIAnalysis to select oomkill-increase-memory-v1 (job engine)")
 	var aaName string
 	Eventually(func() string {
-		aaList := &aianalysisv1.AIAnalysisList{}
-		if err := cfg.CRDClient.List(ctx, aaList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range aaList.Items {
-			aa := &aaList.Items[i]
-			if aa.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				aaName = aa.Name
-				return aa.Status.Phase
-			}
-		}
-		return ""
+		var phase string
+		phase, aaName = oomKillAIAnalysisPhase(ctx, cfg)
+		return phase
 	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"AIAnalysis should reach Completed phase")
 
@@ -177,18 +206,9 @@ func RunOOMKillIncreaseMemoryScenario(cfg OOMKillIncreaseMemoryScenarioConfig) {
 	By("Waiting for WorkflowExecution to be created with job execution engine")
 	var weName string
 	Eventually(func() string {
-		weList := &workflowexecutionv1.WorkflowExecutionList{}
-		if err := cfg.CRDClient.List(ctx, weList, client.InNamespace(cfg.CRDNamespace)); err != nil {
-			return ""
-		}
-		for i := range weList.Items {
-			we := &weList.Items[i]
-			if we.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
-				weName = we.Name
-				return we.Spec.WorkflowRef.ExecutionEngine
-			}
-		}
-		return ""
+		var engine string
+		engine, weName = oomKillWorkflowExecutionEngine(ctx, cfg)
+		return engine
 	}, cfg.Timeout, cfg.Interval).Should(Equal("job"),
 		"WorkflowExecution should use job execution engine")
 
@@ -227,13 +247,7 @@ func RunOOMKillIncreaseMemoryScenario(cfg OOMKillIncreaseMemoryScenarioConfig) {
 	}, cfg.Timeout, cfg.Interval).Should(Succeed())
 
 	By("Waiting for WorkflowExecution to reach Completed phase")
-	Eventually(func() string {
-		we := &workflowexecutionv1.WorkflowExecution{}
-		if err := cfg.CRDClient.Get(ctx, client.ObjectKey{Name: weName, Namespace: cfg.CRDNamespace}, we); err != nil {
-			return ""
-		}
-		return we.Status.Phase
-	}, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
+	Eventually(func() string { return oomKillWorkflowExecutionPhase(ctx, cfg, weName) }, cfg.Timeout, cfg.Interval).Should(Equal("Completed"),
 		"WorkflowExecution should reach Completed phase")
 
 	By("Verifying the memory-eater Deployment recovered (no pod remains in CrashLoopBackOff, container Ready)")

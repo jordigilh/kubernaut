@@ -111,193 +111,15 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		_, _ = fmt.Fprintf(output, "✅ Namespace %s created\n", WorkflowExecutionNamespace)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Parallel infrastructure setup
-	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(output, "\n⚡ PHASE 2: Parallel infrastructure setup...\n")
-	_, _ = fmt.Fprintf(output, "  ├── Installing Tekton Pipelines\n")
-	_, _ = fmt.Fprintf(output, "  ├── Deploying PostgreSQL + Redis\n")
-	_, _ = fmt.Fprintf(output, "  └── Building Data Storage image\n")
-
+	if err := runWorkflowExecutionParallelSetup(kubeconfigPath, output); err != nil {
+		return err
+	}
 	ctx := context.Background()
 
-	type result struct {
-		name string
-		err  error
+	if err := deployWorkflowExecutionDataStorage(ctx, clusterName, kubeconfigPath, output); err != nil {
+		return err
 	}
-
-	results := make(chan result, 3)
-
-	// Goroutine 1: Install Tekton Pipelines
-	go func() {
-		_, _ = fmt.Fprintf(output, "\n🔧 [Goroutine 1] Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
-		err := installTektonPipelines(ctx, kubeconfigPath, output)
-		if err != nil {
-			err = fmt.Errorf("tekton installation failed: %w", err)
-		} else {
-			_, _ = fmt.Fprintf(output, "✅ [Goroutine 1] Tekton Pipelines installed\n")
-		}
-		results <- result{name: "Tekton Pipelines", err: err}
-	}()
-
-	// Goroutine 2: Deploy PostgreSQL and Redis
-	go func() {
-		_, _ = fmt.Fprintf(output, "\n🗄️  [Goroutine 2] Deploying PostgreSQL + Redis...\n")
-		var err error
-
-		// Deploy PostgreSQL
-		_, _ = fmt.Fprintf(output, "  🐘 [Goroutine 2] Deploying PostgreSQL...\n")
-		if postgresErr := deployPostgreSQLInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); postgresErr != nil {
-			err = fmt.Errorf("postgresql deployment failed: %w", postgresErr)
-			results <- result{name: "PostgreSQL+Redis", err: err}
-			return
-		}
-
-		// Deploy Redis
-		_, _ = fmt.Fprintf(output, "  🔴 [Goroutine 2] Deploying Redis...\n")
-		if redisErr := deployRedisInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); redisErr != nil {
-			err = fmt.Errorf("redis deployment failed: %w", redisErr)
-			results <- result{name: "PostgreSQL+Redis", err: err}
-			return
-		}
-
-		// Wait for both to be ready
-		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for PostgreSQL to be ready...\n")
-		if waitErr := waitForDeploymentReady(ctx, kubeconfigPath, "postgresql", output); waitErr != nil {
-			err = fmt.Errorf("postgresql not ready: %w", waitErr)
-			results <- result{name: "PostgreSQL+Redis", err: err}
-			return
-		}
-
-		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for Redis to be ready...\n")
-		if waitErr := waitForDeploymentReady(ctx, kubeconfigPath, "redis", output); waitErr != nil {
-			err = fmt.Errorf("redis not ready: %w", waitErr)
-			results <- result{name: "PostgreSQL+Redis", err: err}
-			return
-		}
-
-		_, _ = fmt.Fprintf(output, "✅ [Goroutine 2] PostgreSQL + Redis ready\n")
-		results <- result{name: "PostgreSQL+Redis", err: nil}
-	}()
-
-	// Goroutine 3: Pre-build Data Storage image (can happen while other infrastructure deploys)
-	go func() {
-		_, _ = fmt.Fprintf(output, "\n💾 [Goroutine 3] Building Data Storage image...\n")
-		err := buildDataStorageImage(ctx, output)
-		if err != nil {
-			err = fmt.Errorf("data storage image build failed: %w", err)
-		} else {
-			_, _ = fmt.Fprintf(output, "✅ [Goroutine 3] Data Storage image built\n")
-		}
-		results <- result{name: "DS image build", err: err}
-	}()
-
-	// Collect results from all 3 goroutines
-	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for parallel tasks to complete...\n")
-	var errors []error
-	for i := 0; i < 3; i++ {
-		res := <-results
-		if res.err != nil {
-			_, _ = fmt.Fprintf(output, "❌ %s: %v\n", res.name, res.err)
-			errors = append(errors, res.err)
-		} else {
-			_, _ = fmt.Fprintf(output, "✅ %s completed\n", res.name)
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("parallel setup failed with %d errors: %v", len(errors), errors)
-	}
-
-	_, _ = fmt.Fprintf(output, "✅ All parallel tasks completed successfully\n")
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Deploy Data Storage + migrations (Sequential - requires Phase 2)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintf(output, "\n💾 PHASE 3: Deploying Data Storage + migrations...\n")
-
-	// Issue #785: Inter-service CA + leaf Secrets before DataStorage pod starts
-	_, _ = fmt.Fprintf(output, "  🔐 Generating inter-service TLS certificates (Issue #785)...\n")
-	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
-		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
-	}
-
-	// AU-9: Generate RSA signing certificate for audit exports
-	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
-		return fmt.Errorf("failed to generate signing certificate: %w", err)
-	}
-
-	// Deploy Data Storage (PostgreSQL/Redis already ready from Phase 2)
-	_, _ = fmt.Fprintf(output, "  💾 Deploying Data Storage service...\n")
-	if err := deployDataStorageWithConfig(ctx, clusterName, kubeconfigPath, output); err != nil {
-		return fmt.Errorf("failed to deploy Data Storage: %w", err)
-	}
-
-	// Wait for DS to be ready
-	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
-	if err := waitForWEDataStorageReady(ctx, kubeconfigPath, output); err != nil {
-		return fmt.Errorf("data storage did not become ready: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "✅ Data Storage deployed and ready\n")
-
-	// Apply ALL migrations (audit + workflow catalog + all schema updates)
-	// Using ApplyAllMigrations ensures we get the complete schema including:
-	// - 015: Create workflow catalog table
-	// - 017-019: Workflow schema updates (UUID primary key, workflow_name, etc.)
-	// - 020-022: Label columns and status fields
-	// - 013-014: Audit events table + partitions
-	_, _ = fmt.Fprintf(output, "\n📋 Applying ALL migrations (auto-discovered)...\n")
-	if err := ApplyAllMigrations(context.Background(), WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
-		return fmt.Errorf("failed to apply migrations: %w", err)
-	}
-
-	// Verify critical tables exist
-	_, _ = fmt.Fprintf(output, "\n🔍 Verifying critical tables...\n")
-	verifyConfig := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
-	verifyConfig.PostgresService = "postgresql"
-	verifyConfig.Tables = []string{"audit_events"}
-	if err := VerifyMigrations(context.Background(), verifyConfig, output); err != nil {
-		return fmt.Errorf("migration verification failed: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "✅ All migrations applied and verified\n")
-
-	// Build and register test workflow bundles
-	// This creates OCI bundles for test workflows and registers them in DataStorage
-	// Per DD-WORKFLOW-005 v1.0: OpenAPI client workflow registration
-	_, _ = fmt.Fprintf(output, "\n🎯 Building and registering test workflow bundles...\n")
-
-	// DD-AUTH-014: Create ServiceAccount for workflow registration with DataStorage
-	workflowRegSAName := "workflow-registration-sa"
-	_, _ = fmt.Fprintf(output, "🔐 Creating ServiceAccount for workflow registration (DD-AUTH-014)...\n")
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, output); err != nil {
-		return fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
-	}
-
-	// Get ServiceAccount token for authenticated workflow registration
-	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
-
-	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
-	_, _ = fmt.Fprintf(output, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
-	depSecretCmd := exec.CommandContext(context.Background(), "kubectl", "create", "secret", "generic", "e2e-dep-secret",
-		"--from-literal=token=e2e-test-value",
-		"--namespace", ExecutionNamespace,
-		"--kubeconfig", kubeconfigPath)
-	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
-	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
-		_, _ = fmt.Fprintf(output, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
-	} else {
-		_, _ = fmt.Fprintf(output, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
-	}
-
-	dataStorageURL := "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
-	if _, err = BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
-		return fmt.Errorf("failed to build and register test workflows: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Namespace + pull secrets (Sequential - quick final setup)
@@ -324,6 +146,130 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	_, _ = fmt.Fprintf(output, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution E2E cluster ready (PARALLEL MODE)!\n")
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	return nil
+}
+
+func deployWorkflowExecutionDataStorage(ctx context.Context, clusterName, kubeconfigPath string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "\n💾 PHASE 3: Deploying Data Storage + migrations...\n  🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "  💾 Deploying Data Storage service...\n")
+	if err := deployDataStorageWithConfig(ctx, clusterName, kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
+	if err := waitForWEDataStorageReady(ctx, kubeconfigPath, output); err != nil {
+		return fmt.Errorf("data storage did not become ready: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "✅ Data Storage deployed and ready\n\n📋 Applying ALL migrations (auto-discovered)...\n")
+	if err := ApplyAllMigrations(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+	verifyConfig := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
+	verifyConfig.PostgresService = "postgresql"
+	verifyConfig.Tables = []string{"audit_events"}
+	if err := VerifyMigrations(ctx, verifyConfig, output); err != nil {
+		return fmt.Errorf("migration verification failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "✅ All migrations applied and verified\n\n🎯 Building and registering test workflow bundles...\n")
+	workflowRegSAName := "workflow-registration-sa"
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, output); err != nil {
+		return fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
+	}
+	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "✅ ServiceAccount token retrieved for authenticated workflow registration\n🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
+	depSecretCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret", "--from-literal=token=e2e-test-value", "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
+	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
+	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(output, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
+	} else {
+		_, _ = fmt.Fprintf(output, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
+	}
+	if _, err := BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, "https://localhost:8092", saToken, output); err != nil {
+		return fmt.Errorf("failed to build and register test workflows: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
+	return nil
+}
+
+func runWorkflowExecutionParallelSetup(kubeconfigPath string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "  ├── Installing Tekton Pipelines\n  ├── Deploying PostgreSQL + Redis\n  └── Building Data Storage image\n")
+	ctx := context.Background()
+	results := make(chan struct {
+		name string
+		err  error
+	}, 3)
+	go func() {
+		_, _ = fmt.Fprintf(output, "\n🔧 [Goroutine 1] Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
+		err := installTektonPipelines(ctx, kubeconfigPath, output)
+		if err != nil {
+			err = fmt.Errorf("tekton installation failed: %w", err)
+		} else {
+			_, _ = fmt.Fprintf(output, "✅ [Goroutine 1] Tekton Pipelines installed\n")
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"Tekton Pipelines", err}
+	}()
+	go func() {
+		_, _ = fmt.Fprintf(output, "\n🗄️  [Goroutine 2] Deploying PostgreSQL + Redis...\n")
+		steps := []struct {
+			name string
+			fn   func() error
+		}{{"postgresql deployment", func() error {
+			return deployPostgreSQLInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output)
+		}}, {"redis deployment", func() error { return deployRedisInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output) }}, {"postgresql readiness", func() error { return waitForDeploymentReady(ctx, kubeconfigPath, "postgresql", output) }}, {"redis readiness", func() error { return waitForDeploymentReady(ctx, kubeconfigPath, "redis", output) }}}
+		for _, step := range steps {
+			if err := step.fn(); err != nil {
+				results <- struct {
+					name string
+					err  error
+				}{"PostgreSQL+Redis", fmt.Errorf("%s failed: %w", step.name, err)}
+				return
+			}
+		}
+		_, _ = fmt.Fprintf(output, "✅ [Goroutine 2] PostgreSQL + Redis ready\n")
+		results <- struct {
+			name string
+			err  error
+		}{"PostgreSQL+Redis", nil}
+	}()
+	go func() {
+		_, _ = fmt.Fprintf(output, "\n💾 [Goroutine 3] Building Data Storage image...\n")
+		err := buildDataStorageImage(ctx, output)
+		if err != nil {
+			err = fmt.Errorf("data storage image build failed: %w", err)
+		} else {
+			_, _ = fmt.Fprintf(output, "✅ [Goroutine 3] Data Storage image built\n")
+		}
+		results <- struct {
+			name string
+			err  error
+		}{"DS image build", err}
+	}()
+	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for parallel tasks to complete...\n")
+	var errs []error
+	for range 3 {
+		result := <-results
+		if result.err != nil {
+			_, _ = fmt.Fprintf(output, "❌ %s: %v\n", result.name, result.err)
+			errs = append(errs, result.err)
+		} else {
+			_, _ = fmt.Fprintf(output, "✅ %s completed\n", result.name)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("parallel setup failed with %d errors: %v", len(errs), errs)
+	}
+	_, _ = fmt.Fprintf(output, "✅ All parallel tasks completed successfully\n")
 	return nil
 }
 func deployDataStorageWithConfig(ctx context.Context, clusterName, kubeconfigPath string, output io.Writer) error {

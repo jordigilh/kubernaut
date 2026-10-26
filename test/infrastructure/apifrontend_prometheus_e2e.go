@@ -239,9 +239,12 @@ type prometheusRulesResponse struct {
 
 // WaitForPrometheusRuleState polls Prometheus /api/v1/rules until the named
 // alert rule reaches the desired state or the timeout expires.
-func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName string, desired PrometheusRuleState, timeout time.Duration) error {
+func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName string, desired PrometheusRuleState, timeout time.Duration, caPath ...string) error {
 	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client, err := prometheusRulesHTTPClient(caPath)
+	if err != nil {
+		return err
+	}
 
 	for time.Now().Before(deadline) {
 		select {
@@ -263,6 +266,13 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 
 		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if resp.StatusCode >= http.StatusInternalServerError {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("prometheus rules endpoint returned status %d: %s", resp.StatusCode, string(body))
+		}
 		if err != nil {
 			time.Sleep(2 * time.Second)
 			continue
@@ -274,18 +284,32 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 			continue
 		}
 
-		for _, group := range rulesResp.Data.Groups {
-			for _, rule := range group.Rules {
-				if rule.Name == ruleName && PrometheusRuleState(rule.State) == desired {
-					return nil
-				}
-			}
+		if prometheusRuleStateReached(rulesResp, ruleName, desired) {
+			return nil
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 
 	return fmt.Errorf("rule %q did not reach state %q within %v", ruleName, desired, timeout)
+}
+
+func prometheusRulesHTTPClient(caPath []string) (*http.Client, error) {
+	if len(caPath) > 0 && caPath[0] != "" {
+		return NewMonitoringTLSAwareClient(caPath[0])
+	}
+	return &http.Client{Timeout: 5 * time.Second}, nil
+}
+
+func prometheusRuleStateReached(response prometheusRulesResponse, ruleName string, desired PrometheusRuleState) bool {
+	for _, group := range response.Data.Groups {
+		for _, rule := range group.Rules {
+			if rule.Name == ruleName && PrometheusRuleState(rule.State) == desired {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AFInjectOTLPMetrics sends a single gauge metric to Prometheus via the OTLP HTTP endpoint.

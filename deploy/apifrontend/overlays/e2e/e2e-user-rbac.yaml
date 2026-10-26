@@ -10,7 +10,7 @@
 # ClusterRoleBindings below. Because Kubernetes RBAC is additive (a SAR
 # Allowed=true from ANY matching ClusterRole/Binding wins), that block
 # silently granted every one of those 4 groups access to tools far beyond
-# what charts/kubernaut/values.yaml's apifrontend.config.rbac.personas
+# what the operator qualification persona contract's apifrontend.config.rbac.personas
 # actually authorizes for them -- e.g. ai-orchestrator could call
 # kubernaut_get_effectiveness, kubernaut_get_audit_trail, kubernaut_approve,
 # etc. even though its persona entry never lists them. This defeated the
@@ -141,7 +141,7 @@ roleRef:
 # access the first time this was tried (RCA'd via CI must-gather on PR
 # #1940) -- every persona below gets an unconditional ClusterRoleBinding
 # instead, matching the "every persona with a tool grant needs console
-# access too" default applied to charts/kubernaut/values.yaml's
+# access too" default applied to the operator qualification persona contract's
 # consoleAccessGroups.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

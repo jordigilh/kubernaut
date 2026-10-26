@@ -33,8 +33,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	interServiceHTTP  = "http"
+	interServiceHTTPS = "https"
 )
 
 // InterServiceCAPath returns the deterministic file path where the inter-service
@@ -158,6 +164,18 @@ data:
 				fmt.Sprintf("gateway-service.%s.svc.cluster.local", namespace),
 			},
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
+		{
+			// The Fleet MCP Gateway terminates TLS at the Gateway API edge,
+			// not at Kubernaut's application gateway Service. Include both
+			// fixed Kuadrant names and namespace wildcards for Envoy Gateway's
+			// generated Service name, plus the sslip.io hostnames used by
+			// Kuadrant MCPServerRegistrations, so the same qualification CA
+			// works for in-cluster clients and host-side NodePort probes.
+			name:       "mcp-gateway",
+			secretName: "mcp-gateway-tls",
+			dnsNames:   append([]string(nil), mcpGatewayTLSDNSNames...),
+			ipAddrs:    []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
 			name:       "kubernaut-agent",
@@ -382,6 +400,9 @@ func NewTLSAwareClient(kubeconfigPath string, timeout time.Duration) (*http.Clie
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("no valid PEM certificates found in %s", caPEMPath)
 	}
+	if err := appendMonitoringCA(pool, kubeconfigPath); err != nil {
+		return nil, err
+	}
 
 	return &http.Client{
 		Timeout: timeout,
@@ -394,9 +415,42 @@ func NewTLSAwareClient(kubeconfigPath string, timeout time.Duration) (*http.Clie
 	}, nil
 }
 
-// NewTLSAwareTransport creates an http.Transport that trusts the inter-service CA.
-// Useful for wrapping with additional transports (e.g., ServiceAccountTransport).
-func NewTLSAwareTransport(kubeconfigPath string) (*http.Transport, error) {
+// monitoringTLSRoundTripper upgrades legacy host-side HTTP URLs for the
+// monitoring NodePorts to HTTPS. The application Helm lane historically
+// exposed Prometheus/AlertManager as HTTP, while the operator qualification
+// contract requires HTTPS endpoints. Keeping this compatibility at the shared
+// transport boundary avoids changing the existing E2E journeys.
+type monitoringTLSRoundTripper struct {
+	base *http.Transport
+}
+
+func (t *monitoringTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL != nil && req.URL.Scheme == interServiceHTTP {
+		port := req.URL.Port()
+		if port == strconv.Itoa(PrometheusHostPort) || port == strconv.Itoa(AlertManagerHostPort) || port == "9190" || port == "9193" {
+			clone := req.Clone(req.Context())
+			clone.URL.Scheme = interServiceHTTPS
+			req = clone
+		}
+	}
+	return t.base.RoundTrip(req)
+}
+
+// NewTLSAwareTransport creates an HTTP round tripper that trusts the
+// inter-service CA. Useful for wrapping with additional transports (e.g.,
+// ServiceAccountTransport). It leaves response-header timing to the caller's
+// http.Client timeout so long-running A2A/MCP turns are not cut off by a
+// hidden 30-second transport deadline. Callers that need a transport-level
+// budget can use NewTLSAwareTransportWithResponseHeaderTimeout explicitly.
+func NewTLSAwareTransport(kubeconfigPath string) (http.RoundTripper, error) {
+	return NewTLSAwareTransportWithResponseHeaderTimeout(kubeconfigPath, 0)
+}
+
+// NewTLSAwareTransportWithResponseHeaderTimeout creates a CA-aware transport
+// with an explicit response-header budget. A zero timeout disables the
+// transport-level header deadline so callers can apply a longer per-request
+// http.Client timeout to long-lived A2A turns.
+func NewTLSAwareTransportWithResponseHeaderTimeout(kubeconfigPath string, responseHeaderTimeout time.Duration) (http.RoundTripper, error) {
 	caPEMPath := InterServiceCAPath(kubeconfigPath)
 	caPEM, err := os.ReadFile(caPEMPath)
 	if err != nil {
@@ -407,14 +461,36 @@ func NewTLSAwareTransport(kubeconfigPath string) (*http.Transport, error) {
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("no valid PEM certificates found in %s", caPEMPath)
 	}
+	if err := appendMonitoringCA(pool, kubeconfigPath); err != nil {
+		return nil, err
+	}
 
-	return &http.Transport{
+	return &monitoringTLSRoundTripper{base: &http.Transport{
 		TLSClientConfig: &tls.Config{
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
 		},
-		ResponseHeaderTimeout: 30 * time.Second,
-	}, nil
+		ResponseHeaderTimeout: responseHeaderTimeout,
+	}}, nil
+}
+
+// appendMonitoringCA extends the shared host-side trust pool when the
+// operator qualification has provisioned the separate monitoring CA. The
+// legacy application Helm lane has no monitoring CA file, so absence remains
+// a no-op for all other E2E suites.
+func appendMonitoringCA(pool *x509.CertPool, kubeconfigPath string) error {
+	monitoringPath := MonitoringCAPath(kubeconfigPath)
+	monitoringPEM, err := os.ReadFile(monitoringPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read monitoring CA PEM from %s: %w", monitoringPath, err)
+	}
+	if !pool.AppendCertsFromPEM(monitoringPEM) {
+		return fmt.Errorf("no valid PEM certificates found in %s", monitoringPath)
+	}
+	return nil
 }
 
 // TLSCertVolumeYAML returns the YAML snippet for mounting a TLS cert Secret as a volume.
