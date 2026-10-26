@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,13 +29,16 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // e2eTokenExpirationSeconds bounds every TokenRequest minted by this file for
@@ -50,6 +54,38 @@ import (
 // on a kind cluster (`kubectl create token --duration=2160h`); a demo/E2E
 // process is not expected to outlive this.
 const e2eTokenExpirationSeconds = 90 * 24 * 3600 // 90 days
+
+// newKubeconfigControllerClient builds the approved controller-runtime client
+// used by Kind-backed infrastructure operations that need typed Kubernetes API
+// access.
+func newKubeconfigControllerClient(kubeconfigPath string) (ctrlclient.Client, error) {
+	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		log.Printf("build rest.Config from kubeconfig %s: %v", kubeconfigPath, err)
+		return nil, fmt.Errorf("build rest.Config from kubeconfig %s: %w", kubeconfigPath, err)
+	}
+
+	scheme := k8sruntime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		log.Printf("register core Kubernetes scheme: %v", err)
+		return nil, fmt.Errorf("register core Kubernetes scheme: %w", err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		log.Printf("register networking Kubernetes scheme: %v", err)
+		return nil, fmt.Errorf("register networking Kubernetes scheme: %w", err)
+	}
+	if err := authenticationv1.AddToScheme(scheme); err != nil {
+		log.Printf("register authentication Kubernetes scheme: %v", err)
+		return nil, fmt.Errorf("register authentication Kubernetes scheme: %w", err)
+	}
+
+	kubeClient, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		log.Printf("create controller-runtime Kubernetes client: %v", err)
+		return nil, fmt.Errorf("create controller-runtime Kubernetes client: %w", err)
+	}
+	return kubeClient, nil
+}
 
 // CreateE2EServiceAccountWithDataStorageAccess creates a ServiceAccount for E2E tests
 // with RBAC permissions to access DataStorage via middleware-based SAR validation.
@@ -331,7 +367,7 @@ func CreateE2EServiceAccountWithGatewayAccess(ctx context.Context, namespace, ku
 //	token, err := GetServiceAccountToken(ctx, "kubernaut-system", "datastorage-e2e-sa", kubeconfigPath)
 //	transport := auth.NewServiceAccountTransport(token)
 func GetServiceAccountToken(ctx context.Context, namespace, saName, kubeconfigPath string) (string, error) {
-	clientset, err := getKubernetesClient(kubeconfigPath)
+	kubeClient, err := newKubeconfigControllerClient(kubeconfigPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
@@ -344,21 +380,16 @@ func GetServiceAccountToken(ctx context.Context, namespace, saName, kubeconfigPa
 		},
 	}
 
-	tokenResp, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
-		ctx,
-		saName,
-		treq,
-		metav1.CreateOptions{},
-	)
-	if err != nil {
+	serviceAccount := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace}}
+	if err := kubeClient.SubResource("token").Create(ctx, serviceAccount, treq); err != nil {
 		return "", fmt.Errorf("failed to create ServiceAccount token via TokenRequest API: %w", err)
 	}
 
-	if tokenResp.Status.Token == "" {
+	if treq.Status.Token == "" {
 		return "", fmt.Errorf("TokenRequest returned empty token for ServiceAccount %s/%s", namespace, saName)
 	}
 
-	return tokenResp.Status.Token, nil
+	return treq.Status.Token, nil
 }
 
 // Removed: waitForServiceAccountToken (unused) - K8s 1.24+ creates tokens automatically, no explicit wait needed
