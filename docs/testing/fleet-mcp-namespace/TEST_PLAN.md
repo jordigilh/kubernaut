@@ -12,11 +12,11 @@
 
 ## 1. Purpose and objectives
 
-The fleet demo must provision the MCP Gateway and hub `kube-mcp-server` before
-the Kubernaut Helm release, while keeping those platform components in the
+The fleet qualification path must provision the MCP Gateway and hub
+`kube-mcp-server` before the operator reconciles the Kubernaut CR, while keeping those platform components in the
 dedicated `mcp-system` namespace used by the remote-cluster setup. This plan
-proves namespace propagation, prerequisite replication, Helm wiring, and the
-existing pre-Helm ordering contract without requiring a live cluster for every
+proves namespace propagation, prerequisite replication, operator CR wiring, and
+the existing pre-reconciliation ordering contract without requiring a live cluster for every
 regression test.
 
 Success requires:
@@ -24,8 +24,8 @@ Success requires:
 1. Hub MCP resources and Gateway registration resources use `mcp-system`.
 2. The hub MCP namespace has its CA ConfigMap and Keycloak DNS alias before the
    server is deployed.
-3. Helm receives `global.fleet.mcpGatewayNamespace=mcp-system` and watches the
-   same namespace for Gateway-managed CRs.
+3. The operator Fleet CR carries `spec.fleet.mcpGateway.namespace=mcp-system` and
+   watches the same namespace for Gateway-managed CRs.
 4. Existing remote-only and same-namespace FMC callers remain compatible.
 
 ## 2. Authority and scope
@@ -53,7 +53,7 @@ out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 
 | ID | Tier | Business outcome | Phase |
 |---|---|---|---|
-| `UT-INFRA-FLEET-MCP-001` | Unit | Operator Fleet CR and gateway builders include the dedicated MCP namespace when configured. | GREEN |
+| `UT-2492-CR-STATIC-001` | Unit | The operator Fleet CR includes the dedicated MCP namespace when configured. | GREEN |
 | `UT-INFRA-FLEET-MCP-002` | Unit | Empty MCP namespace preserves the caller's existing namespace. | GREEN |
 | `UT-INFRA-FLEET-MCP-003` | Unit | Explicit MCP namespace overrides the application namespace. | GREEN |
 | `UT-INFRA-FLEET-MCP-004` | Unit | Remote MCP namespace has an independent default and override. | GREEN |
@@ -66,7 +66,7 @@ out of `kubernaut-system`; live Kind execution is a follow-up validation gate.
 |---|---|---|---|
 | MCP namespace resolution | Fleet demo and fleet E2E setup | `provisionFleetCoreInfra` | `UT-INFRA-FLEET-MCP-002/003/004` |
 | Hub MCP/Gateway resources | `DeployFleetGatewayInfra` | `fleet_e2e.go` | `IT-INFRA-FLEET-MCP-005/006` |
-| Operator Fleet namespace wiring | `SetupFleetE2EInfrastructure` | Fleet CR and gateway namespace builders | `UT-INFRA-FLEET-MCP-001` |
+| Operator Fleet namespace wiring | `SetupFleetE2EInfrastructure` | Fleet CR and gateway namespace builders | `UT-2492-CR-STATIC-001` |
 
 ## 5. Verification
 
@@ -74,17 +74,17 @@ Focused checks:
 
 ```bash
 go test ./test/infrastructure -run 'TestInfrastructure' -ginkgo.focus='Fleet MCP namespace'
-go test ./test/infrastructure -run 'TestInfrastructure' -ginkgo.focus='buildFleetOAuth2HelmArgs'
+  go test ./test/infrastructure -run 'TestInfrastructure' -ginkgo.focus='Fleet static operator contract|UT-INFRA-FLEET-MCP'
 ```
 
 Completion checks:
 
 ```bash
-gofmt -w test/infrastructure/fleet_e2e.go test/infrastructure/fleet_e2e_credentials_test.go test/infrastructure/demo_helm_test.go
+gofmt -w test/infrastructure/fleet_e2e.go test/infrastructure/fleet_e2e_credentials_test.go
 go build ./...
 go test ./test/infrastructure -run '^TestInfrastructure$'
 ```
 
 The live E2E scenario remains pending until an isolated Kind run is available;
-it must verify the `mcp-system` Deployment/Service and readiness before Helm
-creates Kubernaut workloads in `kubernaut-system`.
+it must verify the `mcp-system` Deployment/Service and readiness before the
+operator reconciles Kubernaut workloads in `kubernaut-system`.

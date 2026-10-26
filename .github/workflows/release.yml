@@ -75,6 +75,8 @@ jobs:
     steps:
       - name: Extract version from tag
         id: version
+        env:
+          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAG="v${{ inputs.release_version }}"
@@ -85,11 +87,7 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -z "${{ inputs.operator_candidate_manifest }}" ]]; then
-            echo "qualification_tag=${VERSION}-qualification-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
-          else
-            echo "qualification_tag=$VERSION" >> $GITHUB_OUTPUT
-          fi
+          echo "qualification_tag=${VERSION}-qualification-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
 
           if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
@@ -134,9 +132,11 @@ jobs:
       - name: Resolve immutable candidate manifest or exact development SHA
         id: candidate
         shell: bash
+        env:
+          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
         run: |
           set -euo pipefail
-          MANIFEST_URL='${{ inputs.operator_candidate_manifest }}'
+          MANIFEST_URL="$OPERATOR_CANDIDATE_MANIFEST"
           if [[ -n "$MANIFEST_URL" ]]; then
             curl --fail --location --retry 3 "$MANIFEST_URL" -o operator-candidate.yaml
             test -s operator-candidate.yaml
@@ -255,6 +255,7 @@ jobs:
           OPERATOR_CANDIDATE: /tmp/operator-candidate/operator-candidate.yaml
           IMAGE_TAG: ${{ needs.prepare.outputs.qualification_tag }}
           IMAGE_REGISTRY: quay.io/kubernaut-ai
+          OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
         run: |
           set -euo pipefail
            OPERATOR_IMAGE=$(yq -r '.image.ref' "$OPERATOR_CANDIDATE")
@@ -264,7 +265,7 @@ jobs:
           test "$OPERATOR_SHA" = "${{ needs.prepare-operator-candidate.outputs.operator_sha }}"
           export KUBERNAUT_OPERATOR_IMAGE="$OPERATOR_IMAGE"
           export KUBERNAUT_OPERATOR_SHA="$OPERATOR_SHA"
-          if [[ -z '${{ inputs.operator_candidate_manifest }}' ]]; then
+          if [[ -z "$OPERATOR_CANDIDATE_MANIFEST" ]]; then
             podman load -i /tmp/operator-development/kubernaut-operator.tar
             mkdir -p "$PWD/operator-charts"
             tar -xzf /tmp/operator-development/kubernaut-operator-*.tgz -C "$PWD/operator-charts"
@@ -568,7 +569,6 @@ jobs:
   security-scan-amd64:
     name: "Security Scan ${{ matrix.service }} (amd64)"
     needs: [prepare, build-amd64]
-    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -596,7 +596,7 @@ jobs:
       - name: Scan for CVEs (Trivy)
         uses: ./.github/actions/trivy-scan-with-retry
         with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-amd64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
           # acceptance entries expire between 2027-04-11 and 2027-04-21,
           # scoped to must-gather (not service images).
@@ -605,7 +605,7 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-amd64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-amd64.cdx.json
           # anchore/sbom-action uploads the workflow artifact's file under
@@ -625,7 +625,6 @@ jobs:
   security-scan-arm64:
     name: "Security Scan ${{ matrix.service }} (arm64)"
     needs: [prepare, build-arm64, build-arm64-qemu]
-    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -653,7 +652,7 @@ jobs:
       - name: Scan for CVEs (Trivy)
         uses: ./.github/actions/trivy-scan-with-retry
         with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-arm64
           # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
           # acceptance entries expire between 2027-04-11 and 2027-04-21,
           # scoped to must-gather (not service images).
@@ -662,7 +661,7 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.qualification_tag }}-arm64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-arm64.cdx.json
           # See the amd64 job's identical comment above (#2038).
@@ -700,7 +699,7 @@ jobs:
 
   tag-latest:
     name: Tag GA images as latest
-    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release]
     if: >-
       always() &&
       (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
@@ -709,7 +708,8 @@ jobs:
       needs.security-scan-amd64.result == 'success' &&
       needs.security-scan-arm64.result == 'success' &&
       needs.sign-and-attest.result == 'success' &&
-      needs.provenance.result == 'success'
+      needs.provenance.result == 'success' &&
+      needs.promote-release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -749,8 +749,15 @@ jobs:
 
   sign-and-attest:
     name: "Sign & Attest SBOM ${{ matrix.service }}"
-    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
-    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: >-
+      always() &&
+      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      needs.prepare-operator-candidate.result == 'success' &&
+      needs.operator-qualification.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -790,7 +797,7 @@ jobs:
       - name: Resolve image digests
         id: digests
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
+          VERSION="${{ needs.prepare.outputs.qualification_tag }}"
           SVC="${{ matrix.service }}"
 
           AMD64_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}-amd64")
@@ -873,8 +880,15 @@ jobs:
 
   provenance:
     name: "Attest ${{ matrix.service }}"
-    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
-    if: github.event_name == 'push' || inputs.operator_candidate_manifest != ''
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
+    if: >-
+      always() &&
+      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      needs.prepare-operator-candidate.result == 'success' &&
+      needs.operator-qualification.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success'
     permissions:
       contents: read
       actions: read
@@ -905,8 +919,65 @@ jobs:
       # The `env` context (IMAGE_REGISTRY) is not available to the inputs of
       # a reusable workflow call, so the registry is spelled out here.
       image: quay.io/kubernaut-ai/${{ matrix.service }}
-      version: ${{ needs.prepare.outputs.version }}
+      version: ${{ needs.prepare.outputs.qualification_tag }}
     secrets: inherit
+
+  # ========================================
+  # STAGE 5: PROMOTE QUALIFIED IMAGE DIGESTS
+  # Build and qualification tags are unique to this run. Only after all
+  # qualification, scan, signing, and provenance gates pass are the immutable
+  # release-version architecture tags and manifest list created.
+  # DD-RELEASE-001 | BR-PLATFORM-RELEASE-001
+  # ========================================
+
+  promote-release:
+    name: Promote qualified release images
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
+    if: >-
+      always() &&
+      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      needs.prepare.result == 'success' &&
+      needs.prepare-operator-candidate.result == 'success' &&
+      needs.operator-qualification.result == 'success' &&
+      needs.create-manifests.result == 'success' &&
+      needs.security-scan-amd64.result == 'success' &&
+      needs.security-scan-arm64.result == 'success' &&
+      needs.sign-and-attest.result == 'success' &&
+      needs.provenance.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Promote architecture images and manifest lists
+        env:
+          STAGING_TAG: ${{ needs.prepare.outputs.qualification_tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          services=(gateway signalprocessing aianalysis authwebhook remediationorchestrator workflowexecution notification datastorage effectivenessmonitor kubernautagent apifrontend fleetmetadatacache must-gather db-migrate)
+          for service in "${services[@]}"; do
+            for arch in amd64 arm64; do
+              source="docker://${IMAGE_REGISTRY}/${service}:${STAGING_TAG}-${arch}"
+              target="docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-${arch}"
+              if skopeo inspect "$target" >/dev/null 2>&1; then
+                echo "::error::release image already exists: ${service}:${RELEASE_TAG}-${arch}"
+                exit 1
+              fi
+              skopeo copy --retry-times 3 "$source" "$target"
+            done
+            podman manifest rm "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" 2>/dev/null || true
+            podman manifest create "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" \
+              "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-amd64" \
+              "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-arm64"
+            podman manifest push "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" \
+              "docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}"
+          done
 
   # ========================================
   # STAGE 6: GITHUB RELEASE
@@ -919,7 +990,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, tag-latest]
+    needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release, tag-latest]
     if: >-
       always() &&
       (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
@@ -931,6 +1002,7 @@ jobs:
       needs.security-scan-arm64.result == 'success' &&
       needs.sign-and-attest.result == 'success' &&
       needs.provenance.result == 'success' &&
+      needs.promote-release.result == 'success' &&
       needs.tag-latest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
