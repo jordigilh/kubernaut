@@ -425,6 +425,18 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorChart).To(Equal("oci://example/operator"))
 		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc9"))
 	})
+	It("UT-2492-016D [BR-PLATFORM-014]: rejects an unpaired operator release without a chart override", func() {
+		_, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc28"})
+		Expect(err).To(MatchError(`operator version "1.6.0-rc28" requires an explicit operator chart override`))
+	})
+	It("UT-2492-016E [BR-PLATFORM-014]: reads a bare relative local chart version", func() {
+		chartDir, err := os.MkdirTemp(".", "operator-chart-")
+		Expect(err).NotTo(HaveOccurred())
+		GinkgoT().Cleanup(func() { _ = os.RemoveAll(chartDir) })
+		Expect(os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nversion: 1.6.0-rc28\n"), 0o600)).To(Succeed())
+		Expect(filepath.IsAbs(chartDir)).To(BeFalse())
+		Expect(chartVersionOrDefault(chartDir, "fallback")).To(Equal("1.6.0-rc28"))
+	})
 
 	It("UT-2492-017 [BR-PLATFORM-014]: rejects dirty explicit operator source", func() {
 		tmpDir := GinkgoT().TempDir()

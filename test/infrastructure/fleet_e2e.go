@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -662,40 +661,6 @@ func addFleetWorkloadNamespaces(namespaces map[string]string) {
 	namespaces["fleet-af-hub-triage"] = "fleet-af-hub-triage"
 }
 
-// buildLLMCredentialsSecretManifest renders the llm-credentials-primary
-// Secret manifest with the given file's raw bytes under BOTH key names the
-// chart's kubernaut.llm.credFile helper can ask for: "api_key" (every
-// provider except vertex_ai) and "credentials.json" (vertex_ai only --
-// confirmed via _helpers.tpl's kubernaut.llm.credFile). This function runs
-// before the LLM provider is known to the infra-provisioning step (that's
-// DemoHelmOptions.LLMProvider, resolved later, in the separate
-// `helm install` step), so it populates both rather than plumbing the
-// provider string through this far earlier in the flow.
-//
-// Base64-encoded via the manifest's `data:` field (not `stringData:`)
-// deliberately: vertex_ai credential material is a JSON blob that may
-// contain characters (quotes, newlines) that don't round-trip safely
-// through a YAML block scalar. Pure function (no exec/cluster access) for
-// unit testing without cluster access.
-func buildLLMCredentialsSecretManifest(namespace string, credentials []byte) string {
-	encoded := base64.StdEncoding.EncodeToString(credentials)
-	return fmt.Sprintf(`apiVersion: v1
-kind: Secret
-metadata:
-  name: %s
-  namespace: %s
-type: Opaque
-data:
-  api_key: %s
-  credentials.json: %s
-`, demoLLMSecretName, namespace, encoded, encoded)
-}
-
-// applyRealLLMCredentialsSecret reads llmCredentialsFile and overwrites the
-// mock llm-credentials-primary placeholder createFullPipelineHelmSecrets
-// just created with its raw bytes -- see FleetCoreDemoOptions.
-// LLMCredentialsFile's doc comment for why this exists.
-
 // SetupFleetCoreInfrastructure creates the hub+spoke Kind cluster pair and
 // deploys ONLY the fleet-core infrastructure (Keycloak IdP, Kuadrant MCP
 // Gateway, kube-mcp-server, the genuinely separate remote/spoke cluster,
@@ -759,20 +724,11 @@ type FleetCoreDemoOptions struct {
 	// kube-mcp-server. The demo defaults this to "hub" because git-revert-v2
 	// declares execution.clusterId: hub.
 	HubClusterID string
-	// LLMCredentialsFile, when non-empty, overwrites the mock
-	// llm-credentials-primary placeholder createFullPipelineHelmSecrets
-	// creates with this file's raw bytes, right after the hub cluster and
-	// namespace exist. Closes a chicken-and-egg gap (found 2026-09-01,
-	// FLEET_DEMO_QUICKSTART.md): the docs previously told users to
-	// pre-create this Secret before running setup at all, i.e. before the
-	// cluster meant to hold it existed. Empty (the default, and every
-	// existing Ginkgo-suite caller) leaves the long-standing
-	// mock-llm-e2e-key placeholder untouched -- this is the
-	// `hack/setup-demo-infra -mode=fleet -llm-credentials-file` entry point's
-	// parameter, deliberately a file path rather than a literal string:
-	// vertex_ai's credential material is a multi-KB service-account/ADC
-	// JSON blob, not a short token, and a file also keeps the secret out of
-	// argv/shell history.
+	// LLMCredentialsFile tells the setup summary whether the shared operator
+	// installer will replace the mock llm-credentials-primary Secret after the
+	// cluster exists. It is deliberately a file path rather than a literal
+	// string: vertex_ai's credential material is a multi-KB service-account/ADC
+	// JSON blob, and a file keeps the secret out of argv/shell history.
 	LLMCredentialsFile string
 }
 
@@ -1026,34 +982,29 @@ func installFleetCoreDemoMonitoring(ctx context.Context, clusterName, remoteClus
 }
 
 func printFleetCoreDemoSummary(fleetOpts *FleetHelmOptions, kubeconfigPath, remoteKubeconfigPath, namespace string, opts FleetCoreDemoOptions, writer io.Writer) {
+	crOptions := buildDemoOperatorCROptions(DemoHelmOptions{Autonomous: opts.Autonomous}, fleetOpts)
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet-core infrastructure READY -- Kubernaut is NOT installed")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "  Kubeconfig (hub):     %s\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "  Kubeconfig (remote):  %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "  Namespace:            %s\n", namespace)
-	_, _ = fmt.Fprintln(writer, "\n  Operator CR inputs prepared for the shared demo installer:")
-	_, _ = fmt.Fprintf(writer, "    global.fleet.enabled=true\n")
-	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayEndpoint=%s\n", fleetOpts.MCPGatewayEndpoint)
-	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayType=%s\n", fleetOpts.MCPGatewayType)
-	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayNamespace=%s\n", fleetOpts.MCPGatewayNamespace)
-	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.enabled=true\n")
-	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.tokenURL=%s\n", fleetOpts.OAuth2TokenURL)
-	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.credentialsSecretRef=%s\n", fleetOpts.OAuth2CredentialsSecret)
-	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.scopes=%v\n", fleetOpts.OAuth2Scopes)
-	if fleetOpts.ImageTag != "" {
-		_, _ = fmt.Fprintf(writer, "    global.image.tag=%v\n", fleetOpts.ImageTag)
+	_, _ = fmt.Fprintln(writer, "\n  Effective operator CR settings:")
+	if crOptions.Fleet != nil {
+		_, _ = fmt.Fprintf(writer, "    fleet.enabled=%t\n", crOptions.Fleet.Enabled)
+		_, _ = fmt.Fprintf(writer, "    fleet.gatewayEndpoint=%s\n", crOptions.Fleet.GatewayEndpoint)
+		_, _ = fmt.Fprintf(writer, "    fleet.gatewayType=%s\n", crOptions.Fleet.GatewayType)
+		_, _ = fmt.Fprintf(writer, "    fleet.gatewayNamespace=%s\n", crOptions.Fleet.GatewayNamespace)
+		_, _ = fmt.Fprintf(writer, "    fleet.tokenURL=%s\n", crOptions.Fleet.TokenURL)
+		_, _ = fmt.Fprintf(writer, "    fleet.readCredentialsSecret=%s\n", crOptions.Fleet.ReadCredentialsSecret)
+		_, _ = fmt.Fprintf(writer, "    fleet.writeCredentialsSecret=%s\n", crOptions.Fleet.WriteCredentialsSecret)
+		_, _ = fmt.Fprintf(writer, "    fleet.scopes=%v\n", crOptions.Fleet.Scopes)
 	}
-	_, _ = fmt.Fprintf(writer, "    workflowexecution.fleet.oauth2.credentialsSecretRef=%s\n", fleetOpts.WEOAuth2CredentialsSecret)
-	_, _ = fmt.Fprintf(writer, "    signalprocessing.fleet.namespace=%s\n", fleetOpts.SignalProcessingNamespace)
-	_, _ = fmt.Fprintf(writer, "    fleetmetadatacache.namespace=%s\n", fleetOpts.FleetMetadataCacheNamespace)
-	_, _ = fmt.Fprintln(writer, "\n  For AF's monitoring-backed tools (get_alerts, get_silences, severity triage),")
-	_, _ = fmt.Fprintln(writer, "  fleet-wide via Thanos Querier (hub+spoke, ADR-068/DD-EM-005/DD-INT-020),")
-	_, _ = fmt.Fprintf(writer, "  deployed in its own %q namespace (platform infra, not kubernaut-system):\n", monitoringNamespace)
-	_, _ = fmt.Fprintln(writer, "    monitoring.prometheus.enabled=true")
-	_, _ = fmt.Fprintf(writer, "    monitoring.prometheus.url=http://thanos-querier-svc.%s.svc.cluster.local:9090\n", monitoringNamespace)
-	_, _ = fmt.Fprintln(writer, "    monitoring.alertManager.enabled=true")
-	_, _ = fmt.Fprintf(writer, "    monitoring.alertManager.url=http://alertmanager-svc.%s.svc.cluster.local:9093\n", monitoringNamespace)
+	_, _ = fmt.Fprintf(writer, "    monitoring.prometheus.url=%s\n", crOptions.Monitoring.PrometheusURL)
+	_, _ = fmt.Fprintf(writer, "    monitoring.alertManager.url=%s\n", crOptions.Monitoring.AlertManagerURL)
+	_, _ = fmt.Fprintf(writer, "    monitoring.tls.caSecretName=%s\n", crOptions.Monitoring.TLSCASecretName)
+	_, _ = fmt.Fprintf(writer, "    gateway.enabled=%t\n", crOptions.GatewayEnabled)
+	_, _ = fmt.Fprintf(writer, "    console.redirectURL=%s\n", crOptions.ConsoleRedirectURL)
 	_, _ = fmt.Fprintln(writer, "\n  ⚠️  Adding a NEW alerting rule for this demo? Bake `cluster: hub`/`cluster: remote-cluster`")
 	_, _ = fmt.Fprintln(writer, "      (matching the MCPServerRegistration identity, NOT \"spoke\") into the rule's")
 	_, _ = fmt.Fprintln(writer, "      own static `labels:` block -- Thanos does NOT propagate")
@@ -1062,18 +1013,17 @@ func printFleetCoreDemoSummary(fleetOpts *FleetHelmOptions, kubeconfigPath, remo
 	_, _ = fmt.Fprintln(writer, "      the fleet monitoring manifest and scenario PrometheusRules for details.")
 	if opts.LLMCredentialsFile == "" {
 		_, _ = fmt.Fprintln(writer, "\n  ⚠️  llm-credentials-primary currently holds a MOCK key --")
-		_, _ = fmt.Fprintln(writer, "      kubectl apply your real LLM credentials Secret before")
-		_, _ = fmt.Fprintln(writer, "      provide -llm-credentials-file to the operator demo command.")
+		_, _ = fmt.Fprintln(writer, "      The shared operator demo replaces it from -llm-credentials-file.")
 	}
 	_, _ = fmt.Fprintf(writer, "\n  Keycloak (IdP) lives in its own %q namespace, not %s (production parity).\n", idpNamespace, namespace)
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo")
 	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.audience=kubernaut-apifrontend (required; else AF 401s every token, issue #2352)")
-	_, _ = fmt.Fprintln(writer, "    console.enabled=true, console.ingress.className=traefik,")
-	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local, console.ingress.port=8843")
+	_, _ = fmt.Fprintf(writer, "    console.enabled=true, console.ingress.className=traefik, console.ingress.port=%d\n", DemoHostPort(demoConsolePort))
+	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local")
 	_, _ = fmt.Fprintln(writer, "    Add to /etc/hosts:  127.0.0.1 keycloak kubernaut-console.local")
-	_, _ = fmt.Fprintln(writer, "    Browse to: https://kubernaut-console.local:8843")
+	_, _ = fmt.Fprintf(writer, "    Browse to: https://kubernaut-console.local:%d\n", DemoHostPort(demoConsolePort))
 	_, _ = fmt.Fprintln(writer, "    Login: sre-user / password (Keycloak \"sre\" group)")
 	_, _ = fmt.Fprintln(writer, "    console.oauth2Proxy: Keycloak is in a different namespace than Console's")
 	_, _ = fmt.Fprintln(writer, "    oauth2-proxy, so it needs split browser/in-cluster OIDC endpoints:")

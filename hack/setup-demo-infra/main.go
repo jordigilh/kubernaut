@@ -116,11 +116,13 @@ func main() {
 		fleetOpts, remoteKubeconfigPath, err = infrastructure.SetupFleetCoreInfrastructureWithGateway(
 			ctx, *clusterName, *remoteClusterName, kubeconfigPath,
 			infrastructure.FleetCoreDemoOptions{
+				Autonomous:               *autonomous,
 				GatewayType:              gatewayType,
 				GatewayVersions:          gatewayVersions,
 				MCPGatewayNamespace:      *mcpGatewayNamespace,
 				RemoteMCPServerNamespace: *remoteMCPServerNamespace,
 				SpokeWorkers:             *spokeWorkers,
+				LLMCredentialsFile:       *llmCredentialsFile,
 			}, os.Stdout)
 		if fleetOpts != nil {
 			operatorExposure = fleetOpts.OperatorExposure

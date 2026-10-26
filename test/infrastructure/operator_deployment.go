@@ -1072,6 +1072,9 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 	if operatorVersion == "" {
 		operatorVersion = version
 	}
+	if operatorVersion != demoReleaseVersionRC27 && !hasExplicitDemoOperatorChart(input) {
+		return ResolvedDemoOperatorArtifacts{}, fmt.Errorf("operator version %q requires an explicit operator chart override", operatorVersion)
+	}
 	kubernautVersion := strings.TrimSpace(input.Explicit.KubernautVersion)
 	if kubernautVersion == "" {
 		kubernautVersion = version
@@ -1099,6 +1102,13 @@ func resolveDemoReleaseVersion(input DemoArtifactResolutionInput) string {
 		return demoReleaseVersionRC27
 	}
 	return version
+}
+
+func hasExplicitDemoOperatorChart(input DemoArtifactResolutionInput) bool {
+	return strings.TrimSpace(input.Explicit.OperatorChart) != "" ||
+		strings.TrimSpace(input.Explicit.OperatorChartDigest) != "" ||
+		strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" ||
+		strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != ""
 }
 
 func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion string) string {
@@ -2708,7 +2718,7 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	if options.OperatorArtifacts.OperatorChart != "" {
 		operatorChart = resolved.OperatorChart
 		dependencyChart = resolved.DependencyChart
-		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
+		return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(operatorChart, resolved.OperatorVersion), chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion), nil
 	}
 	if explicitChart := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")); explicitChart != "" && strings.TrimSpace(os.Getenv("KUBERNAUT_DEPENDENCY_CHART_PATH")) == "" && strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) == "" {
 		return explicitChart, resolved.DependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.DependencyChartVersion, nil
@@ -2730,11 +2740,11 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	}
 	operatorChart = resolved.OperatorChart
 	dependencyChart = resolved.DependencyChart
-	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, resolved.OperatorVersion, resolved.DependencyChartVersion, nil
+	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(operatorChart, resolved.OperatorVersion), chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion), nil
 }
 
 func chartVersionOrDefault(chartPath, fallback string) string {
-	if !filepath.IsAbs(chartPath) && !strings.HasPrefix(chartPath, ".") {
+	if strings.HasPrefix(strings.TrimSpace(chartPath), "oci://") {
 		return fallback
 	}
 	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
