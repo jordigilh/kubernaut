@@ -37,6 +37,24 @@ import (
 )
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc27"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
+	})
+	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorRevision).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
+		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
+		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+	})
+
 	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {
 		previous, hadPrevious := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE_TAR")
 		defer func() {
@@ -100,11 +118,11 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "2c021da02bd62aa9adf5c36d511b33c0483da359",
-			ResolvedSHA:   "2c021da02bd62aa9adf5c36d511b33c0483da359",
+			RequestedRef:  "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
+			ResolvedSHA:   "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "2c021da02bd62aa9adf5c36d511b33c0483da359",
+			ChartRevision: "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -112,7 +130,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "2c021da02bd62aa9adf5c36d511b33c0483da359"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
@@ -400,10 +418,104 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(diagnostic).To(ContainSubstring("postgresql Ready=false"))
 	})
 
+	It("UT-2492-016 [BR-PLATFORM-014]: explicit demo artifact overrides win", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6", Explicit: DemoArtifactOverrides{OperatorImage: "operator@sha256:explicit", OperatorChart: "oci://example/operator", KubernautVersion: "1.6.0-rc9"}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("operator@sha256:explicit"))
+		Expect(resolved.OperatorChart).To(Equal("oci://example/operator"))
+		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc9"))
+	})
+	It("UT-2492-016D [BR-PLATFORM-014]: rejects an unpaired operator release without a chart override", func() {
+		_, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc28"})
+		Expect(err).To(MatchError(`operator version "1.6.0-rc28" requires an explicit operator chart override`))
+	})
+	It("UT-2492-016E [BR-PLATFORM-014]: reads a bare relative local chart version", func() {
+		chartDir, err := os.MkdirTemp(".", "operator-chart-")
+		Expect(err).NotTo(HaveOccurred())
+		GinkgoT().Cleanup(func() { _ = os.RemoveAll(chartDir) })
+		Expect(os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nversion: 1.6.0-rc28\n"), 0o600)).To(Succeed())
+		Expect(filepath.IsAbs(chartDir)).To(BeFalse())
+		Expect(chartVersionOrDefault(chartDir, "fallback")).To(Equal("1.6.0-rc28"))
+	})
+
 	It("UT-2492-017 [BR-PLATFORM-014]: rejects dirty explicit operator source", func() {
 		tmpDir := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(tmpDir, ".git-dirty-marker"), []byte("x"), 0o600)).To(Succeed())
 		Expect(ValidateOperatorSourceCheckout(tmpDir, " M charts/kubernaut-operator/values.yaml")).To(MatchError(ContainSubstring("dirty")))
+	})
+
+	It("UT-2492-016A [BR-PLATFORM-014]: records explicit operator ref and digest overrides", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			ReleaseLine: "1.6",
+			Explicit: DemoArtifactOverrides{
+				OperatorVersion:     "1.6.0-rc9",
+				OperatorImage:       "quay.io/example/operator",
+				OperatorDigest:      "sha256:operator",
+				OperatorChart:       "oci://quay.io/example/operator",
+				OperatorChartDigest: "sha256:chart",
+				OperatorRef:         "9dc9394fd1844be4f4d4adb89db9a881dbc066ed",
+				KubernautVersion:    "1.6.0-rc9",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("quay.io/example/operator@sha256:operator"))
+		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/example/operator@sha256:chart"))
+		Expect(resolved.OperatorRef).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
+		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
+	})
+	It("UT-2492-016F [BR-PLATFORM-014]: explicit digests replace pinned default artifacts", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{Explicit: DemoArtifactOverrides{
+			OperatorDigest:      "sha256:operator-override",
+			OperatorChartDigest: "sha256:chart-override",
+		}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(HaveSuffix("@sha256:operator-override"))
+		Expect(resolved.OperatorChart).To(HaveSuffix("@sha256:chart-override"))
+	})
+
+	It("UT-2492-016B [BR-PLATFORM-014]: keeps dependency, operator, and service artifact layers independent", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			ReleaseLine: "1.6",
+			Explicit: DemoArtifactOverrides{
+				OperatorImageRepository: "localhost/kubernaut-operator",
+				OperatorImageTag:        "operator-3838",
+				DependencyChart:         "oci://registry.example/kubernaut-development-dependencies",
+				DependencyChartVersion:  "0.2.0",
+				DependencyChartDigest:   "sha256:dependencies",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("localhost/kubernaut-operator:operator-3838"))
+		Expect(resolved.DependencyChart).To(Equal("oci://registry.example/kubernaut-development-dependencies@sha256:dependencies"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+
+	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
+			DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "ci", DependencyChartVersion: "0.2.0"},
+		)
+		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorImageRepository).To(Equal("localhost/operator"))
+		Expect(merged.OperatorImageTag).To(Equal("ci"))
+		Expect(merged.DependencyChart).To(Equal("oci://file/dependencies"))
+		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+
+	It("UT-2492-PROVENANCE-001 [BR-PLATFORM-014]: serializes exact demo artifact inputs", func() {
+		data, err := BuildDemoArtifactResolutionJSON(DemoArtifactResolutionRecord{
+			ReleaseLine: "1.6", OperatorVersion: "1.6.0-rc9", OperatorImage: "operator@sha256:op",
+			OperatorChart: "oci://example/operator@sha256:chart", DependencyChart: "oci://example/bootstrap",
+			KubernautVersion: "1.6.0-rc9", RelatedImages: map[string]string{"gateway": "gateway@sha256:gw"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("operator@sha256:op"))
+		Expect(string(data)).To(ContainSubstring("gateway@sha256:gw"))
+	})
+
+	It("UT-2492-EXPOSURE-001 [BR-PLATFORM-014]: omits disabled Gateway host exposure in Console-first mode", func() {
+		Expect(DemoExposureComponents(false)).To(Equal([]string{"datastorage", "apifrontend", "kubernautagent"}))
+		Expect(DemoExposureComponents(true)).To(Equal([]string{"gateway", "datastorage", "apifrontend", "kubernautagent"}))
 	})
 
 	It("UT-2492-018 [BR-PLATFORM-014]: qualification manifest links every immutable artifact", func() {
