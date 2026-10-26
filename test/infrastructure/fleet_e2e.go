@@ -1491,7 +1491,33 @@ spec:
 	if err := waitForDeployment(ctx, "mcp-gateway", mcpGatewayNamespace, kubeconfigPath, 120*time.Second, writer); err != nil {
 		return fmt.Errorf("kuadrant broker rollout failed: %w", err)
 	}
+	if err := configureKuadrantBrokerGatewayTLS(ctx, kubeconfigPath, mcpGatewayNamespace, writer); err != nil {
+		return fmt.Errorf("kuadrant broker TLS configuration failed: %w", err)
+	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Kuadrant MCP Gateway ready")
+	return nil
+}
+
+// kuadrantBrokerGatewayCAPatch returns the JSON patch required by Kuadrant's
+// broker/router when its targeted Gateway listener uses a private CA. The
+// inter-service-ca ConfigMap is already replicated into mcpGatewayNamespace by
+// prepareMCPGatewayNamespace; this patch makes the controller-created broker
+// trust the HTTPS Gateway hairpin documented by Kuadrant v0.7.1.
+func kuadrantBrokerGatewayCAPatch() string {
+	return `[{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"gateway-ca","configMap":{"name":"inter-service-ca"}}},{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"gateway-ca","mountPath":"/certs/gateway-ca.crt","subPath":"ca.crt","readOnly":true}},{"op":"add","path":"/spec/template/spec/containers/0/command/-","value":"--gateway-ca-cert=/certs/gateway-ca.crt"}]`
+}
+
+func configureKuadrantBrokerGatewayTLS(ctx context.Context, kubeconfigPath, mcpGatewayNamespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "    Configuring Kuadrant broker trust for the private HTTPS Gateway listener...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"patch", "deployment", "mcp-gateway", "-n", mcpGatewayNamespace,
+		"--type=json", "-p="+kuadrantBrokerGatewayCAPatch(),
+	); err != nil {
+		return fmt.Errorf("patch Kuadrant broker Gateway CA: %w", err)
+	}
+	if err := waitForDeployment(ctx, "mcp-gateway", mcpGatewayNamespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("wait for Kuadrant broker TLS rollout: %w", err)
+	}
 	return nil
 }
 
