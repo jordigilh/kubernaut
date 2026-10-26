@@ -542,6 +542,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 	})
 })
 
+// buildLocalClusterAttributionPayload builds an Alertmanager webhook carrying
+// optional common-label or per-alert cluster attribution for local-mode E2E.
 func buildLocalClusterAttributionPayload(alertName, namespace, podName, commonCluster, perAlertCluster string) []byte {
 	commonLabels := map[string]string{
 		"alertname": alertName,

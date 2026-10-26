@@ -1047,6 +1047,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 	})
 })
 
+// createPrometheusAlertWithCluster builds an Alertmanager webhook with cluster
+// attribution either at the group level or on the individual alert.
 func createPrometheusAlertWithCluster(namespace, alertName, severity, clusterID string, perAlert bool) []byte {
 	clusterLabel := ""
 	commonLabels := fmt.Sprintf(`{"cluster":"%s"}`, clusterID)

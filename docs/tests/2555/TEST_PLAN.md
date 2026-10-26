@@ -76,6 +76,16 @@ integration, and deployed Gateway E2E paths.
   required.
 - Alert sources other than Prometheus/Alertmanager.
 
+### 4.3 Compatibility impact
+
+- Existing local alerts without cluster attribution are unchanged.
+- Local alerts that include `cluster` or `cluster_id` are now accepted when
+  their local resources are otherwise valid; those labels no longer select an
+  owner resolver, change the fingerprint, or populate
+  `RemediationRequest.Spec.ClusterID`.
+- Fleet behavior is unchanged: remote attribution remains required, must be
+  registered, and does not fall back to local resolution.
+
 ## 5. Approach
 
 ### 5.1 TDD sequence
