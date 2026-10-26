@@ -20,8 +20,6 @@ name: Release
 #                   CM-14 (Signed Components), AU-3 (Audit Content)
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       operator_candidate_manifest:
@@ -77,12 +75,13 @@ jobs:
         id: version
         env:
           OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="v${{ inputs.release_version }}"
-          else
-            TAG=${GITHUB_REF#refs/tags/}
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[0-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::release_version must be a semantic version"
+            exit 1
           fi
+          TAG="v${RELEASE_VERSION}"
           VERSION=${TAG#v}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -134,6 +133,7 @@ jobs:
         shell: bash
         env:
           OPERATOR_CANDIDATE_MANIFEST: ${{ inputs.operator_candidate_manifest }}
+          OPERATOR_REF: ${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}
         run: |
           set -euo pipefail
           MANIFEST_URL="$OPERATOR_CANDIDATE_MANIFEST"
@@ -147,11 +147,7 @@ jobs:
             [[ "$IMAGE" == *@sha256:* ]] || { echo "::error::candidate operator image must be digest-pinned"; exit 1; }
             [[ -n "$CHART" ]] || { echo "::error::candidate chart ref is missing"; exit 1; }
           else
-            if [[ "${{ github.event_name }}" == "push" ]]; then
-              echo "::error::release promotion requires operator_candidate_manifest"
-              exit 1
-            fi
-            SHA='${{ inputs.operator_ref || env.KUBERNAUT_OPERATOR_REF }}'
+            SHA="$OPERATOR_REF"
             [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::operator_ref fallback must be an exact SHA"; exit 1; }
             IMAGE="localhost/kubernaut-operator:$SHA"
             cat > operator-candidate.yaml <<EOF
@@ -702,7 +698,7 @@ jobs:
     needs: [prepare, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release]
     if: >-
       always() &&
-      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      inputs.operator_candidate_manifest != '' &&
       needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
       needs.security-scan-amd64.result == 'success' &&
@@ -752,7 +748,7 @@ jobs:
     needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
     if: >-
       always() &&
-      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      inputs.operator_candidate_manifest != '' &&
       needs.prepare-operator-candidate.result == 'success' &&
       needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
@@ -796,10 +792,10 @@ jobs:
 
       - name: Resolve image digests
         id: digests
+        env:
+          VERSION: ${{ needs.prepare.outputs.qualification_tag }}
+          SVC: ${{ matrix.service }}
         run: |
-          VERSION="${{ needs.prepare.outputs.qualification_tag }}"
-          SVC="${{ matrix.service }}"
-
           AMD64_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}-amd64")
           ARM64_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}-arm64")
           MANIFEST_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${SVC}:${VERSION}")
@@ -883,7 +879,7 @@ jobs:
     needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64]
     if: >-
       always() &&
-      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      inputs.operator_candidate_manifest != '' &&
       needs.prepare-operator-candidate.result == 'success' &&
       needs.operator-qualification.result == 'success' &&
       needs.create-manifests.result == 'success' &&
@@ -935,7 +931,7 @@ jobs:
     needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
     if: >-
       always() &&
-      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      inputs.operator_candidate_manifest != '' &&
       needs.prepare.result == 'success' &&
       needs.prepare-operator-candidate.result == 'success' &&
       needs.operator-qualification.result == 'success' &&
@@ -961,22 +957,50 @@ jobs:
         run: |
           set -euo pipefail
           services=(gateway signalprocessing aianalysis authwebhook remediationorchestrator workflowexecution notification datastorage effectivenessmonitor kubernautagent apifrontend fleetmetadatacache must-gather db-migrate)
+          is_not_found_error() {
+            grep -Eqi 'manifest unknown|name unknown|not found|does not exist' <<<"$1"
+          }
           for service in "${services[@]}"; do
             for arch in amd64 arm64; do
               source="docker://${IMAGE_REGISTRY}/${service}:${STAGING_TAG}-${arch}"
               target="docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-${arch}"
-              if skopeo inspect "$target" >/dev/null 2>&1; then
-                echo "::error::release image already exists: ${service}:${RELEASE_TAG}-${arch}"
+              src_digest=$(skopeo inspect --format '{{.Digest}}' "$source")
+              inspect_error=$(mktemp)
+              if dst_digest=$(skopeo inspect --format '{{.Digest}}' "$target" 2>"$inspect_error"); then
+                if [[ "$dst_digest" != "$src_digest" ]]; then
+                  echo "::error::release image exists with different digest: ${service}:${RELEASE_TAG}-${arch}"
+                  exit 1
+                fi
+                rm -f "$inspect_error"
+                continue
+              fi
+              target_error=$(cat "$inspect_error")
+              rm -f "$inspect_error"
+              if ! is_not_found_error "$target_error"; then
+                echo "::error::unable to inspect release image ${service}:${RELEASE_TAG}-${arch}: ${target_error}"
                 exit 1
               fi
-              skopeo copy --retry-times 3 "$source" "$target"
+              skopeo copy --retry-times 3 --preserve-digests "$source" "$target"
             done
-            podman manifest rm "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" 2>/dev/null || true
-            podman manifest create "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" \
-              "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-amd64" \
-              "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}-arm64"
-            podman manifest push "${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}" \
-              "docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}"
+            staging_manifest="docker://${IMAGE_REGISTRY}/${service}:${STAGING_TAG}"
+            release_manifest="docker://${IMAGE_REGISTRY}/${service}:${RELEASE_TAG}"
+            staging_digest=$(skopeo inspect --format '{{.Digest}}' "$staging_manifest")
+            inspect_error=$(mktemp)
+            if release_digest=$(skopeo inspect --format '{{.Digest}}' "$release_manifest" 2>"$inspect_error"); then
+              if [[ "$release_digest" != "$staging_digest" ]]; then
+                echo "::error::release manifest exists with different digest: ${service}:${RELEASE_TAG}"
+                exit 1
+              fi
+              rm -f "$inspect_error"
+              continue
+            fi
+            target_error=$(cat "$inspect_error")
+            rm -f "$inspect_error"
+            if ! is_not_found_error "$target_error"; then
+              echo "::error::unable to inspect release manifest ${service}:${RELEASE_TAG}: ${target_error}"
+              exit 1
+            fi
+            skopeo copy --all --preserve-digests --retry-times 3 "$staging_manifest" "$release_manifest"
           done
 
   # ========================================
@@ -993,7 +1017,7 @@ jobs:
     needs: [prepare, prepare-operator-candidate, operator-qualification, create-manifests, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance, promote-release, tag-latest]
     if: >-
       always() &&
-      (github.event_name == 'push' || inputs.operator_candidate_manifest != '') &&
+      inputs.operator_candidate_manifest != '' &&
       needs.prepare.result == 'success' &&
       needs.prepare-operator-candidate.result == 'success' &&
       needs.operator-qualification.result == 'success' &&

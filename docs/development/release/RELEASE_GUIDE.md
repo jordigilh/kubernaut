@@ -179,14 +179,17 @@ gh pr create --title "release: vX.Y.0 GA" --body "..."
 
 Wait for CI to pass, then merge. Record the merge commit SHA.
 
-### Step 7: Tag the merge commit
+### Step 7: Dispatch release promotion
 
 ```bash
-git checkout main && git pull origin main
-MERGE_SHA=$(git log --oneline -1 --format='%H')
-git tag -a vX.Y.0 "$MERGE_SHA" -m "vX.Y.0"
-git push origin vX.Y.0
+gh workflow run release.yml \
+  -f release_version=X.Y.0 \
+  -f operator_candidate_manifest=https://example.invalid/operator-candidate.yaml
 ```
+
+The candidate manifest URL must be immutable and include the exact operator image,
+bootstrap chart, dependency chart, and resolved source SHA. The release workflow
+creates the GitHub release only after promotion and all qualification gates pass.
 
 ### Step 8: Monitor the release workflow
 
@@ -442,19 +445,19 @@ flowchart LR
         buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
     end
 
-    subgraph P2["Phase 2: Scan & Qualification"]
+    subgraph P2["Phase 2: Scan & Staging Manifests"]
         direction TB
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
+        manifests["create-manifests"]
+        scanamd64 ~~~ scanarm64 ~~~ manifests
+    end
+
+    subgraph P3["Phase 3: Operator Qualification"]
+        direction TB
         candidate["prepare-operator-candidate"]
         qualification["operator-qualification"]
         candidate --> qualification
-        scanamd64 ~~~ scanarm64 ~~~ candidate
-    end
-
-    subgraph P3["Phase 3: Staging Manifests"]
-        direction TB
-        manifests["create-manifests"]
     end
 
     subgraph P4["Phase 4: Sign & Provenance"]
@@ -521,17 +524,17 @@ that arch's build completes. Each job:
 2. Generates a CycloneDX SBOM, uploaded as a workflow artifact for the
    sign-and-attest and release stages to pick up later.
 
-### Stage 3: Operator Qualification
-
-Runs the operator-managed FullPipeline and Fleet qualification lanes against the
-resolved operator candidate and its dependency charts. A failing qualification
-lane blocks the release.
-
-### Stage 4: Staging Multi-Arch Manifests
+### Stage 3: Staging Multi-Arch Manifests
 
 Needs both image build stages to pass. For each service, creates a manifest list
 under the unique `qualification_tag`. No release-version or `:latest` tag is
 published at this stage.
+
+### Stage 4: Operator Qualification
+
+Runs after the staging manifests are available. The operator-managed FullPipeline
+and Fleet qualification lanes consume the resolved operator candidate and its
+dependency charts. A failing qualification lane blocks the release.
 
 ### Stage 5: Sign & Attest / SLSA Provenance
 
