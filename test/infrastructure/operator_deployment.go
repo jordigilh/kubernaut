@@ -44,6 +44,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -1605,11 +1606,12 @@ func EnsureOperatorWritableTempVolumes(ctx context.Context, kubeconfigPath, name
 		}
 		allMounted := len(deployments.Items) > 0
 		for index := range deployments.Items {
-			deployment := &deployments.Items[index]
-			if ensureWritableTempVolume(deployment) {
-				if _, updateErr := clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{}); updateErr != nil {
-					return fmt.Errorf("patch writable /tmp on deployment %s: %w", deployment.Name, updateErr)
-				}
+			deploymentName := deployments.Items[index].Name
+			deployment, changed, updateErr := ensureWritableTempVolumeWithRetry(ctx, clientset, namespace, deploymentName)
+			if updateErr != nil {
+				return fmt.Errorf("patch writable /tmp on deployment %s: %w", deploymentName, updateErr)
+			}
+			if changed {
 				updated++
 			}
 			if !deploymentHasWritableTemp(deployment) {
@@ -1635,6 +1637,28 @@ func EnsureOperatorWritableTempVolumes(ctx context.Context, kubeconfigPath, name
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ test-owned writable /tmp compatibility mounted on %d operator deployments\n", updated)
 	return nil
+}
+
+// ensureWritableTempVolumeWithRetry re-fetches the Deployment for every
+// optimistic-concurrency attempt because the operator may reconcile the same
+// object between the readiness list and this test-owned compatibility update.
+func ensureWritableTempVolumeWithRetry(ctx context.Context, clientset kubernetes.Interface, namespace, deploymentName string) (*appsv1.Deployment, bool, error) {
+	var latest *appsv1.Deployment
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		changed = ensureWritableTempVolume(deployment)
+		if !changed {
+			latest = deployment
+			return nil
+		}
+		latest, err = clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		return err
+	})
+	return latest, changed, err
 }
 
 func deploymentHasWritableTemp(deployment *appsv1.Deployment) bool {
