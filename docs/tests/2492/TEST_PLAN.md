@@ -54,7 +54,7 @@ using the deprecated application Helm chart.
 - `BR-PLATFORM-014`: preserve the stable Fleet demo/QE environment and lifecycle.
 - `DD-TEST-015`: provision Fleet infrastructure before the application configuration is reconciled.
 - Issue #2492: run FP and Fleet against an operator-built deployment.
-- Operator revision `2c021da02bd62aa9adf5c36d511b33c0483da359`.
+- Operator revision `9dc9394fd1844be4f4d4adb89db9a881dbc066ed`.
 - `docs/testing/TEST_PLAN_TEMPLATE.md`.
 
 ### 2.2 Cross-References
@@ -165,7 +165,7 @@ or a non-operator application deployment path.
 
 | Item | Version/Commit | Notes |
 |------|----------------|-------|
-| Upstream operator | `2c021da02bd62aa9adf5c36d511b33c0483da359` | Exact qualification source |
+| Upstream operator | `9dc9394fd1844be4f4d4adb89db9a881dbc066ed` | Exact qualification source |
 | Kind node | `kindest/node:v1.37.0@sha256:a1ed56cf...` | Existing pinned FP profile |
 | PostgreSQL | `docker.io/library/postgres:16.4@sha256:e62fbf9d...` | Operator harness Kind profile; record resolved digest per run |
 | Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | `kubernaut-development-dependencies:0.1.0-run.1`; CR uses Valkey mTLS Secret references |

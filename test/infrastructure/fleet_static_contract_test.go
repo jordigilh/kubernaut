@@ -25,6 +25,28 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var _ = Describe("Fleet demo host-port isolation", func() {
+	It("UT-2492-FLEET-PORT-001 [BR-PLATFORM-014]: offsets the host gateway probe without changing its NodePort", func() {
+		original, wasSet := os.LookupEnv(demoHostPortOffsetEnv)
+		DeferCleanup(func() {
+			if wasSet {
+				Expect(os.Setenv(demoHostPortOffsetEnv, original)).To(Succeed())
+				return
+			}
+			Expect(os.Unsetenv(demoHostPortOffsetEnv)).To(Succeed())
+		})
+		Expect(os.Setenv(demoHostPortOffsetEnv, "20000")).To(Succeed())
+		Expect(fleetGatewayHostPort(31975)).To(Equal(51975))
+		Expect(31975).To(BeNumerically("<", 32768))
+	})
+})
+
+var _ = Describe("Thanos Querier release contract", func() {
+	It("UT-2492-FLEET-THANOS-001 [BR-PLATFORM-014]: uses the Thanos v0.37 HTTP config flag", func() {
+		Expect(thanosQuerierHTTPConfigArg()).To(Equal("--http.config=/etc/monitoring-tls/web-config.yml"))
+	})
+})
+
 var _ = Describe("Fleet static operator contract", func() {
 	It("UT-2492-CR-STATIC-001 [BR-FLEET-004]: renders the checked-in Fleet CR without dynamic EAIGW names", func() {
 		fixture := filepath.Join(getProjectRoot(), "test", "fixtures", "operator", "kubernaut-fleet.yaml")
