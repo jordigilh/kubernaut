@@ -126,7 +126,7 @@ func main() {
 			operatorExposure = fleetOpts.OperatorExposure
 		}
 	} else {
-		operatorExposure, err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath)
+		operatorExposure, err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath, *autonomous)
 	}
 	if err != nil {
 		fail(fmt.Sprintf("demo infrastructure setup failed: %v", err))
@@ -159,8 +159,8 @@ func defaultClusterName(current string, fleet bool) string {
 	return "kubernaut-demo"
 }
 
-func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string) (*infrastructure.OperatorExposurePlan, error) {
-	exposure, err := infrastructure.OperatorExposurePlanForCluster(ctx, clusterName, "kubernaut-system", "localhost", []string{"gateway", "datastorage", "apifrontend", "kubernautagent"})
+func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, autonomous bool) (*infrastructure.OperatorExposurePlan, error) {
+	exposure, err := infrastructure.OperatorExposurePlanForCluster(ctx, clusterName, "kubernaut-system", "localhost", infrastructure.DemoExposureComponents(autonomous))
 	if err != nil {
 		return nil, err
 	}

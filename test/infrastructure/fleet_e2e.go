@@ -896,6 +896,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
+	if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+	}
 	// The fleet AlertManager is hub-only and lives in monitoring. OIDC setup
 	// creates the shared CA in kubernaut-system; replicate it into the hub's
 	// monitoring namespace before AlertManager starts. This is also required
@@ -1156,14 +1159,14 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 	gatewayLabel := gatewayLabelKuadrant
 	// DD-TEST-001-allocated NodePorts: 31975 (Kuadrant) / 31976 (EAIGW).
-	mcpGatewayNodePort := DemoHostPort(31975)
+	mcpGatewayNodePort := 31975
 	// The full-pipeline fleet suite keeps every registration remote. The demo
 	// additionally registers the hub-local server under its catalog identity.
 	remoteToolPrefix := "remote_cluster_"
 	hubToolPrefix := ""
 	if gatewayType == registry.GatewayEAIGW {
 		gatewayLabel = gatewayLabelEAIGW
-		mcpGatewayNodePort = DemoHostPort(eaigwGatewayNodePort)
+		mcpGatewayNodePort = eaigwGatewayNodePort
 		remoteToolPrefix = "remote-cluster__"
 	}
 	if opts.HubClusterID != "" {
@@ -1325,12 +1328,13 @@ func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, 
 			KubeconfigPath: kubeconfigPath,
 		})
 	}
-	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, remoteToolPrefix, kubeconfigPath, writer); readyErr != nil {
+	mcpGatewayHostPort := fleetGatewayHostPort(mcpGatewayNodePort)
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayHostPort, remoteToolPrefix, kubeconfigPath, writer); readyErr != nil {
 		return nil, fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 	if hubToolPrefix != "" {
 		_, _ = fmt.Fprintf(writer, "  ⏳ Verifying authenticated hub tools/call (%s)...\n", hubToolPrefix)
-		hubGatewayURL := fmt.Sprintf("https://localhost:%d/mcp", mcpGatewayNodePort)
+		hubGatewayURL := fmt.Sprintf("https://localhost:%d/mcp", mcpGatewayHostPort)
 		if err := waitForAuthenticatedMCPGateway(ctx, keycloakFleetReadTokenFunc, hubGatewayURL, hubToolPrefix, kubeconfigPath, writer); err != nil {
 			return nil, fmt.Errorf("hub MCP Gateway readiness check failed: %w", err)
 		}
@@ -1349,7 +1353,7 @@ func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, 
 	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet infrastructure ready")
-	_, _ = fmt.Fprintf(writer, "  MCP Gateway:        https://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
+	_, _ = fmt.Fprintf(writer, "  MCP Gateway:        https://localhost:%d/mcp (%s)\n", mcpGatewayHostPort, gatewayLabel)
 	if state.HubClusterID != "" {
 		_, _ = fmt.Fprintf(writer, "  Hub cluster ID:     %s (%s)\n", state.HubClusterID, hubToolPrefix)
 	}
@@ -1496,12 +1500,6 @@ func provisionFleetRemoteCluster(ctx context.Context, opts FleetCoreInfraOptions
 	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
 		return "", nil, fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
 	}
-	if isDemo {
-		if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
-			return "", nil, fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
-		}
-	}
-
 	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
 	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
 	// set, via WE's mcpClientFactory routing. The "kubernaut-workflows"
@@ -3403,6 +3401,12 @@ spec:
 
 	_, _ = fmt.Fprintln(writer, "✅ Fleet Core E2E infrastructure deployed (~388 MB)")
 	return nil
+}
+
+// fleetGatewayHostPort maps a Kubernetes NodePort to the host port used by
+// the isolated demo while leaving the in-cluster NodePort unchanged.
+func fleetGatewayHostPort(nodePort int) int {
+	return DemoHostPort(nodePort)
 }
 
 // WaitForFleetReady verifies the MCP Gateway (Kuadrant or EAIGW) is reachable
