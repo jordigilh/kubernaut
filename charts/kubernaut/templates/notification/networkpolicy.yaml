@@ -1,0 +1,25 @@
+{{- $npV := include "kubernaut.mergedValues" (dict "root" $ "service" "networkPolicies") | fromYaml }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "notification" "appLabel" "notification-controller") }}
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-controller
+      control-plane: controller-manager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- if $npV.externalWebhooks.cidr }}
+    - ports:
+        - port: {{ $npV.externalWebhooks.port }}
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: {{ $npV.externalWebhooks.cidr }}
+    {{- end }}

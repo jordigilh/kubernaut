@@ -1,0 +1,121 @@
+suite: "Issue #1987 (DD-PLATFORM-006 DA4 Addendum): kubernautAgent.llmProfileRef count-based inference"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # NOTE: kubernautAgent.llmProfileRef is deliberately omitted from every
+  # `set` block below unless a test is specifically exercising the
+  # explicit-ref-wins case -- that omission is exactly what's under test.
+
+  - it: "IT-PLATFORM-LLM-009-1 [SI-10]: llmProfileRef omitted, exactly one profile named 'primary' -- infers it (regression guard for the repo-wide primary-naming convention used by quickstart.sh/helm-smoke-test.sh/CI/E2E)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "claude-sonnet-4-20250514"
+
+  - it: "IT-PLATFORM-LLM-009-2 [SI-10]: llmProfileRef omitted, exactly one profile with an arbitrary non-'primary' name -- infers it too (proves genuine count-based inference, not a hidden 'primary' name-match)"
+    set:
+      global:
+        llmProfiles:
+          acme-corp-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-acme
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "gpt-4o"
+
+  - it: "IT-PLATFORM-LLM-009-3 [SI-10]: llmProfileRef omitted, zero profiles defined -- fails the render with an actionable 'no profiles defined' message instead of silently picking or crashing on a nil lookup"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "kubernautAgent.llmProfileRef is not set and global.llmProfiles defines no profiles -- add exactly one profile under global.llmProfiles, or set kubernautAgent.llmProfileRef explicitly."
+
+  - it: "IT-PLATFORM-LLM-009-4 [SI-10]: llmProfileRef omitted, two profiles defined -- fails the render, naming both candidates (sorted, deterministic) instead of silently picking one"
+    set:
+      global:
+        llmProfiles:
+          zeta-profile:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-zeta
+          alpha-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-alpha
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "kubernautAgent.llmProfileRef is not set and global.llmProfiles defines 2 profiles, so auto-selection is ambiguous. Set kubernautAgent.llmProfileRef to one of: alpha-profile, zeta-profile"
+
+  - it: "IT-PLATFORM-LLM-009-5 [SI-10]: an explicit llmProfileRef always wins outright, even when global.llmProfiles has multiple entries that would otherwise be ambiguous"
+    set:
+      global:
+        llmProfiles:
+          zeta-profile:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-zeta
+          alpha-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-alpha
+      kubernautAgent:
+        llmProfileRef: alpha-profile
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "gpt-4o"
+
+  - it: "IT-PLATFORM-LLM-009-6 [SI-10]: apifrontend.yaml's own llmProfileRef fallback chain inherits the inferred (not just the explicit) kubernautAgent profile when both apifrontend.llmProfileRef and kubernautAgent.llmProfileRef are omitted"
+    set:
+      global:
+        llmProfiles:
+          acme-corp-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-acme
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://sso.example.com/realms/kubernaut"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "gpt-4o"

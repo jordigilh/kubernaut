@@ -1,0 +1,387 @@
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
+{{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remediationorchestrator-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: remediationorchestrator
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  remediationorchestrator.yaml: |
+    {{- include "kubernaut.remediationorchestrator.configYAML" . | nindent 4 }}
+{{- define "kubernaut.remediationorchestrator.configYAML" -}}
+{{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "remediationorchestrator") | fromYaml -}}
+logging:
+  level: {{ $v.logging.level | quote }}
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "remediationorchestrator.kubernaut.ai"
+timeouts:
+  global: {{ $v.config.timeouts.global | quote }}
+  processing: {{ $v.config.timeouts.processing | quote }}
+  analyzing: {{ $v.config.timeouts.analyzing | quote }}
+  executing: {{ $v.config.timeouts.executing | quote }}
+  verifying: {{ $v.config.timeouts.verifying | quote }}
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
+  timeout: "10s"
+  buffer:
+    bufferSize: 30000
+    batchSize: 1000
+    flushInterval: "1s"
+    maxRetries: 3
+effectivenessAssessment:
+  stabilizationWindow: {{ $v.config.effectivenessAssessment.stabilizationWindow | quote }}
+asyncPropagation:
+  gitOpsSyncDelay: {{ $v.config.asyncPropagation.gitOpsSyncDelay | quote }}
+  operatorReconcileDelay: {{ $v.config.asyncPropagation.operatorReconcileDelay | quote }}
+  proactiveAlertDelay: {{ $v.config.asyncPropagation.proactiveAlertDelay | quote }}
+notifications:
+  notifySelfResolved: {{ ((.Values.remediationorchestrator.config.notifications).notifySelfResolved) | default false }}
+routing:
+  consecutiveFailureThreshold: {{ $v.config.routing.consecutiveFailureThreshold }}
+  consecutiveFailureCooldown: {{ $v.config.routing.consecutiveFailureCooldown | quote }}
+  recentlyRemediatedCooldown: {{ $v.config.routing.recentlyRemediatedCooldown | quote }}
+  exponentialBackoffBase: "1m"
+  exponentialBackoffMax: "10m"
+  exponentialBackoffMaxExponent: 4
+  scopeBackoffBase: "5s"
+  scopeBackoffMax: "5m"
+  noActionRequiredDelayHours: 24
+  ineffectiveChainThreshold: {{ $v.config.routing.ineffectiveChainThreshold }}
+  recurrenceCountThreshold: {{ $v.config.routing.recurrenceCountThreshold }}
+  ineffectiveTimeWindow: {{ $v.config.routing.ineffectiveTimeWindow | quote }}
+retention:
+  period: {{ $v.config.retention.period | quote }}
+{{- if .Values.global.fleet.enabled }}
+fleet:
+  enabled: true
+  {{- /* global.fleet.backend="" documented default is "fleetmetadatacache"
+  (README.md, values.yaml) -- must be MATERIALIZED here, not just implied by
+  the endpoint auto-derivation below, otherwise pkg/fleet/config.go's
+  effectiveBackend() (which deliberately does NOT itself default an empty
+  Backend, see UT-FLEET-FAC-007) sees Backend="" + a non-empty auto-derived
+  Endpoint and fails startup with "fleet: unsupported backend \"\"" (Issue
+  #1737 DD-TEST-015 regression: the old Go-native E2E harness's kubectl-patch
+  fleet config always wrote `backend: fleetmetadatacache` explicitly, masking
+  this chart gap until the Helm-native fleet deploy path was exercised for
+  the first time). */}}
+  backend: {{ $remediationorchestratorFleetPreamble.config.backend | default "fleetmetadatacache" | quote }}
+  {{- if $remediationorchestratorFleetPreamble.config.endpoint }}
+  endpoint: {{ $remediationorchestratorFleetPreamble.config.endpoint | quote }}
+  {{- else if eq (default "fleetmetadatacache" $remediationorchestratorFleetPreamble.config.backend) "fleetmetadatacache" }}
+  endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
+  {{- end }}
+  mcpGatewayEndpoint: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  {{- if $remediationorchestratorFleetPreamble.config.mcpGatewayType }}
+  mcpGatewayType: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayType | quote }}
+  {{- end }}
+  tlsCAFile: {{ $remediationorchestratorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  mcpGatewayTLSCAFile: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayTLSCAFile | quote }}
+  {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
+       consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
+  {{- if $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
+  tokenPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}/token"
+  {{- end }}
+  {{- if $remediationorchestratorFleetPreamble.oauth2.enabled }}
+  oauth2:
+    enabled: true
+    tokenURL: {{ $remediationorchestratorFleetPreamble.oauth2.tokenURL | quote }}
+    credentialsSecretRef: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef | quote }}
+    {{- if $remediationorchestratorFleetPreamble.oauth2.scopes }}
+    scopes:
+      {{- range $remediationorchestratorFleetPreamble.oauth2.scopes }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    tlsCAFile: {{ $remediationorchestratorFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  {{- end }}
+  {{- /* Issue #2262 Phase 2: only render keys the operator actually set --
+  an unset field keeps mcpclient.DefaultResilienceConfig()'s pre-#2262
+  default unchanged (see mcpclient.ResilienceConfigFromFleet). */}}
+  {{- if $remediationorchestratorFleetPreamble.resilience }}
+  resilience:
+    {{- $remediationorchestratorFleetPreamble.resilience | toYaml | nindent 4 }}
+  {{- end }}
+{{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remediationorchestrator-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: remediationorchestrator-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: remediationorchestrator-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests", "remediationapprovalrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments/status"]
+    verbs: ["get"]
+  # Issue #643: Resolve workflow UUID to human-readable CRD name for display
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # BR-ORCH-025: Distributed locking via coordination.k8s.io Leases
+  # controller-runtime leader election requires list+watch for reflector cache sync (#687)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "namespaces", "persistentvolumes", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # ── Istio (#373) ────────────────────────────────────────────────────────
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: remediationorchestrator-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: remediationorchestrator-controller
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: {{ .Release.Namespace }}
+---
+# Issue #545: Bind to built-in view ClusterRole for broad read access to CRDs
+# (cert-manager, Istio, etc.) needed for pre-remediation hash capture (DD-EM-002).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: remediationorchestrator-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-scoped access to configmaps and secrets (#229)
+{{ include "kubernaut.nsRoleForSecrets" (dict "name" "remediationorchestrator" "serviceAccount" "remediationorchestrator-controller" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remediationorchestrator-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: remediationorchestrator-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "remediationorchestrator") | fromYaml }}
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: remediationorchestrator-controller
+  template:
+    metadata:
+      labels:
+        app: remediationorchestrator-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.remediationorchestrator.configYAML" . | sha256sum }}
+    spec:
+      serviceAccountName: remediationorchestrator-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.remediationorchestrator "matchLabels" (dict "app" "remediationorchestrator-controller")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: remediationorchestrator-controller
+          image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.remediationorchestrator | nindent 12 }}
+          args:
+            - "--config=/etc/config/remediationorchestrator.yaml"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KUBERNAUT_CONTROLLER_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - name: pprof
+              containerPort: 6060
+              protocol: TCP
+            {{- end }}
+          {{- /* DD-PLATFORM-008: when global.fleet.enabled=true, RO builds the
+          same federated scope-checker + registry.ClusterRegistry against the
+          fleet MCP Gateway synchronously at boot as Gateway does -- same
+          blocking-dependency shape already fixed for
+          apifrontend/effectivenessmonitor/workflowexecution (confirmed via a
+          liveness-probe-induced crash loop, "Liveness probe failed... context
+          deadline exceeded", during Issue #1737 Fleet E2E validation).
+          Applying the shared helper here follows the DD's own "default
+          remediation pattern going forward" guidance rather than reinventing
+          probe tuning for this service. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}"
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
+            - name: fleet-acm-token
+              mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}"
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.remediationorchestrator.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: remediationorchestrator-config
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
+        {{- end }}
+        {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
+        - name: fleet-acm-token
+          secret:
+            secretName: {{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remediationorchestrator-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: remediationorchestrator-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: remediationorchestrator-controller

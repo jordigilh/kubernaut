@@ -1,0 +1,26 @@
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsV.mode "cert-manager" }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: authwebhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  secretName: authwebhook-tls
+  duration: 8760h   # 365 days
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "kubernaut.tls.issuerName" . }}
+    kind: {{ $tlsV.certManager.issuerRef.kind }}
+    group: {{ $tlsV.certManager.issuerRef.group }}
+  dnsNames:
+    - authwebhook
+    - authwebhook.{{ .Release.Namespace }}
+    - authwebhook.{{ .Release.Namespace }}.svc
+    - authwebhook.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}

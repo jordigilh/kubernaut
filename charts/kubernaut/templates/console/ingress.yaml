@@ -1,0 +1,46 @@
+{{/*
+BR-PLATFORM-006/BR-PLATFORM-009 (Kubernaut Operator parity): the Operator exposes the
+console via an OCP Route; this chart targets vanilla Kubernetes, so a standard
+networking.k8s.io/v1 Ingress is the equivalent. Opt-in and disabled by default
+(console.ingress.enabled), same as gateway.ingress.enabled/apifrontend.ingress.enabled:
+Console is optional browser-facing UI tooling in front of APIFrontend that users may
+replace with their own UI or front with their own Ingress/Route/mesh gateway instead --
+not something the chart should expose externally without an explicit choice. This is a
+deliberate deviation from the Operator's ConsoleRouteSpec, which defaults to enabled=true
+(opt-out).
+*/}}
+{{- if and .Values.console.enabled .Values.console.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- with .Values.console.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.console.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.console.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ .Values.console.ingress.host }}
+      secretName: {{ .Values.console.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.console.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: console
+                port:
+                  name: http
+{{- end }}

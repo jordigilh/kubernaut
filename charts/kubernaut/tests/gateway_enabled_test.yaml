@@ -1,0 +1,187 @@
+suite: "Issue #2162: gateway.enabled toggle (parity with apifrontend.enabled/console.enabled, independently switchable)"
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/gateway/ingress.yaml
+  - templates/gateway/networkpolicy.yaml
+  - templates/rbac/gateway-signal-source-rbac.yaml
+  - templates/rbac/fmc-scope-check-client-rbac.yaml
+  - templates/rbac/datastorage-rbac.yaml
+  - templates/pdb.yaml
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "gateway.yaml renders (ServiceAccount/RBAC/Deployment/Service) by default (gateway.enabled defaults true)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "gateway.enabled=false renders zero documents from gateway.yaml (ServiceAccount, RBAC, ConfigMap, Deployment, Service all pruned together)"
+    template: templates/gateway/gateway.yaml
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "gateway.enabled=false renders zero documents from ingress.yaml, even when gateway.ingress.enabled=true (ANDed gate, mirrors apifrontend/ingress.yaml)"
+    template: templates/gateway/ingress.yaml
+    set:
+      gateway:
+        enabled: false
+        ingress:
+          enabled: true
+          host: gateway.apps.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "gateway.enabled=false renders zero documents from networkpolicy.yaml"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "gateway.enabled=false renders zero documents from rbac/gateway-signal-source-rbac.yaml, even with signalSources configured"
+    template: templates/rbac/gateway-signal-source-rbac.yaml
+    set:
+      gateway:
+        enabled: false
+        auth:
+          signalSources:
+            - name: alertmanager
+              serviceAccount: alertmanager
+              namespace: monitoring
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "fmc-scope-check-client-rbac.yaml renders 5 documents when fleetmetadatacache is enabled and gateway.enabled defaults true (FMC's own ClusterRole+CRB pair, the shared fmc-scope-check-client ClusterRole, and one CRB each for Gateway + RemediationOrchestrator)"
+    template: templates/rbac/fmc-scope-check-client-rbac.yaml
+    set:
+      fleetmetadatacache:
+        enabled: true
+      global:
+        fleet:
+          mcpGatewayEndpoint: https://mcp.example.com
+          oauth2:
+            enabled: true
+            tokenURL: https://idp.example.com/token
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
+    asserts:
+      - hasDocuments:
+          count: 5
+
+  - it: "gateway.enabled=false drops exactly the gateway-fmc-scope-check-client binding out of fmc-scope-check-client-rbac.yaml, leaving RemediationOrchestrator's sibling binding intact (5 documents -> 4)"
+    template: templates/rbac/fmc-scope-check-client-rbac.yaml
+    set:
+      gateway:
+        enabled: false
+      fleetmetadatacache:
+        enabled: true
+      global:
+        fleet:
+          mcpGatewayEndpoint: https://mcp.example.com
+          oauth2:
+            enabled: true
+            tokenURL: https://idp.example.com/token
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
+    asserts:
+      - hasDocuments:
+          count: 4
+
+  - it: "gateway.enabled=false drops exactly the gateway-data-storage-client RoleBinding out of datastorage-rbac.yaml, leaving every other service's binding intact (14 documents -> 13)"
+    template: templates/rbac/datastorage-rbac.yaml
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 13
+
+  - it: "gateway.enabled=false drops exactly the gateway PodDisruptionBudget out of pdb.yaml, leaving every other service's PDB intact (11 documents -> 10)"
+    template: templates/pdb.yaml
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 10
+
+  - it: "gateway PodDisruptionBudget renders by default (gateway.enabled defaults true)"
+    template: templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+
+  - it: "gateway.enabled and apifrontend.enabled are fully independent: disabling gateway does not affect apifrontend"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "gateway.enabled and apifrontend.enabled are fully independent: disabling apifrontend does not affect gateway"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      apifrontend:
+        enabled: false
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "both gateway.enabled=false and apifrontend.enabled=false simultaneously renders zero documents for both templates (neither ingress point is a hard dependency of the other)"
+    template: templates/gateway/gateway.yaml
+    set:
+      gateway:
+        enabled: false
+      apifrontend:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,0 +1,304 @@
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml -}}
+{{- $hooksV := include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: authwebhook
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "actiontypes"]
+    verbs: ["get", "list", "watch"]
+  # Issue #418: RW reconciler needs update/patch to add/remove the catalog-cleanup finalizer
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
+    verbs: ["update", "patch"]
+  {{- if eq $tlsV.mode "hook" }}
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authwebhook
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authwebhook
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: authwebhook
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+{{- define "kubernaut.authwebhook.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "authwebhook") | fromYaml -}}
+logging:
+  level: {{ $v.logging.level | quote }}
+webhook:
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  healthProbeAddr: ":8081"
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
+  timeout: 30s
+  buffer:
+    bufferSize: 1000
+    batchSize: 100
+    flushInterval: 5s
+    maxRetries: 3
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authwebhook-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  authwebhook.yaml: |
+    {{- include "kubernaut.authwebhook.configYAML" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "authwebhook") | fromYaml }}
+  replicas: {{ $v.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authwebhook
+  template:
+    metadata:
+      labels:
+        app: authwebhook
+      annotations:
+        checksum/config: {{ include "kubernaut.authwebhook.configYAML" . | sha256sum }}
+    spec:
+      serviceAccountName: authwebhook
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.authwebhook "matchLabels" (dict "app" "authwebhook")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
+      {{- if eq $tlsV.mode "hook" }}
+      initContainers:
+        - name: patch-cabundle
+          image: {{ $hooksV.tlsCerts.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /certs
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              CA_FILE="/certs/ca.crt"
+              if [ ! -f "$CA_FILE" ]; then
+                echo "WARNING: $CA_FILE not found — skipping caBundle patch"
+                exit 0
+              fi
+
+              CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
+
+              # Issue #1542 follow-up, round 1: this init container's failures
+              # were initially misdiagnosed as kube-proxy/CNI warm-up races
+              # (a retry loop, then a whole-cluster network-readiness gate).
+              # Instrumenting the retries surfaced "the connection to the
+              # server localhost:8080 was refused" — kubectl's ambient
+              # in-cluster config auto-detection was failing in this image.
+              # Configure the in-cluster API server explicitly from the
+              # mounted service account on every invocation instead of
+              # relying on kubectl auto-detection, and avoid writing a
+              # kubeconfig file since this container's root filesystem is
+              # read-only.
+              KUBE_SA="/var/run/secrets/kubernetes.io/serviceaccount"
+              KUBE_TOKEN=$(cat "${KUBE_SA}/token")
+              kube() {
+                kubectl --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" \
+                  --certificate-authority="${KUBE_SA}/ca.crt" \
+                  --token="${KUBE_TOKEN}" \
+                  --request-timeout=5s \
+                  "$@"
+              }
+
+              # Issue #1542 follow-up, round 2: with the config bug fixed, the
+              # *real* underlying issue became visible directly — genuine
+              # "context deadline exceeded" / connection timeouts reaching
+              # the in-cluster API server ClusterIP that persist for
+              # ~60-90s, recurring on every fresh pod (install, upgrade, and
+              # dev quick-start all hit it, ruling out a one-time cluster
+              # startup warm-up). Long-running controller pods never surface
+              # this: client-go retries silently in the background and their
+              # readiness probes have a generous initialDelaySeconds, so they
+              # just take a little longer to go Ready. This single-shot,
+              # `set -e` init container has no such tolerance, so retry each
+              # kubectl call explicitly with a budget wide enough to span the
+              # observed window instead of failing (and burning a
+              # CrashLoopBackOff cycle) on the first transient timeout.
+              kube_retry() {
+                attempt=0
+                err=""
+                while [ "$attempt" -lt 20 ]; do
+                  if out=$(kube "$@" 2>&1); then
+                    printf '%s\n' "$out"
+                    return 0
+                  fi
+                  err="$out"
+                  attempt=$((attempt + 1))
+                  sleep 3
+                done
+                echo "ERROR: 'kubectl $*' failed after ${attempt} attempts. Last error: ${err}" >&2
+                return 1
+              }
+
+              patch_webhooks() {
+                KIND="$1"
+                NAME="$2"
+                COUNT=$(kube_retry get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                PATCH="["
+                i=0
+                while [ "$i" -lt "$COUNT" ]; do
+                  [ "$i" -gt 0 ] && PATCH="${PATCH},"
+                  PATCH="${PATCH}{\"op\":\"add\",\"path\":\"/webhooks/${i}/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}"
+                  i=$((i + 1))
+                done
+                PATCH="${PATCH}]"
+                echo "  Patching $NAME ($COUNT webhooks)..."
+                kube_retry patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+              }
+
+              echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."
+              patch_webhooks mutatingwebhookconfigurations authwebhook-mutating
+              patch_webhooks validatingwebhookconfigurations authwebhook-validating
+              echo "==> Webhook caBundle patching complete"
+      {{- end }}
+      containers:
+        - name: authwebhook
+          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.authwebhook | nindent 12 }}
+          args:
+            - -config=/etc/authwebhook/authwebhook.yaml
+          ports:
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - name: pprof
+              containerPort: 6060
+              protocol: TCP
+            {{- end }}
+          env:
+            - name: LOG_LEVEL
+              value: "debug"
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: config
+              mountPath: /etc/authwebhook
+              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.authwebhook.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: authwebhook-tls
+        - name: config
+          configMap:
+            name: authwebhook-config
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}

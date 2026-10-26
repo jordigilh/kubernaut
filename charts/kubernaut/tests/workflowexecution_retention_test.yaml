@@ -1,0 +1,53 @@
+suite: "WorkflowExecution failed-resource retention configuration"
+templates:
+  - templates/workflowexecution/workflowexecution.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "renders retention disabled with the default bounded period"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*retainFailedExecutions: false$"
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*failedExecutionRetentionSeconds: 600$"
+
+  - it: "renders explicitly enabled retention and its configured period"
+    set:
+      workflowexecution:
+        config:
+          execution:
+            retainFailedExecutions: true
+            failedExecutionRetentionSeconds: 900
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*retainFailedExecutions: true$"
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*failedExecutionRetentionSeconds: 900$"

@@ -1,0 +1,80 @@
+suite: "Issue #2385: production OIDC issuer default"
+templates:
+  - templates/apifrontend/apifrontend.yaml
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+tests:
+  - it: "IT-HELM-OIDC-2385-003 [BR-PLATFORM-006, IA-2, IA-5]: API Frontend defaults to the production kubernaut realm"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'issuerURL: "https://login.kubernaut.ai/realms/kubernaut"'
+
+  - it: "IT-HELM-OIDC-2385-004 [BR-PLATFORM-006, IA-2, SC-8]: Console inherits the production default issuer"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--oidc-issuer-url=https://login.kubernaut.ai/realms/kubernaut"
+
+  - it: "IT-HELM-OIDC-2385-005 [BR-PLATFORM-006, IA-2]: an explicit issuer override is used by both consumers"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/acme
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'issuerURL: "https://sso.example.com/realms/acme"'
+
+  - it: "IT-HELM-OIDC-2385-006 [BR-PLATFORM-006, IA-2]: an explicit issuer override reaches Console oauth2-proxy"
+    template: templates/console/console.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/acme
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--oidc-issuer-url=https://sso.example.com/realms/acme"

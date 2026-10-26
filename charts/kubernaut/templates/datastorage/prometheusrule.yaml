@@ -1,0 +1,62 @@
+{{/*
+  DataStorage alerting rules (BR-PLATFORM-003, Issue #1589).
+  Ported verbatim from the Kubernaut Operator's DataStoragePrometheusRule
+  (kubernaut-operator/internal/resources/monitoring.go) for observability parity.
+  Gated on monitoring.prometheusRule.enabled + monitoring.coreos.com/v1 CRD presence — see
+  kubernaut.monitoring.crdsPresent in _helpers.tpl.
+*/}}
+{{- if and .Values.monitoring.prometheusRule.enabled (include "kubernaut.monitoring.crdsPresent" .) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: datastorage-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: datastorage
+spec:
+  groups:
+    - name: datastorage.availability
+      rules:
+        - alert: DataStorageDown
+          expr: up{job="datastorage"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DataStorage is down"
+    - name: datastorage.dlq
+      rules:
+        - alert: DataStorageDLQDepthHigh
+          expr: ds_dlq_depth{job="datastorage"} > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DS DLQ depth > 100 for 5m"
+        - alert: DataStorageDLQProcessingErrors
+          expr: rate(ds_dlq_processing_errors_total{job="datastorage"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DS DLQ processing error rate elevated"
+    - name: datastorage.latency
+      rules:
+        - alert: DataStorageHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(ds_http_request_duration_seconds_bucket{job="datastorage"}[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DataStorage P95 latency > 1s"
+    - name: datastorage.database
+      rules:
+        - alert: DataStorageDBConnectionPoolExhausted
+          expr: ds_db_pool_idle_connections{job="datastorage"} == 0 and ds_db_pool_active_connections{job="datastorage"} >= ds_db_pool_max_connections{job="datastorage"}
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "DS database connection pool exhausted"
+{{- end }}

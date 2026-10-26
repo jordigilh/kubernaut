@@ -1,0 +1,51 @@
+suite: "kubernaut-agent ConfigMap — anomaly detector maxTotalToolCalls (#1892)"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: dummy
+  aianalysis:
+    policies:
+      existingConfigMap: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: anthropic
+        model: claude-opus-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+tests:
+  - it: "HT-KA-1892-001a — renders the default of 30 when maxTotalToolCalls is not overridden"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "maxTotalToolCalls: 30"
+
+  - it: "HT-KA-1892-001b — renders an operator-supplied override value"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-opus-4
+            credentialsSecretName: llm-credentials-primary
+      kubernautAgent:
+        llmProfileRef: primary
+        ai:
+          safety:
+            anomaly:
+              maxTotalToolCalls: 75
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "maxTotalToolCalls: 75"

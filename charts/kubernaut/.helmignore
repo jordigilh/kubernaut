@@ -1,0 +1,19 @@
+# Patterns to ignore when packaging/installing this chart.
+#
+# These paths are development/test/tooling artifacts only -- never read by
+# any template at render time (verified: no .Files.Get/.Files.Glob reference
+# them) -- but without this file Helm's default loader still bundles them
+# into the release's stored Chart object (raw chart source), inflating the
+# `sh.helm.release.v1.<name>.v<rev>` Secret. See DD-PLATFORM-006 DA19/DA20
+# CI must-gather RCA (kubernaut#2272): helm-unittest coverage under tests/
+# alone is ~580KB raw and was the single largest non-runtime contributor
+# pushing that Secret's `data` field past the Kubernetes 1MiB hard limit.
+#
+# helm-unittest itself is unaffected: `helm unittest charts/kubernaut/` (the
+# `make test-helm` target) scans tests/ directly off the source tree via its
+# own file-discovery, independent of the standard chart loader that honors
+# this file.
+tests/
+examples/
+README.md
+.helm-coverage-allowlist.yaml

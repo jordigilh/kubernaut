@@ -1,0 +1,54 @@
+{{/*
+BR-PLATFORM-006 (Kubernaut Operator parity, chart-only enhancement — the Operator
+has no NetworkPolicy for Console). Follows the same default-deny + explicit-allow
+convention as every other component in the chart.
+*/}}
+{{- if .Values.console.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "console" "appLabel" "console") }}
+spec:
+  podSelector:
+    matchLabels:
+      app: console
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same-namespace callers (port-forward, testing).
+    - ports:
+        - port: 4180
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    {{- range .Values.networkPolicies.console.ingressNamespaces }}
+    # External ingress-controller namespace (user-configured).
+    - ports:
+        - port: 4180
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+    {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.console.ingressCIDRs "port" 4180) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.console.ingressNamespaceSelectors "port" 4180) | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.dnsEgress" . | nindent 4 }}
+    # APIFrontend: same-namespace by default (kubernaut.np.metadata's
+    # namespace == Release.Namespace, matching APIFrontend's own
+    # NetworkPolicy "same-namespace callers" ingress rule) -- Console and
+    # APIFrontend are always deployed into the same release namespace, so no
+    # additional ingressCIDRs/ingressNamespaceSelectors is needed on either
+    # side purely for this link.
+    - ports:
+        - port: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml).config.server.httpPort }}
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: apifrontend
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+{{- end }}

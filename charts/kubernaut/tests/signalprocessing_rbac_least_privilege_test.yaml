@@ -1,0 +1,59 @@
+suite: "Issue #2243: SP ClusterRole must not grant full-CRUD RemediationRequest RBAC (AC-6 least privilege)"
+# templates/signalprocessing/signalprocessing.yaml's ClusterRole grants full
+# CRUD (get/list/watch/create/update/patch/delete) on "remediationrequests"
+# alongside "signalprocessings" in the same rule. Static analysis of
+# internal/controller/signalprocessing/ and pkg/signalprocessing/ found zero
+# client.Get/List/Create/Update/Patch/Delete call sites against the
+# RemediationRequest CRD type -- SP only reads
+# Spec.RemediationRequestRef.Name (a plain string field on its own CRD,
+# populated by RO at creation) for audit correlation, never the RR object
+# itself. This is a dead, unused grant and a least-privilege (FedRAMP AC-6)
+# violation.
+templates:
+  - templates/signalprocessing/signalprocessing.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "IT-HELM-2243-001: SP ClusterRole does NOT grant any verbs on remediationrequests"
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["kubernaut.ai"]
+            resources: ["signalprocessings", "remediationrequests"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["kubernaut.ai"]
+            resources: ["remediationrequests"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: "IT-HELM-2243-002: SP ClusterRole retains full-CRUD on signalprocessings (regression guard -- own CRD access must be unaffected)"
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["kubernaut.ai"]
+            resources: ["signalprocessings"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: "IT-HELM-2243-003: no rule anywhere in SP's ClusterRole references the remediationrequests resource string at all"
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules[0].resources
+          content: remediationrequests

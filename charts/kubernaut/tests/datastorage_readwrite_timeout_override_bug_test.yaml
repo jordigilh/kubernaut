@@ -1,0 +1,64 @@
+suite: "Issue #2219: DataStorage server.readTimeout schema override is silently ignored; writeTimeout has no schema field at all"
+# values.schema.json already declared datastorage.config.server.readTimeout
+# as a configurable goDuration (default 30s), so `--set
+# datastorage.config.server.readTimeout=60s` validated cleanly against the
+# schema -- but templates/datastorage/datastorage.yaml:19-20 rendered both
+# readTimeout and writeTimeout as bare literals, never referencing
+# .Values/$v, so the override was silently discarded. writeTimeout
+# additionally had no schema field at all despite being an exact peer of
+# readTimeout.
+templates:
+  - templates/datastorage/datastorage.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install renders readTimeout: 30s and writeTimeout: 30s, matching the Go defaults exactly"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 30s'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 30s'
+
+  - it: "REGRESSION GUARD (was the live bug): an explicit server.readTimeout override actually renders through, instead of being silently discarded"
+    set:
+      datastorage:
+        config:
+          server:
+            readTimeout: "60s"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 60s'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'readTimeout: 30s'
+
+  - it: "an explicit server.writeTimeout override renders through (new schema field, exact peer of readTimeout)"
+    set:
+      datastorage:
+        config:
+          server:
+            writeTimeout: "45s"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 45s'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'writeTimeout: 30s'
