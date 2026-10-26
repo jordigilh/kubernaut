@@ -13,7 +13,7 @@
 
 ### Problem Statement
 
-The fleet demo/QE environment (`PRESERVE_E2E_CLUSTER=true make test-e2e-fleet` -> `SetupFleetCoreInfrastructureWithGateway`)
+The operator-backed fleet demo/QE environment (`test/e2e/fleet/suite_test.go` -> `provisionFleetCoreInfra`)
 is meant to run for days at a time so QE can exercise the full fleet stack against a stable
 cluster. Two compounding gaps made it fragile instead:
 

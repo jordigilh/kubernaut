@@ -465,6 +465,23 @@ stringData:
 EOF
 ```
 
+WorkflowExecution uses a separate least-privilege Secret for MCP write calls:
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" apply -n kubernaut-system -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fleet-workflowexecution-oauth2-creds
+  namespace: kubernaut-system
+  labels: {component: fleet}
+type: Opaque
+stringData:
+  client-id: "kubernaut-fleet-read"
+  client-secret: "e2e-fleet-secret"
+EOF
+```
+
 Install the Kubernaut Operator and apply a Fleet-enabled `Kubernaut` CR using the
 [operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
 Map the MCP Gateway endpoint and separate read/write OAuth2 Secret references into the
