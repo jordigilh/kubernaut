@@ -110,29 +110,36 @@ spec:
 `, namespace, demoConsoleHost, demoConsoleHost)
 }
 
-// InstallDemoOperatorApplication deploys the demo through the operator
-// bootstrap chart and a user-owned Kubernaut CR. It never installs the
-// upstream application chart and does not build images on the normal path.
-func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, writer io.Writer) error {
-	if err := opts.Validate(); err != nil {
-		return err
+func prepareDemoOperatorFixtureFiles(opts DemoHelmOptions, fixtureDir string) (spPolicyFile, aaPolicyFile string, err error) {
+	spPolicyFile = opts.SPPolicyFile
+	if spPolicyFile == "" {
+		spPolicyFile = filepath.Join(fixtureDir, "signal-processing.rego")
+		if err := os.WriteFile(spPolicyFile, []byte(demoDefaultSPPolicyRego), 0o600); err != nil {
+			return "", "", fmt.Errorf("write demo SignalProcessing policy: %w", err)
+		}
 	}
-	if err := loadDemoImagesToKind(ctx, kindClusterName, opts, writer); err != nil {
-		return err
+	aaPolicyFile = opts.AAPolicyFile
+	if aaPolicyFile == "" {
+		aaPolicyFile = filepath.Join(fixtureDir, "ai-analysis.rego")
+		if err := os.WriteFile(aaPolicyFile, []byte(demoDefaultAAPolicyRego), 0o600); err != nil {
+			return "", "", fmt.Errorf("write demo AIAnalysis policy: %w", err)
+		}
 	}
+	return spPolicyFile, aaPolicyFile, nil
+}
 
-	reasoningEnabled, reasoningEffort, reasoningCapabilityOverride := resolveDemoReasoning(opts)
+func buildDemoOperatorDeploymentConfig(ctx context.Context, kubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, fixtureDir string) (OperatorDeploymentConfig, error) {
 	operatorChart, dependencyChart, operatorImage, version, operatorChartVersion, dependencyChartVersion, err := resolveDemoOperatorDeploymentInputs(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("resolve demo operator artifacts: %w", err)
+		return OperatorDeploymentConfig{}, fmt.Errorf("resolve demo operator artifacts: %w", err)
 	}
 	relatedImages, err := operatorOperandImagesForDemo(opts, version)
 	if err != nil {
-		return fmt.Errorf("resolve demo operand images: %w", err)
+		return OperatorDeploymentConfig{}, fmt.Errorf("resolve demo operand images: %w", err)
 	}
 	resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: os.Getenv("KUBERNAUT_RELEASE_LINE"), Explicit: opts.OperatorArtifacts})
 	if err != nil {
-		return fmt.Errorf("resolve demo artifact provenance: %w", err)
+		return OperatorDeploymentConfig{}, fmt.Errorf("resolve demo artifact provenance: %w", err)
 	}
 	releaseLine := strings.TrimSpace(os.Getenv("KUBERNAUT_RELEASE_LINE"))
 	if releaseLine == "" {
@@ -144,37 +151,18 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 		DependencyChart: dependencyChart, DependencyChartVersion: dependencyChartVersion,
 		KubernautVersion: resolved.KubernautVersion, RelatedImages: relatedImages,
 	}
-
-	namespace := kubernautSystem
-	fixtureDir, err := os.MkdirTemp("", "operator-demo-fixtures-*")
+	spPolicyFile, aaPolicyFile, err := prepareDemoOperatorFixtureFiles(opts, fixtureDir)
 	if err != nil {
-		return fmt.Errorf("create demo fixture directory: %w", err)
+		return OperatorDeploymentConfig{}, err
 	}
-	defer func() { _ = os.RemoveAll(fixtureDir) }()
-	spPolicyFile := opts.SPPolicyFile
-	if spPolicyFile == "" {
-		spPolicyFile = filepath.Join(fixtureDir, "signal-processing.rego")
-		if err := os.WriteFile(spPolicyFile, []byte(demoDefaultSPPolicyRego), 0o600); err != nil {
-			return fmt.Errorf("write demo SignalProcessing policy: %w", err)
-		}
-	}
-	aaPolicyFile := opts.AAPolicyFile
-	if aaPolicyFile == "" {
-		aaPolicyFile = filepath.Join(fixtureDir, "ai-analysis.rego")
-		if err := os.WriteFile(aaPolicyFile, []byte(demoDefaultAAPolicyRego), 0o600); err != nil {
-			return fmt.Errorf("write demo AIAnalysis policy: %w", err)
-		}
-	}
-
-	crOptions := buildDemoOperatorCROptions(opts, fleetOpts)
 
 	config := OperatorDeploymentConfig{
 		ClusterName: kindClusterName,
-		Namespace:   namespace, KubeconfigPath: kubeconfigPath, OperatorChartPath: operatorChart, OperatorChartVersion: operatorChartVersion, DependencyChartPath: dependencyChart, DependencyChartVersion: dependencyChartVersion,
+		Namespace:   kubernautSystem, KubeconfigPath: kubeconfigPath, OperatorChartPath: operatorChart, OperatorChartVersion: operatorChartVersion, DependencyChartPath: dependencyChart, DependencyChartVersion: dependencyChartVersion,
 		OperatorImage: operatorImage, RelatedImages: relatedImages,
 		PostgreSQLImage: demoPostgreSQLImageDefault,
 		ValkeyImage:     demoValkeyImageDefault,
-		CR:              crOptions, MonitoringNamespace: monitoringNamespace, Exposure: opts.Exposure, DiagnosticsDir: strings.TrimSpace(os.Getenv("KUBERNAUT_QUALIFICATION_DIR")),
+		CR:              buildDemoOperatorCROptions(opts, fleetOpts), MonitoringNamespace: monitoringNamespace, Exposure: opts.Exposure, DiagnosticsDir: strings.TrimSpace(os.Getenv("KUBERNAUT_QUALIFICATION_DIR")),
 		FixtureFiles:  OperatorFixtureFiles{LLMCredentials: opts.LLMCredentialsFile, AIAnalysisPolicy: aaPolicyFile, SignalProcessingPolicy: spPolicyFile},
 		Provenance:    OperatorArtifactProvenance{Repository: operatorRepository, RequestedRef: opts.OperatorArtifacts.OperatorRef, ImageRef: operatorImage, Profile: "demo-v1.6"},
 		DemoArtifacts: demoArtifacts,
@@ -189,45 +177,46 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 		}
 	}
 	if hostIngressCIDR, ingressErr := KindHostIngressCIDR(ctx, kindClusterName); ingressErr != nil {
-		return fmt.Errorf("resolve demo Kind host ingress CIDR: %w", ingressErr)
+		return OperatorDeploymentConfig{}, fmt.Errorf("resolve demo Kind host ingress CIDR: %w", ingressErr)
 	} else {
 		config.HostIngressCIDR = hostIngressCIDR
 	}
-	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("prepare operator demo RBAC: %w", err)
-	}
-	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, fleetOpts != nil, writer); err != nil {
-		return fmt.Errorf("prepare manual operator service TLS: %w", err)
-	}
-	if evidence, err := DeployOperatorManagedApplication(ctx, config, writer); err != nil {
+	return config, nil
+}
+
+func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploymentConfig, writer io.Writer) error {
+	evidence, err := DeployOperatorManagedApplication(ctx, config, writer)
+	if err != nil {
 		return err
-	} else {
-		RememberOperatorExposure(kubeconfigPath, evidence)
 	}
-	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "kubernaut-console", 60*time.Second, writer); err != nil {
+	RememberOperatorExposure(config.KubeconfigPath, evidence)
+	if err := waitForServiceEndpointReady(ctx, config.Namespace, config.KubeconfigPath, "kubernaut-console", 60*time.Second, writer); err != nil {
 		return fmt.Errorf("wait for operator Console Service: %w", err)
 	}
 	// Remove the legacy demo alias from retained clusters. It was required by
 	// the pre-#572 operator-owned Ingress and is no longer part of the exposure
 	// contract; only this exact, test-owned Service is targeted.
-	if err := runKubectl(ctx, kubeconfigPath, writer, "delete", "service", "console", "-n", namespace, "--ignore-not-found"); err != nil {
+	if err := runKubectl(ctx, config.KubeconfigPath, writer, "delete", "service", "console", "-n", config.Namespace, "--ignore-not-found"); err != nil {
 		return fmt.Errorf("remove legacy demo Console Service alias: %w", err)
 	}
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildDemoConsoleIngressManifest(namespace)); err != nil {
+	if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, BuildDemoConsoleIngressManifest(config.Namespace)); err != nil {
 		return fmt.Errorf("create demo Console Ingress: %w", err)
 	}
-
-	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := waitForDataStorageHTTP(ctx, config.Namespace, config.KubeconfigPath, writer); err != nil {
 		return fmt.Errorf("DataStorage did not become ready after operator reconciliation: %w", err)
 	}
-	if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+	if err := BindAFPersonaRBAC(ctx, config.KubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to bind AF persona RBAC: %w", err)
 	}
+	return nil
+}
 
+func printDemoOperatorApplicationReady(config OperatorDeploymentConfig, remoteKubeconfigPath string, opts DemoHelmOptions, writer io.Writer) {
+	reasoningEnabled, reasoningEffort, reasoningCapabilityOverride := resolveDemoReasoning(opts)
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Kubernaut operator demo is ready")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintf(writer, "  Operator image:     %s\n", operatorImage)
+	_, _ = fmt.Fprintf(writer, "  Operator image:     %s\n", config.OperatorImage)
 	_, _ = fmt.Fprintf(writer, "  LLM reasoning:      enabled=%t", reasoningEnabled)
 	if reasoningEffort == "" {
 		_, _ = fmt.Fprintln(writer, " effort=(provider default)")
@@ -237,20 +226,51 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	if reasoningCapabilityOverride != "" {
 		_, _ = fmt.Fprintf(writer, "  Capability override: %s\n", reasoningCapabilityOverride)
 	}
-	_, _ = fmt.Fprintf(writer, "  Trust the demo CA before browser login: %s\n", InterServiceCAPath(kubeconfigPath))
+	_, _ = fmt.Fprintf(writer, "  Trust the demo CA before browser login: %s\n", InterServiceCAPath(config.KubeconfigPath))
 	_, _ = fmt.Fprintf(writer, "    Browse to: https://%s:%d\n", demoConsoleHost, DemoHostPort(demoConsolePort))
 	_, _ = fmt.Fprintln(writer, "    Login: sre-user / password")
 	if opts.Mode == DemoModeFleet {
-		_, _ = fmt.Fprintf(writer, "    HUB_KUBECONFIG=%s\n    SPOKE_KUBECONFIG=%s\n", kubeconfigPath, remoteKubeconfigPath)
+		_, _ = fmt.Fprintf(writer, "    HUB_KUBECONFIG=%s\n    SPOKE_KUBECONFIG=%s\n", config.KubeconfigPath, remoteKubeconfigPath)
 	} else {
-		_, _ = fmt.Fprintf(writer, "    KUBECONFIG=%s\n", kubeconfigPath)
+		_, _ = fmt.Fprintf(writer, "    KUBECONFIG=%s\n", config.KubeconfigPath)
 	}
 	_, _ = fmt.Fprintln(writer, "  Teardown ownership:")
-	_, _ = fmt.Fprintf(writer, "    kubectl delete kubernaut %s -n %s --ignore-not-found\n", operatorCRName, namespace)
-	_, _ = fmt.Fprintf(writer, "    kubectl delete ingress kubernaut-console -n %s --ignore-not-found\n", namespace)
-	_, _ = fmt.Fprintf(writer, "    kubectl delete service console -n %s --ignore-not-found\n", namespace)
-	_, _ = fmt.Fprintf(writer, "    helm uninstall kubernaut-development-dependencies -n %s --wait\n", namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete kubernaut %s -n %s --ignore-not-found\n", operatorCRName, config.Namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete ingress kubernaut-console -n %s --ignore-not-found\n", config.Namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete service console -n %s --ignore-not-found\n", config.Namespace)
+	_, _ = fmt.Fprintf(writer, "    helm uninstall kubernaut-development-dependencies -n %s --wait\n", config.Namespace)
 	_, _ = fmt.Fprintln(writer, "    helm uninstall kubernaut-operator -n kubernaut-operator-system --wait")
-	_, _ = fmt.Fprintf(writer, "    kind delete cluster --name %s\n", kindClusterName)
+	_, _ = fmt.Fprintf(writer, "    kind delete cluster --name %s\n", config.ClusterName)
+}
+
+// InstallDemoOperatorApplication deploys the demo through the operator
+// bootstrap chart and a user-owned Kubernaut CR. It never installs the
+// upstream application chart and does not build images on the normal path.
+func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, writer io.Writer) error {
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+	if err := loadDemoImagesToKind(ctx, kindClusterName, opts, writer); err != nil {
+		return err
+	}
+	fixtureDir, err := os.MkdirTemp("", "operator-demo-fixtures-*")
+	if err != nil {
+		return fmt.Errorf("create demo fixture directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(fixtureDir) }()
+	config, err := buildDemoOperatorDeploymentConfig(ctx, kubeconfigPath, kindClusterName, fleetOpts, opts, fixtureDir)
+	if err != nil {
+		return err
+	}
+	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("prepare operator demo RBAC: %w", err)
+	}
+	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, config.Namespace, fleetOpts != nil, writer); err != nil {
+		return fmt.Errorf("prepare manual operator service TLS: %w", err)
+	}
+	if err := finalizeDemoOperatorApplication(ctx, config, writer); err != nil {
+		return err
+	}
+	printDemoOperatorApplicationReady(config, remoteKubeconfigPath, opts, writer)
 	return nil
 }

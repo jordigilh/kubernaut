@@ -801,13 +801,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if gatewayType == registry.GatewayEAIGW {
 		gatewayLabel = gatewayLabelEAIGW
 	}
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🚀 Fleet-core infrastructure only (operator application install follows)")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintf(writer, "  Hub + spoke Kind clusters, Keycloak, %s,\n", gatewayLabel)
-	_, _ = fmt.Fprintln(writer, "  kube-mcp-server, Traefik (Console Ingress). The shared demo entry point")
-	_, _ = fmt.Fprintln(writer, "  installs the operator bootstrap and applies a Kubernaut CR afterward.")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	printFleetCoreDemoHeader(gatewayLabel, writer)
 
 	namespace := kubernautSystem
 	operatorExposure, exposureErr := OperatorExposurePlanForCluster(ctx, clusterName, namespace, "localhost", DemoExposureComponents(opts.Autonomous))
@@ -855,6 +849,24 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}
 	fleetOpts.OperatorExposure = &operatorExposure
 
+	if err := installFleetCoreDemoMonitoring(ctx, clusterName, remoteClusterName, kubeconfigPath, remoteKubeconfigPath, namespace, writer); err != nil {
+		return nil, remoteKubeconfigPath, err
+	}
+	printFleetCoreDemoSummary(fleetOpts, kubeconfigPath, remoteKubeconfigPath, namespace, opts, writer)
+	return fleetOpts, remoteKubeconfigPath, nil
+}
+
+func printFleetCoreDemoHeader(gatewayLabel string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 Fleet-core infrastructure only (operator application install follows)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "  Hub + spoke Kind clusters, Keycloak, %s,\n", gatewayLabel)
+	_, _ = fmt.Fprintln(writer, "  kube-mcp-server, Traefik (Console Ingress). The shared demo entry point")
+	_, _ = fmt.Fprintln(writer, "  installs the operator bootstrap and applies a Kubernaut CR afterward.")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+}
+
+func prepareFleetCoreDemoMonitoring(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, namespace string, writer io.Writer) error {
 	// Fleet-wide monitoring (Prometheus+Thanos-sidecar per cluster + hub
 	// Thanos Querier + AlertManager): deliberately NOT added to
 	// provisionFleetCoreInfra (shared with the "fleet"/"fullpipeline"
@@ -888,16 +900,16 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// effectivenessmonitor/networkpolicy.yaml) are already CIDR/port-only
 	// with no namespace restriction, so this move needs no chart changes.
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create hub monitoring namespace: %w", err)
+		return fmt.Errorf("failed to create hub monitoring namespace: %w", err)
 	}
 	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to prepare hub monitoring TLS: %w", err)
+		return fmt.Errorf("failed to prepare hub monitoring TLS: %w", err)
 	}
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
+		return fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
 	if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+		return fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
 	}
 	// The fleet AlertManager is hub-only and lives in monitoring. OIDC setup
 	// creates the shared CA in kubernaut-system; replicate it into the hub's
@@ -905,9 +917,12 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// for spoke Prometheus alerts, which forward to this hub AlertManager via
 	// its NodePort (Issue #2405).
 	if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, monitoringNamespace, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to replicate hub inter-service CA to %s: %w", monitoringNamespace, err)
+		return fmt.Errorf("failed to replicate hub inter-service CA to %s: %w", monitoringNamespace, err)
 	}
+	return nil
+}
 
+func installFleetCoreDemoAlertManager(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	// AlertManager: single instance in the hub only (matches DD-EM-005's
 	// "AlertManager... aggregates alerts fleet-wide" -- one sink, not one
 	// per cluster). Both clusters' Prometheus instances point their
@@ -938,26 +953,29 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// the two suites' RBAC bindings don't collide if ever run against the
 	// same cluster.
 	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, namespace, kubeconfigPath, fleetAlertManagerGatewaySA, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("fleet AlertManager Gateway ServiceAccount setup failed: %w", err)
+		return fmt.Errorf("fleet AlertManager Gateway ServiceAccount setup failed: %w", err)
 	}
 	fleetGatewayToken, err := GetServiceAccountToken(ctx, namespace, fleetAlertManagerGatewaySA, kubeconfigPath)
 	if err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
+		return fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "\n📊 Installing fleet-wide monitoring (Prometheus+Thanos per cluster, hub AlertManager)...")
 	if err := DeployAlertManagerTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("alertmanager install failed: %w", err)
+		return fmt.Errorf("alertmanager install failed: %w", err)
 	}
+	return nil
+}
 
+func installFleetCoreDemoMonitoringWorkloads(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath, remoteKubeconfigPath string, writer io.Writer) error {
 	// Prometheus Operator on BOTH clusters, before each cluster's Prometheus
 	// resource. The fleet demo uses one operator-managed installation path for
 	// hub and spoke so ServiceMonitor/Probe/PodMonitor/PrometheusRule behavior
 	// is identical on both clusters and matches the production monitoring API.
 	if err := InstallPrometheusOperator(ctx, kubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("hub Prometheus Operator install failed: %w", err)
+		return fmt.Errorf("hub Prometheus Operator install failed: %w", err)
 	}
 	if err := InstallPrometheusOperator(ctx, remoteKubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke Prometheus Operator install failed: %w", err)
+		return fmt.Errorf("spoke Prometheus Operator install failed: %w", err)
 	}
 
 	// kube-state-metrics on BOTH clusters, before each cluster's Prometheus
@@ -967,34 +985,47 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// come back empty -- confirmed via manual QE run on fleet-e2e-remote's
 	// spoke, 2026-08-30, which is why this now covers the hub too.
 	if err := DeployKubeStateMetrics(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("hub kube-state-metrics install failed: %w", err)
+		return fmt.Errorf("hub kube-state-metrics install failed: %w", err)
 	}
 	if err := DeployKubeStateMetrics(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke kube-state-metrics install failed: %w", err)
+		return fmt.Errorf("spoke kube-state-metrics install failed: %w", err)
 	}
 
 	hubAlertManagerTarget := fmt.Sprintf("alertmanager-svc.%s.svc.cluster.local:9093", monitoringNamespace)
 	if err := DeployManagedPrometheusTLS(ctx, monitoringNamespace, kubeconfigPath, "hub", hubAlertManagerTarget, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("hub managed prometheus+thanos install failed: %w", err)
+		return fmt.Errorf("hub managed prometheus+thanos install failed: %w", err)
 	}
 
 	spokeAlertManagerTarget, err := HubNodeBridgeIPAndPort(ctx, clusterName, AlertManagerNodePort)
 	if err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("failed to resolve hub AlertManager bridge address for spoke: %w", err)
+		return fmt.Errorf("failed to resolve hub AlertManager bridge address for spoke: %w", err)
 	}
 	if err := DeployManagedPrometheusTLS(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", spokeAlertManagerTarget, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke managed prometheus+thanos install failed: %w", err)
+		return fmt.Errorf("spoke managed prometheus+thanos install failed: %w", err)
 	}
 
 	spokeSidecarStoreAddr, err := BridgeSpokeThanosSidecar(ctx, kubeconfigPath, monitoringNamespace, remoteKubeconfigPath, monitoringNamespace, remoteClusterName, writer)
 	if err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke thanos sidecar bridge failed: %w", err)
+		return fmt.Errorf("spoke thanos sidecar bridge failed: %w", err)
 	}
 	hubSidecarStoreAddr := fmt.Sprintf("thanos-sidecar-grpc.%s.svc.cluster.local:%d", monitoringNamespace, ThanosSidecarGRPCPort)
 	if err := DeployThanosQuerier(ctx, monitoringNamespace, kubeconfigPath, []string{hubSidecarStoreAddr, spokeSidecarStoreAddr}, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("thanos querier install failed: %w", err)
+		return fmt.Errorf("thanos querier install failed: %w", err)
 	}
+	return nil
+}
 
+func installFleetCoreDemoMonitoring(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath, remoteKubeconfigPath, namespace string, writer io.Writer) error {
+	if err := prepareFleetCoreDemoMonitoring(ctx, kubeconfigPath, remoteKubeconfigPath, namespace, writer); err != nil {
+		return err
+	}
+	if err := installFleetCoreDemoAlertManager(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return err
+	}
+	return installFleetCoreDemoMonitoringWorkloads(ctx, clusterName, remoteClusterName, kubeconfigPath, remoteKubeconfigPath, writer)
+}
+
+func printFleetCoreDemoSummary(fleetOpts *FleetHelmOptions, kubeconfigPath, remoteKubeconfigPath, namespace string, opts FleetCoreDemoOptions, writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet-core infrastructure READY -- Kubernaut is NOT installed")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1053,8 +1084,6 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}")
 	_, _ = fmt.Fprintln(writer, "    The shared demo command applies the operator CR and binds Fleet AF RBAC afterward.")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	return fleetOpts, remoteKubeconfigPath, nil
 }
 
 // FleetCoreInfraOptions configures provisionFleetCoreInfra. Introduced by
@@ -1212,7 +1241,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		CAFilePath:          "/etc/tls-ca/ca.crt",
 	}
 	var remoteBridge *RemoteClusterBridgeConfig
-	remotePath, remoteBridgeValue, remoteErr := provisionFleetRemoteCluster(ctx, opts, namespace, remoteMCPNamespace, sharedAuthConfig, isDemo, writer)
+	remotePath, remoteBridgeValue, remoteErr := provisionFleetRemoteCluster(ctx, opts, namespace, remoteMCPNamespace, sharedAuthConfig, writer)
 	if remoteErr != nil {
 		return nil, "", remoteErr
 	}
@@ -1449,7 +1478,7 @@ func prepareFleetIdentity(ctx context.Context, kubeconfigPath, namespace, keyclo
 	return nil
 }
 
-func provisionFleetRemoteCluster(ctx context.Context, opts FleetCoreInfraOptions, namespace, remoteMCPNamespace string, sharedAuthConfig KubeMCPServerAuthConfig, isDemo bool, writer io.Writer) (string, *RemoteClusterBridgeConfig, error) {
+func provisionFleetRemoteCluster(ctx context.Context, opts FleetCoreInfraOptions, namespace, remoteMCPNamespace string, sharedAuthConfig KubeMCPServerAuthConfig, writer io.Writer) (string, *RemoteClusterBridgeConfig, error) {
 	clusterName := opts.ClusterName
 	kubeconfigPath := opts.KubeconfigPath
 	spokeWorkers := opts.SpokeWorkers

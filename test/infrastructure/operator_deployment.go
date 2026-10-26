@@ -63,6 +63,7 @@ const (
 	demoOperatorImageRC27        = "quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"
 	demoDependencyChartOCI       = "oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"
 	demoDependencyChartVersion   = "0.1.0-run.1"
+	demoReleaseVersionRC27       = "1.6.0-rc27"
 	operatorDataStorageOperand   = "datastorage"
 	operatorAPIFrontendOperand   = "apifrontend"
 	operatorRuntimeTempMountPath = "/tmp"
@@ -1066,16 +1067,7 @@ func BuildDemoArtifactResolutionJSON(record DemoArtifactResolutionRecord) ([]byt
 }
 
 func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDemoOperatorArtifacts, error) {
-	version := strings.TrimSpace(input.ReleaseLine)
-	if version == "" {
-		version = strings.TrimSpace(os.Getenv("KUBERNAUT_RELEASE_VERSION"))
-	}
-	if version == "" {
-		version = "1.6.0-rc27"
-	}
-	if version == "1.6" {
-		version = "1.6.0-rc27"
-	}
+	version := resolveDemoReleaseVersion(input)
 	operatorVersion := strings.TrimSpace(input.Explicit.OperatorVersion)
 	if operatorVersion == "" {
 		operatorVersion = version
@@ -1084,34 +1076,9 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 	if kubernautVersion == "" {
 		kubernautVersion = version
 	}
-	operatorImage := strings.TrimSpace(input.Explicit.OperatorImage)
-	if operatorImage == "" {
-		operatorImage = composeImageReference(input.Explicit.OperatorImageRepository, input.Explicit.OperatorImageTag)
-	}
-	if operatorImage == "" {
-		if operatorVersion == "1.6.0-rc27" {
-			operatorImage = demoOperatorImageRC27
-		} else {
-			operatorImage = "quay.io/kubernaut-ai/kubernaut-operator-image:" + operatorVersion
-		}
-	}
-	if digest := strings.TrimSpace(input.Explicit.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
-		operatorImage += "@" + digest
-	}
-	operatorChart := strings.TrimSpace(input.Explicit.OperatorChart)
-	if operatorChart == "" {
-		operatorChart = demoOperatorChartOCI
-	}
-	if digest := strings.TrimSpace(input.Explicit.OperatorChartDigest); digest != "" && !strings.Contains(operatorChart, "@sha256:") {
-		operatorChart += "@" + digest
-	}
-	dependencyChart := strings.TrimSpace(input.Explicit.DependencyChart)
-	if dependencyChart == "" {
-		dependencyChart = demoDependencyChartOCI
-	}
-	if digest := strings.TrimSpace(input.Explicit.DependencyChartDigest); digest != "" && !strings.Contains(dependencyChart, "@sha256:") {
-		dependencyChart += "@" + digest
-	}
+	operatorImage := resolveDemoOperatorImage(input.Explicit, operatorVersion)
+	operatorChart := resolveDemoArtifactReference(input.Explicit.OperatorChart, demoOperatorChartOCI, input.Explicit.OperatorChartDigest)
+	dependencyChart := resolveDemoArtifactReference(input.Explicit.DependencyChart, demoDependencyChartOCI, input.Explicit.DependencyChartDigest)
 	dependencyChartVersion := strings.TrimSpace(input.Explicit.DependencyChartVersion)
 	if dependencyChartVersion == "" {
 		dependencyChartVersion = demoDependencyChartVersion
@@ -1121,6 +1088,46 @@ func ResolveDemoOperatorArtifacts(input DemoArtifactResolutionInput) (ResolvedDe
 		kubernautImage = "quay.io/kubernaut-ai/gateway:" + kubernautVersion
 	}
 	return ResolvedDemoOperatorArtifacts{OperatorVersion: operatorVersion, OperatorImage: operatorImage, OperatorChart: operatorChart, OperatorRef: strings.TrimSpace(input.Explicit.OperatorRef), DependencyChart: dependencyChart, DependencyChartVersion: dependencyChartVersion, KubernautVersion: kubernautVersion, KubernautImage: kubernautImage}, nil
+}
+
+func resolveDemoReleaseVersion(input DemoArtifactResolutionInput) string {
+	version := strings.TrimSpace(input.ReleaseLine)
+	if version == "" {
+		version = strings.TrimSpace(os.Getenv("KUBERNAUT_RELEASE_VERSION"))
+	}
+	if version == "" || version == "1.6" {
+		return demoReleaseVersionRC27
+	}
+	return version
+}
+
+func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion string) string {
+	operatorImage := strings.TrimSpace(overrides.OperatorImage)
+	if operatorImage == "" {
+		operatorImage = composeImageReference(overrides.OperatorImageRepository, overrides.OperatorImageTag)
+	}
+	if operatorImage == "" {
+		if operatorVersion == demoReleaseVersionRC27 {
+			operatorImage = demoOperatorImageRC27
+		} else {
+			operatorImage = "quay.io/kubernaut-ai/kubernaut-operator-image:" + operatorVersion
+		}
+	}
+	if digest := strings.TrimSpace(overrides.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
+		operatorImage += "@" + digest
+	}
+	return operatorImage
+}
+
+func resolveDemoArtifactReference(explicit, defaultReference, digest string) string {
+	reference := strings.TrimSpace(explicit)
+	if reference == "" {
+		reference = defaultReference
+	}
+	if digest := strings.TrimSpace(digest); digest != "" && !strings.Contains(reference, "@sha256:") {
+		reference += "@" + digest
+	}
+	return reference
 }
 
 func composeImageReference(repository, tag string) string {
