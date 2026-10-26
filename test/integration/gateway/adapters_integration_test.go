@@ -81,6 +81,36 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				signal.SignalName, signal.Namespace, signal.Severity)
 		})
 
+		It("IT-GW-2555-001 [BR-INTEGRATION-065, AC-4, AC-6, ASVS V4.1.1]: local Parse ignores common cluster attribution", func() {
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
+
+			localSignal, err := adapter.Parse(ctx, createPrometheusAlert(testNamespace, "LocalCommonCluster", "warning", ""))
+			Expect(err).ToNot(HaveOccurred())
+
+			clusteredSignal, err := adapter.Parse(ctx, createPrometheusAlertWithCluster(testNamespace, "LocalCommonCluster", "warning", "local", false))
+			Expect(err).ToNot(HaveOccurred(),
+				"local mode must not attempt remote resolution for common cluster attribution")
+			Expect(clusteredSignal.ClusterID).To(BeEmpty(),
+				"local mode must discard common cluster attribution")
+			Expect(clusteredSignal.Fingerprint).To(Equal(localSignal.Fingerprint),
+				"local cluster attribution must not change deduplication identity")
+		})
+
+		It("IT-GW-2555-002 [BR-INTEGRATION-065, AC-4, AC-6, ASVS V4.1.1]: local Parse ignores per-alert cluster attribution", func() {
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
+
+			localSignal, err := adapter.Parse(ctx, createPrometheusAlert(testNamespace, "LocalPerAlertCluster", "warning", ""))
+			Expect(err).ToNot(HaveOccurred())
+
+			clusteredSignal, err := adapter.Parse(ctx, createPrometheusAlertWithCluster(testNamespace, "LocalPerAlertCluster", "warning", "local", true))
+			Expect(err).ToNot(HaveOccurred(),
+				"local mode must not attempt remote resolution for per-alert cluster attribution")
+			Expect(clusteredSignal.ClusterID).To(BeEmpty(),
+				"local mode must discard per-alert cluster attribution")
+			Expect(clusteredSignal.Fingerprint).To(Equal(localSignal.Fingerprint),
+				"local cluster attribution must not change deduplication identity")
+		})
+
 		It("[GW-INT-ADP-002] should extract alertname from labels correctly", func() {
 			By("1. Create alerts with different alertnames")
 			testCases := []struct {
@@ -1016,3 +1046,28 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		})
 	})
 })
+
+func createPrometheusAlertWithCluster(namespace, alertName, severity, clusterID string, perAlert bool) []byte {
+	clusterLabel := ""
+	commonLabels := fmt.Sprintf(`{"cluster":"%s"}`, clusterID)
+	if perAlert {
+		clusterLabel = fmt.Sprintf(`,"cluster":"%s"`, clusterID)
+		commonLabels = `{}`
+	}
+
+	return []byte(fmt.Sprintf(`{
+		"alerts": [{
+			"labels": {
+				"alertname": "%s",
+				"severity": "%s",
+				"namespace": "%s",
+				"pod": "test-pod-123"%s
+			},
+			"annotations": {
+				"summary": "Test alert with cluster attribution"
+			},
+			"startsAt": "2026-01-16T12:00:00Z"
+		}],
+		"commonLabels": %s
+	}`, alertName, severity, namespace, clusterLabel, commonLabels))
+}
