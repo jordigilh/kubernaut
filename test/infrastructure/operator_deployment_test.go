@@ -463,6 +463,15 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorRef).To(Equal("9dc9394fd1844be4f4d4adb89db9a881dbc066ed"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc9"))
 	})
+	It("UT-2492-016F [BR-PLATFORM-014]: explicit digests replace pinned default artifacts", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{Explicit: DemoArtifactOverrides{
+			OperatorDigest:      "sha256:operator-override",
+			OperatorChartDigest: "sha256:chart-override",
+		}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(HaveSuffix("@sha256:operator-override"))
+		Expect(resolved.OperatorChart).To(HaveSuffix("@sha256:chart-override"))
+	})
 
 	It("UT-2492-016B [BR-PLATFORM-014]: keeps dependency, operator, and service artifact layers independent", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{

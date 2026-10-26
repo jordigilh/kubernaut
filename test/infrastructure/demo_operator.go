@@ -24,6 +24,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -193,13 +200,17 @@ func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploym
 	if err := waitForServiceEndpointReady(ctx, config.Namespace, config.KubeconfigPath, "kubernaut-console", 60*time.Second, writer); err != nil {
 		return fmt.Errorf("wait for operator Console Service: %w", err)
 	}
+	kubeClient, err := newKubeconfigControllerClient(config.KubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create demo Kubernetes client: %w", err)
+	}
 	// Remove the legacy demo alias from retained clusters. It was required by
 	// the pre-#572 operator-owned Ingress and is no longer part of the exposure
 	// contract; only this exact, test-owned Service is targeted.
-	if err := runKubectl(ctx, config.KubeconfigPath, writer, "delete", "service", "console", "-n", config.Namespace, "--ignore-not-found"); err != nil {
+	if err := deleteLegacyDemoConsoleService(ctx, kubeClient, config.Namespace); err != nil {
 		return fmt.Errorf("remove legacy demo Console Service alias: %w", err)
 	}
-	if err := kubectlApplyManifest(ctx, config.KubeconfigPath, writer, BuildDemoConsoleIngressManifest(config.Namespace)); err != nil {
+	if err := applyDemoConsoleIngress(ctx, kubeClient, config.Namespace); err != nil {
 		return fmt.Errorf("create demo Console Ingress: %w", err)
 	}
 	if err := waitForDataStorageHTTP(ctx, config.Namespace, config.KubeconfigPath, writer); err != nil {
@@ -207,6 +218,36 @@ func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploym
 	}
 	if err := BindAFPersonaRBAC(ctx, config.KubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to bind AF persona RBAC: %w", err)
+	}
+	return nil
+}
+
+func deleteLegacyDemoConsoleService(ctx context.Context, kubeClient ctrlclient.Client, namespace string) error {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "console", Namespace: namespace}}
+	return ctrlclient.IgnoreNotFound(kubeClient.Delete(ctx, service))
+}
+
+func applyDemoConsoleIngress(ctx context.Context, kubeClient ctrlclient.Client, namespace string) error {
+	var desired networkingv1.Ingress
+	if err := yaml.Unmarshal([]byte(BuildDemoConsoleIngressManifest(namespace)), &desired); err != nil {
+		return fmt.Errorf("parse demo Console Ingress manifest: %w", err)
+	}
+
+	var existing networkingv1.Ingress
+	key := ctrlclient.ObjectKeyFromObject(&desired)
+	if err := kubeClient.Get(ctx, key, &existing); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("get demo Console Ingress: %w", err)
+		}
+		if err := kubeClient.Create(ctx, &desired); err != nil {
+			return fmt.Errorf("create demo Console Ingress: %w", err)
+		}
+		return nil
+	}
+
+	desired.ResourceVersion = existing.ResourceVersion
+	if err := kubeClient.Update(ctx, &desired); err != nil {
+		return fmt.Errorf("update demo Console Ingress: %w", err)
 	}
 	return nil
 }

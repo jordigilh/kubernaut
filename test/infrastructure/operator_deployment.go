@@ -1123,10 +1123,7 @@ func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion s
 			operatorImage = "quay.io/kubernaut-ai/kubernaut-operator-image:" + operatorVersion
 		}
 	}
-	if digest := strings.TrimSpace(overrides.OperatorDigest); digest != "" && !strings.Contains(operatorImage, "@sha256:") {
-		operatorImage += "@" + digest
-	}
-	return operatorImage
+	return applyDemoDigest(operatorImage, overrides.OperatorDigest)
 }
 
 func resolveDemoArtifactReference(explicit, defaultReference, digest string) string {
@@ -1134,10 +1131,18 @@ func resolveDemoArtifactReference(explicit, defaultReference, digest string) str
 	if reference == "" {
 		reference = defaultReference
 	}
-	if digest := strings.TrimSpace(digest); digest != "" && !strings.Contains(reference, "@sha256:") {
-		reference += "@" + digest
+	return applyDemoDigest(reference, digest)
+}
+
+func applyDemoDigest(reference, digest string) string {
+	digest = strings.TrimPrefix(strings.TrimSpace(digest), "@")
+	if digest == "" {
+		return reference
 	}
-	return reference
+	if at := strings.Index(reference, "@"); at >= 0 {
+		return reference[:at] + "@" + digest
+	}
+	return reference + "@" + digest
 }
 
 func composeImageReference(repository, tag string) string {
