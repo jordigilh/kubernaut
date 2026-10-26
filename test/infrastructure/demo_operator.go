@@ -245,8 +245,14 @@ func applyDemoConsoleIngress(ctx context.Context, kubeClient ctrlclient.Client, 
 		return nil
 	}
 
-	desired.ResourceVersion = existing.ResourceVersion
-	if err := kubeClient.Update(ctx, &desired); err != nil {
+	existing.Spec = desired.Spec
+	if existing.Labels == nil {
+		existing.Labels = map[string]string{}
+	}
+	for key, value := range desired.Labels {
+		existing.Labels[key] = value
+	}
+	if err := kubeClient.Update(ctx, &existing); err != nil {
 		return fmt.Errorf("update demo Console Ingress: %w", err)
 	}
 	return nil

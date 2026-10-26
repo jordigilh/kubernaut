@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,22 +61,27 @@ const e2eTokenExpirationSeconds = 90 * 24 * 3600 // 90 days
 func newKubeconfigControllerClient(kubeconfigPath string) (ctrlclient.Client, error) {
 	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
+		log.Printf("build rest.Config from kubeconfig %s: %v", kubeconfigPath, err)
 		return nil, fmt.Errorf("build rest.Config from kubeconfig %s: %w", kubeconfigPath, err)
 	}
 
 	scheme := k8sruntime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
+		log.Printf("register core Kubernetes scheme: %v", err)
 		return nil, fmt.Errorf("register core Kubernetes scheme: %w", err)
 	}
 	if err := networkingv1.AddToScheme(scheme); err != nil {
+		log.Printf("register networking Kubernetes scheme: %v", err)
 		return nil, fmt.Errorf("register networking Kubernetes scheme: %w", err)
 	}
 	if err := authenticationv1.AddToScheme(scheme); err != nil {
+		log.Printf("register authentication Kubernetes scheme: %v", err)
 		return nil, fmt.Errorf("register authentication Kubernetes scheme: %w", err)
 	}
 
 	kubeClient, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: scheme})
 	if err != nil {
+		log.Printf("create controller-runtime Kubernetes client: %v", err)
 		return nil, fmt.Errorf("create controller-runtime Kubernetes client: %w", err)
 	}
 	return kubeClient, nil
