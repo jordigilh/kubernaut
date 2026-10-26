@@ -174,6 +174,10 @@ label as a remote signal. Under #2555, nil reader factory means local mode, so
 the test now represents Fleet mode with an empty reader registry and verifies
 unregistered IDs fail closed.
 
+`IT-GW-2430-002` now injects an unavailable Fleet reader factory explicitly;
+without that fixture, the adapter is correctly exercising local mode rather
+than the intended remote-reader failure path.
+
 ## 13. Wiring Verification
 
 | Code path | Production entry | Observable outcome | Evidence |
