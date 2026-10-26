@@ -179,14 +179,25 @@ gh pr create --title "release: vX.Y.0 GA" --body "..."
 
 Wait for CI to pass, then merge. Record the merge commit SHA.
 
-### Step 7: Tag the merge commit
+### Step 7: Dispatch release promotion
 
 ```bash
-git checkout main && git pull origin main
-MERGE_SHA=$(git log --oneline -1 --format='%H')
-git tag -a vX.Y.0 "$MERGE_SHA" -m "vX.Y.0"
-git push origin vX.Y.0
+gh workflow run release.yml \
+  -f release_version=X.Y.0
 ```
+
+This publishes the Kubernaut application images without requiring an Operator release.
+To add compatibility qualification, provide an immutable candidate manifest containing
+the exact operator image, bootstrap chart, dependency chart, and resolved source SHA:
+
+```bash
+gh workflow run release.yml \
+  -f release_version=X.Y.0 \
+  -f operator_candidate_manifest=https://example.invalid/operator-candidate.yaml
+```
+
+The release workflow creates the GitHub release only after promotion and all application
+gates pass. Operator publication remains a separate coordinated release step.
 
 ### Step 8: Monitor the release workflow
 
@@ -434,7 +445,7 @@ flowchart LR
         prepare(["prepare"])
     end
 
-    subgraph P1["Phase 1: Build & Push"]
+    subgraph P1["Phase 1: Build & Push Staging Tags"]
         direction TB
         buildamd64["build-amd64\n14 jobs"]
         buildarm64["build-arm64\n12 jobs"]
@@ -442,19 +453,19 @@ flowchart LR
         buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
     end
 
-    subgraph P2["Phase 2: Scan & Qualification"]
+    subgraph P2["Phase 2: Scan & Staging Manifests"]
         direction TB
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
+        manifests["create-manifests"]
+        scanamd64 ~~~ scanarm64 ~~~ manifests
+    end
+
+    subgraph P3["Phase 3: Operator Qualification"]
+        direction TB
         candidate["prepare-operator-candidate"]
         qualification["operator-qualification"]
         candidate --> qualification
-        scanamd64 ~~~ scanarm64 ~~~ candidate
-    end
-
-    subgraph P3["Phase 3: Multi-Arch Manifests"]
-        direction TB
-        manifests["create-manifests"]
     end
 
     subgraph P4["Phase 4: Sign & Provenance"]
@@ -465,7 +476,10 @@ flowchart LR
     end
 
     subgraph P5["Phase 5: Release"]
+        promote["promote-release"]
+        latest["tag-latest"]
         release(["release"])
+        promote --> latest --> release
     end
 
     P0 --> P1 --> P2 --> P3 --> P4 --> P5
@@ -485,6 +499,7 @@ downstream jobs:
 - `tag` — full git tag (e.g., `v1.1.0`)
 - `build_date` — UTC timestamp
 - `is_prerelease` — `true` if tag contains `-rc`, `-alpha`, or `-beta`
+- `qualification_tag` — unique run-scoped image tag consumed before promotion
 
 ### Stage 1: Build & Push Images
 
@@ -494,7 +509,7 @@ Each job:
 1. Checks out code (with submodules)
 2. Runs `make generate` for code generation
 3. Logs in to Quay.io
-4. Builds the image and pushes `quay.io/kubernaut-ai/<service>:<version>-<arch>`
+4. Builds the image and pushes `quay.io/kubernaut-ai/<service>:<qualification_tag>-<arch>`
 
 Three build paths, depending on the service:
 - **12 Go services** (everything except `must-gather` and `db-migrate`): no
@@ -511,27 +526,28 @@ Three build paths, depending on the service:
 
 Runs once per image per arch (28 jobs, same matrix as the build stage), after
 that arch's build completes. Each job:
-1. Scans the pushed image with Trivy — a CRITICAL/HIGH CVE with a fix
+1. Scans the pushed staging image with Trivy — a CRITICAL/HIGH CVE with a fix
    available blocks the release. `must-gather` has a standing, time-bound
    `.trivyignore` for kubectl CVEs with no upstream fix yet (DD-PLATFORM-003).
 2. Generates a CycloneDX SBOM, uploaded as a workflow artifact for the
    sign-and-attest and release stages to pick up later.
 
-### Stage 3: Operator Qualification
+### Stage 3: Staging Multi-Arch Manifests
 
-Runs the operator-managed FullPipeline and Fleet qualification lanes against the
-resolved operator candidate and its dependency charts. A failing qualification
-lane blocks the release.
+Needs both image build stages to pass. For each service, creates a manifest list
+under the unique `qualification_tag`. No release-version or `:latest` tag is
+published at this stage.
 
-### Stage 4: Multi-Arch Manifests
+### Stage 4: Operator Qualification
 
-Needs both image build stages to pass. For each service:
-1. Creates a manifest list so a single tag resolves to the correct arch automatically.
-2. **GA only** (`is_prerelease == false`): tags the manifest as `:latest`.
+Runs after the staging manifests are available. The operator-managed FullPipeline
+and Fleet qualification lanes consume the resolved operator candidate and its
+dependency charts. A failing qualification lane blocks the release.
 
 ### Stage 5: Sign & Attest / SLSA Provenance
 
-Needs the manifests plus both security-scan stages. Two jobs run per service:
+Needs the staging manifests, operator qualification, and both security-scan stages.
+Two jobs run per service:
 - **Cosign sign & attest**: keyless-signs the amd64 image, arm64 image, and
   the manifest list (GitHub OIDC, no stored keys), then attests each arch's
   SBOM against its own digest.
@@ -541,17 +557,19 @@ Needs the manifests plus both security-scan stages. Two jobs run per service:
   makes it Build L3 (non-falsifiable) instead of self-asserted Build L2
   (issue #1109).
 
-### Stage 6: Operator Handoff
+### Stage 6: Release Promotion
 
-Kubernaut release CI no longer packages or publishes an application chart. The
-release record links the exact operator candidate image/chart artifacts consumed by
-qualification; operator publication and promotion remain owned by the
+After qualification, scans, signing, and provenance succeed, `promote-release`
+copies the staging image digests to immutable release-version architecture tags
+and creates the release-version manifest list. `tag-latest` then updates `:latest`
+only for GA candidates. Kubernaut release CI no longer packages or publishes an
+application chart; operator publication remains owned by the
 [Kubernaut Operator release pipeline](https://github.com/jordigilh/kubernaut-operator).
 
 ### Stage 7: GitHub Release
 
-Needs manifests, both security scans,
-sign-and-attest, and provenance — i.e. everything above has to pass first.
+Needs promotion, `tag-latest`, both security scans, sign-and-attest, and provenance
+— i.e. everything above has to pass first.
 Creates the GitHub Release with auto-generated notes, then downloads and
 attaches every SBOM and SLSA provenance bundle as release assets (required by
 OpenSSF Scorecard's Signed-Releases check — signatures need to be attached to
