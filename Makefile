@@ -927,6 +927,90 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
+# Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337/#2492):
+# hub+spoke Kind clusters + Keycloak + MCP Gateway + kube-mcp-server +
+# Traefik, THEN the operator bootstrap plus user-owned Kubernaut CR, wired up
+# Console-first -- Gateway starts disabled (AUTONOMOUS=true to enable it) so
+# you investigate the first demo scenario via Console chat before opting
+# into the fully autonomous flow. Leaves the clusters running -- tear down
+# with `kind delete cluster --name kubernaut-hub` (and `kubernaut-remote-cluster`)
+# when done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name
+# read as CI-only test tooling to demo readers, when this is the same
+# "fleet demo/QE environment" BR-PLATFORM-014 already documents by that name.
+# Cluster names default to kubernaut-hub/kubernaut-remote-cluster (2026-09-01,
+# kubernaut-demo-scenarios#427): "fleet-e2e" is CI's own test cluster name
+# (test/e2e/fleet/suite_test.go), reused here only by coincidence of the old
+# default -- this entry point is a separate binary and was never coupled to
+# it. "kubernaut-remote-cluster" matches the "remote-cluster" identity every
+# fleet MCPServerRegistration/AlertManager label already uses for this same
+# physical cluster.
+.PHONY: setup-fleet-demo-infra
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut through the operator, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
+		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
+		echo "     LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
+		echo "   make setup-fleet-demo-infra LLM_PROVIDER=vertex_ai LLM_MODEL=claude-haiku-4-5@20251001 \\"; \
+		echo "     LLM_CREDENTIALS_FILE=~/.config/gcloud/key.json VERTEX_PROJECT=my-project VERTEX_LOCATION=us-central1"; \
+		echo ""; \
+		echo "LLM_CREDENTIALS_FILE is a file holding your raw LLM credential (a plain API"; \
+		echo "key, or a JSON blob for vertex_ai) -- it becomes the llm-credentials-primary"; \
+		echo "Secret's content once the hub cluster exists. Never put credential material"; \
+		echo "directly on the command line."; \
+		exit 1; \
+	fi
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🚀 Fleet demo/QE setup: infra + operator CR (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
+	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway ($(if $(GATEWAY_TYPE),$(GATEWAY_TYPE),eaigw) by default), kube-mcp-server, Traefik"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	go run ./hack/setup-demo-infra \
+		-mode fleet \
+		-llm-provider "$(LLM_PROVIDER)" \
+		-llm-model "$(LLM_MODEL)" \
+		-llm-endpoint "$(LLM_ENDPOINT)" \
+		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
+		$(if $(LLM_REASONING_ENABLED),-llm-reasoning-enabled "$(LLM_REASONING_ENABLED)") \
+		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
+		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
+		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
+		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
+		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
+		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(DEPENDENCY_OVERRIDES),-dependency-overrides-file "$(DEPENDENCY_OVERRIDES)") \
+		$(if $(ENVOY_GATEWAY_VERSION),-envoy-gateway-version "$(ENVOY_GATEWAY_VERSION)") \
+		$(if $(AGENT_ROUTER_VERSION),-agent-router-version "$(AGENT_ROUTER_VERSION)") \
+		$(if $(MCP_GATEWAY_NAMESPACE),-mcp-gateway-namespace "$(MCP_GATEWAY_NAMESPACE)") \
+		$(if $(REMOTE_MCP_SERVER_NAMESPACE),-remote-mcp-server-namespace "$(REMOTE_MCP_SERVER_NAMESPACE)") \
+		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
+		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
+
+.PHONY: setup-local-demo-infra
+setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai"; \
+		echo "   make setup-local-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
+		exit 1; \
+	fi
+	go run ./hack/setup-demo-infra \
+		-llm-provider "$(LLM_PROVIDER)" \
+		-llm-model "$(LLM_MODEL)" \
+		-llm-endpoint "$(LLM_ENDPOINT)" \
+		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
+		$(if $(LLM_REASONING_ENABLED),-llm-reasoning-enabled "$(LLM_REASONING_ENABLED)") \
+		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
+		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
+		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
+		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
+		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
+
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (legacy/manual helper; demo CR wiring is preferred)
 	@if [ -z "$(KUBECONFIG)" ]; then \

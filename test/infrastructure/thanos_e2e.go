@@ -256,6 +256,10 @@ spec:
 	return nil
 }
 
+func thanosQuerierHTTPConfigArg() string {
+	return "--http.config=/etc/monitoring-tls/web-config.yml"
+}
+
 // DeployThanosQuerier deploys a Thanos Querier into the hub cluster,
 // fanning out to every storeAddress (each a "host:port" gRPC StoreAPI/
 // RulesAPI endpoint -- the hub's own local sidecar via in-cluster DNS, and
@@ -296,9 +300,9 @@ spec:
         args:
         - "query"
         - "--http-address=0.0.0.0:9090"
-        - "--http.config=/etc/monitoring-tls/web-config.yml"
-        - "--grpc-address=0.0.0.0:%[3]d"
-        - "--query.replica-label=replica"%[4]s
+        - "%[3]s"
+        - "--grpc-address=0.0.0.0:%[4]d"
+        - "--query.replica-label=replica"%[5]s
         ports:
         - containerPort: 9090
           name: https
@@ -338,9 +342,9 @@ spec:
   - name: https
     port: 9090
     targetPort: 9090
-    nodePort: %[5]d
+    nodePort: %[6]d
     protocol: TCP
-`, namespace, ThanosImage, ThanosSidecarGRPCPort, storeArgs.String(), ThanosQuerierNodePort)
+`, namespace, ThanosImage, thanosQuerierHTTPConfigArg(), ThanosSidecarGRPCPort, storeArgs.String(), ThanosQuerierNodePort)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("failed to deploy Thanos Querier: %w", err)
