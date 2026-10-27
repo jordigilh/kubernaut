@@ -301,11 +301,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Namespace + operator/dependency prerequisite Secrets
 	//
-	// Issue #1737: DataStorage client RBAC, inter-service TLS, and the AU-9 signing
-	// certificate are provisioned by the operator/dependency charts and the
-	// user-owned Kubernaut CR. The test harness does not recreate application-owned
-	// resources. Credential Secrets remain explicitly user/test managed (original
-	// #239 audit finding #4).
+	// Issue #1737: Phase 5 applies the DataStorage client RBAC, inter-service TLS,
+	// and AU-9 signing certificate as administrator/test-managed prerequisites.
+	// These resources are present before operator reconciliation and do not show
+	// that the operator supplied them. Credential Secrets remain explicitly
+	// user/test managed (original #239 audit finding #4).
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Namespace + Helm prerequisite Secrets...")
 	phase5Start := time.Now()

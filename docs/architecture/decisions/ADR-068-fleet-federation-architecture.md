@@ -500,8 +500,8 @@ for the full method and results.
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 | `ValidateFullFederation` (GW/RO dual-capability startup check) | Config validation | pkg/fleet/config.go | Complete (DD-FLEET-003) |
 | `FleetOAuth2Config.TLSCAFile` (OAuth2 token-fetch CA trust, all 6 services) | `ReloadableOAuth2Config` construction | cmd/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing,workflowexecution}/main.go | Complete |
-| Fleet deployment wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | Operator CR → managed ConfigMaps/RBAC | `kubernaut-operator` Fleet resources | Complete |
-| Fleet deployment wiring (WE: endpoint/OAuth2 with an independent write credential) | Operator CR → managed ConfigMap/Secret mount | `kubernaut-operator` Fleet resources | Complete |
+| Fleet deployment wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | Operator CR → managed ConfigMaps/RBAC in `kubernaut-operator` | Complete |
+| Fleet deployment wiring (WE: endpoint/OAuth2 with an independent write credential) | Operator CR → managed ConfigMap/Secret mount in `kubernaut-operator` | Complete |
 
 ### Fleet E2E Topology
 
