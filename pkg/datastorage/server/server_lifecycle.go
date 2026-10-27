@@ -336,7 +336,8 @@ func (s *Server) GetDLQClient() *dlq.Client {
 // - tls.key (PEM private key)
 //
 // cert-manager Compatibility:
-// - Managed by Certificate CRD (deploy/data-storage/certificate.yaml)
+// - Managed by the operator-owned Certificate CRD; the repository's test fixture is
+//   test/fixtures/kubernetes/datastorage/certificate.yaml
 // - Auto-rotates 30 days before expiry
 // - Self-signed via selfsigned-issuer ClusterIssuer
 //

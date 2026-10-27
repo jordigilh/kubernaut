@@ -1,5 +1,9 @@
 # Data Storage Service - Observability Deployment Configuration
 
+> **Deployment ownership:** Data Storage monitoring, RBAC, certificates, and workload
+> resources are reconciled by the Kubernaut Operator. The former `deploy/monitoring/`
+> and `deploy/manifests/` examples below are historical and not supported inputs.
+
 **Date**: October 13, 2025
 **Service**: Data Storage Service
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics)
@@ -11,6 +15,16 @@
 This document provides step-by-step instructions for configuring observability (metrics, logging, monitoring) for the Data Storage Service in production environments.
 
 ---
+
+## Current supported procedure
+
+The Kubernaut Operator reconciles Data Storage monitoring resources from the
+user-owned `Kubernaut` resource. Configure Prometheus, Grafana, Alertmanager, and any
+optional user-owned alert/dashboard definitions through the supported operator and
+platform observability contracts; do not apply the historical `deploy/` examples below.
+
+<details>
+<summary>Historical standalone observability procedure (unsupported)</summary>
 
 ## Table of Contents
 
@@ -644,3 +658,4 @@ logger.Info("audit created",
 **Last Updated**: October 13, 2025
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics for all operations)
 
+</details>

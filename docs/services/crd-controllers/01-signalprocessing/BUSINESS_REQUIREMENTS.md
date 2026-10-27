@@ -207,7 +207,8 @@ kubectl get rr <name> -o jsonpath='{.status.deduplication}' | jq
 > **Deprecation Notice**: Go-level ConfigMap fallback has been removed. Operators can implement namespace pattern matching directly in their Rego policies if needed. This gives operators full control over fallback behavior.
 >
 > **Migration**: Implement pattern matching in your `environment.rego` policy using Rego functions.
-> See: `deploy/signalprocessing/policies/environment.rego` for examples.
+> See: `test/fixtures/signalprocessing-policy.rego` for the test fixture example;
+> production policies are supplied through the operator-managed `Kubernaut` resource.
 
 **Original Description**: The SignalProcessing controller MUST fall back to ConfigMap-based environment mapping when namespace labels are absent.
 

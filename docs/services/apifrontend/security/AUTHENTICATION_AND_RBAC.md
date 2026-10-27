@@ -189,7 +189,9 @@ sequenceDiagram
 
 ## 4. Kubernetes RBAC (ClusterRole)
 
-The Kustomize-managed ClusterRole (`deploy/apifrontend/base/02-rbac.yaml`) grants the AF ServiceAccount:
+The operator-managed API Frontend ClusterRole grants the AF ServiceAccount. The
+repository copy at `test/fixtures/kubernetes/apifrontend/base/02-rbac.yaml` is a
+test-only parity fixture, not a production source of truth:
 
 | API Group | Resources | Verbs | Purpose |
 |-----------|-----------|-------|---------|
@@ -247,4 +249,4 @@ This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, 
 
 ---
 
-*Source files: `pkg/apifrontend/auth/middleware.go`, `pkg/apifrontend/auth/jwt.go`, `pkg/apifrontend/auth/tokenreview.go`, `pkg/apifrontend/auth/dynamic_impersonation.go`, `deploy/apifrontend/base/02-rbac.yaml`*
+*Source files: `pkg/apifrontend/auth/middleware.go`, `pkg/apifrontend/auth/jwt.go`, `pkg/apifrontend/auth/tokenreview.go`, `pkg/apifrontend/auth/dynamic_impersonation.go`, and the operator RBAC contract; the repository fixture is `test/fixtures/kubernetes/apifrontend/base/02-rbac.yaml`.*

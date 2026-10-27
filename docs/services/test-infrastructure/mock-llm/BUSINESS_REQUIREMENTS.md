@@ -175,7 +175,10 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Rationale**: The Python Mock LLM returns `{"status":"ok"}` for ANY GET path and `{"status":"ok","path":"<path>"}` for ANY POST path, which masks routing errors. The Go rewrite should be strict.
 
-> **Audit Finding**: The permissive routing means `/liveness`, `/readiness`, `/metrics`, and any typo'd path all return 200 OK — hiding misconfigurations. The static manifests in `deploy/mock-llm/01-deployment.yaml` probe `/liveness` and `/readiness` which work only because of this permissiveness.
+> **Audit Finding**: The permissive routing means unknown paths such as `/metrics` and
+> typo'd paths can return 200 OK — hiding misconfigurations. The test-owned manifest
+> uses `/health` for both liveness and readiness, so it does not rely on the retired
+> `/liveness` or `/readiness` probe paths.
 
 **Acceptance Criteria**:
 - [ ] Unknown GET paths return HTTP 404 with JSON error body
@@ -1163,14 +1166,19 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 **Severity**: MEDIUM
 **Probability**: HIGH (already exists)
-**Impact**: `deploy/mock-llm/01-deployment.yaml` uses `/liveness` and `/readiness` probe paths with no ConfigMap, while `kubernautagent.go` (renamed from `holmesgpt_api.go` post-Go-rewrite) uses `/health` with ConfigMap. The Go rewrite enforcing strict routing (BR-MOCK-005) will break the static manifests.
+**Impact**: The test-owned deployment fixture uses `/health` for both probes, matching
+the Go service contract. The remaining divergence risk is configuration ownership:
+the static fixture supplies environment variables directly, while the programmatic
+deployment path may use a ConfigMap. Strict routing must continue to keep `/health`
+as the canonical probe path.
 
-**Mitigation**: Reconcile static manifests during Go rewrite:
-1. Update `deploy/mock-llm/01-deployment.yaml` to use `/health` for both probes
-2. Remove `MOCK_LLM_FORCE_TEXT` from manifests if not needed (or keep with actual implementation)
-3. Document the canonical deployment contract in the BR
+**Mitigation**: Keep the static and programmatic deployment contracts aligned:
+1. Retain `/health` for both probes in `test/fixtures/kubernetes/mock-llm/01-deployment.yaml`
+2. Keep `MOCK_LLM_FORCE_TEXT` only while it is supported by the actual implementation
+3. Document the canonical health and configuration contract in the BR
 
-**Status**: Open — must be resolved during #531 implementation
+**Status**: Probe-path divergence resolved; remaining configuration alignment is tracked
+for #531 implementation
 
 ---
 
@@ -1214,7 +1222,7 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 ### Source
 
-Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go` — since renamed to `kubernautagent.go` post-Go-rewrite), static manifests (`deploy/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
+Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go` — since renamed to `kubernautagent.go` post-Go-rewrite), test-owned static manifests (`test/fixtures/kubernetes/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
 
 ### Findings Addressed in This Document
 
@@ -1227,7 +1235,7 @@ Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `D
 | 5 | Scenario metadata fields missing (execution_engine, etc.) | HIGH | BR-MOCK-026 updated with full metadata table |
 | 6 | `mock_not_reproducible` keyword alias undocumented | MEDIUM | BR-MOCK-026 updated with alias |
 | 7 | Fixed response constants undocumented (created, usage, IDs) | MEDIUM | BR-MOCK-001 updated with response format details |
-| 8 | Static manifest probe paths diverge from programmatic | MEDIUM | RISK-MOCK-003 filed; BR-MOCK-005 addresses |
+| 8 | Static/programmatic deployment configuration alignment | MEDIUM | RISK-MOCK-003 tracks remaining config drift; probe paths now use `/health` |
 | 9 | `MetricsURL` in Go infra points to non-existent endpoint | LOW | RISK-MOCK-006 filed; resolved by #568 |
 | 10 | Invalid UUIDs in low_confidence scenario | LOW | RISK-MOCK-004 filed; preserve as-is |
 | 11 | DD-TEST-011 v4.0 says CONFIG_PATH removed but BR-MOCK-033 keeps it | MEDIUM | Clarified: v4.0 removes it as required, BR-MOCK-033 retains as optional override |

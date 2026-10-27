@@ -38,7 +38,7 @@ import (
 var _ = Describe("APIFRONTEND structured decision selector", func() {
 	Describe("UT-MOCK-AF-1395-001: structured decision selector survives reinvocation", func() {
 		It("should keep the structured decision scenario selected after a synthetic continuation", func() {
-			manifest, err := os.ReadFile("../../../deploy/apifrontend/overlays/e2e/mock-llm.yaml")
+			manifest, err := os.ReadFile("../../../test/fixtures/kubernetes/apifrontend/e2e/mock-llm.yaml")
 			Expect(err).NotTo(HaveOccurred())
 
 			decoder := yaml.NewDecoder(bytes.NewReader(manifest))
@@ -83,7 +83,7 @@ var _ = Describe("APIFRONTEND structured decision selector", func() {
 
 var _ = Describe("APIFRONTEND progressive no-RCA selector", func() {
 	It("UT-MOCK-AF-1407-004: scopes the empty RCA response to KA extraction for #1407", func() {
-		manifest, err := os.ReadFile("../../../deploy/apifrontend/overlays/e2e/mock-llm.yaml")
+		manifest, err := os.ReadFile("../../../test/fixtures/kubernetes/apifrontend/e2e/mock-llm.yaml")
 		Expect(err).NotTo(HaveOccurred())
 
 		decoder := yaml.NewDecoder(bytes.NewReader(manifest))

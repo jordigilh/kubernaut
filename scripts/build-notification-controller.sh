@@ -288,10 +288,9 @@ log_info "Pushed:       $PUSH_TO_REGISTRY"
 log_info "========================================="
 log_info ""
 log_info "Next steps:"
-log_info "  1. Deploy controller: kubectl apply -k deploy/notification/"
-log_info "  2. Verify deployment: kubectl get pods -n kubernaut-notifications"
-log_info "  3. Check logs: kubectl logs -f deployment/notification-controller -n kubernaut-notifications"
+log_info "  1. Publish or load the image for the operator-backed qualification lane"
+log_info "  2. Reconcile the notification controller through the user-owned Kubernaut CR"
+log_info "  3. Verify deployment: kubectl get pods -n kubernaut-system"
 
 exit 0
-
 

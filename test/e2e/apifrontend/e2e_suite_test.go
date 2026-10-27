@@ -592,7 +592,7 @@ var _ = SynchronizedBeforeSuite(
 		}
 
 		// #2022/#2025/ADR-053: the mock-LLM's generic investigate fixture
-		// (af_investigate, see deploy/apifrontend/overlays/e2e/mock-llm.yaml)
+		// (af_investigate, see the test-owned APIFrontend Mock LLM fixture)
 		// targets this namespace, which — unlike sev-tier1-ns et al. — was
 		// never actually created as a real Namespace object (only referenced
 		// as a string in RR specs and Prometheus alert labels). AF's scope

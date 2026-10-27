@@ -58,7 +58,7 @@ type dexE2EManifestDocument struct {
 
 var _ = Describe("API Frontend E2E DEX fixture", func() {
 	It("UT-INFRA-AF-DEX-001 [Issue #1807]: persists DEX state and gives auth requests adequate CPU and probe budget", func() {
-		manifestPath := filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/dex.yaml")
+		manifestPath := filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/dex.yaml")
 		manifest, err := os.ReadFile(manifestPath)
 		Expect(err).NotTo(HaveOccurred())
 

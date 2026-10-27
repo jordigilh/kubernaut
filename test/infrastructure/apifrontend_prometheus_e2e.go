@@ -425,7 +425,7 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 // triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
 // + MatchesResource to correlate rules with the target resource.
 //
-// #1839 RCA: deploy/apifrontend/overlays/e2e/mock-llm.yaml's generic
+// #1839 RCA: the APIFrontend E2E Mock LLM fixture's generic
 // "af_investigate"/"af_investigate_resume" scenarios target a fixed resource
 // via kubernaut_investigate, which (like kubernaut_remediate) now runs through
 // the fail-closed severity triage pipeline. The progressive and

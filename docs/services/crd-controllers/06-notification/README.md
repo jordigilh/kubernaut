@@ -1,5 +1,9 @@
 # Notification Controller
 
+> **Deployment ownership:** The Notification Controller is deployed by the Kubernaut
+> Operator through the user-owned `Kubernaut` resource. Former direct `deploy/notification/`
+> commands are historical and unsupported.
+
 **Version**: v1.6.0
 **Status**: ✅ Production-Ready (358 tests, 100% pass rate, 18/18 BRs Complete)
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
@@ -256,8 +260,8 @@ The Notification Controller is a Kubernetes CRD controller that delivers notific
 # 1. Install NotificationRequest CRD
 kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
-# 2. Deploy notification controller
-kubectl apply -k deploy/notification/
+# 2. Apply the user-owned Kubernaut resource; the Operator deploys Notification
+#    and its RBAC as part of reconciliation
 
 # 3. (Optional) Create Slack webhook secret
 kubectl create secret generic notification-slack-webhook \
@@ -871,4 +875,3 @@ See [LICENSE](../../../../../LICENSE) file in repository root.
 **Last Updated**: December 6, 2025
 **Status**: ✅ Production-Ready + Day 13 Enhancement Scheduled
 **Maintainer**: Notification Service Team
-

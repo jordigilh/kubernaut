@@ -28,7 +28,7 @@ var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATIO
 	})
 
 	It("UT-INFRA-AF-FLEET-2462-012 [BR-FLEET-054]: renders seeded workflow and remediation arguments in the AF mock-LLM manifest", func() {
-		manifestPath := filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/mock-llm.yaml")
+		manifestPath := filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/mock-llm.yaml")
 		data, err := os.ReadFile(manifestPath)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -45,7 +45,7 @@ var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATIO
 	})
 
 	It("UT-INFRA-AF-FLEET-2462-004 [BR-FLEET-054, BR-INTEGRATION-065]: renders matching Keycloak, FMC, and Gateway settings for AF", func() {
-		baseConfig, err := os.ReadFile(filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/config.yaml"))
+		baseConfig, err := os.ReadFile(filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/config.yaml"))
 		Expect(err).NotTo(HaveOccurred())
 		fleetOptions := &FleetHelmOptions{
 			MCPGatewayEndpoint:          "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",

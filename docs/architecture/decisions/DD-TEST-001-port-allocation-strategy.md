@@ -266,7 +266,7 @@ Mock LLM (in Kind):
 Note: No NodePort needed - Mock LLM accessed only by services inside Kind cluster
 ```
 
-**Kind Config**: `deploy/mock-llm/` (deployment manifests)
+**Kind Config**: `test/fixtures/kubernetes/mock-llm/` (test-only manifests)
 **Infrastructure**: Kind cluster with ClusterIP service in `kubernaut-system` (no external access)
 **Pattern**: Shared Mock LLM instance accessed via simplified Kubernetes DNS (same namespace)
 **Access**: Test runner → KA (NodePort 30088) → Mock LLM (`http://mock-llm:8080`)
@@ -1132,4 +1132,3 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 **Scope**: All integration and E2E tests across all services.
 **Enforcement**: Port allocations MUST follow this strategy to prevent conflicts.
 **Kind NodePort**: All E2E tests using Kind clusters MUST use NodePort (no kubectl port-forward).
-

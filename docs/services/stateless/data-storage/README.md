@@ -118,7 +118,8 @@ See [DS_V1.0_TRIAGE_2025-12-15.md](../../../handoff/DS_V1.0_TRIAGE_2025-12-15.md
 ### **Infrastructure**
 - `migrations/` - PostgreSQL schema migrations (Goose)
 - `docker/data-storage-service.Dockerfile` - Container image
-- `deploy/data-storage/` - Kubernetes manifests
+- The Kubernaut Operator and the user-owned `Kubernaut` resource own Kubernetes deployment
+  manifests. Former standalone `deploy/data-storage/` files are historical and removed.
 
 **See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
 
@@ -211,20 +212,10 @@ docker run -d \
 
 ### Kubernetes Deployment
 
-```bash
-# Deploy to Kubernetes
-kubectl apply -f deploy/data-storage/
-
-# Verify deployment
-kubectl get pods -n kubernaut -l app=data-storage-service
-
-# Check logs
-kubectl logs -n kubernaut -l app=data-storage-service --tail=100
-
-# Access metrics
-kubectl port-forward -n kubernaut svc/data-storage-service 9090:9090
-curl http://localhost:9090/metrics | grep datastorage
-```
+Install the Kubernaut Operator, apply the user-owned `kubernaut.ai/v1alpha2`
+`Kubernaut` resource, and use the operator-reconciled Data Storage Deployment and
+Service for verification. Do not apply standalone Data Storage manifests from the
+former `deploy/` tree.
 
 ---
 

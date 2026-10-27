@@ -31,10 +31,11 @@ type rule struct {
 	Annotations map[string]string `yaml:"annotations"`
 }
 
+// loadPrometheusRules loads the test-owned APIFrontend PrometheusRule fixture.
 func loadPrometheusRules() prometheusRuleFile {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
-	path := filepath.Join(root, "deploy", "apifrontend", "base", "05-prometheusrule.yaml")
+	path := filepath.Join(root, "test", "fixtures", "kubernetes", "apifrontend", "base", "05-prometheusrule.yaml")
 
 	data, err := os.ReadFile(path)
 	Expect(err).NotTo(HaveOccurred(), "failed to read prometheus-rules.yaml")

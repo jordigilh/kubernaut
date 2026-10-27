@@ -70,7 +70,7 @@ func parseClusterRoleRulesFromYAML(data []byte, name string) ([]rbacv1.PolicyRul
 
 // UT-INFRA-RBAC-001: Structural parity test for 02-rbac.yaml.
 //
-// Both AF E2E and FP E2E read deploy/apifrontend/base/02-rbac.yaml at
+// Both AF E2E and FP E2E read the test-owned APIFrontend RBAC fixture at
 // runtime (via afDeployE2ERBAC). This test ensures the base file always
 // contains the minimum RBAC rules the API Frontend needs to operate.
 // If a rule is removed from the base file, this test catches it before
@@ -79,7 +79,7 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 	var rules []rbacv1.PolicyRule
 
 	BeforeEach(func() {
-		rbacPath := filepath.Join(getProjectRoot(), "deploy", "apifrontend", "base", "02-rbac.yaml")
+		rbacPath := filepath.Join(getProjectRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "02-rbac.yaml")
 		var err error
 		rules, err = parseClusterRoleRules(rbacPath, "apifrontend")
 		Expect(err).NotTo(HaveOccurred(), "02-rbac.yaml must be parseable")

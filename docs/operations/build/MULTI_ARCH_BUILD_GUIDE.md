@@ -1,5 +1,9 @@
 # Multi-Architecture Build Guide
 
+> **Deployment ownership:** This guide's direct `deploy/notification/` application
+> commands are historical. Build artifacts are consumed by the Kubernaut Operator;
+> deploy the application through the user-owned `Kubernaut` resource.
+
 **Version**: 1.0.0
 **Status**: ✅ Active (ADR-027)
 **Last Updated**: 2025-10-20
@@ -167,8 +171,8 @@ Single-arch builds create a traditional image for one platform only. Use for:
 # Build multi-arch on arm64 Mac
 ./scripts/build-notification-controller.sh
 
-# Deploy directly to amd64 OCP cluster
-oc apply -k deploy/notification/
+# Publish the image, then let the Kubernaut Operator reconcile the
+# Notification Controller through the user-owned Kubernaut resource.
 ```
 
 **Result**: Kubernetes pulls the `amd64` image from the manifest list automatically.
@@ -306,8 +310,7 @@ skopeo inspect docker://<image> | jq '.manifests[].platform'
 # Developer on arm64 Mac
 TARGETARCH=amd64 ./scripts/build-notification-controller.sh
 
-# Deploy to amd64 OCP (fails: ErrImageNeverPull)
-oc apply -k deploy/notification/
+# The former direct Kustomize deployment was retired; use the Operator CR.
 
 # Workaround: Use OpenShift BuildConfig
 oc start-build kubernaut-notification --from-dir=.
@@ -320,8 +323,7 @@ oc start-build kubernaut-notification --from-dir=.
 # Developer on arm64 Mac
 ./scripts/build-notification-controller.sh --push
 
-# Deploy to amd64 OCP (works immediately)
-oc apply -k deploy/notification/
+# The Operator selects the published image through its Kubernaut resource.
 
 # Result: Kubernetes auto-selects amd64 from manifest list
 # Time saved: 10 minutes per deployment
@@ -498,6 +500,4 @@ For issues with multi-architecture builds:
 
 **Confidence Assessment**: 95%
 **Justification**: Based on successful multi-arch build implementation for Notification Service v1.0.1. The 5% gap accounts for edge cases in registry compatibility and platform-specific build failures that may require additional troubleshooting steps.
-
-
 

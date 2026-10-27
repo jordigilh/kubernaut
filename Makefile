@@ -1188,7 +1188,7 @@ lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lin
 .PHONY: lint-naming-convention
 lint-naming-convention: ## Check for legacy holmesgpt-api references (#691)
 	@echo "🔍 Checking for legacy holmesgpt-api naming..."
-	@HITS=$$(grep -rl "holmesgpt-api" config/ deploy/ internal/ pkg/ cmd/ charts/ 2>/dev/null || true); \
+	@HITS=$$(grep -rl "holmesgpt-api" config/ internal/ pkg/ cmd/ charts/ 2>/dev/null || true); \
 	if [ -n "$$HITS" ]; then \
 		echo "❌ Legacy 'holmesgpt-api' references found:"; \
 		echo "$$HITS"; \

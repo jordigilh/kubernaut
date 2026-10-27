@@ -765,7 +765,7 @@ func getKubernetesClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
 //
 // Authority: DD-AUTH-014 (Middleware-based authentication with Zero Trust)
 //
-// The ClusterRole is applied from deploy/data-storage/client-rbac-v2.yaml, which contains:
+// The operator-managed Data Storage RBAC contract contains:
 //   - ClusterRole: data-storage-client (verbs: ["create", "get", "list", "update", "delete"])
 //   - RoleBindings for production services (Gateway, RO, SP, AA, WE, Notification, etc.)
 //
@@ -776,7 +776,7 @@ func deployDataStorageClientClusterRole(ctx context.Context, kubeconfigPath stri
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	rbacManifest := filepath.Join(workspaceRoot, "deploy", "data-storage", "client-rbac-v2.yaml")
+	rbacManifest := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "datastorage", "client-rbac-v2.yaml")
 	if _, err := os.Stat(rbacManifest); os.IsNotExist(err) {
 		return fmt.Errorf("ClusterRole manifest not found at %s", rbacManifest)
 	}
@@ -816,7 +816,7 @@ func deployDataStorageServiceRBAC(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	rbacManifest := filepath.Join(workspaceRoot, "deploy", "data-storage", "service-rbac.yaml")
+	rbacManifest := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "datastorage", "service-rbac.yaml")
 	if _, err := os.Stat(rbacManifest); os.IsNotExist(err) {
 		return fmt.Errorf("service RBAC manifest not found at %s", rbacManifest)
 	}
@@ -2166,7 +2166,7 @@ func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
 	}
 
-	issuerPath := filepath.Join(workspaceRoot, "deploy", "cert-manager", "selfsigned-issuer.yaml")
+	issuerPath := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "cert-manager", "selfsigned-issuer.yaml")
 
 	// Check if issuer manifest exists
 	if _, err := os.Stat(issuerPath); os.IsNotExist(err) {
@@ -2230,7 +2230,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	}
 
 	// Apply Certificate resource first (cert-manager will create Secret)
-	certPath := filepath.Join(workspaceRoot, "deploy", "data-storage", "certificate.yaml")
+	certPath := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "datastorage", "certificate.yaml")
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
 		return fmt.Errorf("certificate manifest not found at %s", certPath)
 	}
@@ -2265,7 +2265,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	_, _ = fmt.Fprintln(writer, "✅ Certificate issued by cert-manager")
 
 	// Now deploy DataStorage using Kustomize (includes deployment with cert volume mount)
-	kustomizePath := filepath.Join(workspaceRoot, "deploy", "data-storage")
+	kustomizePath := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "datastorage")
 	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage via Kustomize...")
 
 	// Use kubectl apply with kustomize

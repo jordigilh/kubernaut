@@ -1,5 +1,9 @@
 # [Service Name] - Implementation Plan Template
 
+> **Deployment ownership:** New application deployment plans must target the Kubernaut
+> Operator and `Kubernaut` CR contract. The legacy `deploy/manifests/` examples below
+> are historical and must not be introduced into new services.
+
 **Filename Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md` (e.g., `IMPLEMENTATION_PLAN_V1.3.md`)
 **Version**: v3.1 - V1.0 MANDATORY MATURITY CHECKLIST
 **Last Updated**: 2025-12-19
@@ -8347,4 +8351,3 @@ The following document categories are **service-specific** and should NOT be ref
 - Gateway Service (proven success: 95% test coverage)
 - Dynamic Toolset enhancements
 - Gateway post-implementation triage
-

@@ -61,11 +61,9 @@ internal/controller/apifrontend/ — Session TTL controller (controller-runtime)
 api/
   apifrontend/v1alpha1/       — CRD Go types (InvestigationSession)
   apifrontend/openapi/        — OpenAPI spec (apifrontend-v1.yaml)
-deploy/apifrontend/
-  base/                       — Kustomize base (Deployment, Service, RBAC, NetworkPolicy, PrometheusRule)
-  overlays/dev/               — Dev overlay (Kind, self-signed TLS, debug logging)
-  overlays/ci/                — CI overlay (GitHub Actions)
-  overlays/e2e/               — E2E overlay (Dex, mock-LLM, full Kind cluster)
+test/fixtures/kubernetes/apifrontend/
+  base/                       — Test-owned RBAC fixture
+  e2e/                        — E2E-only fixtures (Dex, mock-LLM, TLS, RBAC)
 docs/services/apifrontend/    — ADRs, SLOs, runbooks, test plans, guides
 hack/                         — Utility scripts
 ```
@@ -103,40 +101,12 @@ hack/                         — Utility scripts
 
 ## Local Development with Kind
 
-Deploy the API Frontend in a local Kubernetes cluster using [Kind](https://kind.sigs.k8s.io/):
+The API Frontend is deployed as part of the operator-backed Kubernaut installation.
+Follow the [operator quickstart](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+and the repository's [Interactive mode guide](../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md).
 
-```bash
-# 1. Create the Kind cluster with the AF dev config
-kind create cluster --config deploy/apifrontend/overlays/dev/kind-config.yaml
-
-# 2. Generate self-signed TLS certificates and create K8s secrets
-bash deploy/apifrontend/overlays/dev/generate-certs.sh
-
-# 3. Build the container image and load into Kind
-docker build -f docker/apifrontend.Dockerfile -t kubernaut-apifrontend:dev .
-kind load docker-image kubernaut-apifrontend:dev
-
-# 4. Deploy using the dev overlay (Kustomize)
-kubectl apply -k deploy/apifrontend/overlays/dev/
-
-# 5. Verify the pod is running
-kubectl get pods -n kubernaut-system
-
-# 6. Port-forward to access locally
-kubectl port-forward -n kubernaut-system svc/apifrontend 8443:8443
-
-# Tear down
-kubectl delete -k deploy/apifrontend/overlays/dev/
-kind delete cluster
-```
-
-The dev overlay provides:
-- Debug-level logging
-- Reduced resource limits (suitable for laptops)
-- Self-signed TLS certificates via `generate-certs.sh`
-- Kind port mappings (host 8443 → container 30443)
-
-TLS secrets are optional in the dev overlay — the pod will start without them and serve plain HTTP.
+The files under `test/fixtures/kubernetes/apifrontend/e2e/` are test fixtures only;
+they must not be applied as a standalone application deployment.
 
 ## Running Tests
 

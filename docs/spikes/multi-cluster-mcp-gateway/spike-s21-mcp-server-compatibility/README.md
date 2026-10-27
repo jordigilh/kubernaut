@@ -87,7 +87,7 @@ The dependency is broader than the four names:
 | Prefix discovery | `pkg/fleet/mcpclient/discover.go` |
 | WE client composition | `pkg/workflowexecution/executor/client_factory.go` |
 | EM remote reader wiring | `cmd/effectivenessmonitor/main.go` |
-| Gateway read/write policies | `deploy/mcp-gateway/02-auth-policy.yaml` |
+| Gateway read/write policies | `hack/setup-demo-infra/fixtures/mcp-gateway/02-auth-policy.yaml` |
 
 Consequently, replacing only the tool-name constants would support servers that renamed the tools
 but retained every other detail. It would not provide general compatibility.

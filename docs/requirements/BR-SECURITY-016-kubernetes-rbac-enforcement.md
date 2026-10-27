@@ -43,7 +43,10 @@ An earlier approach relied on an `ose-oauth-proxy` sidecar to perform authorizat
   - [`pkg/shared/auth/middleware.go`](../../pkg/shared/auth/middleware.go) — `Middleware.authorizeRequest` invokes the injected `Authorizer` after authentication succeeds, maps the result to `403`/`500`, and emits a `security_event` log entry via `logSecurityEvent` for every denial.
   - `Authorizer` is an interface ([`pkg/shared/auth/interfaces.go`](../../pkg/shared/auth/interfaces.go)); production wiring uses `K8sAuthorizer` (real SAR calls), tests inject `MockAuthorizer`.
 - **Production callers** (confirms this is wired, not just unit-tested): [`cmd/datastorage/main.go`](../../cmd/datastorage/main.go), [`cmd/kubernautagent/routes.go`](../../cmd/kubernautagent/routes.go), [`pkg/gateway/server_constructors.go`](../../pkg/gateway/server_constructors.go) all construct `auth.NewK8sAuthorizer(...)` and wire it into `auth.NewMiddleware(...)` for their respective route sets.
-- **RBAC contract**: [`deploy/data-storage/service-rbac.yaml`](../../deploy/data-storage/service-rbac.yaml) and equivalent per-service manifests define the `Role`/`RoleBinding` objects that the SAR check evaluates against.
+- **RBAC contract**: The Kubernaut Operator generates the application `Role`/`RoleBinding`
+  objects that the SAR check evaluates against. Test-only parity material is kept under
+  `test/fixtures/kubernetes/`; no standalone `deploy/` manifest is a production source
+  of truth.
 
 ---
 
