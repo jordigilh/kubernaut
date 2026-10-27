@@ -9,8 +9,8 @@
 Production secret management using **file-based** secret generation for stability and persistence.
 
 **Key Difference from Dev**:
-- **Dev**: Secrets generated dynamically on every `kubectl apply` (`$(openssl rand)`)
-- **Production**: Secrets read from secure files (generated once, stored encrypted)
+- **Dev**: Secrets are generated into ignored local files before `kubectl apply`
+- **Production**: Secrets are read from secure files (generated once, stored encrypted)
 
 ---
 
