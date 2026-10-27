@@ -4,7 +4,7 @@
 **Category**: Data Storage Service — Security & Compliance
 **Priority**: **P1 (HIGH)** — Closes a HIGH-severity GA readiness gap
 **Target Version**: **V1.5**
-**Status**: ✅ Implemented (DataStorage) / 🔜 Tracked separately for `kubernaut-operator` (v1.6)
+**Status**: ✅ Implemented in DataStorage and the operator-backed deployment path
 **Date**: June 30, 2026
 **Related ADRs**: [ADR-034: Unified Audit Table Design](../architecture/decisions/ADR-034-unified-audit-table-design.md)
 **Related BRs**: BR-AUDIT-005 (Core Audit Business Requirement), BR-AUDIT-007 (Tamper-evident audit exports)
@@ -43,12 +43,15 @@ New audit events are hashed with **HMAC-SHA256** using a key stored **outside th
 Key design choices:
 
 1. **Per-row `hash_algorithm` column** (migration `013_audit_hash_algorithm.sql`): every row records which algorithm produced its `event_hash` (`sha256-unkeyed` or `hmac-sha256`). This supports a **mixed-algorithm chain**: existing rows keep verifying under the legacy algorithm; only new writes made after the HMAC key is provisioned use `hmac-sha256`. There is no retroactive re-hashing of historical data.
-2. **Backward-compatible, opt-in**: when no HMAC key is configured (the default), DataStorage continues using the legacy unkeyed SHA256 algorithm — existing deployments upgrade with zero required action. Operator-managed deployments configure the stronger algorithm through the `Kubernaut` CR contract; the equivalent operator wiring is tracked separately in [kubernaut-operator#209](https://github.com/jordigilh/kubernaut-operator/issues/209).
+2. **Backward-compatible upstream behavior; operator-managed keyed default**: when no HMAC key is configured in an upstream DataStorage configuration, DataStorage continues using the legacy unkeyed SHA256 algorithm — existing deployments upgrade with zero required action. Operator-managed deployments provision and preserve a keyed HMAC Secret by default. Administrators may provide `spec.dataStorage.audit.hashKey.existingSecret` and `secretKey` through the `Kubernaut` CR; the operator validates that reference. The implementation tracked by kubernaut-operator#209 is complete and that issue is closed.
 3. **Excluded from the hash payload**: `hash_algorithm` itself is *not* included in the JSON that gets hashed (`PrepareEventForHashing` zeroes it, the same treatment as `EventHash`/`PreviousEventHash`/`EventDate`). This keeps pre-GAP-05 hashes verifiable byte-for-byte against their original JSON representation, which never contained this field.
 4. **Shared verification logic**: `repository.CalculateHashForVerification(hmacKey, previousHash, event)` is the single source of truth for algorithm-aware verification, used by both the `/api/v1/audit/verify-chain` HTTP handler and the `Export` (compliance export) path. Verifying an `hmac-sha256` event without a configured key fails loudly with an explicit error rather than silently reporting a false "tampered" mismatch.
 5. **Operator-managed Secret provisioning**: the operator generates and preserves the audit HMAC Secret by default. Administrators can provide an existing Secret through the `Kubernaut` CR, and the operator validates that reference.
 
-The equivalent wiring for `kubernaut-operator`-managed deployments (which construct their own `DataStorageConfigMap`/`DataStorageDeployment` independently of this Helm chart) is tracked separately: [kubernaut-operator#209](https://github.com/jordigilh/kubernaut-operator/issues/209), milestone v1.6.
+For `kubernaut-operator`-managed deployments, the operator constructs the DataStorage
+ConfigMap/Deployment and owns the default Secret provisioning and administrator override
+validation described above. kubernaut-operator#209 is retained as historical implementation
+tracking; it is closed.
 
 ### Known Residual Risk (Documented, Not Closed by This BR)
 
@@ -64,7 +67,7 @@ Closing this residual risk would require an external, out-of-band anchor (e.g., 
 2. `repository.CalculateHashForVerification` is algorithm-aware, used identically by `Export` and the verify-chain HTTP handler.
 3. `hmac-sha256` verification without a configured key fails with an explicit error, not a false "tampered" result.
 4. Pre-GAP-05 events (empty `hash_algorithm`) continue to verify identically to `sha256-unkeyed` events.
-5. Helm: `datastorage.config.auditHashKey.enabled=true` wires the ConfigMap (`audit.hashKeySecretsFile`/`hashKeyKey`), mounts the pre-created Secret, and validates its existence at install/upgrade time. Disabled by default.
+5. Operator-managed deployments provision the audit HMAC Secret by default, mount it into DataStorage, and validate an administrator-provided override through `spec.dataStorage.audit.hashKey`.
 6. FedRAMP/SOC2 control mapping: **AU-9** (Protection of Audit Information) is materially strengthened for post-rollout events; **CC8.1** reconstruction retains a documented, bounded caveat for the residual downgrade risk above.
 
 ---
