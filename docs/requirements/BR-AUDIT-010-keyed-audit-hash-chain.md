@@ -36,7 +36,7 @@ This was identified as **GAP-05 (HIGH severity)** in the GA Readiness Audit (iss
 
 ---
 
-## Decision: Keyed HMAC-SHA256, Opt-In and Backward Compatible
+## Decision: Keyed HMAC-SHA256, Operator-Managed Default and Backward Compatible
 
 New audit events are hashed with **HMAC-SHA256** using a key stored **outside the database** (a Kubernetes Secret mounted into the DataStorage pod), instead of plain SHA256. Forging a valid HMAC without that key is computationally infeasible, even for an attacker with full database read/write access — closing the gap that made the previous unkeyed chain forgeable by a DB-privileged actor.
 
