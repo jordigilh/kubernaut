@@ -1247,7 +1247,7 @@ timeoutSeconds: 120
 		},
 		// #2330: /readyz (not /healthz) is required here -- it gates on
 		// wfCatalog.Ready() (cmd/kubernautagent/health.go), matching the
-		// production readinessProbe (charts/kubernaut/.../kubernaut-agent.yaml).
+		// operator-managed Kubernaut Agent readiness contract.
 		// /healthz only proves the HTTP server is listening; it flips
 		// healthy before the workflow-catalog informer's first sync
 		// completes, letting the suite fire requests into that race window
