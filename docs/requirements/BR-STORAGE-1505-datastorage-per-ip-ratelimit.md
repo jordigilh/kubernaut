@@ -62,7 +62,7 @@ Key design choices:
 
 ## Related Documents
 
-- [Kubernaut Helm Chart README — Optional: Data Storage Per-IP Rate Limiting](../../charts/kubernaut/README.md#optional-data-storage-per-ip-rate-limiting-gap-09)
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) — configure DataStorage rate limiting through the operator-managed `Kubernaut` CR.
 
 ---
 

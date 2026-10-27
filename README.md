@@ -180,7 +180,7 @@ Security posture is tracked continuously via [OpenSSF Scorecard](https://scoreca
 
 | Repository | Description |
 |---|---|
-| [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) | OLM operator — deploys and manages Kubernaut services on OpenShift |
+| [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) | Operator and Helm bootstrap chart — deploys and manages Kubernaut services on generic Kubernetes, Kind, and OpenShift |
 | [kubernaut-console](https://github.com/jordigilh/kubernaut-console) | Kubernaut Console — web UI for interactive investigation and remediation |
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |

@@ -5,6 +5,10 @@
 **Last Reviewed**: 2026-07-06
 **Confidence**: 85%
 
+> **Lifecycle note (Issue #2561):** This guard applied to the retired application Helm
+> chart and is retained for historical traceability. The supported deployment boundary
+> is now the singleton operator-managed `Kubernaut` resource.
+
 ## Context & Problem
 
 **Problem**: The Kubernaut Helm chart (`charts/kubernaut/`) provisions ~30 cluster-scoped

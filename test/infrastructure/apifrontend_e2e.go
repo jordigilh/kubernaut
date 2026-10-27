@@ -909,18 +909,18 @@ var personaOrder = []string{
 // (mapping DEX OIDC groups to the ClusterRoles).
 //
 // Tool lists are kept in one test-infrastructure source of truth rather than
-// read from the removed application Helm chart. This function used to derive
-// them from a removed application Helm chart, which made the AF-only E2E lane
-// depend on a deprecated deployment artifact.
+// read from the retired application Helm chart. This prevents the AF-only E2E
+// lane from depending on a deployment artifact that is no longer shipped.
 //
 // Used by AF-only E2E deployments (see afDeployE2ERBAC). Full-pipeline E2E
-// does not call this: it deploys the real chart via `helm install` and only
-// adds the ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
-// fullpipeline_e2e_helm.go), so it was never subject to this drift.
+// uses the operator-managed persona ClusterRoles and only adds the
+// deployment-specific ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
+// fullpipeline_e2e_helm.go), so it does not depend on the retired application
+// chart.
 func PersonaToolClusterRolesYAML() (string, error) {
 	personaTools, err := LoadPersonaTools()
 	if err != nil {
-		return "", fmt.Errorf("failed to load persona tool RBAC from values.yaml: %w", err)
+		return "", fmt.Errorf("failed to load persona tool RBAC contract: %w", err)
 	}
 
 	var b strings.Builder
@@ -928,7 +928,7 @@ func PersonaToolClusterRolesYAML() (string, error) {
 		tools, ok := personaTools[name]
 		if !ok {
 			return "", fmt.Errorf(
-				"persona %q (afPersonaGroupNames) not found in values.yaml apifrontend.config.rbac.personas", name)
+				"persona %q (afPersonaGroupNames) not found in the persona RBAC contract", name)
 		}
 
 		fmt.Fprintf(&b, `---

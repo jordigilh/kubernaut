@@ -556,7 +556,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade Notes
 
 - **Breaking: CRD rename** — `AffectedResource` renamed to `RemediationTarget` across all CRDs. Existing `AIAnalysis` and `RemediationRequest` resources referencing the old field name must be recreated. See [blast radius documentation](docs/architecture/decisions/DD-CRD-004-affected-resource-rename.md) for migration guide.
-- **Breaking: PostgreSQL secrets** — Auto-generation of PostgreSQL passwords has been removed. Secrets must be pre-created before `helm install`. See [README](charts/kubernaut/README.md) for required secret format. The separate `datastorage-db-secret` has been consolidated into `postgresql-secret`.
+- **Breaking: PostgreSQL secrets** — Auto-generation of PostgreSQL passwords has been removed. Secrets must be pre-created before deployment. The separate `datastorage-db-secret` has been consolidated into `postgresql-secret`. This historical entry predates the operator-only deployment model; current installations follow the operator documentation.
 - **Breaking: Rego policies** — Approval policies now use `remediation_target` instead of `affected_resource`. Update any custom Rego policies.
 - **PostgreSQL data directory** — Moved to `/var/lib/kubernaut-pg/data`. Existing installations from v1.0.0 must either copy data from the old path or repopulate the catalog after upgrade.
 - **Helm values restructured** — `externalPostgresql`/`externalValkey` sections removed; use `postgresql.enabled=false` with `postgresql.auth.existingSecret` instead. `eventExporter` removed entirely.

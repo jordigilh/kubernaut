@@ -148,53 +148,36 @@ and WorkflowExecution resources are forward-compatible.
 
 ## Upgrade Procedure
 
-> **Historical Helm procedure**: the application Helm chart referenced below is no
-> longer shipped by this repository. Current installations must follow the
-> [Kubernaut Operator upgrade guidance](https://github.com/jordigilh/kubernaut-operator)
-> and migrate configuration into the user-owned `Kubernaut` resource before upgrading.
+> **Historical release note:** v1.4→v1.5 application-Helm upgrades are retained for
+> historical context only. The application chart is no longer shipped by this repository
+> and is not a supported upgrade path.
 
-1. **Back up** your existing Helm release values:
-   ```bash
-   helm get values kubernaut -n kubernaut-system > values-backup.yaml
-   ```
+Current installations must follow the
+[Kubernaut Operator upgrade guidance](https://github.com/jordigilh/kubernaut-operator)
+and keep application configuration in the user-owned `kubernaut.ai/v1alpha2`
+`Kubernaut` resource.
 
-2. **Update CRDs** (CRDs are not managed by Helm upgrade):
-   ```bash
-   kubectl apply -f charts/kubernaut/crds/
-   ```
+Before upgrading, preserve the current application contract:
 
-3. **Review values changes** — diff your `values-backup.yaml` against the new
-   `values.yaml` for any removed or renamed fields.
+```bash
+kubectl get kubernaut kubernaut -n kubernaut-system -o yaml > kubernaut-cr-backup.yaml
+kubectl get crd -o name | grep 'kubernaut.ai'
+```
 
-4. **Upgrade the Helm release**:
-   ```bash
-   helm upgrade kubernaut charts/kubernaut/ \
-     -n kubernaut-system \
-     -f values-backup.yaml \
-     --set global.image.tag=v1.5.0
-   ```
+Then follow the operator installation/upgrade guide for the target release, apply any
+operator-owned CRD updates using that guide, and verify reconciliation through the
+`Kubernaut` resource conditions and managed workload rollouts:
 
-5. **Verify** all pods are running:
-   ```bash
-   kubectl get pods -n kubernaut-system
-   ```
-
-6. **Validate health endpoints**:
-   ```bash
-   kubectl port-forward svc/kubernaut-agent 8081:8081 -n kubernaut-system &
-   curl http://localhost:8081/healthz
-   curl http://localhost:8081/readyz
-   ```
+```bash
+kubectl get kubernaut kubernaut -n kubernaut-system -o yaml
+kubectl get pods -n kubernaut-system
+kubectl get events -n kubernaut-system --sort-by=.lastTimestamp
+```
 
 ---
 
 ## Rollback
 
-If issues are encountered, roll back to the previous release:
-
-```bash
-helm rollback kubernaut -n kubernaut-system
-```
-
-CRD changes are additive and do not require rollback. However, if you applied
-new CRDs, the extra fields will be ignored by the v1.4 controllers.
+If issues are encountered, use the operator's documented rollback/reconciliation
+procedure. Do not use `helm rollback kubernaut`: there is no supported application
+Helm release in the operator deployment model.

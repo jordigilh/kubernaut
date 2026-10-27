@@ -101,11 +101,11 @@ Proactive signal mappings are YAML (not Rego) and are injected separately.
 ### Negative
 
 - **Hot-reload granularity loss**: Changing one rule requires replacing the entire file. Mitigated by clear documentation and structured examples with section headers.
-- **Larger single file**: Operators manage one file instead of 5. Mitigated by section headers and the example file in `charts/kubernaut/examples/signalprocessing-policy.rego`.
+- **Larger single file**: Operators manage one file instead of 5. Mitigated by section headers and the example file in `test/fixtures/signalprocessing-policy.rego`.
 
 ## Files Changed
 
 - **Created**: `pkg/signalprocessing/evaluator/{evaluator.go,types.go}`
 - **Updated**: `internal/controller/signalprocessing/{interfaces.go,signalprocessing_controller.go}`, `cmd/signalprocessing/main.go`
 - **Deleted**: `pkg/signalprocessing/classifier/{environment.go,priority.go,severity.go,business.go}`, `pkg/signalprocessing/rego/engine.go`
-- **Helm**: `charts/kubernaut/values.yaml`, `templates/signalprocessing/signalprocessing.yaml`, `values.schema.json`
+- **Operator/test contract**: `test/fixtures/signalprocessing-policy.rego`, the operator-managed Kubernaut CR policy reference, and the SignalProcessing evaluator

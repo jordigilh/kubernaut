@@ -246,7 +246,8 @@ Grant to AW service account:
 
 ### CRD Manifest
 
-`charts/kubernaut/crds/kubernaut.ai_actiontypes.yaml` synced from `config/crd/bases/`.
+`config/crd/bases/kubernaut.ai_actiontypes.yaml` is the authoritative generated CRD
+manifest; the retired application chart's duplicate copy is no longer maintained.
 
 ### Seed Job Ordering
 
@@ -264,7 +265,7 @@ ActionType CRDs applied BEFORE RemediationWorkflow CRDs to ensure action types e
 | `api/openapi/data-storage-v1.yaml` | New endpoints |
 | `pkg/authwebhook/` | New webhook handler |
 | `cmd/authwebhook/main.go` | Register handler |
-| `charts/kubernaut/` | Webhook config, RBAC, CRD |
+| `config/rbac/role.yaml`, operator-owned resources | Webhook config, RBAC, CRD lifecycle |
 | `kubernaut-demo-scenarios/deploy/action-types/` | 25 ActionType CRD YAMLs (separate repo) |
 | `migrations/` | DB schema migration |
 

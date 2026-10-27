@@ -135,11 +135,9 @@ nodes:
   # Traefik ingress controller (manual setup-e2e-fleet-infra Console access
   # only -- see deployTraefikForKind in fleet_e2e.go). Unprivileged host ports
   # (>1024), NOT the standard 80/443: most CI runners can't bind non-root
-  # processes to privileged ports, so charts/kubernaut's console.ingress.port
-  # field lets the chart's oauth2-proxy --redirect-url include this exact
-  # port (":8843") instead of assuming port-less HTTPS (443) -- see the
-  # fleet-e2e-values.yaml draft's console.ingress.port and the Keycloak
-  # client's redirectUris, which must both match this hostPort. Inert for
+  # processes to privileged ports, so the operator-managed Console exposure
+  # must use this exact port (":8843") instead of assuming port-less HTTPS
+  # (443). The Keycloak client's redirectUris must match this hostPort. Inert for
   # suites that don't deploy Traefik.
   - containerPort: 30880  # Traefik web (HTTP) NodePort
     hostPort: 8880

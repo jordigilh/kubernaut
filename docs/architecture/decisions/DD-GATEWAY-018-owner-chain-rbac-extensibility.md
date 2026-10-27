@@ -6,6 +6,10 @@
 **Last Reviewed**: 2026-08-02
 **Confidence**: 95%
 
+> **Lifecycle note (Issue #2561):** The application-chart implementation references in this
+> decision are historical. The operator-owned RBAC contract is the supported deployment path;
+> retain this record for the design rationale and cross-repository follow-up.
+
 ---
 
 ## Context & Problem

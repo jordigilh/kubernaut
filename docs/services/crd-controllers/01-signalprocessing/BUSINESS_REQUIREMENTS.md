@@ -241,7 +241,7 @@ result := {"environment": "staging", "source": "namespace-pattern"} if {
 
 > **Deprecation Notice**: Go-level hardcoded defaults have been removed. Operators define concrete default values using the Rego `default` keyword in their unified SignalProcessing `policy.rego` (ADR-060). This gives operators full control over what a catch-all means for their organization.
 >
-> **Migration**: Add a concrete `default environment := {...}` rule to the unified policy. See `charts/kubernaut/examples/signalprocessing-policy.rego`.
+> **Migration**: Add a concrete `default environment := {...}` rule to the unified policy. See `test/fixtures/signalprocessing-policy.rego`.
 >
 > **#2467 clarification (current contract)**: A Rego default is an operator-authored classification, not a Go fallback. If the required environment result is empty or `Unknown`/`unknown`, SignalProcessing MUST fail the Classifying phase; it MUST NOT complete with an unclassified value. A concrete environment catch-all must be selected in Rego.
 
@@ -705,7 +705,7 @@ volumeMounts:
 
 **Status contract**: The current API stores the result in `SignalProcessing.Status.SignalClassification.Severity`. The field's enum admits `unknown` for schema compatibility, but successful SP classification MUST contain a concrete value.
 
-**Policy example**: See [`charts/kubernaut/examples/signalprocessing-policy.rego`](../../../../charts/kubernaut/examples/signalprocessing-policy.rego) for the unified ADR-060 policy shape. Per #2467, this example MUST use specific rules for recognized inputs and a concrete `default severity` catch-all, with comments explaining both its matching behavior and workflow-routing impact. In Rego, `default` applies when none of the more-specific rules matches; it is an explicit policy decision, not a value invented by the SP controller. Operators must choose a catch-all appropriate to their environment. If a policy returns no result, an empty value, or `unknown`, SP fails classification.
+**Policy example**: See [`test/fixtures/signalprocessing-policy.rego`](../../../../test/fixtures/signalprocessing-policy.rego) for the unified ADR-060 policy shape. Per #2467, this example MUST use specific rules for recognized inputs and a concrete `default severity` catch-all, with comments explaining both its matching behavior and workflow-routing impact. In Rego, `default` applies when none of the more-specific rules matches; it is an explicit policy decision, not a value invented by the SP controller. Operators must choose a catch-all appropriate to their environment. If a policy returns no result, an empty value, or `unknown`, SP fails classification.
 
 **Rationale**:
 - **Customer Extensibility**: Operators define severity mappings based on their organization's standards
@@ -717,7 +717,7 @@ volumeMounts:
 - `pkg/signalprocessing/evaluator/evaluator.go`: Severity Rego evaluation and output validation
 - `internal/controller/signalprocessing/signalprocessing_classifying.go`: Required classification and fail-closed phase handling
 - `api/signalprocessing/v1alpha1/signalprocessing_types.go`: `Status.SignalClassification.Severity`
-- `charts/kubernaut/examples/signalprocessing-policy.rego`: Example operator policy and catch-all
+- `test/fixtures/signalprocessing-policy.rego`: Example operator policy and catch-all
 
 **Tests**:
 - `pkg/signalprocessing/evaluator/evaluator_test.go`: Rego severity policy evaluation

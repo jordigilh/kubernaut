@@ -22,6 +22,10 @@ kubernaut#1861 amendment additionally touched `pkg/apifrontend/severity`,
 `cmd/apifrontend`, and `pkg/apifrontend/launcher` to lift the #1731 guard
 (see Addendum)
 
+> **Lifecycle note (Issue #2561):** The Helm-rendering portions of this decision are
+> historical for the retired application chart. Supported LLM configuration is now
+> expressed through the operator-owned `Kubernaut` CR `spec.llmProfiles` contract.
+
 **Related Business Requirements**:
 - BR-PLATFORM-008: Helm Chart LLM Configuration Parity
 

@@ -9,6 +9,11 @@
 
 ---
 
+> **Lifecycle note (Issue #2561):** This requirement records schema validation for the retired
+> application Helm chart and is retained for historical traceability. Supported deployments
+> use operator CR validation and reconciliation rather than the application chart's values
+> schema.
+
 ## Business Need
 
 ### Problem Statement

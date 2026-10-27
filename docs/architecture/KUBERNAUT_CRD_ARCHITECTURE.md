@@ -72,7 +72,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 | 10 | **apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller for its own CRD | `cmd/apifrontend/main.go` | `InvestigationSession` (own CRD) | External-facing A2A/MCP gateway; own LLM "Severity Triager"; creates `RemediationRequest`s from NL queries; separate direct MCP + REST integration to KA |
 | 11 | **authwebhook** | K8s admission webhook + CRD controller | `cmd/authwebhook/main.go` | `RemediationWorkflow` (catalog CRD), plus `ActionType` admission handling | No dedicated `docs/services/` directory exists for this service — a real documentation gap, flagged but not fixed here |
 | 12 | **fleetmetadatacache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | `cmd/fleetmetadatacache/main.go` | — | Multi-cluster "fleet" feature; polls remote clusters via MCP Gateway, writes Valkey, serves scope-check HTTP API |
-| — | **kubernaut-console** | Optional standalone web UI (A2A chat) | n/a (external image) | — | Chart-deployable via `charts/kubernaut/templates/console/console.yaml`; no source in this repository |
+| — | **kubernaut-console** | Optional standalone web UI (A2A chat) | n/a (external image) | — | Reconciled by the Kubernaut Operator when enabled in the user-owned `Kubernaut` resource; no source in this repository |
 
 **Evolution since v1.3.0**: The prior document counted "10 V1.0 services" (5 CRD + 5 stateless). Since then: **Context API was fully removed** (absorbed into DataStorage), **Dynamic Toolset code was deleted** (deferred to V2.0, docs kept only as historical record), **HolmesGPT-API was replaced end-to-end by the native-Go Kubernaut Agent**, **Notification migrated from stateless HTTP to a CRD controller**, and **three services not present in v1.3.0 were added**: `apifrontend`, `authwebhook`, and `fleetmetadatacache`. A `KubernetesExecutor` service was designed pre-v1.3.0 but never implemented and was formally eliminated by [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md) — it does not appear in the count above. See [Deprecated & Removed Components](#deprecated--removed-components) for the full list.
 
@@ -376,7 +376,8 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 
 **Purpose**: Standalone web UI providing an A2A chat experience against apifrontend
 
-**Type**: Externally-built container image, deployed via the Helm chart (`charts/kubernaut/templates/console/console.yaml`)
+**Type**: Externally-built container image, deployed by the Kubernaut Operator when
+`spec.console.enabled=true` in the user-owned `Kubernaut` resource.
 
 **Notes**: This component has no source code in this repository. It is opt-in (not part of the core 12-service topology above) and is included here only for completeness of the service inventory.
 

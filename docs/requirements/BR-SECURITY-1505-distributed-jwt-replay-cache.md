@@ -81,7 +81,7 @@ Key design choices:
 
 ## Related Documents
 
-- [Kubernaut Helm Chart README — Optional: Distributed JWT Replay Cache](../../charts/kubernaut/README.md#optional-distributed-jwt-replay-cache-gap-08)
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) — configure the replay cache through the operator-managed `Kubernaut` CR.
 
 ---
 

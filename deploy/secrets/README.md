@@ -6,9 +6,9 @@
 
 ## 📋 **Overview**
 
-This directory contains Kustomize configurations for generating OAuth2-proxy cookie secrets used by DataStorage and HolmesGPT API services.
+This directory contains Kustomize configurations for optional, administrator-managed OAuth2-proxy cookie Secret fixtures used by DataStorage and HolmesGPT API services.
 
-**Key Principle**: **Secrets are generated at deployment time, NEVER stored in Git.**
+**Key Principle**: **Secret material is generated outside Kustomize and NEVER stored in Git.**
 
 ---
 
@@ -16,8 +16,22 @@ This directory contains Kustomize configurations for generating OAuth2-proxy coo
 
 ### **Deploy Secrets**
 
+For supported deployments, first install the [Kubernaut Operator bootstrap chart](https://github.com/jordigilh/kubernaut-operator/blob/main/charts/kubernaut-operator/README.md).
+It installs the operator in `kubernaut-operator-system`. Then use the
+[minimal Kubernaut CR quickstart](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md),
+which uses `kubernaut-system` for the application operands and CR.
+
 ```bash
-# Generate and apply secrets
+# Create the application namespace before applying namespaced Secret fixtures
+kubectl create namespace kubernaut-system --dry-run=client -o yaml | kubectl apply -f -
+
+# Generate secret material outside Kustomize; these files are ignored by Git
+mkdir -p deploy/secrets/local
+umask 077
+openssl rand -base64 32 | tr -d '\n' > deploy/secrets/local/data-storage-cookie-secret
+openssl rand -base64 32 | tr -d '\n' > deploy/secrets/local/kubernaut-agent-cookie-secret
+
+# Apply optional Secret fixtures before the CR if the CR references them
 kubectl apply -k deploy/secrets/
 
 # Verify secrets created
@@ -37,8 +51,8 @@ kubernaut-agent-oauth-proxy-secret      Opaque   1      10s
 
 | Secret Name | Namespace | Key | Value | Usage |
 |-------------|-----------|-----|-------|-------|
-| `data-storage-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Random 32-byte string | DataStorage oauth2-proxy sidecar |
-| `kubernaut-agent-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Random 32-byte string | HolmesGPT API oauth2-proxy sidecar |
+| `data-storage-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Base64 encoding of 32 random bytes | DataStorage oauth2-proxy sidecar |
+| `kubernaut-agent-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Base64 encoding of 32 random bytes | HolmesGPT API oauth2-proxy sidecar |
 
 ---
 
@@ -50,46 +64,36 @@ kubernaut-agent-oauth-proxy-secret      Opaque   1      10s
 # kustomization.yaml
 secretGenerator:
   - name: data-storage-oauth-proxy-secret
-    literals:
-      - cookie-secret=$(openssl rand -base64 32)  # ← Executed at deploy time
+    files:
+      - cookie-secret=local/data-storage-cookie-secret
     options:
       disableNameSuffixHash: true
 ```
 
 **What happens**:
-1. `kubectl apply -k` reads `kustomization.yaml`
-2. Executes `$(openssl rand -base64 32)` on your machine
-3. Generates a Kubernetes Secret manifest with the random value
-4. Applies the Secret to the cluster
+1. An administrator generates the ignored local files outside Kustomize
+2. `kubectl apply -k` reads each file as Secret data
+3. Kustomize generates a Kubernetes Secret manifest
+4. The manifest is applied to the cluster
 
 **Result**: Secret exists in cluster, value never in Git
 
 ---
 
-### **Helm Integration**
+### **Operator Integration**
 
-Helm charts **reference** these secrets by name (do NOT create them):
-
-```yaml
-# helm/kubernaut/values.yaml
-dataStorage:
-  oauth:
-    secretName: data-storage-oauth-proxy-secret  # ← References Kustomize-generated secret
-```
-
-```yaml
-# helm/kubernaut/templates/data-storage-deployment.yaml
-volumes:
-  - name: oauth-proxy-cookie-secret
-    secret:
-      secretName: {{ .Values.dataStorage.oauth.secretName }}
-```
+The application Helm chart is retired. Supported deployments install the
+Kubernaut Operator Helm bootstrap chart and apply a user-owned
+`kubernaut.ai/v1alpha2` `Kubernaut` resource. Use this directory only when a
+current CR field explicitly references one of these administrator-managed Secret
+fixtures; the operator owns application workload and Secret-reference
+reconciliation.
 
 **Deployment Order**:
-```bash
-kubectl apply -k deploy/secrets/           # Step 1: Create secrets
-helm upgrade --install kubernaut ./helm/kubernaut  # Step 2: Deploy app
-```
+1. Install the operator bootstrap chart in `kubernaut-operator-system`.
+2. Create `kubernaut-system` for the application operands and `Kubernaut` CR.
+3. Generate the ignored `local/*` files and apply these fixtures if the CR references them.
+4. Apply the user-owned `Kubernaut` CR using the operator quickstart.
 
 ---
 
@@ -123,11 +127,11 @@ kubectl get secret data-storage-oauth-proxy-secret -n kubernaut-system \
 # Expected output: 32
 ```
 
-### **Verify Helm Template Does NOT Expose Secrets**
+### **Verify Secret References Do NOT Expose Values**
 
 ```bash
-helm template kubernaut ./helm/kubernaut | grep -i "cookie-secret"
-# Expected: Only references to secretName, NO actual secret values
+# Inspect the rendered operator-managed workload or CR status instead.
+# Secret values must never be copied into a CR, manifest, or Git repository.
 ```
 
 ---
@@ -136,24 +140,29 @@ helm template kubernaut ./helm/kubernaut | grep -i "cookie-secret"
 
 ### **Rotate Cookie Secret**
 
+Secrets created from the former `$(openssl rand ...)` literals must be treated as
+compromised and rotated. Generate fresh local files before applying them; do not
+reuse the old files.
+
 ```bash
-# 1. Delete existing secret
-kubectl delete secret data-storage-oauth-proxy-secret -n kubernaut-system
+# Generate fresh values without a trailing newline
+umask 077
+openssl rand -base64 32 | tr -d '\n' > deploy/secrets/local/data-storage-cookie-secret
+openssl rand -base64 32 | tr -d '\n' > deploy/secrets/local/kubernaut-agent-cookie-secret
 
-# 2. Regenerate secret
+# Apply both rotated Secret values in place
 kubectl apply -k deploy/secrets/
-
-# 3. Restart deployment to pick up new secret
-kubectl rollout restart deployment/data-storage-service -n kubernaut-system
 ```
 
-**Note**: Pod will automatically restart after secret deletion.
+Restart every operator-managed workload that consumes a rotated Secret so it
+reloads the new cookie value. Existing OAuth2-proxy sessions are invalidated.
 
 ---
 
 ## 🏢 **Production Deployment**
 
-For production, use **file-based secrets** instead of dynamic generation:
+For production, keep the generated files in a secure external store instead of
+the repository:
 
 ### **One-Time Setup**
 
@@ -192,7 +201,7 @@ kubectl apply -k deploy/secrets/production/
 
 - ✅ `kustomization.yaml` in Git (no secret values)
 - ✅ `README.md` in Git (documentation only)
-- ✅ Helm values referencing secret names
+- ✅ Operator/CR configuration referencing Secret names
 
 ### **What's NOT Safe**
 
@@ -226,7 +235,7 @@ volumeMounts:
 
 ## 🔗 **Related**
 
-- **Helm Charts**: `helm/kubernaut/` - Application deployment (references secrets)
+- **Kubernaut Operator**: [installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) - application deployment and Secret references
 - **Deployments**: `deploy/data-storage/`, `deploy/kubernaut-agent/` - Service manifests
 - **OAuth2-Proxy Docs**: https://oauth2-proxy.github.io/oauth2-proxy/docs/
 

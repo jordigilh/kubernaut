@@ -7,13 +7,18 @@
 **Status**: Ready for Execution
 **Branch**: `fix/v1.0.1-chart-platform-agnostic`
 
+> **Historical status (Issue #2561):** This test plan describes the retired application
+> Helm chart and is retained for audit history only. Its commands are not a current
+> deployment or validation path; current qualification uses the Kubernaut Operator and
+> the user-owned `Kubernaut` CR.
+
 **Authority**:
 - BR-PLATFORM-001: Helm chart must deploy on vanilla Kubernetes and OpenShift without modification
 - BR-PLATFORM-002: First-time user experience must match documented instructions exactly
 
 **Cross-References**:
 - [Testing Strategy](../../.cursor/rules/03-testing-strategy.mdc)
-- [Helm Chart README](../../charts/kubernaut/README.md)
+- [Repository README](../../../README.md) (the legacy application chart is retired)
 - [GitHub Issue #342](https://github.com/jordigilh/kubernaut/issues/342)
 - Related fixes: [#336](https://github.com/jordigilh/kubernaut/issues/336), [#339](https://github.com/jordigilh/kubernaut/issues/339), [PR #341](https://github.com/jordigilh/kubernaut/pull/341)
 

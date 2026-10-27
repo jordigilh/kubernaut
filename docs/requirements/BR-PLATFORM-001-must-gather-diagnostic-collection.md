@@ -55,7 +55,7 @@ This capability follows established Kubernetes ecosystem best practices:
 #### BR-PLATFORM-001.2: CRD Resource Collection
 **MUST** collect all Kubernaut Custom Resource Definitions and instances:
 
-**CRDs to Collect** (Issue #2187: kept in sync with `charts/kubernaut/crds/`
+**CRDs to Collect** (Issue #2187: kept in sync with `config/crd/bases/`
 via `cmd/must-gather/test/test_crds.bats::UT-MG-2187-001`, which fails if this
 list -- or, more precisely, the ClusterRole allowlist it documents -- drifts
 from what the chart actually ships):
@@ -662,4 +662,3 @@ find . -type f -exec sha256sum {} \; > SHA256SUMS
 **Priority**: **P1 - Required for Production Support**
 **Target Version**: **Kubernaut v1.0**
 **Estimated Effort**: **2-3 weeks** (container image + collection scripts + testing + documentation)
-

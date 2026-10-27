@@ -1,90 +1,38 @@
-# Follow-up: kubernaut-operator Fleet Config Migration
+# Historical note: kubernaut-operator Fleet configuration migration
 
+**Status**: Superseded by the operator-native `Kubernaut` CR contract
 **Date**: 2026-06-20
 **Origin**: ADR-068 Fleet Federation Architecture refactoring
-**Affects**: kubernaut-operator Helm chart and OLM bundle
-**Priority**: Medium (backward-compatible, no immediate breakage)
 
 ## Summary
 
-The kubernaut Helm chart (`charts/kubernaut/`) has been updated to support the new
-fleet adapter pattern (ADR-068). The `gateway.fleet` and `remediationorchestrator.fleet`
-config sections now include two new fields (`backend`, `endpoint`) alongside the
-deprecated `valkeyAddr` field.
+This note originally tracked copying Fleet fields from the application Helm chart into
+the Kubernaut Operator's managed Helm release. That deployment model is retired.
 
-The kubernaut-operator team needs to:
-1. Update the operator's CRD spec to expose the new fleet config fields
-2. Update the operator's reconciler to pass these fields through to the managed Helm release
-3. Update OLM bundle metadata (CSV, CRD schema) if applicable
+The supported model is now:
 
-## New Fleet Config Fields
+1. Install the `kubernaut-operator` Helm bootstrap chart.
+2. Apply a user/GitOps-owned `kubernaut.ai/v1alpha2` `Kubernaut` resource.
+3. Configure Fleet through the CR's `spec.fleet` and
+   `spec.workflowExecution.fleet` fields.
+4. Let the operator render the managed service configuration and workload resources.
 
-### Before (v1.4.x)
+There is no supported application Helm release for the operator to generate or upgrade,
+and there is no Helm-values compatibility contract to preserve in this repository.
 
-```yaml
-gateway:
-  fleet:
-    enabled: false
-    valkeyAddr: ""  # direct Valkey connection
-```
+## Current Fleet contract
 
-### After (v1.5.x)
+The authoritative field names, validation, and read/write credential separation live in
+the operator repository's CRD and installation documentation. In particular, the
+WorkflowExecution Fleet credential reference remains separate from the shared read-only
+Fleet credential reference to preserve least privilege.
 
-```yaml
-gateway:
-  fleet:
-    enabled: false
-    backend: ""     # "fmc", "acm", or "valkey" (legacy)
-    endpoint: ""    # backend-specific endpoint URL
-    valkeyAddr: ""  # deprecated, kept for backward compat
-```
+See:
 
-The same change applies to `remediationorchestrator.fleet`.
+- [Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md)
+- [Fleet setup guide](../operations/deployment/FLEET_SETUP_GUIDE.md)
+- [ADR-068: Fleet Federation Architecture](../architecture/decisions/ADR-068-fleet-federation-architecture.md)
 
-## Backward Compatibility
-
-- `valkeyAddr` is still supported and will continue to work indefinitely
-- If `backend` is empty but `valkeyAddr` is set, the system defaults to `backend: "valkey"`
-- If `backend` and `endpoint` are both set, they take precedence over `valkeyAddr`
-- No existing deployments will break — the new fields are optional
-
-## Operator CRD Changes Needed
-
-The operator's `Kubernaut` CRD (or equivalent) should add:
-
-```go
-type FleetConfig struct {
-    Enabled    bool   `json:"enabled,omitempty"`
-    Backend    string `json:"backend,omitempty"`    // NEW: "fmc", "acm", "valkey"
-    Endpoint   string `json:"endpoint,omitempty"`   // NEW: backend endpoint URL
-    ValkeyAddr string `json:"valkeyAddr,omitempty"` // DEPRECATED but kept
-}
-```
-
-## Operator Reconciler Changes
-
-When reconciling the Helm release, ensure the new fields are passed through:
-
-```go
-// If the operator generates values.yaml for Helm:
-if fleetCfg.Backend != "" {
-    values["gateway"]["fleet"]["backend"] = fleetCfg.Backend
-}
-if fleetCfg.Endpoint != "" {
-    values["gateway"]["fleet"]["endpoint"] = fleetCfg.Endpoint
-}
-```
-
-## Timeline
-
-- **Immediate**: No action required — existing configs continue to work
-- **Next operator release**: Add `backend` and `endpoint` fields to CRD
-- **Future**: When `valkeyAddr` is fully deprecated, remove it from the CRD
-
-## References
-
-- ADR-068: Fleet Federation Architecture
-- `charts/kubernaut/values.yaml` — fleet config sections
-- `charts/kubernaut/values.schema.json` — JSON schema validation
-- `charts/kubernaut/templates/gateway/gateway.yaml` — template rendering
-- `charts/kubernaut/templates/remediationorchestrator/remediationorchestrator.yaml`
+The old chart field examples below the original version of this document are intentionally
+not reproduced: they described a retired deployment API and could be mistaken for current
+operator configuration.

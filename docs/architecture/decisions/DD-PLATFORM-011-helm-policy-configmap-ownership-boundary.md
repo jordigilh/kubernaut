@@ -9,6 +9,10 @@ pending CI image setup)
 
 ---
 
+> **Lifecycle note (Issue #2561):** This decision described policy ConfigMap ownership for
+> the retired application chart and is retained for historical traceability. Current policy
+> ownership and reconciliation are defined by the operator-managed `Kubernaut` CR contract.
+
 ## 🎯 Decision
 
 The Helm chart SHALL keep a stable, chart-owned identity for each policy ConfigMap:

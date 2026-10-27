@@ -20,6 +20,11 @@ conversation record, with the iterative alternatives/version history omitted for
 
 ---
 
+> **Lifecycle note (Issue #2561):** This requirement records onboarding work for the retired
+> application Helm chart and is retained for historical traceability. Supported deployments
+> use the Kubernaut Operator and the user-owned `Kubernaut` CR; the old Helm values surface is
+> not a supported configuration contract.
+
 ## Business Need
 
 ### Problem Statement

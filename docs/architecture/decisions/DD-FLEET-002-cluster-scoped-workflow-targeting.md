@@ -312,7 +312,7 @@ column, no new index:
 - `pkg/remediationorchestrator/creator/aianalysis.go` - Populate `SignalContextInput.Cluster` in `buildSignalContext()`
 - `pkg/kubernautagent/types/types.go` - `SignalContext.ClusterClassification` (AA -> KA hop)
 - `internal/kubernautagent/tools/custom/tools.go` - Pass `Cluster` into discovery tool-call params (KA -> DS hop)
-- Rego policy schema (`charts/kubernaut/examples/signalprocessing-policy.rego`) - Add `cluster` rule group
+- Rego policy schema (`test/fixtures/signalprocessing-policy.rego`) - Add `cluster` rule group
 
 ## Consequences
 

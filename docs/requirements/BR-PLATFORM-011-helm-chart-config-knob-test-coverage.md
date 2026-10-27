@@ -9,6 +9,10 @@
 
 ---
 
+> **Lifecycle note (Issue #2561):** This requirement records test coverage for the retired
+> application Helm chart and is retained for historical traceability. Supported deployment
+> behavior is proven through the operator CR contract and its qualification suites.
+
 ## Business Need
 
 ### Problem Statement
