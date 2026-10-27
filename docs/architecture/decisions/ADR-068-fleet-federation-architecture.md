@@ -482,7 +482,7 @@ for the full method and results.
 |-------|-------------|--------|
 | Phase 1 | GW cluster-aware signal ingestion | Complete |
 | Phase 2 | FMC Writer service | Complete |
-| Phase 3 | Helm config wiring | Complete |
+| Phase 3 | Deployment config wiring (historically Helm; now operator CR) | Complete |
 | Phase 4 | Lightweight fleet E2E | Complete |
 | Phase 5 | CRD schema (ClusterID on RR) | Complete |
 | Phase 6 | MCP client resilience | Complete |
@@ -500,8 +500,8 @@ for the full method and results.
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 | `ValidateFullFederation` (GW/RO dual-capability startup check) | Config validation | pkg/fleet/config.go | Complete (DD-FLEET-003) |
 | `FleetOAuth2Config.TLSCAFile` (OAuth2 token-fetch CA trust, all 6 services) | `ReloadableOAuth2Config` construction | cmd/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing,workflowexecution}/main.go | Complete |
-| Fleet Helm chart wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | ConfigMap render + ClusterRole rules | charts/kubernaut/templates/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing}/*.yaml | Complete |
-| Fleet Helm chart wiring (WE: `endpoint`/`oauth2.*` from `global.fleet.*`; `oauth2.credentialsSecretRef` is WE-owned with NO fallback to `global.fleet.oauth2.credentialsSecretRef`, since WE is the only service calling MCP write tools) | ConfigMap render + Secret volume/mount, `fail()` guards | charts/kubernaut/templates/workflowexecution/workflowexecution.yaml | Complete |
+| Fleet deployment wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | Operator CR → managed ConfigMaps/RBAC | `kubernaut-operator` Fleet resources | Complete |
+| Fleet deployment wiring (WE: endpoint/OAuth2 with an independent write credential) | Operator CR → managed ConfigMap/Secret mount | `kubernaut-operator` Fleet resources | Complete |
 
 ### Fleet E2E Topology
 

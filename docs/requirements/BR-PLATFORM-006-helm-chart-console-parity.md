@@ -9,6 +9,11 @@
 
 ---
 
+> **Lifecycle note (Issue #2561):** This requirement records parity work for the retired
+> application Helm chart and is retained for historical traceability. Supported deployments
+> use the Kubernaut Operator and the user-owned `Kubernaut` CR; active parity work belongs in
+> the operator repository.
+
 ## Business Need
 
 ### Problem Statement

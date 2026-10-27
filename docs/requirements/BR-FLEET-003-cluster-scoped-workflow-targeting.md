@@ -195,7 +195,7 @@ requirement to document, not a runtime failure mode.
 | SP startup wiring | `cmd/signalprocessing/main.go` | Construct `ClusterRegistry` |
 | SP enrichment | `pkg/shared/types/enrichment.go`, `pkg/signalprocessing/enricher/k8s_enricher.go` | `ClusterContext` type; populate `KubernetesContext.Cluster` |
 | SP Rego evaluation | `pkg/signalprocessing/evaluator/{types,evaluator}.go`, `internal/controller/signalprocessing/interfaces.go`, `internal/controller/signalprocessing/signalprocessing_classifying.go`, `api/signalprocessing/v1alpha1/signalprocessing_types.go` | `PolicyInput.Cluster`, `EvaluateCluster()`, `Status.ClusterClassification` |
-| Rego policy example | `charts/kubernaut/examples/signalprocessing-policy.rego` | Example `cluster` rule group |
+| Rego policy example | `test/fixtures/signalprocessing-policy.rego` | Example `cluster` rule group |
 | RO propagation | `api/aianalysis/v1alpha1/aianalysis_types.go`, `pkg/remediationorchestrator/creator/aianalysis.go` | `SignalContextInput.Cluster` |
 | KA propagation | `pkg/kubernautagent/types/types.go`, `internal/kubernautagent/tools/custom/tools.go` | `SignalContext.ClusterClassification`; discovery tool-call param |
 | DS filter dimension | `pkg/datastorage/repository/workflow/discovery.go`, `pkg/datastorage/models/workflow_discovery.go`, `pkg/datastorage/server/workflow_discovery_handlers.go`, `api/openapi/data-storage-v1.yaml` | `cluster` SQL branch, filter model, param parsing, OpenAPI spec |

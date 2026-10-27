@@ -818,7 +818,7 @@ For schemas of CRDs created by Central Controller:
 > `api/aianalysis/v1alpha1/aianalysis_types.go`, which has no `LLMProvider`/`llmProvider` field at all —
 > Kubernaut Agent (KA) is the sole analysis backend invoked by the AIAnalysis controller today, selected
 > via KA's own runtime LLM profile configuration (`kubernautAgent.llmProfileRef` in
-> `charts/kubernaut/values.yaml`), not a per-CRD enum. Treat this entire extension section as historical;
+> the retired application Helm values), not a per-CRD enum. Treat this entire extension section as historical;
 > defer to the Go types for the authoritative current schema, as the note below already instructs.
 >
 > **Also stale (2026-08, [Issue #2176](https://github.com/jordigilh/kubernaut/issues/2176) /
@@ -1564,6 +1564,5 @@ type DeliveryAttempt struct {
 **Last Updated**: October 12, 2025 (Added NotificationRequest CRD)
 **Validates Against**: Kubebuilder v3.x, Kubernetes 1.28+
 **Confidence**: 95% - All validations tested and verified in generated CRD manifests
-
 
 

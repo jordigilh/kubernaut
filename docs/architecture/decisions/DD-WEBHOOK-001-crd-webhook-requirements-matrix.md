@@ -457,7 +457,7 @@ kubectl delete notificationrequest <nr-name> -n <namespace>
 - `agentsession.admitted.create`: CREATE admitted (RR resolved)
 - `agentsession.denied.create`: CREATE denied (RR not found or lookup error)
 
-**RBAC**: zero new grants — reuses AW's existing `get/list/watch` on `remediationrequests` ([charts/kubernaut/templates/authwebhook/authwebhook.yaml](../../../charts/kubernaut/templates/authwebhook/authwebhook.yaml)).
+**RBAC**: zero new grants — reuses AW's existing `get/list/watch` on `remediationrequests` (the generated `config/rbac/role.yaml` and operator-owned deployment contract).
 
 **Webhook Type**: **ValidatingWebhookConfiguration** (CREATE only), namespace-scoped (`.Release.Namespace`), `failurePolicy: Fail` (matches RW/ActionType's entries — see Changelog v1.5 rationale).
 
@@ -844,4 +844,3 @@ This DD is successfully implemented when:
 **Version**: 1.5
 **Authority**: Decision criteria for all CRD webhook implementations
 **Next Review**: 2026-11-22 (3 months)
-

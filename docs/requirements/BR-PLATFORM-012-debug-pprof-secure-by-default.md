@@ -9,6 +9,10 @@
 
 ---
 
+> **Lifecycle note (Issue #2561):** The chart-specific configuration references in this
+> requirement are historical. The supported pprof contract is the operator-managed service
+> configuration derived from the user-owned `Kubernaut` CR.
+
 ## Business Need
 
 ### Problem Statement

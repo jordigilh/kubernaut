@@ -10,6 +10,10 @@ E2E hardening), `pkg/fleet/registry` (`ClusterRegistry.Start`), `pkg/fleet/mcpcl
 
 ---
 
+> **Lifecycle note (Issue #2561):** The chart-template implementation described below
+> is historical. The supported Fleet startup behavior is implemented and qualified in
+> the Kubernaut Operator deployment path.
+
 ## 🎯 **DECISION**
 
 **Every Kubernaut Helm chart component whose process can legitimately block

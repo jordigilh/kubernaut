@@ -1,12 +1,20 @@
-# DD-TEST-015: Fleet E2E "Deploy Correctly the First Time" (Chart-Native Fleet Enablement)
+# DD-TEST-015: Fleet E2E "Deploy Correctly the First Time" (Historical Chart Implementation)
 
-**Status**: ✅ Approved & Implemented
+**Status**: Historical / superseded by operator-backed deployment (Issue #2561)
 **Date**: 2026-07-28
 **Author**: AI Assistant
 **Related**: Issue #54, ADR-068, DD-TEST-013, DD-TEST-014, DD-PLATFORM-008
 (`startupProbe` for fleet-aware services), DD-FLEET-002/003
 
 ---
+
+## Superseded deployment-source note
+
+This decision was written while the application Helm chart was still the E2E deployment
+source. The current FP/Fleet suites use the Kubernaut Operator bootstrap chart plus a
+user-owned `Kubernaut` CR. The ordering decision remains valid: Fleet infrastructure must
+be ready before the first operator reconciliation. The chart-native `global.fleet.*`
+wording below is retained as historical implementation context.
 
 ## Context
 

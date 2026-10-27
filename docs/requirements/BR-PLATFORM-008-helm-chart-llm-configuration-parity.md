@@ -10,6 +10,10 @@ DD-PLATFORM-007's Addendum)
 
 ---
 
+> **Lifecycle note (Issue #2561):** This requirement records parity work for the retired
+> application Helm chart and is retained for historical traceability. Supported deployments
+> use the operator-owned `Kubernaut` CR `spec.llmProfiles` contract.
+
 ## Business Need
 
 ### Problem Statement

@@ -76,7 +76,6 @@ kubernaut/
 │   ├── testutil/               #   Shared test helpers
 │   ├── fixtures/               #   Test data (workflow schemas, CRD samples)
 │   └── ...                     #   Infrastructure, load, chaos, etc.
-├── charts/kubernaut/           # Helm chart (production deployment)
 ├── deploy/                     # Kustomize overlays (individual service development)
 ├── docs/                       # Project documentation
 │   ├── architecture/           #   CRD architecture, schemas, design decisions
@@ -246,52 +245,27 @@ All `pkg/` business logic must always use real implementations — never mock in
 
 ## Deployment
 
-### Production — Helm chart
+### Supported deployment — Kubernaut Operator
 
-The chart lives in `charts/kubernaut/`. `values.yaml` in that directory is the chart's own
-baseline (schema defaults + mandatory-field placeholders) — you don't pass it with `-f`; Helm
-loads it automatically. Instead, supply your own minimal values file with the chart's 7
-mandatory fields (Rego policies + one LLM profile):
+Kubernaut is deployed through the external
+[Kubernaut Operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+The operator's Helm bootstrap chart installs the operator, CRD, webhook, and bootstrap
+prerequisites. It does not create the application resource or application workloads.
 
-```yaml
-# my-values.yaml
-global:
-  llmProfiles:
-    primary:
-      provider: openai
-      model: gpt-4o
-      endpoint: https://api.openai.com/v1
-      credentialsSecretName: llm-credentials
+After installing the operator, apply a user- or GitOps-owned `kubernaut.ai/v1alpha2`
+`Kubernaut` custom resource. The operator reconciles that resource into the Kubernaut
+services, configuration, RBAC, policies, dependencies, and migration workloads.
 
-signalprocessing:
-  policies:
-    content: |
-      # your Rego classification policy
+Use the mode-specific setup guides for verified CR examples:
 
-aianalysis:
-  policies:
-    content: |
-      # your Rego approval policy
-```
+- [Autonomous mode](operations/deployment/AUTONOMOUS_MODE_SETUP_GUIDE.md)
+- [Interactive mode](operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)
+- [Fleet mode](operations/deployment/FLEET_SETUP_GUIDE.md)
 
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system --create-namespace \
-  -f my-values.yaml
-```
-
-For air-gapped/disconnected environments, see `charts/kubernaut/values-airgap.yaml`'s header
-comment for the pull-and-extract sequence (no live OCI reference at install time).
-
-For OpenShift, use the [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/) instead of this Helm chart.
-
-### Development — Local checkout
-
-```bash
-helm install kubernaut ./charts/kubernaut \
-  --namespace kubernaut-system --create-namespace \
-  -f my-values.yaml
-```
+The operator repository also owns the optional
+`kubernaut-development-dependencies` Helm chart for disposable PostgreSQL and Valkey
+dependencies. This repository no longer ships an application Helm chart or a Helm-values
+configuration contract.
 
 ### Individual services — Kustomize
 

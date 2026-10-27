@@ -373,9 +373,8 @@ Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 ```
 
 Added to `WorkflowExecutionStatus` next to `ServiceAccountName` (same resolution phase, same
-"resolved once, immutable thereafter" lifecycle). Requires `make generate manifests` to
-regenerate `DeepCopy` and the CRD YAML (`config/crd/bases/`, synced to
-`charts/kubernaut/{crds,files/crds}/`).
+	"resolved once, immutable thereafter" lifecycle). Requires `make generate manifests` to
+	regenerate `DeepCopy` and the authoritative CRD YAML under `config/crd/bases/`.
 
 ### 6. Controller Wiring (`internal/controller/workflowexecution/workflowexecution_catalog.go`)
 

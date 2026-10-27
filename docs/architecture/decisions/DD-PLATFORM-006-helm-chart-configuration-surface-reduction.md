@@ -24,6 +24,10 @@ cache's opt-in one, since FMC's Valkey dependency has no fail-open fallback)
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
 
+> **Lifecycle note (Issue #2561):** This decision is historical for the retired
+> application chart. Supported deployment configuration now belongs to the
+> operator-owned `Kubernaut` CR contract.
+
 **Related Business Requirements**:
 - BR-PLATFORM-007: Helm Chart Minimal-Configuration Onboarding (this DD implements it)
 - BR-PLATFORM-009: Helm Chart Gateway/APIFrontend Ingress Parity with the Kubernaut Operator

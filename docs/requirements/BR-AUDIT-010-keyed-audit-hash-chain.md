@@ -43,10 +43,10 @@ New audit events are hashed with **HMAC-SHA256** using a key stored **outside th
 Key design choices:
 
 1. **Per-row `hash_algorithm` column** (migration `013_audit_hash_algorithm.sql`): every row records which algorithm produced its `event_hash` (`sha256-unkeyed` or `hmac-sha256`). This supports a **mixed-algorithm chain**: existing rows keep verifying under the legacy algorithm; only new writes made after the HMAC key is provisioned use `hmac-sha256`. There is no retroactive re-hashing of historical data.
-2. **Backward-compatible, opt-in**: when no HMAC key is configured (the default), DataStorage continues using the legacy unkeyed SHA256 algorithm — existing deployments upgrade with zero required action. Operators enable the stronger algorithm by pre-creating a Secret and setting `datastorage.config.auditHashKey.enabled=true` (Helm) — see `charts/kubernaut/README.md`.
+2. **Backward-compatible, opt-in**: when no HMAC key is configured (the default), DataStorage continues using the legacy unkeyed SHA256 algorithm — existing deployments upgrade with zero required action. Operator-managed deployments configure the stronger algorithm through the `Kubernaut` CR contract; the equivalent operator wiring is tracked separately in [kubernaut-operator#209](https://github.com/jordigilh/kubernaut-operator/issues/209).
 3. **Excluded from the hash payload**: `hash_algorithm` itself is *not* included in the JSON that gets hashed (`PrepareEventForHashing` zeroes it, the same treatment as `EventHash`/`PreviousEventHash`/`EventDate`). This keeps pre-GAP-05 hashes verifiable byte-for-byte against their original JSON representation, which never contained this field.
 4. **Shared verification logic**: `repository.CalculateHashForVerification(hmacKey, previousHash, event)` is the single source of truth for algorithm-aware verification, used by both the `/api/v1/audit/verify-chain` HTTP handler and the `Export` (compliance export) path. Verifying an `hmac-sha256` event without a configured key fails loudly with an explicit error rather than silently reporting a false "tampered" mismatch.
-5. **No chart-managed secret generation**: consistent with the existing `postgresql-secret` / `valkey-secret` convention (`charts/kubernaut/templates/infrastructure/secrets.yaml`), the chart does **not** auto-generate the HMAC key. When `auditHashKey.enabled=true`, Helm validates the Secret exists via `lookup` and fails with an actionable `kubectl create secret` command if missing.
+5. **No application-managed secret generation**: the HMAC key remains administrator-owned and must be pre-created. The operator-managed deployment validates the referenced Secret through its CR contract.
 
 The equivalent wiring for `kubernaut-operator`-managed deployments (which construct their own `DataStorageConfigMap`/`DataStorageDeployment` independently of this Helm chart) is tracked separately: [kubernaut-operator#209](https://github.com/jordigilh/kubernaut-operator/issues/209), milestone v1.6.
 
@@ -72,7 +72,7 @@ Closing this residual risk would require an external, out-of-band anchor (e.g., 
 ## Related Documents
 
 - [ADR-034: Unified Audit Table Design](../architecture/decisions/ADR-034-unified-audit-table-design.md)
-- [Kubernaut Helm Chart README — Optional: Keyed Audit Hash Chain](../../charts/kubernaut/README.md#optional-keyed-audit-hash-chain-gap-05)
+- [kubernaut-operator#209 — operator-managed keyed audit hash chain wiring](https://github.com/jordigilh/kubernaut-operator/issues/209)
 
 ---
 

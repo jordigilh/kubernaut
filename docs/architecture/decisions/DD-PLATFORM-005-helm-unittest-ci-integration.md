@@ -9,6 +9,11 @@
 
 ---
 
+> **Lifecycle note (Issue #2561):** This decision described validation for the retired
+> application chart. Its chart-specific CI gate and local target are historical; current
+> deployment qualification uses the operator Helm bootstrap, dependency chart, and
+> `Kubernaut` CR path.
+
 ## 🎯 **DECISION**
 
 **`helm-unittest` is wired into `ci-pipeline.yml` as its own job (`helm-unittest`),
