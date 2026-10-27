@@ -240,7 +240,7 @@ type FleetHelmOptions struct {
 	// WEOAuth2CredentialsSecret is WorkflowExecution's OWN required
 	// credentialsSecretRef (workflowexecution.fleet.oauth2.credentialsSecretRef)
 	// -- REQUIRED with NO fallback to the shared secret above (AC-6 least
-	// privilege, see values.yaml doc comment). Callers may point this at
+	// privilege, see the operator CR contract). Callers may point this at
 	// the same Secret as OAuth2CredentialsSecret if per-service credential
 	// differentiation isn't in scope (e.g. E2E).
 	WEOAuth2CredentialsSecret string
@@ -584,18 +584,16 @@ func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writ
 }
 
 // afPersonaGroupNames lists the persona names AF's SAR-based tool
-// authorization recognizes (must match the retired application chart values's
-// apifrontend.config.rbac.personas keys exactly -- see
-// bindAFPersonaToolClusterRoles doc comment for why this list is duplicated
-// here instead of read from the chart).
+// authorization recognizes. The list is intentionally kept alongside the
+// operator qualification RBAC contract rather than read from the retired
+// application chart.
 var afPersonaGroupNames = []string{
 	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
 }
 
 // bindAFPersonaToolClusterRoles creates the ClusterRoleBindings that map each
-// DEX-issued OIDC "groups" claim (e.g. "sre") to the chart's own
-// per-persona ClusterRoles (kubernaut-tool-<persona>, see
-// the retired application chart templates/apifrontend/apifrontend.yaml).
+// DEX-issued OIDC "groups" claim (e.g. "sre") to the operator-managed
+// per-persona ClusterRoles (kubernaut-tool-<persona>).
 //
 // Issue #1737 gap found: the chart deliberately creates only the ClusterRoles
 // -- its own comment says "Bind these ClusterRoles to OIDC groups via
@@ -617,11 +615,10 @@ var afPersonaGroupNames = []string{
 // kubernaut_investigate/discover_workflows/select_workflow/watch.
 //
 // The persona name list is intentionally re-declared here (afPersonaGroupNames)
-// rather than parsed out of the retired application chart values: this is Go test
-// infrastructure binding to chart-owned ClusterRoles by name/convention (same
-// pattern as every other kubernaut-tool-<persona> reference in this package),
+// rather than parsed out of the retired application chart: this is Go test
+// infrastructure binding to operator-owned ClusterRoles by name/convention,
 // not a second source of truth for which *tools* each persona can call --
-// that authorization content lives solely in values.yaml/apifrontend.yaml.
+// that authorization content lives in the shared persona RBAC contract.
 func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to DEX OIDC groups (Issue #1737 RBAC gap)...")
 
@@ -657,19 +654,14 @@ subjects:
 }
 
 // BindAFPersonaRBAC is the exported, post-`operator reconciliation` entry point for
-// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the chart's
-// kubernaut-tool-<persona> ClusterRoles (only ever *created*, never *bound*,
-// by the retired application chart templates/apifrontend -- see
-// bindAFPersonaToolClusterRoles's doc comment, Issue #1737) to the OIDC
+// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the operator-managed
+// kubernaut-tool-<persona> ClusterRoles to the OIDC
 // groups issued by the Keycloak realm's kubernaut-console client
 // (test/infrastructure/keycloak-realm-demo.json's "sre" group/user).
 //
-// Does NOT also bind kubernaut-console-access: verified via `helm template`
-// that the chart already renders a kubernaut-console-access-<group>
-// ClusterRoleBinding for every apifrontend.config.rbac.consoleAccessGroups
-// entry directly (values.yaml's default list includes "sre") -- unlike the
-// per-tool personas above, that one's genuinely self-contained, no manual
-// step needed.
+// Does NOT also bind kubernaut-console-access: the operator owns the
+// console-access bindings as part of the reconciled Kubernaut resource; unlike
+// the per-tool persona bindings above, no test-owned manual step is needed.
 //
 // Must run after operator reconciliation -- the ClusterRoles this
 // binds don't exist until the chart's apifrontend templates render them.

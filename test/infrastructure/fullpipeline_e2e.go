@@ -64,15 +64,15 @@ import (
 //   - memory-eater: target pod that triggers OOMKill events
 //
 // Port Allocation (DD-TEST-001 v2.8, Issue #1737):
-//   Gateway:      hostPort 30080, chart-pinned NodePort 30080 (host-side signal POSTs, e.g. af_helpers_test.go)
-//   DataStorage:  hostPort 30081, chart-pinned NodePort 30081 (workflow seeding + audit queries)
+//   Gateway:      hostPort 30080, test-owned NodePort adapter (host-side signal POSTs, e.g. af_helpers_test.go)
+//   DataStorage:  hostPort 30081, test-owned NodePort adapter (workflow seeding + audit queries)
 //   API Frontend: hostPort 18443, NodePort 30443 (DD-TEST-001)
-//   All three are pinned via gateway/datastorage/apifrontend.service.{type,nodePort}
-//   (default-off, production-safe chart knob) + networkPolicies.<svc>.ingressCIDRs
+//   All three are allocated by the operator-exposure test fixture before cluster creation;
+//   the operator-managed Services remain ClusterIP. NetworkPolicies admit the test boundary.
 //   ipBlock rules to admit the NodePort-sourced (SNAT'd to node IP) traffic
 //   through the default-deny NetworkPolicy. Host reachability additionally
 //   requires the exact port to be pre-mapped in kind-fullpipeline-config.yaml's
-//   extraPortMappings (fixed at cluster-creation time, before `helm install`
+//   extraPortMappings (fixed at cluster-creation time, before operator reconciliation
 //   runs) -- an auto-assigned NodePort cannot be made host-reachable this way.
 //   Mock LLM:     ClusterIP only (internal, accessed by Kubernaut Agent)
 //
@@ -130,9 +130,9 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 //   - writer: Output writer for progress logging
 //
 // fleetProvisioner, when non-nil, is invoked once the target namespace
-// exists (end of PHASE 5) but before `helm install` (PHASE 6) to deploy
+// exists (end of PHASE 5) but before operator reconciliation (PHASE 6) to deploy
 // fleet-specific infrastructure (IdP, MCP Gateway, remote cluster) and
-// return the global.fleet.* values to render THIS install with --
+// return Fleet values to apply to THIS Kubernaut CR with --
 // DD-TEST-015 "deploy correctly the first time" (see
 // SetupFleetE2EInfrastructure). Nil (the FP suite's call) leaves fleet
 // disabled, unchanged from pre-refactor behavior. See FleetProvisioner's
@@ -281,7 +281,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	phase3Start := time.Now()
 
-	// Issue #1737: always load now -- ensureSharedChartImageTag always produces
+	// Issue #1737: always load now -- the shared application image tag helper always produces
 	// fresh localhost/*:<tag> references (regardless of the original source
 	// mode), so LoadImageToKind must actually load them every time. mock-llm
 	// follows its own pre-existing image ref, handled the same as before.
@@ -292,23 +292,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		time.Since(phase3Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: (removed, Issue #1737) -- config/crd/bases/ is installed
-	// automatically by `helm install` in PHASE 6 below. Manual `kubectl apply`
-	// of config/crd/bases/*.yaml is no longer needed for the chart-managed
-	// services. investigationsessions CRD (chart-only, unused by FullPipeline)
-	// is a harmless extra the chart also installs.
+	// PHASE 4: (removed, Issue #1737) -- config/crd/bases/ is installed by the
+	// operator bootstrap and Kubernaut CR reconciliation in PHASE 6 below. Manual
+	// `kubectl apply` of config/crd/bases/*.yaml is no longer needed for the
+	// operator-managed services. The operator owns the CRD lifecycle.
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5: Namespace + Helm chart prerequisite Secrets
+	// PHASE 5: Namespace + operator/dependency prerequisite Secrets
 	//
-	// Issue #1737: DataStorage client ClusterRole/RoleBindings, inter-service
-	// TLS (Issue #785), and the AU-9 signing certificate are now provisioned
-	// by the Helm chart itself (templates/rbac/datastorage-rbac.yaml,
-	// templates/interservice/{ca,leaf-certs}.yaml, templates/hooks/tls-cert-job.yaml)
-	// -- removed here to avoid duplicating/conflicting with chart-owned resources.
-	// The chart does NOT generate credential Secrets (by design, original #239
-	// audit finding #4), so those remain Go-managed.
+	// Issue #1737: DataStorage client RBAC, inter-service TLS, and the AU-9 signing
+	// certificate are provisioned by the operator/dependency charts and the
+	// user-owned Kubernaut CR. The test harness does not recreate application-owned
+	// resources. Credential Secrets remain explicitly user/test managed (original
+	// #239 audit finding #4).
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Namespace + Helm prerequisite Secrets...")
 	phase5Start := time.Now()
@@ -382,11 +379,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// PHASE 5b: Fleet infrastructure provisioning (DD-TEST-015)
 	//
 	// Runs the caller-supplied fleet provisioning (IdP, MCP Gateway, remote
-	// cluster) now that the namespace exists but before PHASE 6's
-	// `helm install` -- so any chart-managed pod that boots with
-	// global.fleet.enabled=true already has a live, authenticated MCP
-	// Gateway to connect to, instead of racing infrastructure that gets
-	// deployed afterward. Nil for the FP suite (fleet stays disabled).
+	// cluster) now that the namespace exists but before PHASE 6's operator
+	// reconciliation -- so every operator-managed pod that boots with Fleet
+	// enabled already has a live, authenticated MCP Gateway to connect to,
+	// instead of racing infrastructure that gets deployed afterward. Nil for the
+	// FP suite (fleet stays disabled).
 	// ═══════════════════════════════════════════════════════════════════════
 	fleetOpts, err := provisionFullPipelineFleet(ctx, kubeconfigPath, namespace, fleetProvisioner, writer)
 	if err != nil {
@@ -493,8 +490,8 @@ func seedFullPipelineWorkflowCatalog(ctx context.Context, namespace, kubeconfigP
 
 	// #1985 (BR-AUDIT-005 v2.0): AuthWebhook's own /readyz now blocks on
 	// DataStorage's health endpoint being reachable, so it can no longer be
-	// assumed ready merely because `helm install` returned (the chart install
-	// does not --wait) or because DataStorage itself just became ready --
+	// assumed ready merely because operator reconciliation returned or because
+	// DataStorage itself just became ready --
 	// AuthWebhook's readiness probe only starts succeeding some time *after*
 	// DataStorage's. SeedE2EActionTypes below creates/deletes ActionType CRs,
 	// which the actiontype.validate.kubernaut.ai ValidatingWebhookConfiguration
@@ -691,10 +688,10 @@ func runFullPipelineGoManagedInfrastructure(ctx context.Context, namespace, kube
 	//
 	// Gateway, KubernautAgent, EffectivenessMonitor, AIAnalysis, SignalProcessing,
 	// RemediationOrchestrator, WorkflowExecution, Notification, and APIFrontend
-	// are all chart-managed now and already ready (PHASE 6's `helm install
-	// --wait` blocks until they are). No wave synchronization is needed here
+	// are all operator-managed now and already ready (PHASE 6 waits for the
+	// operator lifecycle contract). No wave synchronization is needed here
 	// anymore -- everything below is independent Go-managed test
-	// infrastructure that only needs the chart-managed services to already
+	// infrastructure that only needs the operator-managed services to already
 	// exist (Gateway for event-exporter/AlertManager signal delivery, DataStorage for
 	// RBAC checks), which PHASE 6 guarantees by running before this phase.
 	// ═══════════════════════════════════════════════════════════════════════
@@ -827,7 +824,7 @@ func runFullPipelineGoManagedInfrastructure(ctx context.Context, namespace, kube
 		allResults <- waveResult{"AlertManager", nil}
 	}()
 
-	// event-exporter: Gateway is already up (PHASE 6 helm install --wait).
+	// event-exporter: Gateway is already up (PHASE 6 operator readiness gate).
 	go func() {
 		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, gatewayToken, writer, true)
 		allResults <- waveResult{"event-exporter", err}

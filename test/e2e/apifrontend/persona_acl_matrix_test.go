@@ -16,18 +16,18 @@ import (
 // Prior E2E coverage exercised individual persona/tool pairs (e.g.
 // TC-E2E-RAR-03 proves sre may kubernaut_approve, E2E-AF-WP-003 proves cicd
 // may not kubernaut_discover_workflows), but no test confirmed the full
-// values.yaml apifrontend.config.rbac.personas matrix is actually enforced
+// operator persona RBAC matrix is actually enforced
 // end-to-end through AF's real SAR-backed Authorizer (pkg/apifrontend/auth/sar.go)
 // for more than one or two personas/tools at a time.
 //
-// This suite derives its expectations directly from values.yaml (via
-// kinfra.LoadPersonaTools, the same source of truth
+// This suite derives its expectations directly from the shared persona RBAC
+// contract (via kinfra.LoadPersonaTools, the same source of truth
 // PersonaToolClusterRolesYAML renders from -- see UT-INFRA-RBAC-002) rather
 // than hand-declaring a second "expected" table that could itself drift, as
 // happened to the AF-only E2E suite's RBAC bootstrap (2026-08-03 incident).
 //
 // probeTools is a small set of read-only, side-effect-free tools chosen
-// because their persona coverage in values.yaml varies (granted to some
+// because their persona coverage in the RBAC contract varies (granted to some
 // personas, not others), so each one yields both positive and negative
 // cases across the 6 personas without needing per-tool scenario data setup.
 var probeTools = []string{
@@ -135,7 +135,7 @@ var _ = Describe("Persona ACL matrix enforcement (#1827)", Ordered, Label("e2e",
 	BeforeAll(func() {
 		var err error
 		personaTools, err = kinfra.LoadPersonaTools()
-		Expect(err).NotTo(HaveOccurred(), "values.yaml apifrontend.config.rbac.personas must be parseable")
+		Expect(err).NotTo(HaveOccurred(), "persona RBAC contract must be available")
 		Expect(personaTools).NotTo(BeEmpty())
 		tokenCache = make(map[string]personaSession, len(e2ePersonas))
 	})
@@ -154,10 +154,10 @@ var _ = Describe("Persona ACL matrix enforcement (#1827)", Ordered, Label("e2e",
 		}
 	}
 
-	DescribeTable("AF grants or denies each probe tool exactly as values.yaml declares",
+	DescribeTable("AF grants or denies each probe tool exactly as the persona RBAC contract declares",
 		func(persona, tool string) {
 			tools, ok := personaTools[persona]
-			Expect(ok).To(BeTrue(), "values.yaml apifrontend.config.rbac.personas must define persona %q", persona)
+			Expect(ok).To(BeTrue(), "persona RBAC contract must define persona %q", persona)
 			allowed := false
 			for _, t := range tools {
 				if t == tool {
@@ -174,10 +174,10 @@ var _ = Describe("Persona ACL matrix enforcement (#1827)", Ordered, Label("e2e",
 
 			if allowed {
 				Expect(denied).To(BeFalse(),
-					"persona %q has %q in values.yaml but AF's /mcp endpoint denied it: %s", persona, tool, text)
+					"persona %q has %q in the RBAC contract but AF's /mcp endpoint denied it: %s", persona, tool, text)
 			} else {
 				Expect(denied).To(BeTrue(),
-					"persona %q lacks %q in values.yaml but AF's /mcp endpoint allowed it: %s", persona, tool, text)
+					"persona %q lacks %q in the RBAC contract but AF's /mcp endpoint allowed it: %s", persona, tool, text)
 			}
 		},
 		entries,
