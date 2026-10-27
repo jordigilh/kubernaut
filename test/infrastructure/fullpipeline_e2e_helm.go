@@ -572,7 +572,7 @@ func writeInterServiceCAPEMFromOperator(ctx context.Context, kubeconfigPath, nam
 func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Deploying DEX OIDC provider (Issue #1189, AF auth test double)...")
 	projectRoot := getProjectRoot()
-	dexPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "dex.yaml")
+	dexPath := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "dex.yaml")
 	dexData, err := os.ReadFile(dexPath) //nolint:gosec // G304: test infrastructure path
 	if err != nil {
 		return fmt.Errorf("failed to read dex.yaml: %w", err)

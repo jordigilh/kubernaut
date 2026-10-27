@@ -17,7 +17,7 @@ package scenarios
 
 // structuredDecisionGrounding3Config is KA's own (mock-llm) side of
 // structured_decision_e2e_test.go's E2E-AF-1396-001 groundSessionBeta call
-// (deploy/apifrontend/overlays/e2e/mock-llm.yaml's af_structured_decision_ground_3
+// (the APIFrontend E2E Mock LLM fixture's af_structured_decision_ground_3
 // AF-scenario), which dispatches a real kubernaut_investigate MCP call for
 // the dedicated structured-decision-target-3 fixture.
 //
@@ -139,7 +139,7 @@ func structuredDecisionGroundingConfig() MockScenarioConfig {
 
 // structuredDecisionGrounding4Config is KA's own (mock-llm) side of
 // structured_decision_e2e_test.go's E2E-AF-2387-002 groundSessionDelta call
-// (deploy/apifrontend/overlays/e2e/mock-llm.yaml's
+// (the APIFrontend E2E Mock LLM fixture's
 // af_structured_decision_ground_4 AF-scenario), which dispatches a real
 // kubernaut_investigate MCP call for the dedicated
 // structured-decision-target-4 fixture.

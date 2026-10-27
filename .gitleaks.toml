@@ -27,7 +27,7 @@ paths = [
   '''^cmd/must\-gather/sanitizers/sanitize\-all\.sh$''',
   '''^cmd/must\-gather/test/test_sanitize\.bats$''',
   '''^deploy/holmesgpt\-api/README\.md$''',
-  '''^deploy/integration/postgresql/secret\.yaml$''',
+  '''^test/fixtures/kubernetes/integration/postgresql/secret\.yaml$''',
   '''^deploy/microservices/webhook\-service\-deployment\.yaml$''',
   '''^docker/holmesgpt\-api/src/models/api_models\.py$''',
   '''^docker/holmesgpt\-api/tests/integration/test_k8s_auth_integration\.py$''',

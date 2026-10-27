@@ -27,7 +27,7 @@ var _ = Describe("ServiceMonitor manifest", func() {
 	var smData map[string]interface{}
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "08-servicemonitor.yaml")
+		path := filepath.Join(repoRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "08-servicemonitor.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred(), "failed to read ServiceMonitor YAML")
 		Expect(yaml.Unmarshal(raw, &smData)).To(Succeed())
@@ -101,7 +101,7 @@ var _ = Describe("PrometheusRule manifest", func() {
 	var pr prometheusRule
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "05-prometheusrule.yaml")
+		path := filepath.Join(repoRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "05-prometheusrule.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(yaml.Unmarshal(raw, &pr)).To(Succeed())
@@ -278,7 +278,7 @@ var _ = Describe("NetworkPolicy manifest", func() {
 	var np networkPolicy
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "06-networkpolicy.yaml")
+		path := filepath.Join(repoRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "06-networkpolicy.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(yaml.Unmarshal(raw, &np)).To(Succeed())
@@ -308,7 +308,7 @@ var _ = Describe("NetworkPolicy manifest", func() {
 	})
 
 	It("TC-P1-09b: Prometheus namespace matches config reference", func() {
-		configPath := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "config.yaml")
+		configPath := filepath.Join(repoRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "config.yaml")
 		configRaw, err := os.ReadFile(configPath)
 		Expect(err).NotTo(HaveOccurred())
 		configText := string(configRaw)
@@ -384,10 +384,10 @@ var _ = Describe("Impersonation ClusterRole manifests", func() {
 	}
 
 	It("UT-AF-1226-031: Deploy base ClusterRole must not include serviceaccounts in impersonation", func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "02-rbac.yaml")
+		path := filepath.Join(repoRoot(), "test", "fixtures", "kubernetes", "apifrontend", "base", "02-rbac.yaml")
 		rules := readYAMLRules(path)
 		Expect(hasServiceAccounts(rules)).To(BeFalse(),
-			"deploy/apifrontend/base/02-rbac.yaml must not include serviceaccounts in impersonation rules")
+			"APIFrontend RBAC fixture must not include serviceaccounts in impersonation rules")
 	})
 })
 

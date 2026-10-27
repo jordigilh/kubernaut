@@ -10,9 +10,8 @@
 # - Prometheus + AlertManager monitoring
 # - Git submodules initialization
 #
-# EXCLUDES kubernaut components (handled by build-and-deploy.sh):
-# - Kubernaut webhook + AI services
-# - HolmesGPT integration
+# Application workloads are intentionally excluded. Operator-backed test lanes
+# reconcile them from the Kubernaut CR after this dependency bootstrap.
 
 set -euo pipefail
 
@@ -270,16 +269,16 @@ deploy_external_dependencies() {
 
     # Deploy PostgreSQL
     log_info "Deploying PostgreSQL..."
-    kubectl apply -f deploy/integration/postgresql/ -n ${NAMESPACE}
+    kubectl apply -f test/fixtures/kubernetes/integration/postgresql/ -n ${NAMESPACE}
 
     # Deploy Redis
     log_info "Deploying Redis..."
-    kubectl apply -f deploy/integration/redis/ -n ${NAMESPACE}
+    kubectl apply -f test/fixtures/kubernetes/integration/redis/ -n ${NAMESPACE}
 
     # Deploy monitoring stack
     log_info "Deploying monitoring stack..."
-    kubectl apply -f deploy/integration/monitoring/prometheus/ -n ${NAMESPACE}
-    kubectl apply -f deploy/integration/monitoring/alertmanager/ -n ${NAMESPACE}
+    kubectl apply -f test/fixtures/kubernetes/integration/monitoring/prometheus/ -n ${NAMESPACE}
+    kubectl apply -f test/fixtures/kubernetes/integration/monitoring/alertmanager/ -n ${NAMESPACE}
 
     # Wait for external dependencies to be ready
     log_info "Waiting for external dependencies to be ready (this may take a few minutes)..."
@@ -441,7 +440,7 @@ show_usage_info() {
     echo "  • Port forward:       kubectl port-forward -n ${NAMESPACE} svc/<service> <local-port>:<service-port>"
     echo ""
     echo "🚀 Next Steps:"
-    echo "  • Build kubernaut:    make build-and-deploy"
+    echo "  • This cluster contains dependencies only; application workloads are operator-managed"
     echo "  • Load environment:   source .env.external-deps"
     echo "  • Test connections:   kubectl get pods -n ${NAMESPACE}"
     echo ""
@@ -473,10 +472,8 @@ main() {
     echo "  ✓ Prometheus + AlertManager monitoring"
     echo "  ✓ Git submodules initialization"
     echo ""
-    echo "EXCLUDED (handled by build-and-deploy.sh):"
-    echo "  ✗ kubernaut webhook-service"
-    echo "  ✗ kubernaut ai-service"
-    echo "  ✗ holmesgpt integration"
+    echo "EXCLUDED (owned by the Kubernaut Operator):"
+    echo "  ✗ Kubernaut application workloads"
     echo ""
 
     # Handle command line arguments
@@ -492,8 +489,8 @@ main() {
             echo "  - docker or podman running"
             echo "  - go (brew install go)"
             echo ""
-            echo "After bootstrap, build and deploy kubernaut services with:"
-            echo "  make build-and-deploy"
+            echo "This script provisions dependencies only. The operator-backed E2E targets"
+            echo "create their own isolated Kind clusters and do not reuse this cluster."
             echo ""
             echo "Clean up with:"
             echo "  kind delete cluster --name ${CLUSTER_NAME}"
@@ -521,7 +518,7 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. source .env.external-deps"
-    echo "  2. make build-and-deploy"
+    echo "  2. use the dependency cluster for integration-specific debugging"
 }
 
 # Execute main function

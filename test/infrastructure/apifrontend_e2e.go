@@ -454,7 +454,7 @@ func BuildAFImage(ctx context.Context, writer io.Writer) (string, error) {
 // AFGenerateCerts runs the AF cert generation script.
 func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
-	script := projectRoot + "/deploy/apifrontend/overlays/e2e/generate-certs.sh"
+	script := projectRoot + "/test/fixtures/kubernetes/apifrontend/e2e/generate-certs.sh"
 	cmd := exec.CommandContext(ctx, "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -651,7 +651,7 @@ func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath,
 
 func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetHelmOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
-	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
+	configData, err := os.ReadFile(filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
 		return fmt.Errorf("failed to read config.yaml: %w", err)
 	}
@@ -1027,7 +1027,7 @@ subjects:
 
 func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterID string, workflowUUIDs map[string]string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
-	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
+	mockLLMManifest := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "mock-llm.yaml")
 
 	data, err := os.ReadFile(mockLLMManifest) //nolint:gosec // G304: path from test constants
 	if err != nil {
@@ -1247,7 +1247,7 @@ func afInstallCRDs(ctx context.Context, kubeconfigPath string, writer io.Writer)
 func afDeployDex(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	_ = namespace
 	projectRoot := getProjectRoot()
-	dexPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "dex.yaml")
+	dexPath := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "dex.yaml")
 	data, err := os.ReadFile(dexPath) //nolint:gosec // G304: path from test constants
 	if err != nil {
 		return fmt.Errorf("failed to read dex.yaml: %w", err)
@@ -1268,7 +1268,7 @@ metadata:
 		return fmt.Errorf("failed to create AF ServiceAccount: %w", err)
 	}
 
-	rbacPath := filepath.Join(projectRoot, "deploy", "apifrontend", "base", "02-rbac.yaml")
+	rbacPath := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "base", "02-rbac.yaml")
 	rbacData, err := os.ReadFile(rbacPath) //nolint:gosec // G304: path from project constants
 	if err != nil {
 		return fmt.Errorf("failed to read 02-rbac.yaml: %w", err)
@@ -1285,7 +1285,7 @@ metadata:
 		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
 	}
 
-	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
+	userRBACPath := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "e2e-user-rbac.yaml")
 	data, err := os.ReadFile(userRBACPath) //nolint:gosec // G304: path from test constants
 	if err != nil {
 		return fmt.Errorf("failed to read e2e-user-rbac.yaml: %w", err)
