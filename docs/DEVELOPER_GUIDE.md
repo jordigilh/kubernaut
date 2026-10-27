@@ -267,14 +267,12 @@ The operator repository also owns the optional
 dependencies. This repository no longer ships an application Helm chart or a Helm-values
 configuration contract.
 
-### Individual services — Kustomize
+### Individual services — operator-backed qualification
 
-For developing or debugging a single service, Kustomize overlays are available under `deploy/`:
-
-```bash
-kubectl apply -k deploy/gateway/overlays/kubernetes/   # Vanilla K8s
-oc apply -k deploy/gateway/overlays/openshift/          # OpenShift
-```
+The former per-service Kustomize manifests under `deploy/` were legacy application
+deployment inputs and have been removed. Use the operator-backed FullPipeline, Fleet,
+or mode-specific setup guides for a cluster deployment. Test-only Kubernetes fixtures
+are under `test/fixtures/kubernetes/` and are not supported production inputs.
 
 ### CRD management
 

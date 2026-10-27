@@ -89,6 +89,9 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 | **Integration** | [operations/deployment/](operations/deployment/) | Integration testing setup |
 | **Production** | [operations/deployment/](operations/deployment/) | Production deployment |
 
+See [Legacy Deploy Manifest Audit](operations/deployment/LEGACY_DEPLOY_MANIFEST_AUDIT.md)
+for the historical `deploy/` classification and test-fixture relocation record.
+
 ### Health Monitoring
 | Component | Monitoring Guide | Architecture Reference |
 |-----------|-----------------|----------------------|

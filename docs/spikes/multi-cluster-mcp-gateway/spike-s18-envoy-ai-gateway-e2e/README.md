@@ -27,7 +27,7 @@ Prior to this spike, `pkg/fleet/registry/eaigw_registry.go` (watches
 the only *real* EAIGW binary test ran it as a bare standalone container with
 a hand-rolled JSON config -- never through its Helm-installed controller,
 `GatewayClass`/`Gateway`, or `Backend`/`MCPRoute`/`SecurityPolicy` CRDs.
-`deploy/mcp-gateway/` had draft `Backend`/`MCPRoute` registration YAML but
+`hack/setup-demo-infra/fixtures/mcp-gateway/` has demo-owned draft `Backend`/`MCPRoute` registration YAML but
 explicitly documented the controller install itself as an unmet
 prerequisite. Unlike Kuadrant (de-risked by
 `spike-s14-kuadrant-kind-deployment` before its own E2E lane was built), no

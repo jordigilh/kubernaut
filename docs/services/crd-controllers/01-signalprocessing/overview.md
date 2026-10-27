@@ -40,7 +40,7 @@
 4. **Assign priority based on enriched K8s context** ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
 5. **Detect cluster characteristics** (GitOps, PDB, HPA, etc.) → `DetectedLabels` (V1.0)
 6. **Extract custom labels via Rego policies** (team, region, etc.) → `CustomLabels` (V1.0)
-   *Note: SP Rego policies are in `deploy/signalprocessing/policies/` (deploy) or embedded inline in the Helm chart ConfigMap. The `config/rego/` directory at the repo root only contains `aianalysis/approval.rego` (used by the AIAnalysis controller, not SP).*
+    *Note: production SP policy ownership is the operator-managed `Kubernaut` CR and its referenced ConfigMap. The old `deploy/signalprocessing/policies/` examples were removed; the remaining repository policy file is the test fixture at `test/fixtures/signalprocessing-policy.rego`. The `config/rego/` directory at the repo root only contains `aianalysis/approval.rego` (used by the AIAnalysis controller, not SP).*
 7. Validate signal completeness and readiness for AI analysis
 8. Update status for RemediationRequest controller to trigger next phase
 

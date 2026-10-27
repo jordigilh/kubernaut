@@ -22,7 +22,7 @@
 |--------|--------|--------------------|-------|
 | `build-notification-controller.sh` | ✅ Complete | Default ON | MULTI_ARCH=true, auto single-arch for KIND |
 | `build-kubernaut-agent.sh` | ✅ Complete | Default ON | Already implemented (PLATFORMS=linux/amd64,linux/arm64) |
-| `build-and-deploy.sh` | ⚠️ Needs Review | N/A | Orchestration script, delegates to other scripts |
+| `build-and-deploy.sh` | Removed | N/A | Retired with the standalone integration application manifests; use operator-backed qualification |
 
 ### 📋 Services with Dockerfiles
 
@@ -349,6 +349,5 @@ oc start-build kubernaut-<service> --from-dir=.
 
 **Confidence**: 95%
 **Rationale**: Core infrastructure (Makefile, build scripts) tested and working. Remaining services inherit this functionality. The 5% gap accounts for service-specific edge cases that may emerge during broader testing.
-
 
 

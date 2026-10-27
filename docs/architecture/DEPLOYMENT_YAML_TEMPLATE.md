@@ -1,5 +1,9 @@
 # Deployment YAML Template - Kubernaut Services
 
+> **Historical template:** New Kubernaut application deployment resources are owned by
+> the Kubernaut Operator and the user-owned `Kubernaut` resource. The standalone
+> `deploy/` examples in this document are retained only as historical reference.
+
 **Version**: v1.0
 **Last Updated**: October 6, 2025
 **Status**: ✅ **STANDARDIZED**

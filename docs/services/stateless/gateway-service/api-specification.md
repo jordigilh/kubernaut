@@ -1158,11 +1158,10 @@ The Gateway service loads configuration from:
 - [Deduplication](./deduplication.md) - Fingerprint-based deduplication strategy
 - [Security Configuration](./security-configuration.md) - RBAC and authentication
 - [Observability & Logging](./observability-logging.md) - Metrics and logging
-- [Deployment Guide](../../../../deploy/gateway/README.md) - Kubernetes deployment instructions
+- [Deployment ownership](../../../operations/deployment/LEGACY_DEPLOY_MANIFEST_AUDIT.md) - operator and test-fixture boundary
 
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
 **Last Updated**: 2025-11-06 (v2.25 - Configurable fallback namespace with auto-detection)
 **Status**: ✅ Complete Specification
-

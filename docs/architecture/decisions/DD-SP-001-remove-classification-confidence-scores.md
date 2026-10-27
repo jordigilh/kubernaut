@@ -280,7 +280,7 @@ if envClassification.Confidence < 0.7 {
    - **REMOVE** signal labels check in `Classify()` method
 
 4. **Rego Policies**:
-   - `deploy/signalprocessing/policies/environment.rego`
+   - `test/fixtures/signalprocessing-policy.rego` (test fixture; production policy is operator-supplied)
    - Remove `"confidence": 0.95` from policy results
    - Rename source from `"configmap"` → `"rego-inference"` (clearer)
    - `test/integration/signalprocessing/suite_test.go` (test policy)
@@ -434,4 +434,3 @@ It("should classify environment from namespace label", func() {
 **Document Status**: ✅ IMPLEMENTED
 **Last Updated**: 2026-03-04
 **Implementation**: Complete (ADR-060 consolidation + Issue #177 cleanup)
-

@@ -23,7 +23,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 
 - Issue #41: SLO definitions for tool call latency, SSE, and authentication
 - `internal/metrics/metrics.go` — histogram definitions using `prometheus.DefBuckets`
-- kubernaut `deploy/manifests/monitoring.yaml` — reference PrometheusRule
+- operator-managed monitoring resources — reference PrometheusRule behavior
 - `prometheus.DefBuckets` = {.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
 ### 1.3 Definitions

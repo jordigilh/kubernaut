@@ -1,5 +1,10 @@
 # Kubernaut - Microservices Deployment Guide
 
+> **Historical document:** This guide describes the retired standalone Kustomize
+> application deployment model. Supported deployments use the Kubernaut Operator and
+> a user-owned `kubernaut.ai/v1alpha2` `Kubernaut` resource. The example `deploy/` paths
+> below are retained only as historical record.
+
 **Document Version**: 1.0
 **Date**: September 27, 2025
 **Status**: **APPROVED** - Official Deployment Guide

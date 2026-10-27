@@ -1,5 +1,9 @@
 # Data Storage Service - Observability Deployment Configuration
 
+> **Deployment ownership:** Data Storage monitoring, RBAC, certificates, and workload
+> resources are reconciled by the Kubernaut Operator. The former `deploy/monitoring/`
+> and `deploy/manifests/` examples below are historical and not supported inputs.
+
 **Date**: October 13, 2025
 **Service**: Data Storage Service
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics)
@@ -643,4 +647,3 @@ logger.Info("audit created",
 **Document Version**: 1.0
 **Last Updated**: October 13, 2025
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics for all operations)
-

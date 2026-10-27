@@ -175,7 +175,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Rationale**: The Python Mock LLM returns `{"status":"ok"}` for ANY GET path and `{"status":"ok","path":"<path>"}` for ANY POST path, which masks routing errors. The Go rewrite should be strict.
 
-> **Audit Finding**: The permissive routing means `/liveness`, `/readiness`, `/metrics`, and any typo'd path all return 200 OK — hiding misconfigurations. The static manifests in `deploy/mock-llm/01-deployment.yaml` probe `/liveness` and `/readiness` which work only because of this permissiveness.
+> **Audit Finding**: The permissive routing means `/liveness`, `/readiness`, `/metrics`, and any typo'd path all return 200 OK — hiding misconfigurations. The test-owned manifests in `test/fixtures/kubernetes/mock-llm/01-deployment.yaml` probe `/liveness` and `/readiness` which work only because of this permissiveness.
 
 **Acceptance Criteria**:
 - [ ] Unknown GET paths return HTTP 404 with JSON error body
@@ -1163,10 +1163,10 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 **Severity**: MEDIUM
 **Probability**: HIGH (already exists)
-**Impact**: `deploy/mock-llm/01-deployment.yaml` uses `/liveness` and `/readiness` probe paths with no ConfigMap, while `kubernautagent.go` (renamed from `holmesgpt_api.go` post-Go-rewrite) uses `/health` with ConfigMap. The Go rewrite enforcing strict routing (BR-MOCK-005) will break the static manifests.
+**Impact**: `test/fixtures/kubernetes/mock-llm/01-deployment.yaml` uses `/liveness` and `/readiness` probe paths with no ConfigMap, while `kubernautagent.go` (renamed from `holmesgpt_api.go` post-Go-rewrite) uses `/health` with ConfigMap. The Go rewrite enforcing strict routing (BR-MOCK-005) will break the static manifests.
 
 **Mitigation**: Reconcile static manifests during Go rewrite:
-1. Update `deploy/mock-llm/01-deployment.yaml` to use `/health` for both probes
+1. Update `test/fixtures/kubernetes/mock-llm/01-deployment.yaml` to use `/health` for both probes
 2. Remove `MOCK_LLM_FORCE_TEXT` from manifests if not needed (or keep with actual implementation)
 3. Document the canonical deployment contract in the BR
 
@@ -1214,7 +1214,7 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 ### Source
 
-Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go` — since renamed to `kubernautagent.go` post-Go-rewrite), static manifests (`deploy/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
+Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go` — since renamed to `kubernautagent.go` post-Go-rewrite), test-owned static manifests (`test/fixtures/kubernetes/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
 
 ### Findings Addressed in This Document
 

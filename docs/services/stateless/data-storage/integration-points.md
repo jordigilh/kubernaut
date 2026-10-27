@@ -84,7 +84,7 @@ There is no Vector DB / pgvector component and no per-domain audit tables (`reme
 ## Authentication & Authorization (DD-AUTH-014)
 
 DataStorage does **not** use a sidecar proxy. Authentication and authorization happen in an
-in-process Go middleware, confirmed in `deploy/data-storage/deployment.yaml`:
+in-process Go middleware, confirmed in the operator-managed Data Storage deployment:
 
 > *"DD-AUTH-014: Middleware-Based Authentication/Authorization — No oauth-proxy sidecar - auth
 > handled in DataStorage middleware. Flow: Client → DataStorage:8081 (direct)"*
@@ -93,7 +93,8 @@ in-process Go middleware, confirmed in `deploy/data-storage/deployment.yaml`:
 2. Middleware validates the token via the Kubernetes `TokenReview` API.
 3. Middleware authorizes the call via `SubjectAccessReview` (SAR) against the `data-storage-client`
    ClusterRole — each calling ServiceAccount has its own RoleBinding (see
-   `deploy/data-storage/client-rbac-v2.yaml`).
+   the operator RBAC contract; test-only parity material is under
+   `test/fixtures/kubernetes/`.
 4. `401 Unauthorized` = missing/invalid/expired token; `403 Forbidden` = SAR denied (ServiceAccount
    lacks the RoleBinding).
 

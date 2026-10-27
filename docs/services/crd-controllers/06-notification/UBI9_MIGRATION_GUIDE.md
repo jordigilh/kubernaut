@@ -1,5 +1,9 @@
 # Notification Controller - Red Hat UBI10 Migration Guide
 
+> **Historical deployment note:** The Notification Controller is now reconciled by the
+> Kubernaut Operator. Direct `deploy/notification/` commands in this migration record
+> are retained as historical context only.
+
 **Version**: 1.0
 **Date**: 2025-10-21
 **Based On**: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
@@ -461,4 +465,3 @@ Common issues and solutions:
 **Migration Prepared**: 2025-10-21
 **Migration Owner**: Platform Team
 **Priority**: P1 - HIGH (Week 2 Pilot Service for UBI10)
-

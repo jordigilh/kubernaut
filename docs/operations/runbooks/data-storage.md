@@ -5,7 +5,9 @@
 **Status**: Production Ready
 **Related**: [ADR-034](../../architecture/decisions/ADR-034-unified-audit-table-design.md), [BR-AUDIT-007](../../requirements/BR-AUDIT-007-tamper-evident-exports.md), [BR-AUDIT-009](../../requirements/BR-AUDIT-009-retention-policies.md), [#1048](https://github.com/jordigilh/kubernaut/issues/1048) Phase 5
 
-> **Naming note**: This runbook uses Helm resource names (`deploy/datastorage`, `datastorage-config`, `datastorage-signing`). The kustomize manifests in `deploy/data-storage/` use different names (`data-storage-service`, `data-storage-config`, `datastorage-signing-cert`). Adjust `kubectl` commands accordingly for your deployment method.
+> **Ownership note**: Data Storage is operator-managed. Resource names and certificate
+> ownership are resolved from the reconciled `Kubernaut` resource; the former standalone
+> Kustomize manifests under `deploy/data-storage/` are no longer supported.
 
 ---
 

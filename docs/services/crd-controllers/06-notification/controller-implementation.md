@@ -1,5 +1,8 @@
 # Notification Controller - Implementation Documentation
 
+> **Deployment note:** Runtime deployment is operator-managed through the user-owned
+> `Kubernaut` resource. Any direct `deploy/notification/` commands below are historical.
+
 **Version**: 4.0 (ADR-034 Audit Integration)
 **Last Updated**: 2025-11-21
 **Status**: ✅ Production-Ready with ADR-034 Unified Audit Table
@@ -591,4 +594,3 @@ kubectl apply -f config/notification-config.yaml
 **Last Updated**: 2025-10-18
 **Version**: 3.1
 **Maintained By**: Platform Team
-

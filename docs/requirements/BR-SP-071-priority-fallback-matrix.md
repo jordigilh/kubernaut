@@ -33,7 +33,7 @@ Everything under **Original Document (Archived)** below is historical and non-no
 
 ### See Also
 
-- `deploy/signalprocessing/policies/priority.rego` - Default rule example
+- `test/fixtures/signalprocessing-policy.rego` - Test fixture example; production policy is supplied through the operator-managed `Kubernaut` resource
 - `cmd/signalprocessing/main.go` - Mandatory policy enforcement
 
 ---

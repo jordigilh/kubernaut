@@ -32,7 +32,7 @@
 - `pkg/signalprocessing/evaluator/evaluator.go`: Update `EvaluateEnvironment` and `EvaluatePriority` to use typed constants
 - `internal/controller/signalprocessing/signalprocessing_controller.go`: Update `classifyBusiness` environment switch to use typed constants
 - `pkg/signalprocessing/audit/helpers.go`: Fix audit mapper to accept BR-SP-080 source values (`namespace-labels` -> `Labels`, `rego-inference` -> `Rego`)
-- `deploy/signalprocessing/policies/environment.rego`: Fix default source from `"unclassified"` to `"default"` (per BR-SP-080)
+- `test/fixtures/signalprocessing-policy.rego`: Fix default source from `"unclassified"` to `"default"` (per BR-SP-080)
 - CRD regeneration
 
 ### Out of Scope
@@ -85,7 +85,7 @@ Tests validate that environment/priority values are schema-validated, correctly 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
 | `internal/controller/signalprocessing/signalprocessing_controller.go` | `reconcileCategorizing`, `classifyBusiness` | ~60 |
-| `deploy/signalprocessing/policies/environment.rego` | Default source value | ~5 |
+| `test/fixtures/signalprocessing-policy.rego` | Default source value | ~5 |
 | CRD schema | kubebuilder enum validation on 4 fields | N/A |
 
 ---

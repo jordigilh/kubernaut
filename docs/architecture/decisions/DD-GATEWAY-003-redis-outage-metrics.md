@@ -112,8 +112,8 @@ After implementing Redis HA with Sentinel and request rejection (503) for Redis 
 - `pkg/gateway/server/server.go`: Add 15 new Prometheus metrics to `Server` struct and `initMetrics()`
 - `pkg/gateway/server/handlers.go`: Record metrics in deduplication/storm detection paths
 - `pkg/gateway/processing/redis_health.go` (new): Background Redis health monitoring goroutine
-- `deploy/monitoring/gateway-alerts.yaml` (new): Prometheus alert rules (3 critical + 3 warning)
-- `deploy/monitoring/gateway-dashboard.json` (new): Grafana dashboard with 6 panels
+- `config/monitoring/gateway-alerts.yaml` (user-owned observability input): Prometheus alert rules (3 critical + 3 warning)
+- `config/monitoring/gateway-dashboard.json` (user-owned observability input): Grafana dashboard with 6 panels
 
 **Metric Categories**:
 
@@ -221,5 +221,4 @@ gateway_storm_protection_active
 - **Alert Accuracy**: <5 false positives/day (Target: <2/day)
 - **MTTR Improvement**: 50% faster incident resolution with metrics (Target: 30min → 15min)
 - **Risk Detection**: 100% of prolonged Redis outages (>5 min) detected (Target: 100%)
-
 

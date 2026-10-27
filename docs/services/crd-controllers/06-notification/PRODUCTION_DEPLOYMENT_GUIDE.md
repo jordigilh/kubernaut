@@ -1,9 +1,13 @@
 # Notification Controller - Production Deployment Guide
 
+> **Current deployment contract:** Install the Kubernaut Operator and apply the
+> user-owned `kubernaut.ai/v1alpha2` `Kubernaut` resource. The direct `deploy/notification/`
+> manifests referenced in historical sections were removed by issue #2551.
+
 **Version**: 1.0.0
 **Target Environment**: Kubernetes 1.27+
-**Deployment Method**: Kustomize
-**Status**: Production-Ready (98% complete)
+**Deployment Method**: Kubernaut Operator
+**Status**: Production-Ready (operator-managed)
 
 ---
 
@@ -701,5 +705,4 @@ kubectl logs -f deployment/notification-controller -n kubernaut-notifications | 
 **Last Updated**: 2025-10-12
 **Status**: Production-Ready (98% complete) ✅
 **Next**: Day 12 - Build pipeline + integration test execution
-
 
