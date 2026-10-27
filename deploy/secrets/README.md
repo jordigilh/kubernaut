@@ -66,29 +66,19 @@ secretGenerator:
 
 ---
 
-### **Helm Integration**
+### **Operator Integration**
 
-Helm charts **reference** these secrets by name (do NOT create them):
-
-```yaml
-# helm/kubernaut/values.yaml
-dataStorage:
-  oauth:
-    secretName: data-storage-oauth-proxy-secret  # ← References Kustomize-generated secret
-```
-
-```yaml
-# helm/kubernaut/templates/data-storage-deployment.yaml
-volumes:
-  - name: oauth-proxy-cookie-secret
-    secret:
-      secretName: {{ .Values.dataStorage.oauth.secretName }}
-```
+The application Helm chart is retired. Supported deployments install the Kubernaut
+Operator Helm bootstrap chart and apply a user-owned `kubernaut.ai/v1alpha2`
+`Kubernaut` resource. Use this directory only when a current CR field explicitly
+references one of these administrator-managed Secret fixtures; the operator owns
+application workload and Secret-reference reconciliation.
 
 **Deployment Order**:
 ```bash
-kubectl apply -k deploy/secrets/           # Step 1: Create secrets
-helm upgrade --install kubernaut ./helm/kubernaut  # Step 2: Deploy app
+kubectl apply -k deploy/secrets/           # Optional: create referenced Secret fixtures
+# Install the operator chart and apply the Kubernaut CR per:
+# https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md
 ```
 
 ---
@@ -123,11 +113,11 @@ kubectl get secret data-storage-oauth-proxy-secret -n kubernaut-system \
 # Expected output: 32
 ```
 
-### **Verify Helm Template Does NOT Expose Secrets**
+### **Verify Secret References Do NOT Expose Values**
 
 ```bash
-helm template kubernaut ./helm/kubernaut | grep -i "cookie-secret"
-# Expected: Only references to secretName, NO actual secret values
+# Inspect the rendered operator-managed workload or CR status instead.
+# Secret values must never be copied into a CR, manifest, or Git repository.
 ```
 
 ---
@@ -226,7 +216,7 @@ volumeMounts:
 
 ## 🔗 **Related**
 
-- **Helm Charts**: `helm/kubernaut/` - Application deployment (references secrets)
+- **Kubernaut Operator**: [installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) - application deployment and Secret references
 - **Deployments**: `deploy/data-storage/`, `deploy/kubernaut-agent/` - Service manifests
 - **OAuth2-Proxy Docs**: https://oauth2-proxy.github.io/oauth2-proxy/docs/
 
