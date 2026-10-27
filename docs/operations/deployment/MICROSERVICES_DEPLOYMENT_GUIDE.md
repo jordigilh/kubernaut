@@ -7,10 +7,20 @@
 
 **Document Version**: 1.0
 **Date**: September 27, 2025
-**Status**: **APPROVED** - Official Deployment Guide
+**Status**: **HISTORICAL** - Unsupported standalone deployment record
 **Architecture**: 10-Service Microservices with SRP Compliance
 
 ---
+
+## Current supported deployment
+
+Install the Kubernaut Operator and apply a user/GitOps-owned
+`kubernaut.ai/v1alpha2` `Kubernaut` resource. Use the mode-specific deployment guides
+linked from `docs/DEVELOPER_GUIDE.md`; do not run the standalone commands in this
+historical document.
+
+<details>
+<summary>Historical standalone deployment record (unsupported)</summary>
 
 ## 🎯 **DEPLOYMENT OVERVIEW**
 
@@ -863,3 +873,5 @@ make verify-deployment
 **Production Ready**: ✅ **YES**
 
 This deployment guide ensures proper microservices deployment with security, monitoring, and operational excellence built-in.
+
+</details>

@@ -31,6 +31,8 @@ type demoCLIConfig struct {
 	demoOpts                 infrastructure.DemoHelmOptions
 }
 
+// main parses demo options, provisions local or fleet infrastructure, and installs
+// the operator-backed Kubernaut application.
 func main() {
 	config := parseDemoFlags()
 	ctx := context.Background()
@@ -65,6 +67,7 @@ type demoFlagValues struct {
 	autonomous                                                   *bool
 }
 
+// registerDemoFlags registers the command-line options accepted by setup-demo-infra.
 func registerDemoFlags() demoFlagValues {
 	values := demoFlagValues{
 		mode:                     flag.String("mode", string(infrastructure.DemoModeLocal), "demo mode: local or fleet"),
@@ -97,6 +100,7 @@ func registerDemoFlags() demoFlagValues {
 	return values
 }
 
+// parseDemoFlags validates command-line options and resolves the effective demo config.
 func parseDemoFlags() demoCLIConfig {
 	flags := registerDemoFlags()
 	flag.Parse()
@@ -172,6 +176,7 @@ func parseDemoFlags() demoCLIConfig {
 	}
 }
 
+// setupDemoInfrastructure provisions the selected local or fleet prerequisite topology.
 func setupDemoInfrastructure(ctx context.Context, config demoCLIConfig) (*infrastructure.FleetHelmOptions, string, *infrastructure.OperatorExposurePlan, error) {
 	var fleetOpts *infrastructure.FleetHelmOptions
 	var remoteKubeconfigPath string

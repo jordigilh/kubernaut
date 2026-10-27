@@ -16,6 +16,16 @@ This document provides step-by-step instructions for configuring observability (
 
 ---
 
+## Current supported procedure
+
+The Kubernaut Operator reconciles Data Storage monitoring resources from the
+user-owned `Kubernaut` resource. Configure Prometheus, Grafana, Alertmanager, and any
+optional user-owned alert/dashboard definitions through the supported operator and
+platform observability contracts; do not apply the historical `deploy/` examples below.
+
+<details>
+<summary>Historical standalone observability procedure (unsupported)</summary>
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
@@ -647,3 +657,5 @@ logger.Info("audit created",
 **Document Version**: 1.0
 **Last Updated**: October 13, 2025
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics for all operations)
+
+</details>

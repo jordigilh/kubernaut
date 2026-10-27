@@ -31,6 +31,7 @@ type rule struct {
 	Annotations map[string]string `yaml:"annotations"`
 }
 
+// loadPrometheusRules loads the test-owned APIFrontend PrometheusRule fixture.
 func loadPrometheusRules() prometheusRuleFile {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")

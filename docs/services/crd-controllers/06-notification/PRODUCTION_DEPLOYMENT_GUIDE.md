@@ -11,6 +11,20 @@
 
 ---
 
+## Current supported procedure
+
+1. Install the [Kubernaut Operator](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
+2. Apply a user/GitOps-owned `kubernaut.ai/v1alpha2` `Kubernaut` resource with the
+   Notification configuration required by the environment.
+3. Verify the operator-reconciled Notification Controller Deployment, Service, health,
+   metrics, and NotificationRequest status through `kubernaut-system`.
+
+The direct manifest procedure formerly documented below is retained only as historical
+context and must not be executed.
+
+<details>
+<summary>Historical direct-manifest procedure (unsupported)</summary>
+
 ## 📋 **Prerequisites**
 
 ### **Infrastructure Requirements**
@@ -706,3 +720,4 @@ kubectl logs -f deployment/notification-controller -n kubernaut-notifications | 
 **Status**: Production-Ready (98% complete) ✅
 **Next**: Day 12 - Build pipeline + integration test execution
 
+</details>

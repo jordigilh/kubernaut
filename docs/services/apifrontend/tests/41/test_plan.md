@@ -4,7 +4,11 @@
 **Issue:** [#41](https://github.com/jordigilh/kubernaut-apifrontend/issues/41)
 **Version:** 1.0
 **Date:** 2026-05-06
-**Status:** Draft
+**Status:** Historical — superseded by the operator-managed deployment model
+
+> The standalone deployment paths referenced in this historical test plan were removed
+> by the operator migration. The SLO and histogram requirements remain useful, but the
+> old Kustomize render/apply procedure is not an active validation path.
 
 ---
 
@@ -15,7 +19,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 ### 1.1 Scope
 
 - `docs/slo/SLO_DEFINITIONS.md` documenting targets, metrics, and measurement methods
-- `deploy/kustomize/base/05-prometheusrule.yaml` with alerting rules derived from SLOs
+- Historical pre-operator PrometheusRule fixture (removed) with alerting rules derived from SLOs
 - Verification that `prometheus.DefBuckets` align with SLO thresholds
 - YAML syntax validation of PrometheusRule manifest
 
@@ -42,7 +46,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 | Item | Location | Source |
 |------|----------|--------|
 | SLO_DEFINITIONS.md | `docs/slo/` | New |
-| prometheus-rules.yaml | `deploy/` | New |
+| prometheus-rules.yaml | Historical pre-operator fixture (removed) | Historical |
 | Histogram bucket documentation | SLO_DEFINITIONS.md | New |
 
 ---
@@ -105,7 +109,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 ### 5.1 Test Methodology
 
 This issue is primarily documentation and configuration. Validation approach:
-- **YAML syntax**: `kubectl kustomize deploy/kustomize/overlays/dev/` or manual review
+- **YAML syntax**: Historical-only; current monitoring resources are operator-managed
 - **Cross-reference**: Script/test that verifies metric names in rules match `internal/metrics/metrics.go`
 - **Bucket alignment**: Documented analysis (no code change needed)
 
@@ -171,7 +175,7 @@ This issue is primarily documentation and configuration. Validation approach:
 | Deliverable | Location |
 |-------------|----------|
 | SLO definitions | `docs/slo/SLO_DEFINITIONS.md` |
-| Alerting rules | `deploy/kustomize/base/05-prometheusrule.yaml` |
+| Alerting rules | Operator-managed monitoring resources |
 | This test plan | `docs/tests/41/test_plan.md` |
 
 ---

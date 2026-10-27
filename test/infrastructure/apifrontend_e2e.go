@@ -649,6 +649,7 @@ func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath,
 	return fleetOptions, nil
 }
 
+// deployAPIFrontendService applies the APIFrontend E2E config and deployment fixture.
 func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetHelmOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "config.yaml")) //nolint:gosec // G304
@@ -1025,6 +1026,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
+// afDeployMockLLM applies the APIFrontend-specific Mock LLM scenario fixture.
 func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterID string, workflowUUIDs map[string]string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "mock-llm.yaml")
@@ -1244,6 +1246,7 @@ func afInstallCRDs(ctx context.Context, kubeconfigPath string, writer io.Writer)
 	return nil
 }
 
+// afDeployDex applies the DEX identity-provider fixture used by APIFrontend E2E tests.
 func afDeployDex(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	_ = namespace
 	projectRoot := getProjectRoot()
