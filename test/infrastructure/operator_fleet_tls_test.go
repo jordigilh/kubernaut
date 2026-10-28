@@ -74,7 +74,7 @@ var _ = Describe("operator Fleet TLS material", func() {
 		Expect(string(caKeyPEM)).NotTo(ContainSubstring(string(leafPEM)))
 	})
 
-	It("IT-INFRA-OIDC-2566-001 [BR-PLATFORM-014]: creates the operator CA Secret through the demo preflight", func() {
+	It("UT-INFRA-OIDC-2566-002 [BR-PLATFORM-014]: renders the operator CA Secret through the demo preflight", func() {
 		tempDir, err := os.MkdirTemp("", "operator-ca-preflight-")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(os.RemoveAll(tempDir)).To(Succeed()) })

@@ -118,7 +118,7 @@ existing shared OIDC path regresses.
 
 | Component | Production/qualification entry point | Wiring location | Proving scenario |
 |---|---|---|---|
-| Operator internal CA preflight | Local Kind demo bootstrap | `setupLocalDemoInfrastructure` | `IT-INFRA-OIDC-2566-001` |
+| Operator internal CA preflight | Local Kind demo bootstrap | `setupLocalDemoInfrastructure` | `UT-INFRA-OIDC-2566-002` |
 | Keycloak CA Issuer/Certificate | Local OIDC infrastructure | `SetupOIDCInfrastructure` → `ensureKeycloakCertManagerIssuer` | `IT-INFRA-OIDC-2566-002` |
 | Console OIDC readiness | Operator-backed local demo | `main` → `InstallDemoOperatorApplication` | `IT-INFRA-OIDC-2566-003` |
 
@@ -129,8 +129,9 @@ existing shared OIDC path regresses.
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
 | BR-PLATFORM-014 | Demo TLS material uses one stable trust root | P0 | Unit/static | UT-INFRA-OIDC-2566-001 | Pass |
-| BR-PLATFORM-014 | Operator CA preflight creates the expected Secret | P0 | Integration | IT-INFRA-OIDC-2566-001 | Pass |
-| BR-PLATFORM-014 | Retained rerun repairs stale Keycloak TLS | P0 | Integration | IT-INFRA-OIDC-2566-002 | Pass |
+| BR-PLATFORM-014 | Operator CA preflight renders the expected Secret | P0 | Unit/static | UT-INFRA-OIDC-2566-002 | Pass |
+| BR-PLATFORM-014 | Keycloak leaf chain validates against operator CA | P0 | Integration | IT-INFRA-OIDC-2566-001 | Unproven: leaf not captured |
+| BR-PLATFORM-014 | Retained rerun repairs stale Keycloak TLS | P0 | Integration | IT-INFRA-OIDC-2566-002 | Unproven: leaf not captured |
 | BR-PLATFORM-014 | Console OIDC discovery and readiness succeed | P0 | E2E | IT-INFRA-OIDC-2566-003 | Pass |
 | BR-PLATFORM-014 | Non-demo paths remain unchanged | P1 | Regression | IT-INFRA-OIDC-2566-004 | Pass with unrelated baseline failure |
 
@@ -144,11 +145,24 @@ existing shared OIDC path regresses.
 **When** its setup sequence is inspected  
 **Then** operator CA preparation appears before `SetupOIDCInfrastructure`.
 
-### IT-INFRA-OIDC-2566-001 — Operator CA preflight
+### UT-INFRA-OIDC-2566-002 — Operator CA manifest
 
 **Given** a missing `kubernaut-internal-ca` Secret and a Kubernetes API  
 **When** the local demo's operator CA preflight runs  
 **Then** the preflight creates the expected administrator-owned CA Secret, and the local ordering contract places it before OIDC setup.
+
+This is intentionally a unit/static contract: the kubectl stub captures the rendered
+manifest and does not claim to be a Kubernetes API integration test.
+
+### IT-INFRA-OIDC-2566-001 — Shared trust root
+
+**Given** a retained local Kind demo
+**When** OIDC setup reruns after the operator CA preflight
+**Then** the Keycloak issuer CA fingerprint matches `kubernaut-internal-ca` and OIDC discovery succeeds with normal verification.
+
+The live run proved issuer-root equality and successful discovery, but the leaf PEM was
+not captured for an independent `openssl verify` result. This criterion remains explicitly
+unproven for the leaf-chain portion.
 
 ### IT-INFRA-OIDC-2566-002 — Retained stale Secret
 
@@ -157,7 +171,7 @@ existing shared OIDC path regresses.
 **Then** stale material is removed/reissued and the resulting leaf validates against the current operator CA.
 
 Live evidence: `kubernaut-internal-ca` and the Keycloak issuer CA both had SHA-256
-fingerprint `5D:FD:86:56:EF:68:9D:67:1D:B1:73:AB:F9:06:4C:6F:3B:4C:D8:3C:42:69:4A:81:17:AB:1C:AF:09:B2:F5:02` after the rerun; no manual Secret deletion was performed.
+fingerprint `5D:FD:86:56:EF:68:9D:67:1D:B1:73:AB:1C:AF:09:B2:F5:02` after the rerun; no manual Secret deletion was performed. The leaf PEM was not captured, so the leaf-chain assertion remains unproven.
 
 ### IT-INFRA-OIDC-2566-003 — Console readiness
 
@@ -184,9 +198,10 @@ go build ./...
 golangci-lint run --timeout=5m
 ```
 
-Live evidence must include the CA fingerprints for `kubernaut-internal-ca` and
-`keycloak-tls`, the oauth2-proxy startup/discovery result, Console Deployment readiness,
-and the retained-cluster rerun result. The full infrastructure suite had one unrelated
+Live evidence includes the CA fingerprints for `kubernaut-internal-ca` and the Keycloak
+issuer CA, the oauth2-proxy startup/discovery result, Console Deployment readiness, and
+the retained-cluster rerun result. Direct leaf-chain verification was not captured, so
+the two leaf-chain matrix rows remain unproven. The full infrastructure suite had one unrelated
 baseline failure in `fleet_api_diagnostics_test.go` (deadline text differed from the
 expected `Connection refused`); 363/364 specs passed.
 
@@ -194,7 +209,7 @@ expected `Connection refused`); 363/364 specs passed.
 
 ## 10. Exit Criteria
 
-- All P0 scenarios pass.
+- All proven P0 scenarios pass; any unproven leaf-chain criteria remain explicitly marked.
 - The wiring manifest is 100% covered.
 - Fresh and retained local Kind runs meet the issue acceptance criteria.
 - No unrelated baseline failure is misattributed to this change.
