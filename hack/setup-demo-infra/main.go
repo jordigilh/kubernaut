@@ -225,15 +225,19 @@ func defaultClusterName(current string, fleet bool) string {
 }
 
 func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, autonomous bool) (*infrastructure.OperatorExposurePlan, error) {
-	exposure, err := infrastructure.OperatorExposurePlanForCluster(ctx, clusterName, "kubernaut-system", "localhost", infrastructure.DemoExposureComponents(autonomous))
+	const operatorNamespace = "kubernaut-system"
+	exposure, err := infrastructure.OperatorExposurePlanForCluster(ctx, clusterName, operatorNamespace, "localhost", infrastructure.DemoExposureComponents(autonomous))
 	if err != nil {
 		return nil, err
 	}
 	if err := infrastructure.CreateKindClusterWithExtraMountsAndPortMappings(ctx, clusterName, kubeconfigPath, "test/infrastructure/kind-fullpipeline-config.yaml", nil, infrastructure.OperatorPortMappings(exposure), os.Stdout); err != nil {
 		return nil, err
 	}
-	if err := infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout); err != nil {
+	if err := infrastructure.CreateTestNamespace(ctx, operatorNamespace, kubeconfigPath, os.Stdout); err != nil {
 		return nil, err
+	}
+	if err := infrastructure.EnsureOperatorInternalCA(ctx, kubeconfigPath, operatorNamespace, os.Stdout); err != nil {
+		return nil, fmt.Errorf("operator internal CA preflight failed: %w", err)
 	}
 	if err := infrastructure.SetupOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
 		return nil, err

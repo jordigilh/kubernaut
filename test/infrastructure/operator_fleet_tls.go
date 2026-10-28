@@ -62,6 +62,17 @@ var mcpGatewayTLSDNSNames = []string{
 	"kube-mcp-server-remote.127-0-0-1.sslip.io",
 }
 
+// EnsureOperatorInternalCA creates or reuses the administrator-owned CA used
+// by the operator-backed demo trust domain. Local demo OIDC provisioning must
+// call this before it creates Keycloak's cert-manager Issuer so both sides
+// validate certificates against the same root (BR-PLATFORM-014, issue #2566).
+func EnsureOperatorInternalCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	if _, _, err := ensureOperatorInternalCA(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("prepare operator internal CA: %w", err)
+	}
+	return nil
+}
+
 // EnsureOperatorFleetTLS creates the qualification CA before the Kubernaut CR
 // is applied and signs the MCP Gateway listener certificate with that CA. The
 // latest v1alpha2 manual TLS contract keeps the CA and serving material
