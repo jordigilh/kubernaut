@@ -17,8 +17,13 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -67,5 +72,53 @@ var _ = Describe("operator Fleet TLS material", func() {
 		Expect(string(caPEM)).NotTo(ContainSubstring(string(leafKeyPEM)))
 		Expect(string(caPEM)).NotTo(ContainSubstring(string(leafPEM)))
 		Expect(string(caKeyPEM)).NotTo(ContainSubstring(string(leafPEM)))
+	})
+
+	It("UT-INFRA-OIDC-2566-002 [BR-PLATFORM-014]: renders the operator CA Secret through the demo preflight", func() {
+		tempDir, err := os.MkdirTemp("", "operator-ca-preflight-")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { Expect(os.RemoveAll(tempDir)).To(Succeed()) })
+
+		manifestPath := filepath.Join(tempDir, "manifest.yaml")
+		kubectlPath := filepath.Join(tempDir, "kubectl")
+		kubectlStub := `#!/bin/sh
+set -eu
+case " $* " in
+  *" get secret "*)
+    exit 0
+    ;;
+  *" apply "*)
+    cat > "$OPERATOR_CA_MANIFEST"
+    exit 0
+    ;;
+  *)
+    echo "unexpected kubectl invocation: $*" >&2
+    exit 1
+    ;;
+esac
+`
+		Expect(os.WriteFile(kubectlPath, []byte(kubectlStub), 0o755)).To(Succeed())
+
+		previousPath := os.Getenv("PATH")
+		previousManifest, hadManifest := os.LookupEnv("OPERATOR_CA_MANIFEST")
+		Expect(os.Setenv("PATH", tempDir+string(os.PathListSeparator)+previousPath)).To(Succeed())
+		Expect(os.Setenv("OPERATOR_CA_MANIFEST", manifestPath)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(os.Setenv("PATH", previousPath)).To(Succeed())
+			if hadManifest {
+				Expect(os.Setenv("OPERATOR_CA_MANIFEST", previousManifest)).To(Succeed())
+				return
+			}
+			Expect(os.Unsetenv("OPERATOR_CA_MANIFEST")).To(Succeed())
+		})
+
+		Expect(EnsureOperatorInternalCA(context.Background(), filepath.Join(tempDir, "kubeconfig"), "kubernaut-system", io.Discard)).To(Succeed())
+
+		manifest, err := os.ReadFile(manifestPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(manifest)).To(ContainSubstring("name: kubernaut-internal-ca"))
+		Expect(string(manifest)).To(ContainSubstring("type: Opaque"))
+		Expect(strings.Count(string(manifest), "ca.crt:")).To(Equal(1))
+		Expect(strings.Count(string(manifest), "ca.key:")).To(Equal(1))
 	})
 })

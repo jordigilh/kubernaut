@@ -41,6 +41,20 @@ var _ = Describe("Fleet demo host-port isolation", func() {
 	})
 })
 
+var _ = Describe("Local demo OIDC CA ordering", func() {
+	It("UT-INFRA-OIDC-2566-001 [BR-PLATFORM-014]: prepares the operator CA before OIDC setup", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "hack", "setup-demo-infra", "main.go"))
+		Expect(err).NotTo(HaveOccurred())
+
+		text := string(source)
+		operatorCAIndex := strings.Index(text, "infrastructure.EnsureOperatorInternalCA(")
+		oidcIndex := strings.Index(text, "infrastructure.SetupOIDCInfrastructure(")
+		Expect(operatorCAIndex).To(BeNumerically(">=", 0), "local demo must seed the operator CA")
+		Expect(oidcIndex).To(BeNumerically(">=", 0), "local demo must configure OIDC")
+		Expect(operatorCAIndex).To(BeNumerically("<", oidcIndex), "operator CA must exist before Keycloak TLS is provisioned")
+	})
+})
+
 var _ = Describe("Thanos Querier release contract", func() {
 	It("UT-2492-FLEET-THANOS-001 [BR-PLATFORM-014]: uses the Thanos v0.37 HTTP config flag", func() {
 		Expect(thanosQuerierHTTPConfigArg()).To(Equal("--http.config=/etc/monitoring-tls/web-config.yml"))
