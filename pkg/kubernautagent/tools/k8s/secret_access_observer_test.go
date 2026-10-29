@@ -127,10 +127,10 @@ var _ = Describe("GAP-13: K8s resolver SecretAccessObserver", func() {
 		})
 
 		It("invokes the observer on List with an empty name", func() {
-			dynClient := dynamicfake.NewSimpleDynamicClient(scheme,
-				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "prod"}},
-			)
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "prod"}}
+			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, secret)
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIdx, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(secret)),
 				k8s.WithSecretAccessObserver(recorder.observe))
 
 			_, err := resolver.List(context.Background(), "Secret", "prod", "")

@@ -30,9 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -144,31 +144,27 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).To(ContainSubstring("truncated=true"))
 	})
 
-	It("UT-KA-752-117: paginated dynamic fallback marks an unavailable total as unknown", func() {
-		resolver := testResolverWithObjects(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "page-1", Namespace: "prod"}})
-		resolver.client.PrependReactor("list", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
-			return true, &unstructured.UnstructuredList{
-				Object: map[string]interface{}{
-					"apiVersion": "v1", "kind": "ConfigMapList",
-					"metadata": map[string]interface{}{"continue": "next-page"},
-				},
-				Items: []unstructured.Unstructured{{Object: map[string]interface{}{
-					"apiVersion": "v1", "kind": "ConfigMap",
-					"metadata": map[string]interface{}{"name": "page-1", "namespace": "prod"},
-				}}},
-			}, nil
+	It("UT-KA-752-117: bulk lists fail closed when metadata-only access is unavailable", func() {
+		configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "page-1", Namespace: "prod"}}
+		client := fake.NewSimpleDynamicClient(buildTestScheme(), configMap)
+		dynamicListCalled := false
+		client.PrependReactor("list", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+			dynamicListCalled = true
+			return true, nil, fmt.Errorf("full-object dynamic list must not be attempted")
 		})
+		resolver := k8s.NewDynamicResolver(client, buildTestMapper(), buildTestKindIndex(), logr.Discard(),
+			k8s.WithMetadataClient(newFailingMetadataSummaryClient(
+				apierrors.NewMethodNotSupported(schema.GroupResource{Resource: "configmaps"}, "list"),
+			)))
 		reg := registry.New()
 		for _, tool := range k8s.NewAllTools(nil, resolver) {
 			reg.Register(tool)
 		}
 
-		result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
+		_, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
 			json.RawMessage(`{"kind":"ConfigMap","namespace":"prod"}`))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(ContainSubstring(`"item_count":1`))
-		Expect(result).To(ContainSubstring(`"truncated":true`))
-		Expect(result).NotTo(ContainSubstring(`"total_count"`))
+		Expect(err).To(MatchError(ContainSubstring("metadata-only list unavailable")))
+		Expect(dynamicListCalled).To(BeFalse())
 	})
 
 	It("UT-KA-752-118: JQ fails closed when metadata-only access is unavailable", func() {
@@ -202,6 +198,22 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).To(ContainSubstring("results are truncated"))
 		Expect(result).To(ContainSubstring("600"))
 		Expect(result).NotTo(Equal("[]"))
+	})
+
+	It("UT-KA-2521-120: oversized exact-name results fail before downstream sanitization", func() {
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "large-config", Namespace: "prod"},
+			Data:       map[string]string{"payload": strings.Repeat("x", 100_001)},
+		}
+		resolver := testResolverWithObjects(configMap)
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		_, err := reg.Execute(context.Background(), "kubectl_get_by_name_in_cluster",
+			json.RawMessage(`{"kind":"ConfigMap","name":"large-config"}`))
+		Expect(err).To(MatchError(ContainSubstring("serialized resource exceeds")))
 	})
 })
 
@@ -247,6 +259,7 @@ func testResolverWithMetadataObjects(objects ...runtime.Object) *testDynamicReso
 
 type metadataSummaryClient struct {
 	itemsByResource map[string][]metav1.PartialObjectMetadata
+	listErr         error
 }
 
 // newMetadataSummaryClient builds a GVR-aware metadata fake with pagination
@@ -267,6 +280,13 @@ func newMetadataSummaryClient(objects ...runtime.Object) metadata.Interface {
 	return client
 }
 
+func newFailingMetadataSummaryClient(err error) metadata.Interface {
+	return &metadataSummaryClient{
+		itemsByResource: make(map[string][]metav1.PartialObjectMetadata),
+		listErr:         err,
+	}
+}
+
 func (c *metadataSummaryClient) Resource(gvr schema.GroupVersionResource) metadata.Getter {
 	return metadataSummaryGetter{client: c, resource: gvr.Resource}
 }
@@ -284,6 +304,9 @@ func (g metadataSummaryGetter) Namespace(namespace string) metadata.ResourceInte
 
 // List returns only the requested resource kind and simulates one bounded page.
 func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
+	if g.client.listErr != nil {
+		return nil, g.client.listErr
+	}
 	seeded := g.client.itemsByResource[g.resource]
 	items := make([]metav1.PartialObjectMetadata, 0, len(seeded))
 	for _, item := range seeded {
@@ -310,15 +333,18 @@ func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*m
 // the resolver's REST mapper.
 func metadataResourceForObject(object runtime.Object) string {
 	gvk := object.GetObjectKind().GroupVersionKind()
-	if gvk.Kind != "" {
-		return strings.ToLower(gvk.Kind) + "s"
+	kind := gvk.Kind
+	if kind == "" {
+		t := reflect.TypeOf(object)
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		kind = t.Name()
 	}
-	t := reflect.TypeOf(object)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	kind := strings.ToLower(t.Name())
+	kind = strings.ToLower(kind)
 	switch kind {
+	case "authorizationpolicy":
+		return "authorizationpolicies"
 	case "poddisruptionbudget":
 		return "poddisruptionbudgets"
 	case "horizontalpodautoscaler":

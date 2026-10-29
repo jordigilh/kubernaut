@@ -231,6 +231,9 @@ func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessa
 	if err != nil {
 		return "", fmt.Errorf("marshaling resource: %w", err)
 	}
+	if len(data) > maxJQOutputChars {
+		return "", fmt.Errorf("serialized resource exceeds %d-byte output limit", maxJQOutputChars)
+	}
 	return string(data), nil
 }
 

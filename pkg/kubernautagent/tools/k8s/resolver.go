@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -120,8 +119,8 @@ func WithSecretAccessObserver(observer SecretAccessObserver) ResolverOption {
 
 // WithMetadataClient enables Kubernetes PartialObjectMetadata list requests.
 // Production wiring uses this path so large resource bodies are not fetched at
-// all for bulk list tools. A dynamic-client fallback still applies the same
-// server-side page limit and metadata projection for test and degraded paths.
+// all for bulk list tools. Bulk list operations fail closed when this client
+// is not configured or when metadata negotiation fails.
 func WithMetadataClient(client metadata.Interface) ResolverOption {
 	return func(r *dynamicResourceResolver) { r.metadataClient = client }
 }
@@ -458,23 +457,16 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	return nil, err
 }
 
-// listBoundedSummary chooses the metadata API when available and retains a
-// bounded dynamic fallback only for unsupported metadata representations.
+// listBoundedSummary requires metadata-only access so full resource bodies are
+// never fetched for bulk list tools.
 func (r *dynamicResourceResolver) listBoundedSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
 	if r.metadataClient == nil {
-		return r.listDynamicSummary(ctx, mapping, kind, namespace)
+		return nil, fmt.Errorf("metadata-only list unavailable: metadata client not configured")
 	}
 	metadataList, err := r.listMetadata(ctx, mapping, namespace)
 	if err != nil {
-		// Some aggregated APIs do not serve PartialObjectMetadata. Fall back
-		// to one bounded dynamic list so the tool remains usable; production
-		// still never requests an unrestricted collection.
-		if !errors.IsNotFound(err) && !errors.IsMethodNotSupported(err) && !errors.IsNotAcceptable(err) {
-			return nil, err
-		}
-		r.logger.V(1).Info("metadata list unavailable, using bounded dynamic list",
-			"gvr", mapping.Resource.String(), "error", err.Error())
-		return r.listDynamicSummary(ctx, mapping, kind, namespace)
+		// Do not fetch full resource bodies after metadata negotiation fails.
+		return nil, fmt.Errorf("metadata-only list unavailable for %s: %w", kind, err)
 	}
 	return summarizeMetadataList(kind, metadataList), nil
 }
@@ -486,16 +478,6 @@ func (r *dynamicResourceResolver) listMetadata(ctx context.Context, mapping *met
 		return resource.Namespace(namespace).List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
 	}
 	return resource.List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
-}
-
-// listDynamicSummary projects a bounded dynamic list when metadata negotiation
-// is unsupported by the target API.
-func (r *dynamicResourceResolver) listDynamicSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
-	resourceList, err := r.scopedClient(mapping, namespace).List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
-	if err != nil {
-		return nil, err
-	}
-	return summarizeUnstructuredList(kind, resourceList), nil
 }
 
 // summarizeMetadataList preserves metadata and a safe server-provided count.
@@ -522,33 +504,6 @@ func summarizeMetadataList(kind string, list *metav1.PartialObjectMetadataList) 
 		ItemCount:  len(items),
 		TotalCount: totalCount,
 		Truncated:  list.Continue != "" || len(list.Items) > len(items),
-	}
-}
-
-// summarizeUnstructuredList strips bodies from the bounded dynamic fallback.
-func summarizeUnstructuredList(kind string, list *unstructured.UnstructuredList) *ResourceListSummary {
-	items := make([]ResourceMetadataSummary, 0, min(len(list.Items), int(DefaultResourceListLimit)))
-	for _, item := range list.Items {
-		items = append(items, metadataSummary(item.GetName(), item.GetNamespace(), string(item.GetUID()), item.GetResourceVersion(), item.GetLabels()))
-		if len(items) == int(DefaultResourceListLimit) {
-			break
-		}
-	}
-	var totalCount *int
-	if remaining := list.GetRemainingItemCount(); remaining != nil {
-		total := len(list.Items) + int(*remaining)
-		totalCount = &total
-	} else if list.GetContinue() == "" {
-		total := len(list.Items)
-		totalCount = &total
-	}
-	return &ResourceListSummary{
-		APIVersion: list.GetAPIVersion(),
-		Kind:       kind + "List",
-		Items:      items,
-		ItemCount:  len(items),
-		TotalCount: totalCount,
-		Truncated:  list.GetContinue() != "" || len(list.Items) > len(items),
 	}
 }
 

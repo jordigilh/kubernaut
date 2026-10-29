@@ -18,6 +18,7 @@ package investigator_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -209,7 +210,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	Describe("IT-KA-433-AP-003: Investigation emits per-tool-call events", func() {
 		It("should emit 2 separate llm.tool_call events for 2 tool calls", func() {
 			reg := registry.New()
-			reg.Register(&fakeTool{name: "kubectl_get_by_kind_in_namespace", result: `{"items":[{"name":"api"}]}`})
+			reg.Register(&fakeTool{name: "kubectl_get_by_kind_in_namespace", result: `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"metadata":{"name":"api"}}],"item_count":1,"total_count":1,"truncated":false}`})
 			reg.Register(&fakeTool{name: "fetch_pod_logs", result: `{"logs":"OOMKilled"}`})
 
 			mockClient.responses = []llm.ChatResponse{
@@ -237,7 +238,14 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(tcEvents).To(HaveLen(2))
 			Expect(tcEvents[0].Data["tool_call_index"]).To(Equal(0))
 			Expect(tcEvents[0].Data["tool_name"]).To(Equal("kubectl_get_by_kind_in_namespace"))
-			Expect(tcEvents[0].Data["tool_result"]).To(Equal(`{"items":[{"name":"api"}]}`))
+			var listAuditResult map[string]interface{}
+			Expect(json.Unmarshal([]byte(tcEvents[0].Data["tool_result"].(string)), &listAuditResult)).To(Succeed())
+			Expect(listAuditResult).To(HaveKeyWithValue("tool_name", "kubectl_get_by_kind_in_namespace"))
+			Expect(listAuditResult).To(HaveKeyWithValue("item_count", BeNumerically("==", 1)))
+			Expect(listAuditResult).To(HaveKeyWithValue("total_count", BeNumerically("==", 1)))
+			Expect(listAuditResult).To(HaveKeyWithValue("truncated", false))
+			Expect(listAuditResult).To(HaveKeyWithValue("reference", "rem-it-audit-parity/tool-call/0"))
+			Expect(tcEvents[0].Data["tool_result_summary"]).NotTo(BeNil())
 			Expect(tcEvents[1].Data["tool_call_index"]).To(Equal(1))
 			Expect(tcEvents[1].Data["tool_name"]).To(Equal("fetch_pod_logs"))
 			Expect(tcEvents[1].Data["tool_result"]).To(Equal(`{"logs":"OOMKilled"}`))
