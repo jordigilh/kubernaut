@@ -185,7 +185,8 @@ Effective parameter selection is not a per-key merge:
   parameter map.
 - For a non-nil replacement map, AuthWebhook requires every locked
   `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
-  its original value. Missing or changed locked keys are rejected.
+  its original value. Missing or changed locked keys are rejected. Any new
+  `TARGET_RESOURCE_*` key absent from the original snapshot is also rejected.
 - After locked-key validation, use the non-nil map as the complete replacement
   map.
 - Reject an explicit empty map when the original snapshot contains a locked

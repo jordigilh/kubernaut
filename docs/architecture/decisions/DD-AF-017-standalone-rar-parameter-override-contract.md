@@ -196,7 +196,8 @@ remains an API concurrency guard, not the business review revision.
 - Omitted override or nil parameters: preserve the original RAR spec map.
 - For a non-nil replacement map, AuthWebhook requires every locked
   `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
-  its original value. Missing or changed locked keys are rejected.
+  its original value. Missing or changed locked keys are rejected. Any new
+  `TARGET_RESOURCE_*` key absent from the original snapshot is also rejected.
 - After locked-key validation, replace the entire original map.
 - Reject an explicit empty map when the original snapshot contains a locked
   `TARGET_RESOURCE_*` key; otherwise execute with no parameters.
