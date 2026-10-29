@@ -144,7 +144,9 @@
 | DD-TEST-019 | Minimal Fleet-Enabled APIFrontend E2E Topology (separate local and Fleet CI lanes) | ✅ Approved | 2026-09-23; amended 2026-09-26 | [DD-TEST-019-af-fleet-e2e-minimal-topology.md](decisions/DD-TEST-019-af-fleet-e2e-minimal-topology.md) |
 | DD-TEST-020 | Fleet Demo MCP Dedicated Namespace (production-parity hub/remote MCP placement) | ✅ Approved & Implemented | 2026-09-30 | [DD-TEST-020-fleet-mcp-dedicated-namespace.md](decisions/DD-TEST-020-fleet-mcp-dedicated-namespace.md) |
 | DD-AF-015 | Session-Scoped In-Process Event Router | ✅ Approved | 2026-09-13 | [DD-AF-015-session-scoped-event-router.md](decisions/DD-AF-015-session-scoped-event-router.md) |
+| DD-AF-017 | Standalone RAR Parameter Override Contract | 📋 Proposed | 2026-10-29 | [DD-AF-017-standalone-rar-parameter-override-contract.md](decisions/DD-AF-017-standalone-rar-parameter-override-contract.md) |
 | ADR-075 | Multi-Pillar Data Contract Extensibility | 📋 Proposed | 2026-09-14 | [ADR-075-multi-pillar-data-contract-extensibility.md](decisions/ADR-075-multi-pillar-data-contract-extensibility.md) |
+| ADR-076 | RAR Approval Snapshot and Terminal Decision Contract | 📋 Proposed | 2026-10-29 | [ADR-076-rar-approval-snapshot-and-terminal-decision-contract.md](decisions/ADR-076-rar-approval-snapshot-and-terminal-decision-contract.md) |
 | DD-CONTRACT-003 | Pillar Extension Envelope | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-003-pillar-extension-envelope.md](decisions/DD-CONTRACT-003-pillar-extension-envelope.md) |
 | DD-CONTRACT-004 | ProviderData Compatibility Boundary | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-004-provider-data-compatibility.md](decisions/DD-CONTRACT-004-provider-data-compatibility.md) |
 | DD-CONTRACT-005 | Multi-Pillar Propagation Boundaries | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-005-multi-pillar-propagation-boundaries.md](decisions/DD-CONTRACT-005-multi-pillar-propagation-boundaries.md) |
@@ -190,5 +192,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: September 26, 2026
+**Last Updated**: October 29, 2026
 **Maintained By**: Kubernaut Architecture Team
