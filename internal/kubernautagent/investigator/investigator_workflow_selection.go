@@ -163,13 +163,17 @@ func (inv *Investigator) workflowSelectionPromptBudgetResult(messages []llm.Mess
 	}
 	inv.logger.Error(err, "workflow selection prompt rejected by byte budget",
 		"correlation_id", correlationID, "prompt_bytes", budgetErr.PromptBytes, "budget_bytes", budgetErr.BudgetBytes)
-	return &katypes.InvestigationResult{
+	result := &katypes.InvestigationResult{
 		HumanReviewNeeded:       true,
 		HumanReviewReason:       katypes.HumanReviewReasonRCAIncomplete,
 		Reason:                  err.Error(),
 		TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
 		WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
 	}
+	if workflowDiscoveryHasStarted(messages) {
+		markWorkflowDiscoveryFailed(result)
+	}
+	return result
 }
 
 // completeWorkflowSelection keeps recovered and first-turn proposals on the

@@ -72,12 +72,14 @@ var _ = Describe("Issue #2521 target-scoped Phase 3 handoff", func() {
 
 	It("UT-KA-2521-008: parse-retry provider dispatch also enforces the structured budget", func() {
 		inv := New(Config{Logger: logr.Discard(), Pipeline: Pipeline{StructuredPhase3ContextBudget: 32}})
-		result, content := inv.retryWorkflowSubmit(context.Background(), "last response", []llm.Message{{
-			Role: "system", Content: strings.Repeat("previous workflow context ", 20),
-		}}, "RCA", LLMInvocationContext{CorrelationID: "rr-budget-retry-2521"})
+		result, content := inv.retryWorkflowSubmit(context.Background(), "last response", []llm.Message{
+			{Role: "system", Content: strings.Repeat("previous workflow context ", 20)},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{Name: "list_workflows"}}},
+		}, "RCA", LLMInvocationContext{CorrelationID: "rr-budget-retry-2521"})
 		Expect(content).To(BeEmpty())
 		Expect(result).NotTo(BeNil())
-		Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeRCAIncomplete))
+		Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed))
+		Expect(result.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusFailed))
 	})
 
 	It("UT-KA-2521-008: budget exhaustion after a discovery tool is a discovery failure", func() {
