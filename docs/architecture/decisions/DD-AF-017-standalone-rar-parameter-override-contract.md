@@ -169,7 +169,8 @@ An ordinary approval or rejection may omit it and is not gated on optional
 parameter-edit metadata. When `workflow_override` is present on an `Approved`
 decision—including a rationale-only override that preserves the original
 parameter map—all three review bindings are required. AuthWebhook rejects
-`workflow_override` on a `Rejected` decision.
+`workflow_override` on every non-Approved decision state, including Pending,
+Rejected and Expired.
 
 The bindings map to the RAR source of truth as follows:
 
