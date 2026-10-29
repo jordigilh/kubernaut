@@ -215,7 +215,9 @@ remains an API concurrency guard, not the business review revision.
 3. AuthWebhook authenticates the Kubernetes caller, recognizes AF as the
    trusted intermediary, preserves `DecidedBy`, and sets `DecidedVia`.
 4. AuthWebhook validates parameter keys, schema constraints, target-parameter
-   protection, decision eligibility and terminal immutability.
+   protection and decision eligibility. The API server's CEL transition rules
+   enforce the ADR-076 frozen business-field set; AuthWebhook mirrors that
+   allowlist and performs the contextual checks CEL cannot perform.
 5. RO consumes the admitted RAR snapshot and creates WE; it does not perform
    user selection or infer approval intent.
 

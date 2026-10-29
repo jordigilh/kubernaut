@@ -216,6 +216,16 @@ After `Approved`, `Rejected` or `Expired`, these fields are immutable:
 - `DecisionMessage`, `WorkflowOverride`, `Expired`
 - top-level terminal `Reason` and `Message`
 
+The Kubernetes API server is the first-line immutability guard. The RAR CRD
+schema MUST use CEL transition validation with explicit field-preservation
+guards: once `status.decision` is first set, the frozen business fields above
+must equal their previous values; once `status.workflowOverride` is first set,
+it must not change. This follows the existing field-by-field transition pattern
+used by `AIAnalysis.status.selectedWorkflow` after `selectedAt` and by
+WorkflowExecution spec immutability. A whole-status equality rule is not used,
+because controller-owned observations must remain mutable and nullable fields
+must retain their nil-versus-empty meaning.
+
 Controller-owned observations may still mutate under an explicit allowlist:
 
 - Conditions required by DD-CRD-002
@@ -233,7 +243,8 @@ decision. A later status update may not alter any business field.
 - AuthWebhook authenticates the Kubernetes caller, trusts the AF ServiceAccount
   as the delegated intermediary, preserves `DecidedBy`, and sets `DecidedVia`.
 - AuthWebhook is authoritative for RAR mutation validation and terminal business
-  field immutability; it does not duplicate AF's OAuth/SAR check.
+  field context checks and mirrors the CEL frozen-field allowlist; it does not
+  duplicate AF's OAuth/SAR check.
 - RO consumes the admitted RAR snapshot and does not select a workflow or infer
   approval intent.
 
