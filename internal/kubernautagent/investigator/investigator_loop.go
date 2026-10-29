@@ -729,7 +729,7 @@ func auditLegacyMetadataList(toolName, toolResult, reference string) (string, ma
 		"total_count": len(list.Items),
 		"truncated":   false,
 	}
-	return encodeAuditBulkSummary(toolResult, reference, summary, true)
+	return encodeAuditBulkSummary(toolResult, reference, summary, false)
 }
 
 func isSafeLegacyMetadataItem(raw json.RawMessage) bool {

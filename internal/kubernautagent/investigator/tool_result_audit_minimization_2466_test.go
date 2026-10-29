@@ -156,4 +156,32 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 		Expect(summary).To(HaveKeyWithValue("truncated", true))
 		Expect(summary["digest"]).To(MatchRegexp(`^hmac-sha256:[0-9a-f]{64}$`))
 	})
+
+	It("UT-KA-2521-010: jq legacy list results persist the bounded summary instead of the full result", func() {
+		// BR-AUDIT-005; FedRAMP AU-2/AU-3/AU-9/AU-11 and SI-10;
+		// SOC 2 CC7.2; OWASP ASVS V5.1/V5.5.2/V7.1.1/V7.2.1.
+		const jqResult = `{"items":[{"metadata":{"name":"cfg","namespace":"prod","labels":{"evidence":"raw-jq-body-must-not-persist"}}}]}`
+		store := &auditStoreCapture2466{}
+		inv := New(Config{Logger: logr.Discard(), AuditStore: store})
+		inv.emitToolCallAudit(context.Background(), llm.ToolCall{
+			Name:      "kubernetes_jq_query",
+			Arguments: `{"kind":"ConfigMap","jq_expr":"{items: .items}"}`,
+		}, 4, jqResult, string(katypes.PhaseRCA), "rr-2521-jq-audit")
+
+		Expect(store.events).To(HaveLen(1))
+		event := store.events[0]
+		result, ok := event.Data["tool_result"].(string)
+		Expect(ok).To(BeTrue())
+		Expect(result).NotTo(ContainSubstring("raw-jq-body-must-not-persist"))
+		Expect(result).To(ContainSubstring(`"item_count":1`))
+		Expect(result).To(ContainSubstring(`"total_count":1`))
+		Expect(result).To(ContainSubstring(`"truncated":false`))
+		Expect(result).To(ContainSubstring(`"reference":"rr-2521-jq-audit/tool-call/4"`))
+		summary, ok := event.Data["tool_result_summary"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(summary).To(HaveKeyWithValue("item_count", BeEquivalentTo(1)))
+		Expect(summary).To(HaveKeyWithValue("total_count", BeEquivalentTo(1)))
+		Expect(summary).To(HaveKeyWithValue("truncated", false))
+		Expect(summary["digest"]).To(MatchRegexp(`^hmac-sha256:[0-9a-f]{64}$`))
+	})
 })
