@@ -223,39 +223,39 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 					},
 				},
 			},
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "api-pod", Namespace: "default"},
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{
-					{
-						Name: "api", Image: "api:v1",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("256Mi"),
+			&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "api-pod", Namespace: "default"},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "api", Image: "api:v1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+								},
 							},
 						},
 					},
 				},
 			},
-		},
-		&corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
-		},
-		&corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
-		},
-		&batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{Name: "backup-job", Namespace: "default"},
-			Spec: batchv1.JobSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers:    []corev1.Container{{Name: "backup", Image: "backup:v1"}},
-						RestartPolicy: corev1.RestartPolicyNever,
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+			},
+			&corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
+			},
+			&batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "backup-job", Namespace: "default"},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers:    []corev1.Container{{Name: "backup", Image: "backup:v1"}},
+							RestartPolicy: corev1.RestartPolicyNever,
+						},
 					},
 				},
 			},
-		},
-		&batchv1.CronJob{
+			&batchv1.CronJob{
 				ObjectMeta: metav1.ObjectMeta{Name: "cleanup-cron", Namespace: "default"},
 				Spec: batchv1.CronJobSpec{
 					Schedule: "0 * * * *",
@@ -278,7 +278,8 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 		dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 		mapper := buildTestMapper()
 		kindIndex := buildTestKindIndex()
-		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+			k8s.WithMetadataClient(newMetadataSummaryClient(objects...)))
 
 		reg = registry.New()
 		for _, t := range k8s.NewAllTools(typedClient, resolver) {

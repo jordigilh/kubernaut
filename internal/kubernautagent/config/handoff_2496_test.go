@@ -17,8 +17,6 @@ limitations under the License.
 package config_test
 
 import (
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
@@ -26,20 +24,14 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
-// DD-KA-2496 / BR-KA-016: defaults are independent of model-context truncation.
-var _ = Describe("#2496 positive independent evidence handoff budget", func() {
-	It("UT-KA-2496-010: defaults to 262,144 bytes when omitted", func() {
+// Issue #2521 / BR-KA-016: the raw-evidence tuning knob is no longer part of
+// operator configuration; Investigator owns the fixed structured-context guard.
+var _ = Describe("Issue #2521 structured Phase 3 context budget configuration", func() {
+	It("UT-KA-2521-008: investigation configuration does not expose the raw evidence budget", func() {
 		cfg, err := config.Load([]byte("ai:\n  summarizer:\n    maxToolOutputSize: 32\n"))
 		Expect(err).NotTo(HaveOccurred())
 		raw, err := yaml.Marshal(cfg.AI.Investigation)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(raw)).To(ContainSubstring("maxEvidenceHandoffBytes: 262144"))
+		Expect(string(raw)).NotTo(ContainSubstring("maxEvidenceHandoffBytes"))
 	})
-	DescribeTable("UT-KA-2496-010: rejects non-positive explicitly configured budgets",
-		func(budget int) {
-			cfg, err := config.Load([]byte(fmt.Sprintf("ai:\n  investigation:\n    maxEvidenceHandoffBytes: %d\n", budget)))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("maxEvidenceHandoffBytes must be positive")))
-		}, Entry("zero", 0), Entry("negative", -1),
-	)
 })

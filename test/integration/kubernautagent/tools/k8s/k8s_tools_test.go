@@ -19,6 +19,8 @@ package k8s_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	metadatafake "k8s.io/client-go/metadata/fake"
 
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
@@ -119,13 +122,22 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
 		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "Event"}, meta.RESTScopeNamespace)
 		mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, &metav1.PartialObjectMetadata{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "api-server-abc-xyz", Namespace: "production",
+				Labels: map[string]string{"app": "api-server"},
+			},
+		})
 
 		kindIndex := map[string]schema.GroupKind{
 			"pod":        {Kind: "Pod"},
 			"event":      {Kind: "Event"},
 			"deployment": {Group: "apps", Kind: "Deployment"},
 		}
-		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+			k8s.WithMetadataClient(metadataClient))
 
 		reg = registry.New()
 		allTools := k8s.NewAllTools(typedClient, resolver)
@@ -237,12 +249,60 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 	})
 })
 
+var _ = Describe("Issue #2521 bounded K8s resolver wiring", func() {
+	It("IT-KA-752-004: production tool registration returns bounded metadata summaries", func() {
+		const corpusSize = 600
+		objects := make([]runtime.Object, 0, corpusSize)
+		for i := 0; i < corpusSize; i++ {
+			objects = append(objects, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("bulk-config-%03d", i), Namespace: "prod"},
+				Data:       map[string]string{"payload": strings.Repeat("bulk-secret-body ", 100)},
+			})
+		}
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
+		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
+		dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{{Version: "v1", Resource: "configmaps"}: "ConfigMapList"}, objects...)
+		metadataObjects := make([]runtime.Object, 0, len(objects))
+		for _, object := range objects {
+			accessor, err := meta.Accessor(object)
+			Expect(err).NotTo(HaveOccurred())
+			metadataObjects = append(metadataObjects, &metav1.PartialObjectMetadata{
+				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: accessor.GetName(), Namespace: accessor.GetNamespace(), Labels: accessor.GetLabels(),
+				},
+			})
+		}
+		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, metadataObjects...)
+		resolver := k8s.NewDynamicResolver(dynamicClient, mapper,
+			map[string]schema.GroupKind{"configmap": {Kind: "ConfigMap"}}, logr.Discard(),
+			k8s.WithMetadataClient(metadataClient))
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(fake.NewSimpleClientset(), resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
+			json.RawMessage(`{"kind":"ConfigMap","namespace":"prod"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring(`"item_count":100`))
+		Expect(result).To(ContainSubstring(`"total_count":600`))
+		Expect(result).To(ContainSubstring(`"truncated":true`))
+		Expect(result).NotTo(ContainSubstring("bulk-secret-body"))
+	})
+})
+
 var _ = Describe("Issue #1064: Multi-group kind resolution through full tool stack", func() {
 
 	var reg *registry.Registry
 
 	BeforeEach(func() {
 		scheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 
 		scheme.AddKnownTypeWithName(
 			schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription"},
@@ -290,7 +350,12 @@ var _ = Describe("Issue #1064: Multi-group kind resolution through full tool sta
 		kindIndex := map[string]schema.GroupKind{
 			"subscription": {Group: "messaging.knative.dev", Kind: "Subscription"},
 		}
-		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, &metav1.PartialObjectMetadata{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "operators.coreos.com/v1alpha1", Kind: "Subscription"},
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: "demo-operator"},
+		})
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+			k8s.WithMetadataClient(metadataClient))
 
 		reg = registry.New()
 		for _, t := range k8s.NewAllTools(typedClient, resolver) {

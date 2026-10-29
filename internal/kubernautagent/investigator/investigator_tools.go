@@ -443,21 +443,14 @@ func (inv *Investigator) handleToolExecutionError(ctx context.Context, detector 
 }
 
 func (inv *Investigator) finishToolResult(ctx context.Context, name, result, correlationID string, phase katypes.Phase) string {
-	// DD-KA-2496: project the original structure before text sanitizers can
-	// consume JSON quoting. captureEvidence retains only sanitized content;
-	// summarization and truncation stay independent.
-	if phase == katypes.PhaseRCA {
-		inv.captureEvidence(ctx, correlationID, name, result)
-	}
+	_ = correlationID
+	_ = phase
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {
 			inv.logger.Error(sanitizeErr, "sanitization failed, fail-closed for SOC2 compliance",
 				"tool", name,
 			)
-			if phase == katypes.PhaseRCA {
-				inv.failEvidence(correlationID, "observation sanitization failed")
-			}
 			errResult := toolErrorJSON("sanitization failed: tool output withheld")
 			alignment.SubmitToolStep(ctx, name, errResult)
 			return errResult

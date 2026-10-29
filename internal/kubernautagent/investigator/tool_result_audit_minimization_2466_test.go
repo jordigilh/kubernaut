@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -127,5 +128,67 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 		Expect(store.events).To(HaveLen(1))
 		Expect(store.events[0].Data["tool_result"]).To(Equal(toolResult))
 		Expect(store.events[0].Data["tool_result_preview"]).To(Equal(toolResult))
+	})
+
+	It("UT-KA-2521-009: persists only bounded list summary audit metadata", func() {
+		// BR-AUDIT-005; FedRAMP AU-2/AU-3/AU-9/AU-11 and SI-10;
+		// SOC 2 CC7.2; OWASP ASVS V5.1/V5.5.2/V7.1.1/V7.2.1.
+		const rawSummary = `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"name":"cfg","data":{"payload":"raw-bulk-body-must-not-persist"}}],"item_count":100,"total_count":600,"truncated":true}`
+		store := &auditStoreCapture2466{}
+		inv := New(Config{Logger: logr.Discard(), AuditStore: store})
+		inv.emitToolCallAudit(context.Background(), llm.ToolCall{
+			Name:      "kubectl_get_by_kind_in_cluster",
+			Arguments: `{"kind":"ConfigMap"}`,
+		}, 3, rawSummary, string(katypes.PhaseRCA), "rr-2521-audit")
+
+		Expect(store.events).To(HaveLen(1))
+		event := store.events[0]
+		result, ok := event.Data["tool_result"].(string)
+		Expect(ok).To(BeTrue())
+		Expect(result).NotTo(ContainSubstring("raw-bulk-body-must-not-persist"))
+		Expect(result).To(ContainSubstring(`"item_count":100`))
+		Expect(result).To(ContainSubstring(`"total_count":600`))
+		Expect(result).To(ContainSubstring(`"truncated":true`))
+		Expect(result).To(ContainSubstring(`"reference":"rr-2521-audit/tool-call/3"`))
+		summary, ok := event.Data["tool_result_summary"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(summary).To(HaveKeyWithValue("item_count", BeEquivalentTo(100)))
+		Expect(summary).To(HaveKeyWithValue("total_count", BeEquivalentTo(600)))
+		Expect(summary).To(HaveKeyWithValue("truncated", true))
+		Expect(summary["digest"]).To(MatchRegexp(`^hmac-sha256:[0-9a-f]{64}$`))
+	})
+
+	It("UT-KA-2521-010: jq legacy list results are omitted instead of persisted raw", func() {
+		// BR-AUDIT-005; FedRAMP AU-2/AU-3/AU-9/AU-11 and SI-10;
+		// SOC 2 CC7.2; OWASP ASVS V5.1/V5.5.2/V7.1.1/V7.2.1.
+		const jqResult = `{"items":[{"metadata":{"name":"cfg","namespace":"prod","labels":{"evidence":"raw-jq-body-must-not-persist"}}}]}`
+		store := &auditStoreCapture2466{}
+		inv := New(Config{Logger: logr.Discard(), AuditStore: store})
+		inv.emitToolCallAudit(context.Background(), llm.ToolCall{
+			Name:      "kubernetes_jq_query",
+			Arguments: `{"kind":"ConfigMap","jq_expr":"{items: .items}"}`,
+		}, 4, jqResult, string(katypes.PhaseRCA), "rr-2521-jq-audit")
+
+		Expect(store.events).To(HaveLen(1))
+		event := store.events[0]
+		result, ok := event.Data["tool_result"].(string)
+		Expect(ok).To(BeTrue())
+		Expect(result).NotTo(ContainSubstring("raw-jq-body-must-not-persist"))
+		Expect(result).To(ContainSubstring(`"result_omitted":true`))
+		Expect(result).To(ContainSubstring(`"reason":"bulk_summary_missing"`))
+		Expect(result).To(ContainSubstring(`"reference":"rr-2521-jq-audit/tool-call/4"`))
+		summary, ok := event.Data["tool_result_summary"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(summary).To(HaveKeyWithValue("result_omitted", true))
+		Expect(summary).To(HaveKeyWithValue("reason", "bulk_summary_missing"))
+	})
+
+	It("UT-KA-2521-124: oversized bulk-tool errors use the bounded audit omission", func() {
+		toolResult := toolErrorJSON(strings.Repeat("invalid jq expression detail ", 1000))
+		projected, summary := auditToolResultProjection("kubernetes_count", toolResult, "rr-2521/error")
+
+		Expect(projected).To(ContainSubstring(`"result_omitted":true`))
+		Expect(projected).To(ContainSubstring(`"reason":"size_limit"`))
+		Expect(summary).To(HaveKeyWithValue("reason", "size_limit"))
 	})
 })

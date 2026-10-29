@@ -1,12 +1,12 @@
 # Test Plan: Typed Investigation Outcomes and Decision Ledger
 
 **Test Plan Identifier**: TP-2520-2521-v1.1
-**Feature**: Explicit investigation terminal outcomes, workflow-discovery gates, and bounded decision-ledger audit events
-**Version**: 1.1
+**Feature**: Explicit investigation terminal outcomes, target-scoped Phase 3 handoff, bounded Kubernetes tool output, and bounded decision-ledger audit events
+**Version**: 1.2
 **Created**: 2026-10-16
 **Author**: Kubernaut contributors
-**Status**: Implementation complete; runtime integration validation blocked by environment
-**Branch**: `feat/2510-2511-recurrent-rca`
+**Status**: Approved for RED/GREEN/REFACTOR implementation; Issue #2521 scoped gates in progress
+**Branch**: `main` (Issue #2521 follow-up)
 
 ---
 
@@ -28,12 +28,14 @@ Investigator, AgentSession, and AIAnalysis paths.
 4. Prove decision-ledger events reconstruct meaningful RCA-to-discovery transitions by logical correlation ID.
 5. Prove ledger payloads exclude prompts, hidden reasoning, credentials, raw transport errors, and unrestricted tool arguments/results.
 6. Prove every new production component has a passing integration wiring test.
+7. Prove Phase 3 receives only structured RCA, authoritative RCA-target Phase 2 enrichment/history, target resolution, repeat context, and workflow catalog data; raw PhaseRCA observations and the full investigation conversation are excluded.
+8. Prove Kubernetes bulk list and exact-name lookup responses are bounded at the API source before sanitizer, LLM-context, audit, or memory amplification.
 
 ### 1.3 Success Metrics
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| In-scope scenario coverage | 14/14; minimum 90%, critical scenarios 100% | BR matrix and passing UT/IT assertions |
+| In-scope scenario coverage | 21/21; minimum 90%, critical scenarios 100% | BR matrix and passing UT/IT assertions |
 | Unit test pass rate | 100% | Affected Ginkgo suites |
 | Integration wiring pass rate | 100% of manifest rows | KA/AA integration suites |
 | Audit redaction | 100% of ledger fields allow-listed and bounded | UT-KA-2520-002 and schema assertions |
@@ -50,6 +52,13 @@ still reports pre-existing findings outside the changed paths; no new finding is
 reported for this change. The aggregate `make test` unit target also passed
 (25 Ginkgo suites, 742 specs in the final aggregate output). The 14/14 target is
 therefore not claimed until the integration harness can start.
+
+**Issue #2521 amendment:** the preceding execution record is historical for the
+original #2520/#2518 scope. The current matrix defines 21 scenarios, including
+target-scoped Phase 3 handoff, cluster-scoped history, source-bounded Kubernetes
+lists/JQ/counts, and bounded audit projection. Current validation is recorded by the
+implementation session; unrelated repository-wide baseline failures remain
+separate from this change.
 
 ---
 
@@ -102,6 +111,8 @@ without a proving UT and, where a production boundary exists, a wiring IT.
 - `internal/kubernautagent/agentsession/`: Investigator-to-AgentSession mapping and terminal status propagation.
 - `pkg/aianalysis/handlers/`: AgentSession-to-AIAnalysis routing and no-match guard precedence.
 - `internal/kubernautagent/audit/` and DataStorage schemas: typed payload mapping, redaction, bounds, and envelope fidelity.
+- `internal/kubernautagent/prompt/` and `internal/kubernautagent/investigator/`: structured Phase 3 handoff and fixed prompt/context budget.
+- `pkg/kubernautagent/tools/k8s/`: source-side metadata/count list summaries and server-side exact-name lookup.
 - Generated OpenAPI/CRD/client artifacts: schema and conversion parity.
 
 ### 4.2 Features Not to be Tested
@@ -175,6 +186,7 @@ fixture is made explicit and the failing cause is recorded.
 | `internal/kubernautagent/agentsession/` | AgentSession status result propagation |
 | `test/integration/aianalysis/` | AgentSession → AIAnalysis handler routing |
 | `pkg/datastorage/ogen-client/` and audit OpenAPI | Typed payload encode/decode parity |
+| `cmd/kubernautagent/` | Production resolver/metadata-client and Investigator budget wiring |
 
 ### 6.3 Version Identification
 
@@ -198,6 +210,15 @@ fixture is made explicit and the failing cause is recorded.
 | BR-KA-016 / DD-KA-2496 | Target-scoped history remains safe | P0 | Integration | IT-KA-2521-002 | Blocked at bootstrap |
 | BR-KA-197 / BR-KA-197.2 / #768 | Genuine no-match remains a completed discovery result | P0 | Unit/Integration | UT-KA-2521-004, IT-KA-2520-003 | Unit PASS; IT blocked at bootstrap |
 | BR-KA-261 / DD-KA-2511 | Enrichment failure is safely degraded and observable | P0 | Unit/Integration | UT-KA-2521-002/003, IT-KA-2520-003 | Unit PASS; IT blocked at bootstrap |
+| BR-KA-016 / BR-2521 / DD-KA-017 / ADR-055 | Phase 3 handoff excludes raw PhaseRCA observations and remains target-scoped | P0 | Unit/Integration | UT-KA-2521-007, IT-KA-2521-003/004 | PASS |
+| BR-KA-016 / DD-KA-2496 | Cluster-scoped target history remains associated with the canonical target | P0 | Unit | UT-KA-2521-010 | PASS |
+| BR-SAFETY-752 / SI-10 / AC-4 / AC-6 | Bulk and exact-name Kubernetes tool output is bounded at source | P0 | Unit/Integration | UT-KA-752-112/113, IT-KA-752-004 | PASS |
+| BR-SAFETY-752 / SI-10 / AC-4 / AC-6 | Cluster-scoped metadata lists and metadata-only JQ cannot expose bulk bodies | P0 | Unit | UT-KA-752-114/115 | PASS |
+| BR-SAFETY-752 / SI-10 | Count output distinguishes retained page count from known total source count | P0 | Unit | UT-KA-752-116 | PASS |
+| BR-SAFETY-752 / SI-10 | Paginated fallback explicitly marks unknown total counts instead of misreporting the retained page as corpus total | P0 | Unit | UT-KA-752-117 | PASS |
+| BR-SAFETY-752 / SI-10 | JQ fails closed when the metadata-only source path is unavailable | P0 | Unit | UT-KA-752-118 | PASS |
+| BR-SAFETY-752 / SI-10 | Metadata-only find_resource reports truncation instead of a false empty result | P0 | Unit | UT-KA-752-119 | PASS |
+| BR-AUDIT-005 / DD-AUDIT-003 | Bulk tool audit projection excludes raw payloads while preserving bounded summary metadata | P0 | Unit | UT-KA-2521-009 | PASS |
 
 ---
 
@@ -216,6 +237,18 @@ fixture is made explicit and the failing cause is recorded.
 | `UT-KA-2520-001` | Tool-only turn differs from terminal decision in the ledger. | PASS |
 | `UT-KA-2520-002` | Ledger is bounded, allow-listed, redacted, and contains no private reasoning/secrets. | PASS |
 | `UT-KA-2520-003` | RCA-to-discovery gate transitions are ordered and reconstructable. | PASS |
+| `UT-KA-2521-007` | The frozen Phase 3 packet contains structured RCA and RCA-target enrichment/history but no `current_observations`, raw PhaseRCA tool output, or conversation transcript; signal-target observations cannot become RCA-target workflow evidence. | PASS |
+| `UT-KA-2521-008` | Structured-context budget rejects oversized Phase 3 prompt/context while ordinary oversized PhaseRCA tool output remains available to RCA and does not create a typed terminal failure solely because it was large. | PASS |
+| `UT-KA-2521-009` | Bulk Kubernetes audit output contains only bounded item counts, truncation status, digest and correlation reference; raw bodies are absent. | PASS |
+| `UT-KA-2521-010` | Node/PersistentVolume history in legacy or canonical cluster-scoped forms remains target-scoped and contributes repeat context. | PASS |
+| `UT-KA-752-112` | Kubernetes bulk list requests a bounded server-side page and returns metadata/count/truncation summary without ConfigMap/Secret bodies. | PASS |
+| `UT-KA-752-113` | Exact-name cluster lookup uses a server-side `metadata.name` selector and bounded limit rather than fetching and filtering an unrestricted list. | PASS |
+| `UT-KA-752-114` | Cluster-scoped metadata lists work without a namespace subresource. | PASS |
+| `UT-KA-752-115` | JQ bulk queries are metadata-only and cannot retrieve ConfigMap/Secret data. | PASS |
+| `UT-KA-752-116` | Count output reports retained and total source items separately when the metadata API provides a safe total. | PASS |
+| `UT-KA-752-117` | Paginated fallback omits `total_count` when the API does not provide a safe remaining-item count. | PASS |
+| `UT-KA-752-118` | JQ does not fall back to fetching full bulk objects when metadata-only access is unavailable. | PASS |
+| `UT-KA-752-119` | Bounded find_resource reports truncation when a match may be outside the retained page. | PASS |
 
 ### Tier 2: Integration Tests
 
@@ -226,12 +259,27 @@ fixture is made explicit and the failing cause is recorded.
 | `IT-KA-2520-002` | Successful investigation timeline is queryable by one logical correlation ID. | BLOCKED: suite bootstrap |
 | `IT-KA-2520-003` | Genuine no-match timeline is queryable without an execution resource. | BLOCKED: suite bootstrap |
 | `IT-KA-2521-002` | Transport/history failure timeline shows unavailable history and skipped discovery. | BLOCKED: suite bootstrap |
+| `IT-KA-2521-003` | Production RCA completion reaches workflow selection with one target-scoped structured packet and no raw observations. | PASS |
+| `IT-KA-2521-004` | Production PhaseRCA tool output path does not capture raw observations into the Phase 3 handoff. | PASS |
+| `IT-KA-752-004` | Production K8s tool registration uses the bounded resolver/metadata-client path for list and exact-name lookup. | PASS |
+| `IT-KA-2521-005` | `cmd/kubernautagent.registerK8sTools` reaches the bounded list result path without raw bulk bodies. | PASS |
 
 ### Tier 3: E2E Tests
 
 Deferred to #2518's long-lived MCP reset journey. This plan consumes a typed
 retry-success or retry-exhausted fixture at the integration boundary and does not
 duplicate live transport fault injection.
+
+### 8.1 Control and security traceability for Issue #2521
+
+The new scenarios map to the approved objectives: FedRAMP AU-2/AU-3/AU-9/AU-11
+for bounded correlated audit metadata, SI-10 for structured input/output bounds,
+AC-4/AC-6 for target and access scope; SOC 2 CC7.2 for reconstructable lifecycle
+decisions and CC8.1 for the controlled change process; and OWASP ASVS
+V5.1/V5.5.2/V7.1.1/V7.2.1 for input validation, data minimization, authorization
+boundaries, and safe error handling. Raw bulk ConfigMap/Secret bodies, prompts,
+private reasoning, and unrestricted tool arguments/results are not valid test
+evidence or persistence formats.
 
 ---
 

@@ -18,12 +18,15 @@ package investigator
 
 import (
 	"context"
+	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -272,6 +275,13 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		// -- ctx.Err() is converted into a typed cancelled result, not
 		// propagated as err (Issue #1546 Tier 3).
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
+	}
+	if phase == katypes.PhaseWorkflowDiscovery {
+		if budgetErr := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget); budgetErr != nil {
+			inv.logger.Error(budgetErr, "workflow selection context exceeded structured Phase 3 budget",
+				"correlation_id", llmCtx.CorrelationID, "turn", turn)
+			return &ExhaustedResult{Reason: structuredPhase3BudgetExhaustionReason(messages)}, messages, true, nil
+		}
 	}
 
 	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, phase, messages, toolDefs, llmCtx.WorkflowDiscovery)
@@ -634,15 +644,176 @@ func (inv *Investigator) executeToolCall(ctx context.Context, tc llm.ToolCall, c
 }
 
 const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`
+const maxAuditToolResultBytes = 8192
+const structuredPhase3BudgetExhaustedReason = "structured Phase 3 context budget exceeded"
+const structuredPhase3BudgetExhaustedAfterDiscoveryReason = "structured Phase 3 context budget exceeded after discovery started"
+
+var auditSummaryDigestState struct {
+	sync.Once
+	key []byte
+	err error
+}
 
 // auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
-// history but excludes it from the generic tool-call audit record. The
-// selected workflow ID remains available in the corresponding tool arguments.
+// history but excludes it from the generic tool-call audit record. Bulk
+// Kubernetes summaries are reduced to count/truncation/digest/reference data;
+// the selected workflow ID remains available in the corresponding arguments.
 func auditSafeToolResult(toolName, toolResult string) string {
+	result, _ := auditToolResultProjection(toolName, toolResult, "")
+	return result
+}
+
+// auditToolResultProjection returns the durable, allow-listed representation of
+// a tool result and its structured audit summary when one is available.
+func auditToolResultProjection(toolName, toolResult, reference string) (string, map[string]interface{}) {
 	if toolName == "get_workflow" {
-		return omittedWorkflowSchemaAuditResult
+		return omittedWorkflowSchemaAuditResult, nil
 	}
-	return toolResult
+	if toolName == "" {
+		return toolResult, nil
+	}
+	if isBulkKubernetesSummaryTool(toolName) {
+		if auditToolErrorDetails(toolResult) != nil {
+			if projected, summary, ok := auditOmittedOversizedToolResult(toolName, toolResult, reference); ok {
+				return projected, summary
+			}
+			return toolResult, nil
+		}
+		if projected, summary, ok := auditBulkToolResult(toolName, toolResult, reference); ok {
+			return projected, summary
+		}
+		projected, summary, _ := auditOmittedToolResult(toolName, toolResult, reference, "bulk_summary_missing")
+		return projected, summary
+	}
+	if projected, summary, ok := auditOmittedOversizedToolResult(toolName, toolResult, reference); ok {
+		return projected, summary
+	}
+	return toolResult, nil
+}
+
+// auditBulkToolResult projects a Kubernetes list summary without retaining its
+// item bodies or arbitrary fields.
+func auditBulkToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
+	var listSummary struct {
+		ItemCount  int  `json:"item_count"`
+		TotalCount *int `json:"total_count"`
+		Truncated  bool `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(toolResult), &listSummary); err != nil ||
+		(!strings.Contains(toolResult, `"item_count"`) && !strings.Contains(toolResult, `"total_count"`)) {
+		return auditOmittedToolResult(toolName, toolResult, reference, "bulk_summary_missing")
+	}
+	summary := map[string]interface{}{
+		"tool_name":  toolName,
+		"item_count": listSummary.ItemCount,
+		"truncated":  listSummary.Truncated,
+	}
+	if listSummary.TotalCount != nil {
+		summary["total_count"] = *listSummary.TotalCount
+	}
+	return encodeAuditBulkSummary(reference, summary)
+}
+
+func encodeAuditBulkSummary(reference string, summary map[string]interface{}) (string, map[string]interface{}, bool) {
+	canonical, marshalErr := json.Marshal(summary)
+	if marshalErr != nil {
+		return "", nil, false
+	}
+	digest, digestErr := auditSummaryDigest(canonical)
+	if digestErr != nil {
+		return "", nil, false
+	}
+	summary["digest"] = digest
+	if reference != "" {
+		summary["reference"] = reference
+	}
+	encoded, marshalErr := json.Marshal(summary)
+	if marshalErr == nil {
+		return string(encoded), summary, true
+	}
+	return "", nil, false
+}
+
+// auditSummaryDigest creates an opaque process-local integrity fingerprint for
+// the allow-listed summary. The key prevents the value from being a fast
+// password hash while keeping repeated audit projections in one process stable.
+func auditSummaryDigest(input []byte) (string, error) {
+	auditSummaryDigestState.Do(func() {
+		auditSummaryDigestState.key = make([]byte, 32)
+		if _, err := cryptorand.Read(auditSummaryDigestState.key); err != nil {
+			auditSummaryDigestState.err = fmt.Errorf("generate audit summary digest key: %w", err)
+		}
+	})
+	if auditSummaryDigestState.err != nil {
+		return "", auditSummaryDigestState.err
+	}
+	digest := hmac.New(sha256.New, auditSummaryDigestState.key)
+	if _, err := digest.Write(input); err != nil {
+		return "", fmt.Errorf("hash audit summary: %w", err)
+	}
+	return fmt.Sprintf("hmac-sha256:%x", digest.Sum(nil)), nil
+}
+
+// auditOmittedOversizedToolResult applies the generic audit result size guard.
+func auditOmittedOversizedToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
+	if len(toolResult) <= maxAuditToolResultBytes {
+		return "", nil, false
+	}
+	return auditOmittedToolResult(toolName, toolResult, reference, "size_limit")
+}
+
+// auditOmittedToolResult records only bounded omission metadata for a result.
+func auditOmittedToolResult(toolName, toolResult, reference, reason string) (string, map[string]interface{}, bool) {
+	summary := map[string]interface{}{
+		"tool_name":      toolName,
+		"result_omitted": true,
+		"reason":         reason,
+		"bytes":          len(toolResult),
+	}
+	if reference != "" {
+		summary["reference"] = reference
+	}
+	encoded, marshalErr := json.Marshal(summary)
+	if marshalErr == nil {
+		return string(encoded), summary, true
+	}
+	return "", nil, false
+}
+
+// isBulkKubernetesSummaryTool identifies tools whose audit result must be an
+// allow-listed metadata/count projection rather than arbitrary JSON.
+func isBulkKubernetesSummaryTool(toolName string) bool {
+	return strings.HasPrefix(toolName, "kubectl_get_by_kind_") ||
+		toolName == "kubectl_find_resource" || toolName == "kubernetes_jq_query" || toolName == "kubernetes_count"
+}
+
+// workflowDiscoveryHasStarted reports whether the provider has already
+// requested a discovery tool, which changes the typed outcome of a later
+// structured-context budget exhaustion.
+func workflowDiscoveryHasStarted(messages []llm.Message) bool {
+	for _, message := range messages {
+		for _, toolCall := range message.ToolCalls {
+			if isWorkflowDiscoveryTool(toolCall.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isWorkflowDiscoveryTool excludes shared planning tools from discovery-state
+// classification while recognizing the two catalog-discovery calls.
+func isWorkflowDiscoveryTool(name string) bool {
+	return name == "list_available_actions" || name == "list_workflows"
+}
+
+// structuredPhase3BudgetExhaustionReason preserves whether discovery already
+// ran when a later provider turn exceeds the structured context budget.
+func structuredPhase3BudgetExhaustionReason(messages []llm.Message) string {
+	if workflowDiscoveryHasStarted(messages) {
+		return structuredPhase3BudgetExhaustedAfterDiscoveryReason
+	}
+	return structuredPhase3BudgetExhaustedReason
 }
 
 // buildTruncationRetryMessages emits the truncation-detected audit event and

@@ -355,9 +355,6 @@ type MCPServerEntry struct {
 
 type InvestigationConfig struct {
 	MaxTurns int `yaml:"maxTurns"`
-	// DD-KA-2496: independent of tool-output summarization/truncation. The
-	// complete frozen packet must fit; overflow routes selection to review.
-	MaxEvidenceHandoffBytes int `yaml:"maxEvidenceHandoffBytes"`
 	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
 	// operator-configurable investigation-outcome confidence bands (BR-KA-213,
 	// Issue #1826), templated into the Phase 3 workflow-selection prompt's

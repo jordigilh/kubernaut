@@ -19,15 +19,18 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/metadata"
 )
 
 // ResourceResolver abstracts Kubernetes get/list operations so that tools
@@ -42,10 +45,45 @@ import (
 type ResourceResolver interface {
 	Get(ctx context.Context, kind, name, namespace, apiGroup string) (interface{}, error)
 	List(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error)
+	ListForQuery(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error)
+	GetByNameInCluster(ctx context.Context, kind, name, apiGroup string) (interface{}, error)
+}
+
+// DefaultResourceListLimit is sent to the API server for every bulk list.
+// List tools return metadata summaries, so a large ConfigMap/Secret body cannot
+// be copied into the LLM, audit, or sanitizer pipeline.
+const DefaultResourceListLimit int64 = 100
+
+// ResourceListSummary is the bounded wire result for generic bulk lists.
+// It intentionally contains metadata only; use a targeted get tool for a full
+// resource body.
+type ResourceListSummary struct {
+	APIVersion string                    `json:"apiVersion,omitempty"`
+	Kind       string                    `json:"kind,omitempty"`
+	Items      []ResourceMetadataSummary `json:"items"`
+	ItemCount  int                       `json:"item_count"`
+	TotalCount *int                      `json:"total_count,omitempty"`
+	Truncated  bool                      `json:"truncated"`
+}
+
+// ResourceMetadataSummary contains only the safe metadata projection of one
+// item in a bulk result.
+type ResourceMetadataSummary struct {
+	Metadata ResourceObjectMetadata `json:"metadata"`
+}
+
+// ResourceObjectMetadata is the bounded ObjectMeta subset exposed to tools.
+type ResourceObjectMetadata struct {
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace,omitempty"`
+	UID             string            `json:"uid,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
 }
 
 type dynamicResourceResolver struct {
 	client         dynamic.Interface
+	metadataClient metadata.Interface
 	mapper         meta.RESTMapper
 	kindIndex      map[string]schema.GroupKind
 	logger         logr.Logger
@@ -77,6 +115,14 @@ type ResolverOption func(*dynamicResourceResolver)
 // that resolves to the core Secret resource (GAP-13, Issue #1505).
 func WithSecretAccessObserver(observer SecretAccessObserver) ResolverOption {
 	return func(r *dynamicResourceResolver) { r.secretObserver = observer }
+}
+
+// WithMetadataClient enables Kubernetes PartialObjectMetadata list requests.
+// Production wiring uses this path so large resource bodies are not fetched at
+// all for bulk list tools. Bulk list operations fail closed when this client
+// is not configured or when metadata negotiation fails.
+func WithMetadataClient(client metadata.Interface) ResolverOption {
+	return func(r *dynamicResourceResolver) { r.metadataClient = client }
 }
 
 // NewDynamicResolver creates a ResourceResolver backed by the Kubernetes dynamic client.
@@ -285,6 +331,91 @@ func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace
 	return nil, fmt.Errorf("get %s/%s in %s: %w", kind, name, namespace, lastErr)
 }
 
+// GetByNameInCluster resolves one exact-name resource with a server-side field
+// selector and a one-item limit. It never lists an unrestricted collection and
+// returns the full body only for the single targeted object requested by the
+// caller.
+func (r *dynamicResourceResolver) GetByNameInCluster(ctx context.Context, kind, name, apiGroup string) (interface{}, error) {
+	mappings, err := r.resolveMappings(kind, apiGroup)
+	if err != nil {
+		return nil, err
+	}
+	options := metav1.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("metadata.name", name).String(),
+		Limit:         1,
+	}
+	var lastErr error
+	var lastMapping *meta.RESTMapping
+	for _, mapping := range mappings {
+		lastMapping = mapping
+		result, listErr := r.scopedClient(mapping, "").List(ctx, options)
+		if listErr != nil {
+			lastErr = listErr
+			if !errors.IsNotFound(listErr) && !errors.IsForbidden(listErr) {
+				r.notifySecretAccess(ctx, mapping, "list", "", "", listErr)
+				return nil, fmt.Errorf("find %s/%s in cluster: %w", kind, name, listErr)
+			}
+			continue
+		}
+		if len(result.Items) == 0 {
+			continue
+		}
+		if result.Items[0].GetName() != name {
+			continue
+		}
+		r.notifySecretAccess(ctx, mapping, "list", "", "", nil)
+		return &result.Items[0], nil
+	}
+	if lastErr != nil {
+		r.notifySecretAccess(ctx, lastMapping, "list", "", "", lastErr)
+		return nil, fmt.Errorf("resource %q named %q not found in cluster: %w", kind, name, lastErr)
+	}
+	err = fmt.Errorf("resource %q named %q not found in cluster", kind, name)
+	r.notifySecretAccess(ctx, lastMapping, "list", "", "", err)
+	return nil, err
+}
+
+// ListForQuery is the metadata-only query path for kubernetes_jq_query. Keeping
+// jq on the same bounded summary contract prevents an expression such as
+// `.items[].data` from fetching bulk ConfigMap/Secret bodies before the generic
+// sanitizer or audit pipeline.
+func (r *dynamicResourceResolver) ListForQuery(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error) {
+	if r.metadataClient == nil {
+		return nil, fmt.Errorf("metadata-only query unavailable: metadata client not configured")
+	}
+	mappings, err := r.resolveMappings(kind, apiGroup)
+	if err != nil {
+		return nil, err
+	}
+	var lastSummary *ResourceListSummary
+	var lastMapping *meta.RESTMapping
+	for _, mapping := range mappings {
+		lastMapping = mapping
+		metadataList, listErr := r.listMetadata(ctx, mapping, namespace)
+		if listErr != nil {
+			if errors.IsNotFound(listErr) || errors.IsForbidden(listErr) {
+				continue
+			}
+			r.notifySecretAccess(ctx, mapping, "list", "", namespace, listErr)
+			return nil, fmt.Errorf("metadata-only list %s in %s: %w", kind, namespace, listErr)
+		}
+		summary := summarizeMetadataList(kind, metadataList)
+		lastSummary = summary
+		if summary.ItemCount > 0 {
+			r.notifySecretAccess(ctx, mapping, "list", "", namespace, nil)
+			return summary, nil
+		}
+	}
+	if lastSummary != nil {
+		r.notifySecretAccess(ctx, lastMapping, "list", "", namespace, nil)
+		return lastSummary, nil
+	}
+	err = fmt.Errorf("metadata-only list %s in %s: no results from any API group", kind, namespace)
+	r.notifySecretAccess(ctx, lastMapping, "list", "", namespace, err)
+	return nil, err
+}
+
+// List returns a metadata-only summary for a bounded generic Kubernetes list.
 func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error) {
 	mappings, err := r.resolveMappings(kind, apiGroup)
 	if err != nil {
@@ -295,7 +426,7 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	var lastMapping *meta.RESTMapping
 	for _, mapping := range mappings {
 		lastMapping = mapping
-		result, listErr := r.scopedClient(mapping, namespace).List(ctx, metav1.ListOptions{})
+		result, listErr := r.listBoundedSummary(ctx, mapping, kind, namespace)
 		if listErr != nil {
 			if !errors.IsNotFound(listErr) && !errors.IsForbidden(listErr) {
 				r.notifySecretAccess(ctx, mapping, "list", "", namespace, listErr)
@@ -304,14 +435,14 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 			continue
 		}
 		lastResult = result
-		if len(result.Items) > 0 {
+		if result.ItemCount > 0 {
 			if len(mappings) > 1 {
 				r.logger.V(1).Info("multi-group kind resolved",
 					"kind", kind, "namespace", namespace,
 					"api_group", mapping.Resource.Group,
 					"gvr", mapping.Resource.String(),
 					"result", "success",
-					"items", len(result.Items))
+					"items", result.ItemCount)
 			}
 			r.notifySecretAccess(ctx, mapping, "list", "", namespace, nil)
 			return result, nil
@@ -324,4 +455,88 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	err = fmt.Errorf("list %s in %s: no results from any API group", kind, namespace)
 	r.notifySecretAccess(ctx, lastMapping, "list", "", namespace, err)
 	return nil, err
+}
+
+// listBoundedSummary requires metadata-only access so full resource bodies are
+// never fetched for bulk list tools.
+func (r *dynamicResourceResolver) listBoundedSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
+	if r.metadataClient == nil {
+		return nil, fmt.Errorf("metadata-only list unavailable: metadata client not configured")
+	}
+	metadataList, err := r.listMetadata(ctx, mapping, namespace)
+	if err != nil {
+		// Do not fetch full resource bodies after metadata negotiation fails.
+		return nil, fmt.Errorf("metadata-only list unavailable for %s: %w", kind, err)
+	}
+	return summarizeMetadataList(kind, metadataList), nil
+}
+
+// listMetadata sends a namespace-aware or cluster-scoped metadata request.
+func (r *dynamicResourceResolver) listMetadata(ctx context.Context, mapping *meta.RESTMapping, namespace string) (*metav1.PartialObjectMetadataList, error) {
+	resource := r.metadataClient.Resource(mapping.Resource)
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		return resource.Namespace(namespace).List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
+	}
+	return resource.List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
+}
+
+// summarizeMetadataList preserves metadata and a safe server-provided count.
+func summarizeMetadataList(kind string, list *metav1.PartialObjectMetadataList) *ResourceListSummary {
+	items := make([]ResourceMetadataSummary, 0, len(list.Items))
+	for _, item := range list.Items {
+		items = append(items, metadataSummary(item.Name, item.Namespace, string(item.UID), item.ResourceVersion, item.Labels))
+	}
+	if len(items) > int(DefaultResourceListLimit) {
+		items = items[:DefaultResourceListLimit]
+	}
+	var totalCount *int
+	if list.RemainingItemCount != nil {
+		total := len(list.Items) + int(*list.RemainingItemCount)
+		totalCount = &total
+	} else if list.Continue == "" {
+		total := len(list.Items)
+		totalCount = &total
+	}
+	return &ResourceListSummary{
+		APIVersion: list.APIVersion,
+		Kind:       kind + "List",
+		Items:      items,
+		ItemCount:  len(items),
+		TotalCount: totalCount,
+		Truncated:  list.Continue != "" || len(list.Items) > len(items),
+	}
+}
+
+// metadataSummary builds the allow-listed metadata projection for one item.
+func metadataSummary(name, namespace, uid, resourceVersion string, labels map[string]string) ResourceMetadataSummary {
+	return ResourceMetadataSummary{
+		Metadata: ResourceObjectMetadata{
+			Name: name, Namespace: namespace, UID: uid, ResourceVersion: resourceVersion,
+			Labels: boundedLabels(labels),
+		},
+	}
+}
+
+// boundedLabels keeps label metadata useful without allowing unbounded values.
+func boundedLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) > 32 {
+		keys = keys[:32]
+	}
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		value := labels[key]
+		if len(value) > 256 {
+			value = value[:256]
+		}
+		result[key] = value
+	}
+	return result
 }

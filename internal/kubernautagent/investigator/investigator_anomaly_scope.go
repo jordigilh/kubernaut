@@ -115,7 +115,6 @@ func (inv *Investigator) pruneInvestigationScopes(maxAge time.Duration) {
 	inv.logPrunedScope("anomaly detectors", inv.pruneAnomalyDetectors(maxAge), maxAge)
 	inv.logPrunedScope("metrics", inv.pruneMetrics(maxAge), maxAge)
 	inv.logPrunedScope("token scopes", inv.pruneTokenScope(maxAge), maxAge)
-	inv.logPrunedScope("evidence", inv.pruneEvidence(maxAge), maxAge)
 }
 
 func (inv *Investigator) logPrunedScope(scope string, removed int, maxAge time.Duration) {

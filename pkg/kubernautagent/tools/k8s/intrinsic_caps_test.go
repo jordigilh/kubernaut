@@ -75,7 +75,8 @@ var _ = Describe("Kubernaut Agent K8s Intrinsic Caps — #752 Phase 2", func() {
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 			mapper := buildTestMapper()
 			kindIndex := buildTestKindIndex()
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(objects...)))
 
 			reg = registry.New()
 			for _, t := range k8s.NewAllTools(typedClient, resolver) {
@@ -144,7 +145,8 @@ var _ = Describe("Kubernaut Agent K8s Intrinsic Caps — #752 Phase 2", func() {
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 			mapper := buildTestMapper()
 			kindIndex := buildTestKindIndex()
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(objects...)))
 
 			reg = registry.New()
 			for _, t := range k8s.NewAllTools(typedClient, resolver) {
@@ -215,7 +217,8 @@ var _ = Describe("Kubernaut Agent K8s Intrinsic Caps — #752 Phase 2", func() {
 				dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 				mapper := buildTestMapper()
 				kindIndex := buildTestKindIndex()
-				resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+				resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+					k8s.WithMetadataClient(newMetadataSummaryClient(objects...)))
 
 				reg = registry.New()
 				for _, t := range k8s.NewAllTools(typedClient, resolver) {
@@ -255,7 +258,8 @@ var _ = Describe("Kubernaut Agent K8s Intrinsic Caps — #752 Phase 2", func() {
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 			mapper := buildTestMapper()
 			kindIndex := buildTestKindIndex()
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(objects...)))
 
 			reg = registry.New()
 			for _, t := range k8s.NewAllTools(typedClient, resolver) {

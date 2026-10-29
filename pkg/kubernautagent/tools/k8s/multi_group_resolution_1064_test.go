@@ -108,7 +108,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(olmSub)))
 			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator", "operators.coreos.com")
 			Expect(err).NotTo(HaveOccurred(), "Get should succeed with explicit api_group")
 			data, _ := json.Marshal(result)
@@ -125,7 +126,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(olmSub)))
 			result, err := resolver.List(context.Background(), "Subscription", "demo-operator", "operators.coreos.com")
 			Expect(err).NotTo(HaveOccurred(), "List should succeed with explicit api_group")
 			data, _ := json.Marshal(result)
@@ -152,7 +154,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(olmSub, knativeSub)))
 			result, err := resolver.List(context.Background(), "Subscription", "demo-operator", "operators.coreos.com")
 			Expect(err).NotTo(HaveOccurred())
 			data, _ := json.Marshal(result)
@@ -219,7 +222,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(dep)))
 			result, err := resolver.List(context.Background(), "Deployment", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			data, _ := json.Marshal(result)
@@ -376,7 +380,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(olmSub)))
 			typedClient := fakek8s.NewSimpleClientset()
 
 			reg := registry.New()
@@ -400,7 +405,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
 
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(olmSub)))
 			typedClient := fakek8s.NewSimpleClientset()
 
 			reg := registry.New()

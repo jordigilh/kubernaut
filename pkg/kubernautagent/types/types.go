@@ -42,9 +42,10 @@ const (
 // that must bypass interactive hold.
 const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
 
-// DefaultMaxEvidenceHandoffBytes is the independent whole-packet budget for
-// Phase 2 evidence, including its digest and freeze timestamp (DD-KA-2496).
-const DefaultMaxEvidenceHandoffBytes = 262_144
+// DefaultStructuredPhase3ContextBudget is the code-owned byte budget for the
+// structured Phase 3 packet/prompt, including its digest and freeze timestamp
+// (DD-KA-2496, Issue #2521). It never bounds or stores raw PhaseRCA output.
+const DefaultStructuredPhase3ContextBudget = 262_144
 
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string

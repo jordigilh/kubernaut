@@ -136,7 +136,8 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			kindIndex := buildMultiVersionKindIndex()
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
-			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient()))
 
 			// List exercises resolveMappings; if only 1 mapping returned, we'd get
 			// an empty v1beta1 list. With 2 mappings, we'd get "no results from any
@@ -158,7 +159,8 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			kindIndex := buildMultiVersionKindIndex()
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
-			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
+			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard(),
+				k8s.WithMetadataClient(newMetadataSummaryClient(ap)))
 			result, err := resolver.List(context.Background(), apKind, "demo-mesh-failure", "")
 			Expect(err).NotTo(HaveOccurred(), "List should succeed via multi-version fallback")
 			data, _ := json.Marshal(result)
@@ -247,7 +249,8 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 			logger, logs := captureLogger()
 
-			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logger)
+			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logger,
+				k8s.WithMetadataClient(newMetadataSummaryClient(ap)))
 			_, err := resolver.List(context.Background(), apKind, "ns", "")
 			Expect(err).NotTo(HaveOccurred())
 

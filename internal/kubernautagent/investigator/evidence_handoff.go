@@ -34,23 +34,23 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// DD-KA-2496 / BR-KA-016: this packet exists only for the current model handoff.
-// Status/audit/live projections receive its digest, not its observation contents.
+// DD-KA-2496 / BR-KA-016 / Issue #2521: this packet exists only for the current
+// model handoff. Status/audit/live projections receive its digest, not raw
+// PhaseRCA observations or conversation contents.
 // Pointer fields make unknown distinct from known empty/core group, zero or false.
 type evidenceHandoff struct {
-	SchemaVersion       string                  `json:"schema_version"`
-	Target              handoffTarget           `json:"target"`
-	TargetResolution    handoffTargetResolution `json:"target_resolution"`
-	RCA                 handoffRCA              `json:"rca"`
-	CurrentObservations []handoffObservation    `json:"current_observations"`
-	PriorAttempts       []handoffPriorAttempt   `json:"prior_attempts"`
-	Context             handoffContext          `json:"context"`
-	Comparisons         []string                `json:"comparisons"`
-	Hypotheses          []string                `json:"hypotheses"`
-	ContraryEvidence    []string                `json:"contrary_evidence"`
-	Unknowns            []string                `json:"unknowns"`
-	HandoffDigest       string                  `json:"handoff_digest,omitempty"`
-	FrozenAt            *time.Time              `json:"frozen_at,omitempty"`
+	SchemaVersion    string                  `json:"schema_version"`
+	Target           handoffTarget           `json:"target"`
+	TargetResolution handoffTargetResolution `json:"target_resolution"`
+	RCA              handoffRCA              `json:"rca"`
+	PriorAttempts    []handoffPriorAttempt   `json:"prior_attempts"`
+	Context          handoffContext          `json:"context"`
+	Comparisons      []string                `json:"comparisons"`
+	Hypotheses       []string                `json:"hypotheses"`
+	ContraryEvidence []string                `json:"contrary_evidence"`
+	Unknowns         []string                `json:"unknowns"`
+	HandoffDigest    string                  `json:"handoff_digest,omitempty"`
+	FrozenAt         *time.Time              `json:"frozen_at,omitempty"`
 }
 
 type handoffTarget struct {
@@ -154,29 +154,61 @@ func handoffRecordedTime(value time.Time) *time.Time {
 	return &utc
 }
 
-func scopedHandoffInput(in handoffInput) handoffInput {
+// scopedHandoffInput removes history that cannot be proven to belong to the
+// resolved target before serialization or model dispatch.
+func (inv *Investigator) scopedHandoffInput(in handoffInput) handoffInput {
+	in.Signal.Namespace = inv.normalizeNamespace(in.Signal.ResourceKind, in.Signal.Namespace)
 	if in.EnrichData == nil {
 		return in
 	}
 	data := *in.EnrichData
 	in.EnrichData = &data
 	if data.HistoryResult != nil {
-		if data.HistoryResult.TargetResource != in.Signal.Namespace+"/"+in.Signal.ResourceKind+"/"+in.Signal.ResourceName {
+		if !handoffHistoryMatchesTarget(data.HistoryResult.TargetResource, in.Signal) {
+			inv.logger.V(1).Info("discarding history outside the resolved handoff target",
+				"history_target", data.HistoryResult.TargetResource,
+				"target_kind", in.Signal.ResourceKind, "target_name", in.Signal.ResourceName,
+				"target_namespace", in.Signal.Namespace)
 			data.HistoryResult = nil // Never disclose or match another target's history.
 		}
 	}
 	return in
 }
 
+// handoffHistoryMatchesTarget accepts canonical and legacy cluster-scoped
+// spellings while keeping arbitrary namespaced CRDs fail-closed.
+func handoffHistoryMatchesTarget(raw string, signal katypes.SignalContext) bool {
+	normalized := strings.TrimPrefix(strings.TrimSpace(raw), "/")
+	canonical := signal.Namespace + "/" + signal.ResourceKind + "/" + signal.ResourceName
+	if signal.Namespace == "" {
+		canonical = signal.ResourceKind + "/" + signal.ResourceName
+		return normalized == canonical || normalized == "cluster/"+canonical
+	}
+	if normalized == canonical {
+		return true
+	}
+	// Scope resolution can fail closed while preserving a non-empty signal
+	// namespace. Accept the unnamespaced canonical form only for Kubernetes
+	// built-in cluster-scoped kinds; arbitrary CRDs remain fail-closed.
+	if normalized == signal.ResourceKind+"/"+signal.ResourceName {
+		_, knownClusterScoped := knownClusterScopedHandoffKinds[strings.ToLower(signal.ResourceKind)]
+		return knownClusterScoped
+	}
+	return false
+}
+
+var knownClusterScopedHandoffKinds = map[string]struct{}{
+	"clusterrole": {}, "clusterrolebinding": {}, "customresourcedefinition": {},
+	"namespace": {}, "node": {}, "persistentvolume": {}, "priorityclass": {},
+	"storageclass": {},
+}
+
 func (inv *Investigator) freezeEvidenceHandoff(ctx context.Context, in handoffInput, id string) (*frozenEvidenceHandoff, error) {
+	_ = id // retained at the call boundary for correlation/log compatibility
 	if in.EnrichData != nil && in.EnrichData.HistoryUnavailable {
 		return nil, fmt.Errorf("remediation history acquisition failed; complete repeat context is unavailable")
 	}
-	observations, err := inv.evidenceSnapshot(id)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(scopedHandoffInput(in))
+	raw, err := json.Marshal(inv.scopedHandoffInput(in))
 	if err != nil {
 		return nil, fmt.Errorf("serialize handoff source: %w", err)
 	}
@@ -190,14 +222,14 @@ func (inv *Investigator) freezeEvidenceHandoff(ctx context.Context, in handoffIn
 	if err := json.Unmarshal(sanitized, &source); err != nil {
 		return nil, fmt.Errorf("freeze handoff source: %w", err)
 	}
-	packet, err := buildEvidenceHandoff(source, observations)
+	packet, err := buildEvidenceHandoff(source)
 	if err != nil {
 		return nil, err
 	}
 	if source.Signal.ResourceAPIVersion != "" && packet.Target.APIGroup == nil {
 		inv.logger.Info("Target API group/version unavailable in evidence handoff", "correlation_id", id, "reason", "unparseable_api_version")
 	}
-	wire, digest, err := packet.serializeFrozen(time.Now().UTC(), inv.evidence.budget)
+	wire, digest, err := packet.serializeFrozen(time.Now().UTC(), inv.structuredContext.budget)
 	if err != nil {
 		return nil, err
 	}
@@ -238,15 +270,17 @@ func (packet evidenceHandoff) serializeFrozen(now time.Time, budget int) (string
 	return string(wire), packet.HandoffDigest, nil
 }
 
-func buildEvidenceHandoff(source handoffInput, observations []handoffObservation) (*evidenceHandoff, error) {
+// buildEvidenceHandoff projects trusted signal, structured RCA, and target
+// enrichment into the bounded model-facing packet.
+func buildEvidenceHandoff(source handoffInput) (*evidenceHandoff, error) {
 	signal := source.Signal
 	packet := &evidenceHandoff{
 		SchemaVersion: "1",
 		Target: handoffTarget{ClusterID: optionalHandoffString(signal.ClusterID),
 			Kind: optionalHandoffString(signal.ResourceKind), Namespace: optionalHandoffString(signal.Namespace), Name: optionalHandoffString(signal.ResourceName)},
 		TargetResolution: handoffTargetResolution{Basis: "trusted_signal"},
-		RCA:              handoffRCA{Summary: source.RCASummary}, CurrentObservations: observations,
-		PriorAttempts: []handoffPriorAttempt{}, Comparisons: []string{}, Hypotheses: []string{}, ContraryEvidence: []string{},
+		RCA:              handoffRCA{Summary: source.RCASummary},
+		PriorAttempts:    []handoffPriorAttempt{}, Comparisons: []string{}, Hypotheses: []string{}, ContraryEvidence: []string{},
 		Unknowns: []string{"target-resolution observation timestamp is unknown", "prior resource manifests and failure mechanisms are unknown", "current/prior state comparison and separately recorded contrary evidence are unavailable"},
 		Context:  handoffContext{SignalFiringTime: optionalHandoffString(signal.FiringTime), SignalReceivedTime: optionalHandoffString(signal.ReceivedTime)},
 	}
@@ -266,9 +300,6 @@ func buildEvidenceHandoff(source handoffInput, observations []handoffObservation
 	}
 	if signal.ClusterID == "" {
 		packet.Unknowns = append(packet.Unknowns, "target cluster ID is unknown")
-	}
-	if len(observations) == 0 {
-		packet.Unknowns = append(packet.Unknowns, "current observations were not recorded for this request")
 	}
 	if source.RCASummary != "" {
 		packet.Hypotheses = append(packet.Hypotheses, source.RCASummary)
@@ -400,7 +431,7 @@ func (inv *Investigator) sanitizeHandoffJSON(ctx context.Context, raw json.RawMe
 		if err := json.Unmarshal(raw, &text); err != nil {
 			return nil, fmt.Errorf("decode evidence text: %w", err)
 		}
-		clean, err := inv.sanitizeEvidenceText(ctx, text)
+		clean, err := inv.sanitizeStructuredContextText(ctx, text)
 		if err != nil {
 			return nil, fmt.Errorf("sanitize evidence text: %w", err)
 		}
@@ -432,7 +463,7 @@ func (inv *Investigator) sanitizeHandoffObject(ctx context.Context, raw json.Raw
 	}
 	cleaned := make(map[string]json.RawMessage, len(object))
 	for key, value := range object {
-		cleanKey, err := inv.sanitizeEvidenceText(ctx, key)
+		cleanKey, err := inv.sanitizeStructuredContextText(ctx, key)
 		if err != nil {
 			return nil, fmt.Errorf("sanitize evidence key: %w", err)
 		}

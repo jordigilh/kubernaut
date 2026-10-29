@@ -2,9 +2,9 @@
 
 **Status**: Approved for implementation; **Section 1 Phase 1/RCA contract partially superseded by DD-KA-2511**<br>
 **Decision Date**: 2026-10-09<br>
-**Version**: 1.3 — Phase 1/RCA continuation amendment recorded by DD-KA-2511 on 2026-10-15<br>
+**Version**: 1.4 — Issue #2521 target-scoped handoff and bounded-tool amendment<br>
 **Applies To**: Kubernaut Agent, DataStorage, AIAnalysis, Remediation Orchestrator and existing audit/status paths<br>
-**Issues**: [#2496](https://github.com/jordigilh/kubernaut/issues/2496), [#2498](https://github.com/jordigilh/kubernaut/issues/2498)
+**Issues**: [#2496](https://github.com/jordigilh/kubernaut/issues/2496), [#2498](https://github.com/jordigilh/kubernaut/issues/2498), [#2521](https://github.com/jordigilh/kubernaut/issues/2521)
 
 ### Supersession notice
 
@@ -26,23 +26,27 @@ Implement history-aware RCA and repeat reasoning across two existing paths: past
 - **Phase 2** automatically resolves and enriches exactly one target. It sanitizes, freezes/deep-copies and serializes the authoritative target-scoped handoff for selection. The packet has one `target` field, not `final_target` or a multiple-target model.
 - **Phase 3** exposes only workflow discovery and required result-submission tools. A trusted server-side phase allow-list is checked before registry or external execution. Model-supplied phase arguments are not authoritative; off-phase calls are rejected and observable.
 
-### 2. Frozen target-scoped handoff
+### 2. Frozen target-scoped handoff (amended by Issue #2521)
 
 The model-facing handoff contains:
 
 - schema version, one fully qualified `target` (cluster ID, API group/version, kind, namespace and name), target-resolution provenance and available timestamps;
-- current observations, prior target attempts, comparisons, hypotheses, contrary evidence and explicit unknowns; and
+- structured RCA (summary, confidence, causal chain/factors, actionability and due-diligence fields), authoritative RCA-target Phase 2 enrichment/history, prior target attempts, repeat context, comparisons, hypotheses, contrary evidence and explicit unknowns; and
 - a server-computed handoff digest and freeze timestamp. The digest is a property of the frozen packet, not a read from the audit trail.
 
-It contains no per-item `source_kind`, `source_type`, `source_ref` or `source_resource` metadata. Existing correlated RCA/tool/audit records retain source details for compliance and past-remediation reconstruction; they are not queried to transport the current live result. Unknown values remain unknown and are never inferred.
+It contains no generic PhaseRCA `current_observations`, raw tool output, full investigation conversation, or per-item `source_kind`, `source_type`, `source_ref` or `source_resource` metadata. Existing correlated RCA/tool/audit records retain bounded source identity, status, counts, truncation, digests/references and decision metadata for compliance and past-remediation reconstruction; they are not queried to transport the current live result. Unknown values remain unknown and are never inferred.
 
 The packet is never silently truncated or partially projected. Sanitization, freeze/deep-copy, digest or configured serialized/prompt-budget failure routes automatic selection to the existing review path. No A2 bounded-compaction behavior is introduced.
 
-`ai.investigation.maxEvidenceHandoffBytes` is a positive serialized-packet byte
-budget, default **262,144 bytes (256 KiB)**. It is separate from tool-output
-summarization/truncation. The entire model-facing packet, including the digest and
-freeze timestamp, must fit; the digest covers canonical sanitized content excluding
-those two runtime fields. The same packet and digest are reused across corrections.
+The model-facing packet and rendered Phase 3 prompt remain behind a fixed
+code-owned structured-context byte budget. It is separate from PhaseRCA tool-output
+summarization/truncation: oversized ordinary tool results remain available to RCA,
+while a genuinely oversized structured Phase 3 packet/prompt fails closed without
+partial projection. The digest covers canonical sanitized content excluding the
+runtime digest and freeze timestamp. The same packet and digest are reused across
+corrections. The former operator-facing raw-evidence budget knob is removed; the
+structured-context budget is code-owned and must not be used to carry raw
+observations.
 
 ### 3. Workflow identity and repeat reasoning
 
@@ -84,10 +88,11 @@ wires and **`selectionAssessment`** in AA RCA status. It is non-executable: reta
 the proposed identity, bounded reasoning, known current selection confidence and
 trusted repeat-match/validation/digest context without putting the rejected ID in
 `selected_workflow`. Internal trusted prior-attempt links stay out of the live
-Console projection. The original 64 KiB default was explicitly approved by the
-user on 2026-10-10; issue #2519 raises the operational default to 256 KiB because
-the smaller default caused KA failures in the default configuration. The packet
-contract and fail-closed behavior are unchanged.
+Console projection. Issue #2521 replaces the former operator-tuned raw-evidence
+budget with the code-owned structured Phase 3 packet/prompt budget because raw
+observation capture caused a large PhaseRCA response to be misclassified before
+the valid RCA could reach selection. The packet contract and fail-closed behavior
+are unchanged.
 
 ---
 

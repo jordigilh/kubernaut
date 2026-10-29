@@ -269,6 +269,29 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	Describe("UT-KA-2521-009: bounded Kubernetes summary survives the typed audit projection", func() {
+		It("should persist count, truncation, digest and reference without a raw body", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+			summary := `{"tool_name":"kubectl_get_by_kind_in_cluster","item_count":100,"total_count":600,"truncated":true,"digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","reference":"rr-2521-audit/tool-call/3"}`
+
+			event := audit.NewEvent(audit.EventTypeLLMToolCall, "rr-2521-audit")
+			event.Data["tool_call_index"] = 3
+			event.Data["tool_name"] = "kubectl_get_by_kind_in_cluster"
+			event.Data["tool_result"] = summary
+			event.Data["tool_result_preview"] = summary
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			payload, ok := recorder.calls[0].EventData.GetLLMToolCallPayload()
+			Expect(ok).To(BeTrue())
+			Expect(json.Valid(payload.ToolResult)).To(BeTrue())
+			Expect(string(payload.ToolResult)).To(ContainSubstring(`"total_count":600`))
+			Expect(string(payload.ToolResult)).To(ContainSubstring(`"truncated":true`))
+			Expect(string(payload.ToolResult)).To(ContainSubstring("sha256:"))
+			Expect(string(payload.ToolResult)).NotTo(ContainSubstring("ConfigMap body"))
+		})
+	})
+
 	Describe("UT-KA-433-AP-010: tool_result_preview truncates at 500 chars", func() {
 		It("should truncate long tool results to 500 characters", func() {
 			recorder := &fakeOgenClient{}

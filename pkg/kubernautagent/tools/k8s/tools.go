@@ -210,6 +210,8 @@ func (t *getByNameInClusterTool) Description() string {
 }
 func (t *getByNameInClusterTool) Parameters() json.RawMessage { return clusterObjParams }
 
+// Execute performs one exact-name cluster lookup and serializes its targeted
+// full-object result.
 func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
 		Kind     string `json:"kind"`
@@ -220,38 +222,19 @@ func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessa
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	resources, err := t.resolver.List(ctx, a.Kind, "", a.APIGroup)
+	resource, err := t.resolver.GetByNameInCluster(ctx, a.Kind, a.Name, a.APIGroup)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(resources)
+	data, err := json.Marshal(resource)
 	if err != nil {
-		return "", fmt.Errorf("marshaling resources: %w", err)
+		return "", fmt.Errorf("marshaling resource: %w", err)
 	}
-
-	var listObj struct {
-		Items []json.RawMessage `json:"items"`
+	if len(data) > maxJQOutputChars {
+		return "", fmt.Errorf("serialized resource exceeds %d-byte output limit", maxJQOutputChars)
 	}
-	if err := json.Unmarshal(data, &listObj); err != nil || listObj.Items == nil {
-		return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
-	}
-
-	for _, item := range listObj.Items {
-		var meta struct {
-			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-		}
-		if err := json.Unmarshal(item, &meta); err != nil {
-			continue
-		}
-		if meta.Metadata.Name == a.Name {
-			return string(item), nil
-		}
-	}
-
-	return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
+	return string(data), nil
 }
 
 // --- find resource tool ---
@@ -266,10 +249,12 @@ func newFindResource(resolver ResourceResolver) *findResourceTool {
 
 func (t *findResourceTool) Name() string { return "kubectl_find_resource" }
 func (t *findResourceTool) Description() string {
-	return "Find resources by kind with keyword substring filter across all namespaces"
+	return "Find resources by keyword over retained metadata fields across all namespaces; the first 100 items are searched and results may be truncated"
 }
 func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
 
+// Execute searches only the retained metadata projection and reports when the
+// bounded source page may hide additional matches.
 func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
 		Kind     string `json:"kind"`
@@ -289,6 +274,7 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	if err != nil {
 		return "", err
 	}
+	summary, isSummary := resources.(*ResourceListSummary)
 
 	data, err := json.Marshal(resources)
 	if err != nil {
@@ -314,13 +300,36 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	}
 
 	if len(matched) == 0 {
-		return "[]", nil
+		return findResourceNoMatch(summary, isSummary), nil
 	}
 	result, err := json.Marshal(matched)
 	if err != nil {
 		return "", fmt.Errorf("marshaling matched resources: %w", err)
 	}
-	return string(result), nil
+	return findResourceMatches(string(result), summary, isSummary), nil
+}
+
+// findResourceMatches appends a bounded-source warning when matched results
+// come from a truncated metadata page.
+func findResourceMatches(result string, summary *ResourceListSummary, isSummary bool) string {
+	if !isSummary || summary == nil || !summary.Truncated {
+		return result
+	}
+	if summary.TotalCount != nil {
+		return fmt.Sprintf("%s\nmatches found in the first %d of %d resources; results are truncated; narrow the query", result, summary.ItemCount, *summary.TotalCount)
+	}
+	return fmt.Sprintf("%s\nmatches found in the first %d resources; results are truncated; narrow the query", result, summary.ItemCount)
+}
+
+// findResourceNoMatch distinguishes a true empty result from a truncated page.
+func findResourceNoMatch(summary *ResourceListSummary, isSummary bool) string {
+	if !isSummary || summary == nil || !summary.Truncated {
+		return "[]"
+	}
+	if summary.TotalCount != nil {
+		return fmt.Sprintf("no match in the first %d of %d resources; results are truncated; narrow the query", summary.ItemCount, *summary.TotalCount)
+	}
+	return fmt.Sprintf("no match in the first %d resources; results are truncated; narrow the query", summary.ItemCount)
 }
 
 // --- get yaml tool ---
