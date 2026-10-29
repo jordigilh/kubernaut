@@ -154,6 +154,6 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 		Expect(summary).To(HaveKeyWithValue("item_count", BeEquivalentTo(100)))
 		Expect(summary).To(HaveKeyWithValue("total_count", BeEquivalentTo(600)))
 		Expect(summary).To(HaveKeyWithValue("truncated", true))
-		Expect(summary["digest"]).To(MatchRegexp(`^sha512-256:[0-9a-f]{64}$`))
+		Expect(summary["digest"]).To(MatchRegexp(`^hmac-sha256:[0-9a-f]{64}$`))
 	})
 })

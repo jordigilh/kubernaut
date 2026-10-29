@@ -18,13 +18,15 @@ package investigator
 
 import (
 	"context"
+	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -646,6 +648,12 @@ const maxAuditToolResultBytes = 8192
 const structuredPhase3BudgetExhaustedReason = "structured Phase 3 context budget exceeded"
 const structuredPhase3BudgetExhaustedAfterDiscoveryReason = "structured Phase 3 context budget exceeded after discovery started"
 
+var auditSummaryDigestState struct {
+	sync.Once
+	key []byte
+	err error
+}
+
 // auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
 // history but excludes it from the generic tool-call audit record. Bulk
 // Kubernetes summaries are reduced to count/truncation/digest/reference data;
@@ -701,8 +709,11 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	if marshalErr != nil {
 		return "", nil, false
 	}
-	digest := sha512.Sum512_256(canonical)
-	summary["digest"] = fmt.Sprintf("sha512-256:%x", digest[:])
+	digest, digestErr := auditSummaryDigest(canonical)
+	if digestErr != nil {
+		return "", nil, false
+	}
+	summary["digest"] = digest
 	if reference != "" {
 		summary["reference"] = reference
 	}
@@ -711,6 +722,26 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 		return string(encoded), summary, true
 	}
 	return "", nil, false
+}
+
+// auditSummaryDigest creates an opaque process-local integrity fingerprint for
+// the allow-listed summary. The key prevents the value from being a fast
+// password hash while keeping repeated audit projections in one process stable.
+func auditSummaryDigest(input []byte) (string, error) {
+	auditSummaryDigestState.Do(func() {
+		auditSummaryDigestState.key = make([]byte, 32)
+		if _, err := cryptorand.Read(auditSummaryDigestState.key); err != nil {
+			auditSummaryDigestState.err = fmt.Errorf("generate audit summary digest key: %w", err)
+		}
+	})
+	if auditSummaryDigestState.err != nil {
+		return "", auditSummaryDigestState.err
+	}
+	digest := hmac.New(sha256.New, auditSummaryDigestState.key)
+	if _, err := digest.Write(input); err != nil {
+		return "", fmt.Errorf("hash audit summary: %w", err)
+	}
+	return fmt.Sprintf("hmac-sha256:%x", digest.Sum(nil)), nil
 }
 
 // auditOmittedOversizedToolResult applies the generic audit result size guard.
