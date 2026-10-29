@@ -139,6 +139,26 @@ selectionRevision: rar-selection-v1
 selectionDigest: sha256:...
 ```
 
+The canonical typed execution portion of this snapshot is the existing
+`sharedtypes.WorkflowSnapshot` from `pkg/shared/types/workflow_snapshot.go`.
+It carries the catalog-authoritative workflow identity and execution fields:
+`WorkflowID`, `WorkflowName`, `ActionType`, `Version`, `ExecutionBundle`,
+`ExecutionBundleDigest`, `ExecutionEngine`, `EngineConfig`,
+`ServiceAccountName`, `ExecutionClusterID`, `Dependencies`, `Resources` and
+`DeclaredParameterNames`. The selection contract accompanies that type with
+`Parameters`, `SelectionRevision` and `SelectionDigest`.
+
+The YAML above is illustrative; the shared Go type and generated CRD schemas
+are canonical.
+
+`SelectionDigest` is the SHA-256 digest of a canonical JSON preimage containing
+the complete original selection snapshot, excluding the digest field itself.
+The canonicalizer MUST use the fixed struct field order, lexicographically
+sorted map keys, UTF-8 JSON without insignificant whitespace, and explicit
+presence markers for nil versus empty maps. This preserves the distinction
+between an absent parameter map and an explicit empty map. A shared helper and
+fixed test vectors will be required by implementation.
+
 The current execution contract remains `map[string]string`. “Generic” means
 that the parameter names are not hard-coded by AF or RAR; it does not introduce
 typed JSON values into WorkflowExecution.
@@ -165,6 +185,16 @@ Effective parameter selection is not a per-key merge:
   parameter map.
 - A non-nil parameter map: use it as the complete replacement map.
 - An explicit empty map: execute with no parameters.
+
+The wire contract must preserve those states: omitted `parameters` decodes as
+nil, while `parameters: {}` decodes as an explicit empty map. The AF patch
+builder and CRD serialization must not use an `omitempty` path that drops an
+explicit empty replacement.
+
+For the current parameter-only AF contract, a non-empty `workflowName` in the
+RAR status override is rejected rather than stripped. The existing #594
+workflow-name field remains outside this scope for deferred/legacy handling;
+workflow switching is tracked separately by #2572.
 
 Workflow selection changes are excluded from this ADR's current scope. If that
 capability is later approved, it must carry a complete resolved workflow
@@ -206,10 +236,15 @@ The audit roles are distinct:
 - AF's tool-execution audit records the authenticated human's approval intent
   and request details. It is not proof that the RAR mutation was admitted.
 - AuthWebhook's `webhook.remediationapprovalrequest.decided` event is the
-  authoritative committed-decision event. It is emitted only after the
-  decision and override pass admission validation; rejected mutations must not
-  produce a successful committed-decision event.
-- RO's event records the business context and downstream orchestration result.
+  authoritative admission-attribution event. It records the authenticated
+  identity and accepted business fields after validation; rejected mutations
+  must not produce a successful event. It is not a transactionally durable
+  proof that the API server has persisted the object.
+- RO observes the persisted terminal RAR and owns the committed business
+  decision event and downstream orchestration context. If a control objective
+  later requires atomic audit persistence with the CRD write, the implementation
+  plan must add an outbox/reconciliation mechanism; this ADR does not claim
+  synchronous audit storage.
 
 These events are correlated but must not be treated as duplicate committed
 decisions.
@@ -271,13 +306,18 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 ## Validation Strategy
 
-1. Validate AIA-to-RAR snapshot serialization and nil/empty parameter semantics.
-2. Validate AuthWebhook accepts one terminal business update and rejects later
-   business-field mutations.
-3. Validate controller-only condition and audit bookkeeping remains possible.
-4. Validate AF human audit plus AuthWebhook delegation attribution.
-5. Validate RO creates WE from RAR only and passes the complete effective map.
-6. Validate audit payload reconstruction and control-objective coverage.
+1. **UT-AF-2570-001 / BR-ORCH-025**: validate AIA-to-RAR snapshot
+   serialization and nil/empty parameter semantics.
+2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: validate AuthWebhook accepts one
+   terminal business update and rejects later business-field mutations.
+3. **IT-AW-2570-003 / BR-ORCH-026**: validate controller-only condition and
+   audit bookkeeping remains possible.
+4. **IT-AF-2570-004 / BR-AUTH-001, AU-3**: validate AF human audit plus
+   AuthWebhook delegation attribution.
+5. **IT-RO-2570-005 / BR-ORCH-025/026**: validate RO creates WE from RAR only
+   and passes the complete effective map.
+6. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
+   payload reconstruction and control-objective coverage.
 
 Implementation planning and TDD scenarios are intentionally deferred until
 this ADR/DD set is merged.

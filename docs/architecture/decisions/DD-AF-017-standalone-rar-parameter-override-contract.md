@@ -90,6 +90,9 @@ structured parameter-only object.
   "decision": "Approved",
   "reason": "Reviewed the proposed parameter change",
   "workflow_override": {
+    "rar_uid": "<RAR UID>",
+    "selection_revision": "<selection revision>",
+    "selection_digest": "<canonical digest>",
     "parameters": {
       "MEMORY_LIMIT": "768Mi",
       "REPLICAS": "3"
@@ -174,6 +177,8 @@ remains an API concurrency guard, not the business review revision.
 - Omitted override or nil parameters: preserve the original RAR spec map.
 - Non-nil parameters: replace the entire original map.
 - Empty map: execute with no parameters.
+- The wire representation must preserve omitted versus explicit-empty maps;
+  an explicit `{}` must reach the status patch as an empty replacement map.
 - AF may validate shape and required input presence for user feedback.
 - AuthWebhook validates the admitted business result and locks the final RAR.
 
@@ -194,10 +199,11 @@ remains an API concurrency guard, not the business review revision.
 
 Extend existing typed approval payload types. Do not create a new override
 event taxonomy. AF records approval intent; AuthWebhook records the admitted
-committed decision; RO records business-context/orchestration events. The final
-field set is selected from the SOC2/FedRAMP control mapping and must support
-original, override and effective parameter evidence, actor/rationale
-attribution, review revision and sensitive-value handling.
+business fields and delegation attribution; RO records the persisted committed
+decision and business-context/orchestration events. The final field set is
+selected from the SOC2/FedRAMP control mapping and must support original,
+override and effective parameter evidence, actor/rationale attribution, review
+revision and sensitive-value handling.
 
 ---
 
@@ -245,11 +251,14 @@ attribution, review revision and sensitive-value handling.
 
 ## Validation Strategy
 
-1. JSON/schema tests for structured input, omitted parameters and empty maps.
-2. AuthWebhook tests for invalid keys, schema violations, target locks and
-   post-terminal business-field mutation.
-3. AF-to-AuthWebhook-to-RO-to-WE integration test proving the complete map.
-4. Audit/readback tests after the control-objective field mapping is approved.
+1. **UT-AF-2570-001 / BR-ORCH-025**: JSON/schema tests for structured input,
+   review bindings, omitted parameters and empty maps.
+2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: AuthWebhook tests for invalid keys,
+   schema violations, target locks and post-terminal business-field mutation.
+3. **IT-RO-2570-005 / BR-ORCH-025/026**: AF-to-AuthWebhook-to-RO-to-WE test
+   proving the complete map.
+4. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: audit/readback tests
+   after the control-objective field mapping is approved.
 5. No production implementation begins until this DD and ADR-076 are merged.
 
 ---
