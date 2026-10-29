@@ -698,7 +698,7 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	}
 	if err := json.Unmarshal([]byte(toolResult), &listSummary); err != nil ||
 		(!strings.Contains(toolResult, `"item_count"`) && !strings.Contains(toolResult, `"total_count"`)) {
-		return auditLegacyMetadataList(toolName, toolResult, reference)
+		return auditOmittedToolResult(toolName, toolResult, reference, "bulk_summary_missing")
 	}
 	summary := map[string]interface{}{
 		"tool_name":  toolName,
@@ -708,46 +708,10 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	if listSummary.TotalCount != nil {
 		summary["total_count"] = *listSummary.TotalCount
 	}
-	return encodeAuditBulkSummary(toolResult, reference, summary, false)
+	return encodeAuditBulkSummary(reference, summary)
 }
 
-func auditLegacyMetadataList(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
-	var list struct {
-		Items []json.RawMessage `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(toolResult), &list); err != nil || len(list.Items) == 0 {
-		return "", nil, false
-	}
-	for _, item := range list.Items {
-		if !isSafeLegacyMetadataItem(item) {
-			return "", nil, false
-		}
-	}
-	summary := map[string]interface{}{
-		"tool_name":   toolName,
-		"item_count":  len(list.Items),
-		"total_count": len(list.Items),
-		"truncated":   false,
-	}
-	return encodeAuditBulkSummary(toolResult, reference, summary, false)
-}
-
-func isSafeLegacyMetadataItem(raw json.RawMessage) bool {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || len(fields) == 0 {
-		return false
-	}
-	for key := range fields {
-		switch key {
-		case "name", "namespace", "uid", "resourceVersion", "labels", "metadata":
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func encodeAuditBulkSummary(toolResult, reference string, summary map[string]interface{}, preserveResult bool) (string, map[string]interface{}, bool) {
+func encodeAuditBulkSummary(reference string, summary map[string]interface{}) (string, map[string]interface{}, bool) {
 	canonical, marshalErr := json.Marshal(summary)
 	if marshalErr != nil {
 		return "", nil, false
@@ -759,9 +723,6 @@ func encodeAuditBulkSummary(toolResult, reference string, summary map[string]int
 	summary["digest"] = digest
 	if reference != "" {
 		summary["reference"] = reference
-	}
-	if preserveResult {
-		return toolResult, summary, true
 	}
 	encoded, marshalErr := json.Marshal(summary)
 	if marshalErr == nil {
