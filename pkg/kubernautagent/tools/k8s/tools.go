@@ -210,6 +210,8 @@ func (t *getByNameInClusterTool) Description() string {
 }
 func (t *getByNameInClusterTool) Parameters() json.RawMessage { return clusterObjParams }
 
+// Execute performs one exact-name cluster lookup and serializes its targeted
+// full-object result.
 func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
 		Kind     string `json:"kind"`
@@ -248,6 +250,8 @@ func (t *findResourceTool) Description() string {
 }
 func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
 
+// Execute searches only the retained metadata projection and reports when the
+// bounded source page may hide additional matches.
 func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
 		Kind     string `json:"kind"`
@@ -302,6 +306,7 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	return string(result), nil
 }
 
+// findResourceNoMatch distinguishes a true empty result from a truncated page.
 func findResourceNoMatch(summary *ResourceListSummary, isSummary bool) string {
 	if !isSummary || summary == nil || !summary.Truncated {
 		return "[]"

@@ -32,6 +32,9 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// runWorkflowSelection freezes the trusted Phase 3 handoff, validates the
+// serialized provider context, and drives workflow discovery through its typed
+// terminal-outcome classification.
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
 	correlationID := llmCtx.CorrelationID
 	// Apply signal label overrides (target_resource_kind / target_resource_name)
@@ -290,6 +293,10 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 			result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 			result.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
 			result.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure
+			return "", result
+		}
+		if r.Reason == structuredPhase3BudgetExhaustedAfterDiscoveryReason {
+			markWorkflowDiscoveryFailed(result)
 			return "", result
 		}
 		markWorkflowDiscoveryFailed(result)

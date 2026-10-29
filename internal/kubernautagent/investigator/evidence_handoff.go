@@ -269,6 +269,8 @@ func (packet evidenceHandoff) serializeFrozen(now time.Time, budget int) (string
 	return string(wire), packet.HandoffDigest, nil
 }
 
+// buildEvidenceHandoff projects trusted signal, structured RCA, and target
+// enrichment into the bounded model-facing packet.
 func buildEvidenceHandoff(source handoffInput) (*evidenceHandoff, error) {
 	signal := source.Signal
 	packet := &evidenceHandoff{

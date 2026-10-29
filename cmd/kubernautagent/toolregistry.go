@@ -561,6 +561,8 @@ func wireDataStorageReadinessGate(ctx context.Context, cfg *kaconfig.Config, log
 	return sharedaudit.NewReadinessGate(ctx, cfg.Integrations.DataStorage.HealthURL, logger)
 }
 
+// registerK8sTools wires the production Kubernetes clients into every bounded
+// Kubernetes tool, including the metadata client used for bulk lists.
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger, auditStore audit.AuditStore) {
 	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
 	if err != nil {

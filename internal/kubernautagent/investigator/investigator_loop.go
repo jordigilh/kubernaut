@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -277,7 +278,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		if budgetErr := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget); budgetErr != nil {
 			inv.logger.Error(budgetErr, "workflow selection context exceeded structured Phase 3 budget",
 				"correlation_id", llmCtx.CorrelationID, "turn", turn)
-			return &ExhaustedResult{Reason: structuredPhase3BudgetExhaustedReason}, messages, true, nil
+			return &ExhaustedResult{Reason: structuredPhase3BudgetExhaustionReason(messages)}, messages, true, nil
 		}
 	}
 
@@ -643,6 +644,7 @@ func (inv *Investigator) executeToolCall(ctx context.Context, tc llm.ToolCall, c
 const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`
 const maxAuditToolResultBytes = 8192
 const structuredPhase3BudgetExhaustedReason = "structured Phase 3 context budget exceeded"
+const structuredPhase3BudgetExhaustedAfterDiscoveryReason = "structured Phase 3 context budget exceeded after discovery started"
 
 // auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
 // history but excludes it from the generic tool-call audit record. Bulk
@@ -699,8 +701,8 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	if marshalErr != nil {
 		return "", nil, false
 	}
-	digest := sha256.Sum256(canonical)
-	summary["digest"] = fmt.Sprintf("sha256:%x", digest[:])
+	digest := sha512.Sum512_256(canonical)
+	summary["digest"] = fmt.Sprintf("sha512-256:%x", digest[:])
 	if reference != "" {
 		summary["reference"] = reference
 	}
@@ -742,6 +744,27 @@ func auditOmittedToolResult(toolName, toolResult, reference, reason string) (str
 func isBulkKubernetesSummaryTool(toolName string) bool {
 	return strings.HasPrefix(toolName, "kubectl_get_by_kind_") ||
 		toolName == "kubectl_find_resource" || toolName == "kubernetes_jq_query" || toolName == "kubernetes_count"
+}
+
+// workflowDiscoveryHasStarted reports whether the provider has already
+// requested a discovery tool, which changes the typed outcome of a later
+// structured-context budget exhaustion.
+func workflowDiscoveryHasStarted(messages []llm.Message) bool {
+	for _, message := range messages {
+		if len(message.ToolCalls) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// structuredPhase3BudgetExhaustionReason preserves whether discovery already
+// ran when a later provider turn exceeds the structured context budget.
+func structuredPhase3BudgetExhaustionReason(messages []llm.Message) string {
+	if workflowDiscoveryHasStarted(messages) {
+		return structuredPhase3BudgetExhaustedAfterDiscoveryReason
+	}
+	return structuredPhase3BudgetExhaustedReason
 }
 
 // buildTruncationRetryMessages emits the truncation-detected audit event and

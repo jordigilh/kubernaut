@@ -79,4 +79,23 @@ var _ = Describe("Issue #2521 target-scoped Phase 3 handoff", func() {
 		Expect(result).NotTo(BeNil())
 		Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeRCAIncomplete))
 	})
+
+	It("UT-KA-2521-008: budget exhaustion after a discovery tool is a discovery failure", func() {
+		inv := New(Config{Logger: logr.Discard()})
+		messages := []llm.Message{
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{Name: "list_workflows"}}},
+			{Role: "tool", ToolName: "list_workflows", Content: "bounded workflow list"},
+		}
+		Expect(workflowDiscoveryHasStarted(messages)).To(BeTrue())
+		_, result := inv.handleWorkflowSelectionLoopResult(
+			context.Background(),
+			&ExhaustedResult{Reason: structuredPhase3BudgetExhaustedAfterDiscoveryReason},
+			"structured RCA",
+			messages,
+			LLMInvocationContext{CorrelationID: "rr-budget-after-discovery-2521"},
+		)
+		Expect(result).NotTo(BeNil())
+		Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed))
+		Expect(result.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusFailed))
+	})
 })

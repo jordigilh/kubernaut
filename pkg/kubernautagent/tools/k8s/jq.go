@@ -46,6 +46,8 @@ type jqQueryTool struct {
 }
 
 func (t *jqQueryTool) Name() string { return "kubernetes_jq_query" }
+
+// Description states the metadata-only input contract exposed to the model.
 func (t *jqQueryTool) Description() string {
 	return "Run a jq expression against bounded metadata-only summaries (name, namespace, uid, resourceVersion, up to 32 labels; first 100 retained items) of Kubernetes resources across all namespaces. spec/status/data are unavailable; use a targeted get tool for a resource body."
 }
@@ -70,6 +72,8 @@ type jqCountTool struct {
 }
 
 func (t *jqCountTool) Name() string { return "kubernetes_count" }
+
+// Description states the retained-page and safe-total semantics for counts.
 func (t *jqCountTool) Description() string {
 	return "Count Kubernetes resources matching a jq filter over bounded metadata-only summaries (first 100 retained items; spec/status/data unavailable), showing retained count, safe total when known, and a 10-line preview"
 }

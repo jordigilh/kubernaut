@@ -249,6 +249,8 @@ type metadataSummaryClient struct {
 	itemsByResource map[string][]metav1.PartialObjectMetadata
 }
 
+// newMetadataSummaryClient builds a GVR-aware metadata fake with pagination
+// markers matching the bounded production contract.
 func newMetadataSummaryClient(objects ...runtime.Object) metadata.Interface {
 	client := &metadataSummaryClient{itemsByResource: make(map[string][]metav1.PartialObjectMetadata)}
 	for _, object := range objects {
@@ -280,6 +282,7 @@ func (g metadataSummaryGetter) Namespace(namespace string) metadata.ResourceInte
 	return g
 }
 
+// List returns only the requested resource kind and simulates one bounded page.
 func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
 	seeded := g.client.itemsByResource[g.resource]
 	items := make([]metav1.PartialObjectMetadata, 0, len(seeded))
@@ -303,6 +306,8 @@ func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*m
 	}, Items: items}, nil
 }
 
+// metadataResourceForObject maps test objects to the resource key requested by
+// the resolver's REST mapper.
 func metadataResourceForObject(object runtime.Object) string {
 	gvk := object.GetObjectKind().GroupVersionKind()
 	if gvk.Kind != "" {
