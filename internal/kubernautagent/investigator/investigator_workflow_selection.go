@@ -18,6 +18,7 @@ package investigator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -95,15 +96,14 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
-	if budgetResult := inv.workflowSelectionPromptBudgetResult(systemPrompt, correlationID); budgetResult != nil {
+	messages := []llm.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: "Select the appropriate remediation workflow."},
+	}
+	if budgetResult := inv.workflowSelectionPromptBudgetResult(messages, correlationID); budgetResult != nil {
 		return budgetResult, nil
 	}
 	llmCtx.WorkflowDiscovery = newWorkflowDiscoveryAuditContext(enrichData, overriddenSignal, systemPrompt)
-
-	messages := []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
-	}
 	if llmCtx.decisionLoopID == "" {
 		llmCtx.decisionLoopID = "workflow_selection"
 	}
@@ -137,8 +137,16 @@ func validateWorkflowSelectionPromptBudget(rendered string, budget int) error {
 	return nil
 }
 
-func (inv *Investigator) workflowSelectionPromptBudgetResult(rendered, correlationID string) *katypes.InvestigationResult {
-	err := validateWorkflowSelectionPromptBudget(rendered, inv.evidence.budget)
+func validateWorkflowSelectionContextBudget(messages []llm.Message, budget int) error {
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		return fmt.Errorf("serialize workflow selection context: %w", err)
+	}
+	return validateWorkflowSelectionPromptBudget(string(encoded), budget)
+}
+
+func (inv *Investigator) workflowSelectionPromptBudgetResult(messages []llm.Message, correlationID string) *katypes.InvestigationResult {
+	err := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget)
 	if err == nil {
 		return nil
 	}
@@ -273,6 +281,12 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
+		}
+		if strings.Contains(r.Reason, "structured Phase 3 context budget") {
+			result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+			result.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
+			result.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure
+			return "", result
 		}
 		markWorkflowDiscoveryFailed(result)
 		return "", result
@@ -578,6 +592,9 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			"correlation_id", correlationID)
 
 		retryMessages = append(retryMessages, llm.Message{Role: "user", Content: correctionTemplate})
+		if budgetResult := inv.workflowSelectionPromptBudgetResult(retryMessages, correlationID); budgetResult != nil {
+			return budgetResult, ""
+		}
 
 		result, content, updated, ok := inv.attemptWorkflowSubmitRetry(ctx, workflowSubmitRetryParams{
 			attempt: attempt, retryMessages: retryMessages, tools: submitOnlyTools, rcaSummary: rcaSummary,

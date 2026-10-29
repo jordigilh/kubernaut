@@ -752,9 +752,13 @@ func (inv *Investigator) emitToolCallAudit(ctx context.Context, tc llm.ToolCall,
 	event.Data["tool_call_index"] = index
 	event.Data["tool_name"] = tc.Name
 	event.Data["tool_arguments"] = auditSafeToolArguments(tc.Arguments)
-	auditResult := auditSafeToolResult(tc.Name, result)
+	reference := fmt.Sprintf("%s/tool-call/%d", correlationID, index)
+	auditResult, resultSummary := auditToolResultProjection(tc.Name, result, reference)
 	event.Data["tool_result"] = auditResult
 	event.Data["tool_result_preview"] = truncatePreview(auditResult, 500)
+	if resultSummary != nil {
+		event.Data["tool_result_summary"] = resultSummary
+	}
 	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
 }
 

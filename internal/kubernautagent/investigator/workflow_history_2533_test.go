@@ -127,7 +127,7 @@ var _ = Describe("Issue #2533 Phase 3 historical decision handoff", func() {
 			Enricher:   enrichment.NewEnricher(&issue2533K8sClient{}, &issue2533DSClient{}, &gateRecordingAuditStore{}, logr.Discard()),
 			AuditStore: &gateRecordingAuditStore{}, Logger: logr.Discard(),
 			MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
-			Pipeline: investigator.Pipeline{MaxEvidenceHandoffBytes: 10_000},
+			Pipeline: investigator.Pipeline{StructuredPhase3ContextBudget: 10_000},
 		})
 
 		result, err := inv.Investigate(context.Background(), katypes.SignalContext{

@@ -273,6 +273,13 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		// propagated as err (Issue #1546 Tier 3).
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
 	}
+	if phase == katypes.PhaseWorkflowDiscovery {
+		if budgetErr := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget); budgetErr != nil {
+			inv.logger.Error(budgetErr, "workflow selection context exceeded structured Phase 3 budget",
+				"correlation_id", llmCtx.CorrelationID, "turn", turn)
+			return &ExhaustedResult{Reason: "structured Phase 3 context budget exceeded"}, messages, true, nil
+		}
+	}
 
 	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, phase, messages, toolDefs, llmCtx.WorkflowDiscovery)
 
@@ -634,15 +641,96 @@ func (inv *Investigator) executeToolCall(ctx context.Context, tc llm.ToolCall, c
 }
 
 const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`
+const maxAuditToolResultBytes = 8192
 
 // auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
-// history but excludes it from the generic tool-call audit record. The
-// selected workflow ID remains available in the corresponding tool arguments.
+// history but excludes it from the generic tool-call audit record. Bulk
+// Kubernetes summaries are reduced to count/truncation/digest/reference data;
+// the selected workflow ID remains available in the corresponding arguments.
 func auditSafeToolResult(toolName, toolResult string) string {
+	result, _ := auditToolResultProjection(toolName, toolResult, "")
+	return result
+}
+
+func auditToolResultProjection(toolName, toolResult, reference string) (string, map[string]interface{}) {
 	if toolName == "get_workflow" {
-		return omittedWorkflowSchemaAuditResult
+		return omittedWorkflowSchemaAuditResult, nil
 	}
-	return toolResult
+	if toolName == "" {
+		return toolResult, nil
+	}
+	if isBulkKubernetesSummaryTool(toolName) {
+		if projected, summary, ok := auditBulkToolResult(toolName, toolResult, reference); ok {
+			return projected, summary
+		}
+		projected, summary, _ := auditOmittedToolResult(toolName, toolResult, reference, "bulk_summary_missing")
+		return projected, summary
+	}
+	if projected, summary, ok := auditOmittedOversizedToolResult(toolName, toolResult, reference); ok {
+		return projected, summary
+	}
+	return toolResult, nil
+}
+
+func auditBulkToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
+	var listSummary struct {
+		ItemCount  int  `json:"item_count"`
+		TotalCount *int `json:"total_count"`
+		Truncated  bool `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(toolResult), &listSummary); err != nil ||
+		(!strings.Contains(toolResult, `"item_count"`) && !strings.Contains(toolResult, `"total_count"`)) {
+		return "", nil, false
+	}
+	digest := sha256.Sum256([]byte(toolResult))
+	summary := map[string]interface{}{
+		"tool_name":  toolName,
+		"item_count": listSummary.ItemCount,
+		"truncated":  listSummary.Truncated,
+		"digest":     fmt.Sprintf("sha256:%x", digest[:]),
+	}
+	if listSummary.TotalCount != nil {
+		summary["total_count"] = *listSummary.TotalCount
+	}
+	if reference != "" {
+		summary["reference"] = reference
+	}
+	encoded, marshalErr := json.Marshal(summary)
+	if marshalErr == nil {
+		return string(encoded), summary, true
+	}
+	return "", nil, false
+}
+
+func auditOmittedOversizedToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
+	if len(toolResult) <= maxAuditToolResultBytes {
+		return "", nil, false
+	}
+	return auditOmittedToolResult(toolName, toolResult, reference, "size_limit")
+}
+
+func auditOmittedToolResult(toolName, toolResult, reference, reason string) (string, map[string]interface{}, bool) {
+	digest := sha256.Sum256([]byte(toolResult))
+	summary := map[string]interface{}{
+		"tool_name":      toolName,
+		"result_omitted": true,
+		"reason":         reason,
+		"bytes":          len(toolResult),
+		"digest":         fmt.Sprintf("sha256:%x", digest[:]),
+	}
+	if reference != "" {
+		summary["reference"] = reference
+	}
+	encoded, marshalErr := json.Marshal(summary)
+	if marshalErr == nil {
+		return string(encoded), summary, true
+	}
+	return "", nil, false
+}
+
+func isBulkKubernetesSummaryTool(toolName string) bool {
+	return strings.HasPrefix(toolName, "kubectl_get_by_kind_") ||
+		toolName == "kubectl_find_resource" || toolName == "kubernetes_jq_query" || toolName == "kubernetes_count"
 }
 
 // buildTruncationRetryMessages emits the truncation-detected audit event and

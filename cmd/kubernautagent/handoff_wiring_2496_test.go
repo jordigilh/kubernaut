@@ -210,18 +210,13 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		return result
 	}
 
-	It("IT-KA-2496-007: sanitized original observations survive tool truncation and every correction unchanged", func() {
+	It("IT-KA-2521-004: structured handoff survives corrections without raw PhaseRCA observations", func() {
 		result := runInteractive(newInv())
 		Expect(result.WorkflowID).To(Equal(workflowID), "review reason: %s", result.Reason)
 		selected := selectionRequests()
 		Expect(selected).To(HaveLen(3))
 		packet := handoffPacket2496(selected[0])
-		Expect(string(packet["current_observations"])).To(ContainSubstring("original-observation-tail"))
-		Expect(string(packet["current_observations"])).NotTo(ContainSubstring("private-private"))
-		Expect(string(packet["current_observations"])).NotTo(ContainSubstring("prior-parameter-should-not-leak"))
-		for _, key := range []string{"source_kind", "source_type", "source_ref", "source_resource", "parameters", "metadata"} {
-			Expect(string(packet["current_observations"])).NotTo(ContainSubstring(`\"` + key + `\"`))
-		}
+		Expect(packet).NotTo(HaveKey("current_observations"))
 		for _, request := range selected[1:] {
 			Expect(handoffPacket2496(request)).To(Equal(packet), "correction must use the same frozen packet")
 		}
@@ -252,27 +247,17 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		Expect(result.HandoffDigest).To(Equal(digest))
 	})
 
-	It("IT-KA-2496-008: configured packet budget routes to review before any selection-provider call", func() {
+	It("IT-KA-2521-008: the removed raw-evidence knob cannot force a false review", func() {
 		loaded, err := kaconfig.Load([]byte("ai:\n  investigation:\n    maxEvidenceHandoffBytes: 256\n"))
 		Expect(err).NotTo(HaveOccurred())
 		params.cfg = loaded
 		result := runInteractive(newInv())
-		Expect(result.HumanReviewNeeded).To(BeTrue())
-		Expect(result.HumanReviewReason).To(Equal("rca_incomplete"))
-		Expect(result.WorkflowID).To(BeEmpty())
-		Expect(result.Reason).To(ContainSubstring("evidence handoff"))
-		Expect(selectionRequests()).To(BeEmpty(), "no partial packet or provider invocation is permitted")
-		mu.Lock()
-		logs := strings.Join(runtimeLogs, "\n")
-		mu.Unlock()
-		Expect(logs).To(ContainSubstring("observation budget exceeded"))
+		Expect(result.WorkflowID).To(Equal(workflowID), "review reason: %s", result.Reason)
+		Expect(selectionRequests()).NotTo(BeEmpty())
 	})
 
-	It("IT-KA-2496-008: whole-packet overflow is observable even when observations fit", func() {
-		loaded, err := kaconfig.Load([]byte("ai:\n  investigation:\n    maxEvidenceHandoffBytes: 2048\n"))
-		Expect(err).NotTo(HaveOccurred())
-		params.cfg = loaded
-		rcaSummary = strings.Repeat("Observed memory pressure. ", 200)
+	It("IT-KA-2521-008: fixed structured-context budget remains observable in production", func() {
+		rcaSummary = strings.Repeat("Observed memory pressure. ", 20000)
 		result := runInteractive(newInv())
 		Expect(result.HumanReviewNeeded).To(BeTrue())
 		Expect(result.HumanReviewReason).To(Equal("rca_incomplete"))
@@ -282,7 +267,6 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		logs := strings.Join(runtimeLogs, "\n")
 		mu.Unlock()
 		Expect(logs).To(ContainSubstring("evidence handoff exceeds configured byte budget"))
-		Expect(logs).NotTo(ContainSubstring("observation budget exceeded"))
 	})
 
 	It("IT-KA-2496-008: source serialization failure follows review without a selection-provider call", func() {
@@ -300,16 +284,17 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		Expect(logs).To(ContainSubstring("serialize handoff source"))
 	})
 
-	It("IT-KA-2496-009: autonomous entry also delivers pre-transform evidence without an audit read", func() {
+	It("IT-KA-2521-003: autonomous entry delivers target-scoped structured context without raw PhaseRCA observations", func() {
 		result, err := newInv().Investigate(context.Background(), signal)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.WorkflowID).To(Equal(workflowID), "review reason: %s", result.Reason)
 		packet := handoffPacket2496(selectionRequests()[0])
-		Expect(string(packet["current_observations"])).To(ContainSubstring("original-observation-tail"))
+		Expect(packet).NotTo(HaveKey("current_observations"))
+		Expect(string(packet["rca"])).To(ContainSubstring(rcaSummary))
 		Expect(result.HandoffDigest).NotTo(BeEmpty())
 	})
 
-	It("IT-KA-2496-009: a second request cannot inherit the first request's observations", func() {
+	It("IT-KA-2521-004: a second request cannot inherit raw observations from the first request", func() {
 		inv := newInv()
 		runInteractive(inv)
 		mu.Lock()
@@ -322,14 +307,11 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		Expect(result.WorkflowID).To(Equal(workflowID))
 		selected := selectionRequests()
 		packet := handoffPacket2496(selected[len(selected)-1])
-		var observations []json.RawMessage
-		Expect(json.Unmarshal(packet["current_observations"], &observations)).To(Succeed())
-		Expect(observations).To(BeEmpty(), "the independent request captured no observations")
+		Expect(packet).NotTo(HaveKey("current_observations"))
 		var attempts []json.RawMessage
 		Expect(json.Unmarshal(packet["prior_attempts"], &attempts)).To(Succeed())
 		Expect(attempts).To(BeEmpty(), "the independent request has no target history")
-		Expect(string(packet["current_observations"])).NotTo(ContainSubstring("original-observation-tail"))
-		Expect(string(packet["unknowns"])).To(ContainSubstring("observations"))
+		Expect(string(packet["unknowns"])).NotTo(ContainSubstring("observations"))
 	})
 })
 

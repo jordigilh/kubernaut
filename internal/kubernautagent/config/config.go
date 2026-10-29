@@ -23,7 +23,6 @@ import (
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
@@ -176,9 +175,6 @@ func (c *Config) validateRuntime() error {
 func (c *Config) validateAI() error {
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
-	}
-	if c.AI.Investigation.MaxEvidenceHandoffBytes <= 0 {
-		return fmt.Errorf("ai.investigation.maxEvidenceHandoffBytes must be positive, got %d", c.AI.Investigation.MaxEvidenceHandoffBytes)
 	}
 	if err := c.AI.Investigation.validateConfidenceBands(); err != nil {
 		return err
@@ -397,7 +393,6 @@ func defaultAIConfig() AIConfig {
 		LLM: types.LLMConfig{Provider: "openai"},
 		Investigation: InvestigationConfig{
 			MaxTurns:                        40,
-			MaxEvidenceHandoffBytes:         katypes.DefaultMaxEvidenceHandoffBytes,
 			ResolvedConfidenceThreshold:     defaultResolvedConfidenceThreshold,
 			InconclusiveConfidenceThreshold: defaultInconclusiveConfidenceThreshold,
 		},

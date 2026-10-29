@@ -220,8 +220,10 @@ type Pipeline struct {
 	CatalogFetcher    CatalogFetcher
 	Summarizer        *summarizer.Summarizer
 	MaxToolOutputSize int
-	// DD-KA-2496: applies to the complete frozen packet, never tool results.
-	MaxEvidenceHandoffBytes int
+	// Issue #2521: bounds the structured Phase 3 packet/prompt, never raw
+	// PhaseRCA tool results. Production uses the code-owned default; tests may
+	// inject a smaller value to prove the fail-closed boundary.
+	StructuredPhase3ContextBudget int
 }
 
 // Config holds all dependencies for constructing an Investigator.
@@ -328,9 +330,9 @@ type Investigator struct {
 	// single-Investigate threading), this spans interactive and discovery
 	// legs that carry no accumulator at all.
 	tokenScope *tokenScope
-	// DD-KA-2496: ephemeral, correlation-scoped pre-transform evidence; never
-	// an audit/conversation lookup or a singleton shared observation slice.
-	evidence *evidenceRuntime
+	// Issue #2521: only structured Phase 3 context sanitization and the fixed
+	// prompt/context budget live here. Raw PhaseRCA observations are not stored.
+	structuredContext *structuredContextRuntime
 }
 
 // FleetOverlayResolver returns the configured authoritative fleet overlay
@@ -418,10 +420,10 @@ func New(cfg Config) *Investigator {
 			template: pipeline.AnomalyDetector,
 			entries:  make(map[string]*anomalyDetectorEntry),
 		},
-		metricsScope:    newMetricsScope(),
-		tokenScope:      newTokenScope(),
-		toolCallTimeout: toolCallTimeout,
-		evidence:        newEvidenceRuntime(pipeline),
+		metricsScope:      newMetricsScope(),
+		tokenScope:        newTokenScope(),
+		toolCallTimeout:   toolCallTimeout,
+		structuredContext: newStructuredContextRuntime(pipeline),
 	}
 }
 
@@ -800,7 +802,6 @@ func (inv *Investigator) initializeInvestigationState(ctx context.Context, corre
 	// per-RR totals (turns, tools, and tokens alike).
 	inv.resetMetrics(correlationID)
 	inv.resetTokenScope(correlationID)
-	inv.resetEvidence(correlationID)
 	return ctx
 }
 

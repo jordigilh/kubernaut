@@ -76,13 +76,13 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 				RemediationUID:    "rr-unknown-2533",
 				WorkflowRationale: "A model-authored rationale without catalog identity",
 			}}},
-		}}, nil)
+		}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(repeatContextFromHandoff(packet).CompletedPriorWorkflows).To(BeEmpty())
 	})
 
 	It("UT-KA-2533-005: complete frozen-packet budget remains fail-closed for historical context", func() {
-		inv := New(Config{Logger: logr.Discard(), Pipeline: Pipeline{MaxEvidenceHandoffBytes: 512}})
+		inv := New(Config{Logger: logr.Discard(), Pipeline: Pipeline{StructuredPhase3ContextBudget: 512}})
 		history := &enrichment.RemediationHistoryResult{TargetResource: "prod/Deployment/api"}
 		for i := 0; i < 2; i++ {
 			history.Tier1 = append(history.Tier1, enrichment.Tier1Entry{
@@ -122,7 +122,7 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 			EvidenceHandoff: frozen.serialized,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(len(rendered)).To(BeNumerically("<=", katypes.DefaultMaxEvidenceHandoffBytes))
+		Expect(len(rendered)).To(BeNumerically("<=", katypes.DefaultStructuredPhase3ContextBudget))
 		// The decision-context values are rendered in both the human-readable
 		// history and frozen JSON handoff; the complete prompt budget check keeps
 		// that intentional duplication bounded before provider dispatch.
