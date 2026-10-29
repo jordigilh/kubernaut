@@ -198,7 +198,7 @@ func jqSourceTruncationNotice(resources interface{}) string {
 		return ""
 	}
 	if summary.TotalCount != nil {
-		return fmt.Sprintf("source truncated: retained %d of %d source items; query results may be incomplete; narrow the query", summary.ItemCount, *summary.TotalCount)
+		return fmt.Sprintf("source truncated: retained %d of %d source items; query results may be incomplete; use an available targeted resource-lookup tool for a known resource name", summary.ItemCount, *summary.TotalCount)
 	}
-	return fmt.Sprintf("source truncated: retained %d source items; total unknown; query results may be incomplete; narrow the query", summary.ItemCount)
+	return fmt.Sprintf("source truncated: retained %d source items; total unknown; query results may be incomplete; use an available targeted resource-lookup tool for a known resource name", summary.ItemCount)
 }

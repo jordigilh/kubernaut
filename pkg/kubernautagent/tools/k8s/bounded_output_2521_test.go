@@ -281,6 +281,7 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(ContainSubstring("source truncated"))
 		Expect(result).To(ContainSubstring("results may be incomplete"))
+		Expect(result).To(ContainSubstring("available targeted resource-lookup tool"))
 	})
 
 	It("UT-KA-2521-120: oversized exact-name results fail before downstream sanitization", func() {
