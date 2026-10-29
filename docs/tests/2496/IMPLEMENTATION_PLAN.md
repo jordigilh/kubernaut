@@ -10,6 +10,13 @@
 **Confidence**: **95% for the pre-implementation approach after the final bounded preflight; not implementation/GA confidence**
 **Isolated spike**: [SPIKE_REPORT.md](SPIKE_REPORT.md)
 
+> **Issue #2521 amendment:** the historical observation-capture slice below is
+> superseded. Phase 3 now receives structured RCA plus authoritative RCA-target
+> Phase 2 enrichment/history only; raw PhaseRCA observations and the full
+> investigation conversation are excluded. The operator-facing
+> `maxEvidenceHandoffBytes` knob is removed in favor of a fixed structured
+> Phase 3 prompt/context budget. See [TP-2520-2521](../2520-2521/TEST_PLAN.md).
+
 ## Current implementation status (supersedes historical approval notes below)
 
 The user approved the combined architecture, BR, test plan, implementation plan and
@@ -324,21 +331,19 @@ CHECKPOINT W needs a production caller and passing dispatch-path IT for every ro
 
 ### 5.2.1 Frozen-handoff slice (2026-10-10)
 
-Preflight confidence: **96%**. Capture is available in `executeTool` after the
-production sanitizer and before summarization/truncation; both autonomous and
-interactive entries share `runWorkflowSelection`. Follow existing correlation-
-scoped state and cleanup patterns for cross-turn interactive observations; never
-share evidence across requests. Remaining risk: source tool observations may
-include resource JSON/parameters, so the packet must use a sanitized evidence
-projection, not raw payload/audit/conversation persistence.
+Historical preflight confidence: **96%**. The observation-capture design below
+was superseded by Issue #2521 after the large PhaseRCA response regression. Both
+autonomous and interactive entries still share `runWorkflowSelection`, but the
+handoff now contains structured RCA plus authoritative target-scoped enrichment/
+history and never stores generic PhaseRCA observations or the full conversation.
 
-User approved the concrete contracts in DD-KA-2496 v1.1: independent 64 KiB
-`ai.investigation.maxEvidenceHandoffBytes`, sibling non-executable
+User approved the concrete contracts in DD-KA-2496 v1.1: bounded structured
+Phase 3 context, sibling non-executable
 `selection_assessment` / AA `selectionAssessment`, and NoExecution exclusion.
-Issue #2519 supersedes only the operational default: it is now 256 KiB
-(`262144` bytes) because the original default caused failures in the default
-configuration. Packet immutability, fail-closed overflow and the other DD-KA-2496
-contracts remain unchanged.
+Issue #2521 supersedes the raw-observation capture and operator-tuning parts:
+ordinary oversized PhaseRCA tool results remain available to RCA, while the
+fixed structured packet/prompt budget remains fail-closed. Packet immutability,
+target scoping and the other DD-KA-2496 contracts remain unchanged.
 
 - **RED (~30–45 min):** supplementary prompt/feedback specs; production config,
   real catalog/provider selection and pre-transform external-observation capture

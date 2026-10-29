@@ -20,14 +20,16 @@
 
 ### 1.1 Purpose
 
-Issue #752 reports that `kubectl_get_by_kind_in_cluster` returned 3.4 MB of Secret data, overwhelming both the summarizer's secondary LLM call and the main investigation LLM's context window. This test plan validates three mitigations: (1) a hard truncation safety net in the investigator pipeline, (2) pre-truncation of oversized input before the summarizer's LLM call, and (3) a new targeted tool `kubectl_get_by_name_in_cluster` that lets the LLM fetch a single resource across namespaces without listing everything.
+Issue #752 reports that `kubectl_get_by_kind_in_cluster` returned 3.4 MB of Secret data, overwhelming both the summarizer's secondary LLM call and the main investigation LLM's context window. This test plan validates hard downstream truncation, summarizer pre-truncation, server-side exact-name lookup, and source-side metadata/count bounds for bulk lists.
 
 ### 1.2 Objectives
 
 1. **Hard truncation safety net**: Tool outputs exceeding `MaxToolOutputSize` (default 100,000 chars) are truncated with a guidance hint before entering the LLM conversation
 2. **Summarizer pre-truncation**: Inputs to the summarizer's secondary LLM call are pre-truncated so the summarizer can produce useful summaries instead of failing
-3. **Targeted lookup tool**: `kubectl_get_by_name_in_cluster` returns a single resource by name across all namespaces, eliminating the need to list all resources of a kind
-4. **Zero regressions**: Existing summarizer, investigator, and K8s tool tests continue to pass
+3. **Targeted lookup tool**: `kubectl_get_by_name_in_cluster` uses a server-side exact-name selector and bounded single-result request across all namespaces, eliminating unrestricted list-and-filter lookup
+4. **Bulk list safety**: generic Kubernetes lists use server-side bounds and metadata/count/truncation summaries without ConfigMap/Secret bodies by default
+5. **JQ safety contract**: `kubernetes_jq_query` runs against the same metadata-only bulk summary; full resource bodies require targeted get tools
+6. **Zero regressions**: Existing summarizer, investigator, and K8s tool tests continue to pass
 
 ### 1.3 Success Metrics
 
@@ -84,6 +86,7 @@ Issue #752 reports that `kubectl_get_by_kind_in_cluster` returned 3.4 MB of Secr
 - **Summarizer pre-truncation** (`pkg/kubernautagent/tools/summarizer/summarizer.go`): `MaybeSummarize` pre-truncates input exceeding `maxInputSize` before secondary LLM call
 - **Hard truncation safety net** (`internal/kubernautagent/investigator/investigator.go`): `executeTool` truncates final result exceeding `MaxToolOutputSize`
 - **New tool** (`pkg/kubernautagent/tools/k8s/tools.go`): `kubectl_get_by_name_in_cluster` fetches a single resource by name across all namespaces
+- **Source-side list bounds** (`pkg/kubernautagent/tools/k8s/resolver.go`): bulk lists request bounded pages and project metadata-only summaries; production uses the Kubernetes metadata client
 - **Configuration** (`internal/kubernautagent/config/config.go`): `MaxToolOutputSize` field in `SummarizerConfig`
 
 ### 4.2 Features Not to be Tested
@@ -99,7 +102,9 @@ Issue #752 reports that `kubectl_get_by_kind_in_cluster` returned 3.4 MB of Secr
 | Hard cap at 100,000 chars (default) | ~25K tokens, well within any production LLM context window |
 | Truncation hint guides LLM to targeted tools | Prevents repeated oversized fetches; follows Prometheus `TruncateWithHint` pattern |
 | Pre-truncation in summarizer uses same limit | Ensures summarizer LLM call stays within context window |
-| New tool reuses `ResourceResolver.List` + name filter | Avoids adding new interface methods; consistent with `kubectl_find_resource` pattern |
+| Exact-name lookup uses server-side `metadata.name` filtering with `Limit: 1` | Avoids fetching/marshaling an unrestricted list before the generic pipeline cap |
+| Bulk lists use bounded metadata/count summaries | Prevents ConfigMap/Secret bodies from entering sanitizer, LLM, audit, or memory paths by default |
+| JQ queries use metadata-only summaries | Prevents arbitrary `.items[].data` expressions from becoming a bulk Secret/ConfigMap read path |
 
 ---
 

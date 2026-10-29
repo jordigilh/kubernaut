@@ -1,5 +1,11 @@
 # Test Plan: Failed Workflow Identity and Repeat-Selection Reasoning
 
+> **Issue #2521 supersession note:** this historical #2496 plan's raw
+> `current_observations`/operator `maxEvidenceHandoffBytes` contract is no longer
+> authoritative. The current target-scoped structured Phase 3 handoff, fixed
+> prompt/context budget and source-bounded Kubernetes tool contract are defined
+> in [TP-2520-2521](../2520-2521/TEST_PLAN.md).
+
 **Test Plan Identifier**: TP-2496-v1.6<br>
 **Feature**: Preserve prior workflow identity/confidence and require auditable justification for same-workflow repeats<br>
 **Version**: 1.6 — synchronized final pre-implementation contract, live projection, pyramid/control proof and existing-E2E regression matrix<br>
@@ -133,12 +139,12 @@ every failure requests review before any selection-provider call.
 
 ## 4. Scope and design decisions
 
-Concrete contracts approved on 2026-10-10: independent positive
-`ai.investigation.maxEvidenceHandoffBytes` (default 262,144 bytes); non-executable
+Concrete contracts approved on 2026-10-10: bounded structured Phase 3 context;
+the former operator `maxEvidenceHandoffBytes` field is removed; non-executable
 sibling `selection_assessment` / AA `selectionAssessment`; NoExecution does not
 establish a completed valid workflow assessment. Frozen-handoff supplementary
-proofs: **IT-KA-2496-007** pre-transform sanitized capture and whole-packet delivery;
-**IT-KA-2496-008** config-to-production budget/review; **IT-KA-2496-009** autonomous/
+proofs are superseded by **IT-KA-2521-003/004** target-scoped structured delivery;
+**IT-KA-2521-008** fixed-budget review; **IT-KA-2496-009** autonomous/
 interactive and concurrent-request isolation. Unit **UT-KA-2496-010** covers freeze,
 digest, deep-copy, unknowns and budget failure. Existing E2E gates are unchanged.
 
@@ -551,7 +557,7 @@ completion or a substitute for the complete canonical IT/E2E gates above.
 
 | Boundary / objective | Actual production caller and dispatch | Required proving scenarios |
 |---|---|---|
-| Independent packet budget; SI-10 / AC-4 | `cmd/kubernautagent/bootstrap.go:buildInvestigationRunner` calls `buildInvestigator`, whose `Pipeline.MaxEvidenceHandoffBytes` comes from `AI.Investigation`, not the tool summarizer. | IT-PLATFORM-2496-001; IT-KA-2496-008 |
+| Structured Phase 3 packet/prompt budget; SI-10 / AC-4 | `cmd/kubernautagent/bootstrap.go:buildInvestigationRunner` calls `buildInvestigator`; the code-owned structured-context budget is independent from the tool summarizer and is not operator-configured as raw evidence. | IT-KA-2521-008 |
 | Same frozen packet across entry points; AC-4 / SI-10 | `investigator.go:runWorkflowDiscoveryPhase` and `investigator_discovery.go:RunWorkflowDiscoveryFromRCA` both call `investigator_workflow_selection.go:runWorkflowSelection`; it freezes before any Phase 3 provider call and binds acceptance to that sanitized snapshot. | IT-KA-2496-003/004/008 |
 | Repeat acceptance on initial/recovered/corrected selection; SI-10 | `completeWorkflowSelection` sends both first and parse-recovered results through `selfCorrectWorkflowSelection`, which calls `SetRepeatSelectionContext`; `validator.go:validateSelectionIdentity` calls `validateRepeatSelection` after catalog-authoritative identity/name resolution. | IT-KA-2496-006/007 |
 | Off-phase denial before side effects; AC-6 / AU-3 | `investigator_loop.go:runLoopTurn` calls `processToolCalls`; both that batch/sentinel path and `investigator_tools.go:executeTool` check `toolAllowedInPhase` before registry/overlay dispatch. `emitToolCallAudit` uses the same trusted phase decision. | IT-KA-2498-001/002 |

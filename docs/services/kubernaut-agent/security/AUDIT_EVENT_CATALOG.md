@@ -37,7 +37,7 @@ type AuditEvent struct {
 |-----------|----------|-------------|---------|---------------|
 | `aiagent.llm.request` | `EventTypeLLMRequest` | AU-2, AU-3 | Every LLM chat completion call KA makes (investigation turns, gate checks, retries) | `model`, `prompt_length`, `prompt_preview` (truncated), `toolsets_enabled` |
 | `aiagent.llm.response` | `EventTypeLLMResponse` | AU-2, AU-3 | LLM response received for a turn | `has_analysis`, `analysis_length`, `analysis_preview`/`analysis_full`, `total_tokens`, `tool_call_count`, `reasoning_text`/`reasoning_redacted` (if the model returned reasoning tokens) |
-| `aiagent.llm.tool_call` | `EventTypeLLMToolCall` | AU-2, AU-3, AU-12, AC-6, CC7.2 | Each individual tool call, including a trusted-phase denial before external dispatch (#2498) | `tool_name`, redacted `tool_arguments`, safe `tool_result`/`tool_result_preview`, `phase`, `tool_call_index`; denied calls have outcome `failure` and standardized `error_details.code=ERR_TOOL_PHASE_DENIED` |
+| `aiagent.llm.tool_call` | `EventTypeLLMToolCall` | AU-2, AU-3, AU-9, AU-11, AU-12, AC-6, SI-10, CC7.2 | Each individual tool call, including a trusted-phase denial before external dispatch (#2498) | `tool_name`, redacted `tool_arguments`, safe `tool_result`/`tool_result_preview`, bounded `tool_result_summary` (`item_count`, `total_count` when known, `truncated`, digest and correlation reference) for bulk Kubernetes results, `phase`, `tool_call_index`; denied calls have outcome `failure` and standardized `error_details.code=ERR_TOOL_PHASE_DENIED` |
 
 **Emitted from:** `internal/kubernautagent/investigator/investigator_loop.go`, `investigator_tools.go`, `investigator_gates.go` (retry/gate-check paths also emit `aiagent.llm.request`)
 
