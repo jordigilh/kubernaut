@@ -164,6 +164,19 @@ object contains:
 - `selection_revision: string` — immutable revision of the RAR snapshot
 - `selection_digest: string` — canonical digest of the reviewed snapshot
 
+The `workflow_override` object is optional for an ordinary approval or
+rejection. An ordinary decision may omit it and is not gated on optional
+parameter-edit metadata. When `workflow_override` is present—including a
+rationale-only override that preserves the original parameter map—all three
+review bindings are required.
+
+The bindings map to the RAR source of truth as follows:
+
+- `rar_uid` is compared with the RAR object's `metadata.uid`.
+- `selection_revision` is compared with the immutable revision in the RAR
+  original-selection snapshot.
+- `selection_digest` is compared with the canonical digest of that snapshot.
+
 The current AF contract does not expose a workflow-selection field. A workflow
 selection submitted through this parameter-only path is rejected.
 
