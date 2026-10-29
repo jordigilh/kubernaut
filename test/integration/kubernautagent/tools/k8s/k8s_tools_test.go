@@ -19,6 +19,8 @@ package k8s_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	metadatafake "k8s.io/client-go/metadata/fake"
 
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
@@ -234,6 +237,40 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 				json.RawMessage(`{"name":"api-server-abc-xyz","namespace":"production","container":"api","pattern":"OOM"}`))
 			Expect(err).NotTo(HaveOccurred())
 		})
+	})
+})
+
+var _ = Describe("Issue #2521 bounded K8s resolver wiring", func() {
+	It("IT-KA-752-004: production tool registration returns bounded metadata summaries", func() {
+		const corpusSize = 600
+		objects := make([]runtime.Object, 0, corpusSize)
+		for i := 0; i < corpusSize; i++ {
+			objects = append(objects, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("bulk-config-%03d", i), Namespace: "prod"},
+				Data:       map[string]string{"payload": strings.Repeat("bulk-secret-body ", 100)},
+			})
+		}
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
+		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
+		dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
+		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, objects...)
+		resolver := k8s.NewDynamicResolver(dynamicClient, mapper,
+			map[string]schema.GroupKind{"configmap": {Kind: "ConfigMap"}}, logr.Discard(),
+			k8s.WithMetadataClient(metadataClient))
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(fake.NewSimpleClientset(), resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
+			json.RawMessage(`{"kind":"ConfigMap","namespace":"prod"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring(`"item_count":100`))
+		Expect(result).To(ContainSubstring(`"total_count":600`))
+		Expect(result).To(ContainSubstring(`"truncated":true`))
+		Expect(result).NotTo(ContainSubstring("bulk-secret-body"))
 	})
 })
 

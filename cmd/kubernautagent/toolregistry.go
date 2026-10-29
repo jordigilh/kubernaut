@@ -568,6 +568,7 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 		kindIndex = make(map[string]schema.GroupKind)
 	}
 	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"),
+		k8stools.WithMetadataClient(infra.metadataClient),
 		k8stools.WithSecretAccessObserver(newSecretAccessObserver(auditStore, logger.WithName("secret-access-audit"))))
 
 	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {

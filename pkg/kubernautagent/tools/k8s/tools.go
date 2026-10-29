@@ -220,38 +220,16 @@ func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessa
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	resources, err := t.resolver.List(ctx, a.Kind, "", a.APIGroup)
+	resource, err := t.resolver.GetByNameInCluster(ctx, a.Kind, a.Name, a.APIGroup)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(resources)
+	data, err := json.Marshal(resource)
 	if err != nil {
-		return "", fmt.Errorf("marshaling resources: %w", err)
+		return "", fmt.Errorf("marshaling resource: %w", err)
 	}
-
-	var listObj struct {
-		Items []json.RawMessage `json:"items"`
-	}
-	if err := json.Unmarshal(data, &listObj); err != nil || listObj.Items == nil {
-		return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
-	}
-
-	for _, item := range listObj.Items {
-		var meta struct {
-			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-		}
-		if err := json.Unmarshal(item, &meta); err != nil {
-			continue
-		}
-		if meta.Metadata.Name == a.Name {
-			return string(item), nil
-		}
-	}
-
-	return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
+	return string(data), nil
 }
 
 // --- find resource tool ---

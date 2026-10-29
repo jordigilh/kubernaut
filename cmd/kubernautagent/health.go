@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -311,10 +312,11 @@ func detectNamespace() string {
 // k8sInfra holds shared Kubernetes clients created once and reused by
 // the tool registry, enricher, and custom tools.
 type k8sInfra struct {
-	kubeConfig *rest.Config
-	clientset  *kubernetes.Clientset
-	dynClient  dynamic.Interface
-	mapper     meta.RESTMapper
+	kubeConfig     *rest.Config
+	clientset      *kubernetes.Clientset
+	dynClient      dynamic.Interface
+	metadataClient metadata.Interface
+	mapper         meta.RESTMapper
 }
 
 // CRITICAL: match DataStorage's (cmd/datastorage/main.go) and Gateway's
@@ -362,7 +364,12 @@ func initK8sInfra(logger logr.Logger) *k8sInfra {
 		logger.Error(err, "failed to create dynamic client")
 		return nil
 	}
+	metadataClient, err := metadata.NewForConfig(kubeConfig)
+	if err != nil {
+		logger.Error(err, "failed to create Kubernetes metadata client")
+		return nil
+	}
 	cachedDisc := memory.NewMemCacheClient(k8sClient.Discovery())
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDisc)
-	return &k8sInfra{kubeConfig: kubeConfig, clientset: k8sClient, dynClient: dynClient, mapper: mapper}
+	return &k8sInfra{kubeConfig: kubeConfig, clientset: k8sClient, dynClient: dynClient, metadataClient: metadataClient, mapper: mapper}
 }

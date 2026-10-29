@@ -38,13 +38,17 @@ func newJQTools(resolver ResourceResolver) []tools.Tool {
 	}
 }
 
-// jqQueryTool applies an arbitrary jq expression to K8s resource listings.
+// jqQueryTool applies an expression to bounded metadata/count K8s summaries.
+// Full resource bodies are intentionally not available through this bulk path;
+// use a targeted get tool for one resource's body.
 type jqQueryTool struct {
 	resolver ResourceResolver
 }
 
-func (t *jqQueryTool) Name() string               { return "kubernetes_jq_query" }
-func (t *jqQueryTool) Description() string         { return "Run a jq expression against Kubernetes resources of a given kind across all namespaces" }
+func (t *jqQueryTool) Name() string { return "kubernetes_jq_query" }
+func (t *jqQueryTool) Description() string {
+	return "Run a jq expression against Kubernetes resources of a given kind across all namespaces"
+}
 func (t *jqQueryTool) Parameters() json.RawMessage { return jqQueryParams }
 
 func (t *jqQueryTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -65,8 +69,10 @@ type jqCountTool struct {
 	resolver ResourceResolver
 }
 
-func (t *jqCountTool) Name() string               { return "kubernetes_count" }
-func (t *jqCountTool) Description() string         { return "Count Kubernetes resources matching a jq filter, showing count and 10-line preview" }
+func (t *jqCountTool) Name() string { return "kubernetes_count" }
+func (t *jqCountTool) Description() string {
+	return "Count Kubernetes resources matching a jq filter, showing count and 10-line preview"
+}
 func (t *jqCountTool) Parameters() json.RawMessage { return jqCountParams }
 
 func (t *jqCountTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -95,7 +101,7 @@ func TruncateJQOutput(output string, limit int) string {
 }
 
 func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr, apiGroup string, countMode bool) (string, error) {
-	resources, err := resolver.List(ctx, kind, "", apiGroup)
+	resources, err := resolver.ListForQuery(ctx, kind, "", apiGroup)
 	if err != nil {
 		return "", err
 	}
@@ -110,47 +116,61 @@ func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr, apiGroup 
 		return "", fmt.Errorf("unmarshaling JSON for jq: %w", err)
 	}
 
+	results, err := evaluateJQ(ctx, input, expr)
+	if err != nil {
+		return "", err
+	}
+	return formatJQResults(results, countMode, resources), nil
+}
+
+func evaluateJQ(ctx context.Context, input interface{}, expr string) ([]string, error) {
 	query, err := gojq.Parse(expr)
 	if err != nil {
-		return "", fmt.Errorf("invalid jq expression %q: %w", expr, err)
+		return nil, fmt.Errorf("invalid jq expression %q: %w", expr, err)
 	}
 
 	var results []string
 	iter := query.Run(input)
 	for {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("jq execution cancelled: %w", ctx.Err())
+			return nil, fmt.Errorf("jq execution cancelled: %w", ctx.Err())
 		}
 		v, ok := iter.Next()
 		if !ok {
 			break
 		}
 		if err, isErr := v.(error); isErr {
-			return "", fmt.Errorf("jq execution error: %w", err)
+			return nil, fmt.Errorf("jq execution error: %w", err)
 		}
 		b, err := json.Marshal(v)
 		if err != nil {
-			return "", fmt.Errorf("jq result marshal error: %w", err)
+			return nil, fmt.Errorf("jq result marshal error: %w", err)
 		}
 		results = append(results, string(b))
 		if len(results) >= maxJQResults {
 			break
 		}
 	}
+	return results, nil
+}
 
-	if countMode {
-		count := len(results)
-		preview := results
-		if len(preview) > 10 {
-			preview = preview[:10]
-		}
-		suffix := ""
-		if count >= maxJQResults {
-			suffix = fmt.Sprintf(" (capped at %d)", maxJQResults)
-		}
-		return fmt.Sprintf("Count: %d%s\n%s", count, suffix, strings.Join(preview, "\n")), nil
+func formatJQResults(results []string, countMode bool, resources interface{}) string {
+	if !countMode {
+		return TruncateJQOutput(strings.Join(results, "\n"), maxJQOutputChars)
 	}
 
-	joined := strings.Join(results, "\n")
-	return TruncateJQOutput(joined, maxJQOutputChars), nil
+	count := len(results)
+	preview := results
+	if len(preview) > 10 {
+		preview = preview[:10]
+	}
+	suffix := ""
+	if count >= maxJQResults {
+		suffix = fmt.Sprintf(" (capped at %d)", maxJQResults)
+	}
+	sourceSummary := ""
+	if summary, ok := resources.(*ResourceListSummary); ok && summary.TotalCount != nil {
+		sourceSummary = fmt.Sprintf(" (retained %d of %d source items; truncated=%t)", summary.ItemCount, *summary.TotalCount, summary.Truncated)
+	}
+	return fmt.Sprintf("Count: %d%s%s\n%s", count, suffix, sourceSummary, strings.Join(preview, "\n"))
 }
