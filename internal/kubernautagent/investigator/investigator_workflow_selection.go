@@ -101,7 +101,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}
 	messages := []llm.Message{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: "Select the appropriate remediation workflow."},
+		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 	if budgetResult := inv.workflowSelectionPromptBudgetResult(messages, correlationID); budgetResult != nil {
 		return budgetResult, nil

@@ -673,6 +673,9 @@ func auditToolResultProjection(toolName, toolResult, reference string) (string, 
 		return toolResult, nil
 	}
 	if isBulkKubernetesSummaryTool(toolName) {
+		if auditToolErrorDetails(toolResult) != nil {
+			return toolResult, nil
+		}
 		if projected, summary, ok := auditBulkToolResult(toolName, toolResult, reference); ok {
 			return projected, summary
 		}
@@ -695,7 +698,7 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	}
 	if err := json.Unmarshal([]byte(toolResult), &listSummary); err != nil ||
 		(!strings.Contains(toolResult, `"item_count"`) && !strings.Contains(toolResult, `"total_count"`)) {
-		return "", nil, false
+		return auditLegacyMetadataList(toolName, toolResult, reference)
 	}
 	summary := map[string]interface{}{
 		"tool_name":  toolName,
@@ -705,6 +708,46 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	if listSummary.TotalCount != nil {
 		summary["total_count"] = *listSummary.TotalCount
 	}
+	return encodeAuditBulkSummary(toolResult, reference, summary, false)
+}
+
+func auditLegacyMetadataList(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
+	var list struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(toolResult), &list); err != nil || len(list.Items) == 0 {
+		return "", nil, false
+	}
+	for _, item := range list.Items {
+		if !isSafeLegacyMetadataItem(item) {
+			return "", nil, false
+		}
+	}
+	summary := map[string]interface{}{
+		"tool_name":   toolName,
+		"item_count":  len(list.Items),
+		"total_count": len(list.Items),
+		"truncated":   false,
+	}
+	return encodeAuditBulkSummary(toolResult, reference, summary, true)
+}
+
+func isSafeLegacyMetadataItem(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || len(fields) == 0 {
+		return false
+	}
+	for key := range fields {
+		switch key {
+		case "name", "namespace", "uid", "resourceVersion", "labels", "metadata":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func encodeAuditBulkSummary(toolResult, reference string, summary map[string]interface{}, preserveResult bool) (string, map[string]interface{}, bool) {
 	canonical, marshalErr := json.Marshal(summary)
 	if marshalErr != nil {
 		return "", nil, false
@@ -716,6 +759,9 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	summary["digest"] = digest
 	if reference != "" {
 		summary["reference"] = reference
+	}
+	if preserveResult {
+		return toolResult, summary, true
 	}
 	encoded, marshalErr := json.Marshal(summary)
 	if marshalErr == nil {
