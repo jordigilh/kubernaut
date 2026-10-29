@@ -135,6 +135,7 @@ executionBundle: registry.example/oom-recovery@sha256:...
 parameters:
   MEMORY_LIMIT: "512Mi"
   REPLICAS: "3"
+selectionRevision: rar-selection-v1
 selectionDigest: sha256:...
 ```
 
@@ -200,6 +201,19 @@ decision. A later status update may not alter any business field.
 - RO consumes the admitted RAR snapshot and does not select a workflow or infer
   approval intent.
 
+The audit roles are distinct:
+
+- AF's tool-execution audit records the authenticated human's approval intent
+  and request details. It is not proof that the RAR mutation was admitted.
+- AuthWebhook's `webhook.remediationapprovalrequest.decided` event is the
+  authoritative committed-decision event. It is emitted only after the
+  decision and override pass admission validation; rejected mutations must not
+  produce a successful committed-decision event.
+- RO's event records the business context and downstream orchestration result.
+
+These events are correlated but must not be treated as duplicate committed
+decisions.
+
 ### 5. Audit contract
 
 Existing typed approval audit/readback payload types are extended. No new
@@ -212,6 +226,12 @@ must support, subject to SOC2/FedRAMP control mapping:
 - authenticated human actor and AF delegation identity
 - selection/review revision references
 - sensitive-value redaction or references
+
+The AF review read returns the RAR UID, immutable `selectionRevision` and
+canonical `selectionDigest`. The approval input echoes those values. AuthWebhook
+rejects the mutation when any binding differs from the current pending RAR.
+`resourceVersion` remains the Kubernetes API concurrency guard; it is not the
+business review revision.
 
 The final field set is derived from ADR-034, DD-AUDIT-003, BR-AUDIT-005,
 BR-AUDIT-006 and the applicable AU/AC/SI control objectives.

@@ -192,5 +192,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: September 26, 2026
+**Last Updated**: October 29, 2026
 **Maintained By**: Kubernaut Architecture Team

@@ -157,11 +157,17 @@ object contains:
 
 - `parameters: map[string]string` — complete replacement map
 - `rationale: string` — human explanation
-- review binding fields defined by the #2564 decision contract when that
-  contract is finalized
+- `rar_uid: string` — immutable RAR instance identity
+- `selection_revision: string` — immutable revision of the RAR snapshot
+- `selection_digest: string` — canonical digest of the reviewed snapshot
 
 The current AF contract does not expose a workflow-selection field. A workflow
 selection submitted through this parameter-only path is rejected.
+
+AuthWebhook compares `rar_uid`, `selection_revision` and `selection_digest` to
+the current pending RAR before admitting the decision. A mismatch is a stale
+review and produces no partial status mutation. Kubernetes `resourceVersion`
+remains an API concurrency guard, not the business review revision.
 
 ### Effective parameter semantics
 
@@ -187,9 +193,11 @@ selection submitted through this parameter-only path is rejected.
 ### Audit and readback
 
 Extend existing typed approval payload types. Do not create a new override
-event taxonomy. The final field set is selected from the SOC2/FedRAMP control
-mapping and must support original, override and effective parameter evidence,
-actor/rationale attribution, review revision and sensitive-value handling.
+event taxonomy. AF records approval intent; AuthWebhook records the admitted
+committed decision; RO records business-context/orchestration events. The final
+field set is selected from the SOC2/FedRAMP control mapping and must support
+original, override and effective parameter evidence, actor/rationale
+attribution, review revision and sensitive-value handling.
 
 ---
 
