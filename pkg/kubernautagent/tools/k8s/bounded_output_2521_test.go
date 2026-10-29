@@ -263,6 +263,26 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).To(ContainSubstring("results are truncated"))
 	})
 
+	It("UT-KA-752-125: jq reports source truncation for an empty retained result", func() {
+		objects := make([]runtime.Object, 0, 600)
+		for i := 0; i < 600; i++ {
+			objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("jq-truncated-config-%03d", i), Namespace: "prod",
+			}})
+		}
+		resolver := testResolverWithMetadataObjects(objects...)
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubernetes_jq_query",
+			json.RawMessage(`{"kind":"ConfigMap","jq_expr":".items[] | select(.metadata.name == \"jq-truncated-config-599\") | .metadata.name"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("source truncated"))
+		Expect(result).To(ContainSubstring("results may be incomplete"))
+	})
+
 	It("UT-KA-2521-120: oversized exact-name results fail before downstream sanitization", func() {
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "large-config", Namespace: "prod"},

@@ -163,7 +163,11 @@ func evaluateJQ(ctx context.Context, input interface{}, expr string) ([]string, 
 // formatJQResults renders either a bounded query result or a count summary.
 func formatJQResults(results []string, countMode bool, resources interface{}) string {
 	if !countMode {
-		return TruncateJQOutput(strings.Join(results, "\n"), maxJQOutputChars)
+		output := TruncateJQOutput(strings.Join(results, "\n"), maxJQOutputChars)
+		if warning := jqSourceTruncationNotice(resources); warning != "" {
+			return output + "\n[" + warning + "]"
+		}
+		return output
 	}
 
 	count := len(results)
@@ -184,4 +188,17 @@ func formatJQResults(results []string, countMode bool, resources interface{}) st
 		}
 	}
 	return fmt.Sprintf("Count: %d%s%s\n%s", count, suffix, sourceSummary, strings.Join(preview, "\n"))
+}
+
+// jqSourceTruncationNotice warns that non-count query results cover only the
+// retained metadata page rather than the complete Kubernetes source list.
+func jqSourceTruncationNotice(resources interface{}) string {
+	summary, ok := resources.(*ResourceListSummary)
+	if !ok || summary == nil || !summary.Truncated {
+		return ""
+	}
+	if summary.TotalCount != nil {
+		return fmt.Sprintf("source truncated: retained %d of %d source items; query results may be incomplete; narrow the query", summary.ItemCount, *summary.TotalCount)
+	}
+	return fmt.Sprintf("source truncated: retained %d source items; total unknown; query results may be incomplete; narrow the query", summary.ItemCount)
 }
