@@ -82,6 +82,10 @@ var _ = Describe("Issue #2521 target-scoped Phase 3 handoff", func() {
 
 	It("UT-KA-2521-008: budget exhaustion after a discovery tool is a discovery failure", func() {
 		inv := New(Config{Logger: logr.Discard()})
+		planningMessages := []llm.Message{
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{Name: "todo_write"}}},
+		}
+		Expect(workflowDiscoveryHasStarted(planningMessages)).To(BeFalse())
 		messages := []llm.Message{
 			{Role: "assistant", ToolCalls: []llm.ToolCall{{Name: "list_workflows"}}},
 			{Role: "tool", ToolName: "list_workflows", Content: "bounded workflow list"},

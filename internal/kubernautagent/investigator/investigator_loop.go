@@ -782,11 +782,19 @@ func isBulkKubernetesSummaryTool(toolName string) bool {
 // structured-context budget exhaustion.
 func workflowDiscoveryHasStarted(messages []llm.Message) bool {
 	for _, message := range messages {
-		if len(message.ToolCalls) > 0 {
-			return true
+		for _, toolCall := range message.ToolCalls {
+			if isWorkflowDiscoveryTool(toolCall.Name) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// isWorkflowDiscoveryTool excludes shared planning tools from discovery-state
+// classification while recognizing the two catalog-discovery calls.
+func isWorkflowDiscoveryTool(name string) bool {
+	return name == "list_available_actions" || name == "list_workflows"
 }
 
 // structuredPhase3BudgetExhaustionReason preserves whether discovery already
