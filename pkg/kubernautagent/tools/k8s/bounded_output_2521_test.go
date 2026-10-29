@@ -69,6 +69,25 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).NotTo(ContainSubstring(`"data":`))
 	})
 
+	It("UT-KA-752-121: bulk metadata lists send the server-side item limit", func() {
+		metadataClient := newMetadataSummaryClient(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "bounded-config", Namespace: "prod"},
+		})
+		resolver := &testDynamicResolver{resolver: k8s.NewDynamicResolver(
+			fake.NewSimpleDynamicClient(buildTestScheme()), buildTestMapper(), buildTestKindIndex(), logr.Discard(),
+			k8s.WithMetadataClient(metadataClient),
+		)}
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		_, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
+			json.RawMessage(`{"kind":"ConfigMap","namespace":"prod"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(metadataClient.lastListOptions.Limit).To(Equal(k8s.DefaultResourceListLimit))
+	})
+
 	It("UT-KA-752-113: exact-name cluster lookup sends a server-side metadata.name selector", func() {
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "target-config", Namespace: "prod"},
@@ -260,11 +279,12 @@ func testResolverWithMetadataObjects(objects ...runtime.Object) *testDynamicReso
 type metadataSummaryClient struct {
 	itemsByResource map[string][]metav1.PartialObjectMetadata
 	listErr         error
+	lastListOptions metav1.ListOptions
 }
 
 // newMetadataSummaryClient builds a GVR-aware metadata fake with pagination
 // markers matching the bounded production contract.
-func newMetadataSummaryClient(objects ...runtime.Object) metadata.Interface {
+func newMetadataSummaryClient(objects ...runtime.Object) *metadataSummaryClient {
 	client := &metadataSummaryClient{itemsByResource: make(map[string][]metav1.PartialObjectMetadata)}
 	for _, object := range objects {
 		accessor, err := meta.Accessor(object)
@@ -303,7 +323,8 @@ func (g metadataSummaryGetter) Namespace(namespace string) metadata.ResourceInte
 }
 
 // List returns only the requested resource kind and simulates one bounded page.
-func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
+func (g metadataSummaryGetter) List(_ context.Context, options metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
+	g.client.lastListOptions = options
 	if g.client.listErr != nil {
 		return nil, g.client.listErr
 	}
