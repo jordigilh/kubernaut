@@ -137,6 +137,8 @@ func validateWorkflowSelectionPromptBudget(rendered string, budget int) error {
 	return nil
 }
 
+// validateWorkflowSelectionContextBudget bounds the serialized provider
+// message context, including the user envelope and system prompt.
 func validateWorkflowSelectionContextBudget(messages []llm.Message, budget int) error {
 	encoded, err := json.Marshal(messages)
 	if err != nil {
@@ -145,6 +147,8 @@ func validateWorkflowSelectionContextBudget(messages []llm.Message, budget int) 
 	return validateWorkflowSelectionPromptBudget(string(encoded), budget)
 }
 
+// workflowSelectionPromptBudgetResult converts a structured-context overflow
+// into the existing fail-closed review result.
 func (inv *Investigator) workflowSelectionPromptBudgetResult(messages []llm.Message, correlationID string) *katypes.InvestigationResult {
 	err := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget)
 	if err == nil {
@@ -282,7 +286,7 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}
-		if strings.Contains(r.Reason, "structured Phase 3 context budget") {
+		if r.Reason == structuredPhase3BudgetExhaustedReason {
 			result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 			result.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
 			result.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure

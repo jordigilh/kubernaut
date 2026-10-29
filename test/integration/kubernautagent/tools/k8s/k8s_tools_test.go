@@ -36,7 +36,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
-	metadatafake "k8s.io/client-go/metadata/fake"
 
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
@@ -254,11 +253,10 @@ var _ = Describe("Issue #2521 bounded K8s resolver wiring", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
 		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
-		dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
-		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, objects...)
+		dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{{Version: "v1", Resource: "configmaps"}: "ConfigMapList"}, objects...)
 		resolver := k8s.NewDynamicResolver(dynamicClient, mapper,
-			map[string]schema.GroupKind{"configmap": {Kind: "ConfigMap"}}, logr.Discard(),
-			k8s.WithMetadataClient(metadataClient))
+			map[string]schema.GroupKind{"configmap": {Kind: "ConfigMap"}}, logr.Discard())
 		reg := registry.New()
 		for _, tool := range k8s.NewAllTools(fake.NewSimpleClientset(), resolver) {
 			reg.Register(tool)

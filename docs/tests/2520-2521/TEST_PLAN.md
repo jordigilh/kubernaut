@@ -35,7 +35,7 @@ Investigator, AgentSession, and AIAnalysis paths.
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| In-scope scenario coverage | 20/20; minimum 90%, critical scenarios 100% | BR matrix and passing UT/IT assertions |
+| In-scope scenario coverage | 21/21; minimum 90%, critical scenarios 100% | BR matrix and passing UT/IT assertions |
 | Unit test pass rate | 100% | Affected Ginkgo suites |
 | Integration wiring pass rate | 100% of manifest rows | KA/AA integration suites |
 | Audit redaction | 100% of ledger fields allow-listed and bounded | UT-KA-2520-002 and schema assertions |
@@ -54,7 +54,7 @@ reported for this change. The aggregate `make test` unit target also passed
 therefore not claimed until the integration harness can start.
 
 **Issue #2521 amendment:** the preceding execution record is historical for the
-original #2520/#2518 scope. The current matrix defines 20 scenarios, including
+original #2520/#2518 scope. The current matrix defines 21 scenarios, including
 target-scoped Phase 3 handoff, cluster-scoped history, source-bounded Kubernetes
 lists/JQ/counts, and bounded audit projection. Current validation is recorded by the
 implementation session; unrelated repository-wide baseline failures remain
@@ -217,6 +217,7 @@ fixture is made explicit and the failing cause is recorded.
 | BR-SAFETY-752 / SI-10 | Count output distinguishes retained page count from known total source count | P0 | Unit | UT-KA-752-116 | PASS |
 | BR-SAFETY-752 / SI-10 | Paginated fallback explicitly marks unknown total counts instead of misreporting the retained page as corpus total | P0 | Unit | UT-KA-752-117 | PASS |
 | BR-SAFETY-752 / SI-10 | JQ fails closed when the metadata-only source path is unavailable | P0 | Unit | UT-KA-752-118 | PASS |
+| BR-SAFETY-752 / SI-10 | Metadata-only find_resource reports truncation instead of a false empty result | P0 | Unit | UT-KA-752-119 | PASS |
 | BR-AUDIT-005 / DD-AUDIT-003 | Bulk tool audit projection excludes raw payloads while preserving bounded summary metadata | P0 | Unit | UT-KA-2521-009 | PASS |
 
 ---
@@ -247,6 +248,7 @@ fixture is made explicit and the failing cause is recorded.
 | `UT-KA-752-116` | Count output reports retained and total source items separately when the metadata API provides a safe total. | PASS |
 | `UT-KA-752-117` | Paginated fallback omits `total_count` when the API does not provide a safe remaining-item count. | PASS |
 | `UT-KA-752-118` | JQ does not fall back to fetching full bulk objects when metadata-only access is unavailable. | PASS |
+| `UT-KA-752-119` | Bounded find_resource reports truncation when a match may be outside the retained page. | PASS |
 
 ### Tier 2: Integration Tests
 

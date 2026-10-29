@@ -31,6 +31,8 @@ type structuredContextRuntime struct {
 	additionalSanitizer *sanitization.Pipeline
 }
 
+// newStructuredContextRuntime creates the sanitizer and code-owned Phase 3
+// context budget without retaining tool observations.
 func newStructuredContextRuntime(p Pipeline) *structuredContextRuntime {
 	budget := p.StructuredPhase3ContextBudget
 	if budget <= 0 {
@@ -41,6 +43,8 @@ func newStructuredContextRuntime(p Pipeline) *structuredContextRuntime {
 	return &structuredContextRuntime{budget: budget, sanitizer: sanitizer, additionalSanitizer: p.Sanitizer}
 }
 
+// sanitizeStructuredContextText sanitizes structured handoff leaves using the
+// mandatory baseline and any configured additional policy.
 func (inv *Investigator) sanitizeStructuredContextText(ctx context.Context, text string) (string, error) {
 	clean, err := inv.structuredContext.sanitizer.Run(ctx, text)
 	if err != nil {

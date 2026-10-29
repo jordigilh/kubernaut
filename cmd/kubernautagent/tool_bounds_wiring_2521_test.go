@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
-	metadatafake "k8s.io/client-go/metadata/fake"
 	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -46,18 +45,17 @@ var _ = Describe("Issue #2521 production K8s tool wiring", func() {
 		}
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
-		dynamicClient := fake.NewSimpleDynamicClient(scheme, configMap)
-		metadataClient := metadatafake.NewSimpleMetadataClient(scheme, configMap)
+		dynamicClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{{Version: "v1", Resource: "configmaps"}: "ConfigMapList"}, configMap)
 		clientset, err := kubernetes.NewForConfig(&rest.Config{Host: "http://127.0.0.1"})
 		Expect(err).NotTo(HaveOccurred())
 		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
 		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
 		infra := &k8sInfra{
-			kubeConfig:     &rest.Config{Host: "http://127.0.0.1"},
-			clientset:      clientset,
-			dynClient:      dynamicClient,
-			metadataClient: metadataClient,
-			mapper:         mapper,
+			kubeConfig: &rest.Config{Host: "http://127.0.0.1"},
+			clientset:  clientset,
+			dynClient:  dynamicClient,
+			mapper:     mapper,
 		}
 
 		reg := registry.New()

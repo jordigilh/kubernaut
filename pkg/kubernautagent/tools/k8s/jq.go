@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	jqQueryParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to query"},"jq_expr":{"type":"string","description":"jq expression to apply to the resource list"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
-	jqCountParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to count"},"jq_expr":{"type":"string","description":"jq expression to filter resources before counting"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
+	jqQueryParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to query"},"jq_expr":{"type":"string","description":"jq expression over a metadata-only summary (name, namespace, uid, resourceVersion, up to 32 labels; first 100 retained items; spec/status/data unavailable)"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
+	jqCountParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to count"},"jq_expr":{"type":"string","description":"jq expression over a metadata-only summary (name, namespace, uid, resourceVersion, up to 32 labels; first 100 retained items; spec/status/data unavailable)"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
 )
 
 func newJQTools(resolver ResourceResolver) []tools.Tool {
@@ -47,7 +47,7 @@ type jqQueryTool struct {
 
 func (t *jqQueryTool) Name() string { return "kubernetes_jq_query" }
 func (t *jqQueryTool) Description() string {
-	return "Run a jq expression against Kubernetes resources of a given kind across all namespaces"
+	return "Run a jq expression against bounded metadata-only summaries (name, namespace, uid, resourceVersion, up to 32 labels; first 100 retained items) of Kubernetes resources across all namespaces. spec/status/data are unavailable; use a targeted get tool for a resource body."
 }
 func (t *jqQueryTool) Parameters() json.RawMessage { return jqQueryParams }
 
@@ -71,7 +71,7 @@ type jqCountTool struct {
 
 func (t *jqCountTool) Name() string { return "kubernetes_count" }
 func (t *jqCountTool) Description() string {
-	return "Count Kubernetes resources matching a jq filter, showing count and 10-line preview"
+	return "Count Kubernetes resources matching a jq filter over bounded metadata-only summaries (first 100 retained items; spec/status/data unavailable), showing retained count, safe total when known, and a 10-line preview"
 }
 func (t *jqCountTool) Parameters() json.RawMessage { return jqCountParams }
 
@@ -100,6 +100,7 @@ func TruncateJQOutput(output string, limit int) string {
 	return output[:limit] + fmt.Sprintf("\n... [TRUNCATED] JQ output exceeded %d character limit (%d total). Use a more specific jq expression or filter with select().", limit, len(output))
 }
 
+// runJQ evaluates a bounded metadata-only Kubernetes summary.
 func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr, apiGroup string, countMode bool) (string, error) {
 	resources, err := resolver.ListForQuery(ctx, kind, "", apiGroup)
 	if err != nil {
@@ -123,6 +124,7 @@ func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr, apiGroup 
 	return formatJQResults(results, countMode, resources), nil
 }
 
+// evaluateJQ evaluates one expression over the bounded summary input.
 func evaluateJQ(ctx context.Context, input interface{}, expr string) ([]string, error) {
 	query, err := gojq.Parse(expr)
 	if err != nil {
@@ -154,6 +156,7 @@ func evaluateJQ(ctx context.Context, input interface{}, expr string) ([]string, 
 	return results, nil
 }
 
+// formatJQResults renders either a bounded query result or a count summary.
 func formatJQResults(results []string, countMode bool, resources interface{}) string {
 	if !countMode {
 		return TruncateJQOutput(strings.Join(results, "\n"), maxJQOutputChars)

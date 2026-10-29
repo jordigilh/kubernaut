@@ -67,10 +67,13 @@ type ResourceListSummary struct {
 	Truncated  bool                      `json:"truncated"`
 }
 
+// ResourceMetadataSummary contains only the safe metadata projection of one
+// item in a bulk result.
 type ResourceMetadataSummary struct {
 	Metadata ResourceObjectMetadata `json:"metadata"`
 }
 
+// ResourceObjectMetadata is the bounded ObjectMeta subset exposed to tools.
 type ResourceObjectMetadata struct {
 	Name            string            `json:"name"`
 	Namespace       string            `json:"namespace,omitempty"`
@@ -391,6 +394,9 @@ func (r *dynamicResourceResolver) ListForQuery(ctx context.Context, kind, namesp
 		lastMapping = mapping
 		metadataList, listErr := r.listMetadata(ctx, mapping, namespace)
 		if listErr != nil {
+			if errors.IsNotFound(listErr) || errors.IsForbidden(listErr) {
+				continue
+			}
 			r.notifySecretAccess(ctx, mapping, "list", "", namespace, listErr)
 			return nil, fmt.Errorf("metadata-only list %s in %s: %w", kind, namespace, listErr)
 		}
@@ -410,6 +416,7 @@ func (r *dynamicResourceResolver) ListForQuery(ctx context.Context, kind, namesp
 	return nil, err
 }
 
+// List returns a metadata-only summary for a bounded generic Kubernetes list.
 func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error) {
 	mappings, err := r.resolveMappings(kind, apiGroup)
 	if err != nil {
@@ -451,6 +458,8 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	return nil, err
 }
 
+// listBoundedSummary chooses the metadata API when available and retains a
+// bounded dynamic fallback only for unsupported metadata representations.
 func (r *dynamicResourceResolver) listBoundedSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
 	if r.metadataClient == nil {
 		return r.listDynamicSummary(ctx, mapping, kind, namespace)
@@ -460,11 +469,17 @@ func (r *dynamicResourceResolver) listBoundedSummary(ctx context.Context, mappin
 		// Some aggregated APIs do not serve PartialObjectMetadata. Fall back
 		// to one bounded dynamic list so the tool remains usable; production
 		// still never requests an unrestricted collection.
+		if !errors.IsNotFound(err) && !errors.IsMethodNotSupported(err) && !errors.IsNotAcceptable(err) {
+			return nil, err
+		}
+		r.logger.V(1).Info("metadata list unavailable, using bounded dynamic list",
+			"gvr", mapping.Resource.String(), "error", err.Error())
 		return r.listDynamicSummary(ctx, mapping, kind, namespace)
 	}
 	return summarizeMetadataList(kind, metadataList), nil
 }
 
+// listMetadata sends a namespace-aware or cluster-scoped metadata request.
 func (r *dynamicResourceResolver) listMetadata(ctx context.Context, mapping *meta.RESTMapping, namespace string) (*metav1.PartialObjectMetadataList, error) {
 	resource := r.metadataClient.Resource(mapping.Resource)
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
@@ -473,6 +488,8 @@ func (r *dynamicResourceResolver) listMetadata(ctx context.Context, mapping *met
 	return resource.List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
 }
 
+// listDynamicSummary projects a bounded dynamic list when metadata negotiation
+// is unsupported by the target API.
 func (r *dynamicResourceResolver) listDynamicSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
 	resourceList, err := r.scopedClient(mapping, namespace).List(ctx, metav1.ListOptions{Limit: DefaultResourceListLimit})
 	if err != nil {
@@ -481,6 +498,7 @@ func (r *dynamicResourceResolver) listDynamicSummary(ctx context.Context, mappin
 	return summarizeUnstructuredList(kind, resourceList), nil
 }
 
+// summarizeMetadataList preserves metadata and a safe server-provided count.
 func summarizeMetadataList(kind string, list *metav1.PartialObjectMetadataList) *ResourceListSummary {
 	items := make([]ResourceMetadataSummary, 0, len(list.Items))
 	for _, item := range list.Items {
@@ -507,6 +525,7 @@ func summarizeMetadataList(kind string, list *metav1.PartialObjectMetadataList) 
 	}
 }
 
+// summarizeUnstructuredList strips bodies from the bounded dynamic fallback.
 func summarizeUnstructuredList(kind string, list *unstructured.UnstructuredList) *ResourceListSummary {
 	items := make([]ResourceMetadataSummary, 0, min(len(list.Items), int(DefaultResourceListLimit)))
 	for _, item := range list.Items {
@@ -533,6 +552,7 @@ func summarizeUnstructuredList(kind string, list *unstructured.UnstructuredList)
 	}
 }
 
+// metadataSummary builds the allow-listed metadata projection for one item.
 func metadataSummary(name, namespace, uid, resourceVersion string, labels map[string]string) ResourceMetadataSummary {
 	return ResourceMetadataSummary{
 		Metadata: ResourceObjectMetadata{
@@ -542,6 +562,7 @@ func metadataSummary(name, namespace, uid, resourceVersion string, labels map[st
 	}
 }
 
+// boundedLabels keeps label metadata useful without allowing unbounded values.
 func boundedLabels(labels map[string]string) map[string]string {
 	if len(labels) == 0 {
 		return nil

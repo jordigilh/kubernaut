@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -181,6 +182,27 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 			json.RawMessage(`{"kind":"ConfigMap","jq_expr":".items[].metadata.name"}`))
 		Expect(err).To(MatchError(ContainSubstring("metadata-only query unavailable")))
 	})
+
+	It("UT-KA-752-119: find_resource reports truncation instead of a false empty result", func() {
+		objects := make([]runtime.Object, 0, 600)
+		for i := 0; i < 600; i++ {
+			objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("find-config-%03d", i), Namespace: "prod",
+			}})
+		}
+		resolver := testResolverWithMetadataObjects(objects...)
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubectl_find_resource",
+			json.RawMessage(`{"kind":"ConfigMap","keyword":"find-config-599"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("results are truncated"))
+		Expect(result).To(ContainSubstring("600"))
+		Expect(result).NotTo(Equal("[]"))
+	})
 })
 
 type testDynamicResolver struct {
@@ -224,30 +246,32 @@ func testResolverWithMetadataObjects(objects ...runtime.Object) *testDynamicReso
 }
 
 type metadataSummaryClient struct {
-	items []metav1.PartialObjectMetadata
+	itemsByResource map[string][]metav1.PartialObjectMetadata
 }
 
 func newMetadataSummaryClient(objects ...runtime.Object) metadata.Interface {
-	client := &metadataSummaryClient{items: make([]metav1.PartialObjectMetadata, 0, len(objects))}
+	client := &metadataSummaryClient{itemsByResource: make(map[string][]metav1.PartialObjectMetadata)}
 	for _, object := range objects {
 		accessor, err := meta.Accessor(object)
 		if err != nil {
 			continue
 		}
-		client.items = append(client.items, metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{
+		item := metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{
 			Name: accessor.GetName(), Namespace: accessor.GetNamespace(), UID: accessor.GetUID(),
 			ResourceVersion: accessor.GetResourceVersion(), Labels: accessor.GetLabels(),
-		}})
+		}}
+		client.itemsByResource[metadataResourceForObject(object)] = append(client.itemsByResource[metadataResourceForObject(object)], item)
 	}
 	return client
 }
 
-func (c *metadataSummaryClient) Resource(schema.GroupVersionResource) metadata.Getter {
-	return metadataSummaryGetter{client: c}
+func (c *metadataSummaryClient) Resource(gvr schema.GroupVersionResource) metadata.Getter {
+	return metadataSummaryGetter{client: c, resource: gvr.Resource}
 }
 
 type metadataSummaryGetter struct {
 	client    *metadataSummaryClient
+	resource  string
 	namespace string
 }
 
@@ -257,8 +281,9 @@ func (g metadataSummaryGetter) Namespace(namespace string) metadata.ResourceInte
 }
 
 func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
-	items := make([]metav1.PartialObjectMetadata, 0, len(g.client.items))
-	for _, item := range g.client.items {
+	seeded := g.client.itemsByResource[g.resource]
+	items := make([]metav1.PartialObjectMetadata, 0, len(seeded))
+	for _, item := range seeded {
 		if g.namespace == "" || item.Namespace == g.namespace {
 			items = append(items, item)
 		}
@@ -276,6 +301,28 @@ func (g metadataSummaryGetter) List(_ context.Context, _ metav1.ListOptions) (*m
 		Continue:           continuation,
 		RemainingItemCount: remainingPtr,
 	}, Items: items}, nil
+}
+
+func metadataResourceForObject(object runtime.Object) string {
+	gvk := object.GetObjectKind().GroupVersionKind()
+	if gvk.Kind != "" {
+		return strings.ToLower(gvk.Kind) + "s"
+	}
+	t := reflect.TypeOf(object)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	kind := strings.ToLower(t.Name())
+	switch kind {
+	case "poddisruptionbudget":
+		return "poddisruptionbudgets"
+	case "horizontalpodautoscaler":
+		return "horizontalpodautoscalers"
+	case "networkpolicy":
+		return "networkpolicies"
+	default:
+		return kind + "s"
+	}
 }
 
 func (metadataSummaryGetter) Delete(context.Context, string, metav1.DeleteOptions, ...string) error {

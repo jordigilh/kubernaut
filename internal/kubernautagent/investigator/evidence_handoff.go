@@ -154,7 +154,9 @@ func handoffRecordedTime(value time.Time) *time.Time {
 	return &utc
 }
 
-func scopedHandoffInput(in handoffInput) handoffInput {
+// scopedHandoffInput removes history that cannot be proven to belong to the
+// resolved target before serialization or model dispatch.
+func (inv *Investigator) scopedHandoffInput(in handoffInput) handoffInput {
 	if in.EnrichData == nil {
 		return in
 	}
@@ -162,12 +164,18 @@ func scopedHandoffInput(in handoffInput) handoffInput {
 	in.EnrichData = &data
 	if data.HistoryResult != nil {
 		if !handoffHistoryMatchesTarget(data.HistoryResult.TargetResource, in.Signal) {
+			inv.logger.V(1).Info("discarding history outside the resolved handoff target",
+				"history_target", data.HistoryResult.TargetResource,
+				"target_kind", in.Signal.ResourceKind, "target_name", in.Signal.ResourceName,
+				"target_namespace", in.Signal.Namespace)
 			data.HistoryResult = nil // Never disclose or match another target's history.
 		}
 	}
 	return in
 }
 
+// handoffHistoryMatchesTarget accepts canonical and legacy cluster-scoped
+// spellings while keeping arbitrary namespaced CRDs fail-closed.
 func handoffHistoryMatchesTarget(raw string, signal katypes.SignalContext) bool {
 	normalized := strings.TrimPrefix(strings.TrimSpace(raw), "/")
 	canonical := signal.Namespace + "/" + signal.ResourceKind + "/" + signal.ResourceName
@@ -175,7 +183,23 @@ func handoffHistoryMatchesTarget(raw string, signal katypes.SignalContext) bool 
 		canonical = signal.ResourceKind + "/" + signal.ResourceName
 		return normalized == canonical || normalized == "cluster/"+canonical
 	}
-	return normalized == canonical
+	if normalized == canonical {
+		return true
+	}
+	// Scope resolution can fail closed while preserving a non-empty signal
+	// namespace. Accept the unnamespaced canonical form only for Kubernetes
+	// built-in cluster-scoped kinds; arbitrary CRDs remain fail-closed.
+	if normalized == signal.ResourceKind+"/"+signal.ResourceName {
+		_, knownClusterScoped := knownClusterScopedHandoffKinds[strings.ToLower(signal.ResourceKind)]
+		return knownClusterScoped
+	}
+	return false
+}
+
+var knownClusterScopedHandoffKinds = map[string]struct{}{
+	"clusterrole": {}, "clusterrolebinding": {}, "customresourcedefinition": {},
+	"namespace": {}, "node": {}, "persistentvolume": {}, "priorityclass": {},
+	"storageclass": {},
 }
 
 func (inv *Investigator) freezeEvidenceHandoff(ctx context.Context, in handoffInput, id string) (*frozenEvidenceHandoff, error) {
@@ -183,7 +207,7 @@ func (inv *Investigator) freezeEvidenceHandoff(ctx context.Context, in handoffIn
 	if in.EnrichData != nil && in.EnrichData.HistoryUnavailable {
 		return nil, fmt.Errorf("remediation history acquisition failed; complete repeat context is unavailable")
 	}
-	raw, err := json.Marshal(scopedHandoffInput(in))
+	raw, err := json.Marshal(inv.scopedHandoffInput(in))
 	if err != nil {
 		return nil, fmt.Errorf("serialize handoff source: %w", err)
 	}

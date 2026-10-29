@@ -244,7 +244,7 @@ func newFindResource(resolver ResourceResolver) *findResourceTool {
 
 func (t *findResourceTool) Name() string { return "kubectl_find_resource" }
 func (t *findResourceTool) Description() string {
-	return "Find resources by kind with keyword substring filter across all namespaces"
+	return "Find resources by keyword over retained metadata fields across all namespaces; the first 100 items are searched and results may be truncated"
 }
 func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
 
@@ -267,6 +267,7 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	if err != nil {
 		return "", err
 	}
+	summary, isSummary := resources.(*ResourceListSummary)
 
 	data, err := json.Marshal(resources)
 	if err != nil {
@@ -292,13 +293,23 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	}
 
 	if len(matched) == 0 {
-		return "[]", nil
+		return findResourceNoMatch(summary, isSummary), nil
 	}
 	result, err := json.Marshal(matched)
 	if err != nil {
 		return "", fmt.Errorf("marshaling matched resources: %w", err)
 	}
 	return string(result), nil
+}
+
+func findResourceNoMatch(summary *ResourceListSummary, isSummary bool) string {
+	if !isSummary || summary == nil || !summary.Truncated {
+		return "[]"
+	}
+	if summary.TotalCount != nil {
+		return fmt.Sprintf("no match in the first %d of %d resources; results are truncated; narrow the query", summary.ItemCount, *summary.TotalCount)
+	}
+	return fmt.Sprintf("no match in the first %d resources; results are truncated; narrow the query", summary.ItemCount)
 }
 
 // --- get yaml tool ---

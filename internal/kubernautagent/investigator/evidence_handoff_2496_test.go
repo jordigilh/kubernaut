@@ -94,6 +94,23 @@ var _ = Describe("#2496 structured Phase 3 handoff after Issue #2521", func() {
 		Entry("legacy cluster prefix", "cluster/Node/worker-1"),
 	)
 
+	It("UT-KA-2521-010: known cluster history survives a stale namespace after scope lookup failure", func() {
+		inv := New(Config{Logger: logr.Discard()})
+		score := 0.5
+		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{
+			Signal: katypes.SignalContext{ResourceKind: "Node", ResourceName: "worker-1", Namespace: "stale-namespace"},
+			EnrichData: &prompt.EnrichmentData{HistoryResult: &enrichment.RemediationHistoryResult{
+				TargetResource: "Node/worker-1",
+				Tier1: []enrichment.Tier1Entry{{
+					RemediationUID: "prior-stale-scope", WorkflowID: "workflow-stale-scope", WorkflowName: "repair-node",
+					AssessmentReason: "Full", EffectivenessScore: &score,
+				}},
+			}},
+		}, "rr-stale-scope-2521")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(frozen.repeat.CompletedPriorWorkflows).To(HaveKey("workflow-stale-scope"))
+	})
+
 	It("UT-KA-2496-008: source values are sanitized without retaining raw PhaseRCA observations", func() {
 		inv := New(Config{Logger: logr.Discard()})
 		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{

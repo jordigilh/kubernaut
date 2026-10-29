@@ -277,7 +277,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		if budgetErr := validateWorkflowSelectionContextBudget(messages, inv.structuredContext.budget); budgetErr != nil {
 			inv.logger.Error(budgetErr, "workflow selection context exceeded structured Phase 3 budget",
 				"correlation_id", llmCtx.CorrelationID, "turn", turn)
-			return &ExhaustedResult{Reason: "structured Phase 3 context budget exceeded"}, messages, true, nil
+			return &ExhaustedResult{Reason: structuredPhase3BudgetExhaustedReason}, messages, true, nil
 		}
 	}
 
@@ -642,6 +642,7 @@ func (inv *Investigator) executeToolCall(ctx context.Context, tc llm.ToolCall, c
 
 const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`
 const maxAuditToolResultBytes = 8192
+const structuredPhase3BudgetExhaustedReason = "structured Phase 3 context budget exceeded"
 
 // auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
 // history but excludes it from the generic tool-call audit record. Bulk
@@ -652,6 +653,8 @@ func auditSafeToolResult(toolName, toolResult string) string {
 	return result
 }
 
+// auditToolResultProjection returns the durable, allow-listed representation of
+// a tool result and its structured audit summary when one is available.
 func auditToolResultProjection(toolName, toolResult, reference string) (string, map[string]interface{}) {
 	if toolName == "get_workflow" {
 		return omittedWorkflowSchemaAuditResult, nil
@@ -672,6 +675,8 @@ func auditToolResultProjection(toolName, toolResult, reference string) (string, 
 	return toolResult, nil
 }
 
+// auditBulkToolResult projects a Kubernetes list summary without retaining its
+// item bodies or arbitrary fields.
 func auditBulkToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
 	var listSummary struct {
 		ItemCount  int  `json:"item_count"`
@@ -682,16 +687,20 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 		(!strings.Contains(toolResult, `"item_count"`) && !strings.Contains(toolResult, `"total_count"`)) {
 		return "", nil, false
 	}
-	digest := sha256.Sum256([]byte(toolResult))
 	summary := map[string]interface{}{
 		"tool_name":  toolName,
 		"item_count": listSummary.ItemCount,
 		"truncated":  listSummary.Truncated,
-		"digest":     fmt.Sprintf("sha256:%x", digest[:]),
 	}
 	if listSummary.TotalCount != nil {
 		summary["total_count"] = *listSummary.TotalCount
 	}
+	canonical, marshalErr := json.Marshal(summary)
+	if marshalErr != nil {
+		return "", nil, false
+	}
+	digest := sha256.Sum256(canonical)
+	summary["digest"] = fmt.Sprintf("sha256:%x", digest[:])
 	if reference != "" {
 		summary["reference"] = reference
 	}
@@ -702,6 +711,7 @@ func auditBulkToolResult(toolName, toolResult, reference string) (string, map[st
 	return "", nil, false
 }
 
+// auditOmittedOversizedToolResult applies the generic audit result size guard.
 func auditOmittedOversizedToolResult(toolName, toolResult, reference string) (string, map[string]interface{}, bool) {
 	if len(toolResult) <= maxAuditToolResultBytes {
 		return "", nil, false
@@ -709,14 +719,13 @@ func auditOmittedOversizedToolResult(toolName, toolResult, reference string) (st
 	return auditOmittedToolResult(toolName, toolResult, reference, "size_limit")
 }
 
+// auditOmittedToolResult records only bounded omission metadata for a result.
 func auditOmittedToolResult(toolName, toolResult, reference, reason string) (string, map[string]interface{}, bool) {
-	digest := sha256.Sum256([]byte(toolResult))
 	summary := map[string]interface{}{
 		"tool_name":      toolName,
 		"result_omitted": true,
 		"reason":         reason,
 		"bytes":          len(toolResult),
-		"digest":         fmt.Sprintf("sha256:%x", digest[:]),
 	}
 	if reference != "" {
 		summary["reference"] = reference
@@ -728,6 +737,8 @@ func auditOmittedToolResult(toolName, toolResult, reference, reason string) (str
 	return "", nil, false
 }
 
+// isBulkKubernetesSummaryTool identifies tools whose audit result must be an
+// allow-listed metadata/count projection rather than arbitrary JSON.
 func isBulkKubernetesSummaryTool(toolName string) bool {
 	return strings.HasPrefix(toolName, "kubectl_get_by_kind_") ||
 		toolName == "kubectl_find_resource" || toolName == "kubernetes_jq_query" || toolName == "kubernetes_count"
