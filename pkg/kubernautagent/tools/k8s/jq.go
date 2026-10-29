@@ -176,8 +176,12 @@ func formatJQResults(results []string, countMode bool, resources interface{}) st
 		suffix = fmt.Sprintf(" (capped at %d)", maxJQResults)
 	}
 	sourceSummary := ""
-	if summary, ok := resources.(*ResourceListSummary); ok && summary.TotalCount != nil {
-		sourceSummary = fmt.Sprintf(" (retained %d of %d source items; truncated=%t)", summary.ItemCount, *summary.TotalCount, summary.Truncated)
+	if summary, ok := resources.(*ResourceListSummary); ok {
+		if summary.TotalCount != nil {
+			sourceSummary = fmt.Sprintf(" (retained %d of %d source items; truncated=%t)", summary.ItemCount, *summary.TotalCount, summary.Truncated)
+		} else if summary.Truncated {
+			sourceSummary = fmt.Sprintf(" (retained %d source items; total unknown; truncated=true)", summary.ItemCount)
+		}
 	}
 	return fmt.Sprintf("Count: %d%s%s\n%s", count, suffix, sourceSummary, strings.Join(preview, "\n"))
 }

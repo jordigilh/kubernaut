@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -180,5 +181,14 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 		Expect(ok).To(BeTrue())
 		Expect(summary).To(HaveKeyWithValue("result_omitted", true))
 		Expect(summary).To(HaveKeyWithValue("reason", "bulk_summary_missing"))
+	})
+
+	It("UT-KA-2521-124: oversized bulk-tool errors use the bounded audit omission", func() {
+		toolResult := toolErrorJSON(strings.Repeat("invalid jq expression detail ", 1000))
+		projected, summary := auditToolResultProjection("kubernetes_count", toolResult, "rr-2521/error")
+
+		Expect(projected).To(ContainSubstring(`"result_omitted":true`))
+		Expect(projected).To(ContainSubstring(`"reason":"size_limit"`))
+		Expect(summary).To(HaveKeyWithValue("reason", "size_limit"))
 	})
 })

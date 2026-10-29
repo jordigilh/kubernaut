@@ -306,7 +306,19 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	if err != nil {
 		return "", fmt.Errorf("marshaling matched resources: %w", err)
 	}
-	return string(result), nil
+	return findResourceMatches(string(result), summary, isSummary), nil
+}
+
+// findResourceMatches appends a bounded-source warning when matched results
+// come from a truncated metadata page.
+func findResourceMatches(result string, summary *ResourceListSummary, isSummary bool) string {
+	if !isSummary || summary == nil || !summary.Truncated {
+		return result
+	}
+	if summary.TotalCount != nil {
+		return fmt.Sprintf("%s\nmatches found in the first %d of %d resources; results are truncated; narrow the query", result, summary.ItemCount, *summary.TotalCount)
+	}
+	return fmt.Sprintf("%s\nmatches found in the first %d resources; results are truncated; narrow the query", result, summary.ItemCount)
 }
 
 // findResourceNoMatch distinguishes a true empty result from a truncated page.

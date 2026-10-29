@@ -157,6 +157,7 @@ func handoffRecordedTime(value time.Time) *time.Time {
 // scopedHandoffInput removes history that cannot be proven to belong to the
 // resolved target before serialization or model dispatch.
 func (inv *Investigator) scopedHandoffInput(in handoffInput) handoffInput {
+	in.Signal.Namespace = inv.normalizeNamespace(in.Signal.ResourceKind, in.Signal.Namespace)
 	if in.EnrichData == nil {
 		return in
 	}

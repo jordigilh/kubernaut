@@ -26,6 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -109,6 +111,25 @@ var _ = Describe("#2496 structured Phase 3 handoff after Issue #2521", func() {
 		}, "rr-stale-scope-2521")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(frozen.repeat.CompletedPriorWorkflows).To(HaveKey("workflow-stale-scope"))
+	})
+
+	It("UT-KA-2521-121: normalizes custom cluster-scoped history before matching", func() {
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "example.com", Version: "v1"}})
+		mapper.Add(schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "Widget"}, meta.RESTScopeRoot)
+		inv := New(Config{Logger: logr.Discard(), ScopeResolver: NewMapperScopeResolver(mapper)})
+		score := 0.5
+		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{
+			Signal: katypes.SignalContext{ResourceKind: "Widget", ResourceName: "api", Namespace: "prod"},
+			EnrichData: &prompt.EnrichmentData{HistoryResult: &enrichment.RemediationHistoryResult{
+				TargetResource: "Widget/api",
+				Tier1: []enrichment.Tier1Entry{{
+					RemediationUID: "prior-custom-cluster", WorkflowID: "workflow-custom-cluster",
+					WorkflowName: "repair-widget", AssessmentReason: "Full", EffectivenessScore: &score,
+				}},
+			}},
+		}, "rr-custom-cluster-2521")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(frozen.repeat.CompletedPriorWorkflows).To(HaveKeyWithValue("workflow-custom-cluster", []string{"prior-custom-cluster"}))
 	})
 
 	It("UT-KA-2496-008: source values are sanitized without retaining raw PhaseRCA observations", func() {

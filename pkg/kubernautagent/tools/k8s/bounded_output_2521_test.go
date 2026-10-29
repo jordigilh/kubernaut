@@ -163,6 +163,30 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).To(ContainSubstring("truncated=true"))
 	})
 
+	It("UT-KA-752-122: count reports truncation when the source total is unknown", func() {
+		objects := make([]runtime.Object, 0, 600)
+		for i := 0; i < 600; i++ {
+			objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("unknown-total-config-%03d", i), Namespace: "prod",
+			}})
+		}
+		metadataClient := newMetadataSummaryClient(objects...)
+		metadataClient.unknownTotal = true
+		resolver := &testDynamicResolver{resolver: k8s.NewDynamicResolver(
+			fake.NewSimpleDynamicClient(buildTestScheme(), objects...), buildTestMapper(), buildTestKindIndex(), logr.Discard(),
+			k8s.WithMetadataClient(metadataClient),
+		)}
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubernetes_count",
+			json.RawMessage(`{"kind":"ConfigMap","jq_expr":".items[].metadata.name"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("retained 100 source items; total unknown; truncated=true"))
+	})
+
 	It("UT-KA-752-117: bulk lists fail closed when metadata-only access is unavailable", func() {
 		configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "page-1", Namespace: "prod"}}
 		client := fake.NewSimpleDynamicClient(buildTestScheme(), configMap)
@@ -217,6 +241,26 @@ var _ = Describe("Issue #2521 bounded Kubernetes tool output", func() {
 		Expect(result).To(ContainSubstring("results are truncated"))
 		Expect(result).To(ContainSubstring("600"))
 		Expect(result).NotTo(Equal("[]"))
+	})
+
+	It("UT-KA-752-123: find_resource reports truncation when retained matches are partial", func() {
+		objects := make([]runtime.Object, 0, 600)
+		for i := 0; i < 600; i++ {
+			objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("partial-find-config-%03d", i), Namespace: "prod",
+			}})
+		}
+		resolver := testResolverWithMetadataObjects(objects...)
+		reg := registry.New()
+		for _, tool := range k8s.NewAllTools(nil, resolver) {
+			reg.Register(tool)
+		}
+
+		result, err := reg.Execute(context.Background(), "kubectl_find_resource",
+			json.RawMessage(`{"kind":"ConfigMap","keyword":"partial-find-config-000"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("partial-find-config-000"))
+		Expect(result).To(ContainSubstring("results are truncated"))
 	})
 
 	It("UT-KA-2521-120: oversized exact-name results fail before downstream sanitization", func() {
@@ -280,6 +324,7 @@ type metadataSummaryClient struct {
 	itemsByResource map[string][]metav1.PartialObjectMetadata
 	listErr         error
 	lastListOptions metav1.ListOptions
+	unknownTotal    bool
 }
 
 // newMetadataSummaryClient builds a GVR-aware metadata fake with pagination
@@ -342,7 +387,9 @@ func (g metadataSummaryGetter) List(_ context.Context, options metav1.ListOption
 		remaining = int64(len(items) - int(k8s.DefaultResourceListLimit))
 		items = items[:int(k8s.DefaultResourceListLimit)]
 		continuation = "metadata-summary-next-page"
-		remainingPtr = &remaining
+		if !g.client.unknownTotal {
+			remainingPtr = &remaining
+		}
 	}
 	return &metav1.PartialObjectMetadataList{ListMeta: metav1.ListMeta{
 		Continue:           continuation,

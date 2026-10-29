@@ -674,6 +674,9 @@ func auditToolResultProjection(toolName, toolResult, reference string) (string, 
 	}
 	if isBulkKubernetesSummaryTool(toolName) {
 		if auditToolErrorDetails(toolResult) != nil {
+			if projected, summary, ok := auditOmittedOversizedToolResult(toolName, toolResult, reference); ok {
+				return projected, summary
+			}
 			return toolResult, nil
 		}
 		if projected, summary, ok := auditBulkToolResult(toolName, toolResult, reference); ok {
