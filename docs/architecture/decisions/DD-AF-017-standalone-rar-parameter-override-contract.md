@@ -164,18 +164,23 @@ object contains:
 - `selection_revision: string` — immutable revision of the RAR snapshot
 - `selection_digest: string` — canonical digest of the reviewed snapshot
 
-The `workflow_override` object is optional for an ordinary approval or
-rejection. An ordinary decision may omit it and is not gated on optional
-parameter-edit metadata. When `workflow_override` is present—including a
-rationale-only override that preserves the original parameter map—all three
-review bindings are required.
+The `workflow_override` object is valid only when `decision` is `Approved`.
+An ordinary approval or rejection may omit it and is not gated on optional
+parameter-edit metadata. When `workflow_override` is present on an `Approved`
+decision—including a rationale-only override that preserves the original
+parameter map—all three review bindings are required. AuthWebhook rejects
+`workflow_override` on a `Rejected` decision.
 
 The bindings map to the RAR source of truth as follows:
 
 - `rar_uid` is compared with the RAR object's `metadata.uid`.
-- `selection_revision` is compared with the immutable revision in the RAR
-  original-selection snapshot.
-- `selection_digest` is compared with the canonical digest of that snapshot.
+- `selection_revision` is compared with the RAR spec's
+  `originalSelection.selectionRevision`.
+- `selection_digest` is compared with the RAR spec's
+  `originalSelection.selectionDigest`.
+
+These are the canonical AF wire names; the RAR spec uses the camelCase field
+names shown above.
 
 The current AF contract does not expose a workflow-selection field. A workflow
 selection submitted through this parameter-only path is rejected.
@@ -188,8 +193,12 @@ remains an API concurrency guard, not the business review revision.
 ### Effective parameter semantics
 
 - Omitted override or nil parameters: preserve the original RAR spec map.
-- Non-nil parameters: replace the entire original map.
-- Empty map: execute with no parameters.
+- For a non-nil replacement map, AuthWebhook requires every locked
+  `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
+  its original value. Missing or changed locked keys are rejected.
+- After locked-key validation, replace the entire original map.
+- Reject an explicit empty map when the original snapshot contains a locked
+  `TARGET_RESOURCE_*` key; otherwise execute with no parameters.
 - The wire representation must preserve omitted versus explicit-empty maps;
   an explicit `{}` must reach the status patch as an empty replacement map.
 - AF may validate shape and required input presence for user feedback.

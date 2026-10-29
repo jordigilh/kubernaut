@@ -183,8 +183,13 @@ Effective parameter selection is not a per-key merge:
 
 - `workflowOverride == nil` or `parameters == nil`: use the original RAR spec
   parameter map.
-- A non-nil parameter map: use it as the complete replacement map.
-- An explicit empty map: execute with no parameters.
+- For a non-nil replacement map, AuthWebhook requires every locked
+  `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
+  its original value. Missing or changed locked keys are rejected.
+- After locked-key validation, use the non-nil map as the complete replacement
+  map.
+- Reject an explicit empty map when the original snapshot contains a locked
+  `TARGET_RESOURCE_*` key; otherwise execute with no parameters.
 
 The wire contract must preserve those states: omitted `parameters` decodes as
 nil, while `parameters: {}` decodes as an explicit empty map. The AF patch
