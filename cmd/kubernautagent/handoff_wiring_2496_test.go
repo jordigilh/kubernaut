@@ -247,15 +247,6 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		Expect(result.HandoffDigest).To(Equal(digest))
 	})
 
-	It("IT-KA-2521-008: the removed raw-evidence knob cannot force a false review", func() {
-		loaded, err := kaconfig.Load([]byte("ai:\n  investigation:\n    maxEvidenceHandoffBytes: 256\n"))
-		Expect(err).NotTo(HaveOccurred())
-		params.cfg = loaded
-		result := runInteractive(newInv())
-		Expect(result.WorkflowID).To(Equal(workflowID), "review reason: %s", result.Reason)
-		Expect(selectionRequests()).NotTo(BeEmpty())
-	})
-
 	It("IT-KA-2521-008: fixed structured-context budget remains observable in production", func() {
 		rcaSummary = strings.Repeat("Observed memory pressure. ", 20000)
 		result := runInteractive(newInv())

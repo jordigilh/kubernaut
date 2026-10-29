@@ -44,8 +44,9 @@ summarization/truncation: oversized ordinary tool results remain available to RC
 while a genuinely oversized structured Phase 3 packet/prompt fails closed without
 partial projection. The digest covers canonical sanitized content excluding the
 runtime digest and freeze timestamp. The same packet and digest are reused across
-corrections. The former operator-facing `ai.investigation.maxEvidenceHandoffBytes`
-field is removed and must not be used to carry raw observations.
+corrections. The former operator-facing raw-evidence budget knob is removed; the
+structured-context budget is code-owned and must not be used to carry raw
+observations.
 
 ### 3. Workflow identity and repeat reasoning
 
