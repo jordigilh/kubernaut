@@ -1,9 +1,21 @@
 package main
 
 import (
+	"flag"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var _ = Describe("registerDemoFlags", func() {
+	It("UT-INFRA-FLEETDEMO-067 [BR-PLATFORM-014]: exposes an operator image tag override", func() {
+		flags := flag.NewFlagSet("setup-demo-infra-test", flag.ContinueOnError)
+		values := registerDemoFlags(flags)
+
+		Expect(flags.Parse([]string{"-operator-image-tag", "operator-3838"})).To(Succeed())
+		Expect(*values.operatorImageTag).To(Equal("operator-3838"))
+	})
+})
 
 var _ = Describe("parseReasoningEnabled", func() {
 	It("UT-INFRA-FLEETDEMO-062 [SI-10]: leaves an omitted override unset", func() {

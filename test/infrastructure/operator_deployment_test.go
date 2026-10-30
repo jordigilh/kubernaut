@@ -490,6 +490,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.DependencyChartVersion).To(Equal("0.2.0"))
 	})
 
+	It("UT-2492-016G [BR-PLATFORM-014]: resolves a tag-only operator override from the default repository", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			Explicit: DemoArtifactOverrides{OperatorImageTag: "operator-3838"},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image:operator-3838"))
+	})
 	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
 		merged := MergeDemoArtifactOverrides(
 			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
