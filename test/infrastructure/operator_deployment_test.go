@@ -247,7 +247,33 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(joined).To(ContainSubstring("kubernaut-development-dependencies"))
 		Expect(joined).To(ContainSubstring("postgresql.image.digest"))
 		Expect(joined).To(ContainSubstring("valkey.image.digest"))
+		Expect(joined).NotTo(ContainSubstring("fixtures."))
 		Expect(joined).NotTo(ContainSubstring("charts/kubernaut/"))
+	})
+
+	It("UT-INFRA-2576-001 [BR-PLATFORM-014]: provisions application fixtures outside dependency Helm values", func() {
+		llmManifest, err := buildOperatorLLMCredentialsManifest("kubernaut-system", "llm-credentials-primary", []byte("synthetic-key"))
+		Expect(err).NotTo(HaveOccurred())
+		var llmSecret corev1.Secret
+		Expect(json.Unmarshal([]byte(llmManifest), &llmSecret)).To(Succeed())
+		Expect(llmSecret.Type).To(Equal(corev1.SecretTypeOpaque))
+		Expect(string(llmSecret.Data["api_key"])).To(Equal("synthetic-key"))
+		Expect(llmSecret.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
+		Expect(llmSecret.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
+
+		policyManifest, err := buildOperatorPolicyConfigMapManifest("kubernaut-system", "aianalysis-policy", "approval.rego", "package aianalysis.approval\n")
+		Expect(err).NotTo(HaveOccurred())
+		var policy corev1.ConfigMap
+		Expect(json.Unmarshal([]byte(policyManifest), &policy)).To(Succeed())
+		Expect(policy.Data).To(HaveKeyWithValue("approval.rego", "package aianalysis.approval\n"))
+		Expect(policy.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
+		Expect(policy.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
+
+		signalManifest, err := buildOperatorPolicyConfigMapManifest("kubernaut-system", "signalprocessing-policy", "policy.rego", "package signalprocessing\n")
+		Expect(err).NotTo(HaveOccurred())
+		var signalPolicy corev1.ConfigMap
+		Expect(json.Unmarshal([]byte(signalManifest), &signalPolicy)).To(Succeed())
+		Expect(signalPolicy.Data).To(HaveKeyWithValue("policy.rego", "package signalprocessing\n"))
 	})
 
 	It("UT-2492-006B [BR-E2E-001]: renders Valkey mTLS references for the dependency chart", func() {
