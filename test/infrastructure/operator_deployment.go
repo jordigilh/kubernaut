@@ -60,6 +60,7 @@ const (
 	operatorCRAPIVersion         = "kubernaut.ai/v1alpha2"
 	operatorOwnerLabel           = "upstream-2492"
 	demoOperatorChartOCI         = "oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"
+	demoOperatorImageRepository  = "quay.io/kubernaut-ai/kubernaut-operator-image"
 	demoOperatorImageRC27        = "quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"
 	demoDependencyChartOCI       = "oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"
 	demoDependencyChartVersion   = "0.1.0-run.1"
@@ -1114,7 +1115,11 @@ func hasExplicitDemoOperatorChart(input DemoArtifactResolutionInput) bool {
 func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion string) string {
 	operatorImage := strings.TrimSpace(overrides.OperatorImage)
 	if operatorImage == "" {
-		operatorImage = composeImageReference(overrides.OperatorImageRepository, overrides.OperatorImageTag)
+		repository := overrides.OperatorImageRepository
+		if strings.TrimSpace(repository) == "" && strings.TrimSpace(overrides.OperatorImageTag) != "" {
+			repository = demoOperatorImageRepository
+		}
+		operatorImage = composeImageReference(repository, overrides.OperatorImageTag)
 	}
 	if operatorImage == "" {
 		if operatorVersion == demoReleaseVersionRC27 {
