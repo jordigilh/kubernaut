@@ -31,7 +31,7 @@ var _ = Describe("AlertManager alert cleanup", func() {
 			Labels map[string]string `json:"labels"`
 			EndsAt string            `json:"endsAt"`
 		}
-		var resolved []alertPayload
+		resolvedCh := make(chan []alertPayload, 1)
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if request.Method == http.MethodGet {
 				writer.Header().Set("Content-Type", "application/json")
@@ -50,7 +50,9 @@ var _ = Describe("AlertManager alert cleanup", func() {
 			}
 
 			Expect(request.Method).To(Equal(http.MethodPost))
-			Expect(json.NewDecoder(request.Body).Decode(&resolved)).To(Succeed())
+			var received []alertPayload
+			Expect(json.NewDecoder(request.Body).Decode(&received)).To(Succeed())
+			resolvedCh <- received
 			writer.WriteHeader(http.StatusOK)
 		}))
 		DeferCleanup(server.Close)
@@ -61,6 +63,7 @@ var _ = Describe("AlertManager alert cleanup", func() {
 			"pod":       "memory-eater-owned",
 		})).To(Succeed())
 
+		resolved := <-resolvedCh
 		Expect(resolved).To(HaveLen(1))
 		Expect(resolved[0].Labels).To(Equal(map[string]string{
 			"alertname": "MemoryExceedsLimit",
