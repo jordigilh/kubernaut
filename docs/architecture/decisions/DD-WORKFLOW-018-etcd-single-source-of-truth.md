@@ -1,5 +1,13 @@
 # DD-WORKFLOW-018: Etcd as Single Source of Truth for Workflow/ActionType Catalog
 
+> **Proposed #2570 amendment — pending approval:** WE must check that the same
+> workflow ID exists in the trusted-namespace etcd catalog before dispatch.
+> If adopted, this supersedes the no-live-lookup and deletion-continuation
+> assertions in sections 7–8 below. Execution inputs still come from the frozen
+> WE snapshot, not the live catalog. The check is point-in-time, not an atomic
+> guarantee against deletion after the read. This notice does not itself change
+> the approved decision; ADR-076 and the amendment require review and approval.
+
 **Date**: July 14, 2026
 **Status**: Approved — Phased Rollout In Progress (tracked in [Issue #1661](https://github.com/jordigilh/kubernaut/issues/1661))
 **Decision Maker**: Kubernaut Architecture Team

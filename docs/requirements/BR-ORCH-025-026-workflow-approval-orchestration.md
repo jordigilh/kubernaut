@@ -3,6 +3,15 @@
 > **Superseded (partial)**: References to a "Rejected" RR phase in this document are superseded.
 > Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason, not to a separate "Rejected" phase.
 > See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+>
+> **Proposed approval-path amendment (#2570; pending ADR-076/DD-AF-017 review and merge):**
+> For human-approved execution, RO consumes the immutable selection and target
+> snapshot recorded in the RAR, with only admitted overrides to existing
+> parameter values. Omitted override keys retain their original values; no
+> workflow switch or live catalog/AIA re-resolution is permitted. The
+> unchanged AIA pass-through requirements below continue to apply to the
+> non-approval path. This amendment is proposed, not an assertion that the
+> current implementation or compliance evidence already satisfies it.
 
 **Service**: RemediationOrchestrator Controller
 **Category**: Workflow Data Pass-Through
@@ -169,5 +178,4 @@ Scenario: Approval timeout
 **Document Version**: 1.0
 **Last Updated**: December 2, 2025
 **Maintained By**: Kubernaut Architecture Team
-
 
