@@ -218,8 +218,11 @@ testing is suspended rather than switching to a mutable or temporary override.
    separate `kubernaut-console` / `e2e-console-secret` Secret.
 2. Kubernaut resolves the new dependency chart by exact immutable digest and
    version, with no `latest` or mutable fallback.
-3. The live dependency install creates the expected Secret and the operator CR
-   reaches its existing positive readiness/TLS conditions.
+3. The dependency-chart installation provisions only PostgreSQL/Valkey resources
+   and their supporting connection/TLS material; separate application-fixture
+   steps provision `kubernaut-console-oidc`, LLM credentials, and policy
+   ConfigMaps, and the operator CR reaches its existing positive readiness/TLS
+   conditions.
 4. Console oauth2-proxy starts with normal provider certificate verification,
    access-token forwarding, and the configured audience; no insecure issuer
    verification bypass is present.
@@ -280,7 +283,7 @@ remediation-side effect.
 
 | Item | Current value | Required final evidence |
 |---|---|---|
-| Kubernaut source | `ae4fd255c0` / branch `issue-2574-triage` | Final commit under test |
+| Kubernaut source | `a8dc554ae758d0a3f4f13f4114f960b5d119ab25` / branch `issue-2574-triage` | Reviewed implementation revision; record the final validation SHA in the qualification evidence |
 | Operator source | `9dc9394fd1844be4f4d4adb89db9a881dbc066ed` | Pinned operator qualification revision |
 | Dependency chart | `0.1.1-run.4`, digest `sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d` | Published from source `7b1b6b10e7fb4521120e59609e5f79adef5a108d`; PostgreSQL/Valkey-only ownership |
 | Keycloak realm | `test/infrastructure/keycloak-realm-demo.json` | Client/redirect/group values unchanged and matched by live Secret/test |
@@ -386,13 +389,18 @@ Helm arguments.
 **BR**: BR-PLATFORM-014; operator-only deployment contract  
 **Priority**: P0  
 **Type**: Real Kind/Helm/operator integration  
-**Entry point**: `InstallDemoOperatorApplication` → `InstallOperatorDependencies`
+**Entry point**: `SetupOIDCInfrastructure` plus `DeployOperatorManagedApplication`
+(`InstallOperatorDependencies` → `ensureOperatorApplicationFixtures`)
 
 **Given** a fresh disposable Kind cluster and the corrected immutable dependency
-chart  
-**When** dependencies are installed before the operator CR is applied  
-**Then** `kubernaut-console-oidc` exists in `kubernaut-system`, has application
-fixture ownership labels, and has the three expected keys.  
+chart
+**When** the dependency chart and separate application-fixture steps complete
+before the operator CR is applied
+**Then** the dependency chart owns only PostgreSQL/Valkey resources and their
+supporting connection/TLS material.
+**And** `SetupOIDCInfrastructure` creates `kubernaut-console-oidc` in
+`kubernaut-system`, with application fixture ownership labels and the three
+expected keys.
 **And** decoded values match the realm client without writing those values to
 stdout, Helm arguments, or test artifacts.  
 **And** PostgreSQL/Valkey remain dependency-chart resources while the CR remains
@@ -603,11 +611,13 @@ golangci-lint run --timeout=5m
 FLEET_E2E=true PRESERVE_E2E_CLUSTER=true \
   go test ./test/e2e/fleet -ginkgo.focus='2574'
 
-# Coordinated Console browser lane (credentials are environment-injected;
-# do not place them in this command line or source files)
-LIVE_E2E_CONSOLE_URL=https://kubernaut-console.local:8843 \
+# Coordinated Console browser lane (run from the external kubernaut-console
+# checkout; credentials are environment-injected and must not be placed in this
+# command line or source files)
+(cd /path/to/kubernaut-console && \
+  LIVE_E2E_CONSOLE_URL=https://kubernaut-console.local:8843 \
   pnpm exec playwright test --config=playwright.operator-live.config.ts \
-  e2e/live/operator-oidc-af-read.spec.ts
+  e2e/live/operator-oidc-af-read.spec.ts)
 ```
 
 ---
