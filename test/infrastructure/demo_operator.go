@@ -73,7 +73,7 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 			TLSCASecretName: monitoringClientCASecretName,
 		},
 		GatewayEnabled: opts.Autonomous, APIFrontendEnabled: true, ConsoleEnabled: true,
-		ConsoleAuthSecretName:    "kubernaut-console-oidc",
+		ConsoleAuthSecretName:    demoConsoleOIDCSecretName,
 		ConsoleRedirectURL:       fmt.Sprintf("https://%s:%d/oauth2/callback", demoConsoleHost, DemoHostPort(demoConsolePort)),
 		ConsoleProviderLogoutURL: demoKeycloakConsoleLogoutURL,
 		IssuerURL:                demoKeycloakIssuerURL, JWKSURL: demoKeycloakJWKSURL(), Audience: "kubernaut-apifrontend",

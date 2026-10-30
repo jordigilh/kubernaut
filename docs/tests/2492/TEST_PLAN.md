@@ -15,10 +15,11 @@
 ### 1.1 Purpose
 
 This plan proves that issue #2492 uses an exact operator source revision and immutable
-application/dependency inputs, installs only the operator bootstrap and independently
-owned development dependencies, applies a user/GitOps-style `kubernaut.ai/v1alpha2`
-`Kubernaut` resource, and preserves the real FullPipeline and Fleet journeys without
-using the deprecated application Helm chart.
+application/dependency inputs, installs only the operator bootstrap and PostgreSQL/Valkey
+development dependencies, provisions application-owned fixture Secrets/ConfigMaps
+separately, applies a user/GitOps-style `kubernaut.ai/v1alpha2` `Kubernaut` resource,
+and preserves the real FullPipeline and Fleet journeys without using the deprecated
+application Helm chart.
 
 ### 1.2 Objectives
 
@@ -168,7 +169,7 @@ or a non-operator application deployment path.
 | Upstream operator | `9dc9394fd1844be4f4d4adb89db9a881dbc066ed` | Exact qualification source |
 | Kind node | `kindest/node:v1.37.0@sha256:a1ed56cf...` | Existing pinned FP profile |
 | PostgreSQL | `docker.io/library/postgres:16.4@sha256:e62fbf9d...` | Operator harness Kind profile; record resolved digest per run |
-| Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | `kubernaut-development-dependencies:0.1.0-run.1`; CR uses Valkey mTLS Secret references |
+| Valkey | `docker.io/valkey/valkey:8.0.2@sha256:57bcc49c...` | `kubernaut-development-dependencies:0.1.1-run.4@sha256:53a3155522cab4d...`; CR uses Valkey mTLS Secret references |
 
 ---
 
