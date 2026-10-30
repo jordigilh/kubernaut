@@ -170,6 +170,8 @@ func MergeDemoArtifactOverrides(base, explicit DemoArtifactOverrides) DemoArtifa
 	return merged
 }
 
+// clearFileBackedOperatorImageSelectors removes inherited image and digest
+// selectors when any explicit CLI image selector is present.
 func clearFileBackedOperatorImageSelectors(merged *DemoArtifactOverrides, explicit DemoArtifactOverrides) {
 	if !hasOperatorImageOverride(explicit) {
 		return
@@ -178,6 +180,8 @@ func clearFileBackedOperatorImageSelectors(merged *DemoArtifactOverrides, explic
 	merged.OperatorDigest = ""
 }
 
+// hasOperatorImageOverride reports whether CLI image, repository, or tag input
+// selects an operator image.
 func hasOperatorImageOverride(explicit DemoArtifactOverrides) bool {
 	return explicit.OperatorImage != "" ||
 		explicit.OperatorImageRepository != "" ||

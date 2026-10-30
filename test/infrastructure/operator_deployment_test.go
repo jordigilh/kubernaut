@@ -36,6 +36,8 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
+// restoreEnvironment restores a test-scoped environment variable to its prior
+// value and presence state.
 func restoreEnvironment(name, value string, wasSet bool) {
 	if wasSet {
 		Expect(os.Setenv(name, value)).To(Succeed())
@@ -101,21 +103,18 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 			restoreEnvironment("KUBERNAUT_DEPENDENCY_CHART_PATH", previousDependencyChart, hadPreviousDependencyChart)
 			restoreEnvironment("KUBERNAUT_RELEASE_LINE", previousReleaseLine, hadPreviousReleaseLine)
 		})
-		missingRoot, err := os.MkdirTemp("", "kubernaut-operator-root-*")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.RemoveAll(missingRoot)).To(Succeed())
 		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_IMAGE")).To(Succeed())
-		Expect(os.Setenv("KUBERNAUT_OPERATOR_ROOT", missingRoot)).To(Succeed())
-		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_CHART_PATH")).To(Succeed())
-		Expect(os.Unsetenv("KUBERNAUT_DEPENDENCY_CHART_PATH")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_ROOT")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_CHART_PATH", "operator-chart")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_DEPENDENCY_CHART_PATH", "dependency-chart")).To(Succeed())
 		Expect(os.Setenv("KUBERNAUT_RELEASE_LINE", "1.6.0-rc27")).To(Succeed())
 
-		_, _, _, _, _, _, err = resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
+		_, _, operatorImage, _, _, _, err := resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
 			OperatorArtifacts: DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "cli"},
 		})
 
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).NotTo(ContainSubstring("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorImage).To(Equal("localhost/operator:cli"))
 	})
 
 	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {

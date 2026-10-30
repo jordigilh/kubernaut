@@ -1112,6 +1112,8 @@ func hasExplicitDemoOperatorChart(input DemoArtifactResolutionInput) bool {
 		strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != ""
 }
 
+// resolveDemoOperatorImage selects the operator image from explicit selectors
+// or the pinned release profile and then applies an optional digest.
 func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion string) string {
 	operatorImage := strings.TrimSpace(overrides.OperatorImage)
 	if operatorImage == "" {
@@ -2714,6 +2716,8 @@ func DemoExposureComponents(autonomous bool) []string {
 	return components
 }
 
+// resolveDemoOperatorDeploymentInputs combines release artifacts, environment
+// paths, and explicit image selectors for a demo deployment.
 func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOptions) (operatorChart, dependencyChart, operatorImage, applicationVersion, operatorChartVersion, dependencyChartVersion string, err error) {
 	resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: os.Getenv("KUBERNAUT_RELEASE_LINE"), Explicit: options.OperatorArtifacts})
 	if err != nil {
@@ -2753,6 +2757,8 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(operatorChart, resolved.OperatorVersion), chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion), nil
 }
 
+// requiresExplicitOperatorImage reports whether a source checkout lacks an
+// operator image supplied by either the environment or CLI selectors.
 func requiresExplicitOperatorImage(artifacts DemoArtifactOverrides) bool {
 	return strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && !hasOperatorImageOverride(artifacts)
 }
