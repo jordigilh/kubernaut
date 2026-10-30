@@ -36,6 +36,16 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
+// restoreEnvironment restores a test-scoped environment variable to its prior
+// value and presence state.
+func restoreEnvironment(name, value string, wasSet bool) {
+	if wasSet {
+		Expect(os.Setenv(name, value)).To(Succeed())
+		return
+	}
+	Expect(os.Unsetenv(name)).To(Succeed())
+}
+
 var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc27"})
@@ -53,6 +63,58 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
 		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d"))
 		Expect(resolved.DependencyChartVersion).To(Equal("0.1.1-run.4"))
+	})
+	It("UT-2492-016J [BR-PLATFORM-014]: keeps CLI operator repository and tag ahead of the environment image", func() {
+		previousImage, hadPreviousImage := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE")
+		previousRoot, hadPreviousRoot := os.LookupEnv("KUBERNAUT_OPERATOR_ROOT")
+		previousChart, hadPreviousChart := os.LookupEnv("KUBERNAUT_OPERATOR_CHART_PATH")
+		previousDependencyChart, hadPreviousDependencyChart := os.LookupEnv("KUBERNAUT_DEPENDENCY_CHART_PATH")
+		previousReleaseLine, hadPreviousReleaseLine := os.LookupEnv("KUBERNAUT_RELEASE_LINE")
+		DeferCleanup(func() {
+			restoreEnvironment("KUBERNAUT_OPERATOR_IMAGE", previousImage, hadPreviousImage)
+			restoreEnvironment("KUBERNAUT_OPERATOR_ROOT", previousRoot, hadPreviousRoot)
+			restoreEnvironment("KUBERNAUT_OPERATOR_CHART_PATH", previousChart, hadPreviousChart)
+			restoreEnvironment("KUBERNAUT_DEPENDENCY_CHART_PATH", previousDependencyChart, hadPreviousDependencyChart)
+			restoreEnvironment("KUBERNAUT_RELEASE_LINE", previousReleaseLine, hadPreviousReleaseLine)
+		})
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_IMAGE", "env/operator:wrong")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_ROOT")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_CHART_PATH")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_DEPENDENCY_CHART_PATH")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_RELEASE_LINE", "1.6.0-rc27")).To(Succeed())
+
+		_, _, operatorImage, _, _, _, err := resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
+			OperatorArtifacts: DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "cli"},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorImage).To(Equal("localhost/operator:cli"))
+	})
+	It("UT-2492-016K [BR-PLATFORM-014]: accepts CLI operator selectors for an explicit source checkout", func() {
+		previousImage, hadPreviousImage := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE")
+		previousRoot, hadPreviousRoot := os.LookupEnv("KUBERNAUT_OPERATOR_ROOT")
+		previousChart, hadPreviousChart := os.LookupEnv("KUBERNAUT_OPERATOR_CHART_PATH")
+		previousDependencyChart, hadPreviousDependencyChart := os.LookupEnv("KUBERNAUT_DEPENDENCY_CHART_PATH")
+		previousReleaseLine, hadPreviousReleaseLine := os.LookupEnv("KUBERNAUT_RELEASE_LINE")
+		DeferCleanup(func() {
+			restoreEnvironment("KUBERNAUT_OPERATOR_IMAGE", previousImage, hadPreviousImage)
+			restoreEnvironment("KUBERNAUT_OPERATOR_ROOT", previousRoot, hadPreviousRoot)
+			restoreEnvironment("KUBERNAUT_OPERATOR_CHART_PATH", previousChart, hadPreviousChart)
+			restoreEnvironment("KUBERNAUT_DEPENDENCY_CHART_PATH", previousDependencyChart, hadPreviousDependencyChart)
+			restoreEnvironment("KUBERNAUT_RELEASE_LINE", previousReleaseLine, hadPreviousReleaseLine)
+		})
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_IMAGE")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_ROOT")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_CHART_PATH", "operator-chart")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_DEPENDENCY_CHART_PATH", "dependency-chart")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_RELEASE_LINE", "1.6.0-rc27")).To(Succeed())
+
+		_, _, operatorImage, _, _, _, err := resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
+			OperatorArtifacts: DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "cli"},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorImage).To(Equal("localhost/operator:cli"))
 	})
 
 	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {
@@ -190,7 +252,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(joined).NotTo(ContainSubstring("charts/kubernaut/"))
 	})
 
-	It("UT-INFRA-2574-004 [BR-PLATFORM-014]: application fixtures use explicit non-Helm ownership", func() {
+	It("UT-INFRA-2576-001 [BR-PLATFORM-014]: provisions application fixtures outside dependency Helm values", func() {
 		llmManifest, err := buildOperatorLLMCredentialsManifest("kubernaut-system", "llm-credentials-primary", []byte("synthetic-key"))
 		Expect(err).NotTo(HaveOccurred())
 		var llmSecret corev1.Secret
@@ -209,6 +271,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(policy.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
 		Expect(policy.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
 
+		signalManifest, err := buildOperatorPolicyConfigMapManifest("kubernaut-system", "signalprocessing-policy", "policy.rego", "package signalprocessing\n")
+		Expect(err).NotTo(HaveOccurred())
+		var signalPolicy corev1.ConfigMap
+		Expect(json.Unmarshal([]byte(signalManifest), &signalPolicy)).To(Succeed())
+		Expect(signalPolicy.Data).To(HaveKeyWithValue("policy.rego", "package signalprocessing\n"))
+	})
+
+	It("UT-INFRA-2574-004 [BR-PLATFORM-014]: Console OIDC fixture uses exact operator and realm references", func() {
 		consoleManifest, err := BuildDemoConsoleOIDCSecretManifest("kubernaut-system")
 		Expect(err).NotTo(HaveOccurred())
 		var consoleSecret corev1.Secret
@@ -525,16 +595,44 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.DependencyChartVersion).To(Equal("0.2.0"))
 	})
 
+	It("UT-2492-016G [BR-PLATFORM-014]: resolves a tag-only operator override from the default repository", func() {
+		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{
+			Explicit: DemoArtifactOverrides{OperatorImageTag: "operator-3838"},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image:operator-3838"))
+	})
 	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
 		merged := MergeDemoArtifactOverrides(
-			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file", DependencyChart: "oci://file/dependencies"},
 			DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "ci", DependencyChartVersion: "0.2.0"},
 		)
-		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorImage).To(BeEmpty())
 		Expect(merged.OperatorImageRepository).To(Equal("localhost/operator"))
 		Expect(merged.OperatorImageTag).To(Equal("ci"))
+		Expect(merged.OperatorDigest).To(BeEmpty())
 		Expect(merged.DependencyChart).To(Equal("oci://file/dependencies"))
 		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+	It("UT-2492-016H [BR-PLATFORM-014]: preserves file-backed operator image selectors without a CLI image override", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file"},
+			DemoArtifactOverrides{DependencyChartVersion: "0.2.0"},
+		)
+
+		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorDigest).To(Equal("sha256:file"))
+		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+	It("UT-2492-016I [BR-PLATFORM-014]: applies an explicit CLI operator image and digest over file selectors", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file"},
+			DemoArtifactOverrides{OperatorImage: "localhost/operator:cli", OperatorDigest: "sha256:cli"},
+		)
+
+		Expect(merged.OperatorImage).To(Equal("localhost/operator:cli"))
+		Expect(merged.OperatorDigest).To(Equal("sha256:cli"))
 	})
 
 	It("UT-2492-PROVENANCE-001 [BR-PLATFORM-014]: serializes exact demo artifact inputs", func() {

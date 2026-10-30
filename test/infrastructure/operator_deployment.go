@@ -60,6 +60,7 @@ const (
 	operatorCRAPIVersion         = "kubernaut.ai/v1alpha2"
 	operatorOwnerLabel           = "upstream-2492"
 	demoOperatorChartOCI         = "oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"
+	demoOperatorImageRepository  = "quay.io/kubernaut-ai/kubernaut-operator-image"
 	demoOperatorImageRC27        = "quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"
 	demoDependencyChartOCI       = "oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d"
 	demoDependencyChartVersion   = "0.1.1-run.4"
@@ -1111,10 +1112,16 @@ func hasExplicitDemoOperatorChart(input DemoArtifactResolutionInput) bool {
 		strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != ""
 }
 
+// resolveDemoOperatorImage selects the operator image from explicit selectors
+// or the pinned release profile and then applies an optional digest.
 func resolveDemoOperatorImage(overrides DemoArtifactOverrides, operatorVersion string) string {
 	operatorImage := strings.TrimSpace(overrides.OperatorImage)
 	if operatorImage == "" {
-		operatorImage = composeImageReference(overrides.OperatorImageRepository, overrides.OperatorImageTag)
+		repository := overrides.OperatorImageRepository
+		if strings.TrimSpace(repository) == "" && strings.TrimSpace(overrides.OperatorImageTag) != "" {
+			repository = demoOperatorImageRepository
+		}
+		operatorImage = composeImageReference(repository, overrides.OperatorImageTag)
 	}
 	if operatorImage == "" {
 		if operatorVersion == demoReleaseVersionRC27 {
@@ -1513,7 +1520,7 @@ func ensureOperatorApplicationFixtures(ctx context.Context, config OperatorDeplo
 	if config.FixtureFiles.AIAnalysisPolicy != "" {
 		name := strings.TrimSpace(config.CR.PolicyConfigMaps.AIAnalysis)
 		if name == "" {
-			return errors.New("ai analysis policy fixture requires a ConfigMap name in the Kubernaut CR options")
+			return errors.New("ai analysis policy fixture requires a configmap name in the kubernaut cr options")
 		}
 		if err := ensureOperatorPolicyConfigMap(ctx, config.KubeconfigPath, config.Namespace, name, "approval.rego", config.FixtureFiles.AIAnalysisPolicy, writer); err != nil {
 			return err
@@ -1522,7 +1529,7 @@ func ensureOperatorApplicationFixtures(ctx context.Context, config OperatorDeplo
 	if config.FixtureFiles.SignalProcessingPolicy != "" {
 		name := strings.TrimSpace(config.CR.PolicyConfigMaps.SignalProcessing)
 		if name == "" {
-			return errors.New("signal processing policy fixture requires a ConfigMap name in the Kubernaut CR options")
+			return errors.New("signal processing policy fixture requires a configmap name in the kubernaut cr options")
 		}
 		if err := ensureOperatorPolicyConfigMap(ctx, config.KubeconfigPath, config.Namespace, name, "policy.rego", config.FixtureFiles.SignalProcessingPolicy, writer); err != nil {
 			return err
@@ -1541,7 +1548,7 @@ func applicationFixtureLabels() map[string]string {
 
 func buildOperatorLLMCredentialsManifest(namespace, secretName string, credentials []byte) (string, error) {
 	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(secretName) == "" {
-		return "", errors.New("application LLM Secret requires namespace and name")
+		return "", errors.New("application llm secret requires namespace and name")
 	}
 	secret := corev1.Secret{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
@@ -1557,7 +1564,7 @@ func buildOperatorLLMCredentialsManifest(namespace, secretName string, credentia
 	}
 	manifest, err := json.Marshal(secret)
 	if err != nil {
-		return "", fmt.Errorf("marshal application LLM Secret: %w", err)
+		return "", fmt.Errorf("marshal application llm secret: %w", err)
 	}
 	return string(manifest), nil
 }
@@ -1572,14 +1579,14 @@ func ensureOperatorLLMCredentials(ctx context.Context, kubeconfigPath, namespace
 		return err
 	}
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
-		return fmt.Errorf("create user-owned %s Secret: %w", secretName, err)
+		return fmt.Errorf("create user-owned %s secret: %w", secretName, err)
 	}
 	return nil
 }
 
 func buildOperatorPolicyConfigMapManifest(namespace, name, dataKey, policy string) (string, error) {
 	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(name) == "" || strings.TrimSpace(dataKey) == "" {
-		return "", errors.New("application policy ConfigMap requires namespace, name, and data key")
+		return "", errors.New("application policy configmap requires namespace, name, and data key")
 	}
 	configMap := corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
@@ -1594,7 +1601,7 @@ func buildOperatorPolicyConfigMapManifest(namespace, name, dataKey, policy strin
 	}
 	manifest, err := json.Marshal(configMap)
 	if err != nil {
-		return "", fmt.Errorf("marshal application policy ConfigMap: %w", err)
+		return "", fmt.Errorf("marshal application policy configmap: %w", err)
 	}
 	return string(manifest), nil
 }
@@ -1609,7 +1616,7 @@ func ensureOperatorPolicyConfigMap(ctx context.Context, kubeconfigPath, namespac
 		return err
 	}
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
-		return fmt.Errorf("create user-owned %s ConfigMap: %w", name, err)
+		return fmt.Errorf("create user-owned %s configmap: %w", name, err)
 	}
 	return nil
 }
@@ -2781,13 +2788,15 @@ func DemoExposureComponents(autonomous bool) []string {
 	return components
 }
 
+// resolveDemoOperatorDeploymentInputs combines release artifacts, environment
+// paths, and explicit image selectors for a demo deployment.
 func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOptions) (operatorChart, dependencyChart, operatorImage, applicationVersion, operatorChartVersion, dependencyChartVersion string, err error) {
 	resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: os.Getenv("KUBERNAUT_RELEASE_LINE"), Explicit: options.OperatorArtifacts})
 	if err != nil {
 		return "", "", "", "", "", "", err
 	}
 	operatorImage = resolved.OperatorImage
-	if options.OperatorArtifacts.OperatorImage == "" {
+	if !hasOperatorImageOverride(options.OperatorArtifacts) {
 		if explicit := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")); explicit != "" {
 			operatorImage = explicit
 		}
@@ -2801,7 +2810,7 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 		return explicitChart, resolved.DependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.DependencyChartVersion, nil
 	}
 	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != "" || strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" {
-		if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && options.OperatorArtifacts.OperatorImage == "" {
+		if requiresExplicitOperatorImage(options.OperatorArtifacts) {
 			return "", "", "", "", "", "", errors.New("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE; source is never built implicitly")
 		}
 		operatorChart, dependencyChart, err = OperatorChartPathsFromEnvironment(ctx, resolved.OperatorRef)
@@ -2818,6 +2827,12 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	operatorChart = resolved.OperatorChart
 	dependencyChart = resolved.DependencyChart
 	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(operatorChart, resolved.OperatorVersion), chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion), nil
+}
+
+// requiresExplicitOperatorImage reports whether a source checkout lacks an
+// operator image supplied by either the environment or CLI selectors.
+func requiresExplicitOperatorImage(artifacts DemoArtifactOverrides) bool {
+	return strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && !hasOperatorImageOverride(artifacts)
 }
 
 func chartVersionOrDefault(chartPath, fallback string) string {
