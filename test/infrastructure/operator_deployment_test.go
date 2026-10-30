@@ -59,7 +59,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
-		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
+		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d"))
 		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
 	})
 	It("UT-2492-016J [BR-PLATFORM-014]: keeps CLI operator repository and tag ahead of the environment image", func() {
