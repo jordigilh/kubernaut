@@ -1053,6 +1053,16 @@ func ResolveActiveAlerts(amURL string) error {
 	return ResolveActiveAlertsForLabels(amURL, nil)
 }
 
+// ResolveAlertsByLabels queries AlertManager for active alerts matching every
+// label in matchLabels and re-injects only those alerts with endsAt=now. This
+// prevents one parallel test from resolving another test's alert.
+func ResolveAlertsByLabels(amURL string, matchLabels map[string]string) error {
+	if len(matchLabels) == 0 {
+		return fmt.Errorf("alert label selector must not be empty")
+	}
+	return ResolveActiveAlertsForLabels(amURL, matchLabels)
+}
+
 // ResolveActiveAlertsForLabels resolves only active alerts whose labels contain
 // every requested key/value pair. An empty label set preserves the global
 // cleanup behavior used by callers that own the entire AlertManager fixture.
@@ -1076,9 +1086,6 @@ func ResolveActiveAlertsForLabels(amURL string, requiredLabels map[string]string
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
 		return fmt.Errorf("failed to decode active alerts: %w", err)
-	}
-	if len(alerts) == 0 {
-		return nil
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)

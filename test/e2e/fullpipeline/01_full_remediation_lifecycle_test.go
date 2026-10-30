@@ -1123,15 +1123,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// full AlertManager → Gateway webhook → RR path.
 		By("AM Step 3a: Injecting MemoryExceedsLimit alert into AlertManager")
 		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
+		alertLabels := map[string]string{
+			"alertname": "MemoryExceedsLimit",
+			"severity":  "critical",
+			"namespace": testNamespaceAM,
+			"pod":       memoryEaterPodName,
+			"container": "memory-eater",
+		}
 		injectErr := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
 			{
-				Name: "MemoryExceedsLimit",
-				Labels: map[string]string{
-					"severity":  "critical",
-					"namespace": testNamespaceAM,
-					"pod":       memoryEaterPodName,
-					"container": "memory-eater",
-				},
+				Name:   alertLabels["alertname"],
+				Labels: alertLabels,
 				Annotations: map[string]string{
 					"summary":     "Container memory exceeds limit",
 					"description": fmt.Sprintf("Pod %s using >90%% of memory limit", memoryEaterPodName),
@@ -1414,13 +1416,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// isAlertDecay treats "healthy + alert firing" as Prometheus lookback
 		// decay and defers assessment until validity expires, preventing the
 		// effectiveness.alert.assessed audit event from being emitted.
-		By("AM Step 10.5: Resolving injected AlertManager alerts post-remediation")
-		resolveErr := infrastructure.ResolveActiveAlertsForLabels(alertManagerURL, map[string]string{
-			"alertname": "MemoryExceedsLimit",
-			"namespace": testNamespaceAM,
-			"pod":       memoryEaterPodName,
-			"container": "memory-eater",
-		})
+		By("AM Step 10.5: Resolving the injected AlertManager alert post-remediation")
+		resolveErr := infrastructure.ResolveAlertsByLabels(alertManagerURL, alertLabels)
 		Expect(resolveErr).ToNot(HaveOccurred(), "Failed to resolve active alerts post-remediation")
 
 		// ================================================================
