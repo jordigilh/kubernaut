@@ -945,7 +945,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut through the operator, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut through the operator, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, OPERATOR_IMAGE, OPERATOR_IMAGE_REPOSITORY, OPERATOR_IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
@@ -973,6 +973,9 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut throug
 		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
 		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
 		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
+		$(if $(OPERATOR_IMAGE),-operator-image "$(OPERATOR_IMAGE)") \
+		$(if $(OPERATOR_IMAGE_REPOSITORY),-operator-image-repository "$(OPERATOR_IMAGE_REPOSITORY)") \
+		$(if $(OPERATOR_IMAGE_TAG),-operator-image-tag "$(OPERATOR_IMAGE_TAG)") \
 		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
 		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
@@ -989,7 +992,7 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut throug
 		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
 
 .PHONY: setup-local-demo-infra
-setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG
+setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, OPERATOR_IMAGE, OPERATOR_IMAGE_REPOSITORY, OPERATOR_IMAGE_TAG
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai"; \
 		echo "   make setup-local-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
@@ -1004,6 +1007,9 @@ setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Requ
 		$(if $(LLM_REASONING_EFFORT),-llm-reasoning-effort "$(LLM_REASONING_EFFORT)") \
 		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
 		$(if $(IMAGE_REPOSITORY),-image-repository "$(IMAGE_REPOSITORY)") \
+		$(if $(OPERATOR_IMAGE),-operator-image "$(OPERATOR_IMAGE)") \
+		$(if $(OPERATOR_IMAGE_REPOSITORY),-operator-image-repository "$(OPERATOR_IMAGE_REPOSITORY)") \
+		$(if $(OPERATOR_IMAGE_TAG),-operator-image-tag "$(OPERATOR_IMAGE_TAG)") \
 		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
 		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
@@ -1226,6 +1232,10 @@ lint-acm-schema-drift: ## Check vendored ACM Search GraphQL schema against upstr
 # Registry, tag, and architecture (override via env or CLI)
 IMAGE_REGISTRY ?= quay.io/kubernaut-ai
 IMAGE_TAG ?= latest
+# Operator image overrides for the operator-backed demo targets.
+OPERATOR_IMAGE ?=
+OPERATOR_IMAGE_REPOSITORY ?=
+OPERATOR_IMAGE_TAG ?=
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 

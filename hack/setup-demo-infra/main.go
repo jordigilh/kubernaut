@@ -62,47 +62,51 @@ type demoFlagValues struct {
 	llmProvider, llmModel, llmEndpoint, llmCredentialsFile       *string
 	llmReasoningEnabled, llmReasoningEffort                      *string
 	spPolicyFile, aaPolicyFile, imageTag, imageRepository        *string
+	operatorImage, operatorImageRepository, operatorImageTag     *string
 	vertexProject, vertexLocation                                *string
 	spokeWorkers                                                 *int
 	autonomous                                                   *bool
 }
 
 // registerDemoFlags registers the command-line options accepted by setup-demo-infra.
-func registerDemoFlags() demoFlagValues {
+func registerDemoFlags(fs *flag.FlagSet) demoFlagValues {
 	values := demoFlagValues{
-		mode:                     flag.String("mode", string(infrastructure.DemoModeLocal), "demo mode: local or fleet"),
-		clusterName:              flag.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)"),
-		remoteClusterName:        flag.String("remote-cluster-name", "kubernaut-remote-cluster", "fleet spoke Kind cluster name"),
-		gatewayType:              flag.String("gateway-type", string(registry.GatewayEAIGW), "fleet MCP Gateway implementation: eaigw or kuadrant"),
-		dependencyOverrides:      flag.String("dependency-overrides-file", "", "optional YAML file with demo dependency overrides"),
-		envoyGatewayVersion:      flag.String("envoy-gateway-version", "", "optional Envoy Gateway version override for the EAIGW demo"),
-		agentRouterVersion:       flag.String("agent-router-version", "", "optional Agent Router/AI Gateway version override for the EAIGW demo"),
-		mcpGatewayNamespace:      flag.String("mcp-gateway-namespace", infrastructure.DefaultMCPGatewayNamespace, "fleet MCP Gateway and hub kube-mcp-server namespace"),
-		remoteMCPServerNamespace: flag.String("remote-mcp-server-namespace", infrastructure.DefaultRemoteMCPServerNamespace, "fleet remote kube-mcp-server namespace"),
-		spokeWorkers:             flag.Int("spoke-workers", 0, "number of extra worker nodes for the fleet spoke cluster"),
-		autonomous:               flag.Bool("autonomous", false, "enable Gateway-driven autonomous remediation"),
-		llmProvider:              flag.String("llm-provider", "", "required LLM provider"),
-		llmModel:                 flag.String("llm-model", "", "required LLM model"),
-		llmEndpoint:              flag.String("llm-endpoint", "", "required except for vertex_ai"),
-		llmCredentialsFile:       flag.String("llm-credentials-file", "", "required file containing the raw LLM credential"),
-		llmReasoningEnabled:      flag.String("llm-reasoning-enabled", "", "optional reasoning enablement override: true or false"),
-		llmReasoningEffort:       flag.String("llm-reasoning-effort", "", "optional reasoning effort override"),
-		spPolicyFile:             flag.String("sp-policy-file", "", "optional SignalProcessing Rego policy file"),
-		aaPolicyFile:             flag.String("aa-policy-file", "", "optional AIAnalysis Rego policy file"),
-		imageTag:                 flag.String("image-tag", "", "optional shared Kubernaut image tag override"),
-		imageRepository:          flag.String("image-repository", "", "optional Kubernaut image repository override (for example, quay.io/jordigilh or localhost/kubernaut)"),
-		vertexProject:            flag.String("vertex-project", "", "required with -llm-provider=vertex_ai"),
-		vertexLocation:           flag.String("vertex-location", "", "required with -llm-provider=vertex_ai"),
+		mode:                     fs.String("mode", string(infrastructure.DemoModeLocal), "demo mode: local or fleet"),
+		clusterName:              fs.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)"),
+		remoteClusterName:        fs.String("remote-cluster-name", "kubernaut-remote-cluster", "fleet spoke Kind cluster name"),
+		gatewayType:              fs.String("gateway-type", string(registry.GatewayEAIGW), "fleet MCP Gateway implementation: eaigw or kuadrant"),
+		dependencyOverrides:      fs.String("dependency-overrides-file", "", "optional YAML file with demo dependency overrides"),
+		envoyGatewayVersion:      fs.String("envoy-gateway-version", "", "optional Envoy Gateway version override for the EAIGW demo"),
+		agentRouterVersion:       fs.String("agent-router-version", "", "optional Agent Router/AI Gateway version override for the EAIGW demo"),
+		mcpGatewayNamespace:      fs.String("mcp-gateway-namespace", infrastructure.DefaultMCPGatewayNamespace, "fleet MCP Gateway and hub kube-mcp-server namespace"),
+		remoteMCPServerNamespace: fs.String("remote-mcp-server-namespace", infrastructure.DefaultRemoteMCPServerNamespace, "fleet remote kube-mcp-server namespace"),
+		spokeWorkers:             fs.Int("spoke-workers", 0, "number of extra worker nodes for the fleet spoke cluster"),
+		autonomous:               fs.Bool("autonomous", false, "enable Gateway-driven autonomous remediation"),
+		llmProvider:              fs.String("llm-provider", "", "required LLM provider"),
+		llmModel:                 fs.String("llm-model", "", "required LLM model"),
+		llmEndpoint:              fs.String("llm-endpoint", "", "required except for vertex_ai"),
+		llmCredentialsFile:       fs.String("llm-credentials-file", "", "required file containing the raw LLM credential"),
+		llmReasoningEnabled:      fs.String("llm-reasoning-enabled", "", "optional reasoning enablement override: true or false"),
+		llmReasoningEffort:       fs.String("llm-reasoning-effort", "", "optional reasoning effort override"),
+		spPolicyFile:             fs.String("sp-policy-file", "", "optional SignalProcessing Rego policy file"),
+		aaPolicyFile:             fs.String("aa-policy-file", "", "optional AIAnalysis Rego policy file"),
+		imageTag:                 fs.String("image-tag", "", "optional shared Kubernaut image tag override"),
+		imageRepository:          fs.String("image-repository", "", "optional Kubernaut image repository override (for example, quay.io/jordigilh or localhost/kubernaut)"),
+		operatorImage:            fs.String("operator-image", "", "optional full operator image reference override"),
+		operatorImageRepository:  fs.String("operator-image-repository", "", "optional operator image repository override"),
+		operatorImageTag:         fs.String("operator-image-tag", "", "optional operator image tag override"),
+		vertexProject:            fs.String("vertex-project", "", "required with -llm-provider=vertex_ai"),
+		vertexLocation:           fs.String("vertex-location", "", "required with -llm-provider=vertex_ai"),
 	}
-	if flag.Lookup("kubeconfig") == nil {
-		flag.String("kubeconfig", "", "path to write the cluster kubeconfig")
+	if fs.Lookup("kubeconfig") == nil {
+		fs.String("kubeconfig", "", "path to write the cluster kubeconfig")
 	}
 	return values
 }
 
 // parseDemoFlags validates command-line options and resolves the effective demo config.
 func parseDemoFlags() demoCLIConfig {
-	flags := registerDemoFlags()
+	flags := registerDemoFlags(flag.CommandLine)
 	flag.Parse()
 	fileOverrides, dependencyErr := infrastructure.LoadDemoDependencyOverrides(*flags.dependencyOverrides)
 	if dependencyErr != nil {
@@ -138,6 +142,14 @@ func parseDemoFlags() demoCLIConfig {
 	if !registry.SupportedGateways[gatewayType] {
 		fail(fmt.Sprintf("invalid -gateway-type %q; must be one of: eaigw, kuadrant", *flags.gatewayType))
 	}
+	operatorArtifacts := infrastructure.MergeDemoArtifactOverrides(
+		fileOverrides.ArtifactOverrides(),
+		infrastructure.DemoArtifactOverrides{
+			OperatorImage:           *flags.operatorImage,
+			OperatorImageRepository: *flags.operatorImageRepository,
+			OperatorImageTag:        *flags.operatorImageTag,
+		},
+	)
 	demoOpts := infrastructure.DemoHelmOptions{
 		Mode:                mode,
 		Autonomous:          *flags.autonomous,
@@ -153,7 +165,7 @@ func parseDemoFlags() demoCLIConfig {
 		ImageRepository:     *flags.imageRepository,
 		VertexProject:       *flags.vertexProject,
 		VertexLocation:      *flags.vertexLocation,
-		OperatorArtifacts:   fileOverrides.ArtifactOverrides(),
+		OperatorArtifacts:   operatorArtifacts,
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fail(err.Error())

@@ -1045,11 +1045,14 @@ func InjectAlerts(amURL string, alerts []TestAlert, caPath ...string) error {
 	return nil
 }
 
-// ResolveActiveAlerts queries AlertManager for all currently active alerts and
-// re-injects them with endsAt=now so they transition to "resolved". This prevents
-// stale alerts from being batched with newly injected alerts (the Gateway only
-// processes Alerts[0] in each AlertManager webhook batch).
-func ResolveActiveAlerts(amURL string) error {
+// ResolveAlertsByLabels queries AlertManager for active alerts matching every
+// label in matchLabels and re-injects only those alerts with endsAt=now. This
+// prevents one parallel test from resolving another test's alert.
+func ResolveAlertsByLabels(amURL string, matchLabels map[string]string) error {
+	if len(matchLabels) == 0 {
+		return fmt.Errorf("alert label selector must not be empty")
+	}
+
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to build active alerts request: %w", err)
@@ -1070,9 +1073,6 @@ func ResolveActiveAlerts(amURL string) error {
 	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
 		return fmt.Errorf("failed to decode active alerts: %w", err)
 	}
-	if len(alerts) == 0 {
-		return nil
-	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	type resolvedAlert struct {
@@ -1080,8 +1080,20 @@ func ResolveActiveAlerts(amURL string) error {
 		EndsAt string            `json:"endsAt"`
 	}
 	var resolved []resolvedAlert
-	for _, a := range alerts {
-		resolved = append(resolved, resolvedAlert{Labels: a.Labels, EndsAt: now})
+	for _, alert := range alerts {
+		matches := true
+		for key, expected := range matchLabels {
+			if alert.Labels[key] != expected {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			resolved = append(resolved, resolvedAlert{Labels: alert.Labels, EndsAt: now})
+		}
+	}
+	if len(resolved) == 0 {
+		return nil
 	}
 
 	body, err := json.Marshal(resolved)
