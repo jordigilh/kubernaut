@@ -9,7 +9,7 @@
 
 Use Ginkgo/Gomega business-outcome tests. The 34 scenarios below are the proposed in-scope critical UT denominator: **0/34 implemented or passing**. All 34 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 34 current scenarios are critical, the current gate is 34/34, not 90% of 34. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -56,6 +56,9 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 |---|---|---|
 | IT-AA-2570-001 / IT-RO-2570-002 | KA selection/schema → AgentSession/AIA → RAR; typed nil/empty maps and frozen selection survive generated CRDs. | Real Kubernetes API server and generated CRDs. |
 | IT-KA-2577-001/002 | KA bootstrap list/lookup/watch excludes foreign workflows and ActionTypes, including same-name/ID objects. | Real API server, two namespaces. |
+| IT-2570-020 | KA, AW and WE use their configured trusted namespace; missing namespace fails closed, namespace-scoped Role/RoleBinding grants required access, and foreign catalog objects cannot satisfy lookup. | Real API server with service identities and at least two namespaces. |
+| IT-2570-021 | Pending and already-approved pre-change RARs lacking required selection/declaration data fail closed with an observable reason; no execution is created. | Real API server and RO/AW integration. |
+| IT-KA-2570-008 | Generated RemediationWorkflow CRD supports `status.workflowId` server-side selection within a namespace and returns the matching workflow. | Real Kubernetes API server with generated CRD. |
 | IT-KA-2570-009 | Production KA validation invokes shared core and returns actionable self-correction. | KA integration with schema fixture. |
 | IT-AF-2570-003/010 | Actual MCP read/approve exposes full schema; authorized updates reach shared validation, unauthorized and stale updates fail. | AF, API server, authorization and webhook. |
 | IT-AW-2570-004/011 | Real AW admission enforces same-ID lookup, schema, locked keys and exact input without partial decision. | API server, webhook, trusted/foreign namespaces. |
