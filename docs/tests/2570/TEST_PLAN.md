@@ -56,7 +56,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 |---|---|---|
 | IT-AA-2570-001 / IT-RO-2570-002 | KA selection/schema → AgentSession/AIA → RAR; typed nil/empty maps and frozen selection survive generated CRDs. | Real Kubernetes API server and generated CRDs. |
 | IT-KA-2577-001/002 | KA bootstrap list/lookup/watch excludes foreign workflows and ActionTypes, including same-name/ID objects. | Real API server, two namespaces. |
-| IT-2570-020 | KA, AW and WE use their configured trusted namespace; missing namespace fails closed, namespace-scoped Role/RoleBinding grants required access, and foreign catalog objects cannot satisfy lookup. | Real API server with service identities and at least two namespaces. |
+| IT-2570-020 | KA, AW and WE use their configured trusted namespace; missing namespace fails closed, namespace-scoped Role/RoleBinding grants required access including AW/WE `list` on `remediationworkflows`, and foreign catalog objects cannot satisfy lookup. | Real API server with service identities and at least two namespaces. |
 | IT-2570-021 | Pending and already-approved pre-change RARs lacking required selection/declaration data fail closed with an observable reason; no execution is created. | Real API server and RO/AW integration. |
 | IT-KA-2570-008 | Generated RemediationWorkflow CRD supports `status.workflowId` server-side selection within a namespace and returns the matching workflow. | Real Kubernetes API server with generated CRD. |
 | IT-KA-2570-009 | Production KA validation invokes shared core and returns actionable self-correction. | KA integration with schema fixture. |

@@ -21,7 +21,7 @@
 ## Workflow identity, decisions and audit
 
 - #2577 scopes KA workflow and ActionType discovery/list/watch to the trusted service namespace. AW override admission and WE dispatch perform a direct API-server lookup by `status.workflowId` in that namespace, recompute the content-derived ID, and require exactly one same-ID result. Never substitute live catalog values for the frozen snapshot. Ordinary AW decisions without overrides do not require catalog access.
-- **Trusted namespace and RBAC:** Resolve the namespace from trusted service deployment configuration or the pod's Kubernetes service-account namespace; validate a non-empty namespace during KA, AW and WE bootstrap and fail closed if it cannot be established. Do not silently fall back to `default`, `kubernaut-system` or a cluster-wide scope. Deployment RBAC must grant the respective service accounts only the required catalog reads in this namespace: KA list/watch for workflows and ActionTypes, AW workflow lookup, and WE workflow lookup. Verify namespace-scoped Role/RoleBinding wiring and prohibit foreign-namespace matches. Changes to AW workflow-registration admission are not part of #2577 or this PR; this requirement applies to KA discovery and the AW/WE approval/execution lookups.
+- **Trusted namespace and RBAC:** Resolve the namespace from trusted service deployment configuration or the pod's Kubernetes service-account namespace; validate a non-empty namespace during KA, AW and WE bootstrap and fail closed if it cannot be established. Do not silently fall back to `default`, `kubernaut-system` or a cluster-wide scope. Deployment RBAC must grant the respective service accounts only the required catalog reads in this namespace: KA `list`/`watch` for workflows and ActionTypes, and AW and WE `list` on `remediationworkflows` for the selector-based lookups. Verify namespace-scoped Role/RoleBinding wiring and prohibit foreign-namespace matches. Changes to AW workflow-registration admission are not part of #2577 or this PR; this requirement applies to KA discovery and the AW/WE approval/execution lookups.
 - **Selector prerequisite:** Declare `status.workflowId` under the RemediationWorkflow CRD version's `selectableFields`, regenerate both source and embedded CRDs, and pass real API-server selector test `IT-KA-2570-008` before relying on AW/WE lookup. This selector change is not part of the documentation-only PR and must be included or merged with the implementation.
 - For a previously selected workflow, a successful API lookup with no matching ID fails closed immediately and is not retried; report that the workflow ID was not found. Ambiguity or an ID mismatch also fails closed. For transient API or network errors, use up to three total attempts with `pkg/shared/backoff` jitter, respecting context cancellation and admission timeout. Authorization/configuration failures are not blindly retried. A successful read is point-in-time; deletion before dispatch is not atomically prevented.
 - First committed terminal decision wins. Use an explicit Kubernetes `resourceVersion` precondition. Report a conflict/already-decided outcome separately from a network failure. On an ambiguous transport failure, re-read before any bounded retry and never overwrite a committed decision. The RR-derived RAR name is unique by convention; no reviewer-facing RAR UID binding is required.
@@ -44,6 +44,11 @@ The RAR spec is write-once and is the reviewed source of truth; do not add a sep
 | Approved RAR → RO target/lock/hash → WE → actual executor inputs | IT-RO-2570-006 |
 | WE reconciliation → trusted workflow-ID check → dispatch | IT-WE-2570-012 |
 | AF/AW/RO decision events → shared buffer → DataStorage readback | IT-AUD-2570-007, E2E-AUD-2570-008 |
+
+**Mandatory cross-cutting wiring gates:** CHECKPOINT W also requires IT-2570-020
+(trusted namespace and service-account RBAC, including AW/WE selector `list`)
+and IT-2570-021 (pre-change RARs fail closed) to pass. Neither may be omitted
+when evaluating the affected KA, AW, RO or WE production paths.
 
 ## TDD and verification
 
