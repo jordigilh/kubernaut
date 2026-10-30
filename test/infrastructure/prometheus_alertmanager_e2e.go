@@ -1050,6 +1050,13 @@ func InjectAlerts(amURL string, alerts []TestAlert, caPath ...string) error {
 // stale alerts from being batched with newly injected alerts (the Gateway only
 // processes Alerts[0] in each AlertManager webhook batch).
 func ResolveActiveAlerts(amURL string) error {
+	return ResolveActiveAlertsForLabels(amURL, nil)
+}
+
+// ResolveActiveAlertsForLabels resolves only active alerts whose labels contain
+// every requested key/value pair. An empty label set preserves the global
+// cleanup behavior used by callers that own the entire AlertManager fixture.
+func ResolveActiveAlertsForLabels(amURL string, requiredLabels map[string]string) error {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to build active alerts request: %w", err)
@@ -1079,9 +1086,15 @@ func ResolveActiveAlerts(amURL string) error {
 		Labels map[string]string `json:"labels"`
 		EndsAt string            `json:"endsAt"`
 	}
-	var resolved []resolvedAlert
+	resolved := make([]resolvedAlert, 0, len(alerts))
 	for _, a := range alerts {
+		if !alertLabelsMatch(a.Labels, requiredLabels) {
+			continue
+		}
 		resolved = append(resolved, resolvedAlert{Labels: a.Labels, EndsAt: now})
+	}
+	if len(resolved) == 0 {
+		return nil
 	}
 
 	body, err := json.Marshal(resolved)
@@ -1104,6 +1117,15 @@ func ResolveActiveAlerts(amURL string) error {
 		return fmt.Errorf("AlertManager returned status %d resolving alerts", postResp.StatusCode)
 	}
 	return nil
+}
+
+func alertLabelsMatch(alertLabels, requiredLabels map[string]string) bool {
+	for key, expectedValue := range requiredLabels {
+		if alertLabels[key] != expectedValue {
+			return false
+		}
+	}
+	return true
 }
 
 // HasActiveAlerts returns true if AlertManager has any active (non-silenced,

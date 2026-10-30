@@ -1415,7 +1415,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// decay and defers assessment until validity expires, preventing the
 		// effectiveness.alert.assessed audit event from being emitted.
 		By("AM Step 10.5: Resolving injected AlertManager alerts post-remediation")
-		resolveErr := infrastructure.ResolveActiveAlerts(alertManagerURL)
+		resolveErr := infrastructure.ResolveActiveAlertsForLabels(alertManagerURL, map[string]string{
+			"alertname": "MemoryExceedsLimit",
+			"namespace": testNamespaceAM,
+			"pod":       memoryEaterPodName,
+			"container": "memory-eater",
+		})
 		Expect(resolveErr).ToNot(HaveOccurred(), "Failed to resolve active alerts post-remediation")
 
 		// ================================================================
