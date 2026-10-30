@@ -127,6 +127,7 @@ func MergeDemoArtifactOverrides(base, explicit DemoArtifactOverrides) DemoArtifa
 	if explicit.OperatorVersion != "" {
 		merged.OperatorVersion = explicit.OperatorVersion
 	}
+	clearFileBackedOperatorImageSelectors(&merged, explicit)
 	if explicit.OperatorImage != "" {
 		merged.OperatorImage = explicit.OperatorImage
 	}
@@ -167,4 +168,18 @@ func MergeDemoArtifactOverrides(base, explicit DemoArtifactOverrides) DemoArtifa
 		merged.KubernautDigest = explicit.KubernautDigest
 	}
 	return merged
+}
+
+func clearFileBackedOperatorImageSelectors(merged *DemoArtifactOverrides, explicit DemoArtifactOverrides) {
+	if !hasOperatorImageOverride(explicit) {
+		return
+	}
+	merged.OperatorImage = ""
+	merged.OperatorDigest = ""
+}
+
+func hasOperatorImageOverride(explicit DemoArtifactOverrides) bool {
+	return explicit.OperatorImage != "" ||
+		explicit.OperatorImageRepository != "" ||
+		explicit.OperatorImageTag != ""
 }

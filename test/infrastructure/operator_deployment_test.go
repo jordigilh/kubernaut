@@ -500,14 +500,34 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	})
 	It("UT-2492-016C [BR-PLATFORM-014]: applies explicit CLI artifact values over YAML defaults", func() {
 		merged := MergeDemoArtifactOverrides(
-			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", DependencyChart: "oci://file/dependencies"},
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file", DependencyChart: "oci://file/dependencies"},
 			DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "ci", DependencyChartVersion: "0.2.0"},
 		)
-		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorImage).To(BeEmpty())
 		Expect(merged.OperatorImageRepository).To(Equal("localhost/operator"))
 		Expect(merged.OperatorImageTag).To(Equal("ci"))
+		Expect(merged.OperatorDigest).To(BeEmpty())
 		Expect(merged.DependencyChart).To(Equal("oci://file/dependencies"))
 		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+	It("UT-2492-016H [BR-PLATFORM-014]: preserves file-backed operator image selectors without a CLI image override", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file"},
+			DemoArtifactOverrides{DependencyChartVersion: "0.2.0"},
+		)
+
+		Expect(merged.OperatorImage).To(Equal("operator@sha256:file"))
+		Expect(merged.OperatorDigest).To(Equal("sha256:file"))
+		Expect(merged.DependencyChartVersion).To(Equal("0.2.0"))
+	})
+	It("UT-2492-016I [BR-PLATFORM-014]: applies an explicit CLI operator image and digest over file selectors", func() {
+		merged := MergeDemoArtifactOverrides(
+			DemoArtifactOverrides{OperatorImage: "operator@sha256:file", OperatorDigest: "sha256:file"},
+			DemoArtifactOverrides{OperatorImage: "localhost/operator:cli", OperatorDigest: "sha256:cli"},
+		)
+
+		Expect(merged.OperatorImage).To(Equal("localhost/operator:cli"))
+		Expect(merged.OperatorDigest).To(Equal("sha256:cli"))
 	})
 
 	It("UT-2492-PROVENANCE-001 [BR-PLATFORM-014]: serializes exact demo artifact inputs", func() {
