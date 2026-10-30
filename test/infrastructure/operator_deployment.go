@@ -2720,7 +2720,7 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 		return "", "", "", "", "", "", err
 	}
 	operatorImage = resolved.OperatorImage
-	if options.OperatorArtifacts.OperatorImage == "" {
+	if !hasOperatorImageOverride(options.OperatorArtifacts) {
 		if explicit := strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")); explicit != "" {
 			operatorImage = explicit
 		}
@@ -2734,7 +2734,7 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 		return explicitChart, resolved.DependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(explicitChart, resolved.OperatorVersion), resolved.DependencyChartVersion, nil
 	}
 	if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_ROOT")) != "" || strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_CHART_PATH")) != "" {
-		if strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && options.OperatorArtifacts.OperatorImage == "" {
+		if requiresExplicitOperatorImage(options.OperatorArtifacts) {
 			return "", "", "", "", "", "", errors.New("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE; source is never built implicitly")
 		}
 		operatorChart, dependencyChart, err = OperatorChartPathsFromEnvironment(ctx, resolved.OperatorRef)
@@ -2751,6 +2751,10 @@ func resolveDemoOperatorDeploymentInputs(ctx context.Context, options DemoHelmOp
 	operatorChart = resolved.OperatorChart
 	dependencyChart = resolved.DependencyChart
 	return operatorChart, dependencyChart, operatorImage, resolved.KubernautVersion, chartVersionOrDefault(operatorChart, resolved.OperatorVersion), chartVersionOrDefault(dependencyChart, resolved.DependencyChartVersion), nil
+}
+
+func requiresExplicitOperatorImage(artifacts DemoArtifactOverrides) bool {
+	return strings.TrimSpace(os.Getenv("KUBERNAUT_OPERATOR_IMAGE")) == "" && !hasOperatorImageOverride(artifacts)
 }
 
 func chartVersionOrDefault(chartPath, fallback string) string {

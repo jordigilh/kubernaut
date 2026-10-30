@@ -36,6 +36,14 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
+func restoreEnvironment(name, value string, wasSet bool) {
+	if wasSet {
+		Expect(os.Setenv(name, value)).To(Succeed())
+		return
+	}
+	Expect(os.Unsetenv(name)).To(Succeed())
+}
+
 var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc27"})
@@ -53,6 +61,61 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
 		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
 		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+	})
+	It("UT-2492-016J [BR-PLATFORM-014]: keeps CLI operator repository and tag ahead of the environment image", func() {
+		previousImage, hadPreviousImage := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE")
+		previousRoot, hadPreviousRoot := os.LookupEnv("KUBERNAUT_OPERATOR_ROOT")
+		previousChart, hadPreviousChart := os.LookupEnv("KUBERNAUT_OPERATOR_CHART_PATH")
+		previousDependencyChart, hadPreviousDependencyChart := os.LookupEnv("KUBERNAUT_DEPENDENCY_CHART_PATH")
+		previousReleaseLine, hadPreviousReleaseLine := os.LookupEnv("KUBERNAUT_RELEASE_LINE")
+		DeferCleanup(func() {
+			restoreEnvironment("KUBERNAUT_OPERATOR_IMAGE", previousImage, hadPreviousImage)
+			restoreEnvironment("KUBERNAUT_OPERATOR_ROOT", previousRoot, hadPreviousRoot)
+			restoreEnvironment("KUBERNAUT_OPERATOR_CHART_PATH", previousChart, hadPreviousChart)
+			restoreEnvironment("KUBERNAUT_DEPENDENCY_CHART_PATH", previousDependencyChart, hadPreviousDependencyChart)
+			restoreEnvironment("KUBERNAUT_RELEASE_LINE", previousReleaseLine, hadPreviousReleaseLine)
+		})
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_IMAGE", "env/operator:wrong")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_ROOT")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_CHART_PATH")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_DEPENDENCY_CHART_PATH")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_RELEASE_LINE", "1.6.0-rc27")).To(Succeed())
+
+		_, _, operatorImage, _, _, _, err := resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
+			OperatorArtifacts: DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "cli"},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(operatorImage).To(Equal("localhost/operator:cli"))
+	})
+	It("UT-2492-016K [BR-PLATFORM-014]: accepts CLI operator selectors for an explicit source checkout", func() {
+		previousImage, hadPreviousImage := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE")
+		previousRoot, hadPreviousRoot := os.LookupEnv("KUBERNAUT_OPERATOR_ROOT")
+		previousChart, hadPreviousChart := os.LookupEnv("KUBERNAUT_OPERATOR_CHART_PATH")
+		previousDependencyChart, hadPreviousDependencyChart := os.LookupEnv("KUBERNAUT_DEPENDENCY_CHART_PATH")
+		previousReleaseLine, hadPreviousReleaseLine := os.LookupEnv("KUBERNAUT_RELEASE_LINE")
+		DeferCleanup(func() {
+			restoreEnvironment("KUBERNAUT_OPERATOR_IMAGE", previousImage, hadPreviousImage)
+			restoreEnvironment("KUBERNAUT_OPERATOR_ROOT", previousRoot, hadPreviousRoot)
+			restoreEnvironment("KUBERNAUT_OPERATOR_CHART_PATH", previousChart, hadPreviousChart)
+			restoreEnvironment("KUBERNAUT_DEPENDENCY_CHART_PATH", previousDependencyChart, hadPreviousDependencyChart)
+			restoreEnvironment("KUBERNAUT_RELEASE_LINE", previousReleaseLine, hadPreviousReleaseLine)
+		})
+		missingRoot, err := os.MkdirTemp("", "kubernaut-operator-root-*")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.RemoveAll(missingRoot)).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_IMAGE")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_OPERATOR_ROOT", missingRoot)).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_OPERATOR_CHART_PATH")).To(Succeed())
+		Expect(os.Unsetenv("KUBERNAUT_DEPENDENCY_CHART_PATH")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_RELEASE_LINE", "1.6.0-rc27")).To(Succeed())
+
+		_, _, _, _, _, _, err = resolveDemoOperatorDeploymentInputs(context.Background(), DemoHelmOptions{
+			OperatorArtifacts: DemoArtifactOverrides{OperatorImageRepository: "localhost/operator", OperatorImageTag: "cli"},
+		})
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).NotTo(ContainSubstring("explicit operator source checkout requires KUBERNAUT_OPERATOR_IMAGE"))
 	})
 
 	It("UT-2492-IMAGE-002 [BR-PLATFORM-014]: exposes the exact operator artifact reload path", func() {
