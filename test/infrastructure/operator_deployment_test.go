@@ -196,7 +196,8 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		var llmSecret corev1.Secret
 		Expect(json.Unmarshal([]byte(llmManifest), &llmSecret)).To(Succeed())
 		Expect(llmSecret.Type).To(Equal(corev1.SecretTypeOpaque))
-		Expect(llmSecret.Data).To(HaveKeyWithValue("api_key", []byte("synthetic-key")))
+		llmAPIKeyMatches := string(llmSecret.Data["api_key"]) == "synthetic-key"
+		Expect(llmAPIKeyMatches).To(BeTrue(), "LLM Secret api_key must match the synthetic test key")
 		Expect(llmSecret.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
 		Expect(llmSecret.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
 
@@ -212,12 +213,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var consoleSecret corev1.Secret
 		Expect(json.Unmarshal([]byte(consoleManifest), &consoleSecret)).To(Succeed())
-		Expect(consoleSecret.StringData).To(HaveKeyWithValue("client-id", "kubernaut-console"))
-		Expect(consoleSecret.StringData).To(HaveKeyWithValue("client-secret", "e2e-console-secret"))
-		Expect(consoleSecret.StringData).To(HaveKeyWithValue("cookie-secret", "01234567890123456789012345678901"))
+		Expect(consoleSecret.StringData["client-id"]).To(Equal("kubernaut-console"))
+		consoleClientSecretMatches := consoleSecret.StringData["client-secret"] == "e2e-console-secret"
+		Expect(consoleClientSecretMatches).To(BeTrue(), "console client-secret must match the realm client secret")
+		consoleCookieSecretMatches := consoleSecret.StringData["cookie-secret"] == "01234567890123456789012345678901"
+		Expect(consoleCookieSecretMatches).To(BeTrue(), "console cookie-secret must match the expected cookie secret")
 		Expect(consoleSecret.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
 		Expect(consoleSecret.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
-		Expect(consoleManifest).NotTo(ContainSubstring("e2e-client"))
+		Expect(strings.Contains(consoleManifest, "e2e-client")).To(BeFalse(), "console Secret manifest must not reference e2e-client")
 	})
 
 	It("UT-2492-006B [BR-E2E-001]: renders Valkey mTLS references for the dependency chart", func() {
