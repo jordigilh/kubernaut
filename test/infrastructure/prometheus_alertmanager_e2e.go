@@ -1121,7 +1121,8 @@ func ResolveActiveAlertsForLabels(amURL string, requiredLabels map[string]string
 
 func alertLabelsMatch(alertLabels, requiredLabels map[string]string) bool {
 	for key, expectedValue := range requiredLabels {
-		if alertLabels[key] != expectedValue {
+		value, exists := alertLabels[key]
+		if !exists || value != expectedValue {
 			return false
 		}
 	}

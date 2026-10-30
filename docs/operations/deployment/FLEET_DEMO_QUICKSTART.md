@@ -1,8 +1,9 @@
 # Fleet Demo Quick Start (Kind)
 
-**Status**: The former automated demo helper was removed with the application Helm
-deployment path. This page points to the supported operator-backed qualification and
-user-managed setup flows; it does not provide a working `make setup-*` command.
+**Status**: The operator-backed `hack/setup-demo-infra` helper remains available for
+disposable local/fleet demos. This page points to the supported operator-backed
+qualification and user-managed setup flows; it does not provide a working
+`make setup-*` command.
 
 ## Disposable qualification environment
 

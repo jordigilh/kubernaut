@@ -69,4 +69,11 @@ var _ = Describe("AlertManager alert cleanup", func() {
 		}))
 		Expect(resolved[0].EndsAt).NotTo(BeEmpty())
 	})
+
+	It("UT-INFRA-FP-2579-002 [BR-E2E-001]: requires an empty-valued label to be present", func() {
+		Expect(alertLabelsMatch(
+			map[string]string{"alertname": "MemoryExceedsLimit"},
+			map[string]string{"namespace": ""},
+		)).To(BeFalse())
+	})
 })

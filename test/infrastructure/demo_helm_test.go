@@ -241,6 +241,7 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 		var realm struct {
 			Clients []struct {
 				ClientID string `json:"clientId"`
+				Secret   string `json:"secret"`
 			} `json:"clients"`
 		}
 		Expect(json.Unmarshal([]byte(keycloakRealmDemoJSON), &realm)).To(Succeed())
@@ -249,6 +250,14 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 			realmClientIDs = append(realmClientIDs, client.ClientID)
 		}
 		Expect(realmClientIDs).To(ContainElement(Equal(consoleSecret.StringData["client-id"])))
+		realmSecretMatches := false
+		for _, client := range realm.Clients {
+			if client.ClientID == consoleSecret.StringData["client-id"] {
+				realmSecretMatches = client.Secret == consoleSecret.StringData["client-secret"]
+				break
+			}
+		}
+		Expect(realmSecretMatches).To(BeTrue(), "console client-secret must match the selected realm client secret")
 	})
 
 	It("UT-2492-DEMO-002 [BR-PLATFORM-014]: fleet mode keeps read and WorkflowExecution write credentials distinct", func() {
