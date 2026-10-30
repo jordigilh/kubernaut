@@ -17,10 +17,13 @@ limitations under the License.
 package infrastructure
 
 import (
+	"encoding/json"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 )
 
 var _ = Describe("DemoHelmOptions.Validate", func() {
@@ -217,13 +220,44 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cr).To(ContainSubstring("issuerURL: https://keycloak:8443/realms/kubernaut-demo"))
 		Expect(cr).To(ContainSubstring("jwksURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"))
-		Expect(cr).To(ContainSubstring("secretName: kubernaut-console-oidc"))
 		Expect(cr).To(ContainSubstring("redirectURL: https://kubernaut-console.local:8843/oauth2/callback"))
 		Expect(cr).NotTo(ContainSubstring("ingressClassName:"))
 		Expect(cr).NotTo(ContainSubstring("tlsSecretName:"))
 		Expect(cr).NotTo(ContainSubstring("ingress:"))
 		Expect(cr).NotTo(ContainSubstring("dex"))
 		Expect(cr).NotTo(ContainSubstring("console-oauth-creds"))
+
+		var renderedCR operatorCRManifest
+		Expect(yaml.Unmarshal([]byte(cr), &renderedCR)).To(Succeed())
+		Expect(renderedCR.Spec.Console).NotTo(BeNil())
+		Expect(renderedCR.Spec.Console.Auth).NotTo(BeNil())
+
+		consoleSecretManifest, err := BuildDemoConsoleOIDCSecretManifest("kubernaut-system")
+		Expect(err).NotTo(HaveOccurred())
+		var consoleSecret corev1.Secret
+		Expect(json.Unmarshal([]byte(consoleSecretManifest), &consoleSecret)).To(Succeed())
+		Expect(renderedCR.Spec.Console.Auth.SecretName).To(Equal(consoleSecret.Name))
+
+		var realm struct {
+			Clients []struct {
+				ClientID string `json:"clientId"`
+				Secret   string `json:"secret"`
+			} `json:"clients"`
+		}
+		Expect(json.Unmarshal([]byte(keycloakRealmDemoJSON), &realm)).To(Succeed())
+		realmClientIDs := make([]string, 0, len(realm.Clients))
+		for _, client := range realm.Clients {
+			realmClientIDs = append(realmClientIDs, client.ClientID)
+		}
+		Expect(realmClientIDs).To(ContainElement(Equal(consoleSecret.StringData["client-id"])))
+		realmSecretMatches := false
+		for _, client := range realm.Clients {
+			if client.ClientID == consoleSecret.StringData["client-id"] {
+				realmSecretMatches = client.Secret == consoleSecret.StringData["client-secret"]
+				break
+			}
+		}
+		Expect(realmSecretMatches).To(BeTrue(), "console client-secret must match the selected realm client secret")
 	})
 
 	It("UT-2492-DEMO-002 [BR-PLATFORM-014]: fleet mode keeps read and WorkflowExecution write credentials distinct", func() {

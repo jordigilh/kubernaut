@@ -1045,6 +1045,14 @@ func InjectAlerts(amURL string, alerts []TestAlert, caPath ...string) error {
 	return nil
 }
 
+// ResolveActiveAlerts queries AlertManager for all currently active alerts and
+// re-injects them with endsAt=now so they transition to "resolved". This prevents
+// stale alerts from being batched with newly injected alerts (the Gateway only
+// processes Alerts[0] in each AlertManager webhook batch).
+func ResolveActiveAlerts(amURL string) error {
+	return ResolveActiveAlertsForLabels(amURL, nil)
+}
+
 // ResolveAlertsByLabels queries AlertManager for active alerts matching every
 // label in matchLabels and re-injects only those alerts with endsAt=now. This
 // prevents one parallel test from resolving another test's alert.
@@ -1052,7 +1060,13 @@ func ResolveAlertsByLabels(amURL string, matchLabels map[string]string) error {
 	if len(matchLabels) == 0 {
 		return fmt.Errorf("alert label selector must not be empty")
 	}
+	return ResolveActiveAlertsForLabels(amURL, matchLabels)
+}
 
+// ResolveActiveAlertsForLabels resolves only active alerts whose labels contain
+// every requested key/value pair. An empty label set preserves the global
+// cleanup behavior used by callers that own the entire AlertManager fixture.
+func ResolveActiveAlertsForLabels(amURL string, requiredLabels map[string]string) error {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to build active alerts request: %w", err)
@@ -1079,18 +1093,12 @@ func ResolveAlertsByLabels(amURL string, matchLabels map[string]string) error {
 		Labels map[string]string `json:"labels"`
 		EndsAt string            `json:"endsAt"`
 	}
-	var resolved []resolvedAlert
-	for _, alert := range alerts {
-		matches := true
-		for key, expected := range matchLabels {
-			if alert.Labels[key] != expected {
-				matches = false
-				break
-			}
+	resolved := make([]resolvedAlert, 0, len(alerts))
+	for _, a := range alerts {
+		if !alertLabelsMatch(a.Labels, requiredLabels) {
+			continue
 		}
-		if matches {
-			resolved = append(resolved, resolvedAlert{Labels: alert.Labels, EndsAt: now})
-		}
+		resolved = append(resolved, resolvedAlert{Labels: a.Labels, EndsAt: now})
 	}
 	if len(resolved) == 0 {
 		return nil
@@ -1116,6 +1124,16 @@ func ResolveAlertsByLabels(amURL string, matchLabels map[string]string) error {
 		return fmt.Errorf("AlertManager returned status %d resolving alerts", postResp.StatusCode)
 	}
 	return nil
+}
+
+func alertLabelsMatch(alertLabels, requiredLabels map[string]string) bool {
+	for key, expectedValue := range requiredLabels {
+		value, exists := alertLabels[key]
+		if !exists || value != expectedValue {
+			return false
+		}
+	}
+	return true
 }
 
 // HasActiveAlerts returns true if AlertManager has any active (non-silenced,

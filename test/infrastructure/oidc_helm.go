@@ -26,6 +26,14 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	demoConsoleOIDCSecretName   = "kubernaut-console-oidc"
+	demoConsoleOIDCClientID     = "kubernaut-console"
+	demoConsoleOIDCClientSecret = "e2e-console-secret"
+	demoConsoleOIDCCookieSecret = "01234567890123456789012345678901"
 )
 
 // SetupOIDCInfrastructure provisions the shared browser-authentication
@@ -57,8 +65,52 @@ func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer 
 	if err := deployOIDCKeycloak(ctx, kubeconfigPath, appNamespace, writer); err != nil {
 		return err
 	}
+	if err := ensureDemoConsoleOIDCSecret(ctx, kubeconfigPath, appNamespace, writer); err != nil {
+		return fmt.Errorf("console OIDC Secret provisioning failed: %w", err)
+	}
 	if err := deployTraefikForKind(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("traefik installation failed: %w", err)
+	}
+	return nil
+}
+
+// BuildDemoConsoleOIDCSecretManifest creates the demo-owned oauth2-proxy
+// credentials Secret. The values match the kubernaut-console client imported
+// by keycloak-realm-demo.json; stringData keeps the fixture out of Helm
+// arguments while letting the Kubernetes API perform Secret encoding.
+func BuildDemoConsoleOIDCSecretManifest(namespace string) (string, error) {
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      demoConsoleOIDCSecretName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "setup-demo-infra",
+				"kubernaut.ai/demo-owner":      "setup-demo-infra",
+				"kubernaut.ai/e2e-owner":       operatorOwnerLabel,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"client-id":     demoConsoleOIDCClientID,
+			"client-secret": demoConsoleOIDCClientSecret,
+			"cookie-secret": demoConsoleOIDCCookieSecret,
+		},
+	}
+	manifest, err := json.Marshal(secret)
+	if err != nil {
+		return "", fmt.Errorf("marshal demo Console OIDC Secret: %w", err)
+	}
+	return string(manifest), nil
+}
+
+func ensureDemoConsoleOIDCSecret(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	manifest, err := BuildDemoConsoleOIDCSecretManifest(namespace)
+	if err != nil {
+		return err
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("apply %s Secret: %w", demoConsoleOIDCSecretName, err)
 	}
 	return nil
 }

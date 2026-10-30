@@ -61,8 +61,8 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
 		Expect(resolved.OperatorChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-operator@sha256:8c28efdef6c2f13650146487e1254df8cf6dafc579046ac73d9d24da64987814"))
-		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:b68bb1f24c7e5dfb67107650995987681a156d7a34eea97744c91a88013a325a"))
-		Expect(resolved.DependencyChartVersion).To(Equal("0.1.0-run.1"))
+		Expect(resolved.DependencyChart).To(Equal("oci://quay.io/kubernaut-ai/kubernaut-development-dependencies@sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d"))
+		Expect(resolved.DependencyChartVersion).To(Equal("0.1.1-run.4"))
 	})
 	It("UT-2492-016J [BR-PLATFORM-014]: keeps CLI operator repository and tag ahead of the environment image", func() {
 		previousImage, hadPreviousImage := os.LookupEnv("KUBERNAUT_OPERATOR_IMAGE")
@@ -238,16 +238,17 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		args := BuildOperatorDependencyArgs(OperatorDependencyOptions{
 			Namespace:       "kubernaut-system",
 			ChartPath:       "oci://example/kubernaut-development-dependencies",
-			ChartVersion:    "0.1.0-run.1",
+			ChartVersion:    "0.1.1-run.4",
 			PostgreSQLImage: "docker.io/library/postgres:16.4@sha256:postgres",
 			ValkeyImage:     "docker.io/valkey/valkey:8.0.2@sha256:valkey",
 		})
 		joined := strings.Join(args, " ")
-		Expect(joined).To(ContainSubstring("--version 0.1.0-run.1"))
+		Expect(joined).To(ContainSubstring("--version 0.1.1-run.4"))
 		Expect(joined).To(ContainSubstring("kubernaut-development-dependencies"))
 		Expect(joined).To(ContainSubstring("postgresql.image.digest"))
 		Expect(joined).To(ContainSubstring("valkey.image.digest"))
 		Expect(joined).NotTo(ContainSubstring("fixtures."))
+		Expect(joined).NotTo(ContainSubstring("client-secret"))
 		Expect(joined).NotTo(ContainSubstring("charts/kubernaut/"))
 	})
 
@@ -257,7 +258,8 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		var llmSecret corev1.Secret
 		Expect(json.Unmarshal([]byte(llmManifest), &llmSecret)).To(Succeed())
 		Expect(llmSecret.Type).To(Equal(corev1.SecretTypeOpaque))
-		Expect(string(llmSecret.Data["api_key"])).To(Equal("synthetic-key"))
+		llmAPIKeyMatches := string(llmSecret.Data["api_key"]) == "synthetic-key"
+		Expect(llmAPIKeyMatches).To(BeTrue(), "LLM Secret api_key must match the synthetic test key")
 		Expect(llmSecret.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
 		Expect(llmSecret.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
 
@@ -274,6 +276,21 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		var signalPolicy corev1.ConfigMap
 		Expect(json.Unmarshal([]byte(signalManifest), &signalPolicy)).To(Succeed())
 		Expect(signalPolicy.Data).To(HaveKeyWithValue("policy.rego", "package signalprocessing\n"))
+	})
+
+	It("UT-INFRA-2574-004 [BR-PLATFORM-014]: Console OIDC fixture uses exact operator and realm references", func() {
+		consoleManifest, err := BuildDemoConsoleOIDCSecretManifest("kubernaut-system")
+		Expect(err).NotTo(HaveOccurred())
+		var consoleSecret corev1.Secret
+		Expect(json.Unmarshal([]byte(consoleManifest), &consoleSecret)).To(Succeed())
+		Expect(consoleSecret.StringData["client-id"]).To(Equal("kubernaut-console"))
+		consoleClientSecretMatches := consoleSecret.StringData["client-secret"] == "e2e-console-secret"
+		Expect(consoleClientSecretMatches).To(BeTrue(), "console client-secret must match the realm client secret")
+		consoleCookieSecretMatches := consoleSecret.StringData["cookie-secret"] == "01234567890123456789012345678901"
+		Expect(consoleCookieSecretMatches).To(BeTrue(), "console cookie-secret must match the expected cookie secret")
+		Expect(consoleSecret.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "setup-demo-infra"))
+		Expect(consoleSecret.Labels).To(HaveKeyWithValue("kubernaut.ai/e2e-owner", operatorOwnerLabel))
+		Expect(strings.Contains(consoleManifest, "e2e-client")).To(BeFalse(), "console Secret manifest must not reference e2e-client")
 	})
 
 	It("UT-2492-006B [BR-E2E-001]: renders Valkey mTLS references for the dependency chart", func() {

@@ -264,7 +264,11 @@ Use the mode-specific setup guides for verified CR examples:
 
 The operator repository also owns the optional
 `kubernaut-development-dependencies` Helm chart for disposable PostgreSQL and Valkey
-dependencies. This repository no longer ships an application Helm chart or a Helm-values
+dependencies and their supporting runtime resources. The chart does not own application
+credentials, policy ConfigMaps, notification fixtures, or Console OIDC. Demo and E2E
+helpers provision those application-owned fixtures separately before applying the CR;
+the fixture resources use `setup-demo-infra` management and the applicable E2E ownership
+labels. This repository no longer ships an application Helm chart or a Helm-values
 configuration contract.
 
 ### Individual services — operator-backed qualification

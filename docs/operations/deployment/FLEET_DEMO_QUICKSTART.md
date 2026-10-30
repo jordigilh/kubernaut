@@ -1,8 +1,9 @@
 # Fleet Demo Quick Start (Kind)
 
-**Status**: The former automated demo helper was removed with the application Helm
-deployment path. This page points to the supported operator-backed qualification and
-user-managed setup flows; it does not provide a working `make setup-*` command.
+**Status**: The operator-backed `hack/setup-demo-infra` helper remains available for
+disposable local/fleet demos. This page points to the supported operator-backed
+qualification and user-managed setup flows; it does not provide a working
+`make setup-*` command.
 
 ## Disposable qualification environment
 
@@ -21,10 +22,10 @@ clusters when finished.
 ## User-managed deployment
 
 1. Install the [Kubernaut Operator](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md).
-2. Install the operator's dependency chart and create the PostgreSQL, Valkey, LLM,
-   and fleet credential Secrets. Create the SignalProcessing and AIAnalysis policy
-   ConfigMaps referenced by `spec.signalProcessing.policy.configMapName` and
-   `spec.aiAnalysis.policy.configMapName`.
+2. Install the operator's PostgreSQL/Valkey-only dependency chart. Create the LLM,
+   Console OIDC, and fleet credential Secrets separately, and create the
+   SignalProcessing and AIAnalysis policy ConfigMaps referenced by
+   `spec.signalProcessing.policy.configMapName` and `spec.aiAnalysis.policy.configMapName`.
 3. Apply a `Kubernaut` CR based on
    [`test/fixtures/operator/kubernaut-fleet.yaml`](../../../test/fixtures/operator/kubernaut-fleet.yaml),
    changing endpoints, namespaces, and Secret names for your cluster.
@@ -33,6 +34,7 @@ clusters when finished.
    [Interactive Mode](INTERACTIVE_MODE_SETUP_GUIDE.md), and
    [Fleet Setup](FLEET_SETUP_GUIDE.md) guides.
 
-The operator is the sole application owner. This repository no longer provides the
-former `setup-fleet-demo-infra`, `setup-local-demo-infra`, or
-`hack/setup-demo-infra` entry points.
+The operator is the sole application workload owner. The repository's
+`hack/setup-demo-infra` helper remains available for disposable local/fleet demos;
+it provisions demo-owned credentials and policy fixtures separately and then applies
+the user-owned CR. It does not install an application Helm chart.
