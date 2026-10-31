@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -78,6 +79,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		rpoCtx = context.Background()
 		rpoScheme = runtime.NewScheme()
 		Expect(workflowexecutionv1alpha1.AddToScheme(rpoScheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(rpoScheme)).To(Succeed())
 		Expect(tektonv1.AddToScheme(rpoScheme)).To(Succeed())
 		Expect(corev1.AddToScheme(rpoScheme)).To(Succeed())
 		rpoRecorder = record.NewFakeRecorder(20)
@@ -96,7 +98,8 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 				Finalizers: []string{workflowexecution.FinalizerName},
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: targetResource,
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-" + name, Namespace: "default"},
+				TargetResource:        targetResource,
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "wf-" + name,
@@ -153,7 +156,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(priorWFE, wfe).
+				WithObjects(priorWFE, wfe, parentForWorkflowExecution(priorWFE), parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe, priorWFE).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
@@ -227,7 +230,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(wfe, existingPR).
+				WithObjects(wfe, existingPR, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
@@ -270,7 +273,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()

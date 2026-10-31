@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -92,6 +93,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 		evtCtx = context.Background()
 		evtScheme = runtime.NewScheme()
 		Expect(workflowexecutionv1alpha1.AddToScheme(evtScheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(evtScheme)).To(Succeed())
 		Expect(tektonv1.AddToScheme(evtScheme)).To(Succeed())
 		Expect(corev1.AddToScheme(evtScheme)).To(Succeed())
 		evtRecorder = record.NewFakeRecorder(20)
@@ -339,6 +341,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		evtCtx = context.Background()
 		evtScheme = runtime.NewScheme()
 		Expect(workflowexecutionv1alpha1.AddToScheme(evtScheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(evtScheme)).To(Succeed())
 		Expect(tektonv1.AddToScheme(evtScheme)).To(Succeed())
 		Expect(corev1.AddToScheme(evtScheme)).To(Succeed())
 		evtRecorder = record.NewFakeRecorder(20)
@@ -375,7 +378,8 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				Finalizers: []string{workflowexecution.FinalizerName},
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "default/deployment/test-app",
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-" + name, Namespace: "default"},
+				TargetResource:        "default/deployment/test-app",
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      uuid.New().String(),
@@ -400,7 +404,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			wfe.Status.StartTime = &now
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				Build()
 
@@ -438,7 +442,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			wfe.Spec.WorkflowRef.ExecutionEngine = "unsupported-engine-xyz"
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", func(obj client.Object) []string {
 					return []string{obj.(*workflowexecutionv1alpha1.WorkflowExecution).Spec.TargetResource}
@@ -473,7 +477,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			wfe := buildPendingWFE("wfe-659-catalog-fail")
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				Build()
 
@@ -497,7 +501,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			wfe.Spec.WorkflowRef.ExecutionBundle = "" // trigger spec validation failure
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				Build()
 
@@ -527,7 +531,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, parentForWorkflowExecution(wfe)).
 				WithStatusSubresource(wfe).
 				Build()
 
