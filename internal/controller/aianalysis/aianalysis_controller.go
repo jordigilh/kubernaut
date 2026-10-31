@@ -47,12 +47,14 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 const (
@@ -79,9 +81,11 @@ const (
 // DD-AUDIT-003: P0 priority for audit traces
 type AIAnalysisReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
-	Log      logr.Logger
+	Scheme *runtime.Scheme
+	// APIReader is the uncached reader used by the DD-2582 parent gate.
+	APIReader client.Reader
+	Recorder  record.EventRecorder
+	Log       logr.Logger
 
 	// DD-METRICS-001: Metrics wired to controller (V1.0 Maturity Requirement - P0)
 	// Per DD-METRICS-001: Dependency injection pattern for testability
@@ -147,6 +151,7 @@ type AIAnalysisReconciler struct {
 // introduced -- see DD-AA-KA-001's "three sources" lesson below.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
@@ -195,6 +200,9 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	currentPhase := analysis.Status.Phase
 	if currentPhase == "" {
 		return r.initializePendingPhase(ctx, analysis, log)
+	}
+	if handled, err := r.enforceParentGate(ctx, analysis, log); handled {
+		return ctrl.Result{RequeueAfter: 2 * time.Second}, err
 	}
 
 	// 4. PHASE STATE MACHINE
@@ -259,7 +267,7 @@ func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aian
 		return r.reconcileInvestigating(ctx, analysis)
 	case PhaseAnalyzing:
 		return r.reconcileAnalyzing(ctx, analysis)
-	case PhaseCompleted, PhaseFailed:
+	case PhaseCompleted, PhaseFailed, aianalysisv1.PhaseCancelled:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
 		// #1421, amended #2214: If externally cancelled (ParentCancelled),
@@ -275,6 +283,68 @@ func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aian
 		analysis.Status.Reason = "UnknownPhase"
 		analysis.Status.Message = fmt.Sprintf("Unrecognized phase %q; failing to prevent stall", currentPhase)
 		return ctrl.Result{}, nil
+	}
+}
+
+// enforceParentGate performs a fresh RemediationRequest read before AIA can
+// transition into or continue Investigating/Analyzing. A child owns its
+// cancellation status; RO does not patch AIA directly (DD-2582, AC-4).
+func (r *AIAnalysisReconciler) enforceParentGate(ctx context.Context, analysis *aianalysisv1.AIAnalysis, logger logr.Logger) (bool, error) {
+	// Unit reconcilers that do not provide an APIReader predate DD-2582. The
+	// production command wiring always injects one; keeping this nil-safe avoids
+	// changing isolated handler tests into cache-authority tests.
+	if r.APIReader == nil {
+		return false, nil
+	}
+	if analysis.Status.Phase == PhaseCompleted || analysis.Status.Phase == PhaseFailed || analysis.Status.Phase == aianalysisv1.PhaseCancelled {
+		return false, nil
+	}
+	ref := analysis.Spec.RemediationRequestRef
+	if ref.Name == "" || ref.Namespace == "" {
+		return true, fmt.Errorf("AIAnalysis %s/%s has an invalid RemediationRequestRef", analysis.Namespace, analysis.Name)
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	gate, err := parentlifecycle.RemediationRequestGate(ctx, reader, ref.Namespace, ref.Name, remediationv1.PhaseAnalyzing)
+	if err != nil {
+		logger.Error(err, "parent gate read failed; refusing AIAnalysis work")
+		return true, err
+	}
+	switch gate.Decision {
+	case parentlifecycle.GateAllowed:
+		return false, nil
+	case parentlifecycle.GateWaiting:
+		if parentlifecycle.HandoffExpired(analysis.CreationTimestamp.Time, time.Now(), parentlifecycle.DefaultHandoffTimeout) {
+			now := metav1.Now()
+			analysis.Status.Phase = aianalysisv1.PhaseCancelled
+			analysis.Status.Reason = aianalysisv1.ReasonAPIError
+			analysis.Status.Message = "parent RemediationRequest phase authorization timed out"
+			analysis.Status.CompletedAt = &now
+			analysis.Status.ObservedGeneration = analysis.Generation
+			if updateErr := r.Status().Update(ctx, analysis); updateErr != nil {
+				return true, updateErr
+			}
+			r.cascadeCancelAgentSession(ctx, analysis)
+			return true, nil
+		}
+		logger.V(1).Info("waiting for persisted RemediationRequest analysis phase", "phase", gate.ParentPhase)
+		return true, nil
+	case parentlifecycle.GateCancelled:
+		now := metav1.Now()
+		analysis.Status.Phase = aianalysisv1.PhaseCancelled
+		analysis.Status.Reason = aianalysisv1.ReasonParentCancelled
+		analysis.Status.Message = "parent RemediationRequest failed or was not found"
+		analysis.Status.CompletedAt = &now
+		analysis.Status.ObservedGeneration = analysis.Generation
+		if updateErr := r.Status().Update(ctx, analysis); updateErr != nil {
+			return true, updateErr
+		}
+		r.cascadeCancelAgentSession(ctx, analysis)
+		return true, nil
+	default:
+		return true, fmt.Errorf("unknown parent gate decision %q", gate.Decision)
 	}
 }
 
@@ -333,6 +403,7 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentR
 	}
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
+		Watches(&remediationv1.RemediationRequest{}, handler.EnqueueRequestsFromMapFunc(r.mapRemediationRequestToAIAnalysis)).
 		WatchesRawSource(source.Kind(mgr.GetCache(), &agentsessionv1.AgentSession{},
 			handler.TypedEnqueueRequestsFromMapFunc(r.mapAgentSessionToAIAnalysis),
 			AgentSessionEventPredicate(),
@@ -346,6 +417,20 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentR
 	}
 
 	return builder.Complete(r)
+}
+
+// mapRemediationRequestToAIAnalysis wakes the deterministic AIAnalysis child
+// when the parent phase changes. The direct parent gate still performs the
+// authorization read; this watch is only a bounded latency optimization.
+func (r *AIAnalysisReconciler) mapRemediationRequestToAIAnalysis(_ context.Context, obj client.Object) []reconcile.Request {
+	rr, ok := obj.(*remediationv1.RemediationRequest)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{
+		Name:      "ai-" + rr.Name,
+		Namespace: rr.Namespace,
+	}}}
 }
 
 // mapAgentSessionToAIAnalysis maps an AgentSession event to the AIAnalysis

@@ -31,8 +31,9 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// cascadeTerminalToChildren patches non-terminal child CRDs to a terminal
-// state when the parent RR enters a terminal phase. Follows Kubernetes-native
+// cascadeTerminalToChildren observes child CRDs when the parent RR enters a
+// terminal phase. Child controllers own their terminal/cancellation state.
+// Follows Kubernetes-native
 // parent-manages-children convention (Issue #1421).
 //
 // Children are accessed via status refs on the RR (O(1) per child, no List).
@@ -46,93 +47,90 @@ func (r *Reconciler) cascadeTerminalToChildren(ctx context.Context, rr *remediat
 	message := fmt.Sprintf("Parent RR entered terminal phase: %s", parentPhase)
 
 	if rr.Status.EnsurePhaseProgress().AIAnalysisRef != nil {
-		if err := r.cascadeToAIAnalysis(ctx, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace, message); err != nil {
+		if err := r.cascadeToAIAnalysis(ctx, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace); err != nil {
 			logger.Error(err, "Failed to cascade terminal to AIAnalysis",
 				"aianalysis", rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name)
 		}
 	}
 
 	if rr.Status.EnsurePhaseProgress().SignalProcessingRef != nil {
-		if err := r.cascadeToSignalProcessing(ctx, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Namespace, message); err != nil {
+		if err := r.cascadeToSignalProcessing(ctx, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Namespace); err != nil {
 			logger.Error(err, "Failed to cascade terminal to SignalProcessing",
 				"signalprocessing", rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name)
 		}
 	}
 
 	if rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil {
-		if err := r.cascadeToWorkflowExecution(ctx, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Namespace, message); err != nil {
+		if err := r.cascadeToWorkflowExecution(ctx, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Namespace); err != nil {
 			logger.Error(err, "Failed to cascade terminal to WorkflowExecution",
 				"workflowexecution", rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name)
 		}
 	}
+
+	// RAR has a deterministic name and no RR status ref. A pending approval is
+	// explicitly system-cancelled; terminal approval history is preserved so a
+	// later approval cannot advance a failed RR (DD-2582).
+	if err := r.cascadeToApproval(ctx, "rar-"+rr.Name, rr.Namespace, message); err != nil {
+		logger.Error(err, "Failed to cancel RemediationApprovalRequest", "remediationApprovalRequest", "rar-"+rr.Name)
+	}
 }
 
-func (r *Reconciler) cascadeToAIAnalysis(ctx context.Context, name, namespace, message string) error {
+func (r *Reconciler) cascadeToApproval(ctx context.Context, name, namespace, message string) error {
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		rar := &remediationv1.RemediationApprovalRequest{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, rar); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if rar.Status.Decision != remediationv1.ApprovalDecisionPending {
+			return nil
+		}
+		now := metav1.Now()
+		rar.Status.Decision = remediationv1.ApprovalDecisionCancelled
+		rar.Status.DecidedBy = "system"
+		rar.Status.DecidedAt = &now
+		rar.Status.DecisionMessage = message
+		return r.client.Status().Update(ctx, rar)
+	})
+}
+
+func (r *Reconciler) cascadeToAIAnalysis(ctx context.Context, name, namespace string) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		ai := &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, ai); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-
-		if isAIAnalysisTerminal(ai.Status.Phase) {
-			return nil
-		}
-
-		now := metav1.Now()
-		ai.Status.Phase = aianalysisv1.PhaseFailed
-		ai.Status.Reason = aianalysisv1.ReasonParentCancelled
-		ai.Status.Message = message
-		ai.Status.CompletedAt = &now
-		ai.Status.ObservedGeneration = ai.Generation
-
-		return r.client.Status().Update(ctx, ai)
+		// DD-2582: AIA owns its cancellation transition. The RR watch/fresh
+		// parent gate will reconcile it; RO only observes the child here.
+		return nil
 	})
 }
 
-func (r *Reconciler) cascadeToSignalProcessing(ctx context.Context, name, namespace, message string) error {
+func (r *Reconciler) cascadeToSignalProcessing(ctx context.Context, name, namespace string) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		sp := &signalprocessingv1.SignalProcessing{}
 		if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, sp); err != nil {
 			return client.IgnoreNotFound(err)
 		}
 
-		if isSPTerminal(sp.Status.Phase) {
-			return nil
-		}
-
-		sp.Status.Phase = signalprocessingv1.PhaseFailed
-		sp.Status.EnsureFailureInfo().Error = message
-
-		return r.client.Status().Update(ctx, sp)
+		// DD-2582: SP owns its cancellation transition through its RR watch and
+		// fresh parent gate. Do not overwrite child-owned terminal history.
+		return nil
 	})
 }
 
-func (r *Reconciler) cascadeToWorkflowExecution(ctx context.Context, name, namespace, message string) error {
+func (r *Reconciler) cascadeToWorkflowExecution(ctx context.Context, name, namespace string) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		we := &workflowexecutionv1.WorkflowExecution{}
 		if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, we); err != nil {
 			return client.IgnoreNotFound(err)
 		}
 
-		if isWETerminal(we.Status.Phase) {
-			return nil
-		}
-
-		we.Status.Phase = workflowexecutionv1.PhaseFailed
-		we.Status.FailureReason = message
-
-		return r.client.Status().Update(ctx, we)
+		// DD-2582: WE owns Cancelling→verified Cancelled and backend stop. RO
+		// observes the child rather than claiming that a backend has stopped.
+		return nil
 	})
 }
 
 func isAIAnalysisTerminal(phase string) bool {
-	return phase == aianalysisv1.PhaseCompleted || phase == aianalysisv1.PhaseFailed
-}
-
-func isSPTerminal(phase signalprocessingv1.SignalProcessingPhase) bool {
-	return phase == signalprocessingv1.PhaseCompleted || phase == signalprocessingv1.PhaseFailed
-}
-
-func isWETerminal(phase string) bool {
-	return phase == workflowexecutionv1.PhaseCompleted || phase == workflowexecutionv1.PhaseFailed
+	return phase == aianalysisv1.PhaseCompleted || phase == aianalysisv1.PhaseFailed || phase == aianalysisv1.PhaseCancelled
 }

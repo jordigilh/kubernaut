@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +36,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -80,6 +82,24 @@ var _ = Describe("NotificationCreator", func() {
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-approval-test-rr"))
+			})
+
+			It("UT-NOT-2582-003: rejects a same-name notification with a mismatched parent identity", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				existingNR := helpers.NewNotificationRequest("nr-approval-test-rr", "default")
+				existingNR.Spec.Type = notificationv1.NotificationTypeApproval
+				// Deliberately point the object at a different RR.
+				existingNR.Spec.RemediationRequestRef = &corev1.ObjectReference{
+					APIVersion: remediationv1.GroupVersion.String(), Kind: "RemediationRequest",
+					Name: "other-rr", Namespace: rr.Namespace, UID: "other-uid",
+				}
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingNR).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				var collision *parentlifecycle.ChildCollisionError
+				Expect(errors.As(err, &collision)).To(BeTrue())
 			})
 		})
 
@@ -176,6 +196,13 @@ var _ = Describe("NotificationCreator", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				existingNR := helpers.NewNotificationRequest("nr-approval-test-rr", "default")
 				existingNR.Spec.Type = notificationv1.NotificationTypeApproval
+				existingNR.Spec.RemediationRequestRef = &corev1.ObjectReference{
+					APIVersion: remediationv1.GroupVersion.String(),
+					Kind:       "RemediationRequest",
+					Name:       rr.Name,
+					Namespace:  rr.Namespace,
+					UID:        rr.UID,
+				}
 
 				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingNR).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))

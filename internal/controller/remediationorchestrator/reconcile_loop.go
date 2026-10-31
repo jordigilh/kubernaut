@@ -20,6 +20,7 @@ limitations under the License.
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520) to keep the file
 // under the 700-line convention threshold. Pure structural move — no
 // behavior change.
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=get;list;watch
 package controller
 
 import (
@@ -32,12 +33,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	investigationsessionv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -107,6 +112,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Check for per-phase timeouts (BR-ORCH-028)
 	// Enables faster detection of stuck phases without waiting for global timeout
 	if err := r.checkPhaseTimeouts(ctx, rr); err != nil {
+		return ctrl.Result{}, err
+	}
+	if handled, err := r.handleInvestigationSessionFailure(ctx, rr, logger); handled {
 		return ctrl.Result{}, err
 	}
 
@@ -422,6 +430,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := registerChildCRDIndexes(mgr); err != nil {
 		return err
 	}
+	if err := registerInvestigationSessionIndex(mgr); err != nil {
+		return err
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
@@ -431,11 +442,43 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&remediationv1.RemediationApprovalRequest{}).
 		Owns(&notificationv1.NotificationRequest{}). // BR-ORCH-029/030: Watch notification lifecycle
 		Owns(&eav1.EffectivenessAssessment{}).       // ADR-EM-001, GAP-RO-3: Watch EA for EffectivenessAssessed condition
+		Watches(&investigationsessionv1.InvestigationSession{}, handler.EnqueueRequestsFromMapFunc(r.mapInvestigationSessionToRR)).
 		// V1.0 P1 FIX: GenerationChangedPredicate removed to allow child CRD status changes
 		// Previous optimization filtered status updates, breaking integration tests (RO_INTEGRATION_CRITICAL_BUG_JAN_01_2026.md)
 		// Rationale: Correctness > Performance for P0 orchestration service
 		// WithEventFilter(predicate.GenerationChangedPredicate{}). // ❌ REMOVED - breaks integration tests
 		Complete(r)
+}
+
+func registerInvestigationSessionIndex(mgr ctrl.Manager) error {
+	return mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&investigationsessionv1.InvestigationSession{},
+		"spec.remediationRequestRef.name",
+		func(obj client.Object) []string {
+			is, ok := obj.(*investigationsessionv1.InvestigationSession)
+			if !ok || is.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{is.Spec.RemediationRequestRef.Name}
+		},
+	)
+}
+
+// mapInvestigationSessionToRR uses the canonical spec parent link rather than
+// owner references, which may be absent during AF's IS-before-RR window.
+func (r *Reconciler) mapInvestigationSessionToRR(_ context.Context, obj client.Object) []reconcile.Request {
+	is, ok := obj.(*investigationsessionv1.InvestigationSession)
+	if !ok {
+		return nil
+	}
+	if is.Spec.RemediationRequestRef.Name == "" || is.Spec.RemediationRequestRef.Namespace == "" {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{
+		Name:      is.Spec.RemediationRequestRef.Name,
+		Namespace: is.Spec.RemediationRequestRef.Namespace,
+	}}}
 }
 
 // registerFingerprintIndex creates the field index on spec.signalFingerprint

@@ -65,6 +65,7 @@ type AwaitingApprovalCallbacks struct {
 // Reference: Issue #666, TP-666-v1 §8.5, ADR-040, BR-ORCH-026
 type AwaitingApprovalHandler struct {
 	k8sClient client.Client
+	apiReader client.Reader
 	m         *metrics.Metrics
 	callbacks AwaitingApprovalCallbacks
 }
@@ -73,9 +74,15 @@ func NewAwaitingApprovalHandler(
 	k8sClient client.Client,
 	m *metrics.Metrics,
 	callbacks AwaitingApprovalCallbacks,
+	apiReaders ...client.Reader,
 ) *AwaitingApprovalHandler {
+	apiReader := client.Reader(k8sClient)
+	if len(apiReaders) > 0 && apiReaders[0] != nil {
+		apiReader = apiReaders[0]
+	}
 	return &AwaitingApprovalHandler{
 		k8sClient: k8sClient,
+		apiReader: apiReader,
 		m:         m,
 		callbacks: callbacks,
 	}
@@ -107,6 +114,8 @@ func (h *AwaitingApprovalHandler) Handle(ctx context.Context, rr *remediationv1.
 		return h.handleRejected(ctx, rr, rar)
 	case remediationv1.ApprovalDecisionExpired:
 		return h.handleExpired(ctx, rr)
+	case remediationv1.ApprovalDecisionCancelled:
+		return phase.Fail(remediationv1.FailurePhaseApproval, fmt.Errorf("approval request cancelled by parent failure"), "approval cancelled by parent"), nil
 	default:
 		return h.handlePending(ctx, rr, rar)
 	}
@@ -114,6 +123,18 @@ func (h *AwaitingApprovalHandler) Handle(ctx context.Context, rr *remediationv1.
 
 func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	// DD-2582: approval is a consequential handoff. Re-read the parent through
+	// the uncached reader so a stale RAR event cannot dispatch a WFE after RR
+	// failure/cancellation won the optimistic-concurrency race.
+	freshRR := &remediationv1.RemediationRequest{}
+	if err := h.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), freshRR); err != nil {
+		return phase.Requeue(config.RequeueGenericError, "fresh RR approval gate read failed"), nil
+	}
+	if freshRR.Status.OverallPhase != remediationv1.PhaseAwaitingApproval {
+		logger.Info("approval ignored because parent phase is no longer AwaitingApproval", "parentPhase", freshRR.Status.OverallPhase)
+		return phase.NoOp("parent approval gate closed"), nil
+	}
+	*rr = *freshRR
 
 	logger.Info("Approval granted via RemediationApprovalRequest",
 		"decidedBy", rar.Status.DecidedBy)

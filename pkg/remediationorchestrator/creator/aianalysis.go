@@ -103,7 +103,7 @@ func aiAnalysisTimesOutAt(rr *remediationv1.RemediationRequest) *metav1.Time {
 
 // Create creates an AIAnalysis CRD for the given RemediationRequest.
 // It uses enrichment data from the completed SignalProcessing CRD.
-// It is idempotent - if the CRD already exists, it returns the existing name.
+// DD-2582: creation is CreateOnly; an existing deterministic child is never adopted.
 // Reference: BR-ORCH-025 (data pass-through), BR-ORCH-031 (cascade deletion)
 func (c *AIAnalysisCreator) Create(
 	ctx context.Context,
@@ -119,19 +119,6 @@ func (c *AIAnalysisCreator) Create(
 	// Generate deterministic name
 	name := fmt.Sprintf("ai-%s", rr.Name)
 
-	// Check if already exists (idempotency)
-	existing := &aianalysisv1.AIAnalysis{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		// Already exists, return existing name
-		logger.Info("AIAnalysis already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		// Real error (not "not found"), return it
-		logger.Error(err, "Failed to check existing AIAnalysis")
-		return "", fmt.Errorf("failed to check existing AIAnalysis: %w", err)
-	}
 	if err := validateSignalProcessingClassifications(sp); err != nil {
 		logger.Error(err, "SignalProcessing completed without usable required classifications")
 		return "", err
@@ -154,6 +141,11 @@ func (c *AIAnalysisCreator) Create(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, ai); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			collision := newChildCollision("AIAnalysis", rr.Namespace, name, err)
+			logger.Error(collision, "AIAnalysis creation collision")
+			return "", collision
+		}
 		logger.Error(err, "Failed to create AIAnalysis CRD")
 		// DD-CRD-002-RR: Set AIAnalysisReady=False on creation failure
 		rrconditions.SetAIAnalysisReady(rr, false, fmt.Sprintf("Failed to create AIAnalysis: %v", err), c.metrics)

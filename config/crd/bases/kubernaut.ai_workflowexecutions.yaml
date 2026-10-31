@@ -682,6 +682,8 @@ spec:
                 - Running
                 - Completed
                 - Failed
+                - Cancelling
+                - Cancelled
                 type: string
               startTime:
                 description: StartTime when execution started

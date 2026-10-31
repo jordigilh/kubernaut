@@ -27,8 +27,8 @@ import (
 // AlertISSignaler creates an InvestigationSession CRD to signal interactive
 // intent. Used by HandleInvestigateAlert to co-create the IS alongside the RR,
 // closing the temporal gap where AA might submit autonomously
-// (BR-INTERACTIVE-010, #1440). Best-effort: errors are logged but do not fail
-// the RR creation.
+// (BR-INTERACTIVE-010, #1440). New-session collisions and creation failures
+// are returned so the AF request fails closed before RR persistence (DD-2582).
 type AlertISSignaler interface {
 	SignalInteractive(ctx context.Context, taskID, rrName, username string, groups []string) error
 }
@@ -319,8 +319,8 @@ func buildAlertPreCreateISHooks(signaler AlertISSignaler, username string) (Crea
 			taskID := "a2a-" + rrName
 			signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
 			if sigErr := signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups); sigErr != nil {
-				logr.FromContextOrDiscard(ctx).Error(sigErr, "failed to create IS CRD before RR (proceeding without IS signal)", "rr_name", rrName)
-				return nil
+				logr.FromContextOrDiscard(ctx).Error(sigErr, "failed to create IS CRD before RR; aborting request", "rr_name", rrName)
+				return sigErr
 			}
 			signalSucceeded = true
 			return nil

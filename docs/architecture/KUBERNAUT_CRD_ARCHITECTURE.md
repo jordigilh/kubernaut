@@ -110,7 +110,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 - Derive optional cluster business classification for fleet-scoped signals (`ClusterClassification`, [BR-FLEET-003](../requirements/BR-FLEET-003-cluster-scoped-workflow-targeting.md))
 - Update status (`Phase: Completed`) so RemediationOrchestrator can create the `AIAnalysis` CRD
 
-**Phases**: `Pending` → `Enriching` → `Classifying` → `Categorizing` → `Completed` / `Failed`
+**Phases**: `Pending` → `Enriching` → `Classifying` → `Categorizing` → `Completed` / `Failed` / `Cancelled`
 
 **Port**: 9090 (metrics), 8081 (health) — no separate API port (pure CRD reconciler)
 
@@ -131,7 +131,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 - Evaluate the investigation result against a Rego policy (`pkg/aianalysis/rego/evaluator.go`, [BR-AI-011](../requirements/), [BR-AI-014](../requirements/) graceful degradation) to produce a `PolicyDecision`: `Approved`, `ManualReviewRequired`, `Denied`, or `DegradedMode`
 - Detect and reject hallucinated or invalid AI responses
 
-**Phases**: `Pending` → `Investigating` → `Analyzing` → `Completed` / `Failed` (no `Ready` phase — corrected from v1.3.0)
+**Phases**: `Pending` → `Investigating` → `Analyzing` → `Completed` / `Failed` / `Cancelled` (no `Ready` phase — corrected from v1.3.0)
 
 **Port**: 9090 (metrics), 8081 (health) — no separate API port
 
@@ -157,7 +157,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 - Act as a **pure executor**: since DD-RO-002, WorkflowExecution contains no routing/skip logic — RemediationOrchestrator makes all resource-lock, cooldown, and backoff decisions *before* creating the CRD
 - Write action records to DataStorage for audit and effectiveness tracking
 
-**Phases**: `Pending` → `Running` → `Completed` / `Failed` (the `Skipped` phase was **removed** in the V1.0 "pure executor" refactor — all skip/block information now lives on `RemediationRequest.Status`, not `WorkflowExecution.Status`)
+**Phases**: `Pending` → `Running` → `Completed` / `Failed`; parent failure: `Running` → `Cancelling` → `Cancelled` (the `Skipped` phase was **removed** in the V1.0 "pure executor" refactor — all skip/block information now lives on `RemediationRequest.Status`, not `WorkflowExecution.Status`)
 
 **Port**: 9090 (metrics), 8081 (health) — no separate API port
 

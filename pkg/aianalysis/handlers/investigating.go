@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -181,6 +182,13 @@ func (h *InvestigatingHandler) syncKASessionStatus(analysis *aianalysisv1.AIAnal
 		analysis.Status.KASession = session
 	}
 	session.ID = as.Name
+	session.AgentSessionRef = &corev1.ObjectReference{
+		APIVersion: agentsessionv1.GroupVersion.String(),
+		Kind:       "AgentSession",
+		Name:       as.Name,
+		Namespace:  as.Namespace,
+		UID:        as.UID,
+	}
 	session.Interactive = as.Status.Interactive
 	if session.CreatedAt == nil {
 		created := as.CreationTimestamp
@@ -605,6 +613,13 @@ func (h *InvestigatingHandler) handleSessionCancelled(ctx context.Context, analy
 // BR-AI-010: Fail immediately on permanent errors
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
+	if parentlifecycle.IsChildCollision(err) {
+		review := analysis.Status.EnsureReview()
+		review.NeedsHumanReview = true
+		review.HumanReviewReason = "operator_escalation"
+		return h.failPermanentError(ctx, analysis, err, ErrorClassification{ErrorType: ErrorTypePermanent})
+	}
+
 	// P2.1: Classify error type using error classifier
 	classification := h.errorClassifier.ClassifyError(err)
 

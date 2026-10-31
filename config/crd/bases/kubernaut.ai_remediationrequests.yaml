@@ -266,6 +266,7 @@ spec:
                       - AIAnalysis
                       - Approval
                       - WorkflowExecution
+                      - EffectivenessAssessment
                       - Blocked
                       - Deduplicated
                     - enum:

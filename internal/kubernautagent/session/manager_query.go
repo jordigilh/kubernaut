@@ -520,3 +520,56 @@ func (m *Manager) ForceCancelByRemediationID(rrID string) error {
 	}
 	return nil
 }
+
+// ForceCancelByRemediationIDAndWait performs parent-driven cancellation and
+// returns an acknowledgement channel that closes only after every matching
+// investigation goroutine has finished. Terminal hooks are intentionally fired
+// after that acknowledgement so AgentSession status cannot claim stopped work
+// while the real KA goroutine is still running (DD-2582).
+func (m *Manager) ForceCancelByRemediationIDAndWait(ctx context.Context, rrID string) (<-chan struct{}, error) {
+	m.store.mu.Lock()
+	type cancelledSession struct {
+		id            string
+		correlationID string
+		done          <-chan struct{}
+	}
+	var cancelled []cancelledSession
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID || IsTerminal(sess.Status) {
+			continue
+		}
+		if sess.cancel != nil {
+			sess.cancel()
+		}
+		sess.Status = StatusCancelled
+		sess.lazySink.Set(nil)
+		if sess.eventChan != nil {
+			close(sess.eventChan)
+			sess.eventChan = nil
+		}
+		cancelled = append(cancelled, cancelledSession{id: id, correlationID: rrID, done: sess.done})
+	}
+	m.store.mu.Unlock()
+
+	if len(cancelled) == 0 {
+		return nil, ErrSessionNotFound
+	}
+	ack := make(chan struct{})
+	ackCtx := context.WithoutCancel(ctx)
+	go func() {
+		for _, item := range cancelled {
+			if item.done != nil {
+				<-item.done
+			}
+		}
+		for _, item := range cancelled {
+			m.emitSessionEvent(ackCtx, sessionEventParams{
+				EventType: audit.EventTypeSessionCancelled, Action: audit.ActionSessionCancelled,
+				Outcome: audit.OutcomeSuccess, SessionID: item.id, CorrelationID: item.correlationID,
+			}, nil)
+			m.fireTerminalHook(item.id, item.correlationID, StatusCancelled, nil, nil)
+		}
+		close(ack)
+	}()
+	return ack, nil
+}

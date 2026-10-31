@@ -172,11 +172,17 @@ func (h *ExecutingHandler) handleWEStatus(ctx context.Context, rr *remediationv1
 			fmt.Errorf("WorkflowExecution failed"),
 			"WorkflowExecution failed"), nil
 
+	case workflowexecutionv1.PhaseCancelled:
+		logger.Info("WorkflowExecution cancellation verified, transitioning RemediationRequest to Failed")
+		return phase.Fail(remediationv1.FailurePhaseWorkflowExecution,
+			fmt.Errorf("WorkflowExecution cancelled after parent failure"),
+			"WorkflowExecution cancellation verified"), nil
+
 	case "":
 		logger.V(1).Info("WorkflowExecution has empty phase, waiting for controller to process")
 		return phase.Requeue(executingRequeueInterval, "WE phase empty, waiting for controller"), nil
 
-	case workflowexecutionv1.PhasePending, workflowexecutionv1.PhaseRunning:
+	case workflowexecutionv1.PhasePending, workflowexecutionv1.PhaseRunning, workflowexecutionv1.PhaseCancelling:
 		logger.V(1).Info("WorkflowExecution still in progress, requeuing")
 		return phase.Requeue(executingRequeueInterval, "WE in progress"), nil
 

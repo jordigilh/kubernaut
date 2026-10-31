@@ -247,6 +247,10 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates a permanent failure
 	PhaseFailed = "Failed"
+	// PhaseCancelling indicates that backend termination was requested and is being verified.
+	PhaseCancelling = "Cancelling"
+	// PhaseCancelled indicates backend termination was observed.
+	PhaseCancelled = "Cancelled"
 )
 
 // Issue #501: Condition and event constants for TokenRequest TTL validation.
@@ -279,7 +283,7 @@ type WorkflowExecutionStatus struct {
 
 	// Phase tracks current execution stage
 	// V1.0: Skipped phase removed - RO makes routing decisions before WFE creation
-	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Cancelling;Cancelled
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

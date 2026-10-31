@@ -323,6 +323,8 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates a permanent failure
 	PhaseFailed = "Failed"
+	// PhaseCancelled indicates that the parent RemediationRequest failed or was cancelled.
+	PhaseCancelled = "Cancelled"
 )
 
 // AIAnalysis SubReason constants (subset of the full kubebuilder enum on
@@ -365,7 +367,7 @@ type AIAnalysisStatus struct {
 
 	// Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
 	// Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
-	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed;Cancelled
 	Phase   string `json:"phase"`
 	Message string `json:"message,omitempty"`
 	// Reason provides the umbrella failure or completion category.
@@ -697,6 +699,11 @@ type PostRCAContext struct {
 type KASession struct {
 	// Session ID returned by Kubernaut Agent on submit (cleared on session loss)
 	ID string `json:"id,omitempty"`
+	// AgentSessionRef is the persisted recovery identity for the Kubernetes
+	// AgentSession object. Recovery validates its UID, owner, and immutable spec
+	// identity before reuse (DD-2582).
+	// +optional
+	AgentSessionRef *corev1.ObjectReference `json:"agentSessionRef,omitempty"`
 	// Generation counter tracking session regenerations (0 = first session, incremented on 404)
 	// +kubebuilder:validation:Minimum=0
 	Generation int32 `json:"generation"`

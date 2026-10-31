@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // WFECreationCallbacks provides the reconciler methods needed by the shared
@@ -65,6 +66,9 @@ func CreateWFEAndTransition(
 	weName, created, err := cbs.CreateWFE(ctx, rr, ai)
 	if err != nil {
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
+		if parentlifecycle.IsChildCollision(err) {
+			return phase.Fail(remediationv1.FailurePhaseWorkflowExecution, err, "WorkflowExecution child collision"), nil
+		}
 		return phase.Requeue(config.RequeueGenericError, "WFE creation failed"), nil
 	}
 	logger.Info("Created WorkflowExecution CRD", "weName", weName)

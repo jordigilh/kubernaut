@@ -104,7 +104,7 @@ type DualTarget struct {
 // The alertCheckDelay parameter is optional. When non-nil, the EM will defer alert resolution
 // checks by this duration beyond StabilizationWindow (#277, BR-EM-009).
 //
-// Returns the EA name if created (or already exists), or an error.
+// Returns the EA name if created, or a typed collision/error.
 // resolveDualTarget determines the signal and remediation targets for an EA (DD-EM-003).
 // Defaults both to rr.Spec.TargetResource; dualTarget, when provided, supplies the
 // AI-identified split between the alert-source resource and the actually-patched resource.
@@ -181,18 +181,6 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	// Generate deterministic name (one EA per RR)
 	name := fmt.Sprintf("ea-%s", rr.Name)
 
-	// Check if already exists (idempotency)
-	existing := &eav1.EffectivenessAssessment{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("EffectivenessAssessment already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing EffectivenessAssessment")
-		return "", fmt.Errorf("failed to check existing EffectivenessAssessment: %w", err)
-	}
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
@@ -212,6 +200,11 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, ea); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			collision := newChildCollision("EffectivenessAssessment", rr.Namespace, name, err)
+			logger.Error(collision, "EffectivenessAssessment creation collision")
+			return "", collision
+		}
 		logger.Error(err, "Failed to create EffectivenessAssessment")
 		return "", fmt.Errorf("failed to create EffectivenessAssessment: %w", err)
 	}

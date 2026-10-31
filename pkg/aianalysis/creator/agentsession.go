@@ -21,7 +21,10 @@ package creator
 import (
 	"context"
 	"fmt"
+	"reflect"
 
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,6 +35,7 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // AgentSessionCreator creates AgentSession CRDs from AIAnalysis, replacing
@@ -56,9 +60,10 @@ func NewAgentSessionCreator(c client.Client, s *runtime.Scheme) *AgentSessionCre
 	}
 }
 
-// GetOrCreate returns the AgentSession for the given AIAnalysis, creating it
-// if it does not already exist (BR-AA-KA-065.1). Idempotent: a second call
-// for the same AIAnalysis returns the same object, no duplicate Create.
+// GetOrCreate returns the AgentSession for the given AIAnalysis. The first
+// creation is CreateOnly. Recovery is allowed only through an explicitly
+// persisted AgentSessionRef whose UID, owner, and immutable spec identity
+// validate (BR-AA-KA-065.1, DD-2582).
 //
 // The ownerRef is set to the AIAnalysis CR itself, not the RemediationRequest
 // directly (DD-AA-KA-001 Decision section): AA already holds analysis live,
@@ -77,14 +82,8 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 
 	name := fmt.Sprintf("as-%s", analysis.Spec.RemediationRequestRef.Name)
 
-	existing := &agentsessionv1.AgentSession{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: analysis.Namespace}, existing)
-	if err == nil {
-		logger.V(1).Info("AgentSession already exists, reusing", "name", name)
-		return existing, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to check existing AgentSession: %w", err)
+	if ref := persistedAgentSessionRef(analysis); ref != nil {
+		return c.recoverPersistedAgentSession(ctx, analysis, ref, name, logger)
 	}
 
 	// Defensive: prevents an ownerless AgentSession if AIAnalysis isn't
@@ -115,17 +114,65 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 
 	if err := c.client.Create(ctx, as); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			// Concurrent create (e.g. two reconciles racing) -- re-fetch
-			// rather than erroring, preserving idempotency.
-			if getErr := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: analysis.Namespace}, existing); getErr == nil {
-				return existing, nil
-			}
+			return nil, parentlifecycle.NewChildCollisionError("AgentSession", analysis.Namespace, name, err)
 		}
 		return nil, fmt.Errorf("failed to create AgentSession: %w", err)
 	}
 
 	logger.Info("Created AgentSession", "name", name)
 	return as, nil
+}
+
+func (c *AgentSessionCreator) recoverPersistedAgentSession(
+	ctx context.Context,
+	analysis *aianalysisv1.AIAnalysis,
+	ref *corev1.ObjectReference,
+	name string,
+	logger logr.Logger,
+) (*agentsessionv1.AgentSession, error) {
+	if ref.Name != name || ref.Namespace != analysis.Namespace || ref.UID == "" {
+		return nil, fmt.Errorf("persisted AgentSession recovery identity does not match expected %s/%s", analysis.Namespace, name)
+	}
+	existing := &agentsessionv1.AgentSession{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: analysis.Namespace}, existing)
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("persisted AgentSession recovery object %s/%s is missing: %w", analysis.Namespace, ref.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read persisted AgentSession recovery identity: %w", err)
+	}
+	if err := validateRecoveryIdentity(analysis, existing, ref, c.builder.BuildAgentSessionSpec(analysis)); err != nil {
+		return nil, err
+	}
+	logger.V(1).Info("Recovered persisted AgentSession", "name", name, "uid", existing.UID)
+	return existing, nil
+}
+
+func persistedAgentSessionRef(analysis *aianalysisv1.AIAnalysis) *corev1.ObjectReference {
+	if analysis.Status.KASession == nil || analysis.Status.KASession.AgentSessionRef == nil ||
+		analysis.Status.KASession.AgentSessionRef.Name == "" {
+		return nil
+	}
+	return analysis.Status.KASession.AgentSessionRef
+}
+
+func validateRecoveryIdentity(
+	analysis *aianalysisv1.AIAnalysis,
+	session *agentsessionv1.AgentSession,
+	ref *corev1.ObjectReference,
+	expectedSpec agentsessionv1.AgentSessionSpec,
+) error {
+	if ref.UID == "" || session.UID != ref.UID {
+		return fmt.Errorf("persisted AgentSession recovery UID mismatch for %s/%s", session.Namespace, session.Name)
+	}
+	owner := metav1.GetControllerOf(session)
+	if owner == nil || owner.Kind != "AIAnalysis" || owner.Name != analysis.Name || owner.UID != analysis.UID {
+		return fmt.Errorf("persisted AgentSession recovery owner mismatch for %s/%s", session.Namespace, session.Name)
+	}
+	if !reflect.DeepEqual(session.Spec, expectedSpec) {
+		return fmt.Errorf("persisted AgentSession recovery spec identity mismatch for %s/%s", session.Namespace, session.Name)
+	}
+	return nil
 }
 
 // DeleteForRetry deletes as so that the next reconcile's GetOrCreate call

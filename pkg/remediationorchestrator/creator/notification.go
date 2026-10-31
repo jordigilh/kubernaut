@@ -123,12 +123,24 @@ func FormatClusterLine(clusterID string) string {
 // (idempotent create). Returns (true, nil) when found and reusable, (false, nil) when not
 // found (caller should proceed to build+create), or (false, err) on unexpected API error.
 // kind labels the notification type in log messages (e.g. "Approval", "Completion").
-func (c *NotificationCreator) existingNotification(ctx context.Context, logger logr.Logger, name, namespace, kind string) (bool, error) {
+func (c *NotificationCreator) existingNotification(
+	ctx context.Context,
+	logger logr.Logger,
+	rr *remediationv1.RemediationRequest,
+	name, kind string,
+	expectedType notificationv1.NotificationType,
+) (bool, error) {
 	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, existing)
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
 	if err == nil {
-		logger.Info(kind+" notification already exists, reusing", "name", name)
-		return true, nil
+		if notificationIdentityMatches(existing, rr, expectedType) {
+			logger.Info(kind+" notification already exists, reusing", "name", name)
+			return true, nil
+		}
+		collision := newChildCollision("NotificationRequest", rr.Namespace, name,
+			fmt.Errorf("existing notification identity does not match parent/type"))
+		logger.Error(collision, kind+" notification identity collision")
+		return false, collision
 	}
 	if !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to check existing NotificationRequest")
@@ -155,13 +167,43 @@ func (c *NotificationCreator) persistNotification(ctx context.Context, logger lo
 
 	if err := c.client.Create(ctx, nr); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			logger.Info(kind+" NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
+			return c.reuseConcurrentNotification(ctx, logger, rr, nr, name, kind)
 		}
 		logger.Error(err, "Failed to create "+kind+" NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
 	return name, nil
+}
+
+func (c *NotificationCreator) reuseConcurrentNotification(
+	ctx context.Context,
+	logger logr.Logger,
+	rr *remediationv1.RemediationRequest,
+	nr *notificationv1.NotificationRequest,
+	name, kind string,
+) (string, error) {
+	existing := &notificationv1.NotificationRequest{}
+	if err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing); err != nil {
+		return "", fmt.Errorf("verify concurrent NotificationRequest collision: %w", err)
+	}
+	if notificationIdentityMatches(existing, rr, nr.Spec.Type) {
+		logger.Info(kind+" NotificationRequest already exists (concurrent exact-identity create), reusing", "name", name)
+		return name, nil
+	}
+	collision := newChildCollision("NotificationRequest", rr.Namespace, name,
+		fmt.Errorf("concurrent notification identity does not match parent/type"))
+	logger.Error(collision, kind+" NotificationRequest identity collision")
+	return "", collision
+}
+
+func notificationIdentityMatches(
+	existing *notificationv1.NotificationRequest,
+	rr *remediationv1.RemediationRequest,
+	expectedType notificationv1.NotificationType,
+) bool {
+	ref := existing.Spec.RemediationRequestRef
+	return ref != nil && ref.Name == rr.Name && ref.Namespace == rr.Namespace &&
+		ref.UID == rr.UID && existing.Spec.Type == expectedType
 }
 
 // CreateApprovalNotification creates a NotificationRequest for approval (BR-ORCH-001).
@@ -193,7 +235,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 	name := fmt.Sprintf("nr-approval-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Approval")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Approval", notificationv1.NotificationTypeApproval)
 	if err != nil {
 		return "", err
 	}
@@ -353,7 +395,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	name := fmt.Sprintf("nr-completion-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Completion")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Completion", notificationv1.NotificationTypeCompletion)
 	if err != nil {
 		return "", err
 	}
@@ -569,7 +611,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 	name := fmt.Sprintf("nr-bulk-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Bulk")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Bulk", notificationv1.NotificationTypeSimple)
 	if err != nil {
 		return "", err
 	}
@@ -736,7 +778,7 @@ func (c *NotificationCreator) CreateEscalationNotification(
 
 	name := fmt.Sprintf("nr-escalation-%s", rr.Name)
 
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Escalation")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Escalation", notificationv1.NotificationTypeEscalation)
 	if err != nil {
 		return "", err
 	}
@@ -796,7 +838,11 @@ func (c *NotificationCreator) CreateBlockNotification(
 
 	name := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blockCtx.BlockReason), rr.Name)
 
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Block")
+	// Block notifications may be Escalation or StatusUpdate depending on the
+	// reason; exact identity is checked again in persistNotification after the
+	// built request supplies its concrete type.
+	nrType, priority := c.mapBlockReasonToTypeAndPriority(blockCtx.BlockReason)
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Block", nrType)
 	if err != nil {
 		return "", err
 	}
@@ -804,7 +850,6 @@ func (c *NotificationCreator) CreateBlockNotification(
 		return name, nil
 	}
 
-	nrType, priority := c.mapBlockReasonToTypeAndPriority(blockCtx.BlockReason)
 	subject := fmt.Sprintf("Remediation Blocked: %s (%s)", rr.Spec.SignalName, blockCtx.BlockReason)
 	body := c.buildBlockNotificationBody(rr, blockCtx)
 
@@ -902,7 +947,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	name := fmt.Sprintf("nr-manual-review-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Manual review")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Manual review", notificationv1.NotificationTypeManualReview)
 	if err != nil {
 		return "", err
 	}
@@ -1203,7 +1248,7 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 
 	name := fmt.Sprintf("nr-self-resolved-%s", rr.Name)
 
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Self-resolved")
+	exists, err := c.existingNotification(ctx, logger, rr, name, "Self-resolved", notificationv1.NotificationTypeStatusUpdate)
 	if err != nil {
 		return "", err
 	}

@@ -57,6 +57,12 @@ const (
 
 	// Failed - Workflow execution failed (terminal state)
 	Failed Phase = workflowexecutionv1alpha1.PhaseFailed
+
+	// Cancelling - backend termination requested and being verified
+	Cancelling Phase = workflowexecutionv1alpha1.PhaseCancelling
+
+	// Cancelled - backend termination observed (terminal state)
+	Cancelled Phase = workflowexecutionv1alpha1.PhaseCancelled
 )
 
 // ========================================
@@ -76,7 +82,7 @@ const (
 // - Running: PipelineRun actively executing
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed:
+	case Completed, Failed, Cancelled:
 		return true
 	default:
 		return false
@@ -98,11 +104,13 @@ func IsTerminal(p Phase) bool {
 //
 // Terminal states (Completed, Failed) have no valid transitions.
 var ValidTransitions = map[Phase][]Phase{
-	Pending: {Running, Failed}, // Can transition to Running or fail immediately (e.g., PipelineRun creation error)
-	Running: {Completed, Failed}, // Can complete successfully or fail
+	Pending:    {Running, Failed, Cancelling, Cancelled},
+	Running:    {Completed, Failed, Cancelling},
+	Cancelling: {Cancelled, Failed},
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {},
+	Cancelled: {},
 }
 
 // CanTransition checks if transition from current phase to target phase is valid.
@@ -130,10 +138,9 @@ func CanTransition(current, target Phase) bool {
 // Returns an error if the phase is not one of the defined constants.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Running, Completed, Failed:
+	case Pending, Running, Completed, Failed, Cancelling, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)
 	}
 }
-

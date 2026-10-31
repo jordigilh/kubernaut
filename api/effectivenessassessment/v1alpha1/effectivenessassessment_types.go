@@ -51,6 +51,8 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates the assessment could not be performed (e.g., target not found).
 	PhaseFailed = "Failed"
+	// PhaseCancelled indicates that the parent RemediationRequest failed or was cancelled.
+	PhaseCancelled = "Cancelled"
 	// PhaseWaitingForPropagation indicates the EM is waiting for an async change
 	// (GitOps sync, operator reconciliation) to propagate before computing the hash.
 	// Only entered when EA.Spec.Config.HashComputeDelay is non-nil and the computed
@@ -213,7 +215,7 @@ type EAConfig struct {
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Completed;Failed;Cancelled
 	Phase string `json:"phase,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.
