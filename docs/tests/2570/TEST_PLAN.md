@@ -49,7 +49,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 32 | UT-KA-2577-034 | Trusted-namespace discovery excludes foreign ActionTypes. | KA catalog; WORKFLOW-007 / AC-4 |
 | 33 | UT-RO-2570-028 | A valid frozen remediation target drives safety and execution identity. | RO target/WE creator; ORCH-026 / AC-4 |
 | 34 | UT-DS-2578-001 | DataStorage helper rejects malformed typed parameter values. | DataStorage models; KA-191 / SI-10 |
-| 35 | UT-RO-2570-086 | A conflicting pre-created RAR is not reused; the RR fails and is routed to manual review. | RO creator/reconciler; ORCH-026 / AC-6 |
+| 35 | UT-RO-2570-086 | A conflicting pre-created RAR is not reused; suspected tampering fails the investigation and RR and routes to manual review. | RO creator/reconciler; ORCH-026 / AC-6 |
 
 ## Integration and end-to-end proof
 

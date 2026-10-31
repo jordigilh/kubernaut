@@ -164,8 +164,8 @@ workflow-author configuration is outside the agreed scope.
 
 RO is the authorized creator of the single RAR per RR. A same-name pre-existing
 RAR may be reused only after its RR ownership and authorized creation provenance
-are validated; a conflicting or untrusted RAR fails the RR and routes it to
-manual review. If the RAR is missing after the RR entered approval, the RR fails
+are validated; a conflicting or untrusted RAR is treated as suspected tampering,
+fails the investigation and RR, and routes to manual review. If the RAR is missing after the RR entered approval, the RR fails
 and is routed to manual review rather than creating a replacement. Enforce the
 creation boundary through RBAC/admission and test it through the production path;
 an owner reference alone does not prove who created an object. A separate
