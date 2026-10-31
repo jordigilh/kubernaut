@@ -63,6 +63,16 @@ func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, 
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("seed AIA parent RemediationRequest: %w", err)
 			}
+			existing := &remediationv1.RemediationRequest{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(parent), existing); err != nil {
+				return fmt.Errorf("read existing AIA parent RemediationRequest: %w", err)
+			}
+			if existing.Status.OverallPhase == "" {
+				existing.Status.OverallPhase = c.parentPhase
+				if err := c.Status().Update(ctx, existing); err != nil {
+					return fmt.Errorf("persist existing AIA parent RemediationRequest phase: %w", err)
+				}
+			}
 		} else if err := c.Client.Status().Update(ctx, parent); err != nil {
 			return fmt.Errorf("persist AIA parent RemediationRequest phase: %w", err)
 		}
