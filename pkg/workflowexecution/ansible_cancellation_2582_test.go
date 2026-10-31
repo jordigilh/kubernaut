@@ -2,6 +2,7 @@ package workflowexecution_test
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -37,4 +38,42 @@ var _ = Describe("UT-WE-2582-005: AWX cancellation verification [BR-WE-015, AC-4
 		Expect(err).NotTo(HaveOccurred())
 		Expect(verified.Terminated).To(BeTrue())
 	})
+
+	It("recovers a missing ExecutionRef before cancelling a partially persisted AWX launch", func() {
+		var cancelledJobID atomic.Int32
+		awx := &recoverableAWXClient{
+			mockAWXClient: &mockAWXClient{
+				cancelFunc: func(_ context.Context, jobID int) error {
+					cancelledJobID.Store(int32(jobID))
+					return nil
+				},
+			},
+			recoveredJobID: 77,
+		}
+		ansible := executor.NewAnsibleExecutor(awx, nil, nil, 1, logr.Discard())
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "we-awx-partial-launch",
+				Namespace: "default",
+				UID:       "wfe-awx-partial-launch",
+			},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-awx-partial-launch", Namespace: "default"},
+			},
+		}
+
+		Expect(ansible.RequestCancellation(context.Background(), wfe, "default")).To(Succeed())
+		Expect(wfe.Status.ExecutionRef).NotTo(BeNil())
+		Expect(wfe.Status.ExecutionRef.Name).To(Equal("awx-job-77"))
+		Expect(cancelledJobID.Load()).To(Equal(int32(77)))
+	})
 })
+
+type recoverableAWXClient struct {
+	*mockAWXClient
+	recoveredJobID int
+}
+
+func (c *recoverableAWXClient) FindJobByExecutionIdentity(context.Context, string, string, string) (int, error) {
+	return c.recoveredJobID, nil
+}

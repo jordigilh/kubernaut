@@ -75,4 +75,38 @@ var _ = Describe("UT-WE-2582-004: Tekton cancellation verification [BR-WE-014, A
 		Expect(result.Terminated).To(BeFalse())
 		Expect(result.Reason).To(Equal("PodsStillActive"))
 	})
+
+	It("keeps cancellation unverified when the TaskRun is gone but its PipelineRun-owned Pod is active", func() {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		pr := &tektonv1.PipelineRun{ObjectMeta: metav1.ObjectMeta{
+			Name:      "wfe-tekton-orphan-pod-cancel",
+			Namespace: "default",
+			Labels:    map[string]string{"kubernaut.ai/workflow-execution": "we-tekton-orphan-pod-cancel"},
+		}}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-orphaned-taskrun",
+				Namespace: "default",
+				Labels:    map[string]string{"tekton.dev/pipelineRun": pr.Name},
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr, pod).Build()
+		tekton := executor.NewTektonExecutor(client)
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{Name: "we-tekton-orphan-pod-cancel", Namespace: "default"},
+			Spec:       workflowexecutionv1.WorkflowExecutionSpec{TargetResource: "default/Deployment/api"},
+			Status:     workflowexecutionv1.WorkflowExecutionStatus{ExecutionRef: &corev1.LocalObjectReference{Name: pr.Name}},
+		}
+
+		Expect(tekton.RequestCancellation(context.Background(), wfe, "default")).To(Succeed())
+		result, err := tekton.VerifyCancellation(context.Background(), wfe, "default")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Terminated).To(BeFalse())
+		Expect(result.Reason).To(Equal("PodsStillActive"))
+	})
 })

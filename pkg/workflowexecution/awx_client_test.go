@@ -270,3 +270,39 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 		})
 	})
 })
+
+var _ = Describe("AWXHTTPClient execution identity recovery (DD-2582)", func() {
+	It("UT-WE-2582-007: finds the exact recent AWX job for a partially persisted WFE", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			Expect(r.Method).To(Equal(http.MethodGet))
+			Expect(r.URL.Path).To(Equal("/api/v2/jobs/"))
+			Expect(r.URL.Query().Get("order_by")).To(Equal("-id"))
+			Expect(r.URL.Query().Get("page_size")).To(Equal("100"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"count":2,"results":[{"id":91,"extra_vars":"{\"WFE_NAME\":\"other\",\"WFE_NAMESPACE\":\"default\",\"WFE_UID\":\"other-uid\"}"},{"id":77,"extra_vars":"{\"WFE_NAME\":\"we-partial\",\"WFE_NAMESPACE\":\"default\",\"WFE_UID\":\"wfe-uid\"}"}]}`))
+		}))
+		defer server.Close()
+
+		client, err := executor.NewAWXHTTPClient(server.URL, "test-token")
+		Expect(err).NotTo(HaveOccurred())
+		jobID, err := client.FindJobByExecutionIdentity(context.Background(), "we-partial", "default", "wfe-uid")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(jobID).To(Equal(77))
+	})
+
+	It("UT-WE-2582-008: rejects ambiguous AWX recovery matches instead of adopting one", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results":[{"id":77,"extra_vars":{"WFE_NAME":"we-partial","WFE_NAMESPACE":"default","WFE_UID":"wfe-uid"}},{"id":78,"extra_vars":{"WFE_NAME":"we-partial","WFE_NAMESPACE":"default","WFE_UID":"wfe-uid"}}]}`))
+		}))
+		defer server.Close()
+
+		client, err := executor.NewAWXHTTPClient(server.URL, "test-token")
+		Expect(err).NotTo(HaveOccurred())
+		jobID, err := client.FindJobByExecutionIdentity(context.Background(), "we-partial", "default", "wfe-uid")
+
+		Expect(err).To(HaveOccurred())
+		Expect(jobID).To(Equal(0))
+	})
+})

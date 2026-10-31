@@ -128,6 +128,86 @@ func (c *AWXHTTPClient) GetJobStatus(ctx context.Context, jobID int) (*AWXJobSta
 	return &status, nil
 }
 
+// FindJobByExecutionIdentity searches recent AWX jobs for the exact WFE
+// identity injected into extra_vars. AWX does not permit filtering jobs by
+// extra_vars on all supported versions, so the bounded recent-job scan is
+// intentional; an ambiguous match fails closed rather than adopting either
+// job (DD-2582).
+func (c *AWXHTTPClient) FindJobByExecutionIdentity(ctx context.Context, wfeName, wfeNamespace, wfeUID string) (int, error) {
+	url := fmt.Sprintf("%s/api/v2/jobs/?order_by=-id&page_size=100", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create AWX execution identity search request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("AWX execution identity search request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("AWX execution identity search returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Results []struct {
+			ID        int             `json:"id"`
+			ExtraVars json.RawMessage `json:"extra_vars"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode AWX execution identity search response: %w", err)
+	}
+
+	var matches []int
+	for _, job := range result.Results {
+		vars, err := decodeAWXExtraVars(job.ExtraVars)
+		if err != nil {
+			return 0, fmt.Errorf("decode extra_vars for AWX job %d: %w", job.ID, err)
+		}
+		if awxExecutionIdentityMatches(vars, wfeName, wfeNamespace, wfeUID) {
+			matches = append(matches, job.ID)
+		}
+	}
+	if len(matches) > 1 {
+		return 0, fmt.Errorf("multiple AWX jobs match WFE identity %s/%s", wfeNamespace, wfeName)
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return 0, nil
+}
+
+func decodeAWXExtraVars(raw json.RawMessage) (map[string]interface{}, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return map[string]interface{}{}, nil
+	}
+	var vars map[string]interface{}
+	if err := json.Unmarshal(raw, &vars); err == nil {
+		return vars, nil
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, fmt.Errorf("decode extra_vars value: %w", err)
+	}
+	if err := json.Unmarshal([]byte(encoded), &vars); err != nil {
+		return nil, fmt.Errorf("decode encoded extra_vars: %w", err)
+	}
+	return vars, nil
+}
+
+func awxExecutionIdentityMatches(vars map[string]interface{}, wfeName, wfeNamespace, wfeUID string) bool {
+	if vars == nil || vars["WFE_NAME"] != wfeName || vars["WFE_NAMESPACE"] != wfeNamespace {
+		return false
+	}
+	if wfeUID == "" {
+		return true
+	}
+	return vars["WFE_UID"] == wfeUID
+}
+
 func (c *AWXHTTPClient) CancelJob(ctx context.Context, jobID int) error {
 	url := fmt.Sprintf("%s/api/v2/jobs/%d/cancel/", c.baseURL, jobID)
 

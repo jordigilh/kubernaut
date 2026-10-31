@@ -226,11 +226,31 @@ func (t *TektonExecutor) VerifyCancellation(ctx context.Context, wfe *workflowex
 	if result := activeTaskRunResult(taskRuns); result != nil {
 		return result, nil
 	}
+	if result, done, err := verifyTektonPipelineRunPods(ctx, c, name, namespace); err != nil || done {
+		return result, err
+	}
 	if result, done, err := verifyTektonTaskRunPods(ctx, c, taskRuns, namespace); err != nil || done {
 		return result, err
 	}
 
 	return &CancellationResult{Terminated: true, Reason: "BackendTerminationVerified", Message: "PipelineRun and TaskRuns are terminal"}, nil
+}
+
+func verifyTektonPipelineRunPods(ctx context.Context, c ExecutorClient, pipelineRunName, namespace string) (*CancellationResult, bool, error) {
+	// TaskRuns can be garbage-collected before their workload Pods finish. The
+	// PipelineRun label is the independent ownership boundary that remains
+	// queryable in that window; do not infer termination from an empty TaskRun
+	// list (DD-2582).
+	var pods corev1.PodList
+	if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{"tekton.dev/pipelineRun": pipelineRunName}); err != nil {
+		return nil, false, fmt.Errorf("list Pods for PipelineRun %s/%s: %w", namespace, pipelineRunName, err)
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+			return &CancellationResult{Reason: "PodsStillActive", Message: fmt.Sprintf("Pod %s remains in phase %s", pod.Name, pod.Status.Phase)}, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 func tektonExecutionName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {

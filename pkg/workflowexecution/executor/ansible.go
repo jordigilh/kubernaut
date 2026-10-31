@@ -71,6 +71,14 @@ type AWXJobClient interface {
 	FindJobTemplateByName(ctx context.Context, name string) (int, error)
 }
 
+// AWXExecutionRecovery is an optional AWXJobClient capability used to recover
+// a launch whose AWX job ID was returned but whose WFE status update did not
+// persist. Implementations must return zero when no exact WFE identity match
+// exists and fail on ambiguity.
+type AWXExecutionRecovery interface {
+	FindJobByExecutionIdentity(ctx context.Context, wfeName, wfeNamespace, wfeUID string) (int, error)
+}
+
 // AWXCredentialClient defines AWX/AAP credential-type and credential
 // lifecycle operations for dependencies.secrets injection (BR-WE-015). The
 // executor dynamically creates AWX credential types per unique K8s Secret
@@ -244,6 +252,12 @@ func (a *AnsibleExecutor) Create(
 		)
 	}
 
+	if jobID, err := a.recoverExecutionRef(ctx, wfe); err != nil {
+		return nil, fmt.Errorf("recover existing AWX job: %w", err)
+	} else if jobID != 0 {
+		return &CreateResult{ResourceName: awxJobResourceName(jobID)}, nil
+	}
+
 	cfg, err := a.parseEngineConfig(wfe)
 	if err != nil {
 		return nil, fmt.Errorf("parse ansible engineConfig: %w", err)
@@ -271,7 +285,7 @@ func (a *AnsibleExecutor) Create(
 	}
 
 	return &CreateResult{
-		ResourceName: fmt.Sprintf("awx-job-%d", jobID),
+		ResourceName: awxJobResourceName(jobID),
 		Warnings:     warnings,
 	}, nil
 }
@@ -291,6 +305,7 @@ func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.W
 	}
 	extraVars["WFE_NAME"] = wfe.Name
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
+	extraVars["WFE_UID"] = string(wfe.UID)
 	extraVars["RR_NAME"] = wfe.Spec.RemediationRequestRef.Name
 	extraVars["RR_NAMESPACE"] = wfe.Spec.RemediationRequestRef.Namespace
 	return extraVars
@@ -750,6 +765,11 @@ func (a *AnsibleExecutor) GetStatus(
 	namespace string,
 ) (*ExecutionResult, error) {
 	if wfe.Status.ExecutionRef == nil {
+		if _, err := a.recoverExecutionRef(ctx, wfe); err != nil {
+			return nil, fmt.Errorf("recover AWX execution reference: %w", err)
+		}
+	}
+	if wfe.Status.ExecutionRef == nil {
 		return nil, fmt.Errorf("no execution ref set on WFE %s/%s", wfe.Namespace, wfe.Name)
 	}
 
@@ -812,6 +832,11 @@ func (a *AnsibleExecutor) RequestCancellation(
 	_ string,
 ) error {
 	if wfe.Status.ExecutionRef == nil {
+		if _, err := a.recoverExecutionRef(ctx, wfe); err != nil {
+			return fmt.Errorf("recover AWX execution reference for cancellation: %w", err)
+		}
+	}
+	if wfe.Status.ExecutionRef == nil {
 		return nil
 	}
 	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
@@ -832,6 +857,11 @@ func (a *AnsibleExecutor) VerifyCancellation(
 	_ string,
 ) (*CancellationResult, error) {
 	if wfe.Status.ExecutionRef == nil {
+		if _, err := a.recoverExecutionRef(ctx, wfe); err != nil {
+			return nil, fmt.Errorf("recover AWX execution reference for cancellation verification: %w", err)
+		}
+	}
+	if wfe.Status.ExecutionRef == nil {
 		return &CancellationResult{Reason: "NoBackendReference", Message: "cannot verify AWX termination without an execution reference"}, nil
 	}
 	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
@@ -848,6 +878,33 @@ func (a *AnsibleExecutor) VerifyCancellation(
 	default:
 		return &CancellationResult{Reason: "AWXJobStillActive", Message: fmt.Sprintf("AWX job %d remains in status %s", jobID, status.Status)}, nil
 	}
+}
+
+func (a *AnsibleExecutor) recoverExecutionRef(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (int, error) {
+	if wfe.Status.ExecutionRef != nil && wfe.Status.ExecutionRef.Name != "" {
+		jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
+		if err != nil {
+			return 0, fmt.Errorf("parse existing AWX execution reference: %w", err)
+		}
+		return jobID, nil
+	}
+	recovery, ok := a.AWXClient.(AWXExecutionRecovery)
+	if !ok {
+		return 0, nil
+	}
+	jobID, err := recovery.FindJobByExecutionIdentity(ctx, wfe.Name, wfe.Namespace, string(wfe.UID))
+	if err != nil {
+		return 0, err
+	}
+	if jobID == 0 {
+		return 0, nil
+	}
+	wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: awxJobResourceName(jobID)}
+	return jobID, nil
+}
+
+func awxJobResourceName(jobID int) string {
+	return fmt.Sprintf("awx-job-%d", jobID)
 }
 
 // CleanupEphemeralResources deletes AWX credentials created for a WFE while
