@@ -10,7 +10,8 @@
 > ambiguous or mismatched workflows fail closed without creating an external
 > execution resource. A WE CR can already exist when this dispatch check fails.
 > A successful no-match fails immediately without retry; transient API/network
-> errors may be retried with bounded, cancellable backoff. The check is
+> errors use up to three total attempts with bounded, cancellable backoff and
+> fail closed if unresolved. The check is
 > point-in-time and does not atomically prevent deletion after a successful read.
 > The check does not replace frozen snapshot values with live catalog data. RO's
 > AIA selection pass-through and routing remain unchanged for the non-approval
