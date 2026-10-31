@@ -9,6 +9,9 @@
 > point-in-time workflow-ID and content-identity check before dispatch; absent,
 > ambiguous or mismatched workflows fail closed without creating an external
 > execution resource. A WE CR can already exist when this dispatch check fails.
+> A successful no-match fails immediately without retry; transient API/network
+> errors may be retried with bounded, cancellable backoff. The check is
+> point-in-time and does not atomically prevent deletion after a successful read.
 > The check does not replace frozen snapshot values with live catalog data. RO's
 > AIA selection pass-through and routing remain unchanged for the non-approval
 > path, which nevertheless gains this WE runtime check. This amendment is proposed, not an assertion that the

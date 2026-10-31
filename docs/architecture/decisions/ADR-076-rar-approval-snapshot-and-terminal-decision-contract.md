@@ -246,9 +246,11 @@ snapshot-only execution/deletion behavior of DD-WORKFLOW-018 and requires a
 trusted-namespace catalog lookup before WE dispatch. AW override identity
 checking and WE lookup are point-in-time checks, not an atomic guarantee that
 the catalog remains unchanged until a later write or external dispatch. The
-proposed trusted-namespace `status.workflowId` selector, content-ID verification
-and bounded error/retry handling are in the implementation plan and remain
-subject to design review. A selector miss may reflect status lag, not deletion.
+proposed trusted-namespace `status.workflowId` selector requires exactly one
+matching recomputed content ID. A successful no-match, ambiguity or mismatch
+fails closed immediately; transient API/network failures receive at most three
+total cancellable attempts, then fail closed. These checks remain subject to
+design review. A selector miss alone does not establish why the ID was absent.
 External bundle and dependency availability remain execution-time concerns.
 
 ### 2. RAR status override semantics
@@ -419,9 +421,9 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 1. **UT-AA-2570-067/068; IT-AA-2570-001; IT-AF-2570-003 / BR-ORCH-025**:
    validate AIA-to-RAR nil/empty original maps and AF-to-API-server omitted,
    empty and partial override serialization without clearing omitted values.
-2. **UT-AW-2570-021/087; IT-AW-2570-004/005 / BR-AUTH-001, SI-10**: validate one
-  terminal business update, rejection of later business-field mutations and
-  rejection of a non-empty legacy workflow name before approval.
+2. **UT-AW-2570-021/087; IT-AW-2570-004/005/011 / BR-AUTH-001, SI-10**:
+   validate one terminal business update, rejection of later business-field
+   mutations and rejection of a non-empty legacy workflow name before approval.
 3. **IT-AW-2570-005 / BR-ORCH-026**: validate controller observation updates
    remain possible after a decision.
 4. **IT-AF-2570-003; E2E-AUD-2570-008 / BR-AUTH-001, AU-3**: validate AF
