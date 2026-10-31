@@ -234,8 +234,11 @@ after partial RO success, independently of the resource-version concurrency guar
    protection and decision eligibility. For an override it verifies the current
    catalog workflow in AW's trusted service namespace has exactly one match
    with a recomputed content-derived identity matching the reviewed workflow ID;
-   a missing, ambiguous or changed workflow is rejected and transient network errors may
-   be retried with bounded backoff. Ordinary decisions require no catalog read.
+   a successful no-match, ambiguity or changed content is rejected immediately.
+   Transient API/network failures may be retried using bounded, cancellable
+   backoff; 403 and invalid namespace configuration are not retried, and
+   cancellation or deadline expiry stops retries. Ordinary decisions require no
+   catalog read.
    The API server's CEL transition rules
    enforce the ADR-076 frozen business-field set; AuthWebhook mirrors that
    allowlist and performs the contextual checks CEL cannot perform.

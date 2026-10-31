@@ -297,9 +297,11 @@ other.
 Deleting a `RemediationWorkflow` CRD is a **true deletion** from etcd — there is no soft-delete/disabled state
 retained at the CRD or cache level. This is a deliberate decision, not an oversight:
 
-- Any remediation that already selected the deleted workflow retains full execution capability, because its
-  `WorkflowExecution.Spec.WorkflowRef` already carries the complete execution snapshot (Change 8) — it never needs
-  to re-resolve the now-deleted CRD.
+- **Current approved design (Change 8):** A remediation that already selected the deleted workflow retains its
+  execution snapshot in `WorkflowExecution.Spec.WorkflowRef` without re-resolving the deleted CRD.
+  **Proposed #2570 amendment:** the frozen snapshot remains the execution-input source, but a missing workflow
+  at the trusted-namespace check before dispatch fails closed. Deletion after a successful point-in-time check
+  is not atomically prevented. This proposal does not change the current approved design until approved.
 - Full auditability (SOC2 CC8.1/CC7.2) is preserved because the `remediationworkflow.admitted.create`/`.update`
   audit events already captured the complete `workflow_content` at every point the workflow was ever admitted
   (Change 11) — "what did workflow X look like when remediation Y used it?" is answered from `audit_events`, not

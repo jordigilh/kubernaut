@@ -387,7 +387,9 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 1. RO executes exactly the approval-scoped RAR proposal.
 2. Original, changed and effective values remain attributable. Override
-   admission requires catalog availability; ordinary decisions do not.
+   admission requires catalog availability; ordinary AuthWebhook decisions
+   without overrides do not. Every WE dispatch, including automatic execution,
+   still requires the trusted catalog identity check.
 3. Terminal approval decisions cannot be rewritten through later status writes.
 4. AF/AuthWebhook/RO responsibilities remain separated.
 
