@@ -53,7 +53,7 @@ var _ = Describe("Golden Snapshot — Stabilizing Path (UT-EM-254-002, #254)", f
 	const stabilizationWindow = 5 * time.Minute
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -62,7 +62,7 @@ var _ = Describe("Golden Snapshot — Stabilizing Path (UT-EM-254-002, #254)", f
 	makeReconciler := func(s *runtime.Scheme, recorder *record.FakeRecorder, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

@@ -78,7 +78,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	const requeueInterval = 45 * time.Second
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -96,7 +96,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	makeReconciler := func(s *runtime.Scheme, frozenNow time.Time, objs ...client.Object) *controller.Reconciler {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

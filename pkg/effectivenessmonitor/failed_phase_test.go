@@ -37,7 +37,7 @@ import (
 )
 
 func newTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
+	s := newEMTestScheme()
 	_ = eav1.AddToScheme(s)
 	return s
 }

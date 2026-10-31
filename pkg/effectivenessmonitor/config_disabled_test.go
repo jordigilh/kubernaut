@@ -51,7 +51,7 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 
 	// buildScheme registers EA and core types for the fake client.
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -63,7 +63,7 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

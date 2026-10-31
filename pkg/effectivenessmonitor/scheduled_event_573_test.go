@@ -67,7 +67,7 @@ var _ = Describe("EM Scheduled Event Timing (#573, ADR-EM-001 section 9.2.0)", f
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(s).
-				WithObjects(ea).
+				WithObjects(ea, parentRequestForEA(ea)).
 				WithStatusSubresource(ea).
 				Build()
 
@@ -136,7 +136,7 @@ var _ = Describe("EM Scheduled Event Timing (#573, ADR-EM-001 section 9.2.0)", f
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(s).
-				WithObjects(ea).
+				WithObjects(ea, parentRequestForEA(ea)).
 				WithStatusSubresource(ea).
 				Build()
 

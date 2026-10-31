@@ -49,7 +49,7 @@ import (
 var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -58,7 +58,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	makeReconciler := func(s *runtime.Scheme, promEnabled, amEnabled bool, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

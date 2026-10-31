@@ -32,7 +32,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -263,13 +262,6 @@ func (r *Reconciler) enforceParentGate(ctx context.Context, ea *eav1.Effectivene
 	gate, err := parentlifecycle.RemediationRequestGate(
 		ctx, r.apiReader, ea.Namespace, ea.Spec.CorrelationID, remediationv1.PhaseVerifying)
 	if err != nil {
-		if strings.Contains(err.Error(), "no kind is registered") {
-			// Legacy isolated EM unit fixtures do not register the parent CRD;
-			// production wiring does. Preserve those tests without weakening the
-			// production fresh-read gate.
-			logger.V(1).Info("parent CRD is not registered in isolated fixture; skipping compatibility gate")
-			return ctrl.Result{}, false, nil
-		}
 		logger.Error(err, "EA parent gate read failed; refusing assessment work")
 		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, true, err
 	}

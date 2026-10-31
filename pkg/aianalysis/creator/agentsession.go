@@ -230,11 +230,20 @@ func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessi
 // DeleteForRetry's contract.
 func (c *AgentSessionCreator) DeleteForCascadeCancel(ctx context.Context, rrName, namespace string) error {
 	name := fmt.Sprintf("as-%s", rrName)
-	as := &agentsessionv1.AgentSession{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	as := &agentsessionv1.AgentSession{}
+	if err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, as); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get agentsession %s/%s for cascade-cancel: %w", namespace, name, err)
+	}
+	if as.Status.Phase == agentsessionv1.AgentSessionPhaseCompleted ||
+		as.Status.Phase == agentsessionv1.AgentSessionPhaseFailed ||
+		as.Status.Phase == agentsessionv1.AgentSessionPhaseCancelled {
+		return nil
 	}
 	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete AgentSession %s/%s for cascade-cancel: %w", namespace, name, err)
+		return fmt.Errorf("failed to delete agentsession %s/%s for cascade-cancel: %w", namespace, name, err)
 	}
 	return nil
 }

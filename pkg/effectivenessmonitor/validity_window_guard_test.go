@@ -51,7 +51,7 @@ import (
 var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -60,7 +60,7 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 	makeReconcilerWithConfig := func(s *runtime.Scheme, validityWindow time.Duration, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

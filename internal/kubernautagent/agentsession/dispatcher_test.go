@@ -27,16 +27,20 @@ import (
 	. "github.com/onsi/gomega"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -81,7 +85,9 @@ func newTestDispatcherClient() crclient.WithWatch {
 	scheme := runtime.NewScheme()
 	Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 	Expect(agentsessionv1.AddToScheme(scheme)).To(Succeed())
+	Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 	Expect(isv1.AddToScheme(scheme)).To(Succeed())
+	Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&agentsessionv1.AgentSession{}).
@@ -190,6 +196,53 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			Expect(cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-1", Namespace: testNamespace}, lease)).To(Succeed())
 			Expect(*lease.Spec.HolderIdentity).To(Equal("replica-a"))
 		})
+	})
+
+	It("IT-KA-2582-001: rejects an AgentSession whose AIAnalysis owner UID belongs to a replaced parent", func() {
+		runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "must not run", Confidence: 1}}
+		d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(),
+			agentsession.WithParentLifecycleGate(), agentsession.WithResyncInterval(20*time.Millisecond))
+		wireHooks(mgr, d)
+
+		controllerRef := true
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ai-replaced-parent",
+				Namespace: testNamespace,
+				UID:       types.UID("current-analysis-uid"),
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "rr-replaced-parent",
+					Namespace: testNamespace,
+				},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{Phase: aianalysisv1.PhaseInvestigating},
+		}
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-replaced-parent", Namespace: testNamespace},
+			Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseAnalyzing},
+		}
+		as := newPendingAgentSession("as-replaced-parent")
+		as.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: aianalysisv1.GroupVersion.String(),
+			Kind:       "AIAnalysis",
+			Name:       analysis.Name,
+			UID:        types.UID("old-analysis-uid"),
+			Controller: &controllerRef,
+		}}
+
+		Expect(cli.Create(ctx, analysis)).To(Succeed())
+		Expect(cli.Create(ctx, rr)).To(Succeed())
+		Expect(cli.Create(ctx, as)).To(Succeed())
+		mustReconcile(ctx, d, as)
+
+		Eventually(func() agentsessionv1.AgentSessionPhase {
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, crclient.ObjectKeyFromObject(as), got)).To(Succeed())
+			return got.Status.Phase
+		}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCancelled))
+		Expect(runner.calls.Load()).To(Equal(int32(0)))
 	})
 
 	Describe("IT-AA-2170-DISPATCH-LEASE-NAME: a long AgentSession name that would truncate the dispatch Lease name to a trailing separator", func() {

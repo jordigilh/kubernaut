@@ -69,7 +69,7 @@ var _ emclient.DataStorageQuerier = (*partialScopeDSQuerier)(nil)
 var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -78,7 +78,7 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 	makeReconciler := func(s *runtime.Scheme, dsQuerier emclient.DataStorageQuerier, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 
@@ -146,6 +146,7 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 		}}
 		createAt := time.Now()
 		Expect(fc.Create(ctx, ea)).To(Succeed())
+		Expect(fc.Create(ctx, parentRequestForEA(ea))).To(Succeed())
 		createElapsed := time.Since(createAt)
 
 		// BR-EM-001 / UT-EM-254-006a: verify the same now-5s fixture age

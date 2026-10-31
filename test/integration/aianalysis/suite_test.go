@@ -84,6 +84,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
@@ -523,6 +524,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	By(fmt.Sprintf("[Process %d] Registering AIAnalysis CRD scheme", processNum))
 	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	By(fmt.Sprintf("[Process %d] Registering RemediationRequest CRD scheme (DD-2582)", processNum))
+	err = remediationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By(fmt.Sprintf("[Process %d] Registering AgentSession CRD scheme (DD-AA-KA-001)", processNum))

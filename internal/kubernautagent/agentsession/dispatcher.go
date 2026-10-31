@@ -101,6 +101,8 @@ const listTimeout = 10 * time.Second
 
 const cancellationAckTimeout = 10 * time.Second
 
+var errAgentSessionParentIdentityMismatch = errors.New("agentsession parent identity mismatch")
+
 // InvestigationRunner abstracts the investigation entry point (mirrors
 // internal/kubernautagent/server.InvestigationRunner without importing that
 // package, to keep the dispatcher decoupled from the retired HTTP handler).
@@ -653,14 +655,17 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 	allowed, cancelled, gateErr := d.checkParentGate(ctx, fresh)
 	if gateErr != nil {
 		d.logger.Error(gateErr, "parent gate prevented AgentSession dispatch", "agentSession", fresh.Name)
+		if cancelled {
+			d.cancelForParent(ctx, fresh)
+		}
 		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		return
 	}
 	if !allowed {
-		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		if cancelled {
 			d.cancelForParent(ctx, fresh)
 		}
+		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		return
 	}
 
@@ -680,6 +685,9 @@ func (d *Dispatcher) checkParentGate(ctx context.Context, as *agentsessionv1.Age
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, true, nil
+		}
+		if errors.Is(err, errAgentSessionParentIdentityMismatch) {
+			return false, true, err
 		}
 		return false, false, err
 	}
@@ -714,6 +722,9 @@ func (d *Dispatcher) readAIAnalysisParent(ctx context.Context, as *agentsessionv
 	if err := d.client.Get(ctx, crclient.ObjectKey{Name: owner.Name, Namespace: as.Namespace}, analysis); err != nil {
 		return nil, fmt.Errorf("read AIAnalysis parent: %w", err)
 	}
+	if owner.UID == "" || analysis.UID == "" || owner.UID != analysis.UID {
+		return nil, fmt.Errorf("%w: agentsession %s/%s ai analysis owner uid does not match current parent", errAgentSessionParentIdentityMismatch, as.Namespace, as.Name)
+	}
 	return analysis, nil
 }
 
@@ -734,10 +745,14 @@ func (d *Dispatcher) cancelForParent(ctx context.Context, as *agentsessionv1.Age
 	if as.Spec.RemediationID != "" {
 		ack, err := d.sessions.ForceCancelByRemediationIDAndWait(ctx, as.Spec.RemediationID)
 		if err == nil {
-			go func() {
-				<-ack
+			timer := time.NewTimer(cancellationAckTimeout)
+			defer timer.Stop()
+			select {
+			case <-ack:
 				d.logger.Info("KA cancellation acknowledged after parent failure", "agentSession", as.Name)
-			}()
+			case <-timer.C:
+				d.logger.Error(nil, "KA cancellation acknowledgement timed out after parent failure", "agentSession", as.Name)
+			}
 			return
 		} else if !errors.Is(err, session.ErrSessionNotFound) {
 			d.logger.Error(err, "failed to cancel KA work after parent failure", "agentSession", as.Name)

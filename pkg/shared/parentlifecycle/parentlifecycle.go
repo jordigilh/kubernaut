@@ -106,7 +106,7 @@ func RemediationRequestGate(
 	}
 
 	phase := parent.Status.OverallPhase
-	if phase == remediationv1.PhaseFailed || phase == remediationv1.PhaseCancelled {
+	if phase == remediationv1.PhaseFailed || phase == remediationv1.PhaseCancelled || phase == remediationv1.PhaseTimedOut {
 		return GateResult{Decision: GateCancelled, ParentPhase: string(phase), Reason: "parent-terminal-failure"}, nil
 	}
 	if containsRemediationPhase(allowed, phase) {

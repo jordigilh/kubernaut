@@ -69,7 +69,7 @@ var _ = Describe("Parent lifecycle gates", func() {
 			Expect(result.Decision).To(Equal(parentlifecycle.GateWaiting))
 		})
 
-		It("UT-RO-2582-007: treats a missing or failed parent as cancellation [BR-COMMON-001, AC-4]", func() {
+		It("UT-RO-2582-007: treats a missing, failed, cancelled, or timed-out parent as cancellation [BR-COMMON-001, AC-4]", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			missing, err := parentlifecycle.RemediationRequestGate(ctx, reader, "default", "rr-missing", remediationv1.PhaseExecuting)
@@ -84,6 +84,16 @@ var _ = Describe("Parent lifecycle gates", func() {
 			failed, err := parentlifecycle.RemediationRequestGate(ctx, failedReader, "default", "rr-failed", remediationv1.PhaseExecuting)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failed.Decision).To(Equal(parentlifecycle.GateCancelled))
+
+			timedOutRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-timed-out", Namespace: "default"},
+				Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseTimedOut},
+			}
+			timedOutReader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(timedOutRR).Build()
+			timedOut, err := parentlifecycle.RemediationRequestGate(ctx, timedOutReader, "default", "rr-timed-out", remediationv1.PhaseExecuting)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(timedOut.Decision).To(Equal(parentlifecycle.GateCancelled))
+			Expect(timedOut.ParentPhase).To(Equal(string(remediationv1.PhaseTimedOut)))
 		})
 
 		It("UT-RO-2582-007: never authorizes work when the fresh parent read fails [AC-4, AC-6]", func() {

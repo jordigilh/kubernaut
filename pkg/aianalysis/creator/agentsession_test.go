@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
@@ -76,5 +77,20 @@ var _ = Describe("AgentSessionCreator.DeleteForCascadeCancel [IR-4, AC-6]", func
 		c := creator.NewAgentSessionCreator(fakeClient, scheme)
 
 		Expect(c.DeleteForCascadeCancel(ctx, "rr-never-existed", "default")).To(Succeed())
+	})
+
+	It("UT-AI-2582-005: preserves terminal AgentSession history during parent cancellation", func() {
+		as := &agentsessionv1.AgentSession{
+			ObjectMeta: metav1.ObjectMeta{Name: "as-rr-terminal", Namespace: "default"},
+			Status:     agentsessionv1.AgentSessionStatus{Phase: agentsessionv1.AgentSessionPhaseCompleted},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(as).Build()
+		c := creator.NewAgentSessionCreator(fakeClient, scheme)
+
+		Expect(c.DeleteForCascadeCancel(ctx, "rr-terminal", "default")).To(Succeed())
+
+		var fetched agentsessionv1.AgentSession
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: as.Name, Namespace: as.Namespace}, &fetched)).To(Succeed())
+		Expect(fetched.Status.Phase).To(Equal(agentsessionv1.AgentSessionPhaseCompleted))
 	})
 })

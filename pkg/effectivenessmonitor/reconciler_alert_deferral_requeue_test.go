@@ -63,7 +63,7 @@ func (s *noopAlertManagerClient) Ready(_ context.Context) error {
 var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -72,7 +72,7 @@ var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) *controller.Reconciler {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 

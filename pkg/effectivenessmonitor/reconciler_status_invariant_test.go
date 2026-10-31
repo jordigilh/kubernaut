@@ -61,7 +61,7 @@ import (
 var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -74,7 +74,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			WithInterceptorFuncs(interceptor.Funcs{
 				SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {

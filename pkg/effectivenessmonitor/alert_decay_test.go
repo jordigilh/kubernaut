@@ -88,7 +88,7 @@ func (s *decayAuditSpy) Close() error                  { return nil }
 var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 	buildScheme := func() *runtime.Scheme {
-		s := runtime.NewScheme()
+		s := newEMTestScheme()
 		Expect(eav1.AddToScheme(s)).To(Succeed())
 		Expect(corev1.AddToScheme(s)).To(Succeed())
 		return s
@@ -98,7 +98,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	makeReconcilerWithAM := func(s *runtime.Scheme, amClient emclient.AlertManagerClient, auditMgr *emaudit.Manager, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(objs...).
+			WithObjects(append(objs, parentRequestsForEAs(objs...)...)...).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 
@@ -298,7 +298,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(ea).
+			WithObjects(ea, parentRequestForEA(ea)).
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 
