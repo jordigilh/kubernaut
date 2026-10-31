@@ -233,7 +233,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		})
 		joined := strings.Join(args, " ")
 		Expect(joined).To(ContainSubstring("--set-string image.tag=1.6.0-rc30"))
-		Expect(joined).To(ContainSubstring("--set-string image.digest="))
+		Expect(args).To(ContainElement("image.digest="))
 	})
 
 	It("UT-2492-005 [BR-E2E-001]: bootstrap arguments do not install a CR or application chart", func() {
