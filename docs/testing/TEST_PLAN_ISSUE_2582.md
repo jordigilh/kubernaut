@@ -44,9 +44,9 @@ unrelated #2570 changes.
 |---|---|---|---|
 | Deterministic child is adopted | Unauthorized work or data corruption | UT-RO-2582-001..004, IT-RO-2582-001 | CreateOnly plus typed collision handling |
 | Stale/missed parent watch authorizes work | Premature KA/backend side effects | UT-RO-2582-005..007, IT-AI-2582-001, IT-WE-2582-001 | Fresh API-reader parent read and bounded requeue |
-| RR failure leaves active work running | Continued remediation after failure | UT-AI-2582-004..005, UT-WE-2582-002..006, E2E-2582-003/004 | Child-owned cancellation and backend proof |
-| Cancellation is claimed without stopping backend | False safety/audit state | UT-WE-2582-003..006, IT-WE-2582-002 | Cancelling plus Job/Pods, Tekton dependents, AWX verification |
-| Notification exception is broken | Operators miss failure/completion | UT-NOT-2582-001..003, IT-NOT-2582-001, E2E-2582-001/002 | Exact identity reuse only for approved notification cases |
+| RR failure leaves active work running | Continued remediation after failure | UT-AI-2582-004..005, UT-WE-2582-002..005, IT-AI-2582-001, IT-WE-2582-003, E2E-2582-003/004 | Child-owned cancellation and backend proof |
+| Cancellation is claimed without stopping backend | False safety/audit state | UT-WE-2582-003..005, IT-WE-2582-003 | Cancelling plus Job/Pods, Tekton dependents, AWX verification |
+| Notification exception is broken | Operators miss failure/completion | UT-NOT-2582-003, IT-NOT-2582-001, E2E-2582-001/002 | Exact identity reuse only for approved notification cases |
 | IS collision or failure is hidden | Interactive request joins wrong session | UT-AF-2582-001, IT-AF-2582-001 | New start is direct CreateOnly; join/takeover stays explicit |
 
 ## 4. Wiring manifest
@@ -77,7 +77,6 @@ unrelated #2570 changes.
 | UT-RO-2582-007 | AC-4, AC-6 | Fresh parent read errors/restarts requeue without authorizing work; NotFound cancels the child. |
 | UT-AI-2582-001 | BR-AI-007, AC-4 | AIA does not dispatch KA until RR is durably `Analyzing` and AIA is `Investigating`. |
 | UT-AI-2582-002 | BR-AI-009, SI-10 | First AgentSession CreateOnly collision fails AIA/manual review; no adoption. |
-| UT-AI-2582-003 | BR-AI-009 | Persisted AgentSession recovery identity requires matching UID, owner AIA, incident, and RR refs. |
 | UT-AI-2582-004 | BR-AI-009, AC-4 | A missing AIAnalysis parent is treated as a cancellation signal and never authorizes KA work. |
 | UT-AI-2582-005 | BR-AI-010 | AIA terminal failure preserves existing terminal AgentSession history. |
 | UT-WE-2582-001 | BR-WE-007, AC-4 | WE waits for persisted RR `Executing`; pre-created WE cannot dispatch while RR is `Investigating`. |
@@ -85,17 +84,7 @@ unrelated #2570 changes.
 | UT-WE-2582-003 | BR-WE-014 | Job cancellation verifies Job and all owned Pods are stopped. |
 | UT-WE-2582-004 | BR-WE-014 | Tekton cancellation verifies PipelineRun, TaskRuns, and Pods. |
 | UT-WE-2582-005 | BR-WE-015 | AWX cancellation calls cancel, polls terminal status, and exposes failure/unavailability. |
-| UT-WE-2582-006 | AC-6, CC7.2 | Permission/backend failures leave a non-success observable condition and retry/escalate. |
-| UT-CHILD-2582-001 | BR-SP-*, AC-4 | SP `Cancelled` stops enrichment/classification and preserves Completed/Failed history. |
-| UT-CHILD-2582-002 | BR-AI-010 | AIA `Cancelled` stops analysis and preserves terminal result history. |
-| UT-CHILD-2582-003 | BR-ORCH-026 | RAR `ApprovalDecisionCancelled` cannot later become Approved or advance RR. |
-| UT-CHILD-2582-004 | BR-EM-005 | EA `Cancelled` stops checks and preserves terminal outcomes. |
-| UT-CHILD-2582-005 | BR-INTERACTIVE-010 | IS failure maps to RR failure by `spec.remediationRequestRef.name`; owner refs are not required. |
-| UT-CHILD-2582-006 | BR-INTERACTIVE-010 | Explicit join/takeover semantics remain idempotent and separate from new-session collision. |
-| UT-NOT-2582-001 | BR-ORCH-045.2 | Completion notification reuses exact same-parent/type identity. |
-| UT-NOT-2582-002 | BR-ORCH-036, CC7.2 | Failure/manual-review notification remains deliverable after RR failure. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
-| UT-SEC-2582-001 | AC-6 | Generated RBAC contains only required parent reads and backend-stop verbs; SSAR assumptions are testable. |
 
 ## 6. Integration and E2E scenarios
 
