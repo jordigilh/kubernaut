@@ -263,7 +263,11 @@ func imageReferenceHelmArgs(prefix, imageRef string) []string {
 	lastSlash := strings.LastIndex(imageRef, "/")
 	lastColon := strings.LastIndex(imageRef, ":")
 	if lastColon > lastSlash {
-		return []string{"--set-string", prefix + ".repository=" + imageRef[:lastColon], "--set-string", prefix + ".tag=" + imageRef[lastColon+1:]}
+		return []string{
+			"--set-string", prefix + ".repository=" + imageRef[:lastColon],
+			"--set-string", prefix + ".tag=" + imageRef[lastColon+1:],
+			"--set-string", prefix + ".digest=",
+		}
 	}
 	return []string{"--set-string", prefix + ".repository=" + imageRef}
 }

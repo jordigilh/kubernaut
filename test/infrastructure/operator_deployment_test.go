@@ -223,6 +223,19 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(joined).NotTo(ContainSubstring("latest"))
 	})
 
+	It("UT-2492-007 [BR-PLATFORM-014]: clears a stale digest for tag image overrides", func() {
+		args := BuildOperatorChartArgs(OperatorChartInstallOptions{
+			Namespace:     "kubernaut-system",
+			ChartPath:     "oci://example/charts/kubernaut-operator",
+			ChartVersion:  "1.6.0-rc30",
+			OperatorRef:   "quay.io/kubernaut-ai/kubernaut-operator-image:1.6.0-rc30",
+			RelatedImages: testOperatorOperandImages(),
+		})
+		joined := strings.Join(args, " ")
+		Expect(joined).To(ContainSubstring("--set-string image.tag=1.6.0-rc30"))
+		Expect(joined).To(ContainSubstring("--set-string image.digest="))
+	})
+
 	It("UT-2492-005 [BR-E2E-001]: bootstrap arguments do not install a CR or application chart", func() {
 		args := BuildOperatorBootstrapArgs(OperatorBootstrapOptions{
 			Namespace: "kubernaut-system",
