@@ -188,6 +188,6 @@ changed internal/pkg production packages maps **363/1,722 added production lines
 (21.1%)** to unit execution. Generated/API files, command wiring, test helpers,
 and test files are excluded. This is not the requirements-based acceptance
 metric: controller reconciliation branches are intentionally proven by the
-IT/E2E rows above. The 11/11 unit result therefore must not be presented as
+IT/E2E rows above. The 16/16 unit result therefore must not be presented as
 full-diff line coverage, and the 21.1% diagnostic must not be presented as a
 business-scenario failure.
