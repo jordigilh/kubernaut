@@ -251,6 +251,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 		phase = "Pending" // Default phase when selection completes but WFE phase not yet set
 	}
 	payload := api.WorkflowExecutionAuditPayload{
+		EventType:       api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted,
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		WorkflowName:    api.OptString{Value: workflowName, Set: workflowName != ""},
@@ -389,6 +390,7 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 		phase = "Pending" // Default phase when execution starts but WFE phase not yet set
 	}
 	payload := api.WorkflowExecutionAuditPayload{
+		EventType:       api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
@@ -469,6 +471,7 @@ func (m *Manager) recordAuditEvent(
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
 	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
+	payload.EventType = api.WorkflowExecutionAuditPayloadEventType(action)
 
 	// Set event data using ogen union constructor based on action
 	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
@@ -707,6 +710,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
 	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
+	payload.EventType = api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
 	// **Refactoring**: 2026-01-22 - Use shared helper for type-safe component enum conversion
