@@ -300,7 +300,7 @@ revision and sensitive-value handling.
 |------|------------|--------|------------|
 | AF and AuthWebhook disagree on input semantics | Medium | High | AuthWebhook is authoritative; add admission serialization tests. |
 | A stale terminal status update changes the override | Medium | High | Old/new object comparison and frozen business-field allowlist. |
-| Sensitive parameters enter audit payloads | Medium | High | Control-mapped redaction/reference policy. |
+| User input contains sensitive values | Medium | High | Restrict RAR/audit access; user input is not automatically classified or redacted. |
 
 ---
 

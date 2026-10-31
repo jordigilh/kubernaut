@@ -76,7 +76,7 @@ stores the terminal decision and the operator's partial parameter override.
 **Cons**:
 
 - The RAR CRD schema stores a second copy of selection data.
-- Sensitive-value storage and redaction rules must be explicit.
+- User-input storage and access rules must be explicit.
 - A shared schema-validation core and service-specific adapters must be wired and
   proven across KA, AF and AuthWebhook.
 
@@ -367,7 +367,13 @@ must support, subject to SOC2/FedRAMP control mapping:
 - effective execution selection
 - authenticated human actor and AF delegation identity
 - selection/review revision references
-- sensitive-value redaction or references
+
+User-entered text is not sanitized or redacted; preserve it exactly in the RAR
+and in any audit fields that include it. Limit RAR and audit readback to
+authorized callers and test denial for unauthorized callers. Workflow parameters
+are not a secret-consumption channel; this contract does not detect or prevent
+accidental secret input. KA's tool-output sanitizer is not a protection for RAR
+user input or approval audit fields.
 
 The AF review read returns the RR-derived unique RAR name and immutable
 `selectionRevision`. The approval input echoes those values. AuthWebhook
@@ -395,7 +401,7 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 1. AIA, RAR, AF, AuthWebhook and RO share a larger contract.
    - **Mitigation**: use one shared snapshot type and generated CRD artifacts.
 2. RAR stores original selection data in addition to AIA.
-   - **Mitigation**: define field-level sensitivity and redaction rules.
+   - **Mitigation**: enforce and test the existing RAR and audit authorization boundaries.
 3. Existing workflow-name override behavior from #594 is not exposed by the
    current #2570 AF contract.
    - **Mitigation**: keep workflow switching deferred to #2572.
@@ -405,7 +411,7 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | AuthWebhook admits a post-terminal business-field mutation | Medium | High | Compare old/new objects and enforce a frozen-field allowlist. |
-| Original and override parameter evidence leaks sensitive values | Medium | High | Control-mapped redaction/reference policy and audit tests. |
+| Original or override user input contains sensitive values | Medium | High | Restrict RAR/audit access and test unauthorized read denial; input is not redacted or automatically classified. |
 | AIA/RAR snapshot shapes diverge | Medium | Medium | Shared type and serialization tests across both CRDs. |
 | Editable metadata is missing before #2571 lands | High | Medium | Default catalog fields editable; keep KA-owned target parameters locked. |
 

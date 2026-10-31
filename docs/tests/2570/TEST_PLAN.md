@@ -71,7 +71,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | IT-AF-2570-012 | Concurrent approve/reject updates: exactly one commits; conflict differs from network error; ambiguous failures re-read before retry. | Actual AF/AW path and API server. |
 | IT-RO-2570-006 | Approved RAR → frozen target/lock/hash → WE → actual filtered inputs for Job, Tekton and Ansible. | RO/WE integration, real API and executor fixtures. |
 | IT-WE-2570-012 | WE trusted-ID lookup: same-ID dispatch succeeds; a previously selected ID with no match fails immediately after one lookup; stale/mismatched or foreign-only result never dispatches; transient API/network retries are bounded. | API server and backend fixtures. |
-| IT-AUD-2570-007 | RO decision → shared buffer → DataStorage HTTP/PostgreSQL; healthy correlated readback and observable enqueue failure. | Real service and isolated database. |
+| IT-AUD-2570-007 | RO decision → shared buffer → DataStorage HTTP/PostgreSQL; healthy authorized correlated readback preserves included user text, unauthorized RAR/audit reads are denied, and enqueue failure is observable. | Real service and isolated database with authorized/unauthorized identities. |
 | E2E-AUD-2570-008 | Authenticated review → admitted RAR → committed decision → correlated audit reconstruction; execute applicable safety and denial journeys. | Deployed AF, AW, RO, WE and DataStorage with TLS. |
 
 ### End-to-end business journeys
@@ -102,7 +102,7 @@ Test actual AIA/RAR CRD round trips and exact reviewer strings. No selection SHA
 
 - **SI-10 / ASVS input validation:** invalid types, constraints or keys do not commit a decision; AW is authoritative.
 - **AC-4 / AC-6:** unauthorized or forged callers are denied; namespace isolation and target safety hold; denied actions do not execute.
-- **AU-2 / AU-3 / SOC2 CC7.2:** under healthy delivery, query correlated intent, admission and committed decision with actor and permitted original/changed/effective values. Explicitly identify redactions; do not claim reconstruction of secrets.
+- **AU-2 / AU-3 / SOC2 CC7.2:** under healthy delivery, query correlated intent, admission and committed decision with actor and original/changed/effective values, preserving user-entered text without sanitization or redaction. Verify unauthorized callers cannot read protected RAR/audit data; no automatic secret-detection guarantee is implied.
 - **AU-9 / AU-11:** use applicable existing integrity, retention and hold tests or source-attributed inherited evidence. No seven-year passage or crash-safe delivery is inferred from a stored event.
 - **ASVS 5.0 V16.2/V16.3:** assess relevant correlation, sensitive logging, denied authorization and error visibility with the actual configured log processor; mark missing evidence unverified rather than claiming compliance.
 
