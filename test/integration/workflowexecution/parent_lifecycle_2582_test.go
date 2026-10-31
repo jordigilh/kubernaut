@@ -174,5 +174,15 @@ var _ = Describe("DD-2582 WorkflowExecution parent lifecycle", Label("integratio
 			return apierrors.IsNotFound(err)
 		}, 30*time.Second, 250*time.Millisecond).Should(BeTrue(),
 			"verified cancellation must remove the active Job before or with the WFE Cancelled observation")
+		Consistently(func(g Gomega) {
+			fetched := &workflowexecutionv1alpha1.WorkflowExecution{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), fetched)).To(Succeed())
+			if fetched.Status.Phase == workflowexecutionv1alpha1.PhaseCancelled {
+				check := &batchv1.Job{}
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, check)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+					"every observed Cancelled state must already have a stopped Job")
+			}
+		}, 5*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 })

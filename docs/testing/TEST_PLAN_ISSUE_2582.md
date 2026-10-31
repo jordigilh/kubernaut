@@ -78,7 +78,7 @@ unrelated #2570 changes.
 | UT-AI-2582-001 | BR-AI-007, AC-4 | AIA does not dispatch KA until RR is durably `Analyzing` and AIA is `Investigating`. |
 | UT-AI-2582-002 | BR-AI-009, SI-10 | First AgentSession CreateOnly collision fails AIA/manual review; no adoption. |
 | UT-AI-2582-003 | BR-AI-009 | Persisted AgentSession recovery identity requires matching UID, owner AIA, incident, and RR refs. |
-| UT-AI-2582-004 | BR-AI-023, CC7.2 | Parent failure reaches the real session manager and AgentSession ends `Cancelled` only after acknowledgement. |
+| UT-AI-2582-004 | BR-AI-009, AC-4 | A missing AIAnalysis parent is treated as a cancellation signal and never authorizes KA work. |
 | UT-AI-2582-005 | BR-AI-010 | AIA terminal failure preserves existing terminal AgentSession history. |
 | UT-WE-2582-001 | BR-WE-007, AC-4 | WE waits for persisted RR `Executing`; pre-created WE cannot dispatch while RR is `Investigating`. |
 | UT-WE-2582-002 | BR-WE-014 | WE enters `Cancelling` on RR failure and does not claim `Cancelled` before proof. |

@@ -86,11 +86,15 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
 
 		agentSessionKey := client.ObjectKey{Name: "as-" + rrName, Namespace: testNamespace}
-		Eventually(func() error {
+		Eventually(func() bool {
 			agentSession := &agentsessionv1.AgentSession{}
-			return k8sClient.Get(ctx, agentSessionKey, agentSession)
-		}, 2*time.Minute, time.Second).Should(Succeed(),
-			"authorized AIA work must create an AgentSession before parent failure")
+			if err := k8sClient.Get(ctx, agentSessionKey, agentSession); err != nil {
+				return false
+			}
+			return agentSession.Status.Phase == agentsessionv1.AgentSessionPhaseInvestigating &&
+				agentSession.Status.SessionID != ""
+		}, 2*time.Minute, time.Second).Should(BeTrue(),
+			"authorized AIA work must start an active KA AgentSession before parent failure")
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseFailed
