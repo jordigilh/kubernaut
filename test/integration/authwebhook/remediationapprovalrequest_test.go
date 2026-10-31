@@ -350,6 +350,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 		updateStatusAndWaitForWebhook(ctx, k8sClient, rar,
 			func() {
 				rar.Status.Decision = remediationv1.ApprovalDecisionCancelled
+				rar.Status.DecidedBy = "system"
 				rar.Status.DecisionMessage = "Parent remediation failed"
 			},
 			func() bool { return rar.Status.Decision == remediationv1.ApprovalDecisionCancelled },
