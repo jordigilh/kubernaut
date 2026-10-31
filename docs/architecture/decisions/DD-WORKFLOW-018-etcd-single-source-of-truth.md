@@ -2,6 +2,12 @@
 
 > **Proposed #2570 amendment — pending approval:** WE must check that the same
 > workflow ID exists in the trusted-namespace etcd catalog before dispatch.
+> For every WE dispatch, recompute the returned workflow's content-derived ID
+> and compare it to the frozen WE workflow ID; fail closed on missing, ambiguous
+> or mismatched identity. Human-approved WE receives its frozen selection from
+> the RAR; live catalog values do not replace that selection. This runtime check
+> also applies to non-approval execution; existing non-approval RO routing and
+> selection pass-through remain unchanged.
 > If adopted, this supersedes the no-live-lookup and deletion-continuation
 > assertions in sections 7–8 below. Execution inputs still come from the frozen
 > WE snapshot, not the live catalog. The check is point-in-time, not an atomic

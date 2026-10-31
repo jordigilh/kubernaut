@@ -7,9 +7,9 @@
 
 ## Acceptance
 
-Use Ginkgo/Gomega business-outcome tests. The 38 scenarios below are the proposed in-scope critical UT denominator: **0/38 implemented or passing**. All 38 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
+Use Ginkgo/Gomega business-outcome tests. The 41 scenarios below are the proposed in-scope critical UT denominator: **0/41 implemented or passing**. All 41 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 38 current scenarios are critical, the current gate is 38/38, not 90% of 38. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 41 current scenarios are critical, the current gate is 41/41, not 90% of 41. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -25,7 +25,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 8 | UT-AW-2570-005 | A changed managed target key is rejected. | AW; KA-191 / AC-4 |
 | 9 | UT-AW-2570-066 | Integer `1.0` is rejected, never rewritten. | shared validation/AW; KA-191 |
 | 10 | UT-AW-2570-065 | Valid float `1.0` is retained exactly. | shared validation/AW; KA-191 |
-| 11 | UT-VAL-2570-077 | A processed parameter with changed length or text, including equal-length changes, is rejected. | shared validation/AW; KA-191 / SI-10 |
+| 11 | UT-VAL-2570-077 | A processed candidate differing in length or text from the reviewer-submitted value is rejected; a changed override preserved exactly from the submission is accepted. | shared validation/AW; KA-191 / SI-10 |
 | 12 | UT-AW-2570-078 | Boolean text is accepted or rejected according to its schema. | shared validation; KA-191 / SI-10 |
 | 13 | UT-AW-2570-079 | A missing required effective parameter is rejected. | shared validation; KA-191 / SI-10 |
 | 14 | UT-AW-2570-015 | Malformed schema fails closed. | shared validation/AW; KA-191 / SI-10 |
@@ -53,6 +53,9 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 36 | UT-AW-2570-087 | Non-empty legacy `workflowName` is rejected before decision or execution. | AW; ORCH-025 / SI-10 |
 | 37 | UT-VAL-2570-088 | Omitted optional parameter with a schema default remains absent in the effective map; no default is silently inserted. | shared validation/RO; KA-191 |
 | 38 | UT-RO-2570-089 | After a successful RAR create but before the next step is recorded, an RO retry receives `AlreadyExists` and fails closed to manual review rather than adopting the RAR. | RO creator/reconciler; ORCH-026 / AC-6 |
+| 39 | UT-VAL-2570-090 | A non-finite float value is rejected. | shared validation; KA-191 / SI-10 |
+| 40 | UT-VAL-2570-091 | A float beyond the finite float64 range is rejected as overflow. | shared validation; KA-191 / SI-10 |
+| 41 | UT-VAL-2570-092 | A nonzero float that underflows to zero is rejected. | shared validation; KA-191 / SI-10 |
 
 ## Integration and end-to-end proof
 
@@ -70,7 +73,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | IT-AW-2570-005 | Generated RAR CEL blocks terminal mutation and whole-status removal while permitting observation updates; webhook bypass included. | API server with generated RAR CRD. |
 | IT-AF-2570-012 | Concurrent approve/reject updates: exactly one commits; conflict differs from network error; ambiguous failures re-read before retry. | Actual AF/AW path and API server. |
 | IT-RO-2570-006 | Approved RAR → frozen target/lock/hash → WE → actual filtered inputs for Job, Tekton and Ansible. | RO/WE integration, real API and executor fixtures. |
-| IT-WE-2570-012 | WE trusted-ID lookup: same-ID dispatch succeeds; a previously selected ID with no match fails immediately after one lookup; stale/mismatched or foreign-only result never dispatches; transient API/network retries are bounded. | API server and backend fixtures. |
+| IT-WE-2570-012 | WE trusted-ID lookup on approval and non-approval execution: same-ID dispatch succeeds; a previously selected ID with no match fails immediately after one lookup; stale/mismatched or foreign-only result never dispatches; transient API/network retries are bounded. | API server and backend fixtures. |
 | IT-AUD-2570-007 | RO decision → shared buffer → DataStorage HTTP/PostgreSQL; healthy authorized correlated readback preserves included user text, unauthorized RAR/audit reads are denied, and enqueue failure is observable. | Real service and isolated database with authorized/unauthorized identities. |
 | E2E-AUD-2570-008 | Authenticated review → admitted RAR → committed decision → correlated audit reconstruction; execute applicable safety and denial journeys. | Deployed AF, AW, RO, WE and DataStorage with TLS. |
 
