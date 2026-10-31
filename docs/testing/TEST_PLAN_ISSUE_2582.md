@@ -85,6 +85,10 @@ unrelated #2570 changes.
 | UT-WE-2582-004 | BR-WE-014 | Tekton cancellation verifies PipelineRun, TaskRuns, and Pods. |
 | UT-WE-2582-005 | BR-WE-015 | AWX cancellation calls cancel, polls terminal status, and exposes failure/unavailability. |
 | UT-WE-2582-006 | AC-4, SI-10 | A malformed parent reference enters verified cancellation instead of bypassing authorization. |
+| UT-WE-2582-007 | BR-WE-015, AC-4 | AWX recovers a missing execution reference from an exact WFE identity before cancellation. |
+| UT-WE-2582-008 | BR-WE-015, SI-10 | Ambiguous AWX identity matches fail closed rather than adopting one job. |
+| UT-WE-2582-009 | BR-WE-015, AC-4 | AWX recovery follows pagination and ignores unrelated malformed extra-vars records. |
+| UT-WE-2582-010 | SC-8, SI-10 | AWX recovery rejects cross-origin or scheme-changing pagination links before sending credentials. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
 
 ## 6. Integration and E2E scenarios
@@ -98,6 +102,7 @@ unrelated #2570 changes.
 | IT-KA-2582-001 | Dispatcher invokes the real session manager/terminal hook and acknowledges cancellation. |
 | IT-WE-2582-001 | Pre-created WE remains pending before `Executing`; normal create-before-phase path dispatches only after authorization. |
 | IT-WE-2582-002 | Production WFE reconciliation enters child-owned cancellation before claiming backend termination. |
+| IT-WE-2582-003 | Job-backed WFE observes backend Job termination before every observed `Cancelled` state. |
 | IT-EM-2582-001 | EA stops checks after RR failure and maps IS/parent link failures correctly. |
 | IT-NOT-2582-001 | Failure/manual-review notification delivers after RR enters `Failed`; completion idempotency remains intact. |
 | IT-AF-2582-001 | Production AF session service writes the InvestigationSession CRD used by the handoff path; collision/takeover semantics are covered by the mapped unit scenarios. |
@@ -146,13 +151,13 @@ business scenarios.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
-the measured scenario denominator is **11** and the passing numerator is **11**:
+the measured scenario denominator is **15** and the passing numerator is **15**:
 CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
-(`UT-WE-2582-003..006`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 11 are critical policy scenarios; no pending/skipped
+(`UT-WE-2582-003..010`), and terminal RAR decision immutability
+(`UT-AW-2582-001`). All 15 are critical policy scenarios; no pending/skipped
 examples are included in the numerator. UID replacement, acknowledgement
 ordering, and real backend termination are intentionally not counted in this
 unit denominator because their proving evidence requires the production-path
