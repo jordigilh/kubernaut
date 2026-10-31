@@ -433,6 +433,8 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
    and passes the complete effective map to actual executors.
 6. **E2E-AUD-2570-008 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
    payload reconstruction and applicable control-objective coverage.
+7. **CHECKPOINT W — IT-2570-020/021/022**: validate trusted namespace/RBAC,
+   pre-change RAR failure handling and RAR creation conflict handling.
 
 The implementation and TDD plans are proposed in `docs/tests/2570/`; feature
 implementation remains deferred until the documents are reviewed and approved.
