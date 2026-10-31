@@ -1,8 +1,22 @@
 # BR-ORCH-025/026: Workflow Data Pass-Through and Approval Orchestration
 
-> **Superseded (partial)**: References to a "Rejected" RR phase in this document are superseded.
-> Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason, not to a separate "Rejected" phase.
-> See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+> **Proposed approval-path amendment (#2570; pending ADR-076/DD-AF-017 review and merge):**
+> For human-approved execution, RO consumes the immutable selection and target
+> snapshot recorded in the RAR, with only admitted overrides to existing
+> parameter values. Omitted override keys retain their original values; no
+> workflow switch or live catalog/AIA re-resolution is permitted. Every WE,
+> including automatic non-approval execution, performs the trusted-namespace,
+> point-in-time workflow-ID and content-identity check before dispatch; absent,
+> ambiguous or mismatched workflows fail closed without creating an external
+> execution resource. A WE CR can already exist when this dispatch check fails.
+> A successful no-match fails immediately without retry; transient API/network
+> errors use up to three total attempts with bounded, cancellable backoff and
+> fail closed if unresolved. The check is
+> point-in-time and does not atomically prevent deletion after a successful read.
+> The check does not replace frozen snapshot values with live catalog data. RO's
+> AIA selection pass-through and routing remain unchanged for the non-approval
+> path, which nevertheless gains this WE runtime check. This amendment is proposed, not an assertion that the
+> current implementation or compliance evidence already satisfies it.
 
 **Service**: RemediationOrchestrator Controller
 **Category**: Workflow Data Pass-Through
@@ -20,7 +34,7 @@ This document consolidates two related business requirements for workflow data h
 1. **BR-ORCH-025**: Pass through workflow data from AIAnalysis to WorkflowExecution (no catalog lookup)
 2. **BR-ORCH-026**: Orchestrate approval workflow when AIAnalysis requires human approval
 
-**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → container_image` during MCP search. RO passes through from `AIAnalysis.status.selectedWorkflow`.
+**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → executionBundle` during workflow discovery. Currently RO passes through from `AIAnalysis.status.rcaResult.selectedWorkflow`. Under the proposed #2570 amendment, that pass-through remains for non-approval execution; human-approved execution instead uses the immutable RAR snapshot and admitted parameter overrides.
 
 ---
 
@@ -28,7 +42,7 @@ This document consolidates two related business requirements for workflow data h
 
 ### Description
 
-RemediationOrchestrator MUST pass through workflow data (including `container_image` and `container_digest`) from `AIAnalysis.status.selectedWorkflow` to `WorkflowExecution.spec.workflowRef` without performing catalog lookups.
+RemediationOrchestrator MUST pass through workflow data (including `executionBundle` and `executionBundleDigest`) from `AIAnalysis.status.rcaResult.selectedWorkflow` to `WorkflowExecution.spec.workflowRef` without performing catalog lookups.
 
 ### Priority
 
@@ -37,18 +51,18 @@ RemediationOrchestrator MUST pass through workflow data (including `container_im
 ### Rationale
 
 Per DD-CONTRACT-001 v1.2:
-- Kubernaut Agent resolves `workflow_id → container_image` during MCP search
-- `AIAnalysis.status.selectedWorkflow` contains the fully resolved workflow reference
+- Kubernaut Agent resolves `workflow_id → executionBundle` during workflow discovery
+- `AIAnalysis.status.rcaResult.selectedWorkflow` contains the fully resolved workflow reference
 - RO's responsibility is to pass this data through to WorkflowExecution
 - RO should NOT duplicate catalog lookup logic (separation of concerns)
 
 ### Implementation
 
-1. Read `AIAnalysis.status.selectedWorkflow` when phase = "Completed"
+1. Read `AIAnalysis.status.rcaResult.selectedWorkflow` when phase = "Completed"
 2. Pass through all fields to `WorkflowExecution.spec.workflowRef`:
    - `workflowId` ← `selectedWorkflow.workflowId`
-   - `containerImage` ← `selectedWorkflow.containerImage` (resolved by Kubernaut Agent)
-   - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by Kubernaut Agent)
+   - `executionBundle` ← `selectedWorkflow.executionBundle` (resolved by Kubernaut Agent)
+   - `executionBundleDigest` ← `selectedWorkflow.executionBundleDigest` (resolved by Kubernaut Agent)
 3. Pass through `parameters` unchanged (UPPER_SNAKE_CASE keys)
 4. Pass through `confidence` and `rationale` for audit trail
 5. Fail if `selectedWorkflow` is nil or missing required fields
@@ -58,7 +72,7 @@ Per DD-CONTRACT-001 v1.2:
 | ID | Criterion | Test Coverage |
 |----|-----------|---------------|
 | AC-025-1 | RO does NOT call Data Storage API for workflow resolution | Unit |
-| AC-025-2 | `container_image` and `container_digest` passed through from AIAnalysis.status | Unit, Integration |
+| AC-025-2 | `executionBundle` and `executionBundleDigest` passed through from AIAnalysis.status | Unit, Integration |
 | AC-025-3 | All workflow parameters passed through unchanged | Unit |
 | AC-025-4 | Missing selectedWorkflow → RemediationRequest marked as Failed | Unit |
 | AC-025-5 | Audit trail contains complete workflow selection context | Integration |
@@ -66,20 +80,32 @@ Per DD-CONTRACT-001 v1.2:
 ### Test Scenarios
 
 ```gherkin
-Scenario: Workflow data pass-through
-  Given AIAnalysis "aia-1" has status.selectedWorkflow with:
-    | workflowId | containerImage | containerDigest |
-    | pod-restart | registry.io/workflows/pod-restart:v1.2 | sha256:abc123 |
+Scenario: Workflow data pass-through without approval
+  Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow with:
+    | workflowId | workflowName | actionType | version | executionBundle | executionBundleDigest | executionEngine |
+    | 550e8400-e29b-41d4-a716-446655440000 | pod-restart | RestartPod | 1.2.0 | quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0@sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 | sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 | job |
   And AIAnalysis "aia-1" phase is "Completed"
   When RemediationOrchestrator creates WorkflowExecution
   Then WorkflowExecution.spec.workflowRef should have:
-    | workflowId | pod-restart |
-    | containerImage | registry.io/workflows/pod-restart:v1.2 |
-    | containerDigest | sha256:abc123 |
+    | workflowId | 550e8400-e29b-41d4-a716-446655440000 |
+    | workflowName | pod-restart |
+    | actionType | RestartPod |
+    | version | 1.2.0 |
+    | executionBundle | quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0@sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 |
+    | executionBundleDigest | sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 |
+    | executionEngine | job |
   And NO calls to Data Storage API should be made
 
+Scenario: Approved execution uses the RAR snapshot (proposed #2570)
+  Given an approved RAR with a frozen workflow and original parameters
+  And the admitted override changes one existing parameter value
+  When RemediationOrchestrator creates WorkflowExecution
+  Then its workflow selection comes from the RAR snapshot
+  And the changed parameter uses the admitted override value
+  And omitted parameters retain their original RAR values
+
 Scenario: Missing selectedWorkflow fails remediation
-  Given AIAnalysis "aia-1" has status.selectedWorkflow = nil
+  Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow = nil
   And AIAnalysis "aia-1" phase is "Completed"
   When RemediationOrchestrator attempts to create WorkflowExecution
   Then RemediationRequest should transition to phase "Failed"
@@ -114,7 +140,7 @@ When AIAnalysis confidence is below threshold (80%), human approval is required:
    - Create NotificationRequest (per ADR-017/ADR-018, see BR-ORCH-001)
 3. Wait for `RemediationApprovalRequest.status.decision`
 4. On Approved: Create WorkflowExecution
-5. On Rejected/Expired: Mark RemediationRequest as Rejected
+5. On Rejected/Expired: Mark RemediationRequest as Failed with an approval failure reason
 
 ### Acceptance Criteria
 
@@ -124,7 +150,7 @@ When AIAnalysis confidence is below threshold (80%), human approval is required:
 | AC-026-2 | NotificationRequest created for operator alerting | Unit, Integration |
 | AC-026-3 | Approval decision watched and acted upon | Integration |
 | AC-026-4 | Timeout handled via RemediationApprovalRequest controller | Integration |
-| AC-026-5 | Rejected approval → RemediationRequest phase = Rejected | Unit |
+| AC-026-5 | Rejected approval → RemediationRequest phase = Failed with a rejection reason | Unit |
 | AC-026-6 | Approved → WorkflowExecution created | Integration, E2E |
 
 ### Test Scenarios
@@ -144,14 +170,23 @@ Scenario: Approval orchestration - rejected
   When RemediationOrchestrator reconciles
   Then RemediationApprovalRequest should be created
   When RemediationApprovalRequest decision is "Rejected"
+  And the rejection has no decision message
   Then NO WorkflowExecution should be created
-  And RemediationRequest phase should be "Rejected"
+  And RemediationRequest phase should be "Failed"
+  And RemediationRequest failure reason should be "Rejected by operator"
+
+Scenario: Selected workflow is unavailable at dispatch (proposed #2570)
+  Given an approved RemediationApprovalRequest has produced a WorkflowExecution CR
+  And the previously selected workflow ID has no match in the trusted catalog
+  When WorkflowExecution checks the workflow before dispatch
+  Then WorkflowExecution fails closed without a retry for the no-match
+  And no external execution resource is created
 
 Scenario: Approval timeout
   Given AIAnalysis "aia-1" has approvalRequired = true
   And RemediationApprovalRequest exists with no decision for 15 minutes
   When approval timeout is triggered
-  Then RemediationRequest phase should be "Timeout"
+  Then RemediationRequest phase should be "Failed"
   And timeout reason should be "approval_timeout"
 ```
 
@@ -169,5 +204,3 @@ Scenario: Approval timeout
 **Document Version**: 1.0
 **Last Updated**: December 2, 2025
 **Maintained By**: Kubernaut Architecture Team
-
-

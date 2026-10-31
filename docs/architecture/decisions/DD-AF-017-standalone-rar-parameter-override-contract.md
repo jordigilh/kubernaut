@@ -49,7 +49,7 @@ snapshot required for a safe independent review.
 ### Problem Statement
 
 An authorized reviewer must be able to approve the exact RAR proposal, with an
-optional complete parameter replacement, without starting an investigation or
+optional partial parameter override, without starting an investigation or
 using `kubernaut_select_workflow`. AF must provide the input shape and UX
 preflight, while AuthWebhook remains the authoritative CRD admission boundary.
 
@@ -64,6 +64,8 @@ preflight, while AuthWebhook remains the authoritative CRD admission boundary.
 - AuthWebhook trusts AF delegation and enforces RAR mutation rules.
 - `TARGET_RESOURCE_*` parameters remain locked by a runtime/system rule even
   while catalog parameters default to editable until #2571 is implemented.
+- AF, KA and AuthWebhook reuse the shared workflow-schema validation core;
+  AF needs the complete schema, including bounds, pattern and dependencies.
 
 ---
 
@@ -90,9 +92,6 @@ structured parameter-only object.
   "decision": "Approved",
   "reason": "Reviewed the proposed parameter change",
   "workflow_override": {
-    "rar_uid": "<RAR UID>",
-    "selection_revision": "<selection revision>",
-    "selection_digest": "<canonical digest>",
     "parameters": {
       "MEMORY_LIMIT": "768Mi",
       "REPLICAS": "3"
@@ -144,7 +143,7 @@ the current string field.
 **Cons**:
 
 - Ambiguous precedence between fields.
-- Harder to extend for review revision and future structured metadata.
+- Harder to extend for future structured metadata.
 - Preserves a contract that incorrectly implies workflow selection is in scope.
 
 **Confidence**: 90% (rejected)
@@ -158,53 +157,70 @@ the current string field.
 `kubernaut_approve` accepts one structured parameter-only override object. The
 object contains:
 
-- `parameters: map[string]string` — complete replacement map
+- `parameters: map[string]string` — changed values for existing parameter names
 - `rationale: string` — human explanation
-- `rar_uid: string` — immutable RAR instance identity
-- `selection_revision: string` — immutable revision of the RAR snapshot
-- `selection_digest: string` — canonical digest of the reviewed snapshot
 
 The `workflow_override` object is valid only when `decision` is `Approved`.
 An ordinary approval or rejection may omit it and is not gated on optional
-parameter-edit metadata. When `workflow_override` is present on an `Approved`
-decision—including a rationale-only override that preserves the original
-parameter map—all three review bindings are required. AuthWebhook rejects
+parameter-edit metadata. A `workflow_override` may contain only rationale and
+preserve the original parameter map. AuthWebhook rejects
 `workflow_override` on every non-Approved decision state, including Pending,
 Rejected and Expired.
-
-The bindings map to the RAR source of truth as follows:
-
-- `rar_uid` is compared with the RAR object's `metadata.uid`.
-- `selection_revision` is compared with the RAR spec's
-  `originalSelection.selectionRevision`.
-- `selection_digest` is compared with the RAR spec's
-  `originalSelection.selectionDigest`.
-
-These are the canonical AF wire names; the RAR spec uses the camelCase field
-names shown above.
 
 The current AF contract does not expose a workflow-selection field. A workflow
 selection submitted through this parameter-only path is rejected.
 
-AuthWebhook compares `rar_uid`, `selection_revision` and `selection_digest` to
-the current pending RAR before admitting the decision. A mismatch is a stale
-review and produces no partial status mutation. Kubernetes `resourceVersion`
-remains an API concurrency guard, not the business review revision.
+The RR-derived RAR name identifies the reviewed immutable spec. Kubernetes
+`resourceVersion` guards concurrent status updates; no separate selection
+revision is required.
+
+The RAR is the single RO-created request for its RR; the RR-derived name is
+the review identifier and AF does not require a RAR UID. The creation and
+missing-request lifecycle is enforced by ADR-076: an `AlreadyExists` collision or a
+missing RAR after approval begins fails the RR and routes it to manual review,
+not a same-name replacement. Test this production boundary, including a retry
+after partial RO success, independently of the resource-version concurrency guard.
 
 ### Effective parameter semantics
 
 - Omitted override or nil parameters: preserve the original RAR spec map.
-- For a non-nil replacement map, AuthWebhook requires every locked
-  `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
-  its original value. Missing or changed locked keys are rejected. Any new
-  `TARGET_RESOURCE_*` key absent from the original snapshot is also rejected.
-- After locked-key validation, replace the entire original map.
-- Reject an explicit empty map when the original snapshot contains a locked
-  `TARGET_RESOURCE_*` key; otherwise execute with no parameters.
+- Submitted names must exist in the original RAR snapshot; new names are rejected.
+- Submitted `TARGET_RESOURCE_*` values must equal their original values.
+- Overlay submitted changes on the original map; omitted keys are preserved.
+- Preserve each valid submitted parameter string exactly in RAR status and the
+  effective map. Validation may decode a temporary value but MUST NOT rewrite
+  the input. Reject integer `1.0` rather than changing it to `1`; a valid float
+  input `1.0` remains `1.0`. Original parameters remain in immutable RAR spec.
+- An explicit empty map is a no-op, not a request to clear parameters.
 - The wire representation must preserve omitted versus explicit-empty maps;
-  an explicit `{}` must reach the status patch as an empty replacement map.
+  an explicit `{}` must reach the status patch as an empty override map.
 - AF may validate shape and required input presence for user feedback.
-- AuthWebhook validates the admitted business result and locks the final RAR.
+- AF uses the shared schema core for preflight when the full reviewed schema is
+  available. AuthWebhook independently decodes the RAR string values and uses
+  the same core on the entire effective map; it remains authoritative and locks
+  the final RAR. AF feedback is not an authorization or admission guarantee.
+- Parameter strings for non-string schema types use JSON text, e.g. `3`, `true`
+  or `["a","b"]`; schema `string` values remain unquoted text. AF review must
+  distinguish the effective RAR map from the executor's declared-key filtered
+  inputs; missing declaration metadata blocks new-RAR execution, rather than
+  enabling the executor's nil-allowlist pass-through.
+- Preserve integer numeric text without a float64 conversion; integer input uses
+  integer text such as `3`, not decimal or exponent forms such as `3.0` or `1e3`.
+  Show an omitted
+  optional parameter as omitted; do not silently insert its default during the
+  approval operation. The user states workflow parameters contain no secrets.
+  BR-AUDIT-011 documents
+  KA Secret read permissions and sanitization before LLM output; runtime
+  isolation needs verification. WorkflowExecution uses backend-specific secret
+  dependency delivery. Assess free-text rationale and errors separately.
+- Redacted Secret information may be used as LLM investigation context. Workflow
+  parameters are operational inputs defined by the discovery agent, not fields
+  for consuming secrets; WE receives secret dependencies separately.
+- The AF review exposes each parameter's name and declared type. Feedback for
+  an integer input such as `3.0` identifies the parameter, says it requires a
+  whole number, and offers `3` as an example; `3.0` remains valid for a float.
+  Integer values must fit signed `int64`; floats must be finite `float64`
+  values and may not overflow or silently underflow from nonzero to zero.
 
 ### Validation and authorization boundary
 
@@ -215,11 +231,26 @@ remains an API concurrency guard, not the business review revision.
 3. AuthWebhook authenticates the Kubernetes caller, recognizes AF as the
    trusted intermediary, preserves `DecidedBy`, and sets `DecidedVia`.
 4. AuthWebhook validates parameter keys, schema constraints, target-parameter
-   protection and decision eligibility. The API server's CEL transition rules
+   protection and decision eligibility. For an override it verifies the current
+   catalog workflow in AW's trusted service namespace has exactly one match
+   with a recomputed content-derived identity matching the reviewed workflow ID;
+   a successful no-match, ambiguity or changed content is rejected immediately.
+   Transient API/network failures use up to three total attempts with bounded,
+   cancellable backoff and fail closed if unresolved; 403 and invalid namespace
+   configuration are not retried, and cancellation or deadline expiry stops
+   retries. Ordinary decisions require no catalog read.
+   The API server's CEL transition rules
    enforce the ADR-076 frozen business-field set; AuthWebhook mirrors that
    allowlist and performs the contextual checks CEL cannot perform.
 5. RO consumes the admitted RAR snapshot and creates WE; it does not perform
    user selection or infer approval intent.
+
+The AF discovery/review projection must carry every constraint needed by the
+shared core, not only its current name, type, description, required, default
+and enum fields. Input adapters reconcile typed KA/AF values with AW's
+string-valued transport; policy-specific handling stays with each caller.
+Precise type decoding and default/dependency rules require agreed fixed vectors
+before implementation.
 
 ### Audit and readback
 
@@ -228,8 +259,8 @@ event taxonomy. AF records approval intent; AuthWebhook records the admitted
 business fields and delegation attribution; RO records the persisted committed
 decision and business-context/orchestration events. The final field set is
 selected from the SOC2/FedRAMP control mapping and must support original,
-override and effective parameter evidence, actor/rationale attribution, review
-revision and sensitive-value handling.
+override and effective parameter evidence and actor/rationale attribution, with
+the configured access-control boundary.
 
 ---
 
@@ -238,7 +269,7 @@ revision and sensitive-value handling.
 ### Positive Consequences
 
 1. AF exposes a clean, workflow-generic contract.
-2. Existing #594 RO semantics remain reusable.
+2. The existing approval lifecycle remains reusable with the RAR snapshot contract.
 3. Workflow selection is not accidentally reintroduced into the parameter-only
    feature.
 4. AuthWebhook remains the server-side safety boundary.
@@ -260,7 +291,7 @@ revision and sensitive-value handling.
 |------|------------|--------|------------|
 | AF and AuthWebhook disagree on input semantics | Medium | High | AuthWebhook is authoritative; add admission serialization tests. |
 | A stale terminal status update changes the override | Medium | High | Old/new object comparison and frozen business-field allowlist. |
-| Sensitive parameters enter audit payloads | Medium | High | Control-mapped redaction/reference policy. |
+| User input contains sensitive values | Medium | High | Restrict RAR/audit access; user input is not automatically classified or redacted. |
 
 ---
 
@@ -277,13 +308,13 @@ revision and sensitive-value handling.
 
 ## Validation Strategy
 
-1. **UT-AF-2570-001 / BR-ORCH-025**: JSON/schema tests for structured input,
-   review bindings, omitted parameters and empty maps.
-2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: AuthWebhook tests for invalid keys,
-   schema violations, target locks and post-terminal business-field mutation.
-3. **IT-RO-2570-005 / BR-ORCH-025/026**: AF-to-AuthWebhook-to-RO-to-WE test
-   proving the complete map.
-4. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: audit/readback tests
+1. **UT-AW-2570-001/003; IT-AF-2570-003/010 / BR-ORCH-025**: structured input,
+   partial overlays, omitted parameters and empty maps.
+2. **UT-AW-2570-004/005/015/021; IT-AW-2570-004/011 / BR-AUTH-001, SI-10**:
+   invalid keys, schema violations, target locks and post-terminal mutations.
+3. **IT-RO-2570-006 / BR-ORCH-025/026**: approved RAR through RO to WE and
+   actual executor inputs.
+4. **E2E-AUD-2570-008 / BR-AUDIT-005/006, CC7.2, AU-3**: audit/readback tests
    after the control-objective field mapping is approved.
 5. No production implementation begins until this DD and ADR-076 are merged.
 
