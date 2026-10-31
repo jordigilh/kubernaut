@@ -186,6 +186,13 @@ admitting the decision. A mismatch is a stale
 review and produces no partial status mutation. Kubernetes `resourceVersion`
 remains an API concurrency guard, not the business review revision.
 
+The RAR is the single RO-created request for its RR; the RR-derived name is
+the review identifier and AF does not require a RAR UID. The creation and
+missing-request lifecycle is enforced by ADR-076: an untrusted collision or a
+missing RAR after approval begins fails the RR and routes it to manual review,
+not a same-name replacement. Test the production boundary and idempotent RO
+retries independently of the resource-version concurrency guard.
+
 ### Effective parameter semantics
 
 - Omitted override or nil parameters: preserve the original RAR spec map.

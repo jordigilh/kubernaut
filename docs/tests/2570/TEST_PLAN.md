@@ -7,9 +7,9 @@
 
 ## Acceptance
 
-Use Ginkgo/Gomega business-outcome tests. The 34 scenarios below are the proposed in-scope critical UT denominator: **0/34 implemented or passing**. All 34 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
+Use Ginkgo/Gomega business-outcome tests. The 35 scenarios below are the proposed in-scope critical UT denominator: **0/35 implemented or passing**. All 35 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 34 current scenarios are critical, the current gate is 34/34, not 90% of 34. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 35 current scenarios are critical, the current gate is 35/35, not 90% of 35. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -49,6 +49,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 32 | UT-KA-2577-034 | Trusted-namespace discovery excludes foreign ActionTypes. | KA catalog; WORKFLOW-007 / AC-4 |
 | 33 | UT-RO-2570-028 | A valid frozen remediation target drives safety and execution identity. | RO target/WE creator; ORCH-026 / AC-4 |
 | 34 | UT-DS-2578-001 | DataStorage helper rejects malformed typed parameter values. | DataStorage models; KA-191 / SI-10 |
+| 35 | UT-RO-2570-086 | A conflicting pre-created RAR is not reused; the RR fails and is routed to manual review. | RO creator/reconciler; ORCH-026 / AC-6 |
 
 ## Integration and end-to-end proof
 
@@ -58,6 +59,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | IT-KA-2577-001/002 | KA bootstrap list/lookup/watch excludes foreign workflows and ActionTypes, including same-name/ID objects. | Real API server, two namespaces. |
 | IT-2570-020 | KA, AW and WE use their configured trusted namespace; missing namespace fails closed, namespace-scoped Role/RoleBinding grants required access including AW/WE `list` on `remediationworkflows`, and foreign catalog objects cannot satisfy lookup. | Real API server with service identities and at least two namespaces. |
 | IT-2570-021 | Pending and already-approved pre-change RARs lacking required selection/declaration data fail closed with an observable reason; no execution is created. | Real API server and RO/AW integration. |
+| IT-2570-022 | Only RO's service identity may create RARs; a conflicting/untrusted same-name RAR cannot be reused and causes RR failure and manual-review routing. A RAR missing after the RR enters approval is not recreated and causes the same safe outcome. Legitimate RO retries remain idempotent. | Real API server, deployed authorization boundary and RO reconciliation. |
 | IT-KA-2570-008 | Generated RemediationWorkflow CRD supports `status.workflowId` server-side selection within a namespace and returns the matching workflow. | Real Kubernetes API server with generated CRD. |
 | IT-KA-2570-009 | Production KA validation invokes shared core and returns actionable self-correction. | KA integration with schema fixture. |
 | IT-AF-2570-003/010 | Actual MCP read/approve exposes full schema; authorized updates reach shared validation, unauthorized and stale updates fail. | AF, API server, authorization and webhook. |

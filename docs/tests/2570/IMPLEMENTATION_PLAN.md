@@ -25,6 +25,7 @@
 - **Selector prerequisite:** Declare `status.workflowId` under the RemediationWorkflow CRD version's `selectableFields`, regenerate both source and embedded CRDs, and pass real API-server selector test `IT-KA-2570-008` before relying on AW/WE lookup. This selector change is not part of the documentation-only PR and must be included or merged with the implementation.
 - For a previously selected workflow, a successful API lookup with no matching ID fails closed immediately and is not retried; report that the workflow ID was not found. Ambiguity or an ID mismatch also fails closed. For transient API or network errors, use up to three total attempts with `pkg/shared/backoff` jitter, respecting context cancellation and admission timeout. Authorization/configuration failures are not blindly retried. A successful read is point-in-time; deletion before dispatch is not atomically prevented.
 - First committed terminal decision wins. Use an explicit Kubernetes `resourceVersion` precondition. Report a conflict/already-decided outcome separately from a network failure. On an ambiguous transport failure, re-read before any bounded retry and never overwrite a committed decision. The RR-derived RAR name is unique by convention; no reviewer-facing RAR UID binding is required.
+- **RAR creation boundary:** RO is the authorized creator of the RR's single RAR. Restrict RAR creation to RO through the applicable RBAC/admission boundary and verify an existing same-name RAR belongs to the RR and was created through the authorized path before idempotent reuse. A conflicting or untrusted pre-created RAR fails the RR with an observable reason and routes it to manual review; it must never be reviewed or executed. If the RR has already entered the approval phase and its RAR is missing, fail and route to manual review instead of creating a replacement for the same RR. Preserve valid RO retries that encounter their own RAR. Do not use a reviewer-facing RAR UID as a substitute for enforcing this boundary.
 - Emit existing typed, correlated AF intent, AW admission and RO committed-decision audit evidence including actor and permitted original/changed/effective values. Preserve existing defensive redaction. Audit is fire-and-forget: expose enqueue failures and do not claim enqueue is durable persistence. Persistent buffering, synchronous flush gates and audit finalizers are out of scope.
 
 ## Selection integrity
@@ -47,15 +48,16 @@ The RAR spec is write-once and is the reviewed source of truth; do not add a sep
 
 **Mandatory cross-cutting wiring gates:** CHECKPOINT W also requires IT-2570-020
 (trusted namespace and service-account RBAC, including AW/WE selector `list`)
-and IT-2570-021 (pre-change RARs fail closed) to pass. Neither may be omitted
-when evaluating the affected KA, AW, RO or WE production paths.
+and IT-2570-021 (pre-change RARs fail closed), and IT-2570-022 (RAR creation
+authority, conflict handling and manual-review routing) to pass. None may be
+omitted when evaluating the affected KA, AW, RO or WE production paths.
 
 ## TDD and verification
 
 1. **RED (1–2 days):** Add failing Ginkgo/Gomega unit scenarios and real API/admission integration tests for every wiring row. Prove failures before implementation.
 2. **GREEN (3–5 days):** Implement #2577/#2578 and the snapshot, parameter preservation, shared validation, AF/AW, RO/WE, concurrency, audit and generated CRD/OpenAPI wiring. Pass affected UT and IT; complete CHECKPOINT W for every row.
 3. **REFACTOR (0.5–1 day):** Remove duplicated validation/snapshot handling and improve error context without adding components. If no improvement is needed, mark N/A with a reason. Run post-refactor build and compile-only checks.
-4. **Verify (1–2 days, excluding infrastructure recovery):** Pass all 34 critical scenarios in TP-2570, every wiring row, the successful/denied/missing-workflow end-to-end journeys and applicable control journeys; run affected regressions, `go build ./...`, `go test ./... -run=^$ -timeout=30s`, `golangci-lint run --timeout=5m`, relevant `make test`/integration/E2E targets and generated-artifact checks. Record unrelated baseline or unavailable infrastructure separately; do not claim unavailable tests passed.
+4. **Verify (1–2 days, excluding infrastructure recovery):** Pass all 35 critical scenarios in TP-2570, every wiring row, the successful/denied/missing-workflow end-to-end journeys and applicable control journeys; run affected regressions, `go build ./...`, `go test ./... -run=^$ -timeout=30s`, `golangci-lint run --timeout=5m`, relevant `make test`/integration/E2E targets and generated-artifact checks. Record unrelated baseline or unavailable infrastructure separately; do not claim unavailable tests passed.
 
 Map applicable audit events to AU-2/AU-3 and SOC2 CC7.2, input validation to SI-10, authorization/namespace boundaries to AC-4/AC-6, and applicable ASVS objectives to proving cases. Assess AU-9/AU-11 using source-attributed existing evidence or scoped tests; do not infer retention duration or crash durability from an enqueued or persisted event. Roll back with a reviewed revert, never by discarding unrelated work.
 

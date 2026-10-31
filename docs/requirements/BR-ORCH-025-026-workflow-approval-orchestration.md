@@ -1,9 +1,5 @@
 # BR-ORCH-025/026: Workflow Data Pass-Through and Approval Orchestration
 
-> **Superseded (partial)**: References to a "Rejected" RR phase in this document are superseded.
-> Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason, not to a separate "Rejected" phase.
-> See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
->
 > **Proposed approval-path amendment (#2570; pending ADR-076/DD-AF-017 review and merge):**
 > For human-approved execution, RO consumes the immutable selection and target
 > snapshot recorded in the RAR, with only admitted overrides to existing
@@ -123,7 +119,7 @@ When AIAnalysis confidence is below threshold (80%), human approval is required:
    - Create NotificationRequest (per ADR-017/ADR-018, see BR-ORCH-001)
 3. Wait for `RemediationApprovalRequest.status.decision`
 4. On Approved: Create WorkflowExecution
-5. On Rejected/Expired: Mark RemediationRequest as Rejected
+5. On Rejected/Expired: Mark RemediationRequest as Failed with an approval failure reason
 
 ### Acceptance Criteria
 
@@ -133,7 +129,7 @@ When AIAnalysis confidence is below threshold (80%), human approval is required:
 | AC-026-2 | NotificationRequest created for operator alerting | Unit, Integration |
 | AC-026-3 | Approval decision watched and acted upon | Integration |
 | AC-026-4 | Timeout handled via RemediationApprovalRequest controller | Integration |
-| AC-026-5 | Rejected approval → RemediationRequest phase = Rejected | Unit |
+| AC-026-5 | Rejected approval → RemediationRequest phase = Failed with a rejection reason | Unit |
 | AC-026-6 | Approved → WorkflowExecution created | Integration, E2E |
 
 ### Test Scenarios
@@ -154,13 +150,13 @@ Scenario: Approval orchestration - rejected
   Then RemediationApprovalRequest should be created
   When RemediationApprovalRequest decision is "Rejected"
   Then NO WorkflowExecution should be created
-  And RemediationRequest phase should be "Rejected"
+  And RemediationRequest phase should be "Failed"
 
 Scenario: Approval timeout
   Given AIAnalysis "aia-1" has approvalRequired = true
   And RemediationApprovalRequest exists with no decision for 15 minutes
   When approval timeout is triggered
-  Then RemediationRequest phase should be "Timeout"
+  Then RemediationRequest phase should be "Failed"
   And timeout reason should be "approval_timeout"
 ```
 
@@ -178,4 +174,3 @@ Scenario: Approval timeout
 **Document Version**: 1.0
 **Last Updated**: December 2, 2025
 **Maintained By**: Kubernaut Architecture Team
-
