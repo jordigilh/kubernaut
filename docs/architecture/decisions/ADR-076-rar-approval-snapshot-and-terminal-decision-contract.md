@@ -409,21 +409,21 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 ## Validation Strategy
 
-1. **UT-AF-2570-001 / BR-ORCH-025**: validate AIA-to-RAR snapshot
-   serialization and nil/empty parameter semantics.
-2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: validate AuthWebhook accepts one
-   terminal business update and rejects later business-field mutations.
-3. **IT-AW-2570-003 / BR-ORCH-026**: validate controller-only condition and
-   audit bookkeeping remains possible.
-4. **IT-AF-2570-004 / BR-AUTH-001, AU-3**: validate AF human audit plus
-   AuthWebhook delegation attribution.
-5. **IT-RO-2570-005 / BR-ORCH-025/026**: validate RO creates WE from RAR only
-   and passes the complete effective map.
-6. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
-   payload reconstruction and control-objective coverage.
+1. **UT-AA-2570-067/068; IT-AA-2570-001 / BR-ORCH-025**: validate
+   nil/empty parameter semantics and AIA-to-RAR snapshot serialization.
+2. **UT-AW-2570-021; IT-AW-2570-005 / BR-AUTH-001, SI-10**: validate one
+   terminal business update and rejection of later business-field mutations.
+3. **IT-AW-2570-005 / BR-ORCH-026**: validate controller observation updates
+   remain possible after a decision.
+4. **IT-AF-2570-003; E2E-AUD-2570-008 / BR-AUTH-001, AU-3**: validate AF
+   authorization, human audit and AuthWebhook delegation attribution.
+5. **IT-RO-2570-006 / BR-ORCH-025/026**: validate RO creates WE from RAR only
+   and passes the complete effective map to actual executors.
+6. **E2E-AUD-2570-008 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
+   payload reconstruction and applicable control-objective coverage.
 
-Implementation planning and TDD scenarios are intentionally deferred until
-this ADR/DD set is merged.
+The implementation and TDD plans are proposed in `docs/tests/2570/`; feature
+implementation remains deferred until the documents are reviewed and approved.
 
 ---
 
