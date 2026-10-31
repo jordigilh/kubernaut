@@ -42,7 +42,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -77,25 +79,28 @@ func (f *fakeInvestigationRunner) Investigate(ctx context.Context, _ katypes.Sig
 
 // dispatcherClientScheme mirrors cmd/kubernautagent/agentsession_wiring.go's
 // buildAgentSessionScheme: the built-in K8s scheme (coordination/v1 Lease)
-// plus AgentSession and InvestigationSession, used for the Dispatcher's own
+// plus AgentSession, AIAnalysis, RemediationRequest, and InvestigationSession, used for the Dispatcher's own
 // raw, uncached client -- kept deliberately distinct from the Manager's
 // scheme (managerScheme, below), matching production's split.
 func dispatcherClientScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
+	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
 	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
 	return scheme
 }
 
 // managerScheme mirrors cmd/kubernautagent/agentsession_wiring.go's
-// buildAgentSessionManagerScheme: only AgentSession is needed since the
-// Manager's cache exclusively drives Reconcile dispatch (watch ->
-// workqueue -> Reconcile), never direct reads/writes -- see dispatcher.go's
-// Dispatcher doc comment.
+// buildAgentSessionManagerScheme: the Manager cache drives AgentSession,
+// AIAnalysis, and RemediationRequest watches; direct reads/writes still use
+// the raw client -- see dispatcher.go's Dispatcher doc comment.
 func managerScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
+	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
 	return scheme
 }
 
