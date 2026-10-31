@@ -244,9 +244,9 @@ after partial RO success, independently of the resource-version concurrency guar
    trusted intermediary, preserves `DecidedBy`, and sets `DecidedVia`.
 4. AuthWebhook validates parameter keys, schema constraints, target-parameter
    protection and decision eligibility. For an override it verifies the current
-   catalog workflow in AW's trusted service namespace has a recomputed
-   content-derived identity matching the reviewed workflow ID;
-   a missing or changed workflow is rejected and transient network errors may
+   catalog workflow in AW's trusted service namespace has exactly one match
+   with a recomputed content-derived identity matching the reviewed workflow ID;
+   a missing, ambiguous or changed workflow is rejected and transient network errors may
    be retried with bounded backoff. Ordinary decisions require no catalog read.
    The API server's CEL transition rules
    enforce the ADR-076 frozen business-field set; AuthWebhook mirrors that
@@ -317,13 +317,13 @@ revision and sensitive-value handling.
 
 ## Validation Strategy
 
-1. **UT-AF-2570-001 / BR-ORCH-025**: JSON/schema tests for structured input,
-   review bindings, omitted parameters and empty maps.
-2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: AuthWebhook tests for invalid keys,
-   schema violations, target locks and post-terminal business-field mutation.
-3. **IT-RO-2570-005 / BR-ORCH-025/026**: AF-to-AuthWebhook-to-RO-to-WE test
-   proving the complete map.
-4. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: audit/readback tests
+1. **UT-AW-2570-001/003; IT-AF-2570-003 / BR-ORCH-025**: structured input,
+   partial overlays, omitted parameters and empty maps.
+2. **UT-AW-2570-004/005/015/021; IT-AW-2570-004/011 / BR-AUTH-001, SI-10**:
+   invalid keys, schema violations, target locks and post-terminal mutations.
+3. **IT-RO-2570-006 / BR-ORCH-025/026**: approved RAR through RO to WE and
+   actual executor inputs.
+4. **E2E-AUD-2570-008 / BR-AUDIT-005/006, CC7.2, AU-3**: audit/readback tests
    after the control-objective field mapping is approved.
 5. No production implementation begins until this DD and ADR-076 are merged.
 

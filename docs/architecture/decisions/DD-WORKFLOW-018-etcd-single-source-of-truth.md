@@ -8,6 +8,8 @@
 > the RAR; live catalog values do not replace that selection. This runtime check
 > also applies to non-approval execution; existing non-approval RO routing and
 > selection pass-through remain unchanged.
+> A successful no-match fails immediately without retry; transient API/network
+> failures use bounded, cancellable retries and fail closed if unresolved.
 > If adopted, this supersedes the no-live-lookup and deletion-continuation
 > assertions in sections 7–8 below. Execution inputs still come from the frozen
 > WE snapshot, not the live catalog. The check is point-in-time, not an atomic

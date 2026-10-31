@@ -4,12 +4,14 @@
 > For human-approved execution, RO consumes the immutable selection and target
 > snapshot recorded in the RAR, with only admitted overrides to existing
 > parameter values. Omitted override keys retain their original values; no
-> workflow switch or live catalog/AIA re-resolution is permitted. WE must still
-> perform the trusted-namespace, point-in-time workflow-ID and content-identity
-> check before dispatch; absent, ambiguous or mismatched workflows fail closed.
-> This check does not replace frozen snapshot values with live catalog data. The
-> unchanged AIA pass-through requirements below continue to apply to the
-> non-approval path. This amendment is proposed, not an assertion that the
+> workflow switch or live catalog/AIA re-resolution is permitted. Every WE,
+> including automatic non-approval execution, performs the trusted-namespace,
+> point-in-time workflow-ID and content-identity check before dispatch; absent,
+> ambiguous or mismatched workflows fail closed without creating an external
+> execution resource. A WE CR can already exist when this dispatch check fails.
+> The check does not replace frozen snapshot values with live catalog data. RO's
+> AIA selection pass-through and routing remain unchanged for the non-approval
+> path, which nevertheless gains this WE runtime check. This amendment is proposed, not an assertion that the
 > current implementation or compliance evidence already satisfies it.
 
 **Service**: RemediationOrchestrator Controller
@@ -156,6 +158,13 @@ Scenario: Approval orchestration - rejected
   Then NO WorkflowExecution should be created
   And RemediationRequest phase should be "Failed"
   And RemediationRequest failure reason should be "Rejected by operator"
+
+Scenario: Selected workflow is unavailable at dispatch (proposed #2570)
+  Given an approved RemediationApprovalRequest has produced a WorkflowExecution CR
+  And the previously selected workflow ID has no match in the trusted catalog
+  When WorkflowExecution checks the workflow before dispatch
+  Then WorkflowExecution fails closed without a retry for the no-match
+  And no external execution resource is created
 
 Scenario: Approval timeout
   Given AIAnalysis "aia-1" has approvalRequired = true
