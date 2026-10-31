@@ -70,7 +70,7 @@ stores the terminal decision and the operator's partial parameter override.
 
 - RAR can be reviewed independently of an investigation session.
 - RO consumes one approval-scoped source of truth.
-- Original parameters and selection revision cannot drift after request creation.
+- Original parameters cannot drift after request creation.
 - Audit reconstruction can distinguish original, override and effective values.
 
 **Cons**:
@@ -132,12 +132,10 @@ AIAnalysis and RAR use the same logical selection snapshot contract:
 workflowId: oom-recovery
 workflowName: oom-recovery-v1
 workflowVersion: 1.2.0
-workflowRevision: sha256:...
 executionBundle: registry.example/oom-recovery@sha256:...
 parameters:
   MEMORY_LIMIT: "512Mi"
   REPLICAS: "3"
-selectionRevision: rar-selection-v1
 ```
 
 The canonical typed execution portion of this snapshot is the existing
@@ -147,7 +145,7 @@ It carries the catalog-authoritative workflow identity and execution fields:
 `ExecutionBundleDigest`, `ExecutionEngine`, `EngineConfig`,
 `ServiceAccountName`, `ExecutionClusterID`, `Dependencies`, `Resources` and
 `DeclaredParameterNames`. The selection contract accompanies that type with
-`Parameters`, the selected workflow's parameter schema and `SelectionRevision`.
+`Parameters` and the selected workflow's parameter schema.
 The RAR also freezes the target context needed for
 locking, resource checks, hashing and WorkflowExecution creation.
 
@@ -366,7 +364,6 @@ must support, subject to SOC2/FedRAMP control mapping:
 - complete override parameters and rationale
 - effective execution selection
 - authenticated human actor and AF delegation identity
-- selection/review revision references
 
 User-entered text is not sanitized or redacted; preserve it exactly in the RAR
 and in any audit fields that include it. Limit RAR and audit readback to
@@ -375,11 +372,9 @@ are not a secret-consumption channel; this contract does not detect or prevent
 accidental secret input. KA's tool-output sanitizer is not a protection for RAR
 user input or approval audit fields.
 
-The AF review read returns the RR-derived unique RAR name and immutable
-`selectionRevision`. The approval input echoes those values. AuthWebhook
-rejects the mutation when the revision differs from the current pending RAR.
-`resourceVersion` remains the Kubernetes API concurrency guard; it is not the
-business review revision.
+The AF review read and approval input use the RR-derived unique RAR name. The
+immutable RAR spec is the reviewed selection, and Kubernetes `resourceVersion`
+guards concurrent status updates. No separate selection revision is required.
 
 The final field set is derived from ADR-034, DD-AUDIT-003, BR-AUDIT-005,
 BR-AUDIT-006 and the applicable AU/AC/SI control objectives.

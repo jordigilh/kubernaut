@@ -92,7 +92,6 @@ structured parameter-only object.
   "decision": "Approved",
   "reason": "Reviewed the proposed parameter change",
   "workflow_override": {
-    "selection_revision": "<selection revision>",
     "parameters": {
       "MEMORY_LIMIT": "768Mi",
       "REPLICAS": "3"
@@ -144,7 +143,7 @@ the current string field.
 **Cons**:
 
 - Ambiguous precedence between fields.
-- Harder to extend for review revision and future structured metadata.
+- Harder to extend for future structured metadata.
 - Preserves a contract that incorrectly implies workflow selection is in scope.
 
 **Confidence**: 90% (rejected)
@@ -160,31 +159,20 @@ object contains:
 
 - `parameters: map[string]string` — changed values for existing parameter names
 - `rationale: string` — human explanation
-- `selection_revision: string` — immutable revision of the RAR snapshot
 
 The `workflow_override` object is valid only when `decision` is `Approved`.
 An ordinary approval or rejection may omit it and is not gated on optional
-parameter-edit metadata. When `workflow_override` is present on an `Approved`
-decision—including a rationale-only override that preserves the original
-parameter map—the selection revision is required. AuthWebhook rejects
+parameter-edit metadata. A `workflow_override` may contain only rationale and
+preserve the original parameter map. AuthWebhook rejects
 `workflow_override` on every non-Approved decision state, including Pending,
 Rejected and Expired.
-
-The bindings map to the RAR source of truth as follows:
-
-- `selection_revision` is compared with the RAR spec's
-  `originalSelection.selectionRevision`.
-
-These are the canonical AF wire names; the RAR spec uses the camelCase field
-names shown above.
 
 The current AF contract does not expose a workflow-selection field. A workflow
 selection submitted through this parameter-only path is rejected.
 
-AuthWebhook compares `selection_revision` to the current pending RAR before
-admitting the decision. A mismatch is a stale
-review and produces no partial status mutation. Kubernetes `resourceVersion`
-remains an API concurrency guard, not the business review revision.
+The RR-derived RAR name identifies the reviewed immutable spec. Kubernetes
+`resourceVersion` guards concurrent status updates; no separate selection
+revision is required.
 
 The RAR is the single RO-created request for its RR; the RR-derived name is
 the review identifier and AF does not require a RAR UID. The creation and
@@ -268,8 +256,8 @@ event taxonomy. AF records approval intent; AuthWebhook records the admitted
 business fields and delegation attribution; RO records the persisted committed
 decision and business-context/orchestration events. The final field set is
 selected from the SOC2/FedRAMP control mapping and must support original,
-override and effective parameter evidence, actor/rationale attribution, review
-revision and sensitive-value handling.
+override and effective parameter evidence and actor/rationale attribution, with
+the configured access-control boundary.
 
 ---
 
@@ -278,7 +266,7 @@ revision and sensitive-value handling.
 ### Positive Consequences
 
 1. AF exposes a clean, workflow-generic contract.
-2. Existing #594 RO semantics remain reusable.
+2. The existing approval lifecycle remains reusable with the RAR snapshot contract.
 3. Workflow selection is not accidentally reintroduced into the parameter-only
    feature.
 4. AuthWebhook remains the server-side safety boundary.
