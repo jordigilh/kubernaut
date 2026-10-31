@@ -262,7 +262,7 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 		Expect(runner.calls.Load()).To(Equal(int32(0)))
 	})
 
-	It("IT-KA-2582-002: retains the dispatch lease until active parent cancellation is acknowledged", func() {
+	It("UT-KA-2582-002: retains the dispatch lease until active parent cancellation is acknowledged", func() {
 		runner := &nonCooperativeInvestigationRunner{started: make(chan struct{}), release: make(chan struct{})}
 		DeferCleanup(runner.Release)
 		d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(),

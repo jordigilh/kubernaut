@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -32,7 +33,7 @@ import (
 )
 
 var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "issue-2582"), func() {
-	It("IT-AI-2582-001: cancels before AgentSession creation when the persisted RR is Failed [BR-AI-023, AC-4]", func() {
+	It("IT-AI-2582-001: cancels active AgentSession work after the persisted RR becomes Failed [BR-AI-023, AC-4]", func() {
 		rrName := helpers.UniqueTestName("rr-ai-parent-failed")
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: testNamespace},
@@ -51,7 +52,7 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
+		rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		analysis := &aianalysisv1.AIAnalysis{
@@ -80,6 +81,17 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
 
+		agentSessionKey := client.ObjectKey{Name: "as-" + rrName, Namespace: testNamespace}
+		Eventually(func() error {
+			agentSession := &agentsessionv1.AgentSession{}
+			return k8sClient.Get(ctx, agentSessionKey, agentSession)
+		}, 2*time.Minute, time.Second).Should(Succeed(),
+			"authorized AIA work must create an AgentSession before parent failure")
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
 		Eventually(func() string {
 			fetched := &aianalysisv1.AIAnalysis{}
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), fetched); err != nil {
@@ -89,7 +101,10 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		}, 2*time.Minute, time.Second).Should(Equal(aianalysisv1.PhaseCancelled))
 
 		agentSession := &agentsessionv1.AgentSession{}
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "as-" + rrName, Namespace: testNamespace}, agentSession)).ToNot(Succeed(),
-			"a failed parent must prevent the AIA production path from creating AgentSession work")
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, agentSessionKey, agentSession)
+			return apierrors.IsNotFound(err)
+		}, 2*time.Minute, time.Second).Should(BeTrue(),
+			"AIA must delete the AgentSession only after parent-driven KA cancellation is acknowledged")
 	})
 })

@@ -56,7 +56,7 @@ unrelated #2570 changes.
 | RO collision and child mapping | `RemediationOrchestratorReconciler.SetupWithManager` | `internal/controller/remediationorchestrator/reconcile_loop.go`, `cmd/remediationorchestrator/main.go` | IT-RO-2582-001 |
 | SP parent gate/cancellation | SP reconcile before enrichment | `internal/controller/signalprocessing/`, `cmd/signalprocessing/main.go` | IT-SP-2582-001 |
 | AIA parent gate/cancellation | Pending/Investigating dispatch | `internal/controller/aianalysis/`, `cmd/aianalysis/main.go` | IT-AI-2582-001 |
-| AgentSession/KA cancellation | AgentSession reconcile and dispatcher | `internal/kubernautagent/agentsession/`, `cmd/kubernautagent/agentsession_wiring.go` | IT-KA-2582-001 |
+| AgentSession/KA cancellation | AgentSession reconcile and dispatcher | `internal/kubernautagent/agentsession/`, `cmd/kubernautagent/agentsession_wiring.go` | IT-KA-2582-001; IT-AI-2582-001; UT-KA-2582-002 |
 | WE gate and backend stop | Pending and cancellation lifecycle | `internal/controller/workflowexecution/`, `pkg/workflowexecution/executor/`, `cmd/workflowexecution/main.go` | IT-WE-2582-001/002 |
 | EA parent gate/cancellation | EM reconcile before checks | `internal/controller/effectivenessmonitor/`, `cmd/effectivenessmonitor/main.go` | IT-EM-2582-001 |
 | Notification exception | Notification reconcile/delivery | `internal/controller/notification/`, `cmd/notification/main.go` | IT-NOT-2582-001 |
@@ -101,8 +101,8 @@ unrelated #2570 changes.
 
 | ID | Outcome |
 |---|---|
-| IT-RO-2582-001 | Production RO dispatch maps child status/failure through `spec.remediationRequestRef.name`; dropped/reconnected watches do not authorize premature work. |
-| IT-RO-2582-002 | RAR cancellation and approval-vs-failure optimistic concurrency preserve failed RR history. |
+| IT-RO-2582-001 | Production RO leaves active child status ownership to child controllers after RR cancellation; no false child failure is written. |
+| IT-RO-2582-002 | RAR `Cancelled` is terminal and cannot be reopened as `Approved` by a later status update. |
 | IT-SP-2582-001 | SP production reconcile reads RR directly and stops before enrichment when RR fails. |
 | IT-AI-2582-001 | AIA/KA production path gates dispatch and cancels active KA work on RR failure. |
 | IT-KA-2582-001 | Dispatcher invokes the real session manager/terminal hook and acknowledges cancellation. |
@@ -111,7 +111,7 @@ unrelated #2570 changes.
 | IT-EM-2582-001 | EA stops checks after RR failure and maps IS/parent link failures correctly. |
 | IT-NOT-2582-001 | Failure/manual-review notification delivers after RR enters `Failed`; completion idempotency remains intact. |
 | IT-AF-2582-001 | Production AF session service writes the InvestigationSession CRD used by the handoff path; collision/takeover semantics are covered by the mapped unit scenarios. |
-| IT-SEC-2582-001 | Generated manifests and SSAR assumptions validate least privilege. |
+| IT-SEC-2582-001 | Generated manager RBAC contains the required lifecycle parent reads, child status writes, RAR creation, and InvestigationSession reads. |
 | E2E-2582-001 | Successful SP→AIA→WE completion produces an idempotent completion notification. |
 | E2E-2582-002 | Normal remediation child ordering and owner references remain intact through the lifecycle. |
 | E2E-2582-003 | RR cancellation during active AI leaves child cancellation ownership with AIA and prevents later WFE dispatch. |
@@ -169,11 +169,11 @@ pending/skipped examples are included in the numerator.
 | Create-before-phase handoff waits and expires fail-closed | `UT-RO-2582-005..006`, `UT-AI-2582-001`, `IT-WE-2582-001` | Pass/CI confirmation pending |
 | Missing, failed, cancelled, timed-out, or unreadable parent never authorizes work | `UT-RO-2582-007`, `UT-AI-2582-004`, `IT-AI-2582-001`, `IT-SP-2582-001`, `IT-EM-2582-001` | Pass/CI confirmation pending |
 | AgentSession owner UID replacement is rejected | `IT-KA-2582-001` | Pass locally and in focused envtest |
-| Active KA cancellation retains lease until acknowledgement | `IT-KA-2582-002` | Pass |
+| Active KA cancellation retains lease until acknowledgement | `UT-KA-2582-002`, `IT-AI-2582-001` | Pass/CI confirmation pending |
 | Terminal AgentSession history is preserved | `UT-AI-2582-005` | Pass |
 | RAR terminal cancellation cannot be reopened | `UT-AW-2582-001`, `IT-RO-2582-002` | Pass/CI confirmation pending |
 | RO does not claim child/backend cancellation | `IT-RO-2582-001`, `IT-RO-1421-003`, `IT-WE-2582-002` | Pass/CI confirmation pending |
-| Generated lifecycle RBAC is present and scoped | `IT-SEC-2582-001`, `make manifests` | Pass |
+| Generated lifecycle RBAC entries are present | `IT-SEC-2582-001`, `make manifests` | Pass |
 | Real-Kind normal, cancellation, failure, and restart journeys | `E2E-2582-001..005` | CI confirmation pending |
 
 The local AIA/EM/SP/WE integration matrix is environment-blocked when Podman
