@@ -41,4 +41,21 @@ var _ = Describe("WorkflowExecution parent gate", func() {
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 		Expect(wfe.Status.Phase).To(Equal(workflowexecutionv1.PhasePending))
 	})
+
+	It("UT-WE-2582-006: malformed parent references enter verified cancellation instead of bypassing the gate [AC-4, SI-10]", func() {
+		scheme := runtime.NewScheme()
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{Name: "we-invalid-parent", Namespace: "default"},
+			Status:     workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhasePending},
+		}
+		client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).WithStatusSubresource(wfe).Build()
+		reconciler := &WorkflowExecutionReconciler{Client: client, APIReader: client}
+
+		_, err, handled := reconciler.enforceRemediationParentGate(context.Background(), wfe, log.Log)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(handled).To(BeTrue())
+		Expect(wfe.Status.Phase).To(Equal(workflowexecutionv1.PhaseCancelling))
+	})
 })

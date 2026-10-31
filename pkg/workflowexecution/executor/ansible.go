@@ -832,7 +832,7 @@ func (a *AnsibleExecutor) VerifyCancellation(
 	_ string,
 ) (*CancellationResult, error) {
 	if wfe.Status.ExecutionRef == nil {
-		return &CancellationResult{Terminated: true, Reason: "NoBackendReference", Message: "no AWX execution reference exists"}, nil
+		return &CancellationResult{Reason: "NoBackendReference", Message: "cannot verify AWX termination without an execution reference"}, nil
 	}
 	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
 	if err != nil {

@@ -162,11 +162,12 @@ func (r *WorkflowExecutionReconciler) enforceRemediationParentGate(ctx context.C
 	if r.APIReader == nil {
 		return ctrl.Result{}, nil, false
 	}
-	// Legacy/unit fixtures may omit the parent link; CRD admission rejects this
-	// in production and the direct parent gate helper covers malformed links.
-	// Do not turn those isolated executor tests into parent-cache tests.
 	if wfe.Spec.RemediationRequestRef.Name == "" || wfe.Spec.RemediationRequestRef.Namespace == "" {
-		return ctrl.Result{}, nil, false
+		logger.Error(nil, "WorkflowExecution has an invalid RemediationRequestRef; refusing backend work")
+		return r.applyRemediationParentGate(ctx, wfe, logger, parentlifecycle.GateResult{
+			Decision: parentlifecycle.GateCancelled,
+			Reason:   "invalid-parent-reference",
+		})
 	}
 	ref := wfe.Spec.RemediationRequestRef
 	if wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted ||
@@ -200,18 +201,10 @@ func (r *WorkflowExecutionReconciler) applyRemediationParentGate(ctx context.Con
 		logger.V(1).Info("waiting for persisted RemediationRequest executing phase", "phase", gate.ParentPhase)
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil, true
 	case parentlifecycle.GateCancelled:
-		now := metav1.Now()
-		if wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending {
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelled
-			wfe.Status.CompletionTime = &now
-			wfe.Status.FailureReason = "parent RemediationRequest failed or was not found before backend dispatch"
-			wfe.Status.ObservedGeneration = wfe.Generation
-			weconditions.SetExecutionComplete(wfe, false, "ParentCancelled", wfe.Status.FailureReason)
-		} else {
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelling
-			wfe.Status.FailureReason = "parent RemediationRequest failed or was cancelled"
-			wfe.Status.ObservedGeneration = wfe.Generation
-		}
+		wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelling
+		wfe.Status.FailureReason = "parent RemediationRequest failed or was cancelled"
+		wfe.Status.ObservedGeneration = wfe.Generation
+		weconditions.SetExecutionComplete(wfe, false, "ParentCancelled", wfe.Status.FailureReason)
 		if updateErr := r.Status().Update(ctx, wfe); updateErr != nil {
 			return ctrl.Result{}, updateErr, true
 		}
