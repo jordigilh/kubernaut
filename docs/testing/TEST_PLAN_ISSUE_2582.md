@@ -167,10 +167,21 @@ integration tests listed below.
 | Active KA cancellation retains lease until acknowledgement | `UT-KA-2582-002`, `IT-AI-2582-001` | Pass/CI confirmation pending |
 | Terminal AgentSession history is preserved | `UT-AI-2582-005` | Pass |
 | RAR terminal cancellation cannot be reopened | `UT-AW-2582-001`, `IT-RO-2582-002` | Pass/CI confirmation pending |
-| RO does not claim child/backend cancellation | `IT-RO-2582-001`, `IT-RO-1421-003`, `IT-WE-2582-002` | Pass/CI confirmation pending |
+| RO does not claim child/backend cancellation | `IT-RO-2582-001`, `IT-RO-1421-003`, `IT-WE-2582-002..003` | Pass/CI confirmation pending |
 | Generated lifecycle RBAC entries are present | `IT-SEC-2582-001`, `make manifests` | Pass |
 | Real-Kind normal, cancellation, failure, and restart journeys | `E2E-2582-001..005` | CI confirmation pending |
 
 The local AIA/EM/SP/WE integration matrix is environment-blocked when Podman
 cannot allocate image storage; those scenarios are not counted as locally
 passed and remain merge-blocking until the current-head CI jobs pass.
+
+### Changed-production-line diagnostic
+
+As a structural diagnostic only, a fresh `go test -coverprofile` run over the
+changed internal/pkg production packages maps **363/1,722 added production lines
+(21.1%)** to unit execution. Generated/API files, command wiring, test helpers,
+and test files are excluded. This is not the requirements-based acceptance
+metric: controller reconciliation branches are intentionally proven by the
+IT/E2E rows above. The 11/11 unit result therefore must not be presented as
+full-diff line coverage, and the 21.1% diagnostic must not be presented as a
+business-scenario failure.
