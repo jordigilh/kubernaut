@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -324,5 +325,27 @@ var _ = Describe("AWXHTTPClient execution identity recovery (DD-2582)", func() {
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(jobID).To(Equal(12))
+	})
+
+	It("UT-WE-2582-010: rejects cross-origin and scheme-changing pagination links before sending credentials", func() {
+		for _, nextURLBuilder := range []func(string) string{
+			func(string) string { return "https://attacker.example/api/v2/jobs/?page=2" },
+			func(baseURL string) string {
+				return strings.Replace(baseURL, "http://", "https://", 1) + "/api/v2/jobs/?page=2"
+			},
+		} {
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"next":"` + nextURLBuilder(server.URL) + `","results":[]}`))
+			}))
+			client, err := executor.NewAWXHTTPClient(server.URL, "test-token")
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = client.FindJobByExecutionIdentity(context.Background(), "we-partial", "default", "wfe-uid")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("outside configured origin"))
+			server.Close()
+		}
 	})
 })

@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -160,7 +160,10 @@ func (c *AWXHTTPClient) FindJobByExecutionIdentity(ctx context.Context, wfeName,
 				matches = append(matches, job.ID)
 			}
 		}
-		pageURL = c.normalizeAWXNextURL(nextURL)
+		pageURL, err = c.normalizeAWXNextURL(nextURL)
+		if err != nil {
+			return 0, err
+		}
 	}
 	if len(matches) > 1 {
 		return 0, fmt.Errorf("multiple AWX jobs match WFE identity %s/%s", wfeNamespace, wfeName)
@@ -202,11 +205,23 @@ func (c *AWXHTTPClient) fetchAWXJobPage(ctx context.Context, pageURL string) (st
 	return result.Next, result.Results, nil
 }
 
-func (c *AWXHTTPClient) normalizeAWXNextURL(nextURL string) string {
-	if strings.HasPrefix(nextURL, "/") {
-		return c.baseURL + nextURL
+func (c *AWXHTTPClient) normalizeAWXNextURL(nextURL string) (string, error) {
+	if nextURL == "" {
+		return "", nil
 	}
-	return nextURL
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse configured AWX URL: %w", err)
+	}
+	next, err := url.Parse(nextURL)
+	if err != nil {
+		return "", fmt.Errorf("parse AWX pagination URL: %w", err)
+	}
+	resolved := base.ResolveReference(next)
+	if resolved.Scheme != base.Scheme || resolved.Host != base.Host || resolved.User != nil {
+		return "", fmt.Errorf("reject AWX pagination URL outside configured origin: %q", nextURL)
+	}
+	return resolved.String(), nil
 }
 
 func decodeAWXExtraVars(raw json.RawMessage) (map[string]interface{}, error) {
