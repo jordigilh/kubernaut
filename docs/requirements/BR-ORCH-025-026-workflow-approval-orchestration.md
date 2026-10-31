@@ -30,7 +30,7 @@ This document consolidates two related business requirements for workflow data h
 1. **BR-ORCH-025**: Pass through workflow data from AIAnalysis to WorkflowExecution (no catalog lookup)
 2. **BR-ORCH-026**: Orchestrate approval workflow when AIAnalysis requires human approval
 
-**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → executionBundle` during workflow discovery. RO passes through from `AIAnalysis.status.rcaResult.selectedWorkflow`.
+**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → executionBundle` during workflow discovery. Currently RO passes through from `AIAnalysis.status.rcaResult.selectedWorkflow`. Under the proposed #2570 amendment, that pass-through remains for non-approval execution; human-approved execution instead uses the immutable RAR snapshot and admitted parameter overrides.
 
 ---
 
@@ -76,17 +76,29 @@ Per DD-CONTRACT-001 v1.2:
 ### Test Scenarios
 
 ```gherkin
-Scenario: Workflow data pass-through
+Scenario: Workflow data pass-through without approval
   Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow with:
-    | workflowId | executionBundle | executionBundleDigest |
-    | pod-restart | registry.io/workflows/pod-restart:v1.2 | sha256:abc123 |
+    | workflowId | workflowName | actionType | version | executionBundle | executionBundleDigest | executionEngine |
+    | 550e8400-e29b-41d4-a716-446655440000 | pod-restart | RestartPod | 1.2.0 | quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0@sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 | sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 | job |
   And AIAnalysis "aia-1" phase is "Completed"
   When RemediationOrchestrator creates WorkflowExecution
   Then WorkflowExecution.spec.workflowRef should have:
-    | workflowId | pod-restart |
-    | executionBundle | registry.io/workflows/pod-restart:v1.2 |
-    | executionBundleDigest | sha256:abc123 |
+    | workflowId | 550e8400-e29b-41d4-a716-446655440000 |
+    | workflowName | pod-restart |
+    | actionType | RestartPod |
+    | version | 1.2.0 |
+    | executionBundle | quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0@sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 |
+    | executionBundleDigest | sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8 |
+    | executionEngine | job |
   And NO calls to Data Storage API should be made
+
+Scenario: Approved execution uses the RAR snapshot (proposed #2570)
+  Given an approved RAR with a frozen workflow and original parameters
+  And the admitted override changes one existing parameter value
+  When RemediationOrchestrator creates WorkflowExecution
+  Then its workflow selection comes from the RAR snapshot
+  And the changed parameter uses the admitted override value
+  And omitted parameters retain their original RAR values
 
 Scenario: Missing selectedWorkflow fails remediation
   Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow = nil
