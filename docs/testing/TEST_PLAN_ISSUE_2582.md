@@ -91,6 +91,7 @@ unrelated #2570 changes.
 | UT-WE-2582-010 | SC-8, SI-10 | AWX recovery rejects cross-origin or scheme-changing pagination links before sending credentials. |
 | UT-WE-2582-011 | SC-8, SI-10 | AWX HTTP redirects are origin-locked before bearer-token forwarding. |
 | UT-WE-2582-012 | BR-AUDIT-005, CC7.2 | Verified cancellation emits `workflowexecution.workflow.cancelled`, not `workflow.failed`. |
+| UT-WE-2582-013 | BR-WE-015, AC-4 | AWX launch retry recovers the existing job and does not launch a duplicate. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
 | UT-AW-2582-001 | BR-ORCH-026, SI-10 | A cancelled approval decision cannot be reopened as Approved. |
 
@@ -150,20 +151,20 @@ race with a privileged actor is tested as residual risk, not claimed atomic.
 
 The following is the requirements-based acceptance matrix for the #2582 change;
 raw package coverage is diagnostic and is not used as a substitute for these
-business scenarios. The complete active unit set in Section 5 contains **25
-source-backed scenarios: 25/25 pass locally**, with no pending or skipped
+business scenarios. The complete active unit set in Section 5 contains **26
+source-backed scenarios: 26/26 pass locally**, with no pending or skipped
 examples. The affected package commands cover the full set; the unrelated
 `UT-AUDIT-2522-001` shared audit-store timing failure is tracked separately.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
-the measured scenario denominator is **17** and the passing numerator is **17**:
+the measured scenario denominator is **18** and the passing numerator is **18**:
 CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
-(`UT-WE-2582-003..012`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 17 are critical policy scenarios; no pending/skipped
+(`UT-WE-2582-003..013`), and terminal RAR decision immutability
+(`UT-AW-2582-001`). All 18 are critical policy scenarios; no pending/skipped
 examples are included in the numerator. UID replacement, acknowledgement
 ordering, and real backend termination are intentionally not counted in this
 unit denominator because their proving evidence requires the production-path
@@ -194,7 +195,7 @@ changed internal/pkg production packages maps **363/1,795 added production lines
 (20.2%)** to unit execution. Generated/API files, command wiring, test helpers,
 and test files are excluded. This is not the requirements-based acceptance
 metric: controller reconciliation branches are intentionally proven by the
-IT/E2E rows above. The 25/25 active-unit result (including the 17/17 critical
+IT/E2E rows above. The 26/26 active-unit result (including the 18/18 critical
 subset) therefore must not be presented as
 full-diff line coverage, and the 20.2% diagnostic must not be presented as a
 business-scenario failure.

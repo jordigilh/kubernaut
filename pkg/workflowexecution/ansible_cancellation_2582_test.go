@@ -77,3 +77,16 @@ type recoverableAWXClient struct {
 func (c *recoverableAWXClient) FindJobByExecutionIdentity(context.Context, string, string, string) (int, error) {
 	return c.recoveredJobID, nil
 }
+
+type sequencedRecoverableAWXClient struct {
+	*mockAWXClient
+	recoveryCalls int
+}
+
+func (c *sequencedRecoverableAWXClient) FindJobByExecutionIdentity(context.Context, string, string, string) (int, error) {
+	c.recoveryCalls++
+	if c.recoveryCalls == 1 {
+		return 0, nil
+	}
+	return 77, nil
+}

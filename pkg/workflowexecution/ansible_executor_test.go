@@ -189,6 +189,32 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 	})
 
 	Context("Create", func() {
+		It("UT-WE-2582-013: recovers an AWX launch on retry instead of launching a duplicate", func() {
+			launches := 0
+			awx := &sequencedRecoverableAWXClient{mockAWXClient: &mockAWXClient{
+				launchFunc: func(context.Context, int, map[string]interface{}) (int, error) {
+					launches++
+					return 77, nil
+				},
+			}}
+			ansible := executor.NewAnsibleExecutor(awx, nil, nil, 1, ctrl.Log.WithName("test-recovery"))
+			engineConfig, err := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/restart.yml",
+				"jobTemplateName": "restart-pod",
+				"inventoryName":   "production",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			wfe := newAnsibleWFE("wfe-awx-retry", "default", engineConfig, nil)
+
+			first, err := ansible.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			second, err := ansible.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first.ResourceName).To(Equal("awx-job-77"))
+			Expect(second.ResourceName).To(Equal("awx-job-77"))
+			Expect(launches).To(Equal(1))
+		})
+
 		It("UT-WE-015-001: should launch AWX job with correct extra_vars from workflow parameters", func() {
 			var capturedExtraVars map[string]interface{}
 			var capturedTemplateID int
