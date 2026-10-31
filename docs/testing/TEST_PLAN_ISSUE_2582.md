@@ -69,11 +69,11 @@ unrelated #2570 changes.
 | ID | BR/control | Business outcome |
 |---|---|---|
 | UT-RO-2582-001 | BR-ORCH-025, AC-4 | Pre-existing SP/AIA/RAR/WE/EA is reported as a typed collision; no ref or phase advance occurs. |
-| UT-RO-2582-002 | BR-ORCH-025, AC-4 | Concurrent `AlreadyExists` is a collision, never adoption. |
-| UT-RO-2582-003 | BR-ORCH-036, AU-2 | Collision fails RR, sets manual review/failure phase, and creates an escalation notification without reopening a terminal RR. |
-| UT-RO-2582-004 | SI-10 | Malformed/missing parent links fail closed. |
+| UT-RO-2582-002 | BR-ORCH-025, AC-4 | `CreateWithResult` reports an existing deterministic WFE as a collision without a creation side effect. |
+| UT-RO-2582-003 | BR-ORCH-036, AU-2 | RO does not claim active child cancellation or overwrite child-owned terminal status. |
+| UT-RO-2582-004 | AC-6 | RO leaves active child status ownership to the child controllers during parent cancellation. |
 | UT-RO-2582-005 | BR-ORCH-025 | Legitimate create-before-parent-phase window waits and does not call side effects. |
-| UT-RO-2582-006 | BR-ORCH-025 | Handoff timeout becomes observable fail-closed/cancelled state. |
+| UT-RO-2582-006 | BR-ORCH-025 | The bounded handoff-expiry predicate identifies the create-before-phase timeout boundary. |
 | UT-RO-2582-007 | AC-4, AC-6 | Fresh parent read errors/restarts requeue without authorizing work; NotFound cancels the child. |
 | UT-AI-2582-001 | BR-AI-007, AC-4 | AIA does not dispatch KA until RR is durably `Analyzing` and AIA is `Investigating`. |
 | UT-AI-2582-002 | BR-AI-009, SI-10 | First AgentSession CreateOnly collision fails AIA/manual review; no adoption. |

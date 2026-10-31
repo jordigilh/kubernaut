@@ -176,12 +176,13 @@ var _ = Describe("DD-2582 WorkflowExecution parent lifecycle", Label("integratio
 					"every observed Cancelled state must already have a stopped Job")
 			}
 		}, 30*time.Second, 250*time.Millisecond).Should(Succeed())
-		Eventually(func() string {
+		Eventually(func() bool {
 			fetched := &workflowexecutionv1alpha1.WorkflowExecution{}
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), fetched); err != nil {
-				return ""
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), fetched); err != nil || fetched.Status.Phase != workflowexecutionv1alpha1.PhaseCancelled {
+				return false
 			}
-			return fetched.Status.Phase
-		}, 5*time.Second, 250*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCancelled))
+			check := &batchv1.Job{}
+			return apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, check))
+		}, 5*time.Second, 250*time.Millisecond).Should(BeTrue())
 	})
 })
