@@ -37,6 +37,18 @@ type parentSeedingClient struct {
 }
 
 func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, opts ...client.CreateOption) error {
+	if parent, ok := object.(*remediationv1.RemediationRequest); ok {
+		if err := c.Client.Create(ctx, parent, opts...); err != nil {
+			return err
+		}
+		if parent.Status.OverallPhase == "" {
+			parent.Status.OverallPhase = c.parentPhase
+		}
+		if err := c.Status().Update(ctx, parent); err != nil {
+			return fmt.Errorf("persist direct WFE parent RemediationRequest phase: %w", err)
+		}
+		return nil
+	}
 	wfe, ok := object.(*workflowexecutionv1alpha1.WorkflowExecution)
 	if ok && wfe.Spec.RemediationRequestRef.Name != "" && wfe.Spec.RemediationRequestRef.Namespace != "" {
 		parent := &remediationv1.RemediationRequest{

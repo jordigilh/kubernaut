@@ -38,6 +38,18 @@ type parentSeedingClient struct {
 }
 
 func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, opts ...client.CreateOption) error {
+	if parent, ok := object.(*remediationv1.RemediationRequest); ok {
+		if err := c.Client.Create(ctx, parent, opts...); err != nil {
+			return err
+		}
+		if parent.Status.OverallPhase == "" {
+			parent.Status.OverallPhase = c.parentPhase
+		}
+		if err := c.Status().Update(ctx, parent); err != nil {
+			return fmt.Errorf("persist direct AIA parent RemediationRequest phase: %w", err)
+		}
+		return nil
+	}
 	analysis, ok := object.(*aianalysisv1.AIAnalysis)
 	if ok && analysis.Spec.RemediationRequestRef.Name != "" && analysis.Spec.RemediationRequestRef.Namespace != "" {
 		parent := &remediationv1.RemediationRequest{
