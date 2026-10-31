@@ -2509,6 +2509,42 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(weconditions.IsConditionTrue(persisted, weconditions.ConditionAuditRecorded)).To(BeTrue())
 				Expect(store.events).To(HaveLen(1))
 			})
+
+			It("UT-WE-2582-012: records a cancelled workflow audit instead of workflow.failed", func() {
+				completionTime := metav1.Now()
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-cancelled-audit", Namespace: "default"},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{Name: "rr-cancelled-audit", Namespace: "default"},
+						TargetResource:        defaultDeploymentMyApp,
+					},
+					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+						Phase:          workflowexecutionv1alpha1.PhaseCancelled,
+						CompletionTime: &completionTime,
+					},
+				}
+				store := &mockAuditStore{}
+				fakeClient = fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+					WithObjects(wfe).
+					Build()
+				reconciler = &workflowexecution.WorkflowExecutionReconciler{
+					Client:             fakeClient,
+					Scheme:             scheme,
+					Recorder:           recorder,
+					ExecutionNamespace: "kubernaut-workflows",
+					CooldownPeriod:     time.Hour,
+					AuditManager:       audit.NewManager(store, logr.Discard()),
+					StatusManager:      status.NewManager(fakeClient),
+				}
+
+				_, err := reconciler.ReconcileTerminal(ctx, wfe)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(store.events).To(HaveLen(1))
+				Expect(store.events[0].EventType).To(Equal(audit.EventTypeCancelled))
+			})
 		})
 	})
 

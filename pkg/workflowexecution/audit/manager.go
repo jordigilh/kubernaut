@@ -115,6 +115,7 @@ const (
 	EventTypeExecutionStarted   = "workflowexecution.execution.started"   // Gap #6 (BR-AUDIT-005) - PipelineRun created
 	EventTypeCompleted          = "workflowexecution.workflow.completed"  // Per OpenAPI spec discriminator
 	EventTypeFailed             = "workflowexecution.workflow.failed"     // Per OpenAPI spec discriminator
+	EventTypeCancelled          = "workflowexecution.workflow.cancelled"  // DD-2582 verified backend cancellation
 	EventTypeSelectionCompleted = "workflowexecution.selection.completed" // Gap #5 (BR-AUDIT-005) - Per ADR-034 v1.5
 
 	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
@@ -193,6 +194,13 @@ func (m *Manager) RecordWorkflowCompleted(ctx context.Context, wfe *workflowexec
 func (m *Manager) RecordWorkflowFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	// Use custom audit event with error_details (Gap #7)
 	return m.recordFailureAuditWithDetails(ctx, wfe)
+}
+
+// RecordWorkflowCancelled records a verified workflow cancellation. A
+// cancellation is a distinct terminal outcome from backend failure so audit
+// reconstruction does not misclassify parent-driven stops (DD-2582).
+func (m *Manager) RecordWorkflowCancelled(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	return m.recordAuditEvent(ctx, wfe, EventTypeCancelled, "success")
 }
 
 // RecordWorkflowSelectionCompleted records a workflow.selection.completed audit event (Gap #5).
@@ -467,6 +475,8 @@ func (m *Manager) recordAuditEvent(
 	switch action {
 	case EventTypeFailed:
 		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(payload)
+	case EventTypeCancelled:
+		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData(payload)
 	default:
 		// EventTypeCompleted and any other action default to "completed" (preserves prior behavior)
 		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)

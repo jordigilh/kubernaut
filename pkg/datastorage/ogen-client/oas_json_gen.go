@@ -19315,7 +19315,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData:
 			e.FieldStart("event_type")
@@ -19323,6 +19323,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("workflowexecution.selection.completed")
+		case AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("workflowexecution.workflow.cancelled")
 		case AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("workflowexecution.workflow.completed")
@@ -23081,6 +23084,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "workflowexecution.selection.completed":
 					s.Type = AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData
 					found = true
+				case "workflowexecution.workflow.cancelled":
+					s.Type = AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData
+					found = true
 				case "workflowexecution.workflow.completed":
 					s.Type = AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData
 					found = true
@@ -23516,7 +23522,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		if err := s.WorkflowExecutionAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -25282,7 +25288,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -25290,6 +25296,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("workflowexecution.selection.completed")
+		case AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("workflowexecution.workflow.cancelled")
 		case AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("workflowexecution.workflow.completed")
@@ -29048,6 +29057,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "workflowexecution.selection.completed":
 					s.Type = AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData
 					found = true
+				case "workflowexecution.workflow.cancelled":
+					s.Type = AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData
+					found = true
 				case "workflowexecution.workflow.completed":
 					s.Type = AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData
 					found = true
@@ -29483,7 +29495,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		if err := s.WorkflowExecutionAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -59779,6 +59791,8 @@ func (s *WorkflowExecutionAuditPayloadEventType) Decode(d *jx.Decoder) error {
 		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed:
 		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted:
 		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted:

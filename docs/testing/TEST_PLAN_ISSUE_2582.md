@@ -90,6 +90,7 @@ unrelated #2570 changes.
 | UT-WE-2582-009 | BR-WE-015, AC-4 | AWX recovery follows pagination and ignores unrelated malformed extra-vars records. |
 | UT-WE-2582-010 | SC-8, SI-10 | AWX recovery rejects cross-origin or scheme-changing pagination links before sending credentials. |
 | UT-WE-2582-011 | SC-8, SI-10 | AWX HTTP redirects are origin-locked before bearer-token forwarding. |
+| UT-WE-2582-012 | BR-AUDIT-005, CC7.2 | Verified cancellation emits `workflowexecution.workflow.cancelled`, not `workflow.failed`. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
 
 ## 6. Integration and E2E scenarios
@@ -152,13 +153,13 @@ business scenarios.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
-the measured scenario denominator is **16** and the passing numerator is **16**:
+the measured scenario denominator is **17** and the passing numerator is **17**:
 CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
-(`UT-WE-2582-003..011`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 16 are critical policy scenarios; no pending/skipped
+(`UT-WE-2582-003..012`), and terminal RAR decision immutability
+(`UT-AW-2582-001`). All 17 are critical policy scenarios; no pending/skipped
 examples are included in the numerator. UID replacement, acknowledgement
 ordering, and real backend termination are intentionally not counted in this
 unit denominator because their proving evidence requires the production-path
@@ -172,6 +173,7 @@ integration tests listed below.
 | AgentSession owner UID replacement is rejected | `IT-KA-2582-001` | Pass locally and in focused envtest |
 | Active KA cancellation retains lease until acknowledgement | `UT-KA-2582-002`, `IT-AI-2582-001` | Pass/CI confirmation pending |
 | Terminal AgentSession history is preserved | `UT-AI-2582-005` | Pass |
+| Verified cancellation has distinct audit attribution | `UT-WE-2582-012` | Pass |
 | RAR terminal cancellation cannot be reopened | `UT-AW-2582-001`, `IT-RO-2582-002` | Pass/CI confirmation pending |
 | RO does not claim child/backend cancellation | `IT-RO-2582-001`, `IT-RO-1421-003`, `IT-WE-2582-002..003` | Pass/CI confirmation pending |
 | Generated lifecycle RBAC entries are present | `IT-SEC-2582-001`, `make manifests` | Pass |

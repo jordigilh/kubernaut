@@ -5084,7 +5084,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -5869,7 +5869,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -12912,6 +12912,8 @@ func (s WorkflowExecutionAuditPayloadEventType) Validate() error {
 	case "workflowexecution.workflow.completed":
 		return nil
 	case "workflowexecution.workflow.failed":
+		return nil
+	case "workflowexecution.workflow.cancelled":
 		return nil
 	case "workflowexecution.selection.completed":
 		return nil

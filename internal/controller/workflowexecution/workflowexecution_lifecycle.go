@@ -266,10 +266,14 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		!weconditions.IsConditionTrue(wfe, weconditions.ConditionAuditRecorded) {
 		var auditFn func(context.Context, *workflowexecutionv1alpha1.WorkflowExecution) error
 		eventName := "workflow.failed"
-		if wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted {
+		switch wfe.Status.Phase {
+		case workflowexecutionv1alpha1.PhaseCompleted:
 			eventName = "workflow.completed"
 			auditFn = r.AuditManager.RecordWorkflowCompleted
-		} else {
+		case workflowexecutionv1alpha1.PhaseCancelled:
+			eventName = "workflow.cancelled"
+			auditFn = r.AuditManager.RecordWorkflowCancelled
+		default:
 			auditFn = r.AuditManager.RecordWorkflowFailed
 		}
 		if err := r.recordTerminalAudit(ctx, wfe, eventName, auditFn, logger); err != nil {

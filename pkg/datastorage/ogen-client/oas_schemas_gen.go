@@ -10927,6 +10927,7 @@ const (
 	AuditEventEventDataAianalysisAnalysisFailedAuditEventEventData                   AuditEventEventDataType = "aianalysis.analysis.failed"
 	AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData          AuditEventEventDataType = "workflowexecution.execution.started"
 	AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData        AuditEventEventDataType = "workflowexecution.selection.completed"
+	AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData         AuditEventEventDataType = "workflowexecution.workflow.cancelled"
 	AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData         AuditEventEventDataType = "workflowexecution.workflow.completed"
 	AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData            AuditEventEventDataType = "workflowexecution.workflow.failed"
 	AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData           AuditEventEventDataType = "workflowexecution.workflow.started"
@@ -11107,7 +11108,7 @@ func (s AuditEventEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -12004,6 +12005,13 @@ func NewAuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData(
 func NewAuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowexecutionWorkflowCancelledAuditEventEventData, v)
 	return s
 }
 
@@ -15224,6 +15232,7 @@ const (
 	AuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData                   AuditEventRequestEventDataType = "aianalysis.analysis.failed"
 	AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData          AuditEventRequestEventDataType = "workflowexecution.execution.started"
 	AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData        AuditEventRequestEventDataType = "workflowexecution.selection.completed"
+	AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData         AuditEventRequestEventDataType = "workflowexecution.workflow.cancelled"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData         AuditEventRequestEventDataType = "workflowexecution.workflow.completed"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData            AuditEventRequestEventDataType = "workflowexecution.workflow.failed"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData           AuditEventRequestEventDataType = "workflowexecution.workflow.started"
@@ -15404,7 +15413,7 @@ func (s AuditEventRequestEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventRequestEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventRequestEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -16301,6 +16310,13 @@ func NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventReq
 func NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowexecutionWorkflowCancelledAuditEventRequestEventData, v)
 	return s
 }
 
@@ -38540,6 +38556,7 @@ const (
 	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted    WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.started"
 	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted  WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.completed"
 	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed     WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.failed"
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled  WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.cancelled"
 	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted WorkflowExecutionAuditPayloadEventType = "workflowexecution.selection.completed"
 	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted   WorkflowExecutionAuditPayloadEventType = "workflowexecution.execution.started"
 )
@@ -38550,6 +38567,7 @@ func (WorkflowExecutionAuditPayloadEventType) AllValues() []WorkflowExecutionAud
 		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted,
 		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
 		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed,
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled,
 		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted,
 		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
 	}
@@ -38563,6 +38581,8 @@ func (s WorkflowExecutionAuditPayloadEventType) MarshalText() ([]byte, error) {
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted:
 		return []byte(s), nil
@@ -38584,6 +38604,9 @@ func (s *WorkflowExecutionAuditPayloadEventType) UnmarshalText(data []byte) erro
 		return nil
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed:
 		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
+		return nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCancelled
 		return nil
 	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted:
 		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted
