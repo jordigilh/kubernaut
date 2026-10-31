@@ -92,6 +92,7 @@ unrelated #2570 changes.
 | UT-WE-2582-011 | SC-8, SI-10 | AWX HTTP redirects are origin-locked before bearer-token forwarding. |
 | UT-WE-2582-012 | BR-AUDIT-005, CC7.2 | Verified cancellation emits `workflowexecution.workflow.cancelled`, not `workflow.failed`. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
+| UT-AW-2582-001 | BR-ORCH-026, SI-10 | A cancelled approval decision cannot be reopened as Approved. |
 
 ## 6. Integration and E2E scenarios
 
@@ -149,7 +150,10 @@ race with a privileged actor is tested as residual risk, not claimed atomic.
 
 The following is the requirements-based acceptance matrix for the #2582 change;
 raw package coverage is diagnostic and is not used as a substitute for these
-business scenarios.
+business scenarios. The complete active unit set in Section 5 contains **25
+source-backed scenarios: 25/25 pass locally**, with no pending or skipped
+examples. The affected package commands cover the full set; the unrelated
+`UT-AUDIT-2522-001` shared audit-store timing failure is tracked separately.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
@@ -190,6 +194,7 @@ changed internal/pkg production packages maps **363/1,795 added production lines
 (20.2%)** to unit execution. Generated/API files, command wiring, test helpers,
 and test files are excluded. This is not the requirements-based acceptance
 metric: controller reconciliation branches are intentionally proven by the
-IT/E2E rows above. The 16/16 unit result therefore must not be presented as
-full-diff line coverage, and the 21.1% diagnostic must not be presented as a
+IT/E2E rows above. The 25/25 active-unit result (including the 17/17 critical
+subset) therefore must not be presented as
+full-diff line coverage, and the 20.2% diagnostic must not be presented as a
 business-scenario failure.
