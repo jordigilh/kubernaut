@@ -10,6 +10,10 @@
 > selection pass-through remain unchanged.
 > A successful no-match fails immediately without retry; transient API/network
 > failures use bounded, cancellable retries and fail closed if unresolved.
+> The trusted namespace is the validated deployment-configured or pod
+> service-account namespace; bootstrap fails closed when it is unavailable,
+> without default or cluster-wide fallback. See the #2577 namespace contract
+> and IT-2570-020 in `docs/tests/2570/`.
 > If adopted, this supersedes the no-live-lookup and deletion-continuation
 > assertions in sections 7–8 below. Execution inputs still come from the frozen
 > WE snapshot, not the live catalog. The check is point-in-time, not an atomic

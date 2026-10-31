@@ -308,7 +308,7 @@ the configured access-control boundary.
 
 ## Validation Strategy
 
-1. **UT-AW-2570-001/003; IT-AF-2570-003 / BR-ORCH-025**: structured input,
+1. **UT-AW-2570-001/003; IT-AF-2570-003/010 / BR-ORCH-025**: structured input,
    partial overlays, omitted parameters and empty maps.
 2. **UT-AW-2570-004/005/015/021; IT-AW-2570-004/011 / BR-AUTH-001, SI-10**:
    invalid keys, schema violations, target locks and post-terminal mutations.

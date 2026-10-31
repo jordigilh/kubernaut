@@ -149,6 +149,14 @@ It carries the catalog-authoritative workflow identity and execution fields:
 The RAR also freezes the target context needed for
 locking, resource checks, hashing and WorkflowExecution creation.
 
+Keep selected-workflow `confidence` in the existing immutable RAR
+`spec.confidence` field and selected-workflow `rationale` in
+`spec.recommendedWorkflow.rationale`. Selection provenance uses the existing
+immutable `spec.remediationRequestRef` and `spec.aiAnalysisRef` plus workflow
+ID, name and version in the frozen execution snapshot; do not add a separate
+reviewer-facing UID, selection revision or selection digest. RO uses these
+frozen RAR values for WE confidence/rationale and approval audit context.
+
 The YAML above is illustrative; the shared Go type and generated CRD schemas
 are canonical.
 
@@ -420,7 +428,9 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 1. **UT-AA-2570-067/068; IT-AA-2570-001; IT-AF-2570-003 / BR-ORCH-025**:
    validate AIA-to-RAR nil/empty original maps and AF-to-API-server omitted,
-   empty and partial override serialization without clearing omitted values.
+   empty and partial override serialization without clearing omitted values;
+   round-trip confidence, rationale and provenance through RAR, then verify WE
+   confidence/rationale and audit provenance use the frozen values.
 2. **UT-AW-2570-021/087; IT-AW-2570-004/005/011 / BR-AUTH-001, SI-10**:
    validate one terminal business update, rejection of later business-field
    mutations and rejection of a non-empty legacy workflow name before approval.
