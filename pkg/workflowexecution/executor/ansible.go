@@ -803,6 +803,53 @@ func (a *AnsibleExecutor) Cleanup(
 	return nil
 }
 
+// RequestCancellation sends the AWX cancellation request but does not treat
+// HTTP acceptance as proof of termination. VerifyCancellation must observe a
+// terminal AWX status before the WFE can become Cancelled (DD-2582).
+func (a *AnsibleExecutor) RequestCancellation(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	_ string,
+) error {
+	if wfe.Status.ExecutionRef == nil {
+		return nil
+	}
+	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
+	if err != nil {
+		return fmt.Errorf("parse AWX job ID for cancellation: %w", err)
+	}
+	if err := a.AWXClient.CancelJob(ctx, jobID); err != nil && !strings.Contains(err.Error(), "405") {
+		return fmt.Errorf("cancel AWX job %d: %w", jobID, err)
+	}
+	return nil
+}
+
+// VerifyCancellation polls AWX once and reports whether the job reached a
+// terminal state. The controller requeues while AWX is still cancelling.
+func (a *AnsibleExecutor) VerifyCancellation(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	_ string,
+) (*CancellationResult, error) {
+	if wfe.Status.ExecutionRef == nil {
+		return &CancellationResult{Terminated: true, Reason: "NoBackendReference", Message: "no AWX execution reference exists"}, nil
+	}
+	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
+	if err != nil {
+		return nil, fmt.Errorf("parse AWX job ID for cancellation verification: %w", err)
+	}
+	status, err := a.AWXClient.GetJobStatus(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("get AWX job %d cancellation status: %w", jobID, err)
+	}
+	switch strings.ToLower(status.Status) {
+	case "canceled", "cancelled", "failed", "error", "successful":
+		return &CancellationResult{Terminated: true, Reason: "BackendTerminationVerified", Message: fmt.Sprintf("AWX job %d reached terminal status %s", jobID, status.Status)}, nil
+	default:
+		return &CancellationResult{Reason: "AWXJobStillActive", Message: fmt.Sprintf("AWX job %d remains in status %s", jobID, status.Status)}, nil
+	}
+}
+
 // CleanupEphemeralResources deletes AWX credentials created for a WFE while
 // leaving its execution job untouched (BR-WE-015, FedRAMP AU-9).
 func (a *AnsibleExecutor) CleanupEphemeralResources(

@@ -389,7 +389,7 @@ type AIAnalysisStatus struct {
     ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
     // Pending → Investigating → Analyzing → Completed/Failed (no separate "Approving"/"Recommending" phase)
-    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
+    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed;Cancelled
     Phase   string `json:"phase"`
     Message string `json:"message,omitempty"`
 

@@ -105,7 +105,8 @@ func signalProcessingTimesOutAt(rr *remediationv1.RemediationRequest) *metav1.Ti
 }
 
 // Create creates a SignalProcessing CRD for the given RemediationRequest.
-// It is idempotent - if the CRD already exists, it returns the existing name.
+// DD-2582: creation is CreateOnly; an existing deterministic child is a
+// provenance collision and is never adopted.
 // Reference: BR-ORCH-025 (data pass-through), BR-ORCH-031 (cascade deletion)
 func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.RemediationRequest) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
@@ -115,20 +116,6 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 
 	// Generate deterministic name
 	name := fmt.Sprintf("sp-%s", rr.Name)
-
-	// Check if already exists (idempotency)
-	existing := &signalprocessingv1.SignalProcessing{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		// Already exists, return existing name
-		logger.Info("SignalProcessing already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		// Real error (not "not found"), return it
-		logger.Error(err, "Failed to check existing SignalProcessing")
-		return "", fmt.Errorf("failed to check existing SignalProcessing: %w", err)
-	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
@@ -147,6 +134,11 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 
 	// Create the CRD
 	if err := c.client.Create(ctx, sp); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			collision := newChildCollision("SignalProcessing", rr.Namespace, name, err)
+			logger.Error(collision, "SignalProcessing creation collision")
+			return "", collision
+		}
 		logger.Error(err, "Failed to create SignalProcessing CRD")
 		// DD-CRD-002-RR: Set SignalProcessingReady=False on creation failure
 		rrconditions.SetSignalProcessingReady(rr, false, fmt.Sprintf("Failed to create SignalProcessing: %v", err), c.metrics)

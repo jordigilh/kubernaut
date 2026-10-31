@@ -21,6 +21,7 @@ package creator_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -39,6 +40,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // Note: RunSpecs is invoked once per package by TestClusterIDPropagation in
@@ -211,15 +213,16 @@ var _ = Describe("EffectivenessAssessmentCreator (CHAR-RO-1532)", func() {
 			Expect(name).NotTo(BeEmpty())
 		})
 
-		It("is idempotent: returns the existing EA name without error when already created", func() {
+		It("UT-RO-2582-001: reports an EA collision instead of adopting the existing object", func() {
 			c := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, m, recorder, 5*time.Minute)
 
 			name1, err := c.CreateEffectivenessAssessment(ctx, rr, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
-			name2, err := c.CreateEffectivenessAssessment(ctx, rr, nil, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(name2).To(Equal(name1))
+			_, err = c.CreateEffectivenessAssessment(ctx, rr, nil, nil, nil)
+			var collision *parentlifecycle.ChildCollisionError
+			Expect(errors.As(err, &collision)).To(BeTrue())
+			Expect(name1).NotTo(BeEmpty())
 		})
 
 		It("returns an error when RemediationRequest has an empty UID (Gap 2.1 defensive programming)", func() {

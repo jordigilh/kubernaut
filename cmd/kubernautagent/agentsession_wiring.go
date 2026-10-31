@@ -34,7 +34,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
@@ -58,6 +60,8 @@ func buildAgentSessionScheme() *k8sruntime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
 	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
 	return scheme
 }
 
@@ -99,6 +103,8 @@ func buildAgentSessionDispatcherClient(infra *k8sInfra) (ctrlclient.WithWatch, e
 func buildAgentSessionManagerScheme() *k8sruntime.Scheme {
 	scheme := k8sruntime.NewScheme()
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
+	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
 	return scheme
 }
 
@@ -171,7 +177,7 @@ func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *sess
 
 	holder := holderIdentity()
 	dispatcher := agentsession.NewDispatcher(cli, namespace, holder, mgr, runner, logger,
-		agentsession.WithAuditStore(auditStore))
+		agentsession.WithAuditStore(auditStore), agentsession.WithParentLifecycleGate())
 
 	// DD-AA-KA-001 Amendment Gap 2: register the status-writer hooks before
 	// startup reconciliation can launch a recovered investigation. A fast

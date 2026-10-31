@@ -516,6 +516,7 @@ spec:
                 - Categorizing
                 - Completed
                 - Failed
+                - Cancelled
                 type: string
               priorityAssignment:
                 description: |-

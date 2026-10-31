@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // TargetRef is a minimal struct to avoid importing routing or AI types.
@@ -189,6 +190,9 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 	rarName, err := h.callbacks.CreateApproval(ctx, rr, ai)
 	if err != nil {
 		logger.Error(err, "Failed to create RemediationApprovalRequest")
+		if parentlifecycle.IsChildCollision(err) {
+			return phase.Fail(remediationv1.FailurePhaseApproval, err, "RemediationApprovalRequest child collision"), nil
+		}
 		return phase.Requeue(config.RequeueGenericError, "RAR creation failed"), nil
 	}
 	logger.Info("Created RemediationApprovalRequest", "rarName", rarName)

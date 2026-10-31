@@ -3292,7 +3292,7 @@ components:
           example: "payment/deployment/payment-api"
         phase:
           type: string
-          enum: [Pending, Running, Completed, Failed]
+          enum: [Pending, Running, Completed, Failed, Cancelling, Cancelled]
           description: Current phase of the WorkflowExecution
         container_image:
           type: string

@@ -1897,7 +1897,7 @@ _Appears in:_
 - [SignalProcessingStatus](#signalprocessingstatus)
 
 _Validation:_
-- Enum: [Pending Enriching Classifying Categorizing Completed Failed]
+- Enum: [Pending Enriching Classifying Categorizing Completed Failed Cancelled]
 
 | Value| Description|
 | ---| ---|
@@ -1947,7 +1947,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `observedGeneration`| _integer_| ObservedGeneration is the most recent generation observed by the controller.<br />Used to prevent duplicate reconciliations and ensure idempotency.<br />Per Standard pattern for all Kubernetes controllers.|
-| `phase`| _[SignalProcessingPhase](#signalprocessingphase)_| Phase: Pending, Enriching, Classifying, Categorizing, Completed, Failed|
+| `phase`| _[SignalProcessingPhase](#signalprocessingphase)_| Phase: Pending, Enriching, Classifying, Categorizing, Completed, Failed, Cancelled|
 | `startTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| Processing timestamps|
 | `completionTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_||
 | `kubernetesContext`| _KubernetesContext_| Enrichment results|
@@ -2235,4 +2235,3 @@ _Appears in:_
 | `version`| _string_| Version of the workflow|
 | `executionBundle`| _string_| ExecutionBundle resolved from workflow catalog<br />OCI bundle reference for Tekton PipelineRun|
 | `executionBundleDigest`| _string_| ExecutionBundleDigest for audit trail and reproducibility|
-

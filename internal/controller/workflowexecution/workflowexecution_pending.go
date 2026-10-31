@@ -35,9 +35,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
@@ -115,6 +117,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling Pending phase")
 
+	if result, err, handled := r.enforceRemediationParentGate(ctx, wfe, logger); handled {
+		return result, err
+	}
+
 	if result, err, shouldReturn := r.refetchFreshPendingWFE(ctx, wfe, logger); shouldReturn {
 		return result, err
 	}
@@ -146,6 +152,73 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	return r.finalizePendingToRunning(ctx, wfe, createResult, logger)
+}
+
+// enforceRemediationParentGate performs a fresh RR read immediately before
+// backend creation or cancellation. A pre-created WE therefore waits while
+// the RR is still in Investigating/Analyzing and cannot dispatch early
+// (DD-2582, AC-4).
+func (r *WorkflowExecutionReconciler) enforceRemediationParentGate(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (ctrl.Result, error, bool) {
+	if r.APIReader == nil {
+		return ctrl.Result{}, nil, false
+	}
+	// Legacy/unit fixtures may omit the parent link; CRD admission rejects this
+	// in production and the direct parent gate helper covers malformed links.
+	// Do not turn those isolated executor tests into parent-cache tests.
+	if wfe.Spec.RemediationRequestRef.Name == "" || wfe.Spec.RemediationRequestRef.Namespace == "" {
+		return ctrl.Result{}, nil, false
+	}
+	ref := wfe.Spec.RemediationRequestRef
+	if wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted ||
+		wfe.Status.Phase == workflowexecutionv1alpha1.PhaseFailed ||
+		wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCancelled ||
+		ref.Name == "" || ref.Namespace == "" {
+		return ctrl.Result{}, nil, false
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	gate, err := parentlifecycle.RemediationRequestGate(ctx, reader, ref.Namespace, ref.Name, remediationv1.PhaseExecuting)
+	if err != nil {
+		logger.Error(err, "parent gate read failed; refusing WorkflowExecution work")
+		return ctrl.Result{}, err, true
+	}
+	return r.applyRemediationParentGate(ctx, wfe, logger, gate)
+}
+
+func (r *WorkflowExecutionReconciler) applyRemediationParentGate(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger, gate parentlifecycle.GateResult) (ctrl.Result, error, bool) {
+	switch gate.Decision {
+	case parentlifecycle.GateAllowed:
+		return ctrl.Result{}, nil, false
+	case parentlifecycle.GateWaiting:
+		if parentlifecycle.HandoffExpired(wfe.CreationTimestamp.Time, time.Now(), parentlifecycle.DefaultHandoffTimeout) {
+			gate.Decision = parentlifecycle.GateCancelled
+			gate.Reason = "parent-phase-timeout"
+			return r.applyRemediationParentGate(ctx, wfe, logger, gate)
+		}
+		logger.V(1).Info("waiting for persisted RemediationRequest executing phase", "phase", gate.ParentPhase)
+		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil, true
+	case parentlifecycle.GateCancelled:
+		now := metav1.Now()
+		if wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending {
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelled
+			wfe.Status.CompletionTime = &now
+			wfe.Status.FailureReason = "parent RemediationRequest failed or was not found before backend dispatch"
+			wfe.Status.ObservedGeneration = wfe.Generation
+			weconditions.SetExecutionComplete(wfe, false, "ParentCancelled", wfe.Status.FailureReason)
+		} else {
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelling
+			wfe.Status.FailureReason = "parent RemediationRequest failed or was cancelled"
+			wfe.Status.ObservedGeneration = wfe.Generation
+		}
+		if updateErr := r.Status().Update(ctx, wfe); updateErr != nil {
+			return ctrl.Result{}, updateErr, true
+		}
+		return ctrl.Result{Requeue: true}, nil, true
+	default:
+		return ctrl.Result{}, fmt.Errorf("unknown parent gate decision %q", gate.Decision), true
+	}
 }
 
 // refetchFreshPendingWFE re-reads wfe from the API server via APIReader to

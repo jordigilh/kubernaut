@@ -89,7 +89,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// UT-RO-1421-001: IR-4(1) — Automated termination of AI investigation
 	// when parent remediation is cancelled
 	// ========================================
-	It("UT-RO-1421-001: should patch AIAnalysis to Failed with ParentCancelled when RR is Cancelled [IR-4(1)]", func() {
+	It("UT-RO-2582-001: should not overwrite active AIAnalysis; its controller owns cancellation [IR-4(1)]", func() {
 		rrName := "rr-cascade-001"
 		namespace := testNs
 		aiName := "ai-cascade-001"
@@ -108,13 +108,8 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 
 		fetchedAI := &aianalysisv1.AIAnalysis{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, fetchedAI)).To(Succeed())
-		Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseFailed),
-			"AI should be Failed after parent cancellation")
-		Expect(fetchedAI.Status.Reason).To(Equal(aianalysisv1.ReasonParentCancelled),
-			"Reason should be ParentCancelled")
-		Expect(fetchedAI.Status.Message).To(ContainSubstring("terminal phase"))
-		Expect(fetchedAI.Status.CompletedAt).ToNot(BeNil(),
-			"CompletedAt should be set on cascade")
+		Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseInvestigating),
+			"RO must not claim child cancellation; AIA owns the transition")
 	})
 
 	// ========================================
@@ -171,7 +166,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// UT-RO-1421-004: IR-4(1) — Signal processing resources are terminated
 	// when parent remediation is cancelled
 	// ========================================
-	It("UT-RO-1421-004: should patch SignalProcessing to Failed when RR is Cancelled and SP is Enriching [IR-4(1)]", func() {
+	It("UT-RO-2582-002: should not overwrite active SignalProcessing [IR-4(1)]", func() {
 		rrName := "rr-cascade-004"
 		namespace := testNs
 		spName := "sp-cascade-004"
@@ -190,15 +185,15 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 
 		fetchedSP := &signalprocessingv1.SignalProcessing{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, fetchedSP)).To(Succeed())
-		Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseFailed),
-			"SP should be Failed after parent cancellation")
+		Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseEnriching),
+			"SP controller owns its cancellation transition")
 	})
 
 	// ========================================
 	// UT-RO-1421-005: AC-6 — Workflow execution with elevated cluster access
 	// is terminated when parent remediation is cancelled
 	// ========================================
-	It("UT-RO-1421-005: should patch WorkflowExecution to Failed when RR is Cancelled and WE is Running [AC-6]", func() {
+	It("UT-RO-2582-003: should not claim WorkflowExecution backend stopped [AC-6]", func() {
 		rrName := "rr-cascade-005"
 		namespace := testNs
 		weName := "we-cascade-005"
@@ -217,17 +212,15 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 
 		fetchedWE := &workflowexecutionv1.WorkflowExecution{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: weName, Namespace: namespace}, fetchedWE)).To(Succeed())
-		Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed),
-			"WE should be Failed after parent cancellation")
-		Expect(fetchedWE.Status.FailureReason).To(ContainSubstring("terminal phase"),
-			"WE FailureReason should indicate parent terminated")
+		Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseRunning),
+			"WE controller owns Cancelling and backend verification")
 	})
 
 	// ========================================
 	// UT-RO-1421-006: IR-4 — Full cascade terminates entire remediation
 	// subtree atomically (defense-in-depth: no orphaned resources)
 	// ========================================
-	It("UT-RO-1421-006: should cascade to all three child types simultaneously [IR-4]", func() {
+	It("UT-RO-2582-004: should leave active child status ownership to child controllers [IR-4]", func() {
 		rrName := "rr-cascade-006"
 		namespace := testNs
 		spName := "sp-cascade-006"
@@ -250,15 +243,14 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 
 		fetchedSP := &signalprocessingv1.SignalProcessing{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, fetchedSP)).To(Succeed())
-		Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseFailed))
+		Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseClassifying))
 
 		fetchedAI := &aianalysisv1.AIAnalysis{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, fetchedAI)).To(Succeed())
-		Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseFailed))
-		Expect(fetchedAI.Status.Reason).To(Equal(aianalysisv1.ReasonParentCancelled))
+		Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseInvestigating))
 
 		fetchedWE := &workflowexecutionv1.WorkflowExecution{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: weName, Namespace: namespace}, fetchedWE)).To(Succeed())
-		Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed))
+		Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseRunning))
 	})
 })

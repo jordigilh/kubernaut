@@ -65,6 +65,7 @@ import (
 	// Import ALL CRD types that RO interacts with
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	investigationsessionv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -336,6 +337,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// EffectivenessAssessment (RO owns these - ADR-EM-001, GAP-RO-3)
 	err = eav1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// InvestigationSession (RO watches these for AF failure propagation, DD-2582)
+	err = investigationsessionv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// R8: RemediationWorkflow (RO reads these for operator override resolution, #594)

@@ -181,16 +181,17 @@ const (
 
 // FailurePhase represents the orchestration phase where a failure occurred.
 // BR-COMMON-001: PascalCase for CRD phase values.
-// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked;Deduplicated
+// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;EffectivenessAssessment;Blocked;Deduplicated
 type FailurePhase string
 
 const (
-	FailurePhaseConfiguration     FailurePhase = "Configuration"
-	FailurePhaseSignalProcessing  FailurePhase = "SignalProcessing"
-	FailurePhaseAIAnalysis        FailurePhase = "AIAnalysis"
-	FailurePhaseApproval          FailurePhase = "Approval"
-	FailurePhaseWorkflowExecution FailurePhase = "WorkflowExecution"
-	FailurePhaseBlocked           FailurePhase = "Blocked"
+	FailurePhaseConfiguration           FailurePhase = "Configuration"
+	FailurePhaseSignalProcessing        FailurePhase = "SignalProcessing"
+	FailurePhaseAIAnalysis              FailurePhase = "AIAnalysis"
+	FailurePhaseApproval                FailurePhase = "Approval"
+	FailurePhaseWorkflowExecution       FailurePhase = "WorkflowExecution"
+	FailurePhaseEffectivenessAssessment FailurePhase = "EffectivenessAssessment"
+	FailurePhaseBlocked                 FailurePhase = "Blocked"
 	// FailurePhaseDeduplicated indicates an RR that inherited a failure from a
 	// deduplicated WorkflowExecution collision (Issue #190). Excluded from
 	// consecutive failure counting per BR-ORCH-042.

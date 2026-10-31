@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	k8serrors "github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // PendingHandler encapsulates the reconcile logic for the Pending phase.
@@ -130,6 +131,10 @@ func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 // from Handle (Wave 6 6e-i GREEN: funlen remediation) — pure code motion, no
 // behavior change.
 func (h *PendingHandler) handleSignalProcessingCreationError(ctx context.Context, rr *remediationv1.RemediationRequest, err error, logger logr.Logger) (phase.TransitionIntent, error) {
+	if parentlifecycle.IsChildCollision(err) {
+		logger.Error(err, "SignalProcessing collision; failing RemediationRequest closed")
+		return phase.Fail(remediationv1.FailurePhaseSignalProcessing, err, "SignalProcessing child collision"), nil
+	}
 	if k8serrors.IsNamespaceTerminating(err) {
 		logger.V(1).Info("Namespace is terminating, skipping reconciliation",
 			"namespace", rr.Namespace, "reason", "async_cleanup")

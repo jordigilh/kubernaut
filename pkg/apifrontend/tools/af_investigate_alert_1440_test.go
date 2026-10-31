@@ -143,15 +143,14 @@ var _ = Describe("Fix #1440: IS CRD co-creation in HandleInvestigateAlert", func
 			Expect(result.RRID).NotTo(BeEmpty(), "must succeed without Signaler for backward compat")
 		})
 
-		It("UT-AF-1440-004: succeeds when Signaler returns error — best-effort, non-blocking (SC-24)", func() {
+		It("UT-AF-2582-001: fails before RR persistence when new IS creation fails (SC-24)", func() {
 			recorder := &recordingSignaler{err: errors.New("IS CRD creation failed: simulated")}
 			cfg := baseCfg()
 			cfg.Signaler = recorder
 
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg, validArgs(), "sre-alice")
-			Expect(err).NotTo(HaveOccurred(),
-				"HandleInvestigateAlert must NOT fail when Signaler errors (best-effort)")
-			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(err).To(HaveOccurred())
+			Expect(result.RRID).To(BeEmpty())
 
 			Expect(recorder.Calls()).To(HaveLen(1), "Signaler must still be called")
 		})
@@ -244,7 +243,7 @@ var _ = Describe("Fix #1440: IS CRD co-creation in HandleInvestigateAlert", func
 			Expect(recorder.BackfillCalls()).To(HaveLen(1), "backfill only applies to the genuinely-new RR from the first call")
 		})
 
-		It("UT-AF-2265-204: a signaler error during BeforeCreate does not abort RR creation (fire-and-forget, unchanged from pre-#2265 semantics)", func() {
+		It("UT-AF-2582-002: a signaler error during BeforeCreate aborts RR creation", func() {
 			tc := newTypedFakeClientWithUIDAssignment()
 			cfg := baseCfg()
 			cfg.Client = tc
@@ -252,8 +251,8 @@ var _ = Describe("Fix #1440: IS CRD co-creation in HandleInvestigateAlert", func
 			cfg.Signaler = recorder
 
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg, validArgs(), "sre-alice")
-			Expect(err).NotTo(HaveOccurred(), "HandleInvestigateAlert must NOT fail when the signaler errors (best-effort, SC-24)")
-			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(err).To(HaveOccurred())
+			Expect(result.RRID).To(BeEmpty())
 			Expect(recorder.Calls()).To(HaveLen(1), "signaler must still be attempted exactly once, not retried via the post-hoc path")
 		})
 	})

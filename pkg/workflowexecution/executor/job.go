@@ -881,6 +881,45 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 	return nil
 }
 
+// RequestCancellation stops the owned Job using the same identity-checked
+// delete path as finalizer cleanup. Verification is intentionally separate:
+// Job deletion acknowledgement does not by itself prove all Pods stopped.
+func (j *JobExecutor) RequestCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	return j.Cleanup(ctx, wfe, namespace)
+}
+
+// VerifyCancellation confirms the owned Job is gone and no owned Pod remains
+// in a running/pending/unknown state. This is the proof required before WFE
+// transitions from Cancelling to Cancelled (DD-2582).
+func (j *JobExecutor) VerifyCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (*CancellationResult, error) {
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for Job cancellation verification: %w", err)
+	}
+	jobName, err := jobNameForWFE(wfe)
+	if err != nil {
+		return nil, err
+	}
+	var job batchv1.Job
+	job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &job); err == nil {
+		return &CancellationResult{Reason: "JobStillPresent", Message: fmt.Sprintf("Job %s/%s still exists", namespace, jobName)}, nil
+	} else if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("verify Job deletion %s/%s: %w", namespace, jobName, err)
+	}
+
+	var pods corev1.PodList
+	if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{"job-name": jobName}); err != nil {
+		return nil, fmt.Errorf("list Pods for cancelled Job %s/%s: %w", namespace, jobName, err)
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+			return &CancellationResult{Reason: "PodsStillActive", Message: fmt.Sprintf("Pod %s remains in phase %s", pod.Name, pod.Status.Phase)}, nil
+		}
+	}
+	return &CancellationResult{Terminated: true, Reason: "BackendTerminationVerified", Message: "Job and owned Pods are no longer active"}, nil
+}
+
 // buildJob creates a Kubernetes Job from the WFE spec.
 // Parameters are injected as environment variables.
 // DD-WE-006: deps are mounted as volumes when non-nil.

@@ -178,7 +178,7 @@ func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.Wor
 
 // Create creates a WorkflowExecution CRD for the given RemediationRequest.
 // It uses the selected workflow from the completed AIAnalysis CRD.
-// It is idempotent - if the CRD already exists, it returns the existing name.
+// DD-2582: creation is CreateOnly; an existing deterministic child is never adopted.
 // Reference: BR-ORCH-025 (workflow data pass-through), BR-ORCH-031 (cascade deletion)
 func (c *WorkflowExecutionCreator) Create(
 	ctx context.Context,
@@ -210,18 +210,6 @@ func (c *WorkflowExecutionCreator) CreateWithResult(
 	// Generate deterministic name
 	name := fmt.Sprintf("we-%s", rr.Name)
 
-	// Check if already exists (idempotency)
-	existing := &workflowexecutionv1.WorkflowExecution{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("WorkflowExecution already exists, reusing", "name", name)
-		return name, false, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing WorkflowExecution")
-		return "", false, fmt.Errorf("failed to check existing WorkflowExecution: %w", err)
-	}
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
@@ -239,6 +227,11 @@ func (c *WorkflowExecutionCreator) CreateWithResult(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, we); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			collision := newChildCollision("WorkflowExecution", rr.Namespace, name, err)
+			logger.Error(collision, "WorkflowExecution creation collision")
+			return "", false, collision
+		}
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
 		// DD-CRD-002-RR: Set WorkflowExecutionReady=False on creation failure
 		rrconditions.SetWorkflowExecutionReady(rr, false, fmt.Sprintf("Failed to create WorkflowExecution: %v", err), c.metrics)

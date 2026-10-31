@@ -100,6 +100,9 @@ func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remed
 
 	savedStatus := rar.Status
 	if err := c.client.Create(ctx, rar); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return newChildCollision("RemediationApprovalRequest", rar.Namespace, rar.Name, err)
+		}
 		return fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
 	}
 
@@ -112,6 +115,8 @@ func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remed
 
 // Create creates a RemediationApprovalRequest CRD for the given RemediationRequest and AIAnalysis.
 // V1.0 Implementation: Per ADR-040 V1.0 scope.
+// DD-2582: a new approval request is CreateOnly; an existing deterministic
+// request is a collision and is never adopted.
 // Reference: BR-ORCH-026 (Approval Orchestration)
 func (c *ApprovalCreator) Create(
 	ctx context.Context,
@@ -130,18 +135,6 @@ func (c *ApprovalCreator) Create(
 
 	// Generate deterministic name
 	name := fmt.Sprintf("rar-%s", rr.Name)
-
-	// Check if already exists (idempotency)
-	existing := &remediationv1.RemediationApprovalRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("RemediationApprovalRequest already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing RemediationApprovalRequest")
-		return "", fmt.Errorf("failed to check existing RemediationApprovalRequest: %w", err)
-	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
