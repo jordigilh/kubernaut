@@ -149,7 +149,7 @@ type WorkflowRef struct {
 type WorkflowExecutionStatus struct {
     // Phase tracks current execution stage
     // Skipped: Resource is busy (another workflow running) or recently remediated
-    // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Skipped
+    // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Cancelling;Cancelled
     Phase string `json:"phase"`
 
     // StartTime when execution started
@@ -1301,4 +1301,3 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 | 3.0 | 2025-12-01 | **Enhanced Failure Details**: Added `FailureDetails` struct with structured failure information for recovery flow. Includes `failedTaskIndex`, `failedTaskName`, `reason` (K8s-style enum), `naturalLanguageSummary` for LLM context. Deprecated `failureReason` string field. Added controller logic for extracting failure details from PipelineRun. Aligned with DD-CONTRACT-001 v1.3. |
 | 2.0 | 2025-11-28 | **Breaking**: Simplified schema per ADR-044. Replaced `WorkflowDefinition` with `WorkflowRef`. Removed step orchestration, status tracking, rollback logic. Controller now creates single PipelineRun and watches status. |
 | 1.x | Prior | Complex schema with embedded WorkflowDefinition, step-level status, rollback spec, preconditions/postconditions |
-

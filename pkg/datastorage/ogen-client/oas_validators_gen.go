@@ -12959,6 +12959,10 @@ func (s WorkflowExecutionAuditPayloadPhase) Validate() error {
 		return nil
 	case "Failed":
 		return nil
+	case "Cancelling":
+		return nil
+	case "Cancelled":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

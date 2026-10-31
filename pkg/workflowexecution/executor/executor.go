@@ -117,6 +117,23 @@ type EphemeralResourceCleaner interface {
 	CleanupEphemeralResources(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error
 }
 
+// CancellationResult reports whether a backend stop has been observed. A
+// cancellation request returning successfully is not sufficient evidence that
+// work stopped (DD-2582).
+type CancellationResult struct {
+	Terminated bool
+	Reason     string
+	Message    string
+}
+
+// CancellableExecutor is an optional backend capability used by the WFE
+// Cancelling lifecycle. Keeping it separate preserves existing Executor
+// implementations while requiring verified termination before Cancelled.
+type CancellableExecutor interface {
+	RequestCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error
+	VerifyCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (*CancellationResult, error)
+}
+
 // ExecutionResult represents the mapped status of an execution resource.
 // Both Tekton PipelineRun conditions and K8s Job conditions are mapped
 // to this common structure.

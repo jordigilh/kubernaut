@@ -516,6 +516,7 @@ func setupSignalProcessingReconciler(
 
 	if err := (&signalprocessing.SignalProcessingReconciler{
 		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),
 		Scheme:               mgr.GetScheme(),
 		AuditManager:         auditManager,
 		Metrics:              enrichment.metrics,

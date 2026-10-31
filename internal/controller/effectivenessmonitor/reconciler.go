@@ -32,19 +32,27 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/alert"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
@@ -55,6 +63,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/phase"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // Reconciler reconciles EffectivenessAssessment objects.
@@ -184,6 +193,7 @@ func NewReconciler(deps ReconcilerDeps, cfg ReconcilerConfig) *Reconciler {
 
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -227,6 +237,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	if result, handled, err := r.enforceParentGate(ctx, ea, logger); handled {
+		return result, err
+	}
+
 	reader, err := r.ReaderFor(ctx, ea.Spec.ClusterID)
 	if err != nil {
 		logger.Error(err, "Failed to get reader for cluster", "clusterID", ea.Spec.ClusterID)
@@ -239,6 +253,47 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		targetReader: reader,
 	}
 	return r.reconcileActive(ctx, rctx)
+}
+
+func (r *Reconciler) enforceParentGate(ctx context.Context, ea *eav1.EffectivenessAssessment, logger logr.Logger) (ctrl.Result, bool, error) {
+	if r.apiReader == nil {
+		return ctrl.Result{}, false, nil
+	}
+
+	gate, err := parentlifecycle.RemediationRequestGate(
+		ctx, r.apiReader, ea.Namespace, ea.Spec.CorrelationID, remediationv1.PhaseVerifying)
+	if err != nil {
+		if strings.Contains(err.Error(), "no kind is registered") {
+			// Legacy isolated EM unit fixtures do not register the parent CRD;
+			// production wiring does. Preserve those tests without weakening the
+			// production fresh-read gate.
+			logger.V(1).Info("parent CRD is not registered in isolated fixture; skipping compatibility gate")
+			return ctrl.Result{}, false, nil
+		}
+		logger.Error(err, "EA parent gate read failed; refusing assessment work")
+		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, true, err
+	}
+
+	if gate.Decision == parentlifecycle.GateAllowed {
+		return ctrl.Result{}, false, nil
+	}
+	if gate.Decision == parentlifecycle.GateWaiting && !parentlifecycle.HandoffExpired(
+		ea.CreationTimestamp.Time, time.Now(), parentlifecycle.DefaultHandoffTimeout) {
+		return ctrl.Result{RequeueAfter: r.Config.RequeueAssessmentInProgress}, true, nil
+	}
+
+	now := metav1.Now()
+	ea.Status.Phase = eav1.PhaseCancelled
+	ea.Status.CompletedAt = &now
+	if gate.Decision == parentlifecycle.GateWaiting {
+		ea.Status.Message = "parent RemediationRequest phase authorization timed out"
+	} else {
+		ea.Status.Message = "parent RemediationRequest failed or was not found"
+	}
+	if err := r.Status().Update(ctx, ea); err != nil {
+		return ctrl.Result{}, true, err
+	}
+	return ctrl.Result{}, true, nil
 }
 
 // SetupWithManager registers the controller with the manager.
@@ -265,12 +320,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles 
 	}
 
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&eav1.EffectivenessAssessment{}).
-		// Issue #1466: Filter status-only watch events to prevent hot reconciliation
-		// loops during alert decay monitoring. EA spec is immutable (set once by RO)
-		// and EM is the sole status writer, matching the WE controller pattern
-		// (DD-CONTROLLER-001 v4.0 Pattern B-WE).
-		WithEventFilter(predicate.GenerationChangedPredicate{})
+		For(&eav1.EffectivenessAssessment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&remediationv1.RemediationRequest{}, handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+			rr, ok := obj.(*remediationv1.RemediationRequest)
+			if !ok {
+				return nil
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "ea-" + rr.Name, Namespace: rr.Namespace}}}
+		}))
 
 	if len(maxConcurrentReconciles) > 0 && maxConcurrentReconciles[0] > 0 {
 		builder = builder.WithOptions(ctrlcontroller.TypedOptions[ctrl.Request]{

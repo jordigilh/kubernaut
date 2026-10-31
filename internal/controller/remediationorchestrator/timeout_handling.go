@@ -46,6 +46,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // handleGlobalTimeout transitions the RR to TimedOut phase when global timeout exceeded.
@@ -265,6 +266,13 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeDelay, alertCheckDelay)
 	if err != nil {
+		if parentlifecycle.IsChildCollision(err) {
+			logger.Error(err, "EffectivenessAssessment collision; failing RemediationRequest closed")
+			if _, transitionErr := r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseEffectivenessAssessment, err); transitionErr != nil {
+				logger.Error(transitionErr, "Failed to transition RemediationRequest after EffectivenessAssessment collision")
+			}
+			return
+		}
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
 	}

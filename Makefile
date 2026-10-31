@@ -112,7 +112,7 @@ help: ## Display this help
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." paths="./internal/kubernautagent/agentsession/..." output:crd:artifacts:config=config/crd/bases
 	@$(MAKE) sync-embed
 
 .PHONY: sync-embed

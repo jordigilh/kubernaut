@@ -48,6 +48,9 @@ import (
 // ========================================
 func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	if result, err, handled := r.enforceRemediationParentGate(ctx, wfe, logger); handled {
+		return result, err
+	}
 
 	// Issue #518/#1661 Change 11f: defensive guard against WFEs whose
 	// spec.workflowRef lacks an execution engine (should be unreachable --
@@ -101,6 +104,68 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	}
 
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+const cancellationRequeueInterval = 5 * time.Second
+
+// reconcileCancelling requests backend termination and verifies it before
+// persisting the terminal Cancelled phase. A request failure or an
+// unverified backend remains observable and retryable; it is never reported as
+// successful cancellation (DD-2582, BR-WE-014).
+func (r *WorkflowExecutionReconciler) reconcileCancelling(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("workflowExecution", wfe.Name, "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
+	if r.ExecutorRegistry == nil {
+		return r.persistCancellationFailure(ctx, wfe, fmt.Errorf("executor registry is not configured"), logger)
+	}
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
+	if err != nil {
+		return r.persistCancellationFailure(ctx, wfe, err, logger)
+	}
+	cancellable, ok := exec.(weexecutor.CancellableExecutor)
+	if !ok {
+		return r.persistCancellationFailure(ctx, wfe, fmt.Errorf("execution engine %q does not support verified cancellation", exec.Engine()), logger)
+	}
+	if err := cancellable.RequestCancellation(ctx, wfe, r.ExecutionNamespace); err != nil {
+		return r.persistCancellationFailure(ctx, wfe, err, logger)
+	}
+	result, err := cancellable.VerifyCancellation(ctx, wfe, r.ExecutionNamespace)
+	if err != nil {
+		return r.persistCancellationFailure(ctx, wfe, err, logger)
+	}
+	if result == nil || !result.Terminated {
+		message := "backend termination not yet observed"
+		if result != nil && result.Message != "" {
+			message = result.Message
+		}
+		if updateErr := r.updateCancellationCondition(ctx, wfe, false, weconditions.ReasonCancellationFailed, message); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+		return ctrl.Result{RequeueAfter: cancellationRequeueInterval}, nil
+	}
+
+	now := metav1.Now()
+	wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCancelled
+	wfe.Status.CompletionTime = &now
+	wfe.Status.ObservedGeneration = wfe.Generation
+	weconditions.SetCancellation(wfe, true, weconditions.ReasonCancellationVerified, result.Message)
+	weconditions.SetExecutionComplete(wfe, false, weconditions.ReasonCancellationVerified, result.Message)
+	if err := r.Status().Update(ctx, wfe); err != nil {
+		return ctrl.Result{}, fmt.Errorf("persist verified WorkflowExecution cancellation: %w", err)
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *WorkflowExecutionReconciler) persistCancellationFailure(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cancellationErr error, logger logr.Logger) (ctrl.Result, error) {
+	logger.Error(cancellationErr, "WorkflowExecution cancellation is not verified; retrying")
+	if err := r.updateCancellationCondition(ctx, wfe, false, weconditions.ReasonCancellationFailed, cancellationErr.Error()); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: cancellationRequeueInterval}, nil
+}
+
+func (r *WorkflowExecutionReconciler) updateCancellationCondition(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, verified bool, reason, message string) error {
+	weconditions.SetCancellation(wfe, verified, reason, message)
+	return r.Status().Update(ctx, wfe)
 }
 
 // handleRunningExecutionResult maps a Running-phase executor result to the

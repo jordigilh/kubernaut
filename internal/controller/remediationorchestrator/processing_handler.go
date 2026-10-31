@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 const processingRequeueInterval = 10 * time.Second
@@ -126,6 +127,9 @@ func (h *ProcessingHandler) handleSPCompleted(ctx context.Context, rr *remediati
 	aiName, err := h.aiAnalysisCreator.Create(ctx, rr, sp)
 	if err != nil {
 		logger.Error(err, "Failed to create AIAnalysis CRD")
+		if parentlifecycle.IsChildCollision(err) {
+			return phase.Fail(remediationv1.FailurePhaseAIAnalysis, err, "AIAnalysis child collision"), nil
+		}
 		if updateErr := h.statusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetAIAnalysisReady(rr, false,
 				fmt.Sprintf("Failed to create AIAnalysis: %v", err), h.metrics)

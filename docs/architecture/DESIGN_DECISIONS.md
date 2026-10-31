@@ -29,6 +29,7 @@
 | DD-HTTP-001 | HTTP Router Strategy (chi for REST APIs, stdlib for simple services) | ✅ Approved | 2025-11-22 | [DD-HTTP-001-http-router-strategy.md](decisions/DD-HTTP-001-http-router-strategy.md) |
 | DD-018 | Helm Chart Single-Install-Per-Cluster Guard (`lookup`-based fail-fast check) | ✅ Approved | 2026-07-06 | [DD-018-helm-chart-single-install-per-cluster-guard.md](decisions/DD-018-helm-chart-single-install-per-cluster-guard.md) |
 | DD-RELEASE-001 | Run-Scoped Image Promotion | ✅ Approved | 2026-10-26 | [DD-RELEASE-001-run-scoped-image-promotion.md](decisions/DD-RELEASE-001-run-scoped-image-promotion.md) |
+| DD-2582 | Fail-Closed Remediation Child Lifecycle | ✅ Approved for implementation | 2026-10-31 | [DD-2582-fail-closed-ro-child-lifecycle.md](decisions/DD-2582-fail-closed-ro-child-lifecycle.md) |
 | ADR-001 | CRD-Based Microservices Architecture | ✅ Approved | TBD | [ADR-001-crd-microservices-architecture.md](decisions/ADR-001-crd-microservices-architecture.md) |
 | ADR-002 | Native Kubernetes Jobs for Remediation Execution | ✅ Approved | TBD | [ADR-002-native-kubernetes-jobs.md](decisions/ADR-002-native-kubernetes-jobs.md) |
 | ADR-003 | Kind Cluster as Primary Integration Environment | ✅ Approved | TBD | [ADR-003-KIND-INTEGRATION-ENVIRONMENT.md](decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md) |

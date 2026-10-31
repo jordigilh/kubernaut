@@ -59939,6 +59939,10 @@ func (s *WorkflowExecutionAuditPayloadPhase) Decode(d *jx.Decoder) error {
 		*s = WorkflowExecutionAuditPayloadPhaseCompleted
 	case WorkflowExecutionAuditPayloadPhaseFailed:
 		*s = WorkflowExecutionAuditPayloadPhaseFailed
+	case WorkflowExecutionAuditPayloadPhaseCancelling:
+		*s = WorkflowExecutionAuditPayloadPhaseCancelling
+	case WorkflowExecutionAuditPayloadPhaseCancelled:
+		*s = WorkflowExecutionAuditPayloadPhaseCancelled
 	default:
 		*s = WorkflowExecutionAuditPayloadPhase(v)
 	}

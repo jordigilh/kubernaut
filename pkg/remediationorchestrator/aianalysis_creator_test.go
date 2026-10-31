@@ -19,6 +19,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -92,7 +94,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(name).To(Equal("ai-test-remediation"))
 			})
 
-			It("should be idempotent - return existing name on retry without creating duplicate", func() {
+			It("UT-RO-2582-001: should fail on a pre-existing AIAnalysis instead of adopting it", func() {
 				// Arrange - pre-create the AIAnalysis
 				existingAI := &aianalysisv1.AIAnalysis{
 					ObjectMeta: metav1.ObjectMeta{
@@ -111,8 +113,9 @@ var _ = Describe("AIAnalysisCreator", func() {
 				name, err := aiCreator.Create(ctx, rr, completedSP)
 
 				// Assert
-				Expect(err).ToNot(HaveOccurred())
-				Expect(name).To(Equal("ai-test-remediation"))
+				Expect(name).To(BeEmpty())
+				var collision *parentlifecycle.ChildCollisionError
+				Expect(errors.As(err, &collision)).To(BeTrue())
 			})
 
 			It("should build correct AIAnalysis spec with signal context and enrichment data", func() {
@@ -465,19 +468,6 @@ var _ = Describe("AIAnalysisCreator", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedError))
 				},
-				Entry("Get fails with non-NotFound error - propagates to allow RO to mark RR as Failed",
-					"get_error",
-					interceptor.Funcs{
-						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-							// Return error for AIAnalysis Get
-							if _, ok := obj.(*aianalysisv1.AIAnalysis); ok {
-								return fmt.Errorf("network error")
-							}
-							return c.Get(ctx, key, obj, opts...)
-						},
-					},
-					"failed to check existing AIAnalysis",
-				),
 				Entry("Create fails with API server error - propagates to allow RO to mark RR as Failed",
 					"create_error",
 					interceptor.Funcs{

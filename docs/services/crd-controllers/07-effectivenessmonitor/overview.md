@@ -41,7 +41,7 @@ EM has **zero AI/LLM dependency in V1.0**. There is no HolmesGPT, HAPI, or Kuber
 | **Alert resolution check** | Queries AlertManager for the triggering alert; includes stale-pod alert filtering and multi-probe alert-decay detection | BR-EM-002, BR-EM-012, `pkg/effectivenessmonitor/alert/alert.go` |
 | **Metric comparison** | 5 PromQL queries (CPU, memory, p95 latency, error rate, throughput) compared pre/post remediation, plus cluster-scoped Node/PV metrics | BR-EM-003, `pkg/effectivenessmonitor/metrics/scorer.go` |
 | **Spec hash / drift detection** | SHA-256 canonical fingerprint comparison (pre/post/current) — detects whether the workflow changed the spec, and whether something else changed it afterward | BR-EM-004, `pkg/effectivenessmonitor/hash/hash.go` |
-| **Phase state machine + derived timing** | `Pending → [WaitingForPropagation] → Stabilizing → Assessing → Completed/Failed`, with validity/stabilization deadlines computed and persisted in status | BR-EM-005, BR-EM-009 |
+| **Phase state machine + derived timing** | `Pending → [WaitingForPropagation] → Stabilizing → Assessing → Completed/Failed`, or parent failure → `Cancelled`, with validity/stabilization deadlines computed and persisted in status | BR-EM-005, BR-EM-009 |
 | **Component audit events** | 7 typed audit event types emitted to DataStorage per assessment lifecycle | BR-AUDIT-006, [Audit Event Catalog](./security/AUDIT_EVENT_CATALOG.md) |
 | **Fleet-aware target reads** | When Fleet federation is enabled, routes health/hash reads to the correct remote cluster via `fleet.ReaderFactory` | BR-FLEET-054, [ADR-068](../../../architecture/decisions/ADR-068-fleet-federation-architecture.md) |
 

@@ -19,6 +19,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -78,7 +80,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 				Expect(name).To(Equal("sp-test-remediation"))
 			})
 
-			It("should be idempotent - return existing name on retry without creating duplicate", func() {
+			It("UT-RO-2582-001: should fail on a pre-existing SignalProcessing instead of adopting it", func() {
 				// Arrange - pre-create the SignalProcessing
 				existingSP := &signalprocessingv1.SignalProcessing{
 					ObjectMeta: metav1.ObjectMeta{
@@ -94,8 +96,9 @@ var _ = Describe("SignalProcessingCreator", func() {
 				name, err := spCreator.Create(ctx, rr)
 
 				// Assert
-				Expect(err).ToNot(HaveOccurred())
-				Expect(name).To(Equal("sp-test-remediation"))
+				Expect(name).To(BeEmpty())
+				var collision *parentlifecycle.ChildCollisionError
+				Expect(errors.As(err, &collision)).To(BeTrue())
 			})
 
 			It("should build correct SignalProcessing spec with all signal data passed through", func() {
@@ -185,15 +188,6 @@ var _ = Describe("SignalProcessingCreator", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedError))
 				},
-				Entry("Get fails with non-NotFound error - propagates to allow RO to mark RR as Failed",
-					"get_error",
-					interceptor.Funcs{
-						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-							return fmt.Errorf("network error")
-						},
-					},
-					"failed to check existing SignalProcessing",
-				),
 				Entry("Create fails with API server error - propagates to allow RO to mark RR as Failed",
 					"create_error",
 					interceptor.Funcs{

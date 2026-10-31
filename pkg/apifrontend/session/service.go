@@ -23,6 +23,7 @@ import (
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // validCRDName matches a DNS label (lowercase alphanumeric and '-', must
@@ -670,9 +671,11 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 
 	crdName := fmt.Sprintf("is-%s", cfg.RRName)
 
-	done, result, err := s.reconcileExistingIS(ctx, crdName, cfg)
-	if done {
-		return result, err
+	if cfg.JoinMode != v1alpha1.SessionJoinModeStart {
+		done, result, err := s.reconcileExistingIS(ctx, crdName, cfg)
+		if done {
+			return result, err
+		}
 	}
 
 	crd := buildInvestigationSessionCRD(s.namespace, crdName, cfg)
@@ -682,7 +685,7 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 
 	if err := s.client.Create(ctx, crd); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			return crdName, nil
+			return "", parentlifecycle.NewChildCollisionError("InvestigationSession", s.namespace, crdName, err)
 		}
 		return "", fmt.Errorf("create IS CRD: %w", err)
 	}

@@ -38711,10 +38711,12 @@ func (s *WorkflowExecutionAuditPayloadParameters) init() WorkflowExecutionAuditP
 type WorkflowExecutionAuditPayloadPhase string
 
 const (
-	WorkflowExecutionAuditPayloadPhasePending   WorkflowExecutionAuditPayloadPhase = "Pending"
-	WorkflowExecutionAuditPayloadPhaseRunning   WorkflowExecutionAuditPayloadPhase = "Running"
-	WorkflowExecutionAuditPayloadPhaseCompleted WorkflowExecutionAuditPayloadPhase = "Completed"
-	WorkflowExecutionAuditPayloadPhaseFailed    WorkflowExecutionAuditPayloadPhase = "Failed"
+	WorkflowExecutionAuditPayloadPhasePending    WorkflowExecutionAuditPayloadPhase = "Pending"
+	WorkflowExecutionAuditPayloadPhaseRunning    WorkflowExecutionAuditPayloadPhase = "Running"
+	WorkflowExecutionAuditPayloadPhaseCompleted  WorkflowExecutionAuditPayloadPhase = "Completed"
+	WorkflowExecutionAuditPayloadPhaseFailed     WorkflowExecutionAuditPayloadPhase = "Failed"
+	WorkflowExecutionAuditPayloadPhaseCancelling WorkflowExecutionAuditPayloadPhase = "Cancelling"
+	WorkflowExecutionAuditPayloadPhaseCancelled  WorkflowExecutionAuditPayloadPhase = "Cancelled"
 )
 
 // AllValues returns all WorkflowExecutionAuditPayloadPhase values.
@@ -38724,6 +38726,8 @@ func (WorkflowExecutionAuditPayloadPhase) AllValues() []WorkflowExecutionAuditPa
 		WorkflowExecutionAuditPayloadPhaseRunning,
 		WorkflowExecutionAuditPayloadPhaseCompleted,
 		WorkflowExecutionAuditPayloadPhaseFailed,
+		WorkflowExecutionAuditPayloadPhaseCancelling,
+		WorkflowExecutionAuditPayloadPhaseCancelled,
 	}
 }
 
@@ -38737,6 +38741,10 @@ func (s WorkflowExecutionAuditPayloadPhase) MarshalText() ([]byte, error) {
 	case WorkflowExecutionAuditPayloadPhaseCompleted:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadPhaseFailed:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadPhaseCancelling:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadPhaseCancelled:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -38757,6 +38765,12 @@ func (s *WorkflowExecutionAuditPayloadPhase) UnmarshalText(data []byte) error {
 		return nil
 	case WorkflowExecutionAuditPayloadPhaseFailed:
 		*s = WorkflowExecutionAuditPayloadPhaseFailed
+		return nil
+	case WorkflowExecutionAuditPayloadPhaseCancelling:
+		*s = WorkflowExecutionAuditPayloadPhaseCancelling
+		return nil
+	case WorkflowExecutionAuditPayloadPhaseCancelled:
+		*s = WorkflowExecutionAuditPayloadPhaseCancelled
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

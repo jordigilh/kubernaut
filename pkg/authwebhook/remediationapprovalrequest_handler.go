@@ -203,6 +203,12 @@ func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.Remedi
 		logger.Info("System-initiated expiry detected, preserving DecidedBy=system per CRD spec")
 		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec"), true
 	}
+	if rar.Status.Decision == remediationv1.ApprovalDecisionCancelled {
+		if rar.Status.DecidedBy != "system" {
+			return admission.Denied("Cancelled is a system-only approval decision"), true
+		}
+		return admission.Allowed("system-initiated cancellation"), true
+	}
 
 	return admission.Response{}, false
 }

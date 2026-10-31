@@ -32,13 +32,18 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // dispatchLeaseDuration is the coordination/v1 Lease duration used for
@@ -94,12 +99,20 @@ const dispatchCleanupFinalizer = agentsessionv1.DispatchCleanupFinalizer
 // why this can't just be a blanket rest.Config.Timeout on the client.
 const listTimeout = 10 * time.Second
 
+const cancellationAckTimeout = 10 * time.Second
+
 // InvestigationRunner abstracts the investigation entry point (mirrors
 // internal/kubernautagent/server.InvestigationRunner without importing that
 // package, to keep the dispatcher decoupled from the retired HTTP handler).
 type InvestigationRunner interface {
 	Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error)
 }
+
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
+//+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Dispatcher is a controller-runtime Reconciler for AgentSession (#2231 /
 // DD-AA-KA-001 Amendment: superseding this type's original raw
@@ -115,15 +128,16 @@ type InvestigationRunner interface {
 // Lease, and launches exactly one investigation per AgentSession via the
 // existing session.Manager.
 type Dispatcher struct {
-	client         crclient.WithWatch
-	namespace      string
-	holderIdentity string
-	sessions       *session.Manager
-	investigator   InvestigationRunner
-	logger         logr.Logger
-	resyncInterval time.Duration
-	auditStore     kaaudit.AuditStore
-	epochLeaseName string
+	client            crclient.WithWatch
+	namespace         string
+	holderIdentity    string
+	sessions          *session.Manager
+	investigator      InvestigationRunner
+	logger            logr.Logger
+	resyncInterval    time.Duration
+	auditStore        kaaudit.AuditStore
+	epochLeaseName    string
+	parentGateEnabled bool
 
 	// dispatchedMu guards dispatched, the remediationID -> AgentSession
 	// key/session identity map that lets OnTerminal/OnInteractiveUpgrade (registered
@@ -156,6 +170,14 @@ func WithResyncInterval(d time.Duration) DispatcherOption {
 // the existing dispatcher behavior.
 func WithAuditStore(store kaaudit.AuditStore) DispatcherOption {
 	return func(disp *Dispatcher) { disp.auditStore = store }
+}
+
+// WithParentLifecycleGate enables DD-2582 AIA/RR fresh-read authorization for
+// production dispatch. It is explicit so legacy isolated dispatcher tests and
+// migration fixtures without owner references do not accidentally become
+// parent-cache tests.
+func WithParentLifecycleGate() DispatcherOption {
+	return func(disp *Dispatcher) { disp.parentGateEnabled = true }
 }
 
 // NewDispatcher constructs a Dispatcher. namespace scopes the watch (""
@@ -361,7 +383,20 @@ func (d *Dispatcher) reconcileDelete(ctx context.Context, as *agentsessionv1.Age
 		return ctrl.Result{}, nil
 	}
 
-	d.cancelOnDelete(as) //nolint:contextcheck // cancelOnDelete's own ForceCancelByRemediationID call is a pure in-memory map operation (see cancelOnDelete's doc comment) with no I/O to cancel; ctx is otherwise unused on this path
+	ack, cancelErr := d.cancelOnDelete(ctx, as)
+	if cancelErr != nil {
+		return ctrl.Result{}, cancelErr
+	}
+	if ack != nil {
+		ackTimer := time.NewTimer(cancellationAckTimeout)
+		defer ackTimer.Stop()
+		select {
+		case <-ack:
+		case <-ackTimer.C:
+			d.logger.Error(nil, "AgentSession cancellation acknowledgement timed out; retaining finalizer", "agentSession", as.Name)
+			return ctrl.Result{RequeueAfter: cancellationAckTimeout}, nil
+		}
+	}
 
 	if err := d.removeDispatchCleanupFinalizer(ctx, crclient.ObjectKeyFromObject(as)); err != nil {
 		return ctrl.Result{}, err
@@ -414,7 +449,9 @@ func (d *Dispatcher) removeDispatchCleanupFinalizer(ctx context.Context, key crc
 func (d *Dispatcher) SetupWithManager(mgr ctrl.Manager) error {
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		Named("agentsession-dispatcher").
-		For(&agentsessionv1.AgentSession{})
+		For(&agentsessionv1.AgentSession{}).
+		Watches(&aianalysisv1.AIAnalysis{}, handler.EnqueueRequestsFromMapFunc(d.mapAIAnalysisToAgentSession)).
+		Watches(&remediationv1.RemediationRequest{}, handler.EnqueueRequestsFromMapFunc(d.mapRemediationRequestToAgentSession))
 	if d.namespace != "" {
 		ns := d.namespace
 		bldr = bldr.WithEventFilter(predicate.NewPredicateFuncs(func(obj crclient.Object) bool {
@@ -422,6 +459,28 @@ func (d *Dispatcher) SetupWithManager(mgr ctrl.Manager) error {
 		}))
 	}
 	return bldr.Complete(d)
+}
+
+// mapAIAnalysisToAgentSession wakes a deterministic AgentSession when its AIA
+// parent changes. The direct fresh reads in tryDispatch remain authoritative.
+func (d *Dispatcher) mapAIAnalysisToAgentSession(_ context.Context, obj crclient.Object) []reconcile.Request {
+	analysis, ok := obj.(*aianalysisv1.AIAnalysis)
+	if !ok {
+		return nil
+	}
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: crclient.ObjectKey{Name: "as-" + rrName, Namespace: analysis.Namespace}}}
+}
+
+func (d *Dispatcher) mapRemediationRequestToAgentSession(_ context.Context, obj crclient.Object) []reconcile.Request {
+	rr, ok := obj.(*remediationv1.RemediationRequest)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: crclient.ObjectKey{Name: "as-" + rr.Name, Namespace: rr.Namespace}}}
 }
 
 // considerAgentSession is Reconcile's shared dispatch-decision logic: skip
@@ -475,19 +534,28 @@ func isTimedOut(as *agentsessionv1.AgentSession) bool {
 // LLM/tool budget. ErrSessionNotFound is expected and silent: most
 // deletions arrive after the investigation has already reached a terminal
 // phase and been cleaned up.
-func (d *Dispatcher) cancelOnDelete(as *agentsessionv1.AgentSession) {
+func (d *Dispatcher) cancelOnDelete(ctx context.Context, as *agentsessionv1.AgentSession) (<-chan struct{}, error) {
 	if as.Spec.RemediationID == "" {
-		return
+		return acknowledgedCancellation(), nil
 	}
-	if err := d.sessions.ForceCancelByRemediationID(as.Spec.RemediationID); err != nil { //nolint:contextcheck // ForceCancelByRemediationID is a pure in-memory map operation (mirrors ForceCompleteByRemediationID, #1654) with no I/O to cancel; it intentionally takes no context
+	ack, err := d.sessions.ForceCancelByRemediationIDAndWait(ctx, as.Spec.RemediationID)
+	if err != nil {
 		if !errors.Is(err, session.ErrSessionNotFound) {
 			d.logger.Error(err, "failed to cancel investigation on AgentSession deletion",
 				"agentSession", as.Name, "namespace", as.Namespace, "remediationID", as.Spec.RemediationID)
+			return nil, err
 		}
-		return
+		return acknowledgedCancellation(), nil
 	}
 	d.logger.Info("AgentSession deleted, cancelled in-flight investigation",
 		"agentSession", as.Name, "namespace", as.Namespace, "remediationID", as.Spec.RemediationID)
+	return ack, nil
+}
+
+func acknowledgedCancellation() <-chan struct{} {
+	ack := make(chan struct{})
+	close(ack)
+	return ack
 }
 
 // cancelOnTimeout self-enforces an expired Spec.TimesOutAt deadline (#2170,
@@ -582,8 +650,106 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 		d.deleteDispatchLease(ctx, as.Name, as.Namespace)
 		return
 	}
+	allowed, cancelled, gateErr := d.checkParentGate(ctx, fresh)
+	if gateErr != nil {
+		d.logger.Error(gateErr, "parent gate prevented AgentSession dispatch", "agentSession", fresh.Name)
+		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
+		return
+	}
+	if !allowed {
+		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
+		if cancelled {
+			d.cancelForParent(ctx, fresh)
+		}
+		return
+	}
 
 	d.dispatch(ctx, fresh, recovered || fresh.Status.SessionID != "")
+}
+
+// checkParentGate reads AIA and RR directly immediately before KA dispatch.
+func (d *Dispatcher) checkParentGate(ctx context.Context, as *agentsessionv1.AgentSession) (allowed, cancelled bool, err error) {
+	if !d.parentGateEnabled {
+		return true, false, nil
+	}
+	owner, err := agentSessionAIAnalysisOwner(as)
+	if err != nil {
+		return false, true, err
+	}
+	analysis, err := d.readAIAnalysisParent(ctx, as, owner)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, true, nil
+		}
+		return false, false, err
+	}
+	aiGate, err := parentlifecycle.AIAnalysisGate(ctx, d.client, as.Namespace, analysis.Name, aianalysisv1.PhaseInvestigating)
+	if err != nil {
+		return false, false, err
+	}
+	if allowed, cancelled, err := resolveAgentSessionGate(as, aiGate); !allowed || cancelled || err != nil {
+		return allowed, cancelled, err
+	}
+	rrRef := analysis.Spec.RemediationRequestRef
+	if rrRef.Name == "" || rrRef.Namespace == "" {
+		return false, true, fmt.Errorf("AIAnalysis %s/%s has invalid RemediationRequestRef", analysis.Namespace, analysis.Name)
+	}
+	rrGate, err := parentlifecycle.RemediationRequestGate(ctx, d.client, rrRef.Namespace, rrRef.Name, remediationv1.PhaseAnalyzing)
+	if err != nil {
+		return false, false, err
+	}
+	return resolveAgentSessionGate(as, rrGate)
+}
+
+func agentSessionAIAnalysisOwner(as *agentsessionv1.AgentSession) (*metav1.OwnerReference, error) {
+	owner := metav1.GetControllerOf(as)
+	if owner == nil || owner.Kind != "AIAnalysis" || owner.Name == "" {
+		return nil, fmt.Errorf("AgentSession %s/%s has no valid AIAnalysis owner", as.Namespace, as.Name)
+	}
+	return owner, nil
+}
+
+func (d *Dispatcher) readAIAnalysisParent(ctx context.Context, as *agentsessionv1.AgentSession, owner *metav1.OwnerReference) (*aianalysisv1.AIAnalysis, error) {
+	analysis := &aianalysisv1.AIAnalysis{}
+	if err := d.client.Get(ctx, crclient.ObjectKey{Name: owner.Name, Namespace: as.Namespace}, analysis); err != nil {
+		return nil, fmt.Errorf("read AIAnalysis parent: %w", err)
+	}
+	return analysis, nil
+}
+
+func resolveAgentSessionGate(as *agentsessionv1.AgentSession, gate parentlifecycle.GateResult) (bool, bool, error) {
+	switch gate.Decision {
+	case parentlifecycle.GateAllowed:
+		return true, false, nil
+	case parentlifecycle.GateCancelled:
+		return false, true, nil
+	case parentlifecycle.GateWaiting:
+		return false, parentlifecycle.HandoffExpired(as.CreationTimestamp.Time, time.Now(), parentlifecycle.DefaultHandoffTimeout), nil
+	default:
+		return false, true, fmt.Errorf("unknown AgentSession parent gate decision %q", gate.Decision)
+	}
+}
+
+func (d *Dispatcher) cancelForParent(ctx context.Context, as *agentsessionv1.AgentSession) {
+	if as.Spec.RemediationID != "" {
+		ack, err := d.sessions.ForceCancelByRemediationIDAndWait(ctx, as.Spec.RemediationID)
+		if err == nil {
+			go func() {
+				<-ack
+				d.logger.Info("KA cancellation acknowledged after parent failure", "agentSession", as.Name)
+			}()
+			return
+		} else if !errors.Is(err, session.ErrSessionNotFound) {
+			d.logger.Error(err, "failed to cancel KA work after parent failure", "agentSession", as.Name)
+			return
+		}
+	}
+	d.updateStatus(ctx, crclient.ObjectKeyFromObject(as), func(fresh *agentsessionv1.AgentSession) {
+		if !isTerminalPhase(fresh.Status.Phase) {
+			fresh.Status.Phase = agentsessionv1.AgentSessionPhaseCancelled
+			fresh.Status.Error = "parent AIAnalysis or RemediationRequest failed"
+		}
+	})
 }
 
 // dispatch launches the investigation for a won-Lease AgentSession: starts

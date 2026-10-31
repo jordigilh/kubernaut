@@ -178,6 +178,118 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 	return nil
 }
 
+// RequestCancellation requests PipelineRun termination by deleting only the
+// PipelineRun proven to belong to this WFE. TaskRuns and Pods are verified
+// separately before the controller claims Cancelled.
+func (t *TektonExecutor) RequestCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("get client for PipelineRun cancellation: %w", err)
+	}
+	name := ExecutionResourceName(wfe.Spec.TargetResource)
+	if wfe.Status.ExecutionRef != nil && wfe.Status.ExecutionRef.Name != "" {
+		name = wfe.Status.ExecutionRef.Name
+	}
+	var pr tektonv1.PipelineRun
+	pr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &pr); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("get PipelineRun %s/%s for cancellation: %w", namespace, name, err)
+	}
+	if pr.Labels["kubernaut.ai/workflow-execution"] != wfe.Name {
+		return fmt.Errorf("refusing to cancel PipelineRun %s/%s with mismatched WorkflowExecution identity", namespace, name)
+	}
+	if err := c.Delete(ctx, &pr); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete PipelineRun %s/%s for cancellation: %w", namespace, name, err)
+	}
+	return nil
+}
+
+// VerifyCancellation confirms the PipelineRun is gone or terminal and that
+// no active TaskRun/Pod dependent remains (DD-2582).
+func (t *TektonExecutor) VerifyCancellation(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (*CancellationResult, error) {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for PipelineRun cancellation verification: %w", err)
+	}
+	name := tektonExecutionName(wfe)
+	if result, done, err := verifyPipelineRunTermination(ctx, c, name, namespace); err != nil || done {
+		return result, err
+	}
+
+	taskRuns, err := listTektonTaskRuns(ctx, c, name, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("list TaskRuns for PipelineRun %s/%s: %w", namespace, name, err)
+	}
+	if result := activeTaskRunResult(taskRuns); result != nil {
+		return result, nil
+	}
+	if result, done, err := verifyTektonTaskRunPods(ctx, c, taskRuns, namespace); err != nil || done {
+		return result, err
+	}
+
+	return &CancellationResult{Terminated: true, Reason: "BackendTerminationVerified", Message: "PipelineRun and TaskRuns are terminal"}, nil
+}
+
+func tektonExecutionName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	if wfe.Status.ExecutionRef != nil && wfe.Status.ExecutionRef.Name != "" {
+		return wfe.Status.ExecutionRef.Name
+	}
+	return ExecutionResourceName(wfe.Spec.TargetResource)
+}
+
+func verifyPipelineRunTermination(ctx context.Context, c ExecutorClient, name, namespace string) (*CancellationResult, bool, error) {
+	var pr tektonv1.PipelineRun
+	pr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &pr); err == nil {
+		cond := pr.Status.GetCondition(apis.ConditionSucceeded)
+		if cond == nil || cond.IsUnknown() {
+			return &CancellationResult{Reason: "PipelineRunStillActive", Message: fmt.Sprintf("PipelineRun %s/%s is not terminal", namespace, name)}, true, nil
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return nil, false, fmt.Errorf("verify PipelineRun %s/%s: %w", namespace, name, err)
+	}
+	return nil, false, nil
+}
+
+func listTektonTaskRuns(ctx context.Context, c ExecutorClient, name, namespace string) (*tektonv1.TaskRunList, error) {
+	taskRuns := &tektonv1.TaskRunList{}
+	if err := c.List(ctx, taskRuns, client.InNamespace(namespace), client.MatchingLabels{"tekton.dev/pipelineRun": name}); err != nil {
+		return nil, err
+	}
+	return taskRuns, nil
+}
+
+func activeTaskRunResult(taskRuns *tektonv1.TaskRunList) *CancellationResult {
+	for _, taskRun := range taskRuns.Items {
+		cond := taskRun.Status.GetCondition(apis.ConditionSucceeded)
+		if cond == nil || cond.IsUnknown() {
+			return &CancellationResult{Reason: "TaskRunStillActive", Message: fmt.Sprintf("TaskRun %s remains active", taskRun.Name)}
+		}
+	}
+	return nil
+}
+
+func verifyTektonTaskRunPods(ctx context.Context, c ExecutorClient, taskRuns *tektonv1.TaskRunList, namespace string) (*CancellationResult, bool, error) {
+	// A terminal TaskRun/PipelineRun does not prove that every workload Pod
+	// has stopped. Tekton normally garbage-collects these Pods, but cancellation
+	// verification must observe that outcome rather than assume it.
+	for _, taskRun := range taskRuns.Items {
+		var pods corev1.PodList
+		if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{"tekton.dev/taskRun": taskRun.Name}); err != nil {
+			return nil, false, fmt.Errorf("list Pods for TaskRun %s: %w", taskRun.Name, err)
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+				return &CancellationResult{Reason: "PodsStillActive", Message: fmt.Sprintf("Pod %s remains in phase %s", pod.Name, pod.Status.Phase)}, true, nil
+			}
+		}
+	}
+	return nil, false, nil
+}
+
 // BuildPipelineRun creates a PipelineRun with bundle resolver.
 // DD-WE-006: deps are added as workspace bindings when non-nil.
 // #243: Parameters are filtered against DeclaredParameterNames before conversion.

@@ -53,24 +53,27 @@ const (
 	Completed = eav1.PhaseCompleted
 	// Failed - Assessment could not be performed.
 	Failed = eav1.PhaseFailed
+	// Cancelled - parent remediation failed or was cancelled.
+	Cancelled = eav1.PhaseCancelled
 )
 
 // ValidTransitions defines the state machine for EA phases.
 // Key: current phase, Value: list of valid target phases.
 var ValidTransitions = map[Phase][]Phase{
-	Pending:               {WaitingForPropagation, Stabilizing, Assessing, Failed},
-	WaitingForPropagation: {Stabilizing, Failed},
-	Stabilizing:           {Assessing, Failed},
-	Assessing:             {Completed, Failed},
+	Pending:               {WaitingForPropagation, Stabilizing, Assessing, Failed, Cancelled},
+	WaitingForPropagation: {Stabilizing, Failed, Cancelled},
+	Stabilizing:           {Assessing, Failed, Cancelled},
+	Assessing:             {Completed, Failed, Cancelled},
 	// Terminal states - no transitions allowed.
 	Completed: {},
 	Failed:    {},
+	Cancelled: {},
 }
 
 // IsTerminal returns true if the phase is a terminal state.
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed:
+	case Completed, Failed, Cancelled:
 		return true
 	default:
 		return false
@@ -94,7 +97,7 @@ func CanTransition(current, target Phase) bool {
 // Validate checks if a phase value is valid.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, WaitingForPropagation, Stabilizing, Assessing, Completed, Failed:
+	case Pending, WaitingForPropagation, Stabilizing, Assessing, Completed, Failed, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)

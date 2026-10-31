@@ -32,10 +32,11 @@ func ValidateApprovalDecision(decision remediationv1.ApprovalDecision) error {
 		remediationv1.ApprovalDecisionApproved: true,
 		remediationv1.ApprovalDecisionRejected: true,
 		remediationv1.ApprovalDecisionExpired:  true,
+		remediationv1.ApprovalDecisionCancelled: true,
 	}
 
 	if !validDecisions[decision] {
-		return fmt.Errorf("invalid decision: %s (must be Approved, Rejected, or Expired)", decision)
+		return fmt.Errorf("invalid decision: %s (must be Approved, Rejected, Expired, or system-only Cancelled)", decision)
 	}
 
 	return nil

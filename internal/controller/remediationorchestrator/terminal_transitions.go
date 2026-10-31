@@ -427,8 +427,14 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 	// ensureNotificationsCreated is called from handleVerifyingPhase after EA terminal transition
 	// or timeout sets Outcome. Previously called here with empty Outcome (BR-ORCH-045 violation).
 
-	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
-	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+	// DD-2582: build/create the EA with the Verifying handoff phase before the
+	// parent phase is persisted. The helper persists the EA ref first; the RR
+	// phase update above is the subsequent authorization write. A copy is used
+	// so the immutable EA spec records Verifying without authorizing child work
+	// early.
+	eaRR := rr.DeepCopy()
+	eaRR.Status.OverallPhase = phase.Verifying
+	r.createEffectivenessAssessmentIfNeeded(ctx, eaRR)
 
 	logger.Info("Remediation succeeded, entered Verifying phase", "outcome", outcome)
 	return ctrl.Result{}, nil

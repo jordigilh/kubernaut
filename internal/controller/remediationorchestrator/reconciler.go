@@ -356,7 +356,7 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		ExpireRAR:                 r.expireRARWithoutDecision,
 		UpdateRARTimeRemaining:    r.updateRARTimeRemaining,
 		WFECallbacks:              wfeCallbacks,
-	}))
+	}, r.apiReader))
 }
 
 // applyTimeoutDefaults populates zero-valued timeout fields with controller

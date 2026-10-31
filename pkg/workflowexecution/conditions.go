@@ -68,6 +68,9 @@ const (
 	// Phase Alignment: All phases (cross-cutting concern)
 	// Per BR-WE-005: WorkflowExecution is P0 for audit traces
 	ConditionAuditRecorded = "AuditRecorded"
+
+	// ConditionCancellation records requested, verified, or failed backend stop.
+	ConditionCancellation = "Cancellation"
 )
 
 // Condition reasons for ExecutionCreated
@@ -122,6 +125,10 @@ const (
 
 	// ReasonAuditFailed - Audit write failed (Data Storage unavailable)
 	ReasonAuditFailed = "AuditFailed"
+
+	ReasonCancellationRequested = "CancellationRequested"
+	ReasonCancellationVerified  = "CancellationVerified"
+	ReasonCancellationFailed    = "CancellationFailed"
 )
 
 // Ready condition reasons
@@ -195,6 +202,17 @@ func SetExecutionRunning(wfe *workflowexecutionv1.WorkflowExecution, running boo
 		status = metav1.ConditionFalse
 	}
 	SetCondition(wfe, ConditionExecutionRunning, status, reason, message)
+}
+
+// SetCancellation records the observed backend termination state. False is
+// deliberately retained while cancellation is unverified so operators never
+// mistake a Cancelled phase request for proof that external work stopped.
+func SetCancellation(wfe *workflowexecutionv1.WorkflowExecution, verified bool, reason, message string) {
+	status := metav1.ConditionFalse
+	if verified {
+		status = metav1.ConditionTrue
+	}
+	SetCondition(wfe, ConditionCancellation, status, reason, message)
 }
 
 // SetExecutionComplete sets the ExecutionComplete condition

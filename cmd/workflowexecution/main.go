@@ -44,6 +44,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/internal/version"
@@ -71,6 +72,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1alpha1.AddToScheme(scheme))
 	// Issue #868: Registering Tekton types with the scheme is safe even when
 	// Tekton CRDs are absent — it only teaches the serializer about Go types.
 	// Actual CRD availability is checked at startup via tektonCRDsAvailable.

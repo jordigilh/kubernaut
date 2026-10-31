@@ -37,6 +37,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -106,7 +107,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(created.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
 		})
 
-		It("should return existing name when WorkflowExecution already exists per BR-ORCH-025 idempotency", func() {
+		It("UT-RO-2582-001: should fail on a pre-existing WorkflowExecution instead of adopting it", func() {
 			// Arrange
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
@@ -119,11 +120,12 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			name, err := weCreator.Create(ctx, rr, ai)
 
 			// Assert
-			Expect(err).ToNot(HaveOccurred())
-			Expect(name).To(Equal("we-test-remediation"))
+			Expect(name).To(BeEmpty())
+			var collision *parentlifecycle.ChildCollisionError
+			Expect(errors.As(err, &collision)).To(BeTrue())
 		})
 
-		It("should report reused WorkflowExecution without a creation side effect", func() {
+		It("UT-RO-2582-002: should report CreateOnly collision without a creation side effect", func() {
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			existingWE := helpers.NewWorkflowExecution("we-test-remediation", "default")
@@ -132,9 +134,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 
 			name, created, err := weCreator.CreateWithResult(context.Background(), rr, ai)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(name).To(Equal("we-test-remediation"))
+			Expect(name).To(BeEmpty())
 			Expect(created).To(BeFalse())
+			var collision *parentlifecycle.ChildCollisionError
+			Expect(errors.As(err, &collision)).To(BeTrue())
 		})
 
 		It("should build WorkflowExecution spec with all required fields per BR-ORCH-025", func() {
@@ -458,26 +461,6 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(err.Error()).To(ContainSubstring("failed to create WorkflowExecution"))
 		})
 
-		It("should return error when client Get fails with non-NotFound error per BR-ORCH-025", func() {
-			// Arrange - Use interceptor to simulate Get failure
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-						return errors.New("simulated get failure")
-					},
-				}).Build()
-			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-remediation", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			ctx := context.Background()
-
-			// Act
-			_, err := weCreator.Create(ctx, rr, ai)
-
-			// Assert
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to check existing WorkflowExecution"))
-		})
 	})
 
 	Describe("ClusterID propagation (BR-FLEET-054)", func() {

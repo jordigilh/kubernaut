@@ -18,6 +18,7 @@ package aianalysis_test
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,7 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -133,7 +135,7 @@ var _ = Describe("AgentSessionCreator", func() {
 			Expect(as.Spec.RemediationRequestRef.Namespace).To(Equal("default"))
 		})
 
-		It("UT-AA-KA-065-204: should return the existing AgentSession when already created (idempotency)", func() {
+		It("UT-AI-2582-002: should fail on an unexpected pre-existing AgentSession instead of adopting it", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			c := creator.NewAgentSessionCreator(fakeClient, scheme)
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
@@ -142,11 +144,12 @@ var _ = Describe("AgentSessionCreator", func() {
 			first, err := c.GetOrCreate(ctx, analysis)
 			Expect(err).ToNot(HaveOccurred())
 
-			second, err := c.GetOrCreate(ctx, analysis)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(second.Name).To(Equal(first.Name))
-			Expect(second.UID).To(Equal(first.UID))
+			_, err = c.GetOrCreate(ctx, analysis)
+			Expect(err).To(HaveOccurred())
+			var collision *parentlifecycle.ChildCollisionError
+			Expect(errors.As(err, &collision)).To(BeTrue())
+			Expect(collision.ChildKind).To(Equal("AgentSession"))
+			Expect(first.Name).To(Equal("as-test-remediation"))
 
 			// Only one AgentSession should ever exist for this AIAnalysis.
 			list := &agentsessionv1.AgentSessionList{}
@@ -186,12 +189,10 @@ var _ = Describe("AgentSessionCreator", func() {
 		// fail an AIAnalysis whose underlying investigation had already
 		// completed successfully. Both handleSessionLost and
 		// tryAdoptCorrelatedSession are fully retired under DD-AA-KA-001 --
-		// GetOrCreate has no regeneration concept, no cap, and no adoption
-		// race to lose: repeated/concurrent calls for the same AIAnalysis
-		// always resolve to the single already-created AgentSession
-		// (BR-AA-KA-065.1/065.2), eliminating this failure mode by
-		// construction rather than by tuning a cap or backoff.
-		It("UT-AA-KA-065-207 (#2081 regression): rapid concurrent GetOrCreate calls for the same AIAnalysis never error and never create more than one AgentSession", func() {
+		// CreateOnly deliberately surfaces the concurrent AlreadyExists hand-off
+		// as a collision; no caller may adopt the object without persisted recovery
+		// identity (DD-2582).
+		It("UT-RO-2582-002 (#2081): rapid concurrent GetOrCreate calls surface collisions and create one AgentSession", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			c := creator.NewAgentSessionCreator(fakeClient, scheme)
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
@@ -208,10 +209,20 @@ var _ = Describe("AgentSessionCreator", func() {
 					results <- err
 				}()
 			}
+			successes := 0
+			collisions := 0
 			for i := 0; i < concurrentCallers; i++ {
-				Expect(<-results).ToNot(HaveOccurred(),
-					"#2081: no caller should ever see an error from a concurrent hand-off -- there is no cap left to exhaust")
+				err := <-results
+				if err == nil {
+					successes++
+					continue
+				}
+				var collision *parentlifecycle.ChildCollisionError
+				Expect(errors.As(err, &collision)).To(BeTrue())
+				collisions++
 			}
+			Expect(successes).To(Equal(1))
+			Expect(collisions).To(Equal(concurrentCallers - 1))
 
 			list := &agentsessionv1.AgentSessionList{}
 			Expect(fakeClient.List(ctx, list)).To(Succeed())

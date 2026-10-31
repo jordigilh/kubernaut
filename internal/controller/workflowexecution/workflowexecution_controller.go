@@ -67,6 +67,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -266,9 +267,11 @@ func (r *WorkflowExecutionReconciler) executionClientFor(ctx context.Context, cl
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
 // reconciler only calls List() -- the manager's cached client establishes
 // an Informer for any type it reads, and that Informer needs list+watch to
@@ -335,7 +338,9 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.reconcilePending(ctx, &wfe)
 	case workflowexecutionv1alpha1.PhaseRunning:
 		return r.reconcileRunning(ctx, &wfe)
-	case workflowexecutionv1alpha1.PhaseCompleted, workflowexecutionv1alpha1.PhaseFailed:
+	case workflowexecutionv1alpha1.PhaseCancelling:
+		return r.reconcileCancelling(ctx, &wfe)
+	case workflowexecutionv1alpha1.PhaseCompleted, workflowexecutionv1alpha1.PhaseFailed, workflowexecutionv1alpha1.PhaseCancelled:
 		// P1: Terminal State Logic - ReconcileTerminal handles cooldown, then returns
 		// This prevents unnecessary reconciliation of terminal resources
 		if wephase.IsTerminal(wephase.Phase(wfe.Status.Phase)) {
@@ -363,12 +368,14 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
-		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
-		// WE-BUG-001: Prevent duplicate reconciles from status-only updates
-		// Use GenerationChangedPredicate to only reconcile on spec changes
-		// Status updates (PipelineRunStatus) are informational and don't require reconciliation
-		// Rationale: Controller only needs to act on spec changes, not status updates
-		WithEventFilter(predicate.GenerationChangedPredicate{})
+		For(&workflowexecutionv1alpha1.WorkflowExecution{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&remediationv1.RemediationRequest{}, handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+			rr, ok := obj.(*remediationv1.RemediationRequest)
+			if !ok {
+				return nil
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "we-" + rr.Name, Namespace: rr.Namespace}}}
+		}))
 
 	// BR-WE-014: Only watch PipelineRuns if Tekton CRDs are installed.
 	// This is a runtime optimization - if Tekton is not installed, the controller

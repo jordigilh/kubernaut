@@ -701,7 +701,7 @@ type KASession struct {
 	ID string `json:"id,omitempty"`
 	// AgentSessionRef is the persisted recovery identity for the Kubernetes
 	// AgentSession object. Recovery validates its UID, owner, and immutable spec
-	// identity before reuse (Issue #2582 schema foundation).
+	// identity before reuse (Issue #2582 schema foundation; DD-2582).
 	// +optional
 	AgentSessionRef *corev1.ObjectReference `json:"agentSessionRef,omitempty"`
 	// Generation counter tracking session regenerations (0 = first session, incremented on 404)

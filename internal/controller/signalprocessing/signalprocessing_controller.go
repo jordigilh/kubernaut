@@ -43,15 +43,20 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
@@ -64,7 +69,11 @@ import (
 // Day 10 Integration: Wired with Rego-based classifiers from pkg/signalprocessing/classifier
 type SignalProcessingReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
+	Scheme *runtime.Scheme
+	// APIReader is used for the DD-2582 parent gate immediately before any
+	// enrichment/classification side effect. Tests may leave it nil and use the
+	// injected client, but production wiring must provide the uncached reader.
+	APIReader    client.Reader
 	AuditManager *audit.Manager // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
 
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
@@ -113,7 +122,7 @@ type SignalProcessingReconciler struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 
 // Reconcile implements the reconciliation loop for SignalProcessing.
 func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -132,6 +141,10 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// O5: Defense-in-depth nil guard for PolicyEvaluator (after resource exists)
 	if r.PolicyEvaluator == nil {
 		return ctrl.Result{}, fmt.Errorf("PolicyEvaluator is nil - SP controller misconfigured (should be caught by SetupWithManager)")
+	}
+
+	if handled, err := r.enforceParentGate(ctx, sp, logger); handled {
+		return ctrl.Result{}, err
 	}
 
 	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001): skip reconcile if we've
@@ -180,6 +193,63 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return result, err
 }
 
+// enforceParentGate prevents a stale/missed watch from authorizing SP work
+// before the parent RR phase is persisted. The child owns its Cancelled status;
+// RO does not patch it directly (DD-2582, AC-4).
+func (r *SignalProcessingReconciler) enforceParentGate(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (bool, error) {
+	if r.APIReader == nil {
+		return false, nil
+	}
+	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseCancelled {
+		return false, nil
+	}
+	ref := sp.Spec.RemediationRequestRef
+	if ref.Name == "" || ref.Namespace == "" {
+		return true, fmt.Errorf("SignalProcessing %s/%s has an invalid RemediationRequestRef", sp.Namespace, sp.Name)
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	gate, err := parentlifecycle.RemediationRequestGate(ctx, reader, ref.Namespace, ref.Name, remediationv1.PhaseProcessing)
+	if err != nil {
+		logger.Error(err, "parent gate read failed; refusing SignalProcessing work")
+		return true, err
+	}
+	switch gate.Decision {
+	case parentlifecycle.GateAllowed:
+		return false, nil
+	case parentlifecycle.GateWaiting:
+		if parentlifecycle.HandoffExpired(sp.CreationTimestamp.Time, time.Now(), parentlifecycle.DefaultHandoffTimeout) {
+			now := metav1.Now()
+			sp.Status.Phase = signalprocessingv1alpha1.PhaseCancelled
+			sp.Status.CompletionTime = &now
+			sp.Status.ObservedGeneration = sp.Generation
+			sp.Status.EnsureFailureInfo().Error = "parent RemediationRequest phase authorization timed out"
+			if updateErr := r.Status().Update(ctx, sp); updateErr != nil {
+				return true, updateErr
+			}
+			return true, nil
+		}
+		logger.V(1).Info("waiting for persisted RemediationRequest phase", "phase", gate.ParentPhase)
+		return true, nil
+	case parentlifecycle.GateCancelled:
+		now := metav1.Now()
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseCancelled
+		sp.Status.CompletionTime = &now
+		sp.Status.ObservedGeneration = sp.Generation
+		sp.Status.EnsureFailureInfo().Error = "parent RemediationRequest failed or was not found"
+		if updateErr := r.Status().Update(ctx, sp); updateErr != nil {
+			return true, updateErr
+		}
+		return true, nil
+	default:
+		return true, fmt.Errorf("unknown parent gate decision %q", gate.Decision)
+	}
+}
+
 // checkTerminalOrTimeout reports (via handled=true) whether Reconcile should
 // return immediately: either sp is already in a terminal phase, or RO's
 // authoritative Spec.TimesOutAt deadline (DD-TIMEOUT-002 / Issue #2176) has
@@ -190,7 +260,8 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 // requeue, so the caller pairs handled=true with a bare ctrl.Result{}.
 func (r *SignalProcessingReconciler) checkTerminalOrTimeout(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (handled bool, err error) {
 	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
-		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseCancelled {
 		return true, nil
 	}
 	if hasTimedOut(sp) {
@@ -207,7 +278,8 @@ func isDuplicateGenerationReconcile(sp *signalprocessingv1alpha1.SignalProcessin
 	return sp.Status.ObservedGeneration == sp.Generation &&
 		sp.Status.Phase != "" &&
 		sp.Status.Phase != signalprocessingv1alpha1.PhaseCompleted &&
-		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseCancelled
 }
 
 // errUnknownPhase is a sentinel returned by dispatchPhase when sp.Status.Phase
@@ -326,6 +398,13 @@ func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&signalprocessingv1alpha1.SignalProcessing{}).
+		Watches(&remediationv1.RemediationRequest{}, handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+			rr, ok := obj.(*remediationv1.RemediationRequest)
+			if !ok {
+				return nil
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "sp-" + rr.Name, Namespace: rr.Namespace}}}
+		})).
 		Named(fmt.Sprintf("signalprocessing-%s", "controller")).
 		Complete(r)
 }
