@@ -38,6 +38,10 @@ var _ = Describe("DD-2582 SignalProcessing parent lifecycle", Label("integration
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+		persistedRR := &remediationv1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), persistedRR)).To(Succeed())
+		Expect(persistedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
+			"the failed parent phase must be visible through the test client before SP reconciliation")
 
 		sp := CreateTestSignalProcessingWithParent("sp-2582-parent", ns, rr, ValidTestFingerprints["reconciler-05"], target)
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
