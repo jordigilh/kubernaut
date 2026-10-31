@@ -44,10 +44,24 @@ func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, 
 				Name:      wfe.Spec.RemediationRequestRef.Name,
 				Namespace: wfe.Spec.RemediationRequestRef.Namespace,
 			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				SignalName:        "parent-fixture",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "parent-fixture-target", Namespace: wfe.Spec.RemediationRequestRef.Namespace},
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+			},
 			Status: remediationv1.RemediationRequestStatus{OverallPhase: c.parentPhase},
 		}
-		if err := c.Client.Create(ctx, parent); err != nil && !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("seed WFE parent RemediationRequest: %w", err)
+		if err := c.Client.Create(ctx, parent); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				return fmt.Errorf("seed WFE parent RemediationRequest: %w", err)
+			}
+		} else if err := c.Client.Status().Update(ctx, parent); err != nil {
+			return fmt.Errorf("persist WFE parent RemediationRequest phase: %w", err)
 		}
 	}
 	return c.Client.Create(ctx, object, opts...)

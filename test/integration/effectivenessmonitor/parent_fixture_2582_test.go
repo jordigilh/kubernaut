@@ -40,10 +40,24 @@ func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, 
 	if ok && ea.Spec.CorrelationID != "" && ea.Namespace != "" {
 		parent := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: ea.Spec.CorrelationID, Namespace: ea.Namespace},
-			Status:     remediationv1.RemediationRequestStatus{OverallPhase: c.parentPhase},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				SignalName:        "parent-fixture",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "parent-fixture-target", Namespace: ea.Namespace},
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+			},
+			Status: remediationv1.RemediationRequestStatus{OverallPhase: c.parentPhase},
 		}
-		if err := c.Client.Create(ctx, parent); err != nil && !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("seed EA parent RemediationRequest: %w", err)
+		if err := c.Client.Create(ctx, parent); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				return fmt.Errorf("seed EA parent RemediationRequest: %w", err)
+			}
+		} else if err := c.Client.Status().Update(ctx, parent); err != nil {
+			return fmt.Errorf("persist EA parent RemediationRequest phase: %w", err)
 		}
 	}
 	return c.Client.Create(ctx, object, opts...)

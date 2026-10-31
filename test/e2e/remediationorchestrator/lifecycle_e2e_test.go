@@ -17,6 +17,7 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,8 +27,10 @@ import (
 	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -116,6 +119,61 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(we.OwnerReferences).To(HaveLen(1))
 			Expect(we.OwnerReferences[0].Name).To(Equal(rr.Name))
 		})
+	})
+
+	It("E2E-2582-003: RR cancellation does not let RO overwrite active AI or create later WE work", func() {
+		rrName := helpers.UniqueTestName("rr-parent-cancel-e2e")
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: controllerNamespace},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: fmt.Sprintf("%064x", time.Now().UnixNano()),
+				SignalName:        "ParentCancellation",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind: "Deployment", Name: "parent-cancel-target", Namespace: testNS,
+				},
+				FiringTime: now, ReceivedTime: now,
+			},
+		}
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
+
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rrName, 2*time.Minute, interval)
+		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rrName, 2*time.Minute, interval)
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
+				return err
+			}
+			ai.Status.Phase = aianalysisv1.PhaseInvestigating
+			return k8sClient.Status().Update(ctx, ai)
+		})).To(Succeed())
+
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			fresh := &remediationv1.RemediationRequest{}
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fresh); err != nil {
+				return err
+			}
+			fresh.Status.OverallPhase = remediationv1.PhaseCancelled
+			return k8sClient.Status().Update(ctx, fresh)
+		})).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			fetchedAI := &aianalysisv1.AIAnalysis{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), fetchedAI)).To(Succeed())
+			g.Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseInvestigating),
+				"RO must leave active AI cancellation to the child controller")
+			weList := &workflowexecutionv1.WorkflowExecutionList{}
+			g.Expect(k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))).To(Succeed())
+			for i := range weList.Items {
+				for _, owner := range weList.Items[i].OwnerReferences {
+					g.Expect(owner.Name).NotTo(Equal(rrName), "RR cancellation must prevent later WE dispatch")
+				}
+			}
+		}, 5*time.Second, interval).Should(Succeed())
 	})
 
 	// ========================================

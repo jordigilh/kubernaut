@@ -310,8 +310,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 	// E2E-RO-163-005: Failure post-mortem scenario
 	// Tests that RR transitions to Failed with correct FailurePhase, FailureReason, ConsecutiveFailureCount
 	// when WorkflowExecution fails during execution.
-	Context("E2E-RO-163-005: Failure post-mortem", func() {
-		It("should set FailurePhase, FailureReason, ConsecutiveFailureCount when WE fails", func() {
+	Context("E2E-2582-004 / E2E-RO-163-005: Failure post-mortem", func() {
+		It("E2E-2582-004: sets failure attribution when WE fails", func() {
 			By("1. Creating RemediationRequest")
 			rrName := "rr-fail-e2e-" + uuid.New().String()[:8]
 			now := metav1.Now()

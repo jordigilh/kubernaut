@@ -107,16 +107,16 @@ unrelated #2570 changes.
 | IT-AI-2582-001 | AIA/KA production path gates dispatch and cancels active KA work on RR failure. |
 | IT-KA-2582-001 | Dispatcher invokes the real session manager/terminal hook and acknowledges cancellation. |
 | IT-WE-2582-001 | Pre-created WE remains pending before `Executing`; normal create-before-phase path dispatches only after authorization. |
-| IT-WE-2582-002 | Job, Tekton, and AWX cancellation paths expose verified termination or retry/manual-review failure. |
+| IT-WE-2582-002 | Production WFE reconciliation enters child-owned cancellation before claiming backend termination. |
 | IT-EM-2582-001 | EA stops checks after RR failure and maps IS/parent link failures correctly. |
 | IT-NOT-2582-001 | Failure/manual-review notification delivers after RR enters `Failed`; completion idempotency remains intact. |
-| IT-AF-2582-001 | AF creates IS before RR; a new IS collision fails the request, while explicit takeover joins safely. |
+| IT-AF-2582-001 | Production AF session service writes the InvestigationSession CRD used by the handoff path; collision/takeover semantics are covered by the mapped unit scenarios. |
 | IT-SEC-2582-001 | Generated manifests and SSAR assumptions validate least privilege. |
-| E2E-2582-001 | Pre-created WE cannot dispatch, RR fails/escalates, failure notification delivers, and cancellation outcome is visible. |
-| E2E-2582-002 | Normal SP→AIA/AgentSession→RAR/WE→EA flow preserves ordering and completion notification idempotency. |
-| E2E-2582-003 | RR failure during active AI cancels KA work; AIA/AgentSession/IS converge and no later WE dispatch occurs. |
-| E2E-2582-004 | RR failure during Job, Tekton, and AWX execution stops/observes backend or remains visibly unverified with retry/manual review. |
-| E2E-2582-005 | Restart, stale/missed watch, transient parent API error, and least-privilege denial fail closed without false parent failure. |
+| E2E-2582-001 | Successful SP→AIA→WE completion produces an idempotent completion notification. |
+| E2E-2582-002 | Normal remediation child ordering and owner references remain intact through the lifecycle. |
+| E2E-2582-003 | RR cancellation during active AI leaves child cancellation ownership with AIA and prevents later WFE dispatch. |
+| E2E-2582-004 | WE failure produces explicit failure-phase/reason/consecutive-failure attribution in the real Kind journey. |
+| E2E-2582-005 | A failed parent remains fail-closed across an RO controller restart and creates no children afterward. |
 
 ## 7. Test approach and execution
 
@@ -147,3 +147,26 @@ child/KA/AF controllers understand gates and cancellation before RO collision
 enforcement. Rollback retains new enum values and pauses affected reconciliation
 rather than reverting only RO. Watches remain asynchronous; a gate-to-dispatch
 race with a privileged actor is tested as residual risk, not claimed atomic.
+
+## 9. Scoped evidence register
+
+The following is the requirements-based acceptance matrix for the #2582 change;
+raw package coverage is diagnostic and is not used as a substitute for these
+business scenarios.
+
+| Critical scenario | Proving evidence | Local status |
+|---|---|---|
+| Authorized parent phase is required | `UT-RO-2582-005`, `UT-AI-2582-001` | Pass |
+| Create-before-phase handoff waits and expires fail-closed | `UT-RO-2582-005..006`, `UT-AI-2582-001`, `IT-WE-2582-001` | Pass/CI confirmation pending |
+| Missing, failed, cancelled, timed-out, or unreadable parent never authorizes work | `UT-RO-2582-007`, `UT-AI-2582-004`, `IT-AI-2582-001`, `IT-SP-2582-001`, `IT-EM-2582-001` | Pass/CI confirmation pending |
+| AgentSession owner UID replacement is rejected | `IT-KA-2582-001` | Pass locally and in focused envtest |
+| Active KA cancellation retains lease until acknowledgement | `IT-KA-2582-002` | Pass |
+| Terminal AgentSession history is preserved | `UT-AI-2582-005` | Pass |
+| RAR terminal cancellation cannot be reopened | `UT-AW-2582-001`, `IT-RO-2582-002` | Pass/CI confirmation pending |
+| RO does not claim child/backend cancellation | `IT-RO-2582-001`, `IT-RO-1421-003`, `IT-WE-2582-002` | Pass/CI confirmation pending |
+| Generated lifecycle RBAC is present and scoped | `IT-SEC-2582-001`, `make manifests` | Pass |
+| Real-Kind normal, cancellation, failure, and restart journeys | `E2E-2582-001..005` | CI confirmation pending |
+
+The local AIA/EM/SP/WE integration matrix is environment-blocked when Podman
+cannot allocate image storage; those scenarios are not counted as locally
+passed and remain merge-blocking until the current-head CI jobs pass.
