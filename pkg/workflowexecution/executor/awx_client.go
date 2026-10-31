@@ -46,6 +46,10 @@ func NewAWXHTTPClient(baseURL, token string) (*AWXHTTPClient, error) {
 	if token == "" {
 		return nil, fmt.Errorf("token must not be empty")
 	}
+	baseOrigin, err := url.Parse(baseURL)
+	if err != nil || baseOrigin.Scheme == "" || baseOrigin.Host == "" {
+		return nil, fmt.Errorf("baseURL must contain a valid scheme and host")
+	}
 
 	rt, err := sharedtls.DefaultBaseTransport()
 	if err != nil {
@@ -58,6 +62,12 @@ func NewAWXHTTPClient(baseURL, token string) (*AWXHTTPClient, error) {
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: rt,
+			CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+				if req.URL.Scheme != baseOrigin.Scheme || req.URL.Host != baseOrigin.Host || req.URL.User != nil {
+					return fmt.Errorf("reject AWX redirect outside configured origin")
+				}
+				return nil
+			},
 		},
 	}, nil
 }
