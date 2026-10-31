@@ -4,7 +4,10 @@
 > For human-approved execution, RO consumes the immutable selection and target
 > snapshot recorded in the RAR, with only admitted overrides to existing
 > parameter values. Omitted override keys retain their original values; no
-> workflow switch or live catalog/AIA re-resolution is permitted. The
+> workflow switch or live catalog/AIA re-resolution is permitted. WE must still
+> perform the trusted-namespace, point-in-time workflow-ID and content-identity
+> check before dispatch; absent, ambiguous or mismatched workflows fail closed.
+> This check does not replace frozen snapshot values with live catalog data. The
 > unchanged AIA pass-through requirements below continue to apply to the
 > non-approval path. This amendment is proposed, not an assertion that the
 > current implementation or compliance evidence already satisfies it.
@@ -149,8 +152,10 @@ Scenario: Approval orchestration - rejected
   When RemediationOrchestrator reconciles
   Then RemediationApprovalRequest should be created
   When RemediationApprovalRequest decision is "Rejected"
+  And the rejection has no decision message
   Then NO WorkflowExecution should be created
   And RemediationRequest phase should be "Failed"
+  And RemediationRequest failure reason should be "Rejected by operator"
 
 Scenario: Approval timeout
   Given AIAnalysis "aia-1" has approvalRequired = true
