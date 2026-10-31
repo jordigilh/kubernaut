@@ -89,6 +89,7 @@ unrelated #2570 changes.
 | UT-WE-2582-008 | BR-WE-015, SI-10 | Ambiguous AWX identity matches fail closed rather than adopting one job. |
 | UT-WE-2582-009 | BR-WE-015, AC-4 | AWX recovery follows pagination and ignores unrelated malformed extra-vars records. |
 | UT-WE-2582-010 | SC-8, SI-10 | AWX recovery rejects cross-origin or scheme-changing pagination links before sending credentials. |
+| UT-WE-2582-011 | SC-8, SI-10 | AWX HTTP redirects are origin-locked before bearer-token forwarding. |
 | UT-NOT-2582-003 | SI-10 | Mismatched notification identity is a collision, not reusable. |
 
 ## 6. Integration and E2E scenarios
@@ -151,13 +152,13 @@ business scenarios.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
-the measured scenario denominator is **15** and the passing numerator is **15**:
+the measured scenario denominator is **16** and the passing numerator is **16**:
 CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
-(`UT-WE-2582-003..010`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 15 are critical policy scenarios; no pending/skipped
+(`UT-WE-2582-003..011`), and terminal RAR decision immutability
+(`UT-AW-2582-001`). All 16 are critical policy scenarios; no pending/skipped
 examples are included in the numerator. UID replacement, acknowledgement
 ordering, and real backend termination are intentionally not counted in this
 unit denominator because their proving evidence requires the production-path
