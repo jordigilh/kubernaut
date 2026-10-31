@@ -61,6 +61,11 @@ import (
 // Conflict errors, so this propagates immediately to the caller for graceful handling.
 var errPhaseAlreadySet = errors.New("phase already initialized by concurrent reconcile")
 
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/status,verbs=get;update;patch
+
 // Reconciler reconciles RemediationRequest objects.
 type Reconciler struct {
 	client              client.Client

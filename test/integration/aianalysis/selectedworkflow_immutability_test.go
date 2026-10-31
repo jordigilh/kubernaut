@@ -107,6 +107,9 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},
 			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase: aianalysisv1.PhasePending,
+			},
 		}
 	})
 
@@ -125,6 +128,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 				return err
 			}
+			analysis.Status.Phase = aianalysisv1.PhasePending
 			analysis.Status.EnsureRCAResult().SelectedWorkflow = firstSW
 			return k8sClient.Status().Update(ctx, analysis)
 		}, timeout, interval).Should(Succeed(), "first write to a nil SelectedWorkflow must be accepted regardless of content")
@@ -232,6 +236,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 				return err
 			}
+			analysis.Status.Phase = aianalysisv1.PhasePending
 			analysis.Status.EnsureRCAResult().SelectedWorkflow = firstSW
 			return k8sClient.Status().Update(ctx, analysis)
 		}, timeout, interval).Should(Succeed(), "first write with nil DeclaredParameterNames must be accepted")

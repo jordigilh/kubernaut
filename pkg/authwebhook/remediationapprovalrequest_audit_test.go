@@ -301,6 +301,33 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 			Expect(mockStore.StoredEvents).To(BeEmpty(), "IDEMPOTENCY: No duplicate webhook audit event (already attributed)")
 		})
 
+		It("UT-AW-2582-001: rejects changing a cancelled decision to Approved", func() {
+			oldRAR := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rar-cancelled", Namespace: "production"},
+				Status: remediationv1.RemediationApprovalRequestStatus{
+					Decision:  remediationv1.ApprovalDecisionCancelled,
+					DecidedBy: "system",
+				},
+			}
+			newRAR := oldRAR.DeepCopy()
+			newRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+			newJSON, err := json.Marshal(newRAR)
+			Expect(err).NotTo(HaveOccurred())
+			oldJSON, err := json.Marshal(oldRAR)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp := handler.Handle(ctx, admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+				Kind:      metav1.GroupVersionKind{Group: "remediation.kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequest"},
+				Name:      oldRAR.Name,
+				Namespace: oldRAR.Namespace,
+				Operation: admissionv1.Update,
+				Object:    runtime.RawExtension{Raw: newJSON},
+				OldObject: runtime.RawExtension{Raw: oldJSON},
+			}})
+
+			Expect(resp.Allowed).To(BeFalse())
+		})
+
 		It("UNIT-RAR-AUDIT-AW-005: should not emit audit event for pending decisions", func() {
 			// BUSINESS BEHAVIOR: No audit event until decision is made
 			// Prevents audit pollution with incomplete/pending records

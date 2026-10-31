@@ -188,6 +188,9 @@ func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.Remedi
 	// - OLD object has NO decision → NEW decision (OVERWRITE any user-provided DecidedBy)
 	isNewDecision := oldRAR == nil || oldRAR.Status.Decision == ""
 	if !isNewDecision {
+		if oldRAR.Status.Decision != rar.Status.Decision {
+			return admission.Denied("approval decision is already terminal and cannot be changed"), true
+		}
 		logger.Info("Skipping RAR (decision already exists in old object) - TRUE IDEMPOTENCY",
 			"oldDecision", oldRAR.Status.Decision,
 			"oldDecidedBy", oldRAR.Status.DecidedBy,

@@ -92,6 +92,8 @@ rules:
   - aianalyses/status
   - effectivenessassessments/status
   - notificationrequests/status
+  - remediationapprovalrequests/status
+  - remediationrequests/status
   - signalprocessings/status
   - workflowexecutions/status
   verbs:
@@ -113,6 +115,15 @@ rules:
   - investigationsessions
   - remediationrequests
   verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - remediationapprovalrequests
+  verbs:
+  - create
   - get
   - list
   - watch

@@ -825,7 +825,11 @@ rules:
   # Interactive mode: RR existence check (#703 HARM-004)
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
+  # AgentSession parent lifecycle gate (DD-2582): fresh parent watches.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
   # AgentSession (DD-AA-KA-001, #2170): dispatch watcher + Status writer.
   # Unconditional -- every investigation flows through AgentSession
   # dispatch regardless of interactive.enabled. KA never writes Spec.

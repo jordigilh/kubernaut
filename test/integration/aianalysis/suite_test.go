@@ -1038,7 +1038,12 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 			{
 				APIGroups: []string{"kubernaut.ai"},
 				Resources: []string{"remediationrequests"},
-				Verbs:     []string{"get", "list"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"aianalyses"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"coordination.k8s.io"},
