@@ -7,9 +7,9 @@
 
 ## Acceptance
 
-Use Ginkgo/Gomega business-outcome tests. The 41 scenarios below are the proposed in-scope critical UT denominator: **0/41 implemented or passing**. All 41 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
+Use Ginkgo/Gomega business-outcome tests. The 42 scenarios below are the proposed in-scope critical UT denominator: **0/42 implemented or passing**. All 42 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 41 current scenarios are critical, the current gate is 41/41, not 90% of 41. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 42 current scenarios are critical, the current gate is 42/42, not 90% of 42. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -56,6 +56,7 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 39 | UT-VAL-2570-090 | A non-finite float value is rejected. | shared validation; KA-191 / SI-10 |
 | 40 | UT-VAL-2570-091 | A float beyond the finite float64 range is rejected as overflow. | shared validation; KA-191 / SI-10 |
 | 41 | UT-VAL-2570-092 | A nonzero float that underflows to zero is rejected. | shared validation; KA-191 / SI-10 |
+| 42 | UT-VAL-2570-093 | Integers above signed int64 maximum or below its minimum are rejected without a tighter schema bound. | shared validation; KA-191 / SI-10 |
 
 ## Integration and end-to-end proof
 

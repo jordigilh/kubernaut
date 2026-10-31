@@ -30,7 +30,7 @@ This document consolidates two related business requirements for workflow data h
 1. **BR-ORCH-025**: Pass through workflow data from AIAnalysis to WorkflowExecution (no catalog lookup)
 2. **BR-ORCH-026**: Orchestrate approval workflow when AIAnalysis requires human approval
 
-**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → container_image` during MCP search. RO passes through from `AIAnalysis.status.selectedWorkflow`.
+**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → executionBundle` during workflow discovery. RO passes through from `AIAnalysis.status.rcaResult.selectedWorkflow`.
 
 ---
 
@@ -38,7 +38,7 @@ This document consolidates two related business requirements for workflow data h
 
 ### Description
 
-RemediationOrchestrator MUST pass through workflow data (including `container_image` and `container_digest`) from `AIAnalysis.status.selectedWorkflow` to `WorkflowExecution.spec.workflowRef` without performing catalog lookups.
+RemediationOrchestrator MUST pass through workflow data (including `executionBundle` and `executionBundleDigest`) from `AIAnalysis.status.rcaResult.selectedWorkflow` to `WorkflowExecution.spec.workflowRef` without performing catalog lookups.
 
 ### Priority
 
@@ -47,18 +47,18 @@ RemediationOrchestrator MUST pass through workflow data (including `container_im
 ### Rationale
 
 Per DD-CONTRACT-001 v1.2:
-- Kubernaut Agent resolves `workflow_id → container_image` during MCP search
-- `AIAnalysis.status.selectedWorkflow` contains the fully resolved workflow reference
+- Kubernaut Agent resolves `workflow_id → executionBundle` during workflow discovery
+- `AIAnalysis.status.rcaResult.selectedWorkflow` contains the fully resolved workflow reference
 - RO's responsibility is to pass this data through to WorkflowExecution
 - RO should NOT duplicate catalog lookup logic (separation of concerns)
 
 ### Implementation
 
-1. Read `AIAnalysis.status.selectedWorkflow` when phase = "Completed"
+1. Read `AIAnalysis.status.rcaResult.selectedWorkflow` when phase = "Completed"
 2. Pass through all fields to `WorkflowExecution.spec.workflowRef`:
    - `workflowId` ← `selectedWorkflow.workflowId`
-   - `containerImage` ← `selectedWorkflow.containerImage` (resolved by Kubernaut Agent)
-   - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by Kubernaut Agent)
+   - `executionBundle` ← `selectedWorkflow.executionBundle` (resolved by Kubernaut Agent)
+   - `executionBundleDigest` ← `selectedWorkflow.executionBundleDigest` (resolved by Kubernaut Agent)
 3. Pass through `parameters` unchanged (UPPER_SNAKE_CASE keys)
 4. Pass through `confidence` and `rationale` for audit trail
 5. Fail if `selectedWorkflow` is nil or missing required fields
@@ -68,7 +68,7 @@ Per DD-CONTRACT-001 v1.2:
 | ID | Criterion | Test Coverage |
 |----|-----------|---------------|
 | AC-025-1 | RO does NOT call Data Storage API for workflow resolution | Unit |
-| AC-025-2 | `container_image` and `container_digest` passed through from AIAnalysis.status | Unit, Integration |
+| AC-025-2 | `executionBundle` and `executionBundleDigest` passed through from AIAnalysis.status | Unit, Integration |
 | AC-025-3 | All workflow parameters passed through unchanged | Unit |
 | AC-025-4 | Missing selectedWorkflow → RemediationRequest marked as Failed | Unit |
 | AC-025-5 | Audit trail contains complete workflow selection context | Integration |
@@ -77,19 +77,19 @@ Per DD-CONTRACT-001 v1.2:
 
 ```gherkin
 Scenario: Workflow data pass-through
-  Given AIAnalysis "aia-1" has status.selectedWorkflow with:
-    | workflowId | containerImage | containerDigest |
+  Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow with:
+    | workflowId | executionBundle | executionBundleDigest |
     | pod-restart | registry.io/workflows/pod-restart:v1.2 | sha256:abc123 |
   And AIAnalysis "aia-1" phase is "Completed"
   When RemediationOrchestrator creates WorkflowExecution
   Then WorkflowExecution.spec.workflowRef should have:
     | workflowId | pod-restart |
-    | containerImage | registry.io/workflows/pod-restart:v1.2 |
-    | containerDigest | sha256:abc123 |
+    | executionBundle | registry.io/workflows/pod-restart:v1.2 |
+    | executionBundleDigest | sha256:abc123 |
   And NO calls to Data Storage API should be made
 
 Scenario: Missing selectedWorkflow fails remediation
-  Given AIAnalysis "aia-1" has status.selectedWorkflow = nil
+  Given AIAnalysis "aia-1" has status.rcaResult.selectedWorkflow = nil
   And AIAnalysis "aia-1" phase is "Completed"
   When RemediationOrchestrator attempts to create WorkflowExecution
   Then RemediationRequest should transition to phase "Failed"
