@@ -156,13 +156,13 @@ business scenarios.
 
 For the **parent-gate and pure cancellation-policy unit subset** (excluding
 cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
-the measured scenario denominator is **9** and the passing numerator is **9**:
+the measured scenario denominator is **10** and the passing numerator is **10**:
 CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
 (`UT-WE-2582-003..005`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 9 are critical policy scenarios; no pending/skipped
+(`UT-AW-2582-001`). All 10 are critical policy scenarios; no pending/skipped
 examples are included in the numerator. UID replacement, acknowledgement
 ordering, and real backend termination are intentionally not counted in this
 unit denominator because their proving evidence requires the production-path
