@@ -254,6 +254,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	k8sClient = &parentSeedingClient{Client: k8sClient, parentPhase: remediationv1.PhaseExecuting}
 
 	By("Creating namespaces for testing")
 	// Create kubernaut-workflows namespace for PipelineRuns

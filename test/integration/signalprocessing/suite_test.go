@@ -319,6 +319,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	k8sClient = &parentSeedingClient{Client: k8sClient, parentPhase: remediationv1alpha1.PhaseProcessing}
 
 	// DD-AUTH-014: Create authenticated DataStorage clients (both audit + query)
 	// Uses centralized helper to ensure both clients use ServiceAccount authentication
@@ -499,6 +500,7 @@ proactive_signal_mappings:
 	// ADR-060: Initialize SignalProcessing controller with unified evaluator
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:               k8sManager.GetClient(),
+		APIReader:            k8sManager.GetAPIReader(),
 		Scheme:               k8sManager.GetScheme(),
 		AuditManager:         auditManager,
 		Metrics:              sharedMetrics,

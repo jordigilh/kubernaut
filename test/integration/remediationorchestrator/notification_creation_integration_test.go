@@ -67,7 +67,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 	// Decision: Dec 23, 2025 - Removed per user approval
 
 	Context("NC-INT-2: Approval Expiry Notification (BR-ORCH-034)", func() {
-		It("should create NotificationRequest when RemediationApprovalRequest expires", func() {
+		It("IT-NOT-2582-001: creates a failure notification when RemediationApprovalRequest expires", func() {
 			// Create RemediationRequest
 			rrName := "rr-approval-expiry-notification"
 			rr := &remediationv1.RemediationRequest{

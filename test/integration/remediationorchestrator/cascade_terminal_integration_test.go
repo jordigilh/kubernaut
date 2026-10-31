@@ -68,10 +68,11 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		deleteTestNamespace(namespace)
 	})
 
-	// IT-RO-1421-001: RR cancelled → AI transitions to Failed with ParentCancelled
+	// IT-RO-2582-001: RR cancelled → RO leaves active child status ownership to
+	// each child controller.
 	// Exercises the production RO reconcile loop → cascadeTerminalToChildren → AI status patch.
 	// FedRAMP IR-4(1): Automated response terminates active investigation when parent is cancelled.
-	It("IT-RO-1421-001: RR cancelled via status patch → AI transitions to Failed [IR-4(1)]", func() {
+	It("IT-RO-2582-001: RR cancelled via status patch does not overwrite active children [DD-2582]", func() {
 		rrName := fmt.Sprintf("rr-cascade-%s", uuid.New().String()[:8])
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		spName := fmt.Sprintf("sp-%s", rrName)
@@ -155,27 +156,21 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 			g.Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("Verifying AI transitions to Failed with ParentCancelled reason [IR-4(1)]")
-		Eventually(func(g Gomega) {
+		By("Verifying RO leaves active AI cancellation status to the AIAnalysis controller [DD-2582]")
+		Consistently(func(g Gomega) {
 			fetchedAI := &aianalysisv1.AIAnalysis{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, fetchedAI)).To(Succeed())
-			g.Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseFailed),
-				"AI must transition to Failed when parent RR is Cancelled")
-			g.Expect(fetchedAI.Status.Reason).To(Equal(aianalysisv1.ReasonParentCancelled),
-				"Reason must be ParentCancelled for audit trail [AU-12]")
-			g.Expect(fetchedAI.Status.Message).To(ContainSubstring("terminal phase"),
-				"Message must indicate parent termination for operator visibility")
-			g.Expect(fetchedAI.Status.CompletedAt).ToNot(BeNil(),
-				"CompletedAt must be set for lifecycle completeness")
-		}, timeout, interval).Should(Succeed())
+			g.Expect(fetchedAI.Status.Phase).To(Equal(aianalysisv1.PhaseInvestigating),
+				"RO must not claim or overwrite active AIAnalysis cancellation")
+		}, "5s", interval).Should(Succeed())
 
-		By("Verifying SP transitions to Failed [AC-6]")
-		Eventually(func(g Gomega) {
+		By("Verifying RO leaves active SignalProcessing cancellation status to its controller [DD-2582]")
+		Consistently(func(g Gomega) {
 			fetchedSP := &signalprocessingv1.SignalProcessing{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, fetchedSP)).To(Succeed())
-			g.Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseFailed),
-				"SP must transition to Failed when parent RR is Cancelled")
-		}, timeout, interval).Should(Succeed())
+			g.Expect(fetchedSP.Status.Phase).To(Equal(signalprocessingv1.PhaseEnriching),
+				"RO must not claim or overwrite active SignalProcessing cancellation")
+		}, "5s", interval).Should(Succeed())
 	})
 
 	// IT-RO-1421-002: Idempotent cascade — already-terminal children not overwritten
@@ -257,9 +252,9 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		}, "5s", interval).Should(Succeed())
 	})
 
-	// IT-RO-1421-003: Cascade to WorkflowExecution
-	// FedRAMP AC-6: Active PipelineRun with elevated RBAC must be terminated.
-	It("IT-RO-1421-003: WE transitions to Failed when RR is Cancelled [AC-6]", func() {
+	// IT-RO-1421-003: RO leaves backend cancellation to WorkflowExecution.
+	// FedRAMP AC-6: RO must not claim that an active backend has stopped.
+	It("IT-RO-1421-003: RO leaves active WorkflowExecution cancellation to WE [AC-6, DD-2582]", func() {
 		rrName := fmt.Sprintf("rr-we-%s", uuid.New().String()[:8])
 		weName := fmt.Sprintf("we-%s", rrName)
 
@@ -321,15 +316,13 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 			g.Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("Verifying WE transitions to Failed [AC-6]")
-		Eventually(func(g Gomega) {
+		By("Verifying WE remains owned by its controller while RO avoids a false terminal claim [DD-2582]")
+		Consistently(func(g Gomega) {
 			fetchedWE := &workflowexecutionv1.WorkflowExecution{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, fetchedWE)).To(Succeed())
-			g.Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed),
-				"WE must transition to Failed when parent RR is Cancelled")
-			g.Expect(fetchedWE.Status.FailureReason).To(ContainSubstring("terminal phase"),
-				"FailureReason must indicate parent termination [AU-12]")
-		}, timeout, interval).Should(Succeed())
+			g.Expect(fetchedWE.Status.Phase).To(Equal(workflowexecutionv1.PhaseRunning),
+				"RO must not claim backend cancellation before WE proves it")
+		}, "5s", interval).Should(Succeed())
 	})
 })
 

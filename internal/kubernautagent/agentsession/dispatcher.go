@@ -99,7 +99,7 @@ const dispatchCleanupFinalizer = agentsessionv1.DispatchCleanupFinalizer
 // why this can't just be a blanket rest.Config.Timeout on the client.
 const listTimeout = 10 * time.Second
 
-const cancellationAckTimeout = 10 * time.Second
+const defaultCancellationAckTimeout = 10 * time.Second
 
 var errAgentSessionParentIdentityMismatch = errors.New("agentsession parent identity mismatch")
 
@@ -130,16 +130,17 @@ type InvestigationRunner interface {
 // Lease, and launches exactly one investigation per AgentSession via the
 // existing session.Manager.
 type Dispatcher struct {
-	client            crclient.WithWatch
-	namespace         string
-	holderIdentity    string
-	sessions          *session.Manager
-	investigator      InvestigationRunner
-	logger            logr.Logger
-	resyncInterval    time.Duration
-	auditStore        kaaudit.AuditStore
-	epochLeaseName    string
-	parentGateEnabled bool
+	client                 crclient.WithWatch
+	namespace              string
+	holderIdentity         string
+	sessions               *session.Manager
+	investigator           InvestigationRunner
+	logger                 logr.Logger
+	resyncInterval         time.Duration
+	auditStore             kaaudit.AuditStore
+	epochLeaseName         string
+	parentGateEnabled      bool
+	cancellationAckTimeout time.Duration
 
 	// dispatchedMu guards dispatched, the remediationID -> AgentSession
 	// key/session identity map that lets OnTerminal/OnInteractiveUpgrade (registered
@@ -182,19 +183,31 @@ func WithParentLifecycleGate() DispatcherOption {
 	return func(disp *Dispatcher) { disp.parentGateEnabled = true }
 }
 
+// WithCancellationAckTimeout overrides the bounded wait for parent-driven
+// cancellation acknowledgement. Production uses the ten-second default; the
+// option keeps cancellation ordering tests deterministic.
+func WithCancellationAckTimeout(timeout time.Duration) DispatcherOption {
+	return func(disp *Dispatcher) {
+		if timeout > 0 {
+			disp.cancellationAckTimeout = timeout
+		}
+	}
+}
+
 // NewDispatcher constructs a Dispatcher. namespace scopes the watch (""
 // watches all namespaces the client's RBAC permits). holderIdentity
 // identifies this KA replica in the dispatch Lease's HolderIdentity field.
 func NewDispatcher(client crclient.WithWatch, namespace, holderIdentity string, sessions *session.Manager, investigator InvestigationRunner, logger logr.Logger, opts ...DispatcherOption) *Dispatcher {
 	d := &Dispatcher{
-		client:         client,
-		namespace:      namespace,
-		holderIdentity: holderIdentity,
-		sessions:       sessions,
-		investigator:   investigator,
-		logger:         logger.WithName("agentsession-dispatcher"),
-		resyncInterval: defaultResyncInterval,
-		dispatched:     make(map[string]dispatchedEntry),
+		client:                 client,
+		namespace:              namespace,
+		holderIdentity:         holderIdentity,
+		sessions:               sessions,
+		investigator:           investigator,
+		logger:                 logger.WithName("agentsession-dispatcher"),
+		resyncInterval:         defaultResyncInterval,
+		cancellationAckTimeout: defaultCancellationAckTimeout,
+		dispatched:             make(map[string]dispatchedEntry),
 	}
 	for _, opt := range opts {
 		opt(d)
@@ -390,13 +403,13 @@ func (d *Dispatcher) reconcileDelete(ctx context.Context, as *agentsessionv1.Age
 		return ctrl.Result{}, cancelErr
 	}
 	if ack != nil {
-		ackTimer := time.NewTimer(cancellationAckTimeout)
+		ackTimer := time.NewTimer(d.cancellationAckTimeout)
 		defer ackTimer.Stop()
 		select {
 		case <-ack:
 		case <-ackTimer.C:
 			d.logger.Error(nil, "AgentSession cancellation acknowledgement timed out; retaining finalizer", "agentSession", as.Name)
-			return ctrl.Result{RequeueAfter: cancellationAckTimeout}, nil
+			return ctrl.Result{RequeueAfter: d.cancellationAckTimeout}, nil
 		}
 	}
 
@@ -656,16 +669,22 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 	if gateErr != nil {
 		d.logger.Error(gateErr, "parent gate prevented AgentSession dispatch", "agentSession", fresh.Name)
 		if cancelled {
-			d.cancelForParent(ctx, fresh)
+			if d.cancelForParent(ctx, fresh) {
+				d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
+			}
+		} else {
+			d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		}
-		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		return
 	}
 	if !allowed {
 		if cancelled {
-			d.cancelForParent(ctx, fresh)
+			if d.cancelForParent(ctx, fresh) {
+				d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
+			}
+		} else {
+			d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		}
-		d.deleteDispatchLease(ctx, fresh.Name, fresh.Namespace)
 		return
 	}
 
@@ -741,22 +760,31 @@ func resolveAgentSessionGate(as *agentsessionv1.AgentSession, gate parentlifecyc
 	}
 }
 
-func (d *Dispatcher) cancelForParent(ctx context.Context, as *agentsessionv1.AgentSession) {
+// cancelForParent returns true only when the dispatch lease can be released.
+// An active session keeps ownership until its terminal acknowledgement; this
+// prevents another replica from acquiring the lease while KA work is still
+// unwinding after a parent failure (DD-2582).
+func (d *Dispatcher) cancelForParent(ctx context.Context, as *agentsessionv1.AgentSession) bool {
 	if as.Spec.RemediationID != "" {
 		ack, err := d.sessions.ForceCancelByRemediationIDAndWait(ctx, as.Spec.RemediationID)
 		if err == nil {
-			timer := time.NewTimer(cancellationAckTimeout)
+			timer := time.NewTimer(d.cancellationAckTimeout)
 			defer timer.Stop()
 			select {
 			case <-ack:
 				d.logger.Info("KA cancellation acknowledged after parent failure", "agentSession", as.Name)
+				return true
 			case <-timer.C:
 				d.logger.Error(nil, "KA cancellation acknowledgement timed out after parent failure", "agentSession", as.Name)
+				go func() {
+					<-ack
+					d.deleteDispatchLease(context.WithoutCancel(ctx), as.Name, as.Namespace)
+				}()
+				return false
 			}
-			return
 		} else if !errors.Is(err, session.ErrSessionNotFound) {
 			d.logger.Error(err, "failed to cancel KA work after parent failure", "agentSession", as.Name)
-			return
+			return false
 		}
 	}
 	d.updateStatus(ctx, crclient.ObjectKeyFromObject(as), func(fresh *agentsessionv1.AgentSession) {
@@ -765,6 +793,7 @@ func (d *Dispatcher) cancelForParent(ctx context.Context, as *agentsessionv1.Age
 			fresh.Status.Error = "parent AIAnalysis or RemediationRequest failed"
 		}
 	})
+	return true
 }
 
 // dispatch launches the investigation for a won-Lease AgentSession: starts

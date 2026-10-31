@@ -19,6 +19,7 @@ package agentsession_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +56,22 @@ type fakeInvestigationRunner struct {
 	block  chan struct{}
 	result *katypes.InvestigationResult
 	err    error
+}
+
+type nonCooperativeInvestigationRunner struct {
+	started     chan struct{}
+	release     chan struct{}
+	releaseOnce sync.Once
+}
+
+func (r *nonCooperativeInvestigationRunner) Investigate(context.Context, katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	close(r.started)
+	<-r.release
+	return &katypes.InvestigationResult{RCASummary: "released", Confidence: 1}, nil
+}
+
+func (r *nonCooperativeInvestigationRunner) Release() {
+	r.releaseOnce.Do(func() { close(r.release) })
 }
 
 func (f *fakeInvestigationRunner) Investigate(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
@@ -243,6 +260,77 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			return got.Status.Phase
 		}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCancelled))
 		Expect(runner.calls.Load()).To(Equal(int32(0)))
+	})
+
+	It("IT-KA-2582-002: retains the dispatch lease until active parent cancellation is acknowledged", func() {
+		runner := &nonCooperativeInvestigationRunner{started: make(chan struct{}), release: make(chan struct{})}
+		DeferCleanup(runner.Release)
+		d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(),
+			agentsession.WithParentLifecycleGate(), agentsession.WithCancellationAckTimeout(20*time.Millisecond),
+			agentsession.WithResyncInterval(20*time.Millisecond))
+		wireHooks(mgr, d)
+
+		_, err := mgr.StartInvestigationWithContext(ctx, func(runCtx context.Context) (*katypes.InvestigationResult, error) {
+			return runner.Investigate(runCtx, katypes.SignalContext{})
+		}, session.SessionContext{RemediationID: "rr-ack-timeout"})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(runner.started, "2s", "10ms").Should(BeClosed())
+
+		controllerRef := true
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ai-ack-timeout",
+				Namespace: testNamespace,
+				UID:       types.UID("current-analysis-uid-ack"),
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-ack-timeout", Namespace: testNamespace},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{Phase: aianalysisv1.PhaseInvestigating},
+		}
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-ack-timeout", Namespace: testNamespace},
+			Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseAnalyzing},
+		}
+		as := newPendingAgentSession("as-ack-timeout")
+		as.Status.Phase = agentsessionv1.AgentSessionPhasePending
+		as.Spec.RemediationID = "rr-ack-timeout"
+		as.Spec.RemediationRequestRef = agentsessionv1.ObjectRef{Name: "rr-ack-timeout", Namespace: testNamespace}
+		as.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: aianalysisv1.GroupVersion.String(),
+			Kind:       "AIAnalysis",
+			Name:       analysis.Name,
+			UID:        types.UID("old-analysis-uid-ack"),
+			Controller: &controllerRef,
+		}}
+
+		Expect(cli.Create(ctx, analysis)).To(Succeed())
+		Expect(cli.Create(ctx, rr)).To(Succeed())
+		Expect(cli.Create(ctx, as)).To(Succeed())
+		mustReconcile(ctx, d, as)
+
+		Eventually(func() error {
+			lease := &coordinationv1.Lease{}
+			return cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-ack-timeout", Namespace: testNamespace}, lease)
+		}, "2s", "10ms").Should(Succeed())
+		Consistently(func() agentsessionv1.AgentSessionPhase {
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, crclient.ObjectKeyFromObject(as), got)).To(Succeed())
+			return got.Status.Phase
+		}, 100*time.Millisecond, "10ms").Should(Equal(agentsessionv1.AgentSessionPhasePending))
+
+		runner.Release()
+		Eventually(func() bool {
+			lease := &coordinationv1.Lease{}
+			err := cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-ack-timeout", Namespace: testNamespace}, lease)
+			return apierrors.IsNotFound(err)
+		}, "2s", "10ms").Should(BeTrue())
+		mustReconcile(ctx, d, as)
+		Eventually(func() agentsessionv1.AgentSessionPhase {
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, crclient.ObjectKeyFromObject(as), got)).To(Succeed())
+			return got.Status.Phase
+		}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCancelled))
 	})
 
 	Describe("IT-AA-2170-DISPATCH-LEASE-NAME: a long AgentSession name that would truncate the dispatch Lease name to a trailing separator", func() {

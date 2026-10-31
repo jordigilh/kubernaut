@@ -53,7 +53,7 @@ import (
 // Full lifecycle: RR → SP → AA → WE → Completed → NotificationRequest
 // Pattern: Manual child CRD status updates (no child controllers deployed)
 
-var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notification", "remediationorchestrator"), func() {
+var _ = Describe("E2E-2582-001 / E2E-RO-2449-001: Completion Notification", Label("e2e", "notification", "remediationorchestrator", "issue-2582"), func() {
 	var (
 		testNS string
 	)
@@ -66,7 +66,7 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 		deleteTestNamespace(testNS)
 	})
 
-	It("should create NotificationRequest with type=completion when remediation succeeds", func() {
+	It("E2E-2582-001: creates a completion NotificationRequest after successful remediation", func() {
 		By("1. Creating RemediationRequest")
 		rrName := "rr-completion-" + uuid.New().String()[:13]
 		now := metav1.Now()

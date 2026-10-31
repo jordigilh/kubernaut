@@ -29,9 +29,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
@@ -135,6 +137,10 @@ func startEnv(runner agentsession.InvestigationRunner) (crclient.WithWatch, *ses
 }
 
 func startEnvWithPreparation(runner agentsession.InvestigationRunner, prepare func(crclient.WithWatch)) (crclient.WithWatch, *session.Manager, func()) {
+	return startEnvWithPreparationAndOptions(runner, prepare)
+}
+
+func startEnvWithPreparationAndOptions(runner agentsession.InvestigationRunner, prepare func(crclient.WithWatch), options ...agentsession.DispatcherOption) (crclient.WithWatch, *session.Manager, func()) {
 	Expect(os.Getenv("KUBEBUILDER_ASSETS")).NotTo(BeEmpty(),
 		"KUBEBUILDER_ASSETS must be set — run 'make setup-envtest' first")
 
@@ -162,7 +168,7 @@ func startEnvWithPreparation(runner agentsession.InvestigationRunner, prepare fu
 
 	sessions := session.NewManager(session.NewStore(5*time.Minute), logr.Discard(), nil, kametrics.NewMetrics())
 	dispatcher := agentsession.NewDispatcher(cli, testNamespace, "replica-it", sessions, runner, logr.Discard(),
-		agentsession.WithResyncInterval(200*time.Millisecond))
+		append([]agentsession.DispatcherOption{agentsession.WithResyncInterval(200 * time.Millisecond)}, options...)...)
 	sessions.SetTerminalHook(dispatcher.OnTerminal)
 	sessions.SetInteractiveUpgradeHook(dispatcher.OnInteractiveUpgrade)
 	Expect(dispatcher.RegisterEpoch(context.Background())).To(Succeed())
@@ -293,6 +299,83 @@ var _ = Describe("AgentSession Dispatcher Reconciler wiring (#2231) [AU-2, CC7.2
 		Expect(int(runner.calls.Load())).To(Equal(1))
 		Expect(got.GetFinalizers()).To(ContainElement(agentsessionv1.DispatchCleanupFinalizer),
 			fmt.Sprintf("dispatchCleanupFinalizer must be present on %s even after reaching a terminal phase (removed only on delete)", got.Name))
+	})
+
+	It("IT-KA-2582-001: real Manager wiring rejects an AgentSession owned by a replaced AIAnalysis UID", func() {
+		runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "must not run", Confidence: 1}}
+		cli, _, stop := startEnvWithPreparationAndOptions(runner, nil, agentsession.WithParentLifecycleGate())
+		defer stop()
+		ctx := context.Background()
+
+		controllerRef := true
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ai-2582-replaced-parent",
+				Namespace: testNamespace,
+				UID:       types.UID("current-analysis-uid"),
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-2582-replaced-parent", Namespace: testNamespace},
+				RemediationID:         "rr-2582-replaced-parent",
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						Severity:         "critical",
+						SignalName:       "ParentLifecycleReplacement",
+						SignalMode:       "reactive",
+						Environment:      "test",
+						BusinessPriority: "P1",
+						TargetResource: aianalysisv1.TargetResource{
+							Kind:      "Pod",
+							Name:      "parent-lifecycle-target",
+							Namespace: testNamespace,
+						},
+					},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+				},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{Phase: aianalysisv1.PhaseInvestigating},
+		}
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-2582-replaced-parent", Namespace: testNamespace},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				SignalName:        "ParentLifecycleReplacement",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind: "Pod", Name: "parent-lifecycle-target", Namespace: testNamespace,
+				},
+				FiringTime:   metav1.Now(),
+				ReceivedTime: metav1.Now(),
+			},
+			Status: remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseAnalyzing},
+		}
+		as := newAgentSession("as-2582-replaced-parent")
+		as.Spec.RemediationRequestRef = agentsessionv1.ObjectRef{Name: rr.Name, Namespace: testNamespace}
+		as.Spec.RemediationID = rr.Name
+		as.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: aianalysisv1.GroupVersion.String(),
+			Kind:       "AIAnalysis",
+			Name:       analysis.Name,
+			UID:        types.UID("old-analysis-uid"),
+			Controller: &controllerRef,
+		}}
+
+		Expect(cli.Create(ctx, analysis)).To(Succeed())
+		Expect(cli.Create(ctx, rr)).To(Succeed())
+		Expect(cli.Create(ctx, as)).To(Succeed())
+
+		Eventually(func() agentsessionv1.AgentSessionPhase {
+			got := &agentsessionv1.AgentSession{}
+			if err := cli.Get(ctx, crclient.ObjectKeyFromObject(as), got); err != nil {
+				return ""
+			}
+			return got.Status.Phase
+		}, 10*time.Second, 100*time.Millisecond).Should(Equal(agentsessionv1.AgentSessionPhaseCancelled),
+			"production dispatcher wiring must cancel rather than dispatch after an owner UID replacement")
+		Expect(int(runner.calls.Load())).To(Equal(0))
 	})
 
 	It("IT-AA-2527-001: a real Manager reclaims a pre-expiry dispatch Lease after the owning epoch dies", func() {

@@ -27,6 +27,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ApprovalDecisionScenario defines test data for business outcome validation
@@ -340,6 +341,24 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			GinkgoWriter.Printf("   • COMPLIANCE: DD-WEBHOOK-003 satisfied\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
+	})
+
+	It("IT-RO-2582-002: rejects reopening a terminal Cancelled approval decision [BR-ORCH-026, SI-10]", func() {
+		rar := createRAR("terminal-cancelled")
+		createAndWaitForCRD(ctx, k8sClient, rar)
+
+		updateStatusAndWaitForWebhook(ctx, k8sClient, rar,
+			func() {
+				rar.Status.Decision = remediationv1.ApprovalDecisionCancelled
+				rar.Status.DecisionMessage = "Parent remediation failed"
+			},
+			func() bool { return rar.Status.Decision == remediationv1.ApprovalDecisionCancelled },
+		)
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), rar)).To(Succeed())
+		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+		Expect(k8sClient.Status().Update(ctx, rar)).ToNot(Succeed(),
+			"a terminal Cancelled decision must not be reopened as Approved")
 	})
 
 	Context("INT-RAR-06: DecidedBy Preservation for RO Audit", func() {

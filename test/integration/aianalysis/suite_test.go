@@ -567,6 +567,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	k8sClient = &parentSeedingClient{Client: k8sClient, parentPhase: remediationv1.PhaseAnalyzing}
 
 	By(fmt.Sprintf("[Process %d] Creating per-process-unique namespace", processNum))
 	// AA IT shared-envtest fix: unlike the old fixed "kubernaut-system"
@@ -708,6 +709,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	reconciler = &aianalysis.AIAnalysisReconciler{
 		Metrics:             testMetrics, // DD-METRICS-001: Per-process metrics
 		Client:              k8sManager.GetClient(),
+		APIReader:           k8sManager.GetAPIReader(),
 		Scheme:              k8sManager.GetScheme(),
 		Recorder:            eventRecorder,
 		Log:                 ctrl.Log.WithName("aianalysis-controller"),

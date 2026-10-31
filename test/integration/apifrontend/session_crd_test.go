@@ -43,7 +43,7 @@ func sessionCreateRequest(suffix, user string) *adksession.CreateRequest {
 var _ = Describe("Session CRD Integration (session/)", func() {
 
 	Describe("AC-28: CRDSessionService creates InvestigationSession CRD via envtest", func() {
-		It("IT-AF-1195-042: Create session writes CRD to envtest API server", func() {
+		It("IT-AF-2582-001 / IT-AF-1195-042: Create session writes IS CRD before RR handoff", func() {
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(),
 				k8sClient,

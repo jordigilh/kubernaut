@@ -59,7 +59,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	// BR-ORCH-025: Full Remediation Lifecycle
 	// ========================================
 	Describe("Full Remediation Lifecycle (BR-ORCH-025)", func() {
-		It("should create RemediationRequest and progress through phases", func() {
+		It("E2E-2582-002: creates RemediationRequest and preserves normal child ordering", func() {
 			By("Creating a RemediationRequest in Pending phase")
 			now := metav1.Now()
 			fingerprint := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"

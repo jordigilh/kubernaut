@@ -250,6 +250,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	k8sClient = &parentSeedingClient{Client: k8sClient, parentPhase: remediationv1.PhaseVerifying}
 
 	By("Creating required namespaces")
 	for _, nsName := range []string{"kubernaut-system", "default"} {
