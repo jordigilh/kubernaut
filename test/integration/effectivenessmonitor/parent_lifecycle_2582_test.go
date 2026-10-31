@@ -32,7 +32,19 @@ import (
 var _ = Describe("DD-2582 EffectivenessAssessment parent lifecycle", Label("integration", "issue-2582"), func() {
 	It("IT-EM-2582-001: cancels before checks when the persisted RR is Failed [BR-EM-005, AC-4]", func() {
 		rrName := helpers.UniqueTestName("rr-em-parent-failed")
-		rr := &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: "default"}}
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: "default"},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				SignalName:        "ParentLifecycleFailure",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "parent-lifecycle-target", Namespace: "default"},
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+			},
+		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 

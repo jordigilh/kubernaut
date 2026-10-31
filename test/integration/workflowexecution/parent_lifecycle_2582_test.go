@@ -33,6 +33,16 @@ var _ = Describe("DD-2582 WorkflowExecution parent lifecycle", Label("integratio
 		rrName := "test-rr-2582-parent-wait"
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: DefaultNamespace},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				SignalName:        "ParentLifecycleWait",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "parent-lifecycle-target", Namespace: DefaultNamespace},
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })

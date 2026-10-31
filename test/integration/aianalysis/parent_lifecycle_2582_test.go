@@ -36,6 +36,16 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		rrName := helpers.UniqueTestName("rr-ai-parent-failed")
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: testNamespace},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+				SignalName:        "ParentLifecycleFailure",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "parent-lifecycle-target", Namespace: testNamespace},
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
