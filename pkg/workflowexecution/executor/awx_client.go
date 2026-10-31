@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 // AWXHTTPClient implements AWXClient using the AWX REST API.
@@ -134,42 +136,31 @@ func (c *AWXHTTPClient) GetJobStatus(ctx context.Context, jobID int) (*AWXJobSta
 // intentional; an ambiguous match fails closed rather than adopting either
 // job (DD-2582).
 func (c *AWXHTTPClient) FindJobByExecutionIdentity(ctx context.Context, wfeName, wfeNamespace, wfeUID string) (int, error) {
-	url := fmt.Sprintf("%s/api/v2/jobs/?order_by=-id&page_size=100", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("create AWX execution identity search request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("AWX execution identity search request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("AWX execution identity search returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Results []struct {
-			ID        int             `json:"id"`
-			ExtraVars json.RawMessage `json:"extra_vars"`
-		} `json:"results"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode AWX execution identity search response: %w", err)
-	}
-
 	var matches []int
-	for _, job := range result.Results {
-		vars, err := decodeAWXExtraVars(job.ExtraVars)
+	pageURL := fmt.Sprintf("%s/api/v2/jobs/?order_by=-id&page_size=100", c.baseURL)
+	visited := make(map[string]struct{})
+	for pageURL != "" {
+		if _, seen := visited[pageURL]; seen {
+			return 0, fmt.Errorf("AWX execution identity search pagination repeated %q", pageURL)
+		}
+		visited[pageURL] = struct{}{}
+		nextURL, jobs, err := c.fetchAWXJobPage(ctx, pageURL)
 		if err != nil {
-			return 0, fmt.Errorf("decode extra_vars for AWX job %d: %w", job.ID, err)
+			return 0, err
 		}
-		if awxExecutionIdentityMatches(vars, wfeName, wfeNamespace, wfeUID) {
-			matches = append(matches, job.ID)
+		for _, job := range jobs {
+			vars, err := decodeAWXExtraVars(job.ExtraVars)
+			if err != nil {
+				// AWX permits legacy/YAML/empty extra_vars values. An unrelated
+				// record that cannot be decoded is not evidence of this WFE and
+				// must not prevent recovery of an exact later match.
+				continue
+			}
+			if awxExecutionIdentityMatches(vars, wfeName, wfeNamespace, wfeUID) {
+				matches = append(matches, job.ID)
+			}
 		}
+		pageURL = c.normalizeAWXNextURL(nextURL)
 	}
 	if len(matches) > 1 {
 		return 0, fmt.Errorf("multiple AWX jobs match WFE identity %s/%s", wfeNamespace, wfeName)
@@ -180,6 +171,44 @@ func (c *AWXHTTPClient) FindJobByExecutionIdentity(ctx context.Context, wfeName,
 	return 0, nil
 }
 
+type awxJobPageRecord struct {
+	ID        int             `json:"id"`
+	ExtraVars json.RawMessage `json:"extra_vars"`
+}
+
+func (c *AWXHTTPClient) fetchAWXJobPage(ctx context.Context, pageURL string) (string, []awxJobPageRecord, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("create AWX execution identity search request: %w", err)
+	}
+	c.setHeaders(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", nil, fmt.Errorf("AWX execution identity search request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", nil, fmt.Errorf("AWX execution identity search returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Next    string             `json:"next"`
+		Results []awxJobPageRecord `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", nil, fmt.Errorf("decode AWX execution identity search response: %w", err)
+	}
+	return result.Next, result.Results, nil
+}
+
+func (c *AWXHTTPClient) normalizeAWXNextURL(nextURL string) string {
+	if strings.HasPrefix(nextURL, "/") {
+		return c.baseURL + nextURL
+	}
+	return nextURL
+}
+
 func decodeAWXExtraVars(raw json.RawMessage) (map[string]interface{}, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return map[string]interface{}{}, nil
@@ -188,12 +217,17 @@ func decodeAWXExtraVars(raw json.RawMessage) (map[string]interface{}, error) {
 	if err := json.Unmarshal(raw, &vars); err == nil {
 		return vars, nil
 	}
+	if err := sigsyaml.Unmarshal(raw, &vars); err == nil {
+		return vars, nil
+	}
 	var encoded string
 	if err := json.Unmarshal(raw, &encoded); err != nil {
 		return nil, fmt.Errorf("decode extra_vars value: %w", err)
 	}
 	if err := json.Unmarshal([]byte(encoded), &vars); err != nil {
-		return nil, fmt.Errorf("decode encoded extra_vars: %w", err)
+		if err := sigsyaml.Unmarshal([]byte(encoded), &vars); err != nil {
+			return nil, fmt.Errorf("decode encoded extra_vars: %w", err)
+		}
 	}
 	return vars, nil
 }

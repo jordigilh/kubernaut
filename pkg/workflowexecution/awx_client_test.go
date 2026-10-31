@@ -305,4 +305,24 @@ var _ = Describe("AWXHTTPClient execution identity recovery (DD-2582)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(jobID).To(Equal(0))
 	})
+
+	It("UT-WE-2582-009: follows pagination and ignores unrelated malformed extra_vars", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("page") == "2" {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"results":[{"id":12,"extra_vars":"WFE_NAME: we-partial\nWFE_NAMESPACE: default\nWFE_UID: wfe-uid\n"}]}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"next":"/api/v2/jobs/?order_by=-id&page_size=100&page=2","results":[{"id":11,"extra_vars":"not-json"}]}`))
+		}))
+		defer server.Close()
+
+		client, err := executor.NewAWXHTTPClient(server.URL, "test-token")
+		Expect(err).NotTo(HaveOccurred())
+		jobID, err := client.FindJobByExecutionIdentity(context.Background(), "we-partial", "default", "wfe-uid")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(jobID).To(Equal(12))
+	})
 })
