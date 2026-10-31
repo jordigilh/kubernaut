@@ -473,6 +473,9 @@ func createSignalModeTestCRD(namespace, name string) *signalprocessingv1alpha1.S
 	// Per DD-AUDIT-CORRELATION-001: RR name must be unique per remediation flow
 	timestamp := time.Now().UnixNano()
 	rrName := fmt.Sprintf("%s-rr-%d", name, timestamp)
+	target := signalprocessingv1alpha1.ResourceIdentifier{Kind: "Pod", Name: "test-pod", Namespace: namespace}
+	parent := CreateTestRemediationRequest(rrName, namespace, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "critical", target)
+	Expect(k8sClient.Create(ctx, parent)).To(Succeed())
 
 	return &signalprocessingv1alpha1.SignalProcessing{
 		ObjectMeta: metav1.ObjectMeta{
@@ -485,18 +488,14 @@ func createSignalModeTestCRD(namespace, name string) *signalprocessingv1alpha1.S
 				Namespace: namespace,
 			},
 			Signal: signalprocessingv1alpha1.SignalData{
-				Fingerprint:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", // Valid 64-char hex fingerprint
-				Name:         "TestProactiveAlert",
-				Severity:     "critical",
-				Type:         "alert", // Overridden by each test case
-				Source:       "test-source",
-				TargetType:   "kubernetes",
-				ReceivedTime: metav1.Now(),
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: namespace,
-				},
+				Fingerprint:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", // Valid 64-char hex fingerprint
+				Name:           "TestProactiveAlert",
+				Severity:       "critical",
+				Type:           "alert", // Overridden by each test case
+				Source:         "test-source",
+				TargetType:     "kubernetes",
+				ReceivedTime:   metav1.Now(),
+				TargetResource: target,
 			},
 		},
 	}

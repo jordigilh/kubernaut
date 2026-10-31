@@ -671,6 +671,9 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 	// Correlation ID must be unique across test runs to avoid finding stale events from previous runs
 	timestamp := time.Now().UnixNano()
 	rrName := fmt.Sprintf("%s-rr-%d", name, timestamp) // e.g., "test-audit-event-rr-1737763995123456789"
+	target := signalprocessingv1alpha1.ResourceIdentifier{Kind: "Pod", Name: "test-pod", Namespace: namespace}
+	parent := CreateTestRemediationRequest(rrName, namespace, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "critical", target)
+	Expect(k8sClient.Create(ctx, parent)).To(Succeed())
 
 	return &signalprocessingv1alpha1.SignalProcessing{
 		ObjectMeta: metav1.ObjectMeta{
@@ -683,18 +686,14 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 				Namespace: namespace,
 			},
 			Signal: signalprocessingv1alpha1.SignalData{
-				Fingerprint:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // Valid 64-char hex fingerprint
-				Name:         "TestAlert",
-				Severity:     signalprocessingv1alpha1.SeverityCritical, // Default, overridden by tests
-				Type:         "alert",
-				Source:       "test-source",
-				TargetType:   "kubernetes",
-				ReceivedTime: metav1.Now(),
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: namespace,
-				},
+				Fingerprint:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // Valid 64-char hex fingerprint
+				Name:           "TestAlert",
+				Severity:       signalprocessingv1alpha1.SeverityCritical, // Default, overridden by tests
+				Type:           "alert",
+				Source:         "test-source",
+				TargetType:     "kubernetes",
+				ReceivedTime:   metav1.Now(),
+				TargetResource: target,
 			},
 		},
 	}

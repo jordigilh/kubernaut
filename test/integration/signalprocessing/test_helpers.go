@@ -158,7 +158,9 @@ func CreateTestRemediationRequest(name, namespace, fingerprint, severity string,
 			// Temporal data
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),
-
+		},
+		Status: remediationv1.RemediationRequestStatus{
+			OverallPhase: remediationv1.PhaseProcessing,
 		},
 	}
 }
