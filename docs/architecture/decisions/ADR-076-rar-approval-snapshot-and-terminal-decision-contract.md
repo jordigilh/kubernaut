@@ -162,14 +162,16 @@ and verify it through the generated CRD. Integer parameter text remains exact
 and must not be converted to float64. General numeric normalization of
 workflow-author configuration is outside the agreed scope.
 
-RO is the authorized creator of the single RAR per RR. A same-name pre-existing
-RAR may be reused only after its RR ownership and authorized creation provenance
-are validated; a conflicting or untrusted RAR is treated as suspected tampering,
-fails the investigation and RR, and routes to manual review. If the RAR is missing after the RR entered approval, the RR fails
-and is routed to manual review rather than creating a replacement. Enforce the
-creation boundary through RBAC/admission and test it through the production path;
-an owner reference alone does not prove who created an object. A separate
-reviewer-facing RAR UID is not part of this contract.
+RO is the authorized creator of the single RAR per RR. If RO's create returns
+`AlreadyExists`, never reuse the existing RAR: treat it as suspected tampering,
+fail the investigation and RR, and route to manual review. This also applies to
+a retry following an earlier successful create whose next step was not recorded;
+the safety decision deliberately favors manual review over automatic recovery.
+If the RAR is missing after the RR entered approval, fail and route to manual
+review rather than creating a replacement. This detects and escalates a collision;
+it does not prevent CR creation or guarantee that an independent controller has
+not acted. Test the RO outcome through the production path. A separate
+reviewer-facing RAR UID or reuse-provenance marker is not part of this contract.
 
 For #2570 the workflow already stored in etcd is the catalog source. Preserve
 the execution snapshot through approval; original author input precision before
@@ -189,8 +191,10 @@ Integer numeric text must be preserved without float64 conversion across the
 selection handoff. The input contract accepts integer JSON text such as `3`,
 not decimal or exponent notation such as `3.0` or `1e3`, even if a generic
 parser considers those values mathematically integral. An omitted optional parameter remains omitted in the RAR;
-review shows the omission rather than silently inserting a default. Which
-execution component supplies an optional default requires proving evidence.
+review shows the omission. AW and RO do not insert schema defaults into the
+effective parameter map, WE or audit evidence. A workflow may supply its own
+runtime default; this contract does not assert that it does. The AF-to-API and
+execution/audit integration paths must test omission.
 Integer validation uses signed `int64`. Float validation uses finite `float64`
 and rejects overflow and nonzero input that underflows to zero. Numeric schema
 bounds must be compared without rounding an integer to float64.
@@ -409,10 +413,12 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 ## Validation Strategy
 
-1. **UT-AA-2570-067/068; IT-AA-2570-001 / BR-ORCH-025**: validate
-   nil/empty parameter semantics and AIA-to-RAR snapshot serialization.
-2. **UT-AW-2570-021; IT-AW-2570-005 / BR-AUTH-001, SI-10**: validate one
-   terminal business update and rejection of later business-field mutations.
+1. **UT-AA-2570-067/068; IT-AA-2570-001; IT-AF-2570-003 / BR-ORCH-025**:
+   validate AIA-to-RAR nil/empty original maps and AF-to-API-server omitted,
+   empty and partial override serialization without clearing omitted values.
+2. **UT-AW-2570-021/087; IT-AW-2570-004/005 / BR-AUTH-001, SI-10**: validate one
+  terminal business update, rejection of later business-field mutations and
+  rejection of a non-empty legacy workflow name before approval.
 3. **IT-AW-2570-005 / BR-ORCH-026**: validate controller observation updates
    remain possible after a decision.
 4. **IT-AF-2570-003; E2E-AUD-2570-008 / BR-AUTH-001, AU-3**: validate AF

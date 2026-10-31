@@ -7,9 +7,9 @@
 
 ## Acceptance
 
-Use Ginkgo/Gomega business-outcome tests. The 35 scenarios below are the proposed in-scope critical UT denominator: **0/35 implemented or passing**. All 35 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
+Use Ginkgo/Gomega business-outcome tests. The 38 scenarios below are the proposed in-scope critical UT denominator: **0/38 implemented or passing**. All 38 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 35 current scenarios are critical, the current gate is 35/35, not 90% of 35. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 38 current scenarios are critical, the current gate is 38/38, not 90% of 38. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -50,6 +50,9 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 33 | UT-RO-2570-028 | A valid frozen remediation target drives safety and execution identity. | RO target/WE creator; ORCH-026 / AC-4 |
 | 34 | UT-DS-2578-001 | DataStorage helper rejects malformed typed parameter values. | DataStorage models; KA-191 / SI-10 |
 | 35 | UT-RO-2570-086 | A conflicting pre-created RAR is not reused; suspected tampering fails the investigation and RR and routes to manual review. | RO creator/reconciler; ORCH-026 / AC-6 |
+| 36 | UT-AW-2570-087 | Non-empty legacy `workflowName` is rejected before decision or execution. | AW; ORCH-025 / SI-10 |
+| 37 | UT-VAL-2570-088 | Omitted optional parameter with a schema default remains absent in the effective map; no default is silently inserted. | shared validation/RO; KA-191 |
+| 38 | UT-RO-2570-089 | After a successful RAR create but before the next step is recorded, an RO retry receives `AlreadyExists` and fails closed to manual review rather than adopting the RAR. | RO creator/reconciler; ORCH-026 / AC-6 |
 
 ## Integration and end-to-end proof
 
@@ -59,11 +62,11 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | IT-KA-2577-001/002 | KA bootstrap list/lookup/watch excludes foreign workflows and ActionTypes, including same-name/ID objects. | Real API server, two namespaces. |
 | IT-2570-020 | KA, AW and WE use their configured trusted namespace; missing namespace fails closed, namespace-scoped Role/RoleBinding grants required access including AW/WE `list` on `remediationworkflows`, and foreign catalog objects cannot satisfy lookup. | Real API server with service identities and at least two namespaces. |
 | IT-2570-021 | Pending and already-approved pre-change RARs lacking required selection/declaration data fail closed with an observable reason; no execution is created. | Real API server and RO/AW integration. |
-| IT-2570-022 | Only RO's service identity may create RARs; a conflicting/untrusted same-name RAR cannot be reused and causes RR failure and manual-review routing. A RAR missing after the RR enters approval is not recreated and causes the same safe outcome. Legitimate RO retries remain idempotent. | Real API server, deployed authorization boundary and RO reconciliation. |
+| IT-2570-022 | A pre-existing RAR causes `AlreadyExists`; RO does not reuse it and fails/escalates the RR, including on a retry after a prior create succeeded but its next step was not recorded. A RAR missing after the RR enters approval is not recreated and causes the same safe outcome. Transient API failures remain distinct. This does not claim to prevent CR creation or independent controller actions. | Real API server and RO reconciliation. |
 | IT-KA-2570-008 | Generated RemediationWorkflow CRD supports `status.workflowId` server-side selection within a namespace and returns the matching workflow. | Real Kubernetes API server with generated CRD. |
 | IT-KA-2570-009 | Production KA validation invokes shared core and returns actionable self-correction. | KA integration with schema fixture. |
-| IT-AF-2570-003/010 | Actual MCP read/approve exposes full schema; authorized updates reach shared validation, unauthorized and stale updates fail. | AF, API server, authorization and webhook. |
-| IT-AW-2570-004/011 | Real AW admission enforces same-ID lookup, schema, locked keys and exact input without partial decision. | API server, webhook, trusted/foreign namespaces. |
+| IT-AF-2570-003/010 | Actual MCP read/approve exposes full schema; omitted override, explicit `{}` and partial override survive the AF→API-server path without clearing omitted values; omitted optional defaults stay absent in WE and audit evidence. | AF, API server, authorization, webhook and execution/audit fixtures. |
+| IT-AW-2570-004/011 | Real AW admission enforces same-ID lookup, schema, locked keys and exact input; a non-empty legacy workflowName is rejected before any decision or execution. | API server, webhook, trusted/foreign namespaces. |
 | IT-AW-2570-005 | Generated RAR CEL blocks terminal mutation and whole-status removal while permitting observation updates; webhook bypass included. | API server with generated RAR CRD. |
 | IT-AF-2570-012 | Concurrent approve/reject updates: exactly one commits; conflict differs from network error; ambiguous failures re-read before retry. | Actual AF/AW path and API server. |
 | IT-RO-2570-006 | Approved RAR → frozen target/lock/hash → WE → actual filtered inputs for Job, Tekton and Ansible. | RO/WE integration, real API and executor fixtures. |
