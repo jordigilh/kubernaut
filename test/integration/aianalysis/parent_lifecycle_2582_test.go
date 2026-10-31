@@ -65,14 +65,18 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 				RemediationID:         rrName,
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
-						Fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-						Severity:    "critical",
-						SignalName:  "ParentLifecycleFailure",
+						Fingerprint:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						Severity:         "critical",
+						SignalName:       "ParentLifecycleFailure",
+						SignalMode:       "reactive",
+						Environment:      "test",
+						BusinessPriority: "P1",
 						TargetResource: aianalysisv1.TargetResource{
 							Kind:      "Pod",
 							Name:      "parent-lifecycle-target",
 							Namespace: testNamespace,
 						},
+						EnrichmentResults: aianalysisv1.EnrichmentResults{},
 					},
 					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},

@@ -164,18 +164,15 @@ var _ = Describe("DD-2582 WorkflowExecution parent lifecycle", Label("integratio
 		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
-		Eventually(func() string {
-			fetched := &workflowexecutionv1alpha1.WorkflowExecution{}
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), fetched); err != nil {
-				return ""
-			}
-			return fetched.Status.Phase
-		}, 30*time.Second, 250*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCancelled))
 		Eventually(func() bool {
+			fetched := &workflowexecutionv1alpha1.WorkflowExecution{}
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), fetched); err != nil || fetched.Status.Phase != workflowexecutionv1alpha1.PhaseCancelled {
+				return false
+			}
 			check := &batchv1.Job{}
 			err := k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, check)
 			return apierrors.IsNotFound(err)
 		}, 30*time.Second, 250*time.Millisecond).Should(BeTrue(),
-			"verified cancellation must remove the active Job before WFE becomes Cancelled")
+			"verified cancellation must remove the active Job before or with the WFE Cancelled observation")
 	})
 })

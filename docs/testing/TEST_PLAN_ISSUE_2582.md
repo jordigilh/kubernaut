@@ -154,14 +154,19 @@ The following is the requirements-based acceptance matrix for the #2582 change;
 raw package coverage is diagnostic and is not used as a substitute for these
 business scenarios.
 
-For the critical unit subset, the measured scenario denominator is **9** and
-the passing numerator is **9**: CreateOnly collision refusal (`UT-RO-2582-001`
+For the **parent-gate and pure cancellation-policy unit subset** (excluding
+cross-component UID/lease/backend journeys, which are measured in IT/E2E rows),
+the measured scenario denominator is **9** and the passing numerator is **9**:
+CreateOnly collision refusal (`UT-RO-2582-001`
 and `UT-RO-2582-002`), parent authorization/wait/terminal/read-error handling
 (`UT-RO-2582-005..007`), terminal AgentSession-history preservation
 (`UT-AI-2582-005`), Job/Tekton/AWX cancellation verification
 (`UT-WE-2582-003..005`), and terminal RAR decision immutability
-(`UT-AW-2582-001`). All 9 are critical safety or identity scenarios; no
-pending/skipped examples are included in the numerator.
+(`UT-AW-2582-001`). All 9 are critical policy scenarios; no pending/skipped
+examples are included in the numerator. UID replacement, acknowledgement
+ordering, and real backend termination are intentionally not counted in this
+unit denominator because their proving evidence requires the production-path
+integration tests listed below.
 
 | Critical scenario | Proving evidence | Local status |
 |---|---|---|
