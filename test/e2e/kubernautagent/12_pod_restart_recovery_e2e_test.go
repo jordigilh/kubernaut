@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package aianalysis
+package kubernautagent
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/google/uuid"
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -52,14 +53,15 @@ var _ = Describe("E2E-AA-2527: AgentSession recovery after KA pod restart", Labe
 		testCtx, testCancel := context.WithTimeout(ctx, 4*time.Minute)
 		defer testCancel()
 
-		suffix := randomSuffix()
-		sharedNamespace := controllerNamespace
+		suffix := uuid.NewString()[:8]
 		isolatedNamespace := "ka-restart-e2e-" + suffix
 		deploymentName := "ka-restart-agent-" + suffix
 		serviceName := "ka-restart-svc-" + suffix
 		serviceAccountName := "ka-restart-agent-sa-" + suffix
 		agentSessionName := "as-ka-restart-" + suffix
 		remediationID := "rr-" + suffix
+		dsClient, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(authHTTPClient))
+		Expect(err).ToNot(HaveOccurred(), "create DataStorage client for recovery audit checks")
 		leaseName := "dispatch-" + agentSessionName
 
 		By("Resolving the already-deployed KA image instead of building a second image")

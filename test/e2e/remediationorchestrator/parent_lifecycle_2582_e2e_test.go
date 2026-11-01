@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,16 +46,17 @@ var _ = Describe("E2E-2582-005: fail closed across RO restart", Serial, Label("e
 			_, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred())
 		}
-		waitForReplicas := func(expected string) {
+		waitForNoControllerPods := func() {
 			Eventually(func() string {
 				cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-					"get", deployment, "-n", controllerNamespace, "-o", "jsonpath={.status.replicas}")
+					"get", "pods", "-n", controllerNamespace,
+					"-l", "app=remediationorchestrator-controller", "-o", "name")
 				output, err := cmd.Output()
 				if err != nil {
 					return ""
 				}
-				return string(output)
-			}, timeout, interval).Should(Equal(expected))
+				return strings.TrimSpace(string(output))
+			}, timeout, interval).Should(BeEmpty())
 		}
 
 		// Stop RO before creating the failed parent. Otherwise the controller
@@ -62,7 +64,7 @@ var _ = Describe("E2E-2582-005: fail closed across RO restart", Serial, Label("e
 		// status-subresource update, creating a child before the fixture is
 		// authorized as terminal.
 		scale("0")
-		waitForReplicas("0")
+		waitForNoControllerPods()
 
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
@@ -89,13 +91,16 @@ var _ = Describe("E2E-2582-005: fail closed across RO restart", Serial, Label("e
 			return k8sClient.Status().Update(ctx, fresh)
 		}, timeout, interval).Should(Succeed(), "persist failed parent phase without losing a concurrent RO status update")
 		scale("1")
-		waitForReplicas("1")
+		wait := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"rollout", "status", deployment, "-n", controllerNamespace, "--timeout=120s")
+		_, err := wait.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred())
 
 		restart := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"rollout", "restart", deployment, "-n", controllerNamespace)
-		_, err := restart.CombinedOutput()
+		_, err = restart.CombinedOutput()
 		Expect(err).NotTo(HaveOccurred())
-		wait := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		wait = exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"rollout", "status", deployment, "-n", controllerNamespace, "--timeout=120s")
 		_, err = wait.CombinedOutput()
 		Expect(err).NotTo(HaveOccurred())
