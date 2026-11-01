@@ -1407,6 +1407,13 @@ func fleetBrokerCredential(ctx context.Context, gatewayType registry.MCPGatewayT
 
 func prepareFleetIdentity(ctx context.Context, kubeconfigPath, namespace, keycloakNamespace string, isDemo bool, writer io.Writer) error {
 	if isDemo {
+		// The operator-generated authwebhook certificate historically covered
+		// only the short service name. The admission webhook calls the Service
+		// object as authwebhook-service, so provision the complete manual TLS
+		// bundle (including that SAN) before the operator reconciles the CR.
+		if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, true, writer); err != nil {
+			return fmt.Errorf("operator application TLS preflight failed: %w", err)
+		}
 		if err := EnsureOperatorFleetTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
 			return fmt.Errorf("operator Fleet TLS preflight failed: %w", err)
 		}

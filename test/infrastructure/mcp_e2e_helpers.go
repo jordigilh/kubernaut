@@ -37,7 +37,10 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const deploymentKind = "Deployment"
+const (
+	deploymentKind = "Deployment"
+	podKind        = "Pod"
+)
 
 // MCPClientConfig holds the configuration for creating an MCP client connection.
 // Uses TLS-aware transport + SA Bearer token auth, matching the E2E suite pattern.
@@ -301,11 +304,11 @@ func createDirectRRWithTargetKindAndSeverity(ctx context.Context, namespace, tes
 	var targetGVR schema.GroupVersionResource
 	var targetObj *unstructured.Unstructured
 	switch targetKind {
-	case "Pod":
+	case podKind:
 		targetGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": "v1",
-			"kind":       "Pod",
+			"kind":       podKind,
 			"metadata": map[string]interface{}{
 				"name":      targetName,
 				"namespace": targetNS,

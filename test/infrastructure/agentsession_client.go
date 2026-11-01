@@ -18,16 +18,22 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // NewKubeconfigAgentSessionClient builds a throwaway controller-runtime
@@ -47,6 +53,12 @@ func NewKubeconfigAgentSessionClient(kubeconfigPath string) (client.Client, erro
 	}
 	if err := agentsessionv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register AgentSession scheme: %w", err)
+	}
+	if err := aianalysisv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register AIAnalysis scheme: %w", err)
+	}
+	if err := remediationv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register RemediationRequest scheme: %w", err)
 	}
 
 	c, err := client.New(restConfig, client.Options{Scheme: scheme})
@@ -83,6 +95,10 @@ func InvestigateViaAgentSession(ctx context.Context, k8sClient client.Client, na
 	if spec.SignalMode == "" {
 		spec.SignalMode = "reactive"
 	}
+	analysis, err := ensureAgentSessionParents(ctx, k8sClient, k8sClient.Scheme(), namespace, spec)
+	if err != nil {
+		return nil, err
+	}
 
 	name := "as-" + spec.IncidentID
 	as := &agentsessionv1.AgentSession{
@@ -91,6 +107,9 @@ func InvestigateViaAgentSession(ctx context.Context, k8sClient client.Client, na
 			Namespace: namespace,
 		},
 		Spec: spec,
+	}
+	if err := controllerutil.SetControllerReference(analysis, as, k8sClient.Scheme()); err != nil {
+		return nil, fmt.Errorf("set AIAnalysis owner on AgentSession %s/%s: %w", namespace, name, err)
 	}
 	if err := k8sClient.Create(ctx, as); err != nil {
 		return nil, fmt.Errorf("failed to create AgentSession %s/%s: %w", namespace, name, err)
@@ -114,4 +133,120 @@ func InvestigateViaAgentSession(ctx context.Context, k8sClient client.Client, na
 		}
 	}
 	return nil, fmt.Errorf("timed out after %s waiting for AgentSession %s/%s to reach a terminal phase (last phase: %s)", timeout, namespace, name, as.Status.Phase)
+}
+
+// agentSessionParentDetails contains normalized values used by direct
+// AgentSession E2E parent fixtures.
+type agentSessionParentDetails struct {
+	rrName, targetNamespace, targetKind, targetName string
+	severity, signalName, fingerprint               string
+}
+
+func ensureAgentSessionParents(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec) (*aianalysisv1.AIAnalysis, error) {
+	details, err := newAgentSessionParentDetails(namespace, spec)
+	if err != nil {
+		return nil, err
+	}
+	rr, err := ensureAgentSessionRemediationRequest(ctx, k8sClient, namespace, details)
+	if err != nil {
+		return nil, err
+	}
+	return ensureAgentSessionAIAnalysis(ctx, k8sClient, scheme, namespace, spec, details, rr)
+}
+
+func newAgentSessionParentDetails(namespace string, spec agentsessionv1.AgentSessionSpec) (agentSessionParentDetails, error) {
+	if spec.RemediationRequestRef.Name == "" {
+		return agentSessionParentDetails{}, fmt.Errorf("AgentSession %s has an empty RemediationRequestRef.Name", spec.IncidentID)
+	}
+	targetNamespace := spec.ResourceNamespace
+	if targetNamespace == "" {
+		targetNamespace = namespace
+	}
+	targetKind := spec.ResourceKind
+	if targetKind == "" {
+		targetKind = "Pod"
+	}
+	targetName := spec.ResourceName
+	if targetName == "" {
+		targetName = "e2e-test-pod"
+	}
+	severity := spec.Severity
+	if severity == "" {
+		severity = "critical"
+	}
+	signalName := spec.SignalName
+	if signalName == "" {
+		signalName = "E2ETestSignal"
+	}
+	return agentSessionParentDetails{
+		rrName: spec.RemediationRequestRef.Name, targetNamespace: targetNamespace,
+		targetKind: targetKind, targetName: targetName, severity: severity,
+		signalName: signalName, fingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(spec.IncidentID))),
+	}, nil
+}
+
+func ensureAgentSessionRemediationRequest(ctx context.Context, k8sClient client.Client, namespace string, details agentSessionParentDetails) (*remediationv1.RemediationRequest, error) {
+	rr := &remediationv1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{Name: details.rrName, Namespace: namespace},
+		Spec: remediationv1.RemediationRequestSpec{
+			SignalFingerprint: details.fingerprint, SignalName: details.signalName,
+			Severity: details.severity, SignalType: "alert", TargetType: "kubernetes",
+			TargetResource: remediationv1.ResourceIdentifier{Kind: details.targetKind, Name: details.targetName, Namespace: details.targetNamespace},
+			FiringTime:     metav1.Now(), ReceivedTime: metav1.Now(),
+		},
+	}
+	if err := k8sClient.Create(ctx, rr); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("create AgentSession parent RemediationRequest %s/%s: %w", namespace, details.rrName, err)
+		}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return nil, fmt.Errorf("read AgentSession parent RemediationRequest %s/%s: %w", namespace, details.rrName, err)
+		}
+	}
+	if rr.Status.OverallPhase == "" {
+		rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
+		if err := k8sClient.Status().Update(ctx, rr); err != nil {
+			return nil, fmt.Errorf("persist AgentSession parent RemediationRequest %s/%s phase: %w", namespace, details.rrName, err)
+		}
+	}
+	return rr, nil
+}
+
+func ensureAgentSessionAIAnalysis(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec, details agentSessionParentDetails, rr *remediationv1.RemediationRequest) (*aianalysisv1.AIAnalysis, error) {
+	remediationID := spec.RemediationID
+	if remediationID == "" {
+		remediationID = details.rrName
+	}
+	analysis := &aianalysisv1.AIAnalysis{
+		ObjectMeta: metav1.ObjectMeta{Name: "ai-" + spec.IncidentID, Namespace: namespace},
+		Spec: aianalysisv1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{Name: details.rrName, Namespace: namespace}, RemediationID: remediationID,
+			AnalysisRequest: aianalysisv1.AnalysisRequest{
+				SignalContext: aianalysisv1.SignalContextInput{
+					Fingerprint: details.fingerprint, Severity: details.severity, SignalName: details.signalName,
+					SignalMode: spec.SignalMode, Environment: spec.Environment, BusinessPriority: spec.Priority,
+					TargetResource:    aianalysisv1.TargetResource{Kind: details.targetKind, Name: details.targetName, Namespace: details.targetNamespace, APIVersion: spec.ResourceAPIVersion},
+					EnrichmentResults: sharedtypes.EnrichmentResults{},
+				},
+				AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+			},
+		},
+	}
+	if err := controllerutil.SetControllerReference(rr, analysis, scheme); err != nil {
+		return nil, fmt.Errorf("set RemediationRequest owner on AIAnalysis %s/%s: %w", namespace, analysis.Name, err)
+	}
+	if err := k8sClient.Create(ctx, analysis); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("create AgentSession parent AIAnalysis %s/%s: %w", namespace, analysis.Name, err)
+		}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+			return nil, fmt.Errorf("read AgentSession parent AIAnalysis %s/%s: %w", namespace, analysis.Name, err)
+		}
+		return analysis, nil
+	}
+	analysis.Status.Phase = aianalysisv1.PhaseInvestigating
+	if err := k8sClient.Status().Update(ctx, analysis); err != nil {
+		return nil, fmt.Errorf("persist AgentSession parent AIAnalysis %s/%s phase: %w", namespace, analysis.Name, err)
+	}
+	return analysis, nil
 }

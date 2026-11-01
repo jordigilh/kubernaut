@@ -40,7 +40,7 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: testNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-				SignalName:        "ParentLifecycleFailure",
+				SignalName:        "slow-investigation-test",
 				Severity:          "critical",
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
@@ -68,7 +68,7 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 						Severity:         "critical",
-						SignalName:       "ParentLifecycleFailure",
+						SignalName:       "slow-investigation-test",
 						SignalMode:       "reactive",
 						Environment:      "test",
 						BusinessPriority: "P1",

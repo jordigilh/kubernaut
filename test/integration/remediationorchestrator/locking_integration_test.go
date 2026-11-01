@@ -464,9 +464,10 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 		})
 	})
 
-	// IT-RO-189-005: Status update failure recovery via creator idempotency
-	Describe("IT-RO-189-005: Idempotent WFE creation on status update failure", func() {
-		It("should recover via Get-before-Create when WFE exists but status update failed", func() {
+	// IT-RO-2582-003: A lost parent status write must fail closed rather than
+	// adopting a deterministic WFE that already exists without a persisted ref.
+	Describe("IT-RO-2582-003: CreateOnly WFE collision after status update failure", func() {
+		It("should fail closed when WFE exists but the parent ref was not persisted", func() {
 			ns := createTestNamespace(ctx, "locking-idempotency")
 			defer deleteTestNamespace(ns)
 
@@ -493,26 +494,19 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
-			// Wait for reconciler to retry and recover via Get-before-Create.
-			// Root cause (found while migrating this suite under #2213): this
-			// revert races the controller's own in-flight Advance-to-Executing
-			// retry, which could previously commit OverallPhase=Executing on
-			// top of the now-nil ref (transitionPhase's conflict-retry guard
-			// only re-validated OverallPhase, not WorkflowExecutionRef) —
-			// producing a PERMANENT terminal failure in executing_handler.go
-			// that no timeout would recover from. Fixed in terminal_transitions.go
-			// (BR-ORCH-031 guard, UT-AT-013/014); the standard timeout here is
-			// sufficient again since recovery is now a normal, fast retry loop.
-			Eventually(func() bool {
+			// DD-2582: the deterministic child is now CreateOnly. Without the
+			// persisted ref, an existing WFE is untrusted and must not be adopted.
+			Eventually(func() string {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-					return false
+					return ""
 				}
-				return rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
-			}, timeout, interval).Should(BeTrue(), "WFE ref should be restored via idempotent create")
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal(string(remediationv1.PhaseFailed)),
+				"WFE collision must fail the parent closed")
 
-			// Verify the same WFE was reused (not a new one)
-			Expect(rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name).To(Equal(wfeName),
-				"Get-before-Create should reuse existing WFE, not create a duplicate")
+			Expect(rr.Status.EnsurePhaseProgress().WorkflowExecutionRef).To(BeNil(),
+				"failed closed parent must not claim the pre-existing WFE")
+			Expect(wfeName).NotTo(BeEmpty())
 		})
 	})
 })

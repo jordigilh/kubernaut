@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -72,7 +74,41 @@ func createEA(targetNamespace, name, correlationID string, opts ...eaOption) {
 	}
 
 	GinkgoHelper()
+	ensureEAParent(ea)
 	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", controllerNamespace, name)
+}
+
+func ensureEAParent(ea *eav1.EffectivenessAssessment) {
+	parent := &remediationv1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{Name: ea.Spec.CorrelationID, Namespace: ea.Namespace},
+		Spec: remediationv1.RemediationRequestSpec{
+			SignalFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			SignalName:        "effectivenessmonitor-e2e-parent",
+			Severity:          "critical",
+			SignalType:        "alert",
+			TargetType:        "kubernetes",
+			TargetResource: remediationv1.ResourceIdentifier{
+				Kind:      ea.Spec.RemediationTarget.Kind,
+				Name:      ea.Spec.RemediationTarget.Name,
+				Namespace: ea.Spec.RemediationTarget.Namespace,
+			},
+			FiringTime:   metav1.Now(),
+			ReceivedTime: metav1.Now(),
+		},
+		Status: remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseVerifying},
+	}
+	if err := k8sClient.Create(ctx, parent); err != nil {
+		Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(), "parent creation failed: %v", err)
+		existing := &remediationv1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(parent), existing)).To(Succeed())
+		if existing.Status.OverallPhase == "" {
+			existing.Status.OverallPhase = remediationv1.PhaseVerifying
+			Expect(k8sClient.Status().Update(ctx, existing)).To(Succeed())
+		}
+		return
+	}
+	parent.Status.OverallPhase = remediationv1.PhaseVerifying
+	Expect(k8sClient.Status().Update(ctx, parent)).To(Succeed())
 }
 
 // eaOption is a functional option for customizing EA creation.
@@ -123,6 +159,7 @@ func createExpiredEA(targetNamespace, name, correlationID string) *eav1.Effectiv
 	}
 
 	GinkgoHelper()
+	ensureEAParent(ea)
 	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", controllerNamespace, name)
 
 	// Patch status with an expired ValidityDeadline via the status subresource.

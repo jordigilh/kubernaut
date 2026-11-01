@@ -56,6 +56,7 @@ import (
 
 	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -223,6 +224,8 @@ var _ = SynchronizedBeforeSuite(
 		// capacity boundary before creating the overshoot batch.
 		err = agentsessionv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
+		err = remediationv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Create Kubernetes client
 		cfg, err := config.GetConfig()
@@ -230,6 +233,7 @@ var _ = SynchronizedBeforeSuite(
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
+		k8sClient = &parentSeedingClient{Client: k8sClient, parentPhase: remediationv1alpha1.PhaseAnalyzing}
 
 		// Set service URLs (per DD-TEST-001 port allocation)
 		// AIAnalysis ports: API=8084/30084, Metrics=9184/30184, Health=8184/30284

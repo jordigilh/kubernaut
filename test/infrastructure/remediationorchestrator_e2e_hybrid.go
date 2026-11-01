@@ -266,6 +266,10 @@ rules:
   resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
+  # DD-2582: RO watches AF InvestigationSession failures and maps them to the parent RR.
+  resources: ["investigationsessions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["signalprocessings"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]

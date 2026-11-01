@@ -135,6 +135,16 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 		return phase.NoOp("parent approval gate closed"), nil
 	}
 	*rr = *freshRR
+	if freshRR.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil {
+		// The WFE create and the AwaitingApproval→Executing status transition
+		// are separate writes. A queued approval event may observe the persisted
+		// ref before the phase transition lands; the ref is authoritative proof
+		// that this parent already owns its WFE, so do not invoke CreateOnly a
+		// second time and turn a normal handoff race into a collision.
+		logger.Info("WorkflowExecution already persisted; completing approval handoff without recreating child",
+			"workflowExecution", freshRR.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name)
+		return phase.Advance(phase.Executing, "WorkflowExecution already persisted"), nil
+	}
 
 	logger.Info("Approval granted via RemediationApprovalRequest",
 		"decidedBy", rar.Status.DecidedBy)

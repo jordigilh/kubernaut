@@ -1126,6 +1126,10 @@ rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/finalizers"]
   verbs: ["update"]
+- apiGroups: ["kubernaut.ai"]
+  # DD-2582: WFE performs a fresh parent RemediationRequest gate read.
+  resources: ["remediationrequests"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["tekton.dev"]
   resources: ["pipelineruns"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

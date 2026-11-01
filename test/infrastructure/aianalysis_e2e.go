@@ -376,6 +376,10 @@ rules:
   resources: ["aianalyses/status"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
+  # DD-2582: AIA performs a fresh parent RemediationRequest gate read and watch.
+  resources: ["remediationrequests"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["investigationsessions"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["kubernaut.ai"]
