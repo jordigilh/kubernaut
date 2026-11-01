@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -52,14 +53,9 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 		return fmt.Errorf("seed direct AgentSession parent chain: %w", err)
 	}
 	// The AIAnalysis E2E suite also runs a real AIA controller cluster-wide.
-	// Mark this direct KA handoff as already entered Investigating so that
-	// controller observes the fixture as pre-authorized work and does not
-	// create a second deterministic AgentSession for it.
-	analysis.Status.KASession = &aianalysisv1.KASession{
-		AgentSessionRef: &corev1.ObjectReference{Name: as.Name, Namespace: as.Namespace},
-	}
-	analysis.Status.InvestigationMetadata = &aianalysisv1.InvestigationMetadata{InvestigationTime: 1}
-	if err := c.Status().Update(ctx, analysis); err != nil {
+	// Persist the direct handoff through a fresh read so an initial Pending
+	// reconcile cannot overwrite the authorized Investigating phase.
+	if err := persistDirectParentHandoff(ctx, c.Client, analysis, as.Name); err != nil {
 		return fmt.Errorf("persist direct AgentSession investigation handoff: %w", err)
 	}
 	if err := controllerutil.SetControllerReference(analysis, as, c.Scheme()); err != nil {
@@ -68,21 +64,42 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 	if err := c.Client.Create(ctx, object, opts...); err != nil {
 		return err
 	}
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		current := &aianalysisv1.AIAnalysis{}
-		if err := c.Get(ctx, client.ObjectKeyFromObject(analysis), current); err != nil {
-			return err
-		}
-		if current.Status.KASession == nil || current.Status.KASession.AgentSessionRef == nil {
-			return fmt.Errorf("AIAnalysis %s/%s lost its AgentSession recovery reference", current.Namespace, current.Name)
-		}
-		current.Status.KASession.AgentSessionRef.UID = as.UID
-		return c.Status().Update(ctx, current)
-	}); err != nil {
+	if err := persistDirectParentHandoffUID(ctx, c.Client, analysis, as.UID); err != nil {
 		if apierrors.IsNotFound(err) {
 			return fmt.Errorf("persist direct AgentSession recovery UID: parent AIAnalysis was deleted")
 		}
 		return fmt.Errorf("persist direct AgentSession recovery UID: %w", err)
 	}
 	return nil
+}
+
+func persistDirectParentHandoff(ctx context.Context, k8sClient client.Client, analysis *aianalysisv1.AIAnalysis, agentSessionName string) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		current := &aianalysisv1.AIAnalysis{}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), current); err != nil {
+			return err
+		}
+		current.Status.Phase = aianalysisv1.PhaseInvestigating
+		current.Status.KASession = &aianalysisv1.KASession{
+			AgentSessionRef: &corev1.ObjectReference{Name: agentSessionName, Namespace: current.Namespace},
+		}
+		current.Status.InvestigationMetadata = &aianalysisv1.InvestigationMetadata{InvestigationTime: 1}
+		return k8sClient.Status().Update(ctx, current)
+	})
+}
+
+func persistDirectParentHandoffUID(ctx context.Context, k8sClient client.Client, analysis *aianalysisv1.AIAnalysis, uid types.UID) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		current := &aianalysisv1.AIAnalysis{}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), current); err != nil {
+			return err
+		}
+		if current.Status.KASession == nil || current.Status.KASession.AgentSessionRef == nil {
+			return fmt.Errorf("AIAnalysis %s/%s lost its AgentSession recovery reference", current.Namespace, current.Name)
+		}
+		current.Status.KASession.AgentSessionRef.UID = uid
+		current.Status.Phase = aianalysisv1.PhaseInvestigating
+		current.Status.InvestigationMetadata = &aianalysisv1.InvestigationMetadata{InvestigationTime: 1}
+		return k8sClient.Status().Update(ctx, current)
+	})
 }
