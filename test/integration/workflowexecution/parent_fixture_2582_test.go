@@ -59,7 +59,20 @@ func parentForIntegrationWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) *
 func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, opts ...client.CreateOption) error {
 	if parent, ok := object.(*remediationv1.RemediationRequest); ok {
 		if err := c.Client.Create(ctx, parent, opts...); err != nil {
-			return err
+			if !apierrors.IsAlreadyExists(err) {
+				return err
+			}
+			existing := &remediationv1.RemediationRequest{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(parent), existing); err != nil {
+				return fmt.Errorf("read existing direct WFE parent RemediationRequest: %w", err)
+			}
+			if existing.Status.OverallPhase == "" {
+				existing.Status.OverallPhase = c.parentPhase
+				if err := c.Status().Update(ctx, existing); err != nil {
+					return fmt.Errorf("persist existing direct WFE parent RemediationRequest phase: %w", err)
+				}
+			}
+			return nil
 		}
 		if parent.Status.OverallPhase == "" {
 			parent.Status.OverallPhase = c.parentPhase
