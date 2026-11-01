@@ -47,12 +47,12 @@ var _ = Describe("DD-2582 SignalProcessing parent lifecycle", Label("integration
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 		DeferCleanup(func() { _ = deleteAndWait(sp) })
 
-		Eventually(func() string {
+		Eventually(func() signalprocessingv1.SignalProcessingPhase {
 			fetched := &signalprocessingv1.SignalProcessing{}
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), fetched); err != nil {
-				return ""
+				return signalprocessingv1.SignalProcessingPhase("")
 			}
-			return string(fetched.Status.Phase)
+			return fetched.Status.Phase
 		}, timeout, interval).Should(Equal(signalprocessingv1.PhaseCancelled))
 	})
 })
