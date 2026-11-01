@@ -115,8 +115,19 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 		agentSession := &agentsessionv1.AgentSession{}
 		Eventually(func() bool {
 			err := k8sClient.Get(ctx, agentSessionKey, agentSession)
-			return apierrors.IsNotFound(err)
+			if apierrors.IsNotFound(err) {
+				return true
+			}
+			if err != nil || agentSession.DeletionTimestamp.IsZero() {
+				return false
+			}
+			for _, finalizer := range agentSession.Finalizers {
+				if finalizer == agentsessionv1.DispatchCleanupFinalizer {
+					return false
+				}
+			}
+			return true
 		}, 2*time.Minute, time.Second).Should(BeTrue(),
-			"AIA must delete the AgentSession only after parent-driven KA cancellation is acknowledged")
+			"AIA must request AgentSession deletion and KA must release its cleanup finalizer before AF removes its terminal-close finalizer")
 	})
 })

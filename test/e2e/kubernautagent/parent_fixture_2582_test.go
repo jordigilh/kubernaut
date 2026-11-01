@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -38,7 +39,7 @@ type agentSessionParentFixtureClient struct {
 
 func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object client.Object, opts ...client.CreateOption) error {
 	as, ok := object.(*agentsessionv1.AgentSession)
-	if !ok || as.Spec.RemediationRequestRef.Name == "" || metav1.GetControllerOf(as) != nil {
+	if !ok || as.Spec.RemediationRequestRef.Name == "" || as.Spec.IncidentID == "" || as.Spec.RemediationID == "" || metav1.GetControllerOf(as) != nil {
 		return c.Client.Create(ctx, object, opts...)
 	}
 
@@ -46,6 +47,14 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 		ctx, c.Client, c.Scheme(), as.Namespace, as.Spec)
 	if err != nil {
 		return fmt.Errorf("seed direct AgentSession parent chain: %w", err)
+	}
+	// The AIAnalysis E2E suite also runs a real AIA controller cluster-wide.
+	// Mark this direct KA handoff as already entered Investigating so that
+	// controller observes the fixture as pre-authorized work and does not
+	// create a second deterministic AgentSession for it.
+	analysis.Status.InvestigationMetadata = &aianalysisv1.InvestigationMetadata{InvestigationTime: 1}
+	if err := c.Status().Update(ctx, analysis); err != nil {
+		return fmt.Errorf("persist direct AgentSession investigation handoff: %w", err)
 	}
 	if err := controllerutil.SetControllerReference(analysis, as, c.Scheme()); err != nil {
 		return fmt.Errorf("set direct AgentSession AIAnalysis owner: %w", err)
