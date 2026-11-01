@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +52,12 @@ func NewKubeconfigAgentSessionClient(kubeconfigPath string) (client.Client, erro
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register core Kubernetes scheme: %w", err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register apps Kubernetes scheme: %w", err)
+	}
+	if err := coordinationv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register coordination Kubernetes scheme: %w", err)
 	}
 	if err := agentsessionv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register AgentSession scheme: %w", err)
