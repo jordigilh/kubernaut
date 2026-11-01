@@ -59,7 +59,7 @@ var _ = Describe("E2E-AA-2527: AgentSession recovery after KA pod restart", Labe
 		serviceName := "ka-restart-svc-" + suffix
 		serviceAccountName := "ka-restart-agent-sa-" + suffix
 		agentSessionName := "as-ka-restart-" + suffix
-		remediationID := "rem-ka-restart-" + suffix
+		remediationID := "rr-" + suffix
 		leaseName := "dispatch-" + agentSessionName
 
 		By("Resolving the already-deployed KA image instead of building a second image")
@@ -157,11 +157,11 @@ var _ = Describe("E2E-AA-2527: AgentSession recovery after KA pod restart", Labe
 				RemediationID:     remediationID,
 				SignalName:        "slow-investigation-test",
 				Severity:          "warning",
-				SignalSource:      "e2e",
+				SignalSource:      "kubernaut",
 				ResourceNamespace: "default",
 				ResourceKind:      "Pod",
 				ResourceName:      "investigation-target",
-				ErrorMessage:      "KA pod restart recovery test",
+				ErrorMessage:      "",
 				Environment:       "test",
 				Priority:          "P2",
 				RiskTolerance:     "medium",

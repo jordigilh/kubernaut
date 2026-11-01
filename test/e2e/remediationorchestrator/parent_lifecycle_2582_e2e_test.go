@@ -54,9 +54,14 @@ var _ = Describe("E2E-2582-005: fail closed across RO restart", Serial, Label("e
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
-		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+		Eventually(func() error {
+			fresh := &remediationv1.RemediationRequest{}
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fresh); err != nil {
+				return err
+			}
+			fresh.Status.OverallPhase = remediationv1.PhaseFailed
+			return k8sClient.Status().Update(ctx, fresh)
+		}, timeout, interval).Should(Succeed(), "persist failed parent phase without losing a concurrent RO status update")
 
 		restart := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"rollout", "restart", "deployment/remediationorchestrator-controller", "-n", controllerNamespace)

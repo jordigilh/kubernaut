@@ -184,6 +184,7 @@ var _ = SynchronizedBeforeSuite(
 		// Register RemediationRequest scheme (parent of SignalProcessing)
 		err = remediationv1alpha1.AddToScheme(k8sClient.Scheme())
 		Expect(err).ToNot(HaveOccurred())
+		k8sClient = &signalProcessingParentFixtureClient{Client: k8sClient}
 
 		// Create standard clientset for native K8s resources
 		clientset, err = kubernetes.NewForConfig(config)

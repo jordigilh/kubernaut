@@ -20,7 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -52,6 +55,9 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 	// Mark this direct KA handoff as already entered Investigating so that
 	// controller observes the fixture as pre-authorized work and does not
 	// create a second deterministic AgentSession for it.
+	analysis.Status.KASession = &aianalysisv1.KASession{
+		AgentSessionRef: &corev1.ObjectReference{Name: as.Name, Namespace: as.Namespace},
+	}
 	analysis.Status.InvestigationMetadata = &aianalysisv1.InvestigationMetadata{InvestigationTime: 1}
 	if err := c.Status().Update(ctx, analysis); err != nil {
 		return fmt.Errorf("persist direct AgentSession investigation handoff: %w", err)
@@ -59,5 +65,24 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 	if err := controllerutil.SetControllerReference(analysis, as, c.Scheme()); err != nil {
 		return fmt.Errorf("set direct AgentSession AIAnalysis owner: %w", err)
 	}
-	return c.Client.Create(ctx, object, opts...)
+	if err := c.Client.Create(ctx, object, opts...); err != nil {
+		return err
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		current := &aianalysisv1.AIAnalysis{}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(analysis), current); err != nil {
+			return err
+		}
+		if current.Status.KASession == nil || current.Status.KASession.AgentSessionRef == nil {
+			return fmt.Errorf("AIAnalysis %s/%s lost its AgentSession recovery reference", current.Namespace, current.Name)
+		}
+		current.Status.KASession.AgentSessionRef.UID = as.UID
+		return c.Status().Update(ctx, current)
+	}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("persist direct AgentSession recovery UID: parent AIAnalysis was deleted")
+		}
+		return fmt.Errorf("persist direct AgentSession recovery UID: %w", err)
+	}
+	return nil
 }

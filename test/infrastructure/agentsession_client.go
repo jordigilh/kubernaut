@@ -222,7 +222,9 @@ func ensureAgentSessionAIAnalysis(ctx context.Context, k8sClient client.Client, 
 		remediationID = details.rrName
 	}
 	analysis := &aianalysisv1.AIAnalysis{
-		ObjectMeta: metav1.ObjectMeta{Name: "ai-" + spec.IncidentID, Namespace: namespace},
+		// Direct KA fixtures use IncidentID as the AIA identity, matching the
+		// production RequestBuilder's lossless AgentSession mapping.
+		ObjectMeta: metav1.ObjectMeta{Name: spec.IncidentID, Namespace: namespace},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{Name: details.rrName, Namespace: namespace}, RemediationID: remediationID,
 			AnalysisRequest: aianalysisv1.AnalysisRequest{
