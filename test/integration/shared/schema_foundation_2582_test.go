@@ -91,6 +91,7 @@ var _ = Describe("Schema foundation", func() {
 		}, persisted)).To(Succeed())
 		Expect(nestedString(persisted, "status", "phase")).To(Equal("Cancelled"))
 		Expect(nestedString(persisted, "status", "investigationSession", "agentSessionRef", "name")).To(Equal("agent-session-2582"))
+		Expect(nestedString(persisted, "status", "investigationSession", "agentSessionRef", "namespace")).To(Equal(schemaFoundationNamespace))
 		Expect(nestedString(persisted, "status", "investigationSession", "agentSessionRef", "uid")).To(Equal("agent-session-uid-2582"))
 	})
 

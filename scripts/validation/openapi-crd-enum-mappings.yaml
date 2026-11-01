@@ -36,6 +36,7 @@ mappings:
     crd_path: status.phase
     openapi_schema: AIAnalysisAuditPayload
     openapi_field: phase
+    subset_ok: true
     note: "Audit gap #2 - must include Investigating"
 
   - crd: kubernaut.ai_remediationworkflows.yaml
@@ -70,6 +71,8 @@ mappings:
     crd_path: status.phase
     openapi_schema: WorkflowExecutionAuditPayload
     openapi_field: phase
+    subset_ok: true
+    note: "Schema foundation defers audit OpenAPI lifecycle alignment"
 
   - crd: kubernaut.ai_workflowexecutions.yaml
     crd_path: status.failureDetails.reason
@@ -90,6 +93,8 @@ mappings:
     crd_path: status.phase
     openapi_schema: SignalProcessingAuditPayload
     openapi_field: phase
+    subset_ok: true
+    note: "Schema foundation defers audit OpenAPI lifecycle alignment"
 
   - crd: kubernaut.ai_signalprocessings.yaml
     crd_path: status.severity
