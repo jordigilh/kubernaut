@@ -23,8 +23,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -286,11 +288,75 @@ func canonicalJSONArray(raw []byte) ([]byte, error) {
 }
 
 func canonicalJSONScalar(raw []byte) ([]byte, error) {
-	var canonical bytes.Buffer
-	if err := json.Compact(&canonical, raw); err != nil {
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("invalid json scalar")
+	}
+
+	switch raw[0] {
+	case '"':
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		return json.Marshal(value)
+	case 't', 'f', 'n':
+		var canonical bytes.Buffer
+		if err := json.Compact(&canonical, raw); err != nil {
+			return nil, err
+		}
+		return canonical.Bytes(), nil
+	default:
+		return canonicalJSONNumber(raw)
+	}
+}
+
+func canonicalJSONNumber(raw []byte) ([]byte, error) {
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err != nil {
 		return nil, err
 	}
-	return canonical.Bytes(), nil
+	rational, ok := new(big.Rat).SetString(number.String())
+	if !ok {
+		return nil, fmt.Errorf("invalid json number")
+	}
+	decimalPlaces, ok := decimalPlacesForJSONNumber(rational.Denom())
+	if !ok {
+		return nil, fmt.Errorf("json number has non-decimal denominator")
+	}
+	canonical := rational.FloatString(decimalPlaces)
+	if decimalPoint := strings.IndexByte(canonical, '.'); decimalPoint >= 0 {
+		canonical = strings.TrimRight(canonical, "0")
+		canonical = strings.TrimRight(canonical, ".")
+	}
+	return []byte(canonical), nil
+}
+
+func decimalPlacesForJSONNumber(denominator *big.Int) (int, bool) {
+	twos, remaining := countJSONNumberFactor(denominator, 2)
+	fives, remaining := countJSONNumberFactor(remaining, 5)
+	if remaining.Cmp(big.NewInt(1)) != 0 {
+		return 0, false
+	}
+	if twos > fives {
+		return twos, true
+	}
+	return fives, true
+}
+
+func countJSONNumberFactor(value *big.Int, factor int64) (int, *big.Int) {
+	divisor := big.NewInt(factor)
+	count := 0
+	remaining := new(big.Int).Set(value)
+	for {
+		quotient := new(big.Int)
+		remainder := new(big.Int)
+		quotient.QuoRem(remaining, divisor, remainder)
+		if remainder.Sign() != 0 {
+			return count, remaining
+		}
+		count++
+		remaining = quotient
+	}
 }
 
 // DeleteForRetry deletes as so that the next reconcile's GetOrCreate call
