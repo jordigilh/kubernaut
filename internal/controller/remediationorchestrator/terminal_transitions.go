@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
 )
 
 // errPhaseConflict is returned when a concurrent reconcile changed the phase
@@ -384,6 +385,23 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
 
+	// #304: Notification creation deferred until after Outcome is set (completeVerificationIfNeeded).
+	// ensureNotificationsCreated is called from handleVerifyingPhase after EA terminal transition
+	// or timeout sets Outcome. Previously called here with empty Outcome (BR-ORCH-045 violation).
+
+	// DD-2582: build/create the EA with the Verifying handoff phase before the
+	// parent phase is persisted. The helper persists the EA ref first; the RR
+	// phase update below is the subsequent authorization write. A copy is used
+	// so the immutable EA spec records Verifying without authorizing child work
+	// early.
+	eaRR := rr.DeepCopy()
+	eaRR.Status.OverallPhase = phase.Verifying
+	if err := r.createEffectivenessAssessmentIfNeeded(ctx, eaRR); parentlifecycle.IsChildCollision(err) {
+		// The collision handler has already failed the RR. Do not overwrite that
+		// terminal state with Verifying after the CreateOnly failure.
+		return ctrl.Result{}, nil
+	}
+
 	// #280: Transition to Verifying (not Completed). CompletedAt and Outcome are set later
 	// when EA finishes or VerificationDeadline expires.
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -422,19 +440,6 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 				"Remediation succeeded, entering verification phase (#280)")
 		}
 	}
-
-	// #304: Notification creation deferred until after Outcome is set (completeVerificationIfNeeded).
-	// ensureNotificationsCreated is called from handleVerifyingPhase after EA terminal transition
-	// or timeout sets Outcome. Previously called here with empty Outcome (BR-ORCH-045 violation).
-
-	// DD-2582: build/create the EA with the Verifying handoff phase before the
-	// parent phase is persisted. The helper persists the EA ref first; the RR
-	// phase update above is the subsequent authorization write. A copy is used
-	// so the immutable EA spec records Verifying without authorizing child work
-	// early.
-	eaRR := rr.DeepCopy()
-	eaRR.Status.OverallPhase = phase.Verifying
-	r.createEffectivenessAssessmentIfNeeded(ctx, eaRR)
 
 	logger.Info("Remediation succeeded, entered Verifying phase", "outcome", outcome)
 	return ctrl.Result{}, nil

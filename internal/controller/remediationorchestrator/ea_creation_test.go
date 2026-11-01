@@ -623,6 +623,59 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
+	// UT-RO-EA-015: The Verifying phase write follows EA ref persistence
+	// DD-2582 ordering: create the child, persist its parent reference, then
+	// advance the parent phase that authorizes child processing.
+	// ========================================
+	It("UT-RO-EA-015: should persist the EA reference before writing Verifying phase", func() {
+		rrName := "rr-ea-015"
+		namespace := testNs
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+		verifyingWrites := []bool{}
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+					if subResourceName == "status" {
+						if updatedRR, ok := obj.(*remediationv1.RemediationRequest); ok && updatedRR.Status.OverallPhase == remediationv1.PhaseVerifying {
+							verifyingWrites = append(verifyingWrites,
+								updatedRR.Status.GetPhaseProgress().EffectivenessAssessmentRef != nil)
+						}
+					}
+					return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(verifyingWrites).To(ConsistOf(true),
+			"every Verifying status write must already contain EffectivenessAssessmentRef")
+	})
+
+	// ========================================
 	// UT-RO-EA-011: Phase timeout does NOT create EA (#240)
 	// Issue #240: EA should only be created when WFE completes successfully.
 	// Phase timeouts (Processing, Analyzing) occur before any remediation

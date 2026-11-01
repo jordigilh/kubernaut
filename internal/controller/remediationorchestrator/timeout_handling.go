@@ -254,9 +254,9 @@ func (r *Reconciler) trackTimeoutNotification(ctx context.Context, rr *remediati
 // so the EA assesses the resource the workflow actually modified (not the signal Pod).
 // Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
 // so that trackEffectivenessStatus can find the EA for condition tracking.
-func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) {
+func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) error {
 	if r.eaCreator == nil {
-		return
+		return nil
 	}
 
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
@@ -271,10 +271,10 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 			if _, transitionErr := r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseEffectivenessAssessment, err); transitionErr != nil {
 				logger.Error(transitionErr, "Failed to transition RemediationRequest after EffectivenessAssessment collision")
 			}
-			return
+			return err
 		}
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
-		return
+		return nil
 	}
 	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
 
@@ -303,6 +303,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist EA ref on RR status (non-critical)", "eaName", name)
 	}
+	return nil
 }
 
 // resolveEATargets implements DD-EM-003's dual-target resolution step of

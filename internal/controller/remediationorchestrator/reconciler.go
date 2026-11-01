@@ -301,12 +301,14 @@ func (r *Reconciler) registerPhaseHandlers(deps phaseHandlerDeps) {
 	}))
 	r.registerWorkflowPhaseHandlers(c, m)
 	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
-		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
-		CreateEffectivenessAssessmentIfNeeded: r.createEffectivenessAssessmentIfNeeded,
-		TrackEffectivenessStatus:              r.trackEffectivenessStatus,
-		EmitVerificationTimedOutAudit:         r.emitVerificationTimedOutAudit,
-		EmitVerificationCompletedAudit:        r.emitVerificationCompletedAudit,
-		EmitCompletionAudit:                   r.emitCompletionAudit,
+		EnsureNotificationsCreated: r.ensureNotificationsCreated,
+		CreateEffectivenessAssessmentIfNeeded: func(ctx context.Context, rr *remediationv1.RemediationRequest) {
+			_ = r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+		},
+		TrackEffectivenessStatus:       r.trackEffectivenessStatus,
+		EmitVerificationTimedOutAudit:  r.emitVerificationTimedOutAudit,
+		EmitVerificationCompletedAudit: r.emitVerificationCompletedAudit,
+		EmitCompletionAudit:            r.emitCompletionAudit,
 	}))
 }
 
