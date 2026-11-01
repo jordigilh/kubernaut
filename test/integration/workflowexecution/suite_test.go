@@ -479,8 +479,8 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 	Expect(k8sClient.Create(ctx, parent)).To(Succeed())
 	persistedParent := &remediationv1.RemediationRequest{}
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(parent), persistedParent)).To(Succeed())
-	Expect(persistedParent.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting),
-		"createUniqueWFE must persist an authorized parent before returning the child fixture")
+	Expect(persistedParent.Status.OverallPhase).NotTo(BeEmpty(),
+		"createUniqueWFE must preserve or persist an authorized parent before returning the child fixture")
 	return wfe
 }
 

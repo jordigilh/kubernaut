@@ -46,6 +46,7 @@ import (
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
@@ -188,6 +189,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 
 			s := runtime.NewScheme()
 			Expect(eav1.AddToScheme(s)).To(Succeed())
+			Expect(remediationv1.AddToScheme(s)).To(Succeed())
 			fc := fakeclient.NewClientBuilder().
 				WithScheme(s).
 				WithObjects(initObjects...).
@@ -211,6 +213,13 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 				return c
 			}())
 			return r, fc
+		}
+
+		localParentForEA := func(ea *eav1.EffectivenessAssessment) *remediationv1.RemediationRequest {
+			return &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: ea.Spec.CorrelationID, Namespace: ea.Namespace},
+				Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseVerifying},
+			}
 		}
 
 		// ogenCompliantEvent builds a schema-compliant AuditEvent JSON map with
@@ -290,7 +299,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 			}
 
 			By("Creating reconciler with fake client seeded with the EA")
-			reconciler, fc := newLocalReconciler(dsServer.URL, ea)
+			reconciler, fc := newLocalReconciler(dsServer.URL, ea, localParentForEA(ea))
 
 			By("Calling Reconcile() directly with the local reconciler")
 			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: ea.Name, Namespace: "default"}}
@@ -345,7 +354,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 			}
 
 			By("Creating reconciler with fake client seeded with the EA")
-			reconciler, fc := newLocalReconciler(dsServer.URL, ea)
+			reconciler, fc := newLocalReconciler(dsServer.URL, ea, localParentForEA(ea))
 
 			By("Calling Reconcile() directly with the local reconciler")
 			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: ea.Name, Namespace: "default"}}
