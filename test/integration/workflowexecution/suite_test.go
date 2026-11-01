@@ -449,7 +449,7 @@ var _ = SynchronizedAfterSuite(func() {
 // wfe.Spec.WorkflowRef after this returns, before k8sClient.Create.
 func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	name := IntegrationTestNamePrefix + testID + "-" + time.Now().Format("150405000")
-	return &workflowexecutionv1alpha1.WorkflowExecution{
+	wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
 			Namespace:  DefaultNamespace,
@@ -475,6 +475,8 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 			TargetResource: targetResource,
 		},
 	}
+	Expect(k8sClient.Create(ctx, parentForIntegrationWFE(wfe))).To(Succeed())
+	return wfe
 }
 
 // createUniqueJobWFE creates a WorkflowExecution for Job backend tests

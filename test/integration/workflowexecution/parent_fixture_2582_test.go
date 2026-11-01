@@ -36,6 +36,26 @@ type parentSeedingClient struct {
 	parentPhase remediationv1.RemediationPhase
 }
 
+func parentForIntegrationWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) *remediationv1.RemediationRequest {
+	return &remediationv1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wfe.Spec.RemediationRequestRef.Name,
+			Namespace: wfe.Spec.RemediationRequestRef.Namespace,
+		},
+		Spec: remediationv1.RemediationRequestSpec{
+			SignalFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			SignalName:        "workflowexecution-integration-parent",
+			Severity:          "critical",
+			SignalType:        "alert",
+			TargetType:        "kubernetes",
+			TargetResource:    remediationv1.ResourceIdentifier{Kind: "Pod", Name: "integration-parent-target", Namespace: wfe.Namespace},
+			FiringTime:        metav1.Now(),
+			ReceivedTime:      metav1.Now(),
+		},
+		Status: remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseExecuting},
+	}
+}
+
 func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, opts ...client.CreateOption) error {
 	if parent, ok := object.(*remediationv1.RemediationRequest); ok {
 		if err := c.Client.Create(ctx, parent, opts...); err != nil {
