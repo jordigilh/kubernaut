@@ -128,7 +128,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			Expect(rendered).To(ContainSubstring("arbitrary retry-count threshold"))
 		})
 
-		It("keeps GitOps mechanism selection separate from runtime precondition validation", func() {
+		It("keeps GitOps mechanism fit separate from precondition enforcement", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -141,12 +141,14 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			for _, text := range []string{
-				"GitOps-compatible action types and workflows",
-				"Do not equate GitOps management alone with GitRevertCommit",
-				"Evaluate all returned GitOps-compatible candidates",
-				"GitRevertCommit is one possible mechanism",
-				"runtime fail-closed checks",
-				"not contrary evidence",
+				"catalog identifies as compatible with the detected GitOps management",
+				"Do not infer a particular action type, workflow, or mechanism solely from this label",
+				"Evaluate every returned candidate against the RCA, target",
+				"choose the best-supported match",
+				"do not infer a specific action family unless the returned catalog guidance supports it",
+				"Treat catalog `preconditions` and other descriptive guidance as",
+				"not, by itself, contrary evidence about mechanism",
+				"follow the existing",
 				"respective stages",
 			} {
 				Expect(rendered).To(ContainSubstring(text), "workflow selection prompt must contain %q", text)

@@ -109,12 +109,19 @@ candidates remain available; no action-family ban or confidence penalty applies.
 Assess current selection confidence from the current evidence; do not substitute
 historical selection or RCA confidence, or apply a formula based on past scores.
 Selection confidence measures mechanism fit, not proof that execution will
-succeed. Workflow execution preconditions are runtime fail-closed checks:
-missing independent verification in Phase 2 is not contrary evidence when the
-workflow mechanism fits the RCA. Lower selection confidence for mechanism
-mismatch or explicit failed/contradictory evidence, not merely for unobserved
-runtime checks. Existing confidence/review/approval and execution-safety gates
-still apply at their respective stages.
+succeed. Treat catalog `preconditions` and other descriptive guidance as
+selection evidence, not proof of runtime enforcement. Consider an applicable
+precondition satisfied only when current evidence or an explicit workflow
+contract establishes that it is satisfied or enforced. Missing independent
+verification in Phase 2 is not, by itself, contrary evidence about mechanism
+fit; it does not establish that an applicable precondition is satisfied. If an
+applicable precondition remains unverified and no explicit fail-closed
+enforcement is established, preserve that uncertainty and follow the existing
+review or no-workflow handling rather than treating it as satisfied. Lower
+selection confidence for mechanism mismatch or explicit failed/contradictory
+evidence, not solely for an unobserved check. Existing
+confidence/review/approval and execution-safety gates still apply at their
+respective stages.
 You may select the same workflow, a different workflow, or call
 `submit_result_no_workflow` when no candidate is suitable, even with one candidate.
 
@@ -127,8 +134,8 @@ DO NOT GUESS action types. You MUST call `list_available_actions` first to see w
 If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL action types before selecting one.
 
 **Action Type Selection Rules** (apply BEFORE calling Step 2):
-- If `cluster_context` shows `gitOpsManaged=true`, MUST prefer GitOps-compatible action types and workflows that preserve desired-state authority. Do not equate GitOps management alone with GitRevertCommit. Evaluate all returned GitOps-compatible candidates against the RCA and their documented `when_to_use`/`when_not_to_use` guidance, and choose whichever mechanism best fits; GitRevertCommit is one possible mechanism, not a default for every GitOps incident.
-- If the RCA reveals an error rate spike correlating with a recent deployment revision change, prefer ProactiveRollback.
+- If `cluster_context` shows `gitOpsManaged=true`, MUST prefer action types and workflows that the catalog identifies as compatible with the detected GitOps management. Do not infer a particular action type, workflow, or mechanism solely from this label. Evaluate every returned candidate against the RCA, target, and its documented `when_to_use`/`when_not_to_use` guidance, and choose the best-supported match.
+- Use concrete RCA findings, including any correlation with a recent deployment revision change, when comparing returned action types; do not infer a specific action family unless the returned catalog guidance supports it.
 - Treat the catalog's `rank`, `preferred`, `matchedDetectedLabels`, and `preferenceReason` fields as objective discovery evidence. Inspect the `preferred` action family first when it is present.
 - Ranking is advisory, not authorization or confidence. You may choose a lower-ranked action family when the RCA, target, preconditions, or action description provide stronger evidence. If you do, the selected workflow `rationale` MUST state the catalog preference you considered and the concrete RCA evidence for overriding it.
 - Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
