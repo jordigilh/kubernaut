@@ -58,7 +58,10 @@ var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "is
 
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      helpers.UniqueTestName("ai-parent-failed"),
+				// The production RR watch maps the deterministic child name
+				// "ai-<rr-name>". Keep this direct fixture on that contract so
+				// the persisted parent failure wakes AIA immediately.
+				Name:      "ai-" + rrName,
 				Namespace: testNamespace,
 			},
 			Spec: aianalysisv1.AIAnalysisSpec{

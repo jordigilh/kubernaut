@@ -196,6 +196,7 @@ var _ = SynchronizedBeforeSuite(
 
 		k8sClient, err = infrastructure.NewKubeconfigAgentSessionClient(kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create AgentSession-scoped k8s client (#2190)")
+		k8sClient = &agentSessionParentFixtureClient{Client: k8sClient}
 
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
@@ -239,6 +240,7 @@ var _ = SynchronizedBeforeSuite(
 
 		k8sClient, err = infrastructure.NewKubeconfigAgentSessionClient(kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create AgentSession-scoped k8s client (#2190)")
+		k8sClient = &agentSessionParentFixtureClient{Client: k8sClient}
 	},
 )
 

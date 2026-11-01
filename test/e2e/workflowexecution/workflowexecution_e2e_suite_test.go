@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -236,10 +237,13 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		err = tektonv1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
+		err = remediationv1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
 		// Note: batch/v1 is already registered by k8s.io/client-go/kubernetes/scheme (BR-WE-014)
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
+		k8sClient = &wfeParentFixtureClient{Client: k8sClient}
 
 		// Create direct API reader for Eventually() blocks to bypass client cache
 		// This ensures fresh reads from API server for status polling

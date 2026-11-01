@@ -95,7 +95,7 @@ func InvestigateViaAgentSession(ctx context.Context, k8sClient client.Client, na
 	if spec.SignalMode == "" {
 		spec.SignalMode = "reactive"
 	}
-	analysis, err := ensureAgentSessionParents(ctx, k8sClient, k8sClient.Scheme(), namespace, spec)
+	analysis, err := EnsureAgentSessionParents(ctx, k8sClient, k8sClient.Scheme(), namespace, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,11 @@ type agentSessionParentDetails struct {
 	severity, signalName, fingerprint               string
 }
 
-func ensureAgentSessionParents(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec) (*aianalysisv1.AIAnalysis, error) {
+// EnsureAgentSessionParents creates the authorized RR -> AIAnalysis parent
+// chain used by direct AgentSession E2E fixtures. It deliberately leaves the
+// production parent gate enabled and returns the AIAnalysis whose UID must own
+// the AgentSession.
+func EnsureAgentSessionParents(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec) (*aianalysisv1.AIAnalysis, error) {
 	details, err := newAgentSessionParentDetails(namespace, spec)
 	if err != nil {
 		return nil, err

@@ -321,14 +321,14 @@ func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace stri
 		return loadErr
 	}
 
+	// The admission webhook calls the Service object by its full
+	// authwebhook-service name. Keep the legacy authwebhook aliases because
+	// existing helpers still use them, but make the pre-provisioned Secret
+	// match the operator-managed Service DNS name before reconciliation.
+	authWebhookDNSNames := qualificationServiceDNSNames("authwebhook-service", namespace)
 	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
-		fmt.Sprintf("authwebhook.%s.svc", namespace),
-		[]string{
-			"authwebhook",
-			fmt.Sprintf("authwebhook.%s", namespace),
-			fmt.Sprintf("authwebhook.%s.svc", namespace),
-			fmt.Sprintf("authwebhook.%s.svc.cluster.local", namespace),
-		},
+		fmt.Sprintf("authwebhook-service.%s.svc", namespace),
+		authWebhookDNSNames,
 		nil, 365*24*time.Hour, caCert, caKey)
 	if err != nil {
 		return err
