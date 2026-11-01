@@ -30,6 +30,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -47,7 +48,7 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 		return c.Client.Create(ctx, object, opts...)
 	}
 
-	analysis, err := infrastructure.EnsureAgentSessionParents(
+	analysis, err := infrastructure.EnsureAgentSessionParentsWaiting(
 		ctx, c.Client, c.Scheme(), as.Namespace, as.Spec)
 	if err != nil {
 		return fmt.Errorf("seed direct AgentSession parent chain: %w", err)
@@ -70,7 +71,22 @@ func (c *agentSessionParentFixtureClient) Create(ctx context.Context, object cli
 		}
 		return fmt.Errorf("persist direct AgentSession recovery UID: %w", err)
 	}
+	if err := authorizeDirectParent(ctx, c.Client, as); err != nil {
+		return fmt.Errorf("authorize direct AgentSession parent phase: %w", err)
+	}
 	return nil
+}
+
+func authorizeDirectParent(ctx context.Context, k8sClient client.Client, as *agentsessionv1.AgentSession) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		parent := &remediationv1.RemediationRequest{}
+		key := client.ObjectKey{Name: as.Spec.RemediationRequestRef.Name, Namespace: as.Namespace}
+		if err := k8sClient.Get(ctx, key, parent); err != nil {
+			return err
+		}
+		parent.Status.OverallPhase = remediationv1.PhaseAnalyzing
+		return k8sClient.Status().Update(ctx, parent)
+	})
 }
 
 func persistDirectParentHandoff(ctx context.Context, k8sClient client.Client, analysis *aianalysisv1.AIAnalysis, agentSessionName string) error {

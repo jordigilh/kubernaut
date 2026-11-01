@@ -147,15 +147,26 @@ type agentSessionParentDetails struct {
 // production parent gate enabled and returns the AIAnalysis whose UID must own
 // the AgentSession.
 func EnsureAgentSessionParents(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec) (*aianalysisv1.AIAnalysis, error) {
+	return ensureAgentSessionParentsWithPhases(ctx, k8sClient, scheme, namespace, spec, remediationv1.PhaseAnalyzing, aianalysisv1.PhaseInvestigating)
+}
+
+// EnsureAgentSessionParentsWaiting creates the same parent chain in the
+// documented create-before-phase handoff window. Callers must authorize the RR
+// after persisting the child identity.
+func EnsureAgentSessionParentsWaiting(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec) (*aianalysisv1.AIAnalysis, error) {
+	return ensureAgentSessionParentsWithPhases(ctx, k8sClient, scheme, namespace, spec, remediationv1.PhasePending, aianalysisv1.PhasePending)
+}
+
+func ensureAgentSessionParentsWithPhases(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec, parentPhase remediationv1.RemediationPhase, analysisPhase string) (*aianalysisv1.AIAnalysis, error) {
 	details, err := newAgentSessionParentDetails(namespace, spec)
 	if err != nil {
 		return nil, err
 	}
-	rr, err := ensureAgentSessionRemediationRequest(ctx, k8sClient, namespace, details)
+	rr, err := ensureAgentSessionRemediationRequest(ctx, k8sClient, namespace, details, parentPhase)
 	if err != nil {
 		return nil, err
 	}
-	return ensureAgentSessionAIAnalysis(ctx, k8sClient, scheme, namespace, spec, details, rr)
+	return ensureAgentSessionAIAnalysis(ctx, k8sClient, scheme, namespace, spec, details, rr, analysisPhase)
 }
 
 func newAgentSessionParentDetails(namespace string, spec agentsessionv1.AgentSessionSpec) (agentSessionParentDetails, error) {
@@ -189,7 +200,7 @@ func newAgentSessionParentDetails(namespace string, spec agentsessionv1.AgentSes
 	}, nil
 }
 
-func ensureAgentSessionRemediationRequest(ctx context.Context, k8sClient client.Client, namespace string, details agentSessionParentDetails) (*remediationv1.RemediationRequest, error) {
+func ensureAgentSessionRemediationRequest(ctx context.Context, k8sClient client.Client, namespace string, details agentSessionParentDetails, parentPhase remediationv1.RemediationPhase) (*remediationv1.RemediationRequest, error) {
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{Name: details.rrName, Namespace: namespace},
 		Spec: remediationv1.RemediationRequestSpec{
@@ -208,7 +219,7 @@ func ensureAgentSessionRemediationRequest(ctx context.Context, k8sClient client.
 		}
 	}
 	if rr.Status.OverallPhase == "" {
-		rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
+		rr.Status.OverallPhase = parentPhase
 		if err := k8sClient.Status().Update(ctx, rr); err != nil {
 			return nil, fmt.Errorf("persist AgentSession parent RemediationRequest %s/%s phase: %w", namespace, details.rrName, err)
 		}
@@ -216,7 +227,7 @@ func ensureAgentSessionRemediationRequest(ctx context.Context, k8sClient client.
 	return rr, nil
 }
 
-func ensureAgentSessionAIAnalysis(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec, details agentSessionParentDetails, rr *remediationv1.RemediationRequest) (*aianalysisv1.AIAnalysis, error) {
+func ensureAgentSessionAIAnalysis(ctx context.Context, k8sClient client.Client, scheme *runtime.Scheme, namespace string, spec agentsessionv1.AgentSessionSpec, details agentSessionParentDetails, rr *remediationv1.RemediationRequest, analysisPhase string) (*aianalysisv1.AIAnalysis, error) {
 	remediationID := spec.RemediationID
 	if remediationID == "" {
 		remediationID = details.rrName
@@ -250,7 +261,7 @@ func ensureAgentSessionAIAnalysis(ctx context.Context, k8sClient client.Client, 
 		}
 		return analysis, nil
 	}
-	analysis.Status.Phase = aianalysisv1.PhaseInvestigating
+	analysis.Status.Phase = analysisPhase
 	if err := k8sClient.Status().Update(ctx, analysis); err != nil {
 		return nil, fmt.Errorf("persist AgentSession parent AIAnalysis %s/%s phase: %w", namespace, analysis.Name, err)
 	}
