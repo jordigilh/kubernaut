@@ -84,6 +84,41 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 		})
 	})
 
+	Describe("stale Processing cache state", func() {
+		It("UT-RO-2582-009: skips AI creation when the persisted RR already has the AI ref", func() {
+			staleRR := newRemediationRequest("prc-stale", defaultFixture, remediationv1.PhaseProcessing)
+			staleRR.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
+				Name:      "sp-prc-stale",
+				Namespace: staleRR.Namespace,
+			}
+			persistedRR := staleRR.DeepCopy()
+			persistedRR.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
+				Name:      "ai-prc-stale",
+				Namespace: staleRR.Namespace,
+			}
+
+			cacheClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}).
+				WithObjects(staleRR).Build()
+			apiReader := fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}).
+				WithObjects(persistedRR).Build()
+			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+			h := prodcontroller.NewProcessingHandler(
+				cacheClient,
+				creator.NewAIAnalysisCreator(cacheClient, scheme, m),
+				status.NewManager(cacheClient, cacheClient),
+				m,
+				apiReader,
+			)
+
+			intent, err := h.Handle(ctx, staleRR)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(intent.Type).To(Equal(phase.TransitionNone))
+			Expect(intent.Reason).To(Equal("persisted Processing state already advanced"))
+		})
+	})
+
 	// ========================================
 	// Corrupted state
 	// ========================================

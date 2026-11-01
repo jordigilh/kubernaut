@@ -115,8 +115,11 @@ func (c *parentSeedingClient) Create(ctx context.Context, object client.Object, 
 					return fmt.Errorf("persist existing WFE parent RemediationRequest phase: %w", err)
 				}
 			}
-		} else if err := c.Client.Status().Update(ctx, parent); err != nil {
-			return fmt.Errorf("persist WFE parent RemediationRequest phase: %w", err)
+		} else {
+			parent.Status.OverallPhase = c.parentPhase
+			if err := c.Client.Status().Update(ctx, parent); err != nil {
+				return fmt.Errorf("persist WFE parent RemediationRequest phase: %w", err)
+			}
 		}
 	}
 	return c.Client.Create(ctx, object, opts...)

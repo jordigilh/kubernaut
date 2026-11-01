@@ -290,8 +290,8 @@ func (r *Reconciler) registerPhaseHandlers(deps phaseHandlerDeps) {
 		deps.client, deps.apiReader, deps.statusManager, deps.metrics,
 		deps.notifCreator, deps.recorder, deps.routingEngine, deps.timeouts
 
-	r.phaseRegistry.MustRegister(NewPendingHandler(c, routingEngine, r.spCreator, statusManager, m))
-	r.phaseRegistry.MustRegister(NewProcessingHandler(c, r.aiAnalysisCreator, statusManager, m))
+	r.phaseRegistry.MustRegister(NewPendingHandler(c, routingEngine, r.spCreator, statusManager, m, apiReader))
+	r.phaseRegistry.MustRegister(NewProcessingHandler(c, r.aiAnalysisCreator, statusManager, m, apiReader))
 	r.phaseRegistry.MustRegister(NewExecutingHandler(c, apiReader, r.statusAggregator, statusManager, m, nc, recorder))
 	r.phaseRegistry.MustRegister(NewBlockedHandler(m, BlockedCallbacks{
 		RecheckResourceBusyBlock:      r.recheckResourceBusyBlock,

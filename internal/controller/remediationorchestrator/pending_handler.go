@@ -48,6 +48,7 @@ import (
 // Reference: Issue #666 (RO Phase Handler Registry refactoring)
 type PendingHandler struct {
 	client        client.Client
+	apiReader     client.Reader
 	routingEngine routing.Engine
 	spCreator     *creator.SignalProcessingCreator
 	statusManager *status.Manager
@@ -61,9 +62,15 @@ func NewPendingHandler(
 	sp *creator.SignalProcessingCreator,
 	sm *status.Manager,
 	m *metrics.Metrics,
+	apiReaders ...client.Reader,
 ) *PendingHandler {
+	var apiReader client.Reader
+	if len(apiReaders) > 0 {
+		apiReader = apiReaders[0]
+	}
 	return &PendingHandler{
 		client:        c,
+		apiReader:     apiReader,
 		routingEngine: re,
 		spCreator:     sp,
 		statusManager: sm,
@@ -81,6 +88,19 @@ func (h *PendingHandler) Phase() phase.Phase {
 // returns a TransitionIntent to advance to Processing.
 func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	if h.apiReader != nil {
+		persisted := &remediationv1.RemediationRequest{}
+		if err := h.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), persisted); err != nil {
+			logger.Error(err, "Failed to fresh-read Pending RemediationRequest")
+			return phase.Requeue(config.RequeueGenericError, "fresh Pending state read failed"), nil
+		}
+		if persisted.Status.OverallPhase != phase.Pending ||
+			persisted.Status.EnsurePhaseProgress().SignalProcessingRef != nil {
+			logger.Info("Skipping stale Pending reconcile", "persistedPhase", persisted.Status.OverallPhase,
+				"signalProcessingRef", persisted.Status.EnsurePhaseProgress().SignalProcessingRef != nil)
+			return phase.NoOp("persisted Pending state already advanced"), nil
+		}
+	}
 	logger.Info("Handling Pending phase - checking routing conditions")
 
 	blocked, err := h.routingEngine.CheckPreAnalysisConditions(ctx, rr)

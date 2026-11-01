@@ -92,6 +92,38 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 		})
 	})
 
+	Describe("stale Pending cache state", func() {
+		It("UT-RO-2582-008: skips child creation when the persisted RR already has the SP ref", func() {
+			staleRR := newRemediationRequest("pnd-stale", defaultFixture, remediationv1.PhasePending)
+			persistedRR := staleRR.DeepCopy()
+			persistedRR.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
+				Name:      "sp-pnd-stale",
+				Namespace: staleRR.Namespace,
+			}
+
+			cacheClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}).
+				WithObjects(staleRR).Build()
+			apiReader := fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}).
+				WithObjects(persistedRR).Build()
+			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+			h := prodcontroller.NewPendingHandler(
+				cacheClient,
+				&MockRoutingEngine{},
+				creator.NewSignalProcessingCreator(cacheClient, scheme, m),
+				status.NewManager(cacheClient, cacheClient),
+				m,
+				apiReader,
+			)
+
+			intent, err := h.Handle(ctx, staleRR)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(intent.Type).To(Equal(phase.TransitionNone))
+			Expect(intent.Reason).To(Equal("persisted Pending state already advanced"))
+		})
+	})
+
 	// ========================================
 	// Routing error
 	// ========================================

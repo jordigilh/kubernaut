@@ -51,6 +51,7 @@ const processingRequeueInterval = 10 * time.Second
 // Reference: Issue #666 (RO Phase Handler Registry refactoring)
 type ProcessingHandler struct {
 	client            client.Client
+	apiReader         client.Reader
 	aiAnalysisCreator *creator.AIAnalysisCreator
 	statusManager     *status.Manager
 	metrics           *metrics.Metrics
@@ -62,9 +63,15 @@ func NewProcessingHandler(
 	aic *creator.AIAnalysisCreator,
 	sm *status.Manager,
 	m *metrics.Metrics,
+	apiReaders ...client.Reader,
 ) *ProcessingHandler {
+	var apiReader client.Reader
+	if len(apiReaders) > 0 {
+		apiReader = apiReaders[0]
+	}
 	return &ProcessingHandler{
 		client:            c,
+		apiReader:         apiReader,
 		aiAnalysisCreator: aic,
 		statusManager:     sm,
 		metrics:           m,
@@ -81,6 +88,19 @@ func (h *ProcessingHandler) Phase() phase.Phase {
 // SP completion, and returns a TransitionIntent to advance to Analyzing.
 func (h *ProcessingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	if h.apiReader != nil {
+		persisted := &remediationv1.RemediationRequest{}
+		if err := h.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), persisted); err != nil {
+			logger.Error(err, "Failed to fresh-read Processing RemediationRequest")
+			return phase.Requeue(config.RequeueGenericError, "fresh Processing state read failed"), nil
+		}
+		if persisted.Status.OverallPhase != phase.Processing ||
+			persisted.Status.EnsurePhaseProgress().AIAnalysisRef != nil {
+			logger.Info("Skipping stale Processing reconcile", "persistedPhase", persisted.Status.OverallPhase,
+				"aiAnalysisRef", persisted.Status.EnsurePhaseProgress().AIAnalysisRef != nil)
+			return phase.NoOp("persisted Processing state already advanced"), nil
+		}
+	}
 
 	if rr.Status.EnsurePhaseProgress().SignalProcessingRef == nil {
 		logger.Error(nil, "Processing phase but no SignalProcessingRef - corrupted state")
