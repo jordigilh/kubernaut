@@ -168,7 +168,21 @@ func seedFailedCapacityExceededAgentSession(ctx context.Context, k8sClient clien
 	now := metav1.Now()
 	as.Status.CompletedAt = &now
 	ExpectWithOffset(1, k8sClient.Status().Update(ctx, as)).To(Succeed())
+	persistAgentSessionRef(ctx, k8sClient, analysis, as)
 	return as
+}
+
+func persistAgentSessionRef(ctx context.Context, kube client.WithWatch, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) {
+	GinkgoHelper()
+	Expect(analysis.Status.KASession).NotTo(BeNil())
+	analysis.Status.KASession.AgentSessionRef = &corev1.ObjectReference{
+		APIVersion: agentsessionv1.GroupVersion.String(),
+		Kind:       "AgentSession",
+		Name:       as.Name,
+		Namespace:  as.Namespace,
+		UID:        as.UID,
+	}
+	Expect(kube.Status().Update(ctx, analysis)).To(Succeed())
 }
 
 // newCapacityRetryReconciler wires a real AIAnalysisReconciler backed by the

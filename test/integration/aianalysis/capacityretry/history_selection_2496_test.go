@@ -246,4 +246,5 @@ func seedHistorySelection2496(ctx context.Context, kube client.WithWatch, analys
 	completed := metav1.Now()
 	as.Status.CompletedAt = &completed
 	Expect(kube.Status().Update(ctx, as)).To(Succeed())
+	persistAgentSessionRef(ctx, kube, analysis, as)
 }

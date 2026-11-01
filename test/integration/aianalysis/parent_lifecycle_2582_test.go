@@ -35,6 +35,7 @@ import (
 var _ = Describe("DD-2582 AIAnalysis parent lifecycle", Label("integration", "issue-2582"), func() {
 	It("IT-AI-2582-001: cancels active AgentSession work after the persisted RR becomes Failed [BR-AI-023, AC-4]", func() {
 		rrName := helpers.UniqueTestName("rr-ai-parent-failed")
+		createITAAAnalysisPodFixture(k8sClient, testNamespace, "parent-lifecycle-target")
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: testNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
