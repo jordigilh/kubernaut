@@ -18,19 +18,24 @@ package aianalysis_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/shared/parentlifecycle"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -133,6 +138,86 @@ var _ = Describe("AgentSessionCreator", func() {
 			Expect(as.Spec.IncidentID).To(Equal("ai-test"))
 			Expect(as.Spec.RemediationRequestRef.Name).To(Equal("test-remediation"))
 			Expect(as.Spec.RemediationRequestRef.Namespace).To(Equal("default"))
+		})
+
+		It("UT-AA-KA-2583-002: should recover when persisted JSON formatting differs but values are identical", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
+				KubernetesContext: &sharedtypes.KubernetesContext{ClusterID: "cluster-a"},
+				BusinessClassification: &sharedtypes.BusinessClassification{
+					Criticality:    sharedtypes.CriticalityMedium,
+					SLARequirement: sharedtypes.SLARequirementSilver,
+				},
+			}
+
+			created, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+
+			persisted := &agentsessionv1.AgentSession{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(created), persisted)).To(Succeed())
+			persisted.UID = types.UID("agentsession-uid")
+			var decoded map[string]json.RawMessage
+			Expect(json.Unmarshal(persisted.Spec.EnrichmentResults.Raw, &decoded)).To(Succeed())
+			pretty, err := json.MarshalIndent(decoded, "", "  ")
+			Expect(err).ToNot(HaveOccurred())
+			persisted.Spec.EnrichmentResults.Raw = pretty
+			Expect(fakeClient.Update(ctx, persisted)).To(Succeed())
+
+			analysis.Status.KASession = &aianalysisv1.KASession{
+				AgentSessionRef: &corev1.ObjectReference{
+					Name:      persisted.Name,
+					Namespace: persisted.Namespace,
+					UID:       persisted.UID,
+				},
+			}
+			recovered, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(recovered.UID).To(Equal(persisted.UID))
+		})
+
+		It("UT-AA-KA-2583-003: should reject malformed persisted enrichment JSON", func() {
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := underlying.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						session, ok := obj.(*agentsessionv1.AgentSession)
+						Expect(ok).To(BeTrue())
+						session.UID = types.UID("agentsession-uid")
+						session.Spec.EnrichmentResults = &apiextensionsv1.JSON{Raw: []byte(`{"businessClassification":`)}
+						return nil
+					},
+				}).
+				Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
+				BusinessClassification: &sharedtypes.BusinessClassification{
+					Criticality:    sharedtypes.CriticalityMedium,
+					SLARequirement: sharedtypes.SLARequirementSilver,
+				},
+			}
+
+			created, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+			created.UID = types.UID("agentsession-uid")
+
+			analysis.Status.KASession = &aianalysisv1.KASession{
+				AgentSessionRef: &corev1.ObjectReference{
+					Name:      created.Name,
+					Namespace: created.Namespace,
+					UID:       created.UID,
+				},
+			}
+
+			_, err = c.GetOrCreate(ctx, analysis)
+			Expect(err).To(MatchError(ContainSubstring("spec identity mismatch")))
 		})
 
 		It("UT-AI-2582-002: should fail on an unexpected pre-existing AgentSession instead of adopting it", func() {

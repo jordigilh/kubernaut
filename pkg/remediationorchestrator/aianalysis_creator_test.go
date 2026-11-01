@@ -77,6 +77,33 @@ var _ = Describe("AIAnalysisCreator", func() {
 	})
 
 	Describe("Create", func() {
+		Context("BR-AA-KA-065.1 / DD-2582: AgentSession recovery identity", func() {
+			It("UT-AA-KA-2583-001: creates API-round-trip-stable investigation deadlines", func() {
+				completedSP := helpers.NewCompletedSignalProcessing("sp-timeout-roundtrip", "default")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.CreateOption) error {
+							createdAI, ok := obj.(*aianalysisv1.AIAnalysis)
+							Expect(ok).To(BeTrue())
+							Expect(createdAI.Spec.TimesOutAt.Time.Nanosecond()).To(Equal(0),
+								"metav1.Time serializes at whole-second precision; the persisted AIAnalysis and rebuilt AgentSessionSpec must remain identical")
+							return nil
+						},
+					}).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("timeout-roundtrip", "default", helpers.RemediationRequestOpts{
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						Analyzing: &metav1.Duration{Duration: 10 * time.Minute},
+					},
+				})
+
+				_, err := aiCreator.Create(ctx, rr, completedSP)
+
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
 		Context("BR-ORCH-025: Data pass-through from RemediationRequest and SignalProcessing", func() {
 			It("should generate deterministic name in format 'ai-{rr.Name}' for reliable tracking", func() {
 				// Arrange - use testutil factories

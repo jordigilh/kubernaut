@@ -19,12 +19,16 @@ limitations under the License.
 package creator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -169,10 +173,124 @@ func validateRecoveryIdentity(
 	if owner == nil || owner.Kind != "AIAnalysis" || owner.Name != analysis.Name || owner.UID != analysis.UID {
 		return fmt.Errorf("persisted AgentSession recovery owner mismatch for %s/%s", session.Namespace, session.Name)
 	}
-	if !reflect.DeepEqual(session.Spec, expectedSpec) {
+	if !agentSessionSpecsEqual(session.Spec, expectedSpec) {
 		return fmt.Errorf("persisted AgentSession recovery spec identity mismatch for %s/%s", session.Namespace, session.Name)
 	}
 	return nil
+}
+
+// agentSessionSpecsEqual keeps immutable-spec recovery fail-closed while
+// treating apiextensionsv1.JSON as JSON rather than as a byte slice. The API
+// server may preserve equivalent JSON with different whitespace or object-key
+// order when it round-trips a CRD; those serialization details are not a spec
+// identity change. Every typed field remains reflect.DeepEqual, and malformed
+// JSON is rejected rather than adopted.
+func agentSessionSpecsEqual(persisted, expected agentsessionv1.AgentSessionSpec) bool {
+	persistedEnrichment := persisted.EnrichmentResults
+	expectedEnrichment := expected.EnrichmentResults
+	persisted.EnrichmentResults = nil
+	expected.EnrichmentResults = nil
+
+	typedEqual := reflect.DeepEqual(persisted, expected)
+	jsonEqual := equivalentJSON(persistedEnrichment, expectedEnrichment)
+	return typedEqual && jsonEqual
+}
+
+func equivalentJSON(persisted, expected *apiextensionsv1.JSON) bool {
+	if persisted == nil || expected == nil {
+		return persisted == nil && expected == nil
+	}
+
+	persistedCanonical, err := canonicalJSON(persisted.Raw)
+	if err != nil {
+		return false
+	}
+	expectedCanonical, err := canonicalJSON(expected.Raw)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(persistedCanonical, expectedCanonical)
+}
+
+func canonicalJSON(raw []byte) ([]byte, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("json is empty")
+	}
+
+	switch raw[0] {
+	case '{':
+		return canonicalJSONObject(raw)
+
+	case '[':
+		return canonicalJSONArray(raw)
+
+	default:
+		return canonicalJSONScalar(raw)
+	}
+}
+
+func canonicalJSONObject(raw []byte) ([]byte, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(object))
+	for key := range object {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var canonical bytes.Buffer
+	canonical.WriteByte('{')
+	for index, key := range keys {
+		if index > 0 {
+			canonical.WriteByte(',')
+		}
+		encodedKey, err := json.Marshal(key)
+		if err != nil {
+			return nil, err
+		}
+		canonical.Write(encodedKey)
+		canonical.WriteByte(':')
+		encodedValue, err := canonicalJSON(object[key])
+		if err != nil {
+			return nil, err
+		}
+		canonical.Write(encodedValue)
+	}
+	canonical.WriteByte('}')
+	return canonical.Bytes(), nil
+}
+
+func canonicalJSONArray(raw []byte) ([]byte, error) {
+	var array []json.RawMessage
+	if err := json.Unmarshal(raw, &array); err != nil {
+		return nil, err
+	}
+
+	var canonical bytes.Buffer
+	canonical.WriteByte('[')
+	for index, item := range array {
+		if index > 0 {
+			canonical.WriteByte(',')
+		}
+		encodedItem, err := canonicalJSON(item)
+		if err != nil {
+			return nil, err
+		}
+		canonical.Write(encodedItem)
+	}
+	canonical.WriteByte(']')
+	return canonical.Bytes(), nil
+}
+
+func canonicalJSONScalar(raw []byte) ([]byte, error) {
+	var canonical bytes.Buffer
+	if err := json.Compact(&canonical, raw); err != nil {
+		return nil, err
+	}
+	return canonical.Bytes(), nil
 }
 
 // DeleteForRetry deletes as so that the next reconcile's GetOrCreate call

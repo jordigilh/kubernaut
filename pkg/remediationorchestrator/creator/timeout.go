@@ -17,6 +17,8 @@ limitations under the License.
 package creator
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -29,13 +31,16 @@ import (
 // the child controller can self-enforce it without any clock-skew ambiguity
 // between RO's reconcile loop (where the duration is known) and the child
 // controller's own reconcile loop (where the deadline must be checked,
-// potentially much later). Returns nil when no positive duration is
+// potentially much later). Kubernetes serializes metav1.Time at whole-second
+// precision, so the in-memory deadline is canonicalized before the parent and
+// AgentSession are created. This keeps strict immutable-spec recovery identity
+// stable across an API round trip. Returns nil when no positive duration is
 // configured, in which case the child CRD relies on its own configured
 // default and/or RO's outer backstop.
 func computeTimesOutAt(d *metav1.Duration) *metav1.Time {
 	if d == nil || d.Duration <= 0 {
 		return nil
 	}
-	deadline := metav1.NewTime(metav1.Now().Add(d.Duration))
+	deadline := metav1.NewTime(metav1.Now().Add(d.Duration).Truncate(time.Second))
 	return &deadline
 }
