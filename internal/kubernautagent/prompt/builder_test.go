@@ -141,9 +141,10 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			for _, text := range []string{
-				"GitOps-compatible",
+				"GitOps-compatible action types and workflows",
 				"Do not equate GitOps management alone with GitRevertCommit",
-				"IncreaseMemoryLimits",
+				"Evaluate all returned GitOps-compatible candidates",
+				"GitRevertCommit is one possible mechanism",
 				"runtime fail-closed checks",
 				"not contrary evidence",
 				"respective stages",
