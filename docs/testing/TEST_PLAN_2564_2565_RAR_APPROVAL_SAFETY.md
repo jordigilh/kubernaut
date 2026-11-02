@@ -41,7 +41,7 @@ acceptance rather than durable persistence.
 |---|---:|---|
 | Requirements-based scenario coverage | 16/20 currently passed; 4 explicitly open/conditional | This plan's scenario matrix |
 | Critical scenario coverage | 15/18 currently passed; 3 open critical scenarios | Critical rows in the scenario matrix |
-| Required wiring coverage | 6/9 fully evidenced; 3 rows have open residual scenarios | W-01 through W-09 with passing IT |
+| Required wiring coverage | 3/9 fully evidenced; 6 rows remain open or unverified | W-01 through W-09 with production-path IT evidence |
 | Optional normal-delivery observation | 0/1 or 1/1 | W-10, only where an existing harness supports it |
 | Affected build | Pass | `go build ./...` |
 | Affected lint | Pass with no new findings | `golangci-lint run --timeout=5m` |
@@ -123,14 +123,16 @@ acceptance rather than durable persistence.
 ### Pass/fail criteria
 
 The full plan pass requires 20/20 scenarios, 18/18 critical scenarios, W-01
-through W-09, no decision replay after conflict or ambiguous write, no parent
-failure without `ExpiredConfirmed`, no unsupported durability claim, and passing
-build/lint/generated-artifact/affected Make gates. This PR does not claim that
-full certification: its current evidence is 16/20 passed rows, with
-IT-RO-2564-013, IT-RO-2564-014, and IT-RO-2564-018 explicitly open residual
-scenarios and IT-RO-2564-020 conditional. Any executed scenario failure,
-affected regression, generated RBAC mismatch, or unsupported audit durability
-claim fails the baseline.
+through W-09 with production-path evidence, no decision replay after conflict or
+ambiguous write, no parent failure without `ExpiredConfirmed`, no unsupported
+durability claim, and passing build/lint/generated-artifact/affected Make gates.
+This PR does not claim that full certification: its current behavior evidence is
+16/20 passed rows, while only 3/9 required wiring rows are fully evidenced.
+IT-RO-2564-013, IT-RO-2564-014, and IT-RO-2564-018 are explicitly open residual
+scenarios; W-05, W-06, and W-08 remain unverified for production wiring; and
+IT-RO-2564-020 is conditional. Any executed scenario failure, affected
+regression, generated RBAC mismatch, or unsupported audit durability claim fails
+the baseline.
 
 ## 4. Wiring manifest
 
@@ -180,10 +182,10 @@ the explicitly listed residual and conditional rows.
 | IT-RO-2564-002 | IT | W-02 | Yes | RAR deletion with awaiting/terminal parent follows the exact parent matrix before finalizer release | Pass — focused real-API integration (2 table entries) |
 | IT-RO-2564-003 | IT | W-03 | Yes | RR `NotFound` performs the direct RAR lookup before returning and releases only after confirmed cleanup | Pass — focused real-API integration |
 | IT-RO-2564-004 | IT | W-04 | Yes | Generated/deployed and inline E2E RBAC contain only required `kubernaut.ai` RAR rules | Pass — parity test |
-| IT-AW-2564-005 | IT | W-05 | Yes | Terminating decision is rejected after authentication and denial audit is attributed/enqueued | Pass — focused package test |
-| IT-AF-2564-006 | IT | W-06 | Yes | Conditional write and full terminal tuple are immutable; exact same tuple is a no-op | Pass — focused package test |
+| IT-AW-2564-005 | IT | W-05 | Yes | Terminating decision is rejected after authentication and denial audit is attributed/enqueued | Behavior pass — focused package test; production wiring unverified |
+| IT-AF-2564-006 | IT | W-06 | Yes | Conditional write and full terminal tuple are immutable; exact same tuple is a no-op | Behavior pass — focused package test; production wiring unverified |
 | IT-RO-2564-007 | IT | W-07 | Yes | Strict deadline and atomic expiry yield only `ExpiredConfirmed`, `DecisionWon`, or `Unavailable` | Pass — focused real-API integration |
-| IT-AF-2565-008 | IT | W-08 | No | Projection honors owner validation, exact schema, false flag, nulls, and bounds | Pass — focused package test |
+| IT-AF-2565-008 | IT | W-08 | No | Projection honors owner validation, exact schema, false flag, nulls, and bounds | Behavior pass — focused package test; production wiring unverified |
 | IT-RO-2564-009 | IT | W-09 | Yes | Decision/denial/expiry/deletion audit payloads correlate and enqueue successfully | Pass — focused real-API integration |
 | IT-AF-2564-010 | IT | W-06 | Yes | Opposite writers have one winner; conflict/ambiguous writes never replay | Pass — focused package test |
 | UT-AW-2564-011 | UT | W-07 | Yes | Before/equal/after deadline decisions use the injected clock | Pass — focused package test |
@@ -254,6 +256,10 @@ Focused real-API integration gate:
 - The earlier direct invocation was blocked before assets were configured; the
   Makefile target resolved envtest assets through `setup-envtest` and completed
   the focused suite successfully.
+- The focused `pkg/authwebhook` and `pkg/apifrontend/tools` tests establish
+  behavior only; they do not exercise the production entry points. W-05, W-06,
+  and W-08 therefore remain unverified for wiring until production-path
+  integration scenarios are added and pass.
 
 ## 9. Residual risks and handoff
 

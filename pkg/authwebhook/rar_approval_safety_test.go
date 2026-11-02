@@ -19,6 +19,7 @@ package authwebhook_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -141,6 +142,24 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 		Entry("Approved", remediationv1.ApprovalDecisionApproved, "Approved"),
 		Entry("Rejected", remediationv1.ApprovalDecisionRejected, "Rejected"),
 	)
+
+	It("IT-AW-2564-015: bounds the rejected condition while retaining the full decision message", func() {
+		fullReason := strings.Repeat("拒", 40000)
+		rar := safetyRAR(remediationv1.ApprovalDecisionRejected, "", time.Time{})
+		rar.Status.DecisionMessage = fullReason
+
+		resp := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
+
+		Expect(resp.Allowed).To(BeTrue())
+		condition := meta.FindStatusCondition(patchedApprovalConditions(resp), "ApprovalDecided")
+		Expect(condition).NotTo(BeNil())
+		Expect([]rune(condition.Message)).To(HaveLen(32768))
+		Expect(condition.Message).To(HavePrefix("Rejected by operator@example.com: "))
+		Expect(store.StoredEvents).To(HaveLen(1))
+		payload, ok := store.StoredEvents[0].EventData.GetRemediationApprovalAuditPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.DecisionMessage).To(Equal(fullReason))
+	})
 
 	It("IT-AW-2564-015: trusted RO cannot mutate a decision-bearing terminal condition", func() {
 		decidedAt := time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC)

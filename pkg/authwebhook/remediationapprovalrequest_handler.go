@@ -45,6 +45,8 @@ const roServiceAccountName = "remediationorchestrator-controller"
 
 const systemDecisionActor = "system"
 
+const maxConditionMessageLength = 32768
+
 // BuildTrustedAFSA constructs the fully-qualified AF SA identity from a namespace.
 // The SA name is a compile-time constant; only the namespace varies per deployment.
 func BuildTrustedAFSA(namespace string) string {
@@ -228,7 +230,7 @@ func setHumanDecisionConditions(rar *remediationv1.RemediationApprovalRequest) {
 	case remediationv1.ApprovalDecisionRejected:
 		rarconditions.SetApprovalDecided(rar, true,
 			rarconditions.ReasonRejected,
-			fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), nil)
+			boundedConditionMessage(fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage)), nil)
 	case remediationv1.ApprovalDecisionPending,
 		remediationv1.ApprovalDecisionExpired,
 		remediationv1.ApprovalDecisionCancelled:
@@ -236,6 +238,14 @@ func setHumanDecisionConditions(rar *remediationv1.RemediationApprovalRequest) {
 	}
 	rarconditions.SetApprovalPending(rar, false, "Decision received", nil)
 	rarconditions.SetReady(rar, true, rarconditions.ReasonReady, "Approval decided", nil)
+}
+
+func boundedConditionMessage(message string) string {
+	runes := []rune(message)
+	if len(runes) <= maxConditionMessageLength {
+		return message
+	}
+	return string(runes[:maxConditionMessageLength])
 }
 
 func (h *RemediationApprovalRequestAuthHandler) authenticateCaller(ctx context.Context, req admission.Request) (*AuthContext, error) {

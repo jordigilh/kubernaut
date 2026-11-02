@@ -712,7 +712,7 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 
 	if err := client.Status().Update(ctx, &rar); err != nil {
 		if isDefinitiveApprovalDecisionRejection(err) {
-			return ApproveResult{}, ToUserFriendlyError(err)
+			return ApproveResult{}, toUserFriendlyApprovalDecisionError(err)
 		}
 		return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
 	}
@@ -729,6 +729,37 @@ func isDefinitiveApprovalDecisionRejection(err error) bool {
 		apierrors.IsInvalid(err) ||
 		apierrors.IsBadRequest(err) ||
 		apierrors.IsNotFound(err)
+}
+
+func toUserFriendlyApprovalDecisionError(err error) error {
+	if reason := knownApprovalAdmissionDenial(err); reason != "" {
+		return fmt.Errorf("approval decision rejected: %s", reason)
+	}
+	return ToUserFriendlyError(err)
+}
+
+func knownApprovalAdmissionDenial(err error) string {
+	var statusErr *apierrors.StatusError
+	if !errors.As(err, &statusErr) || !apierrors.IsForbidden(err) {
+		return ""
+	}
+
+	const deniedRequestMarker = "denied the request:"
+	message := statusErr.ErrStatus.Message
+	markerIndex := strings.Index(strings.ToLower(message), deniedRequestMarker)
+	if markerIndex < 0 {
+		return ""
+	}
+
+	reason := strings.ToLower(strings.TrimSpace(message[markerIndex+len(deniedRequestMarker):]))
+	switch {
+	case strings.Contains(reason, "approval decision deadline has passed"):
+		return "approval decision deadline has passed"
+	case strings.Contains(reason, "override rejected:"):
+		return "workflow override was rejected"
+	default:
+		return ""
+	}
 }
 
 func approvalRequestMatches(args ApproveArgs, username string, rar *remediationv1.RemediationApprovalRequest) bool {

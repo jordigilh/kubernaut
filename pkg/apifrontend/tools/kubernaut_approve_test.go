@@ -285,6 +285,38 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(err.Error()).To(ContainSubstring("lack access"))
 	})
 
+	DescribeTable("IT-AF-2564-010: preserves known AuthWebhook denial reasons", func(denial, expected string) {
+		rar := newTypedRAR()
+		tc := fake.NewClientBuilder().
+			WithScheme(rrTestScheme()).
+			WithObjects(rar).
+			WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(_ context.Context, _ crclient.Client, subresource string, _ crclient.Object, _ ...crclient.SubResourceUpdateOption) error {
+					Expect(subresource).To(Equal("status"))
+					return apierrors.NewForbidden(
+						schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationapprovalrequests/status"},
+						"rar-1",
+						errors.New("admission webhook \"rar-auth\" denied the request: "+denial),
+					)
+				},
+			}).
+			Build()
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring(expected))
+		Expect(err.Error()).NotTo(ContainSubstring("lack access"))
+	},
+		Entry("expired deadline", "approval decision deadline has passed", "approval decision deadline has passed"),
+		Entry("invalid workflow override", "override rejected: workflowOverride is only valid when decision is Approved", "workflow override was rejected"),
+	)
+
 	It("IT-AF-2564-010: ambiguous readback for a replacement UID is unknown", func() {
 		rar := newTypedRAR()
 		rar.UID = "rar-original"
