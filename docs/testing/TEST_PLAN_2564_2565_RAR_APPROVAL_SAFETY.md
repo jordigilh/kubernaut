@@ -247,7 +247,11 @@ Compile-only evidence passed for the new real-API suite:
 
 Repository-wide unit gate:
 
-- `make test` — passed; all unit suites completed with zero failures.
+- `make test` — all suites completed, but the target exited 2 because the
+  unrelated timing-sensitive gateway spec `LOCK-RETRY-U-002` measured
+  905.844334ms against its 900ms ceiling. The isolated rerun
+  `go test ./pkg/gateway -count=1 -ginkgo.focus='Exponential Backoff with Successful Retry'`
+  passed; no RAR-related unit failure was observed.
 
 Focused real-API integration gate:
 
