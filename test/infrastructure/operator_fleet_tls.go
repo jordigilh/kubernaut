@@ -224,6 +224,10 @@ func operatorApplicationTLSServiceDefinitions(includeFleet bool) []operatorAppli
 }
 
 func qualificationServiceDNSNames(serviceName, namespace string) []string {
+	if serviceName == "authwebhook-service" {
+		return append([]string{"localhost"}, authWebhookDNSNames(namespace)...)
+	}
+
 	names := []string{
 		"localhost",
 		serviceName,
@@ -231,15 +235,24 @@ func qualificationServiceDNSNames(serviceName, namespace string) []string {
 		serviceName + "." + namespace + ".svc",
 		serviceName + "." + namespace + ".svc.cluster.local",
 	}
-	if serviceName == "authwebhook-service" {
-		names = append(names,
-			"authwebhook",
-			"authwebhook."+namespace,
-			"authwebhook."+namespace+".svc",
-			"authwebhook."+namespace+".svc.cluster.local",
-		)
-	}
 	return names
+}
+
+// authWebhookDNSNames covers both the operator Service name and the legacy
+// AuthWebhook name used by older webhook fixtures. The operator Fleet setup
+// calls authwebhook-service.kubernaut-system.svc, while some existing manifests
+// and clients still use authwebhook.kubernaut-system.svc.
+func authWebhookDNSNames(namespace string) []string {
+	return []string{
+		"authwebhook-service",
+		"authwebhook-service." + namespace,
+		"authwebhook-service." + namespace + ".svc",
+		"authwebhook-service." + namespace + ".svc.cluster.local",
+		"authwebhook",
+		"authwebhook." + namespace,
+		"authwebhook." + namespace + ".svc",
+		"authwebhook." + namespace + ".svc.cluster.local",
+	}
 }
 
 func ensureOperatorInternalCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) ([]byte, []byte, error) {
