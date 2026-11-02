@@ -3,10 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -270,9 +274,10 @@ func NewListApprovalRequestsTool(client crclient.Client, controllerNS string) (t
 
 // GetApprovalRequestArgs defines the input for kubernaut_get_approval_request.
 type GetApprovalRequestArgs struct {
-	Namespace string `json:"-"`
-	Name      string `json:"name,omitempty"`
-	RARID     string `json:"rar_id,omitempty"`
+	Namespace             string `json:"-"`
+	Name                  string `json:"name,omitempty"`
+	RARID                 string `json:"rar_id,omitempty"`
+	IncludeParentEvidence bool   `json:"include_parent_evidence,omitempty"`
 }
 
 // AuditFields implements AuditableInput for audit enrichment.
@@ -312,6 +317,54 @@ type GetApprovalRequestResult struct {
 	DecidedAt              string                     `json:"decided_at,omitempty"`
 	TimeRemaining          string                     `json:"time_remaining,omitempty"`
 	Expired                bool                       `json:"expired"`
+	ParentEvidence         *ParentEvidence            `json:"parent_evidence,omitempty"`
+}
+
+const (
+	maxParentEvidenceStringBytes = 4096
+	maxParentEvidenceBytes       = 16 * 1024
+)
+
+// ParentEvidence is a bounded, server-resolved projection of the owning RR.
+// It intentionally contains no raw signal payload, labels, audit rows, or
+// workflow override data.
+type ParentEvidence struct {
+	State     string            `json:"state"`
+	Complete  bool              `json:"complete"`
+	Truncated bool              `json:"truncated"`
+	Parent    *ParentProjection `json:"parent,omitempty"`
+}
+
+// ParentProjection is the fixed allowlist exposed by the approval-review
+// tool. Pointer fields preserve JSON null for absent optional source values.
+type ParentProjection struct {
+	Name           string                   `json:"name"`
+	Namespace      string                   `json:"namespace"`
+	UID            string                   `json:"uid"`
+	OverallPhase   string                   `json:"overall_phase"`
+	SignalSource   *string                  `json:"signal_source"`
+	ClusterID      *string                  `json:"cluster_id"`
+	TargetResource ParentTargetResource     `json:"target_resource"`
+	Approval       ParentApprovalProjection `json:"approval"`
+}
+
+// ParentTargetResource is the bounded target allowlist.
+type ParentTargetResource struct {
+	Kind       string  `json:"kind"`
+	Name       string  `json:"name"`
+	Namespace  *string `json:"namespace"`
+	APIVersion *string `json:"api_version"`
+}
+
+// ParentApprovalProjection carries the RAR's existing decision context,
+// rather than reconstructing a new decision from the parent.
+type ParentApprovalProjection struct {
+	RequiredBy string  `json:"required_by"`
+	Decision   *string `json:"decision"`
+	DecidedBy  *string `json:"decided_by"`
+	DecidedVia *string `json:"decided_via"`
+	DecidedAt  *string `json:"decided_at"`
+	Expired    bool    `json:"expired"`
 }
 
 // RecommendedWorkflowInfo is a compact view of a recommended workflow in an approval request.
@@ -385,7 +438,7 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		requiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
 	}
 
-	return GetApprovalRequestResult{
+	result := GetApprovalRequestResult{
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
 		RemediationRequest:     rar.Spec.RemediationRequestRef.Name,
@@ -405,7 +458,159 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		DecidedAt:              decidedAt,
 		TimeRemaining:          rar.Status.TimeRemaining,
 		Expired:                rar.Status.Expired,
-	}, nil
+	}
+	if args.IncludeParentEvidence {
+		result.ParentEvidence = resolveParentEvidence(ctx, client, &rar)
+	}
+	return result, nil
+}
+
+func resolveParentEvidence(ctx context.Context, client crclient.Client, rar *remediationv1.RemediationApprovalRequest) *ParentEvidence {
+	owner, found := approvalRequestOwner(rar)
+	if !found {
+		return &ParentEvidence{State: "missing", Complete: false}
+	}
+
+	parent, earlyResult := fetchParentEvidence(ctx, client, rar, owner)
+	if earlyResult != nil {
+		return earlyResult
+	}
+	if owner.UID != "" && owner.UID != parent.UID {
+		return &ParentEvidence{State: "missing", Complete: false}
+	}
+
+	if !parentEvidenceHasRequiredFields(parent, rar) {
+		return &ParentEvidence{State: "unavailable", Complete: false}
+	}
+
+	if !parentEvidenceStringsWithinBounds(parentEvidenceRequiredValues(parent, rar)) {
+		return &ParentEvidence{State: "unavailable", Complete: false, Truncated: true}
+	}
+
+	truncated := false
+	projection := parentEvidenceProjection(parent, rar, &truncated)
+
+	evidence := &ParentEvidence{
+		State:     "complete",
+		Complete:  !truncated,
+		Truncated: truncated,
+		Parent:    projection,
+	}
+	return boundParentEvidence(evidence)
+}
+
+func fetchParentEvidence(ctx context.Context, client crclient.Client, rar *remediationv1.RemediationApprovalRequest, owner metav1.OwnerReference) (*remediationv1.RemediationRequest, *ParentEvidence) {
+	parent := &remediationv1.RemediationRequest{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: rar.Namespace, Name: owner.Name}, parent); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, &ParentEvidence{State: "missing", Complete: false}
+		}
+		return nil, &ParentEvidence{State: "unavailable", Complete: false}
+	}
+	return parent, nil
+}
+
+func parentEvidenceHasRequiredFields(parent *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) bool {
+	return parent.Name != "" && parent.Namespace != "" && parent.UID != "" &&
+		string(parent.Status.OverallPhase) != "" &&
+		parent.Spec.TargetResource.Kind != "" && parent.Spec.TargetResource.Name != "" &&
+		!rar.Spec.RequiredBy.IsZero()
+}
+
+func parentEvidenceRequiredValues(parent *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) []string {
+	return []string{
+		parent.Name,
+		parent.Namespace,
+		string(parent.UID),
+		string(parent.Status.OverallPhase),
+		parent.Spec.TargetResource.Kind,
+		parent.Spec.TargetResource.Name,
+		rar.Spec.RequiredBy.Format(time.RFC3339),
+	}
+}
+
+func parentEvidenceStringsWithinBounds(values []string) bool {
+	for _, value := range values {
+		if len([]byte(value)) > maxParentEvidenceStringBytes {
+			return false
+		}
+	}
+	return true
+}
+
+func parentEvidenceProjection(parent *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, truncated *bool) *ParentProjection {
+	return &ParentProjection{
+		Name:         parent.Name,
+		Namespace:    parent.Namespace,
+		UID:          string(parent.UID),
+		OverallPhase: string(parent.Status.OverallPhase),
+		SignalSource: boundedOptionalParentString(parent.Spec.SignalSource, truncated),
+		ClusterID:    boundedOptionalParentString(parent.Spec.ClusterID, truncated),
+		TargetResource: ParentTargetResource{
+			Kind:       parent.Spec.TargetResource.Kind,
+			Name:       parent.Spec.TargetResource.Name,
+			Namespace:  boundedOptionalParentString(parent.Spec.TargetResource.Namespace, truncated),
+			APIVersion: boundedOptionalParentString(parent.Spec.TargetResource.APIVersion, truncated),
+		},
+		Approval: ParentApprovalProjection{
+			RequiredBy: rar.Spec.RequiredBy.Format(time.RFC3339),
+			Decision:   optionalApprovalString(string(rar.Status.Decision)),
+			DecidedBy:  optionalApprovalString(rar.Status.DecidedBy),
+			DecidedVia: optionalApprovalString(rar.Status.DecidedVia),
+			DecidedAt:  optionalApprovalTime(rar.Status.DecidedAt),
+			Expired:    rar.Status.Expired,
+		},
+	}
+}
+
+func boundParentEvidence(evidence *ParentEvidence) *ParentEvidence {
+	encoded, err := json.Marshal(evidence)
+	if err != nil || len(encoded) > maxParentEvidenceBytes {
+		return &ParentEvidence{State: "unavailable", Complete: false, Truncated: true}
+	}
+	return evidence
+}
+
+func approvalRequestOwner(rar *remediationv1.RemediationApprovalRequest) (metav1.OwnerReference, bool) {
+	for _, owner := range rar.OwnerReferences {
+		if owner.APIVersion == remediationv1.GroupVersion.String() &&
+			owner.Kind == "RemediationRequest" &&
+			owner.Name != "" &&
+			owner.UID != "" &&
+			owner.Controller != nil &&
+			*owner.Controller {
+			return owner, true
+		}
+	}
+	return metav1.OwnerReference{}, false
+}
+
+func boundedOptionalParentString(value string, truncated *bool) *string {
+	if value == "" {
+		return nil
+	}
+	if len([]byte(value)) > maxParentEvidenceStringBytes {
+		*truncated = true
+		return nil
+	}
+	copyValue := value
+	return &copyValue
+}
+
+func optionalApprovalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	copyValue := value
+	return &copyValue
+}
+
+func optionalApprovalTime(value *metav1.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.Format(time.RFC3339)
+	return &formatted
 }
 
 // NewGetApprovalRequestTool creates the kubernaut_get_approval_request tool.
@@ -434,6 +639,27 @@ type ApproveResult struct {
 	Message string `json:"message"`
 }
 
+// ApprovalDecisionWriteError reports a conditional decision write that could
+// not be proven from the canonical object after the API response.
+type ApprovalDecisionWriteError struct {
+	Outcome string
+	Err     error
+}
+
+func (e *ApprovalDecisionWriteError) Error() string {
+	if e == nil || e.Err == nil {
+		return "approval decision write outcome is unknown"
+	}
+	return fmt.Sprintf("approval decision write %s: %v", e.Outcome, e.Err)
+}
+
+func (e *ApprovalDecisionWriteError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // HandleApprove implements the kubernaut_approve logic.
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
@@ -459,38 +685,81 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 		return ApproveResult{}, ToUserFriendlyError(err)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	statusPatch := map[string]interface{}{
-		"decision":  args.Decision,
-		"decidedBy": username,
-		"decidedAt": now,
+	if rar.DeletionTimestamp != nil {
+		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest is terminating", ErrAlreadyTerminal)
 	}
+
+	if rar.Status.Decision != remediationv1.ApprovalDecisionPending {
+		if approvalRequestMatches(args, username, &rar) {
+			return approvalResult(args, username), nil
+		}
+		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest already has terminal decision %q", ErrAlreadyTerminal, rar.Status.Decision)
+	}
+
+	// Status().Update carries the fetched metadata.resourceVersion. The API
+	// server therefore makes the first concurrent business decision win.
+	rar.Status.Decision = remediationv1.ApprovalDecision(args.Decision)
+	rar.Status.DecidedBy = username
 	if args.Reason != "" {
-		statusPatch["decisionMessage"] = args.Reason
+		rar.Status.DecisionMessage = args.Reason
 	}
 	if args.WorkflowOverride != "" {
-		statusPatch["workflowOverride"] = map[string]interface{}{
-			"workflowName": args.WorkflowOverride,
-			"rationale":    "User override via kubernaut_approve",
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
+			WorkflowName: args.WorkflowOverride,
+			Rationale:    "User override via kubernaut_approve",
 		}
 	}
-	patch := map[string]interface{}{
-		"status": statusPatch,
-	}
 
-	patchBytes, err := json.Marshal(patch)
-	if err != nil {
-		return ApproveResult{}, fmt.Errorf("marshaling patch: %w", err)
-	}
-
-	if err := client.Status().Patch(ctx, &rar, crclient.RawPatch(types.MergePatchType, patchBytes)); err != nil {
-		return ApproveResult{}, ToUserFriendlyError(err)
+	if err := client.Status().Update(ctx, &rar); err != nil {
+		return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
 	}
 
 	return ApproveResult{
 		Status:  args.Decision,
 		Message: fmt.Sprintf("Remediation approval %s by %s", args.Decision, username),
 	}, nil
+}
+
+func approvalRequestMatches(args ApproveArgs, username string, rar *remediationv1.RemediationApprovalRequest) bool {
+	if rar.Status.Decision != remediationv1.ApprovalDecision(args.Decision) || rar.Status.DecidedBy != username {
+		return false
+	}
+	if rar.Status.DecisionMessage != args.Reason {
+		return false
+	}
+	if args.WorkflowOverride == "" {
+		return rar.Status.WorkflowOverride == nil
+	}
+	return reflect.DeepEqual(rar.Status.WorkflowOverride, &remediationv1.WorkflowOverride{
+		WorkflowName: args.WorkflowOverride,
+		Rationale:    "User override via kubernaut_approve",
+	})
+}
+
+func approvalResult(args ApproveArgs, username string) ApproveResult {
+	return ApproveResult{
+		Status:  args.Decision,
+		Message: fmt.Sprintf("Remediation approval %s by %s", args.Decision, username),
+	}
+}
+
+func proveConditionalDecision(ctx context.Context, client crclient.Client, args ApproveArgs, username string, expectedUID types.UID, writeErr error) (ApproveResult, error) {
+	canonical := &remediationv1.RemediationApprovalRequest{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.RARName}, canonical); err == nil {
+		if expectedUID == "" || canonical.UID != expectedUID {
+			return ApproveResult{}, &ApprovalDecisionWriteError{Outcome: "unknown", Err: fmt.Errorf("canonical approval request UID does not match the fetched object")}
+		}
+		if approvalRequestMatches(args, username, canonical) {
+			return approvalResult(args, username), nil
+		}
+		outcome := "unknown"
+		if apierrors.IsConflict(writeErr) {
+			outcome = "conflict"
+		}
+		return ApproveResult{}, &ApprovalDecisionWriteError{Outcome: outcome, Err: writeErr}
+	} else {
+		return ApproveResult{}, &ApprovalDecisionWriteError{Outcome: "unknown", Err: errors.Join(writeErr, err)}
+	}
 }
 
 // NewApproveTool creates the kubernaut_approve tool.

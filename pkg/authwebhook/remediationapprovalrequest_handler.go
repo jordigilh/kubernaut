@@ -21,11 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
+	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,10 +41,20 @@ import (
 // This is the sole trusted intermediary for approval delegation (DD-AUTH-MCP-001 v3.0).
 const afServiceAccountName = "apifrontend"
 
+const roServiceAccountName = "remediationorchestrator-controller"
+
+const systemDecisionActor = "system"
+
 // BuildTrustedAFSA constructs the fully-qualified AF SA identity from a namespace.
 // The SA name is a compile-time constant; only the namespace varies per deployment.
 func BuildTrustedAFSA(namespace string) string {
 	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, afServiceAccountName)
+}
+
+// BuildTrustedROSA constructs the fully-qualified RO service-account identity
+// used for system-only expiry and cancellation decisions.
+func BuildTrustedROSA(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, roServiceAccountName)
 }
 
 // RemediationApprovalRequestAuthHandler handles authentication for RemediationApprovalRequest decisions
@@ -60,6 +73,8 @@ type RemediationApprovalRequestAuthHandler struct {
 	auditStore    audit.AuditStore
 	reader        client.Reader
 	trustedAFSA   string
+	trustedROSA   string
+	clock         sharedclock.Clock
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler.
@@ -71,6 +86,16 @@ func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reade
 		auditStore:    auditStore,
 		reader:        reader,
 		trustedAFSA:   BuildTrustedAFSA(podNamespace),
+		trustedROSA:   BuildTrustedROSA(podNamespace),
+		clock:         sharedclock.RealClock{},
+	}
+}
+
+// SetClock replaces the admission time source for deterministic deadline
+// tests. Production uses the real UTC clock configured by the constructor.
+func (h *RemediationApprovalRequestAuthHandler) SetClock(value sharedclock.Clock) {
+	if value != nil {
+		h.clock = value
 	}
 }
 
@@ -78,6 +103,10 @@ func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reade
 // This is the sole trusted intermediary for approval delegation (AC-6: Least Privilege).
 func (h *RemediationApprovalRequestAuthHandler) isAFServiceAccount(username string) bool {
 	return username == h.trustedAFSA
+}
+
+func (h *RemediationApprovalRequestAuthHandler) isROServiceAccount(username string) bool {
+	return username == h.trustedROSA
 }
 
 // Handle processes the admission request for RemediationApprovalRequest
@@ -99,14 +128,75 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		return resp
 	}
 
-	if earlyResp, earlyDone := earlyDecisionResponse(logger, rar, oldRAR); earlyDone {
-		return earlyResp
+	if oldRAR != nil && oldRAR.Status.Decision != remediationv1.ApprovalDecisionPending {
+		return h.handleTerminalRARUpdate(ctx, logger, rar, oldRAR, req)
 	}
 
-	authCtx, isDelegation, resp, done := h.authenticateAndAttribute(ctx, logger, rar, req)
-	if done {
-		return resp
+	// A status write with no business decision is not an approval attempt.
+	// Preserve the existing no-op behavior for controller bookkeeping.
+	if rar.Status.Decision == remediationv1.ApprovalDecisionPending {
+		logger.Info("Skipping RAR (no decision made)")
+		return admission.Allowed("no decision made")
 	}
+
+	authCtx, err := h.authenticateCaller(ctx, req)
+	if err != nil {
+		logger.Error(err, "Authentication failed")
+		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
+	}
+	return h.handleNewDecision(ctx, logger, req, rar, authCtx)
+}
+
+func (h *RemediationApprovalRequestAuthHandler) handleTerminalRARUpdate(ctx context.Context, logger logr.Logger, rar, oldRAR *remediationv1.RemediationApprovalRequest, req admission.Request) admission.Response {
+	authCtx, err := h.authenticateCaller(ctx, req)
+	if err != nil {
+		logger.Error(err, "Authentication failed")
+		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
+	}
+	if isSystemOnlyDecision(oldRAR.Status.Decision) &&
+		(!h.isROServiceAccount(authCtx.Username) || rar.Status.DecidedBy != systemDecisionActor) {
+		return h.denyDecision(ctx, logger, rar, authCtx, "system-only decision requires the trusted remediation orchestrator")
+	}
+	if terminalBusinessTupleEqual(rar, oldRAR) && h.terminalBookkeepingUnchanged(oldRAR, rar, authCtx.Username) {
+		logger.Info("Skipping RAR (decision already attributed) - exact terminal tuple")
+		return admission.Allowed("decision already attributed")
+	}
+	return h.denyDecision(ctx, logger, rar, authCtx, "terminal decision is immutable")
+}
+
+func (h *RemediationApprovalRequestAuthHandler) handleNewDecision(ctx context.Context, logger logr.Logger, req admission.Request, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) admission.Response {
+	if rar.DeletionTimestamp != nil {
+		return h.denyDecision(ctx, logger, rar, authCtx, "cannot decide on a terminating RemediationApprovalRequest")
+	}
+	if err := ValidateApprovalDecision(rar.Status.Decision); err != nil {
+		return h.denyDecision(ctx, logger, rar, authCtx, err.Error())
+	}
+	if isSystemOnlyDecision(rar.Status.Decision) {
+		return h.handleSystemDecision(ctx, logger, req, rar, authCtx)
+	}
+	return h.handleHumanDecision(ctx, logger, req, rar, authCtx)
+}
+
+func (h *RemediationApprovalRequestAuthHandler) handleSystemDecision(ctx context.Context, logger logr.Logger, req admission.Request, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) admission.Response {
+	if !h.isROServiceAccount(authCtx.Username) || rar.Status.DecidedBy != systemDecisionActor {
+		return h.denyDecision(ctx, logger, rar, authCtx, "Expired and Cancelled decisions are system-only")
+	}
+	// The trusted RO identity, not a client field, establishes provenance.
+	rar.Status.DecidedVia = ""
+	now := metav1.NewTime(h.clock.Now())
+	rar.Status.DecidedAt = &now
+	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, false)
+	return finalizeRARResponse(logger, req, rar)
+}
+
+func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.Context, logger logr.Logger, req admission.Request, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) admission.Response {
+	now := h.clock.Now()
+	if rar.Spec.RequiredBy.IsZero() || !now.Before(rar.Spec.RequiredBy.Time) {
+		return h.denyDecision(ctx, logger, rar, authCtx, "approval decision deadline has passed")
+	}
+	isDelegation := h.attributeDecision(logger, rar, authCtx)
+	decidedAt := metav1.NewTime(now)
+	rar.Status.DecidedAt = &decidedAt
 
 	if rar.Status.WorkflowOverride != nil {
 		if resp, done := h.checkWorkflowOverride(ctx, logger, rar, authCtx); done {
@@ -114,8 +204,6 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		}
 	}
 
-	now := metav1.Now()
-	rar.Status.DecidedAt = &now
 	logger.Info("Populating decision attribution",
 		"decidedBy", rar.Status.DecidedBy,
 		"decidedVia", rar.Status.DecidedVia,
@@ -124,8 +212,146 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	)
 
 	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, isDelegation)
-
 	return finalizeRARResponse(logger, req, rar)
+}
+
+func (h *RemediationApprovalRequestAuthHandler) authenticateCaller(ctx context.Context, req admission.Request) (*AuthContext, error) {
+	return h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
+}
+
+func isSystemOnlyDecision(decision remediationv1.ApprovalDecision) bool {
+	return decision == remediationv1.ApprovalDecisionExpired || decision == remediationv1.ApprovalDecisionCancelled
+}
+
+type terminalBusinessTuple struct {
+	Decision         remediationv1.ApprovalDecision
+	DecidedBy        string
+	DecidedVia       string
+	DecidedAt        *metav1.Time
+	DecisionMessage  string
+	WorkflowOverride *remediationv1.WorkflowOverride
+	Expired          bool
+	CreatedAt        *metav1.Time
+	Reason           string
+	Message          string
+	Spec             remediationv1.RemediationApprovalRequestSpec
+}
+
+func terminalBusinessTupleOf(rar *remediationv1.RemediationApprovalRequest) terminalBusinessTuple {
+	return terminalBusinessTuple{
+		Decision:         rar.Status.Decision,
+		DecidedBy:        rar.Status.DecidedBy,
+		DecidedVia:       rar.Status.DecidedVia,
+		DecidedAt:        rar.Status.DecidedAt,
+		DecisionMessage:  rar.Status.DecisionMessage,
+		WorkflowOverride: rar.Status.WorkflowOverride,
+		Expired:          rar.Status.Expired,
+		CreatedAt:        rar.Status.CreatedAt,
+		Reason:           rar.Status.Reason,
+		Message:          rar.Status.Message,
+		Spec:             rar.Spec,
+	}
+}
+
+func terminalBusinessTupleEqual(left, right *remediationv1.RemediationApprovalRequest) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return reflect.DeepEqual(terminalBusinessTupleOf(left), terminalBusinessTupleOf(right))
+}
+
+func (h *RemediationApprovalRequestAuthHandler) terminalBookkeepingUnchanged(oldRAR, rar *remediationv1.RemediationApprovalRequest, username string) bool {
+	if oldRAR.Status.TimeRemaining != rar.Status.TimeRemaining {
+		return false
+	}
+	if !h.isROServiceAccount(username) {
+		return oldRAR.Status.ObservedGeneration == rar.Status.ObservedGeneration &&
+			reflect.DeepEqual(oldRAR.Status.Conditions, rar.Status.Conditions)
+	}
+	if rar.Status.ObservedGeneration < oldRAR.Status.ObservedGeneration {
+		return false
+	}
+	return terminalConditionsAllowAuditBookkeeping(oldRAR, rar)
+}
+
+func (h *RemediationApprovalRequestAuthHandler) attributeDecision(logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) bool {
+	isDelegation := h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != ""
+	if isDelegation {
+		logger.Info("Trusted intermediary delegation accepted (AC-6)",
+			"intermediary", authCtx.Username,
+			"delegatedUser", rar.Status.DecidedBy,
+		)
+		rar.Status.DecidedVia = authCtx.Username
+		return true
+	}
+	DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
+	rar.Status.DecidedBy = authCtx.Username
+	rar.Status.DecidedVia = ""
+	return false
+}
+
+func (h *RemediationApprovalRequestAuthHandler) denyDecision(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext, reason string) admission.Response {
+	logger.Info("RAR decision denied", "reason", reason, "decision", rar.Status.Decision)
+	isDelegation := authCtx != nil && h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != "" && rar.Status.DecidedBy != systemDecisionActor
+	h.emitDeniedApprovalAuditEvent(ctx, logger, rar, authCtx, isDelegation, reason)
+	return admission.Denied(reason)
+}
+
+func terminalConditionsAllowAuditBookkeeping(oldRAR, rar *remediationv1.RemediationApprovalRequest) bool {
+	oldConditions, oldOK := conditionMap(oldRAR.Status.Conditions)
+	newConditions, newOK := conditionMap(rar.Status.Conditions)
+	if !oldOK || !newOK {
+		return false
+	}
+
+	oldAudit, hadOldAudit := oldConditions[rarconditions.ConditionAuditRecorded]
+	newAudit, hasNewAudit := newConditions[rarconditions.ConditionAuditRecorded]
+	if hasNewAudit && !validAuditRecordedCondition(newAudit, rar.Generation) {
+		return false
+	}
+	if hadOldAudit {
+		if !hasNewAudit {
+			return false
+		}
+		if oldAudit.Status == metav1.ConditionTrue && !reflect.DeepEqual(oldAudit, newAudit) {
+			return false
+		}
+	}
+
+	delete(oldConditions, rarconditions.ConditionAuditRecorded)
+	delete(newConditions, rarconditions.ConditionAuditRecorded)
+	return reflect.DeepEqual(oldConditions, newConditions)
+}
+
+func conditionMap(conditions []metav1.Condition) (map[string]metav1.Condition, bool) {
+	result := make(map[string]metav1.Condition, len(conditions))
+	for _, condition := range conditions {
+		if condition.Type == "" {
+			return nil, false
+		}
+		if _, exists := result[condition.Type]; exists {
+			return nil, false
+		}
+		result[condition.Type] = condition
+	}
+	return result, true
+}
+
+func validAuditRecordedCondition(condition metav1.Condition, generation int64) bool {
+	if condition.Type != rarconditions.ConditionAuditRecorded ||
+		condition.ObservedGeneration != generation ||
+		condition.LastTransitionTime.IsZero() ||
+		condition.Message == "" {
+		return false
+	}
+	switch condition.Status {
+	case metav1.ConditionTrue:
+		return condition.Reason == rarconditions.ReasonAuditSucceeded
+	case metav1.ConditionFalse:
+		return condition.Reason == rarconditions.ReasonAuditFailed
+	default:
+		return false
+	}
 }
 
 // decodeRARRequest decodes the new (and, if present, old) RemediationApprovalRequest
@@ -164,90 +390,6 @@ func (h *RemediationApprovalRequestAuthHandler) decodeRARRequest(logger logr.Log
 	return rar, oldRAR, admission.Response{}, false
 }
 
-// earlyDecisionResponse handles the request states that terminate processing
-// before authentication is needed: no decision yet, an invalid decision,
-// true idempotency (decision already attributed), and system-initiated expiry.
-func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.RemediationApprovalRequest) (admission.Response, bool) {
-	if rar.Status.Decision == "" {
-		logger.Info("Skipping RAR (no decision made)")
-		return admission.Allowed("no decision made"), true
-	}
-
-	// REFACTOR-AW-001: Validate decision using extracted helper
-	if err := ValidateApprovalDecision(rar.Status.Decision); err != nil {
-		logger.Info("Rejecting RAR (invalid decision)",
-			"decision", rar.Status.Decision,
-			"error", err,
-		)
-		return admission.Denied(err.Error()), true
-	}
-
-	// SECURITY: TRUE Idempotency Check - Compare OLD object with NEW object
-	// Per AUTHWEBHOOK_INT_COMPLETE_RCA_FEB_03_2026.md Issue #4:
-	// - OLD object has decision → true idempotency (preserve existing attribution)
-	// - OLD object has NO decision → NEW decision (OVERWRITE any user-provided DecidedBy)
-	isNewDecision := oldRAR == nil || oldRAR.Status.Decision == ""
-	if !isNewDecision {
-		logger.Info("Skipping RAR (decision already exists in old object) - TRUE IDEMPOTENCY",
-			"oldDecision", oldRAR.Status.Decision,
-			"oldDecidedBy", oldRAR.Status.DecidedBy,
-			"newDecision", rar.Status.Decision,
-		)
-		return admission.Allowed("decision already attributed"), true
-	}
-
-	// CRD spec (remediationapprovalrequest_types.go:197): DecidedBy = "system" for timeout.
-	// When the controller expires an RAR, it sets Decision=Expired and DecidedBy="system".
-	// The webhook must preserve this value rather than overwriting with the controller's SA.
-	if rar.Status.Decision == remediationv1.ApprovalDecisionExpired && rar.Status.DecidedBy == "system" {
-		logger.Info("System-initiated expiry detected, preserving DecidedBy=system per CRD spec")
-		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec"), true
-	}
-
-	return admission.Response{}, false
-}
-
-// authenticateAndAttribute extracts the authenticated caller and applies
-// attribution to rar.Status (delegation via the trusted AF SA, or standard
-// forgery-prevention overwrite). done is true when authentication failed and
-// the caller must return resp immediately.
-func (h *RemediationApprovalRequestAuthHandler) authenticateAndAttribute(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, req admission.Request) (authCtx *AuthContext, isDelegation bool, resp admission.Response, done bool) {
-	// SECURITY: This is a NEW decision - Extract authenticated user
-	// Even if user provided DecidedBy in their request, webhook MUST overwrite with authenticated identity
-	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
-	if err != nil {
-		logger.Error(err, "Authentication failed")
-		return nil, false, admission.Denied(fmt.Sprintf("authentication required: %v", err)), true
-	}
-
-	logger.Info("User authenticated",
-		"username", authCtx.Username,
-		"uid", authCtx.UID,
-	)
-
-	// Trusted intermediary delegation (DD-AUTH-MCP-001 v3.0, AC-6: Least Privilege)
-	// AF SA is the sole trusted intermediary — hardcoded, derived from POD_NAMESPACE.
-	// When AF delegates, it has already authenticated the human via JWT+SAR.
-	isDelegation = h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != ""
-
-	if isDelegation {
-		// AF SA delegation: preserve human decidedBy, set decidedVia for operational visibility
-		logger.Info("Trusted intermediary delegation accepted (AC-6)",
-			"intermediary", authCtx.Username,
-			"delegatedUser", rar.Status.DecidedBy,
-		)
-		rar.Status.DecidedVia = authCtx.Username
-		// DecidedBy preserved from patch body (the human AF authenticated via JWT)
-	} else {
-		// Non-AF caller OR AF with empty decidedBy: standard forgery prevention
-		DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
-		rar.Status.DecidedBy = authCtx.Username
-		rar.Status.DecidedVia = "" // AC-3: Clear any user-submitted value (prevent spoofing)
-	}
-
-	return authCtx, isDelegation, admission.Response{}, false
-}
-
 // checkWorkflowOverride validates a WorkflowOverride, if present, AFTER
 // authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid
 // overrides). done is true when validation failed and resp must be returned.
@@ -270,6 +412,10 @@ func (h *RemediationApprovalRequestAuthHandler) checkWorkflowOverride(ctx contex
 // decision (DD-WEBHOOK-003, ADR-034 v1.7 two-event pattern, Event 1).
 // Storage failures are non-blocking but logged for observability.
 func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext, isDelegation bool) {
+	if h.auditStore == nil {
+		logger.Info("Approval audit event accepted without configured audit store", "rar", rar.Name)
+		return
+	}
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeRARDecided) // Per ADR-034 v1.7
 	audit.SetEventCategory(auditEvent, EventCategoryApproval)
@@ -317,6 +463,42 @@ func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx conte
 		"rarName", rar.Name,
 		"eventAction", "approval_decided",
 	)
+}
+
+// emitDeniedApprovalAuditEvent records an authenticated denial attempt. The
+// event is best effort, matching the existing asynchronous audit boundary; it
+// never turns an admission denial into a fabricated actor or a blocking flush.
+func (h *RemediationApprovalRequestAuthHandler) emitDeniedApprovalAuditEvent(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext, isDelegation bool, reason string) {
+	if h.auditStore == nil || authCtx == nil {
+		return
+	}
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeRARDecided)
+	audit.SetEventCategory(event, EventCategoryApproval)
+	audit.SetEventAction(event, "approval_decision_denied")
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	if isDelegation {
+		audit.SetActor(event, "service", authCtx.Username)
+	} else {
+		audit.SetActor(event, "user", authCtx.Username)
+	}
+	audit.SetResource(event, "RemediationApprovalRequest", string(rar.UID))
+	audit.SetCorrelationID(event, rar.Spec.RemediationRequestRef.Name)
+	audit.SetNamespace(event, rar.Namespace)
+	audit.SetClusterID(event, rar.Spec.ClusterID)
+	// The normal typed payload remains useful for forensic context. Denied
+	// attempts may not carry a client timestamp, so use a local observation
+	// timestamp on a copy rather than dereferencing a nil status field.
+	payloadRAR := rar.DeepCopy()
+	payloadRAR.Status.DecisionMessage = reason
+	if payloadRAR.Status.DecidedAt == nil {
+		now := metav1.NewTime(h.clock.Now())
+		payloadRAR.Status.DecidedAt = &now
+	}
+	event.EventData = WrapRARApprovalPayloadWithDiscriminator(BuildRARApprovalAuditPayload(payloadRAR))
+	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Denied approval audit enqueue failed", "reason", reason)
+	}
 }
 
 // finalizeRARResponse marshals the patched RAR and builds the admission

@@ -389,6 +389,7 @@ func newRemediationApprovalRequestApproved(name, rrName, decidedBy string) *reme
 			Confidence:           0.4,
 			ConfidenceLevel:      "low",
 			Reason:               "Low confidence score requires approval",
+			RequiredBy:           metav1.NewTime(now.Add(time.Hour)),
 			RecommendedWorkflow:  remediationv1.RecommendedWorkflowSummary{},
 			InvestigationSummary: "Test investigation summary",
 		},
@@ -434,6 +435,7 @@ func newRemediationApprovalRequestRejected(name, rrName, decidedBy, reason strin
 			Confidence:           0.4,
 			ConfidenceLevel:      "low",
 			Reason:               "Low confidence score requires approval",
+			RequiredBy:           metav1.NewTime(now.Add(time.Hour)),
 			RecommendedWorkflow:  remediationv1.RecommendedWorkflowSummary{},
 			InvestigationSummary: "Test investigation summary",
 		},
@@ -582,7 +584,10 @@ func newRemediationApprovalRequestExpired(name, namespace, rrName string) *remed
 			InvestigationSummary: "Test investigation summary",
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{
-			Decision: remediationv1.ApprovalDecisionExpired,
+			Decision:  remediationv1.ApprovalDecisionExpired,
+			DecidedBy: "system",
+			DecidedAt: &pastTime,
+			Expired:   true,
 		},
 	}
 }

@@ -517,6 +517,14 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	return ctrl.Result{}, nil
 }
 
+// transitionApprovalCreationFailure converts a typed RAR persistence outcome
+// into the reviewed terminal manual-review parent state. This keeps collision,
+// status persistence failure, and unknown persistence from entering an
+// unbounded generic requeue loop.
+func (r *Reconciler) transitionApprovalCreationFailure(ctx context.Context, rr *remediationv1.RemediationRequest, creationErr *creator.ApprovalCreationError) (ctrl.Result, error) {
+	return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, creationErr)
+}
+
 // applyFailedTransitionFields updates the RR status fields for a Failed
 // transition: overall phase/observed generation/failure phase+reason/
 // CompletedAt, the terminal-failure Ready condition (BR-ORCH-043), and
@@ -531,6 +539,10 @@ func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRe
 	completion := rr.Status.EnsureCompletionStatus()
 	completion.FailurePhase = &failurePhase
 	completion.FailureReason = &failureReason
+	if failurePhase == remediationv1.FailurePhaseApproval && isApprovalCreationManualReviewReason(failureReason) {
+		completion.RequiresManualReview = true
+		completion.Outcome = remediationv1.OutcomeManualReviewRequired
+	}
 	now := metav1.Now()
 	rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
@@ -554,6 +566,17 @@ func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRe
 				"backoff", backoff.Round(time.Second),
 				"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
 		}
+	}
+}
+
+func isApprovalCreationManualReviewReason(reason string) bool {
+	switch reason {
+	case creator.ApprovalCreationReasonCollision,
+		creator.ApprovalCreationReasonStatusFailed,
+		creator.ApprovalCreationReasonPersistenceUnknown:
+		return true
+	default:
+		return false
 	}
 }
 

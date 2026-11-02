@@ -2,6 +2,8 @@ package tools_test
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -19,7 +22,7 @@ func newTypedRAR() *remediationv1.RemediationApprovalRequest {
 		ObjectMeta: objMeta("payments", "rar-1"),
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: corev1.ObjectReference{Name: "rr-1"},
-			RequiredBy:            metav1.NewTime(metav1.Now().Time),
+			RequiredBy:            metav1.NewTime(time.Now().Add(15 * time.Minute)),
 		},
 	}
 }
@@ -129,6 +132,168 @@ var _ = Describe("kubernaut_approve", func() {
 		}, "bob")
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("IT-AF-2564-006: same terminal tuple is an idempotent no-op", func() {
+		decidedAt := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		rar := newTypedRAR()
+		rar.Status = remediationv1.RemediationApprovalRequestStatus{
+			Decision:        remediationv1.ApprovalDecisionApproved,
+			DecidedBy:       "bob",
+			DecidedAt:       &decidedAt,
+			DecisionMessage: "approved",
+		}
+		tc := newTypedFakeClientWithStatus(rar)
+
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+			Reason:    "approved",
+		}, "bob")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("Approved"))
+	})
+
+	It("IT-AF-2564-006: opposite terminal decision is rejected without mutation", func() {
+		decidedAt := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		rar := newTypedRAR()
+		rar.Status = remediationv1.RemediationApprovalRequestStatus{
+			Decision:  remediationv1.ApprovalDecisionApproved,
+			DecidedBy: "alice",
+			DecidedAt: &decidedAt,
+		}
+		tc := newTypedFakeClientWithStatus(rar)
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Rejected",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("terminal"))
+		var current remediationv1.RemediationApprovalRequest
+		Expect(tc.Get(ctx, crclient.ObjectKey{Namespace: "payments", Name: "rar-1"}, &current)).To(Succeed())
+		Expect(current.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
+	})
+
+	It("IT-AF-2564-006: omitted reason does not match a stored terminal reason", func() {
+		decidedAt := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		rar := newTypedRAR()
+		rar.Status = remediationv1.RemediationApprovalRequestStatus{
+			Decision:        remediationv1.ApprovalDecisionApproved,
+			DecidedBy:       "bob",
+			DecidedAt:       &decidedAt,
+			DecisionMessage: "stored reason",
+		}
+		tc := newTypedFakeClientWithStatus(rar)
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("terminal"))
+	})
+
+	It("IT-AF-2564-006: omitted override does not match a stored override", func() {
+		decidedAt := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		rar := newTypedRAR()
+		rar.Status = remediationv1.RemediationApprovalRequestStatus{
+			Decision:  remediationv1.ApprovalDecisionApproved,
+			DecidedBy: "bob",
+			DecidedAt: &decidedAt,
+			WorkflowOverride: &remediationv1.WorkflowOverride{
+				WorkflowName: "stored-workflow",
+				Rationale:    "User override via kubernaut_approve",
+			},
+		}
+		tc := newTypedFakeClientWithStatus(rar)
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("terminal"))
+	})
+
+	It("IT-AF-2564-010: ambiguous committed status write is proven by one readback", func() {
+		rar := newTypedRAR()
+		rar.UID = "rar-original"
+		var statusWrites int
+		tc := fake.NewClientBuilder().
+			WithScheme(rrTestScheme()).
+			WithObjects(rar).
+			WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, underlying crclient.Client, subresource string, obj crclient.Object, _ ...crclient.SubResourceUpdateOption) error {
+					statusWrites++
+					Expect(subresource).To(Equal("status"))
+					Expect(underlying.SubResource(subresource).Update(ctx, obj)).To(Succeed())
+					return errors.New("transport interrupted after commit")
+				},
+			}).
+			Build()
+
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("Approved"))
+		Expect(statusWrites).To(Equal(1))
+	})
+
+	It("IT-AF-2564-010: ambiguous readback for a replacement UID is unknown", func() {
+		rar := newTypedRAR()
+		rar.UID = "rar-original"
+		replacement := rar.DeepCopy()
+		replacement.UID = "rar-replacement"
+		replacement.Status.Decision = remediationv1.ApprovalDecisionRejected
+		replacement.Status.DecidedBy = "alice"
+		getCount := 0
+		tc := fake.NewClientBuilder().
+			WithScheme(rrTestScheme()).
+			WithObjects(rar).
+			WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+					getCount++
+					if getCount == 1 {
+						return underlying.Get(ctx, key, obj, opts...)
+					}
+					replacementObject := obj.(*remediationv1.RemediationApprovalRequest)
+					replacementObject.TypeMeta = replacement.TypeMeta
+					replacementObject.ObjectMeta = *replacement.ObjectMeta.DeepCopy()
+					replacementObject.Status = *replacement.Status.DeepCopy()
+					return nil
+				},
+				SubResourceUpdate: func(_ context.Context, _ crclient.Client, _ string, _ crclient.Object, _ ...crclient.SubResourceUpdateOption) error {
+					return errors.New("transport outcome unknown")
+				},
+			}).
+			Build()
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		var writeErr *tools.ApprovalDecisionWriteError
+		Expect(errors.As(err, &writeErr)).To(BeTrue())
+		Expect(writeErr.Outcome).To(Equal("unknown"))
+		Expect(getCount).To(Equal(2))
 	})
 
 	Context("strict decision enum validation (#1353)", func() {

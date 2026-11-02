@@ -19,6 +19,7 @@ package authwebhook_test
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -111,7 +112,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 				InvestigationSummary: "test investigation",
 				RecommendedActions:   []remediationv1.ApprovalRecommendedAction{{Action: "test", Rationale: "test"}},
 				WhyApprovalRequired:  "confidence below threshold",
-				RequiredBy:           metav1.Now(),
+				RequiredBy:           metav1.NewTime(time.Now().Add(15 * time.Minute)),
 			},
 			Status: remediationv1.RemediationApprovalRequestStatus{
 				Decision:         decision,
