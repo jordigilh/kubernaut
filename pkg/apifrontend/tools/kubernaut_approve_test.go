@@ -8,7 +8,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -251,6 +253,36 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("Approved"))
 		Expect(statusWrites).To(Equal(1))
+	})
+
+	It("IT-AF-2564-010: definitive status rejection is returned as a user-facing error", func() {
+		rar := newTypedRAR()
+		tc := fake.NewClientBuilder().
+			WithScheme(rrTestScheme()).
+			WithObjects(rar).
+			WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(_ context.Context, _ crclient.Client, subresource string, _ crclient.Object, _ ...crclient.SubResourceUpdateOption) error {
+					Expect(subresource).To(Equal("status"))
+					return apierrors.NewForbidden(
+						schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationapprovalrequests/status"},
+						"rar-1",
+						errors.New("forbidden by test"),
+					)
+				},
+			}).
+			Build()
+
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+			Namespace: "payments",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+
+		Expect(err).To(HaveOccurred())
+		var writeErr *tools.ApprovalDecisionWriteError
+		Expect(errors.As(err, &writeErr)).To(BeFalse(), "a definitive API rejection is not an unknown write outcome")
+		Expect(err.Error()).To(ContainSubstring("lack access"))
 	})
 
 	It("IT-AF-2564-010: ambiguous readback for a replacement UID is unknown", func() {

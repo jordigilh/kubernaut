@@ -17,7 +17,6 @@ limitations under the License.
 package remediationorchestrator
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -210,7 +209,7 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		}, timeout, interval).Should(BeTrue(), "invalid parent reference must fail closed and retain the finalizer")
 	})
 
-	It("IT-RO-2564-019: real API persistence distinguishes Created from Collision", func() {
+	It("IT-RO-2564-019: real API persistence distinguishes Created from idempotent retry", func() {
 		rrName := fmt.Sprintf("rr-rar-collision-%s", uuid.NewString()[:13])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
 		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
@@ -249,11 +248,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		})
 
 		_, outcome, err = approvalCreator.CreateWithResult(ctx, rr, ai)
-		Expect(err).To(HaveOccurred())
-		Expect(outcome).To(Equal(creator.ApprovalCreationCollision))
-		var creationErr *creator.ApprovalCreationError
-		Expect(errors.As(err, &creationErr)).To(BeTrue())
-		Expect(creationErr.ReasonCode).To(Equal(creator.ApprovalCreationReasonCollision))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(outcome).To(Equal(creator.ApprovalCreationCreated))
 	})
 })
 

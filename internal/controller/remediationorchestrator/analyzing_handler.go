@@ -195,7 +195,7 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 			if transitionErr != nil {
 				return phase.TransitionIntent{}, transitionErr
 			}
-			logger.Info("RAR creation reached a terminal safety outcome",
+			logger.Error(creationErr.Err, "RAR creation reached a terminal safety outcome",
 				"outcome", creationErr.Outcome,
 				"reason", creationErr.ReasonCode,
 			)

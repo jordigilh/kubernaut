@@ -711,6 +711,9 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	}
 
 	if err := client.Status().Update(ctx, &rar); err != nil {
+		if isDefinitiveApprovalDecisionRejection(err) {
+			return ApproveResult{}, ToUserFriendlyError(err)
+		}
 		return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
 	}
 
@@ -718,6 +721,14 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 		Status:  args.Decision,
 		Message: fmt.Sprintf("Remediation approval %s by %s", args.Decision, username),
 	}, nil
+}
+
+func isDefinitiveApprovalDecisionRejection(err error) bool {
+	return apierrors.IsForbidden(err) ||
+		apierrors.IsUnauthorized(err) ||
+		apierrors.IsInvalid(err) ||
+		apierrors.IsBadRequest(err) ||
+		apierrors.IsNotFound(err)
 }
 
 func approvalRequestMatches(args ApproveArgs, username string, rar *remediationv1.RemediationApprovalRequest) bool {

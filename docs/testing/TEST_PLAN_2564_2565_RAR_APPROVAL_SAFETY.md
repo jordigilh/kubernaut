@@ -25,7 +25,8 @@ acceptance rather than durable persistence.
 
 ### Objectives
 
-1. Prove all 20 requirements-based scenarios, including all 18 critical scenarios.
+1. Track all 20 requirements-based scenarios, including all 18 critical scenarios;
+   this baseline records open residual scenarios instead of claiming unrun coverage.
 2. Prove every production wiring row W-01 through W-09 through an integration path;
    W-10 is an optional normal-delivery observation and is not a release gate.
 3. Prove resourceVersion first-writer-wins behavior without adding reviewer UID,
@@ -38,9 +39,9 @@ acceptance rather than durable persistence.
 
 | Metric | Target | Measurement |
 |---|---:|---|
-| Requirements-based scenario coverage | 20/20 | This plan's scenario matrix |
-| Critical scenario coverage | 18/18 | Critical rows in the scenario matrix |
-| Required wiring coverage | 9/9 | W-01 through W-09 with passing IT |
+| Requirements-based scenario coverage | 16/20 currently passed; 4 explicitly open/conditional | This plan's scenario matrix |
+| Critical scenario coverage | 15/18 currently passed; 3 open critical scenarios | Critical rows in the scenario matrix |
+| Required wiring coverage | 6/9 fully evidenced; 3 rows have open residual scenarios | W-01 through W-09 with passing IT |
 | Optional normal-delivery observation | 0/1 or 1/1 | W-10, only where an existing harness supports it |
 | Affected build | Pass | `go build ./...` |
 | Affected lint | Pass with no new findings | `golangci-lint run --timeout=5m` |
@@ -101,7 +102,7 @@ acceptance rather than durable persistence.
 
 | ID | Risk | Priority | Mitigating scenarios |
 |---|---|---:|---|
-| R-01 | Deterministic RAR collision is reused or repaired | P0 | UT-RO-2564-001, IT-RO-2564-019 |
+| R-01 | Same-identity RAR retries are idempotent; mismatched collisions fail closed | P0 | UT-RO-2564-001, IT-RO-2564-019 |
 | R-02 | RAR deletion releases finalizer before safe parent handling | P0 | IT-RO-2564-002, 003, 013, 017, 018 |
 | R-03 | Competing approval writers both mutate terminal fields | P0 | IT-AF-2564-006, 010, IT-AW-2564-015 |
 | R-04 | Expiry wins over a timely decision because of stale reads | P0 | IT-RO-2564-007, UT-AW-2564-011, UT-RO-2564-012 |
@@ -121,12 +122,15 @@ acceptance rather than durable persistence.
 
 ### Pass/fail criteria
 
-Pass requires 20/20 scenarios, 18/18 critical scenarios, W-01 through W-09,
-no decision replay after conflict or ambiguous write, no parent failure without
-`ExpiredConfirmed`, no unsupported durability claim, and passing build/lint/
-generated-artifact/affected Make gates. Any critical scenario failure, required
-wiring gap, affected regression, generated RBAC mismatch, or unsupported audit
-durability claim fails the plan.
+The full plan pass requires 20/20 scenarios, 18/18 critical scenarios, W-01
+through W-09, no decision replay after conflict or ambiguous write, no parent
+failure without `ExpiredConfirmed`, no unsupported durability claim, and passing
+build/lint/generated-artifact/affected Make gates. This PR does not claim that
+full certification: its current evidence is 16/20 passed rows, with
+IT-RO-2564-013, IT-RO-2564-014, and IT-RO-2564-018 explicitly open residual
+scenarios and IT-RO-2564-020 conditional. Any executed scenario failure,
+affected regression, generated RBAC mismatch, or unsupported audit durability
+claim fails the baseline.
 
 ## 4. Wiring manifest
 
@@ -167,30 +171,30 @@ No `delete` verb is added unless a production client call proves it is required.
 ## 6. Requirements-based scenario matrix
 
 Initial coverage was **0/20 overall** and **0/18 critical** before RED. Current
-execution evidence is recorded in §8; the full scenario target remains open
-while the envtest control plane is unavailable.
+execution evidence is recorded in §8; the full scenario target remains open for
+the explicitly listed residual and conditional rows.
 
 | ID | Tier | Wiring | Critical | Outcome to prove | Status |
 |---|---|---|---:|---|---|
-| UT-RO-2564-001 | UT | W-01 | Yes | Finalizer exists before create; deterministic `AlreadyExists` fails closed without reuse/repair | Pass — focused package test |
-| IT-RO-2564-002 | IT | W-02 | Yes | RAR deletion with awaiting/terminal parent follows the exact parent matrix before finalizer release | Blocked — envtest assets |
-| IT-RO-2564-003 | IT | W-03 | Yes | RR `NotFound` performs the direct RAR lookup before returning and releases only after confirmed cleanup | Blocked — envtest assets |
+| UT-RO-2564-001 | UT | W-01 | Yes | Finalizer exists before create; same-identity `AlreadyExists` retries idempotently and mismatched identity fails closed | Pass — focused package test |
+| IT-RO-2564-002 | IT | W-02 | Yes | RAR deletion with awaiting/terminal parent follows the exact parent matrix before finalizer release | Pass — focused real-API integration (2 table entries) |
+| IT-RO-2564-003 | IT | W-03 | Yes | RR `NotFound` performs the direct RAR lookup before returning and releases only after confirmed cleanup | Pass — focused real-API integration |
 | IT-RO-2564-004 | IT | W-04 | Yes | Generated/deployed and inline E2E RBAC contain only required `kubernaut.ai` RAR rules | Pass — parity test |
 | IT-AW-2564-005 | IT | W-05 | Yes | Terminating decision is rejected after authentication and denial audit is attributed/enqueued | Pass — focused package test |
 | IT-AF-2564-006 | IT | W-06 | Yes | Conditional write and full terminal tuple are immutable; exact same tuple is a no-op | Pass — focused package test |
-| IT-RO-2564-007 | IT | W-07 | Yes | Strict deadline and atomic expiry yield only `ExpiredConfirmed`, `DecisionWon`, or `Unavailable` | Blocked — envtest assets |
+| IT-RO-2564-007 | IT | W-07 | Yes | Strict deadline and atomic expiry yield only `ExpiredConfirmed`, `DecisionWon`, or `Unavailable` | Pass — focused real-API integration |
 | IT-AF-2565-008 | IT | W-08 | No | Projection honors owner validation, exact schema, false flag, nulls, and bounds | Pass — focused package test |
-| IT-RO-2564-009 | IT | W-09 | Yes | Decision/denial/expiry/deletion audit payloads correlate and enqueue successfully | Blocked — envtest assets |
+| IT-RO-2564-009 | IT | W-09 | Yes | Decision/denial/expiry/deletion audit payloads correlate and enqueue successfully | Pass — focused real-API integration |
 | IT-AF-2564-010 | IT | W-06 | Yes | Opposite writers have one winner; conflict/ambiguous writes never replay | Pass — focused package test |
 | UT-AW-2564-011 | UT | W-07 | Yes | Before/equal/after deadline decisions use the injected clock | Pass — focused package test |
 | UT-RO-2564-012 | UT | W-07 | Yes | Approved/Rejected/Expired/system-only Cancelled and invalid timestamp states converge safely | Pass — focused package test |
-| IT-RO-2564-013 | IT | W-07 | Yes | Restart/watch replay and finalizer conflicts are idempotent and observable | Pending |
-| IT-RO-2564-014 | IT | W-03 | Yes | Missing RAR after persisted decision does not replay or mutate parent incorrectly | Pending |
+| IT-RO-2564-013 | IT | W-07 | Yes | Restart/watch replay and finalizer conflicts are idempotent and observable | Open residual — no focused integration spec |
+| IT-RO-2564-014 | IT | W-03 | Yes | Missing RAR after persisted decision does not replay or mutate parent incorrectly | Open residual — no focused integration spec |
 | IT-AW-2564-015 | IT | W-05 | Yes | Authenticates before terminal response and rejects every terminal-field mutation | Pass — focused package test |
 | IT-AW-2564-016 | IT | W-05 | Yes | Client Cancelled/Expired is rejected; trusted RO system outcome is read-only/terminal | Pass — focused package test |
-| IT-RO-2564-017 | IT | W-02 | Yes | Transient deletion-parent/API failure retains finalizer and retries observably | Blocked — envtest assets |
-| IT-RO-2564-018 | IT | W-02 | Yes | RR deletion with an existing RAR is distinct and does not orphan pending decision handling | Blocked — envtest assets |
-| IT-RO-2564-019 | IT | W-01 | Yes | `Created`, `Collision`, `StatusPersistenceFailed`, and `PersistenceUnknown` have exact outcomes; unknown performs one read/no replay and manual review/audit | Blocked — envtest assets |
+| IT-RO-2564-017 | IT | W-02 | Yes | Transient deletion-parent/API failure retains finalizer and retries observably | Pass — focused real-API integration |
+| IT-RO-2564-018 | IT | W-02 | Yes | RR deletion with an existing RAR is distinct and does not orphan pending decision handling | Open residual — no focused integration spec |
+| IT-RO-2564-019 | IT | W-01 | Yes | `Created`, validated same-RR retry, `Collision`, `StatusPersistenceFailed`, and `PersistenceUnknown` have exact outcomes; unknown performs one read/no replay and manual review/audit | Pass — focused real-API integration |
 | IT-RO-2564-020 | IT | W-10 | No | Existing harness observes normal downstream audit delivery with bounded polling, if available | Conditional |
 
 ## 7. Test environment and data

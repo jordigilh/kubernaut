@@ -356,12 +356,18 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 // AwaitingApproval parent is failed, so the approval artifact cannot disappear
 // before the parent observes why approval stopped.
 func (r *Reconciler) reconcileApprovalRequestDeletion(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, bool, error) {
+	rarKey := client.ObjectKey{Name: fmt.Sprintf("rar-%s", rr.Name), Namespace: rr.Namespace}
+	// Avoid an uncached API read for the normal case. Owned RAR events cause a
+	// fresh reconcile if the cache is stale and later observes termination.
+	if _, cachedFound, cachedErr := terminatingRAR(ctx, r.client, rarKey); cachedErr == nil && !cachedFound {
+		return ctrl.Result{}, false, nil
+	}
+
 	reader := r.apiReader
 	if reader == nil {
 		reader = r.client
 	}
 
-	rarKey := client.ObjectKey{Name: fmt.Sprintf("rar-%s", rr.Name), Namespace: rr.Namespace}
 	rar, found, err := terminatingRAR(ctx, reader, rarKey)
 	if err != nil {
 		logger.Error(err, "Failed to inspect RemediationApprovalRequest deletion state")

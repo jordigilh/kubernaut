@@ -166,11 +166,7 @@ func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remed
 	savedStatus := rar.Status
 	if err := c.client.Create(ctx, rar); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			return &ApprovalCreationError{
-				Outcome:    ApprovalCreationCollision,
-				ReasonCode: ApprovalCreationReasonCollision,
-				Err:        err,
-			}
+			return c.handleApprovalAlreadyExists(ctx, rar, err)
 		}
 
 		// Create may have reached the API server before the transport failed.
@@ -196,6 +192,37 @@ func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remed
 		return c.recoverApprovalStatus(ctx, rar, savedStatus, err)
 	}
 	return nil
+}
+
+func (c *ApprovalCreator) handleApprovalAlreadyExists(ctx context.Context, rar *remediationv1.RemediationApprovalRequest, createErr error) error {
+	existing := &remediationv1.RemediationApprovalRequest{}
+	getErr := c.client.Get(ctx, client.ObjectKeyFromObject(rar), existing)
+	if getErr == nil && approvalRequestIdentityMatches(rar, existing) {
+		return nil
+	}
+	if getErr != nil {
+		createErr = errors.Join(createErr, getErr)
+	}
+	return &ApprovalCreationError{
+		Outcome:    ApprovalCreationCollision,
+		ReasonCode: ApprovalCreationReasonCollision,
+		Err:        createErr,
+	}
+}
+
+// approvalRequestIdentityMatches proves that an existing deterministic RAR
+// belongs to the same parent before treating an AlreadyExists result as a
+// retry of the original create.
+func approvalRequestIdentityMatches(expected, existing *remediationv1.RemediationApprovalRequest) bool {
+	if expected == nil || existing == nil {
+		return false
+	}
+	expectedParentUID := expected.Spec.RemediationRequestRef.UID
+	if expectedParentUID == "" || existing.Spec.RemediationRequestRef.UID != expectedParentUID {
+		return false
+	}
+	controller := metav1.GetControllerOf(existing)
+	return controller != nil && controller.UID == expectedParentUID
 }
 
 // recoverApprovalStatus performs the single status-only recovery allowed after

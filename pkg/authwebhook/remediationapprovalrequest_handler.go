@@ -210,9 +210,32 @@ func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.
 		"decision", rar.Status.Decision,
 		"isDelegation", isDelegation,
 	)
+	setHumanDecisionConditions(rar)
 
 	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, isDelegation)
 	return finalizeRARResponse(logger, req, rar)
+}
+
+// setHumanDecisionConditions commits the terminal approval conditions in the
+// same admission mutation as the business decision. The RO callback remains
+// terminal-condition aware and does not rewrite this decision-bearing tuple.
+func setHumanDecisionConditions(rar *remediationv1.RemediationApprovalRequest) {
+	switch rar.Status.Decision {
+	case remediationv1.ApprovalDecisionApproved:
+		rarconditions.SetApprovalDecided(rar, true,
+			rarconditions.ReasonApproved,
+			fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), nil)
+	case remediationv1.ApprovalDecisionRejected:
+		rarconditions.SetApprovalDecided(rar, true,
+			rarconditions.ReasonRejected,
+			fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), nil)
+	case remediationv1.ApprovalDecisionPending,
+		remediationv1.ApprovalDecisionExpired,
+		remediationv1.ApprovalDecisionCancelled:
+		return
+	}
+	rarconditions.SetApprovalPending(rar, false, "Decision received", nil)
+	rarconditions.SetReady(rar, true, rarconditions.ReasonReady, "Approval decided", nil)
 }
 
 func (h *RemediationApprovalRequestAuthHandler) authenticateCaller(ctx context.Context, req admission.Request) (*AuthContext, error) {

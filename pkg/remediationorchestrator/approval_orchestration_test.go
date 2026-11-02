@@ -132,24 +132,37 @@ var _ = Describe("ApprovalOrchestration", func() {
 					"UT-RO-2564-001: the RAR finalizer must be present before the create is persisted")
 			})
 
-			It("UT-RO-2564-001: fails closed on deterministic RAR collision", func() {
+			It("UT-RO-2564-001: reuses a deterministic RAR only when its identity matches", func() {
 				// First creation
 				name1, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
-				// A second deterministic creation must never adopt or repair the first RAR.
+				// A retry after a successful create is idempotent for the same RR identity.
 				name2, err := ac.Create(ctx, rr, ai)
 				Expect(name2).To(Equal(name1))
-				Expect(err).To(HaveOccurred())
-
-				var creationErr *creator.ApprovalCreationError
-				Expect(errors.As(err, &creationErr)).To(BeTrue())
-				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
+				Expect(err).NotTo(HaveOccurred())
 
 				existing := &remediationv1.RemediationApprovalRequest{}
 				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name1, Namespace: rr.Namespace}, existing)).To(Succeed())
 				Expect(existing.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
 				Expect(existing.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName))
+			})
+
+			It("UT-RO-2564-001: fails closed when an existing RAR has a mismatched parent UID", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+
+				foreign := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, foreign)).To(Succeed())
+				foreign.Spec.RemediationRequestRef.UID = types.UID("foreign-parent-uid")
+				Expect(fakeClient.Update(ctx, foreign)).To(Succeed())
+
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
 			})
 
 			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {

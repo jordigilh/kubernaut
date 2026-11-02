@@ -30,6 +30,7 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -116,6 +117,30 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 		Expect(resp.Result.Message).To(ContainSubstring("terminal"))
 		Expect(store.StoredEvents).To(HaveLen(1))
 	})
+
+	DescribeTable("IT-AW-2564-015: persists terminal approval conditions with the decision", func(decision remediationv1.ApprovalDecision, reason string) {
+		rar := safetyRAR(decision, "", time.Time{})
+		resp := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
+
+		Expect(resp.Allowed).To(BeTrue())
+		conditions := patchedApprovalConditions(resp)
+		Expect(meta.FindStatusCondition(conditions, "ApprovalPending")).To(SatisfyAll(
+			Not(BeNil()),
+			WithTransform(func(condition *metav1.Condition) metav1.ConditionStatus { return condition.Status }, Equal(metav1.ConditionFalse)),
+		))
+		Expect(meta.FindStatusCondition(conditions, "ApprovalDecided")).To(SatisfyAll(
+			Not(BeNil()),
+			WithTransform(func(condition *metav1.Condition) metav1.ConditionStatus { return condition.Status }, Equal(metav1.ConditionTrue)),
+			WithTransform(func(condition *metav1.Condition) string { return condition.Reason }, Equal(reason)),
+		))
+		Expect(meta.FindStatusCondition(conditions, "Ready")).To(SatisfyAll(
+			Not(BeNil()),
+			WithTransform(func(condition *metav1.Condition) metav1.ConditionStatus { return condition.Status }, Equal(metav1.ConditionTrue)),
+		))
+	},
+		Entry("Approved", remediationv1.ApprovalDecisionApproved, "Approved"),
+		Entry("Rejected", remediationv1.ApprovalDecisionRejected, "Rejected"),
+	)
 
 	It("IT-AW-2564-015: trusted RO cannot mutate a decision-bearing terminal condition", func() {
 		decidedAt := time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC)
@@ -232,4 +257,18 @@ func handleSafetyAdmission(ctx context.Context, handler *authwebhook.Remediation
 		Object:    runtime.RawExtension{Raw: raw},
 		OldObject: runtime.RawExtension{Raw: oldRaw},
 	}})
+}
+
+func patchedApprovalConditions(resp admission.Response) []metav1.Condition {
+	for _, patch := range resp.Patches {
+		if patch.Path != "/status/conditions" {
+			continue
+		}
+		raw, err := json.Marshal(patch.Value)
+		Expect(err).NotTo(HaveOccurred())
+		var conditions []metav1.Condition
+		Expect(json.Unmarshal(raw, &conditions)).To(Succeed())
+		return conditions
+	}
+	return nil
 }
