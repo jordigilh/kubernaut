@@ -105,6 +105,22 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 		Expect(resp.Allowed).To(BeTrue())
 	})
 
+	It("IT-AW-2564-016: preserves the trusted RO expiry timestamp", func() {
+		decidedAt := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+		handler.SetClock(approvalSafetyClock{now: decidedAt.Add(time.Second)})
+		rar := safetyRAR(remediationv1.ApprovalDecisionExpired, "system", decidedAt)
+		trusted := authwebhook.BuildTrustedROSA("kubernaut-system")
+
+		resp := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), trusted)
+
+		Expect(resp.Allowed).To(BeTrue())
+		Expect(store.StoredEvents).To(HaveLen(1))
+		payload, ok := store.StoredEvents[0].EventData.GetRemediationApprovalAuditPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.DecidedAt).To(BeTemporally("==", decidedAt),
+			"the webhook must not move the trusted RO decision timestamp forward")
+	})
+
 	It("IT-AW-2564-015: authenticates before returning a terminal-state response and rejects tuple mutation", func() {
 		decidedAt := time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC)
 		oldRAR := safetyRAR(remediationv1.ApprovalDecisionApproved, "original@example.com", decidedAt)

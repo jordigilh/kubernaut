@@ -42,6 +42,11 @@ import (
 // Conflict errors, so this propagates immediately to the caller for graceful handling.
 var errPhaseConflict = errors.New("phase changed by concurrent reconcile")
 
+// errTerminalPhaseWon is returned from a status retry when another reconcile
+// has already committed a terminal phase. It stops the retry without writing a
+// stale failure over the winning terminal outcome.
+var errTerminalPhaseWon = errors.New("terminal phase won concurrent failure transition")
+
 // transitionToInheritedCompleted transitions the RR to Completed with outcome "Remediated".
 // Used when an original resource (WFE or RR) that caused deduplication completes successfully.
 // The outcome is "Remediated" (not a separate "InheritedCompleted") because the CRD enum
@@ -467,27 +472,49 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		return ctrl.Result{}, err
 	}
 
-	if rr.Status.OverallPhase == phase.Failed {
-		logger.V(1).Info("Already in Failed phase (confirmed via apiReader), skipping transition")
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		logger.V(1).Info("Already in terminal phase (confirmed via apiReader), skipping failure transition",
+			"phase", rr.Status.OverallPhase)
 		return ctrl.Result{}, nil
 	}
 
-	// GAP-4 / #808: Create escalation NR for terminal failures (BR-ORCH-036).
-	r.createEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
-
-	// Capture old phase for metrics and audit
-	oldPhaseBeforeTransition := rr.Status.OverallPhase
+	// Capture the phase from the successful status-update attempt, not from the
+	// stale reconcile input. A conflict retry may observe that another
+	// reconcile already committed a terminal phase.
+	var oldPhaseBeforeTransition phase.Phase
+	transitioned := false
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		transitioned = false
+		if phase.IsTerminal(rr.Status.OverallPhase) {
+			return errTerminalPhaseWon
+		}
+		oldPhaseBeforeTransition = rr.Status.OverallPhase
 		r.applyFailedTransitionFields(rr, failurePhase, failureReason, logger)
+		transitioned = true
 		return nil
 	})
+	if errors.Is(err, errTerminalPhaseWon) {
+		logger.V(1).Info("Concurrent reconcile committed terminal phase; preserving winning outcome",
+			"phase", rr.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
 		logger.Error(err, "Failed to transition to Failed")
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Failed: %w", err)
 	}
+	if !transitioned {
+		logger.V(1).Info("Failure transition made no status change; preserving current outcome",
+			"phase", rr.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
+
+	// GAP-4 / #808: Create escalation NR only after this reconcile has
+	// successfully committed the terminal failure. This avoids a false
+	// escalation when a concurrent reconcile wins the terminal race.
+	r.createEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {

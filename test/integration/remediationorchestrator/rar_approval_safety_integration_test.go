@@ -187,29 +187,40 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			NotTo(ContainSubstring("recorded to DataStorage"))
 	})
 
-	It("IT-RO-2564-017: an invalid parent reference retains the RAR finalizer", func() {
-		rrName := fmt.Sprintf("rr-rar-invalid-ref-%s", uuid.NewString()[:13])
-		rr := createRemediationRequest(ROControllerNamespace, rrName)
-		rar := rarSafetyRequest(rr, time.Now().Add(15*time.Minute), true)
-		rar.Spec.RemediationRequestRef.Name = rrName + "-different"
-		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
-		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
-		DeferCleanup(func() {
-			rarSafetyRemoveFinalizer(rar.Name)
-			_ = k8sClient.Delete(ctx, rr)
-		})
+	DescribeTable("IT-RO-2564-017: an invalid parent identity retains the RAR finalizer",
+		func(mutate func(*remediationv1.RemediationApprovalRequest)) {
+			rrName := fmt.Sprintf("rr-rar-invalid-ref-%s", uuid.NewString()[:13])
+			rr := createRemediationRequest(ROControllerNamespace, rrName)
+			rar := rarSafetyRequest(rr, time.Now().Add(15*time.Minute), true)
+			mutate(rar)
+			setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
+			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+			DeferCleanup(func() {
+				rarSafetyRemoveFinalizer(rar.Name)
+				_ = k8sClient.Delete(ctx, rr)
+			})
 
-		Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
-		Eventually(func() bool {
-			current := &remediationv1.RemediationApprovalRequest{}
-			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), current); err != nil {
-				return false
-			}
-			return current.DeletionTimestamp != nil && controllerutil.ContainsFinalizer(current, creator.ApprovalRequestFinalizerName)
-		}, timeout, interval).Should(BeTrue(), "invalid parent reference must fail closed and retain the finalizer")
-	})
+			Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
+			Eventually(func() bool {
+				current := &remediationv1.RemediationApprovalRequest{}
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), current); err != nil {
+					return false
+				}
+				return current.DeletionTimestamp != nil && controllerutil.ContainsFinalizer(current, creator.ApprovalRequestFinalizerName)
+			}, timeout, interval).Should(BeTrue(), "invalid parent identity must fail closed and retain the finalizer")
+		},
+		Entry("name mismatch", func(rar *remediationv1.RemediationApprovalRequest) {
+			rar.Spec.RemediationRequestRef.Name += "-different"
+		}),
+		Entry("reference UID mismatch", func(rar *remediationv1.RemediationApprovalRequest) {
+			rar.Spec.RemediationRequestRef.UID = types.UID("different-parent-uid")
+		}),
+		Entry("owner UID mismatch", func(rar *remediationv1.RemediationApprovalRequest) {
+			rar.OwnerReferences[0].UID = types.UID("different-owner-uid")
+		}),
+	)
 
-	It("IT-RO-2564-019: real API persistence distinguishes Created from idempotent retry", func() {
+	It("IT-RO-2564-019: real API persistence fails closed on an existing RAR", func() {
 		rrName := fmt.Sprintf("rr-rar-collision-%s", uuid.NewString()[:13])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
 		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
@@ -248,8 +259,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		})
 
 		_, outcome, err = approvalCreator.CreateWithResult(ctx, rr, ai)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(outcome).To(Equal(creator.ApprovalCreationCreated))
+		Expect(err).To(HaveOccurred())
+		Expect(outcome).To(Equal(creator.ApprovalCreationCollision))
 	})
 })
 

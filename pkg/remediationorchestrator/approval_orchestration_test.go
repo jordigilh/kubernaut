@@ -132,15 +132,19 @@ var _ = Describe("ApprovalOrchestration", func() {
 					"UT-RO-2564-001: the RAR finalizer must be present before the create is persisted")
 			})
 
-			It("UT-RO-2564-001: reuses a deterministic RAR only when its identity matches", func() {
+			It("UT-RO-2564-001: fails closed on any deterministic RAR collision", func() {
 				// First creation
 				name1, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
-				// A retry after a successful create is idempotent for the same RR identity.
+				// A retry after a successful create must not reuse the existing review.
 				name2, err := ac.Create(ctx, rr, ai)
 				Expect(name2).To(Equal(name1))
-				Expect(err).NotTo(HaveOccurred())
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
 
 				existing := &remediationv1.RemediationApprovalRequest{}
 				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name1, Namespace: rr.Namespace}, existing)).To(Succeed())

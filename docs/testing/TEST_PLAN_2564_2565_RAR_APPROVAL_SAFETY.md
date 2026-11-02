@@ -102,8 +102,8 @@ acceptance rather than durable persistence.
 
 | ID | Risk | Priority | Mitigating scenarios |
 |---|---|---:|---|
-| R-01 | Same-identity RAR retries are idempotent; mismatched collisions fail closed | P0 | UT-RO-2564-001, IT-RO-2564-019 |
-| R-02 | RAR deletion releases finalizer before safe parent handling | P0 | IT-RO-2564-002, 003, 013, 017, 018 |
+| R-01 | Any deterministic RAR collision fails closed; ambiguous writes never replay the create | P0 | UT-RO-2564-001, IT-RO-2564-019 |
+| R-02 | RAR deletion releases finalizer before safe parent handling or without exact owner/reference identity | P0 | IT-RO-2564-002, 003, 013, 017, 018 |
 | R-03 | Competing approval writers both mutate terminal fields | P0 | IT-AF-2564-006, 010, IT-AW-2564-015 |
 | R-04 | Expiry wins over a timely decision because of stale reads | P0 | IT-RO-2564-007, UT-AW-2564-011, UT-RO-2564-012 |
 | R-05 | A system-only decision is spoofed by a human or AF | P0 | IT-AW-2564-005, 015, 016 |
@@ -178,7 +178,7 @@ the explicitly listed residual and conditional rows.
 
 | ID | Tier | Wiring | Critical | Outcome to prove | Status |
 |---|---|---|---:|---|---|
-| UT-RO-2564-001 | UT | W-01 | Yes | Finalizer exists before create; same-identity `AlreadyExists` retries idempotently and mismatched identity fails closed | Pass — focused package test |
+| UT-RO-2564-001 | UT | W-01 | Yes | Finalizer exists before create; any `AlreadyExists` collision fails closed without reusing the existing RAR | Pass — focused package test |
 | IT-RO-2564-002 | IT | W-02 | Yes | RAR deletion with awaiting/terminal parent follows the exact parent matrix before finalizer release | Pass — focused real-API integration (2 table entries) |
 | IT-RO-2564-003 | IT | W-03 | Yes | RR `NotFound` performs the direct RAR lookup before returning and releases only after confirmed cleanup | Pass — focused real-API integration |
 | IT-RO-2564-004 | IT | W-04 | Yes | Generated/deployed and inline E2E RBAC contain only required `kubernaut.ai` RAR rules | Pass — parity test |
@@ -196,7 +196,7 @@ the explicitly listed residual and conditional rows.
 | IT-AW-2564-016 | IT | W-05 | Yes | Client Cancelled/Expired is rejected; trusted RO system outcome is read-only/terminal | Pass — focused package test |
 | IT-RO-2564-017 | IT | W-02 | Yes | Transient deletion-parent/API failure retains finalizer and retries observably | Pass — focused real-API integration |
 | IT-RO-2564-018 | IT | W-02 | Yes | RR deletion with an existing RAR is distinct and does not orphan pending decision handling | Open residual — no focused integration spec |
-| IT-RO-2564-019 | IT | W-01 | Yes | `Created`, validated same-RR retry, `Collision`, `StatusPersistenceFailed`, and `PersistenceUnknown` have exact outcomes; unknown performs one read/no replay and manual review/audit | Pass — focused real-API integration |
+| IT-RO-2564-019 | IT | W-01 | Yes | `Created`, any deterministic `AlreadyExists` `Collision`, `StatusPersistenceFailed`, and `PersistenceUnknown` have exact outcomes; unknown performs one read/no replay and manual review/audit | Pass — focused real-API integration plus creator unit evidence |
 | IT-RO-2564-020 | IT | W-10 | No | Existing harness observes normal downstream audit delivery with bounded polling, if available | Conditional |
 
 ## 7. Test environment and data
@@ -233,13 +233,26 @@ separate from downstream delivery and durability claims.
 Passed:
 
 - `go test ./internal/controller/remediationorchestrator -count=1`
+- `go test ./internal/controller/remediationorchestrator -run '^TestController$' -ginkgo.focus='RAR approval safety terminal transition races' -count=1`
 - `go test ./pkg/authwebhook -count=1`
+- `go test ./pkg/remediationorchestrator -count=1`
 - `go test ./pkg/remediationorchestrator/creator -count=1`
 - `go test ./pkg/apifrontend/tools -count=1`
 - `go test ./test/infrastructure -run TestInfrastructure -ginkgo.focus='RO RAR RBAC parity' -count=1`
 - `go test ./test/infrastructure -run TestInfrastructure -ginkgo.focus='signs AuthWebhook with both service DNS identities' -count=1`
+- `go build ./...`
+- `golangci-lint run --timeout=5m`
 - `make manifests`
+- `make validate-embed`
+- `make generate`
 - `gofmt` on changed Go files and `git diff --check`
+
+The terminal-transition regression proves a resourceVersion conflict cannot
+overwrite a concurrent `Completed` outcome or emit a losing escalation
+notification. The deletion table also exercises exact RAR parent identity
+(name, reference UID, and controller-owner UID); these are additional safety
+regressions and do not close the intentionally open restart/deletion-wiring
+rows above.
 
 Compile-only evidence passed for the new real-API suite:
 
@@ -248,18 +261,19 @@ Compile-only evidence passed for the new real-API suite:
 Repository-wide unit gate:
 
 - `make test` — all suites completed, but the target exited 2 because the
-  unrelated timing-sensitive gateway spec `LOCK-RETRY-U-002` measured
-  905.844334ms against its 900ms ceiling. The isolated rerun
-  `go test ./pkg/gateway -count=1 -ginkgo.focus='Exponential Backoff with Successful Retry'`
-  passed; no RAR-related unit failure was observed.
+  unrelated data-storage performance spec
+  `pkg/datastorage/metrics_test.go:98` failed its first flaky attempt before
+  passing on retry. No RAR-related unit failure was observed.
 
 Focused real-API integration gate:
 
-- `make test-integration-remediationorchestrator GINKGO_FOCUS='RAR approval safety' TEST_PROCS=1`
-  — passed; **7/7 focused specs passed**, 0 failed, 150 skipped.
-- The earlier direct invocation was blocked before assets were configured; the
-  Makefile target resolved envtest assets through `setup-envtest` and completed
-  the focused suite successfully.
+- An earlier run of `make test-integration-remediationorchestrator
+  GINKGO_FOCUS='RAR approval safety' TEST_PROCS=1` passed **7/7 focused
+  specs** at the prior local head.
+- The latest post-fix rerun did not reach any specs: Podman image creation
+  failed with `no space left on device` while the Podman VM reported 366
+  images and 63.69 GB reclaimable. The suite is therefore environment-blocked
+  for the current unpushed head; no image pruning was performed.
 - The focused `pkg/authwebhook` and `pkg/apifrontend/tools` tests establish
   behavior only; they do not exercise the production entry points. W-05, W-06,
   and W-08 therefore remain unverified for wiring until production-path

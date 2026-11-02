@@ -185,8 +185,14 @@ func (h *RemediationApprovalRequestAuthHandler) handleSystemDecision(ctx context
 	}
 	// The trusted RO identity, not a client field, establishes provenance.
 	rar.Status.DecidedVia = ""
-	now := metav1.NewTime(h.clock.Now())
-	rar.Status.DecidedAt = &now
+	// RO supplies the decision timestamp for expiry so it can confirm the
+	// terminal write against the same instant. Only fill it when an older
+	// caller did not provide one; overwriting it here with a later webhook
+	// clock value would make RO reject its own expiry confirmation.
+	if rar.Status.DecidedAt == nil || rar.Status.DecidedAt.IsZero() {
+		now := metav1.NewTime(h.clock.Now())
+		rar.Status.DecidedAt = &now
+	}
 	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, false)
 	return finalizeRARResponse(logger, req, rar)
 }

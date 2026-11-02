@@ -428,8 +428,49 @@ func terminatingRAR(ctx context.Context, reader client.Reader, key client.Object
 }
 
 func rarReferencesParent(rar *remediationv1.RemediationApprovalRequest, rr *remediationv1.RemediationRequest) bool {
-	return rar.Spec.RemediationRequestRef.Name == rr.Name &&
-		(rar.Spec.RemediationRequestRef.Namespace == "" || rar.Spec.RemediationRequestRef.Namespace == rr.Namespace)
+	const remediationRequestKind = "RemediationRequest"
+
+	if rar == nil || rr == nil || rr.UID == "" {
+		return false
+	}
+	ref := rar.Spec.RemediationRequestRef
+	if ref.APIVersion != remediationv1.GroupVersion.String() ||
+		ref.Kind != remediationRequestKind ||
+		ref.Name != rr.Name ||
+		ref.Namespace != rr.Namespace ||
+		ref.UID != rr.UID {
+		return false
+	}
+
+	owner := metav1.GetControllerOf(rar)
+	return owner != nil &&
+		owner.APIVersion == remediationv1.GroupVersion.String() &&
+		owner.Kind == remediationRequestKind &&
+		owner.Name == rr.Name &&
+		owner.UID == rr.UID
+}
+
+func rarReferencesOrphanedParent(rar *remediationv1.RemediationApprovalRequest, parentKey client.ObjectKey) bool {
+	const remediationRequestKind = "RemediationRequest"
+
+	if rar == nil {
+		return false
+	}
+	ref := rar.Spec.RemediationRequestRef
+	if ref.APIVersion != remediationv1.GroupVersion.String() ||
+		ref.Kind != remediationRequestKind ||
+		ref.Name != parentKey.Name ||
+		ref.Namespace != parentKey.Namespace ||
+		ref.UID == "" {
+		return false
+	}
+
+	owner := metav1.GetControllerOf(rar)
+	return owner != nil &&
+		owner.APIVersion == remediationv1.GroupVersion.String() &&
+		owner.Kind == remediationRequestKind &&
+		owner.Name == parentKey.Name &&
+		owner.UID == ref.UID
 }
 
 func authoritativeParentForRARDeletion(ctx context.Context, reader client.Reader, rr *remediationv1.RemediationRequest) (*remediationv1.RemediationRequest, bool, error) {
@@ -479,8 +520,7 @@ func (r *Reconciler) reconcileOrphanedApprovalRequest(ctx context.Context, paren
 			"deletionTimestamp", rar.DeletionTimestamp)
 		return nil
 	}
-	if rar.Spec.RemediationRequestRef.Name != parentKey.Name ||
-		rar.Spec.RemediationRequestRef.Namespace != "" && rar.Spec.RemediationRequestRef.Namespace != parentKey.Namespace {
+	if !rarReferencesOrphanedParent(rar, parentKey) {
 		return fmt.Errorf("orphaned RemediationApprovalRequest %s/%s does not reference parent %s/%s", rarKey.Namespace, rarKey.Name, parentKey.Namespace, parentKey.Name)
 	}
 	return r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID)
