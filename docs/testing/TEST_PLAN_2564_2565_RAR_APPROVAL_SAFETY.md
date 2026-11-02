@@ -103,7 +103,7 @@ acceptance rather than durable persistence.
 | ID | Risk | Priority | Mitigating scenarios |
 |---|---|---:|---|
 | R-01 | Any deterministic RAR collision fails closed; ambiguous writes never replay the create | P0 | UT-RO-2564-001, IT-RO-2564-019 |
-| R-02 | RAR deletion releases finalizer before safe parent handling or without exact owner/reference identity | P0 | IT-RO-2564-002, 003, 013, 017, 018 |
+| R-02 | RAR deletion releases finalizer before safe parent handling, without exact owner/reference identity, or against a same-name replacement parent | P0 | IT-RO-2564-002, 003, 013, 017, 018 |
 | R-03 | Competing approval writers both mutate terminal fields | P0 | IT-AF-2564-006, 010, IT-AW-2564-015 |
 | R-04 | Expiry wins over a timely decision because of stale reads | P0 | IT-RO-2564-007, UT-AW-2564-011, UT-RO-2564-012 |
 | R-05 | A system-only decision is spoofed by a human or AF | P0 | IT-AW-2564-005, 015, 016 |
@@ -181,7 +181,7 @@ the explicitly listed residual and conditional rows.
 | UT-RO-2564-001 | UT | W-01 | Yes | Finalizer exists before create; any `AlreadyExists` collision fails closed without reusing the existing RAR | Pass — focused package test |
 | IT-RO-2564-002 | IT | W-02 | Yes | RAR deletion with awaiting/terminal parent follows the exact parent matrix before finalizer release | Pass — focused real-API integration (2 table entries) |
 | IT-RO-2564-003 | IT | W-03 | Yes | RR `NotFound` performs the direct RAR lookup before returning and releases only after confirmed cleanup | Pass — focused real-API integration |
-| IT-RO-2564-004 | IT | W-04 | Yes | Generated/deployed and inline E2E RBAC contain only required `kubernaut.ai` RAR rules | Pass — parity test |
+| IT-RO-2564-004 | IT | W-04 | Yes | Generated and inline RAR RBAC rules include the required verbs and reject `delete` | Pass — parity test; complete deployed-rule parity is not claimed |
 | IT-AW-2564-005 | IT | W-05 | Yes | Terminating decision is rejected after authentication and denial audit is attributed/enqueued | Behavior pass — focused package test; production wiring unverified |
 | IT-AF-2564-006 | IT | W-06 | Yes | Conditional write and full terminal tuple are immutable; exact same tuple is a no-op | Behavior pass — focused package test; production wiring unverified |
 | IT-RO-2564-007 | IT | W-07 | Yes | Strict deadline and atomic expiry yield only `ExpiredConfirmed`, `DecisionWon`, or `Unavailable` | Pass — focused real-API integration |
@@ -247,12 +247,14 @@ Passed:
 - `make generate`
 - `gofmt` on changed Go files and `git diff --check`
 
-The terminal-transition regression proves a resourceVersion conflict cannot
-overwrite a concurrent `Completed` outcome or emit a losing escalation
-notification. The deletion table also exercises exact RAR parent identity
-(name, reference UID, and controller-owner UID); these are additional safety
-regressions and do not close the intentionally open restart/deletion-wiring
-rows above.
+The supplemental unit regressions `UT-RO-2564-021` through
+`UT-RO-2564-023` prove that a resourceVersion conflict cannot overwrite a
+concurrent `Completed` outcome, emit a losing escalation notification, fail a
+same-name replacement parent, or release the RAR finalizer against the wrong
+parent UID. The deletion table also exercises exact RAR parent identity (name,
+reference UID, and controller-owner UID). These additional safety regressions
+do not change the 20-scenario certification denominator or close the
+intentionally open restart/deletion-wiring rows above.
 
 Compile-only evidence passed for the new real-API suite:
 

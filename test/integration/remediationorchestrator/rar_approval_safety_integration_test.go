@@ -201,13 +201,13 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			})
 
 			Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
-			Eventually(func() bool {
+			Consistently(func() bool {
 				current := &remediationv1.RemediationApprovalRequest{}
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), current); err != nil {
 					return false
 				}
 				return current.DeletionTimestamp != nil && controllerutil.ContainsFinalizer(current, creator.ApprovalRequestFinalizerName)
-			}, timeout, interval).Should(BeTrue(), "invalid parent identity must fail closed and retain the finalizer")
+			}, 5*time.Second, interval).Should(BeTrue(), "invalid parent identity must fail closed and retain the finalizer")
 		},
 		Entry("name mismatch", func(rar *remediationv1.RemediationApprovalRequest) {
 			rar.Spec.RemediationRequestRef.Name += "-different"

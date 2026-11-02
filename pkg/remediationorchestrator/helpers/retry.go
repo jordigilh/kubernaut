@@ -18,7 +18,9 @@ package helpers
 
 import (
 	"context"
+	"fmt"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,10 +52,30 @@ func UpdateRemediationRequestStatus(
 	rr *remediationv1.RemediationRequest,
 	updateFn func(*remediationv1.RemediationRequest) error,
 ) error {
+	return UpdateRemediationRequestStatusForUID(ctx, c, rr, rr.UID, updateFn)
+}
+
+// UpdateRemediationRequestStatusForUID updates RR status with retry logic while
+// preserving the identity observed by the caller. A resourceVersion retry
+// refetches by namespace/name, so the UID guard is required to prevent a
+// same-name replacement object from receiving the stale transition.
+//
+// An empty expectedUID keeps compatibility with callers that operate on an
+// unpersisted test object; persisted RemediationRequests always have a UID.
+func UpdateRemediationRequestStatusForUID(
+	ctx context.Context,
+	c client.Client,
+	rr *remediationv1.RemediationRequest,
+	expectedUID types.UID,
+	updateFn func(*remediationv1.RemediationRequest) error,
+) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Refetch to get latest resourceVersion (preserves Gateway fields)
 		if err := c.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 			return err
+		}
+		if expectedUID != "" && rr.UID != expectedUID {
+			return fmt.Errorf("remediation request uid changed from %q to %q", expectedUID, rr.UID)
 		}
 
 		// Apply user's updates (modifies only RO-owned fields)

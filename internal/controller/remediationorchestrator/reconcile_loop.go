@@ -391,6 +391,9 @@ func (r *Reconciler) reconcileApprovalRequestDeletion(ctx context.Context, rr *r
 	if parentGone {
 		return ctrl.Result{}, true, r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID)
 	}
+	if !rarReferencesParent(rar, authoritativeRR) {
+		return ctrl.Result{}, true, fmt.Errorf("terminating RemediationApprovalRequest %s/%s does not reference authoritative parent %s/%s", rar.Namespace, rar.Name, authoritativeRR.Namespace, authoritativeRR.Name)
+	}
 
 	if rarDeletionMayReleaseParent(authoritativeRR) {
 		logger.Info("Releasing RAR finalizer without parent mutation",
@@ -474,12 +477,19 @@ func rarReferencesOrphanedParent(rar *remediationv1.RemediationApprovalRequest, 
 }
 
 func authoritativeParentForRARDeletion(ctx context.Context, reader client.Reader, rr *remediationv1.RemediationRequest) (*remediationv1.RemediationRequest, bool, error) {
+	if rr == nil || rr.UID == "" {
+		return nil, false, fmt.Errorf("cannot confirm remediation request deletion identity without a uid")
+	}
+	expectedUID := rr.UID
 	authoritativeRR := &remediationv1.RemediationRequest{}
 	if err := reader.Get(ctx, client.ObjectKeyFromObject(rr), authoritativeRR); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, true, nil
 		}
 		return nil, false, fmt.Errorf("confirm parent RemediationRequest during RAR deletion: %w", err)
+	}
+	if authoritativeRR.UID != expectedUID {
+		return nil, false, fmt.Errorf("remediation request uid changed from %q to %q during rar deletion", expectedUID, authoritativeRR.UID)
 	}
 	return authoritativeRR, false, nil
 }

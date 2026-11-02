@@ -467,8 +467,14 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	// start with stale cache showing non-Failed phase after the first reconcile has
 	// already transitioned, causing duplicate orchestrator.lifecycle.completed events.
 	// Pattern: mirrors RAR audit deduplication (remediation_approval_request.go).
+	expectedUID := rr.UID
 	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
+		return ctrl.Result{}, err
+	}
+	if expectedUID != "" && rr.UID != expectedUID {
+		err := fmt.Errorf("remediation request uid changed from %q to %q before failure transition", expectedUID, rr.UID)
+		logger.Error(err, "Refusing to transition a same-name replacement RemediationRequest")
 		return ctrl.Result{}, err
 	}
 
