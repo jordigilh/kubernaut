@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -43,6 +44,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -60,6 +62,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	rr := &remediationv1.RemediationRequest{}
 	if err := r.client.Get(ctx, req.NamespacedName, rr); err != nil {
 		if apierrors.IsNotFound(err) {
+			if cleanupErr := r.reconcileOrphanedApprovalRequest(ctx, req.NamespacedName, logger); cleanupErr != nil {
+				return ctrl.Result{}, cleanupErr
+			}
 			logger.V(1).Info("RemediationRequest not found, likely deleted")
 			return ctrl.Result{}, nil
 		}
@@ -74,6 +79,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			string(rr.Status.OverallPhase),
 		).Observe(time.Since(startTime).Seconds())
 	}()
+
+	// RAR deletion must be handled before terminal housekeeping or phase
+	// dispatch. A terminating approval request must not be consumed by the
+	// approval handler, and its finalizer is released only after the parent is
+	// either safely failed, already terminal, or authoritatively gone.
+	if result, handled, err := r.reconcileApprovalRequestDeletion(ctx, rr, logger); handled {
+		return result, err
+	}
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
 	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
@@ -336,6 +349,191 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 
 	// #265: Requeue for TTL cleanup at expiry time
 	return ctrl.Result{RequeueAfter: retentionRequeue}, nil
+}
+
+// reconcileApprovalRequestDeletion applies the RAR deletion matrix for an
+// existing parent RR. The RAR finalizer is intentionally retained while an
+// AwaitingApproval parent is failed, so the approval artifact cannot disappear
+// before the parent observes why approval stopped.
+func (r *Reconciler) reconcileApprovalRequestDeletion(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, bool, error) {
+	rarKey := client.ObjectKey{Name: fmt.Sprintf("rar-%s", rr.Name), Namespace: rr.Namespace}
+	// Avoid an uncached API read for the normal case. Owned RAR events cause a
+	// fresh reconcile if the cache is stale and later observes termination.
+	if _, cachedFound, cachedErr := terminatingRAR(ctx, r.client, rarKey); cachedErr == nil && !cachedFound {
+		return ctrl.Result{}, false, nil
+	}
+
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.client
+	}
+
+	rar, found, err := terminatingRAR(ctx, reader, rarKey)
+	if err != nil {
+		logger.Error(err, "Failed to inspect RemediationApprovalRequest deletion state")
+		return ctrl.Result{}, true, err
+	}
+	if !found {
+		return ctrl.Result{}, false, nil
+	}
+	if !rarReferencesParent(rar, rr) {
+		return ctrl.Result{}, true, fmt.Errorf("terminating RemediationApprovalRequest %s/%s does not reference parent %s/%s", rar.Namespace, rar.Name, rr.Namespace, rr.Name)
+	}
+
+	// Confirm the parent from the cache-bypassed reader before deciding whether
+	// a pending approval deletion must fail it. This prevents a stale RR phase
+	// from releasing a finalizer without applying the parent outcome.
+	authoritativeRR, parentGone, err := authoritativeParentForRARDeletion(ctx, reader, rr)
+	if err != nil {
+		logger.Error(err, "Failed to confirm parent RemediationRequest during RAR deletion")
+		return ctrl.Result{}, true, err
+	}
+	if parentGone {
+		return ctrl.Result{}, true, r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID)
+	}
+	if !rarReferencesParent(rar, authoritativeRR) {
+		return ctrl.Result{}, true, fmt.Errorf("terminating RemediationApprovalRequest %s/%s does not reference authoritative parent %s/%s", rar.Namespace, rar.Name, authoritativeRR.Namespace, authoritativeRR.Name)
+	}
+
+	if rarDeletionMayReleaseParent(authoritativeRR) {
+		logger.Info("Releasing RAR finalizer without parent mutation",
+			"rar", rar.Name,
+			"parentPhase", authoritativeRR.Status.OverallPhase,
+			"parentDeleting", authoritativeRR.DeletionTimestamp != nil)
+		return ctrl.Result{}, true, r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID)
+	}
+
+	result, err := r.transitionToFailed(ctx, authoritativeRR, remediationv1.FailurePhaseApproval,
+		fmt.Errorf("%s", creator.ApprovalRequestDeletionReason))
+	if err != nil {
+		logger.Error(err, "Failed to fail parent after terminating RAR")
+		return result, true, err
+	}
+	if err := r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID); err != nil {
+		logger.Error(err, "Failed to remove RAR finalizer after parent failure")
+		return result, true, err
+	}
+	return result, true, nil
+}
+
+func terminatingRAR(ctx context.Context, reader client.Reader, key client.ObjectKey) (*remediationv1.RemediationApprovalRequest, bool, error) {
+	rar := &remediationv1.RemediationApprovalRequest{}
+	if err := reader.Get(ctx, key, rar); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("inspect RemediationApprovalRequest deletion state: %w", err)
+	}
+	if rar.DeletionTimestamp == nil || !controllerutil.ContainsFinalizer(rar, creator.ApprovalRequestFinalizerName) {
+		return nil, false, nil
+	}
+	return rar, true, nil
+}
+
+func rarReferencesParent(rar *remediationv1.RemediationApprovalRequest, rr *remediationv1.RemediationRequest) bool {
+	const remediationRequestKind = "RemediationRequest"
+
+	if rar == nil || rr == nil || rr.UID == "" {
+		return false
+	}
+	ref := rar.Spec.RemediationRequestRef
+	if ref.APIVersion != remediationv1.GroupVersion.String() ||
+		ref.Kind != remediationRequestKind ||
+		ref.Name != rr.Name ||
+		ref.Namespace != rr.Namespace ||
+		ref.UID != rr.UID {
+		return false
+	}
+
+	owner := metav1.GetControllerOf(rar)
+	return owner != nil &&
+		owner.APIVersion == remediationv1.GroupVersion.String() &&
+		owner.Kind == remediationRequestKind &&
+		owner.Name == rr.Name &&
+		owner.UID == rr.UID
+}
+
+func rarReferencesOrphanedParent(rar *remediationv1.RemediationApprovalRequest, parentKey client.ObjectKey) bool {
+	const remediationRequestKind = "RemediationRequest"
+
+	if rar == nil {
+		return false
+	}
+	ref := rar.Spec.RemediationRequestRef
+	if ref.APIVersion != remediationv1.GroupVersion.String() ||
+		ref.Kind != remediationRequestKind ||
+		ref.Name != parentKey.Name ||
+		ref.Namespace != parentKey.Namespace ||
+		ref.UID == "" {
+		return false
+	}
+
+	owner := metav1.GetControllerOf(rar)
+	return owner != nil &&
+		owner.APIVersion == remediationv1.GroupVersion.String() &&
+		owner.Kind == remediationRequestKind &&
+		owner.Name == parentKey.Name &&
+		owner.UID == ref.UID
+}
+
+func authoritativeParentForRARDeletion(ctx context.Context, reader client.Reader, rr *remediationv1.RemediationRequest) (*remediationv1.RemediationRequest, bool, error) {
+	if rr == nil || rr.UID == "" {
+		return nil, false, fmt.Errorf("cannot confirm remediation request deletion identity without a uid")
+	}
+	expectedUID := rr.UID
+	authoritativeRR := &remediationv1.RemediationRequest{}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(rr), authoritativeRR); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("confirm parent RemediationRequest during RAR deletion: %w", err)
+	}
+	if authoritativeRR.UID != expectedUID {
+		return nil, false, fmt.Errorf("remediation request uid changed from %q to %q during rar deletion", expectedUID, authoritativeRR.UID)
+	}
+	return authoritativeRR, false, nil
+}
+
+func rarDeletionMayReleaseParent(rr *remediationv1.RemediationRequest) bool {
+	return rr.DeletionTimestamp != nil || phase.IsTerminal(rr.Status.OverallPhase) || rr.Status.OverallPhase != phase.AwaitingApproval
+}
+
+// reconcileOrphanedApprovalRequest handles a RemediationRequest NotFound
+// event. The cache miss is confirmed through the direct reader before the RAR
+// is inspected, preventing a stale cache from removing a live approval's
+// finalizer. Only a terminating RAR is finalized; an unexpected live object is
+// left for Kubernetes garbage collection or a later authoritative event.
+func (r *Reconciler) reconcileOrphanedApprovalRequest(ctx context.Context, parentKey client.ObjectKey, logger logr.Logger) error {
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.client
+	}
+
+	parent := &remediationv1.RemediationRequest{}
+	if err := reader.Get(ctx, parentKey, parent); err == nil {
+		return nil
+	} else if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("confirm missing RemediationRequest %s/%s: %w", parentKey.Namespace, parentKey.Name, err)
+	}
+
+	rarKey := client.ObjectKey{Name: fmt.Sprintf("rar-%s", parentKey.Name), Namespace: parentKey.Namespace}
+	rar := &remediationv1.RemediationApprovalRequest{}
+	if err := reader.Get(ctx, rarKey, rar); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect orphaned RemediationApprovalRequest %s/%s: %w", rarKey.Namespace, rarKey.Name, err)
+	}
+	if rar.DeletionTimestamp == nil || !controllerutil.ContainsFinalizer(rar, creator.ApprovalRequestFinalizerName) {
+		logger.V(1).Info("Parent is gone but RAR is not terminating; retaining finalizer",
+			"rar", rarKey,
+			"deletionTimestamp", rar.DeletionTimestamp)
+		return nil
+	}
+	if !rarReferencesOrphanedParent(rar, parentKey) {
+		return fmt.Errorf("orphaned RemediationApprovalRequest %s/%s does not reference parent %s/%s", rarKey.Namespace, rarKey.Name, parentKey.Namespace, parentKey.Name)
+	}
+	return r.removeApprovalRequestFinalizer(ctx, rarKey, rar.UID)
 }
 
 // enforceRetentionTTL implements Issue #265 TTL enforcement for terminal

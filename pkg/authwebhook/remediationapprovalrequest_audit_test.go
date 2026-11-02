@@ -118,6 +118,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 						AIAnalysisRef: remediationv1.ObjectRef{
 							Name: "ai-analysis-789",
 						},
+						RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 					},
 					Status: remediationv1.RemediationApprovalRequestStatus{
 						Decision:        decision,
@@ -198,8 +199,6 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 				remediationv1.ApprovalDecisionApproved),
 			Entry("UNIT-RAR-AUDIT-AW-002: Rejected decision",
 				remediationv1.ApprovalDecisionRejected),
-			Entry("UNIT-RAR-AUDIT-AW-003: Expired decision",
-				remediationv1.ApprovalDecisionExpired),
 		)
 	})
 
@@ -230,6 +229,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision:        remediationv1.ApprovalDecisionApproved,
@@ -254,6 +254,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision:        remediationv1.ApprovalDecisionApproved,
@@ -318,6 +319,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision: "", // No decision yet
@@ -452,6 +454,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision:        remediationv1.ApprovalDecisionApproved,

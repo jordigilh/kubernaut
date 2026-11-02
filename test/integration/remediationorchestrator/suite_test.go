@@ -518,6 +518,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	By("Setting up the RemediationApprovalRequest audit controller")
+	rarAuditReconciler := controller.NewRARReconciler(
+		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(),
+		k8sManager.GetScheme(),
+		auditStore,
+		roMetrics,
+	)
+	Expect(rarAuditReconciler.SetupWithManager(k8sManager)).To(Succeed())
+
 	By("Configuring child CRD test strategy")
 
 	// ========================================

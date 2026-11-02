@@ -69,7 +69,9 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		TransitionToFailed: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
 			return ctrl.Result{}, nil
 		},
-		ExpireRAR:              func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
+		ExpireRAR: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
+			return prodcontroller.ExpiredConfirmed, nil
+		},
 		UpdateRARTimeRemaining: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
@@ -106,14 +108,25 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	}
 
 	makeRAR := func(rrName string, decision remediationv1.ApprovalDecision) *remediationv1.RemediationApprovalRequest {
+		now := metav1.Now()
+		requiredBy := metav1.NewTime(now.Add(1 * time.Hour))
+		decidedBy := "admin@example.com"
+		expired := false
+		if decision == remediationv1.ApprovalDecisionExpired {
+			requiredBy = metav1.NewTime(now.Add(-1 * time.Hour))
+			decidedBy = "system"
+			expired = true
+		}
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rar-%s", rrName), Namespace: defaultFixture},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
-				RequiredBy: metav1.NewTime(time.Now().Add(1 * time.Hour)),
+				RequiredBy: requiredBy,
 			},
 			Status: remediationv1.RemediationApprovalRequestStatus{
 				Decision:  decision,
-				DecidedBy: "admin@example.com",
+				DecidedBy: decidedBy,
+				DecidedAt: &now,
+				Expired:   expired,
 			},
 		}
 	}
@@ -360,6 +373,53 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(err).ToNot(HaveOccurred())
 			Expect(failedCalled).To(BeTrue())
 		})
+
+		It("UT-RO-2564-012: invalid terminal timestamps requeue without changing the parent", func() {
+			rr := awaitingRR("apr-invalid-terminal")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
+			tar := rar.Spec.RequiredBy
+			rar.Status.DecidedAt = &tar
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+		})
+
+		It("UT-RO-2564-012: missing actor on Rejected requeues without failing the parent", func() {
+			rr := awaitingRR("apr-invalid-rejected")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionRejected)
+			rar.Status.DecidedBy = ""
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+		})
 	})
 
 	// ========================================
@@ -380,9 +440,9 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			expireCalled := false
 			failedCalled := false
 			cbs := noopAwaitingCallbacks()
-			cbs.ExpireRAR = func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error {
+			cbs.ExpireRAR = func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
 				expireCalled = true
-				return nil
+				return prodcontroller.ExpiredConfirmed, nil
 			}
 			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
 				failedCalled = true
@@ -420,6 +480,37 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(timeUpdated).To(BeTrue(), "should update RAR time remaining")
 			Expect(intent.Type).To(Equal(phase.TransitionNone))
 			Expect(intent.RequeueAfter).To(Equal(config.RequeueResourceBusy))
+		})
+
+		It("UT-RO-2564-012: expiry race with invalid winning decision requeues safely", func() {
+			rr := awaitingRR("apr-invalid-race")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionPending)
+			tar := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+			rar.Spec.RequiredBy = tar
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.ExpireRAR = func(_ context.Context, current *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
+				current.Status.Decision = remediationv1.ApprovalDecisionApproved
+				current.Status.DecidedBy = "system"
+				decidedAt := metav1.Now()
+				current.Status.DecidedAt = &decidedAt
+				return prodcontroller.DecisionWon, nil
+			}
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
 		})
 	})
 })

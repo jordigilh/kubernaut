@@ -259,11 +259,17 @@ metadata:
   name: remediationorchestrator-controller
 rules:
 - apiGroups: ["kubernaut.ai"]
-  resources: ["remediationrequests", "remediationapprovalrequests"]
+  resources: ["remediationrequests"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationapprovalrequests"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
   verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationapprovalrequests/finalizers"]
+  verbs: ["update"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["signalprocessings"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
