@@ -42,6 +42,11 @@ import (
 // Conflict errors, so this propagates immediately to the caller for graceful handling.
 var errPhaseConflict = errors.New("phase changed by concurrent reconcile")
 
+// errTerminalPhaseWon is returned from a status retry when another reconcile
+// has already committed a terminal phase. It stops the retry without writing a
+// stale failure over the winning terminal outcome.
+var errTerminalPhaseWon = errors.New("terminal phase won concurrent failure transition")
+
 // transitionToInheritedCompleted transitions the RR to Completed with outcome "Remediated".
 // Used when an original resource (WFE or RR) that caused deduplication completes successfully.
 // The outcome is "Remediated" (not a separate "InheritedCompleted") because the CRD enum
@@ -462,32 +467,60 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	// start with stale cache showing non-Failed phase after the first reconcile has
 	// already transitioned, causing duplicate orchestrator.lifecycle.completed events.
 	// Pattern: mirrors RAR audit deduplication (remediation_approval_request.go).
+	expectedUID := rr.UID
 	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
 		return ctrl.Result{}, err
 	}
+	if expectedUID != "" && rr.UID != expectedUID {
+		err := fmt.Errorf("remediation request uid changed from %q to %q before failure transition", expectedUID, rr.UID)
+		logger.Error(err, "Refusing to transition a same-name replacement RemediationRequest")
+		return ctrl.Result{}, err
+	}
 
-	if rr.Status.OverallPhase == phase.Failed {
-		logger.V(1).Info("Already in Failed phase (confirmed via apiReader), skipping transition")
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		logger.V(1).Info("Already in terminal phase (confirmed via apiReader), skipping failure transition",
+			"phase", rr.Status.OverallPhase)
 		return ctrl.Result{}, nil
 	}
 
-	// GAP-4 / #808: Create escalation NR for terminal failures (BR-ORCH-036).
-	r.createEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
-
-	// Capture old phase for metrics and audit
-	oldPhaseBeforeTransition := rr.Status.OverallPhase
+	// Capture the phase from the successful status-update attempt, not from the
+	// stale reconcile input. A conflict retry may observe that another
+	// reconcile already committed a terminal phase.
+	var oldPhaseBeforeTransition phase.Phase
+	transitioned := false
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		transitioned = false
+		if phase.IsTerminal(rr.Status.OverallPhase) {
+			return errTerminalPhaseWon
+		}
+		oldPhaseBeforeTransition = rr.Status.OverallPhase
 		r.applyFailedTransitionFields(rr, failurePhase, failureReason, logger)
+		transitioned = true
 		return nil
 	})
+	if errors.Is(err, errTerminalPhaseWon) {
+		logger.V(1).Info("Concurrent reconcile committed terminal phase; preserving winning outcome",
+			"phase", rr.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
 		logger.Error(err, "Failed to transition to Failed")
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Failed: %w", err)
 	}
+	if !transitioned {
+		logger.V(1).Info("Failure transition made no status change; preserving current outcome",
+			"phase", rr.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
+
+	// GAP-4 / #808: Create escalation NR only after this reconcile has
+	// successfully committed the terminal failure. This avoids a false
+	// escalation when a concurrent reconcile wins the terminal race.
+	r.createEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {
@@ -517,6 +550,14 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	return ctrl.Result{}, nil
 }
 
+// transitionApprovalCreationFailure converts a typed RAR persistence outcome
+// into the reviewed terminal manual-review parent state. This keeps collision,
+// status persistence failure, and unknown persistence from entering an
+// unbounded generic requeue loop.
+func (r *Reconciler) transitionApprovalCreationFailure(ctx context.Context, rr *remediationv1.RemediationRequest, creationErr *creator.ApprovalCreationError) (ctrl.Result, error) {
+	return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, creationErr)
+}
+
 // applyFailedTransitionFields updates the RR status fields for a Failed
 // transition: overall phase/observed generation/failure phase+reason/
 // CompletedAt, the terminal-failure Ready condition (BR-ORCH-043), and
@@ -531,6 +572,10 @@ func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRe
 	completion := rr.Status.EnsureCompletionStatus()
 	completion.FailurePhase = &failurePhase
 	completion.FailureReason = &failureReason
+	if failurePhase == remediationv1.FailurePhaseApproval && isApprovalCreationManualReviewReason(failureReason) {
+		completion.RequiresManualReview = true
+		completion.Outcome = remediationv1.OutcomeManualReviewRequired
+	}
 	now := metav1.Now()
 	rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
@@ -554,6 +599,17 @@ func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRe
 				"backoff", backoff.Round(time.Second),
 				"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
 		}
+	}
+}
+
+func isApprovalCreationManualReviewReason(reason string) bool {
+	switch reason {
+	case creator.ApprovalCreationReasonCollision,
+		creator.ApprovalCreationReasonStatusFailed,
+		creator.ApprovalCreationReasonPersistenceUnknown:
+		return true
+	default:
+		return false
 	}
 }
 

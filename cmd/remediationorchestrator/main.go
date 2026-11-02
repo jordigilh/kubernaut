@@ -326,15 +326,15 @@ func run() int {
 	}
 
 	// ========================================
-	// Graceful Shutdown: Flush Audit Events (DD-007)
-	// BR-STORAGE-001: Complete audit trail with no data loss
+	// Graceful Shutdown: Close the audit buffer (DD-007)
+	// The close result confirms shutdown handling, not downstream delivery.
 	// ========================================
-	setupLog.Info("Shutting down remediation orchestrator, flushing remaining audit events")
+	setupLog.Info("Shutting down remediation orchestrator, closing audit buffer")
 	if err := auditStore.Close(); err != nil {
 		setupLog.Error(err, "Failed to close audit store gracefully")
 		return 1
 	}
-	setupLog.Info("Audit store closed successfully, all events flushed")
+	setupLog.Info("Audit buffer closed successfully; downstream delivery was not independently verified")
 	return 0
 }
 

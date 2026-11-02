@@ -155,6 +155,46 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 	})
 })
 
+// IT-RO-2564-004: The deployed generated ClusterRole and the inline RO E2E
+// fixture must grant the same narrow RAR permissions. In particular, neither
+// fixture may grant delete on remediationapprovalrequests: lifecycle cleanup
+// is protected by the RAR finalizer and parent-state safety checks.
+var _ = Describe("RO RAR RBAC parity (IT-RO-2564-004)", func() {
+	It("keeps generated and inline RAR permissions fail-closed", func() {
+		generatedPath := filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml")
+		generatedRules, err := parseClusterRoleRules(generatedPath, "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "generated manager role must be parseable")
+
+		inlineRules, err := parseClusterRoleRulesFromYAML(
+			[]byte(roRBACManifest()), "remediationorchestrator-controller")
+		Expect(err).NotTo(HaveOccurred(), "inline RO RBAC fixture must be parseable")
+
+		assertRARRule := func(rules []rbacv1.PolicyRule, resource string, requiredVerbs []string) {
+			var matching []rbacv1.PolicyRule
+			for _, rule := range rules {
+				if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, resource) {
+					matching = append(matching, rule)
+				}
+			}
+			Expect(matching).NotTo(BeEmpty(), "RBAC must contain kubernaut.ai/%s", resource)
+			for _, rule := range matching {
+				for _, verb := range requiredVerbs {
+					Expect(rule.Verbs).To(ContainElement(verb),
+						"RBAC rule for kubernaut.ai/%s must include %q", resource, verb)
+				}
+				Expect(rule.Verbs).NotTo(ContainElement("delete"),
+					"RAR safety rule for kubernaut.ai/%s must not grant delete", resource)
+			}
+		}
+
+		for _, rules := range [][]rbacv1.PolicyRule{generatedRules, inlineRules} {
+			assertRARRule(rules, "remediationapprovalrequests", []string{"get", "list", "watch", "create", "update", "patch"})
+			assertRARRule(rules, "remediationapprovalrequests/status", []string{"get", "update", "patch"})
+			assertRARRule(rules, "remediationapprovalrequests/finalizers", []string{"update"})
+		}
+	})
+})
+
 // UT-INFRA-RBAC-002: Structural parity test for PersonaToolClusterRolesYAML.
 //
 // Incident (2026-08-03): #1869/#1884 added kubernaut_get_approval_request and

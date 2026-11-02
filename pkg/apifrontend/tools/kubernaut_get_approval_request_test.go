@@ -2,9 +2,11 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -131,6 +133,70 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(result.RecommendedWorkflow.Version).To(Equal("1.0.0"))
 	})
 
+	It("IT-AF-2565-008: returns bounded owner-validated parent evidence only when requested", func() {
+		parent := newTypedRR("payments", "rr-oom-1", "AwaitingApproval")
+		parent.UID = "rr-parent-uid"
+		parent.Spec.SignalSource = "prometheus-adapter"
+		parent.Spec.ClusterID = "spoke-a"
+		parent.Spec.TargetResource = remediationv1.ResourceIdentifier{
+			Kind: "Deployment", Name: "payments", Namespace: "payments", APIVersion: "apps/v1",
+		}
+		rar := newTypedDetailedRAR("payments", "rar-oom-1")
+		rar.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: remediationv1.GroupVersion.String(),
+			Kind:       "RemediationRequest",
+			Name:       parent.Name,
+			UID:        parent.UID,
+			Controller: boolPtr(true),
+		}}
+
+		tc := newTypedFakeClient(parent, rar)
+		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
+			Namespace: "payments", Name: "rar-oom-1", IncludeParentEvidence: true,
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ParentEvidence).NotTo(BeNil())
+		Expect(result.ParentEvidence.State).To(Equal("complete"))
+		Expect(result.ParentEvidence.Complete).To(BeTrue())
+		Expect(result.ParentEvidence.Truncated).To(BeFalse())
+		Expect(result.ParentEvidence.Parent.Name).To(Equal("rr-oom-1"))
+		Expect(result.ParentEvidence.Parent.TargetResource.Kind).To(Equal("Deployment"))
+
+		encoded, marshalErr := json.Marshal(result.ParentEvidence)
+		Expect(marshalErr).NotTo(HaveOccurred())
+		Expect(len(encoded)).To(BeNumerically("<=", 16*1024))
+	})
+
+	It("IT-AF-2565-008: ignores a non-controller or wrong-group owner", func() {
+		parent := newTypedRR("payments", "rr-oom-1", "AwaitingApproval")
+		parent.UID = "rr-parent-uid"
+		rar := newTypedDetailedRAR("payments", "rar-oom-1")
+		rar.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: "other.example/v1",
+			Kind:       "RemediationRequest",
+			Name:       parent.Name,
+			UID:        parent.UID,
+			Controller: boolPtr(false),
+		}}
+
+		result, err := tools.HandleGetApprovalRequest(ctx, newTypedFakeClient(parent, rar), tools.GetApprovalRequestArgs{
+			Namespace: "payments", Name: "rar-oom-1", IncludeParentEvidence: true,
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ParentEvidence).To(Equal(&tools.ParentEvidence{State: "missing", Complete: false}))
+	})
+
+	It("IT-AF-2565-008: omits parent evidence and performs no parent projection by default", func() {
+		result, err := tools.HandleGetApprovalRequest(ctx, newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1")), tools.GetApprovalRequestArgs{
+			Namespace: "payments", Name: "rar-oom-1",
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ParentEvidence).To(BeNil())
+	})
+
 	It("UT-AF-1493-005: returns full RAR detail with bare rar_id and injected namespace", func() {
 		tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
 		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
@@ -189,6 +255,10 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		})
 	})
 })
+
+func boolPtr(value bool) *bool {
+	return &value
+}
 
 // Test for the HandleGetApprovalRequest 403 error interceptor uses Get, not List
 var _ = Describe("kubernaut_get_approval_request 403 via Get interceptor", func() {
