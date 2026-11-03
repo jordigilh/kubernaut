@@ -27,14 +27,18 @@ import (
 	"fmt"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
@@ -134,6 +138,13 @@ func (r *Reconciler) updateRARConditionsOnDecision(ctx context.Context, _ *remed
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
 			return err
 		}
+		// Decision-bearing conditions are immutable after AuthWebhook commits
+		// the terminal business tuple. AuditRecorded is the only post-terminal
+		// condition owned by a controller. Keep this callback idempotent for
+		// older callers without rewriting approval conditions.
+		if rar.Status.Decision != remediationv1.ApprovalDecisionPending {
+			return nil
+		}
 		remediationapprovalrequest.SetApprovalPending(rar, false, "Decision received", r.Metrics)
 		switch decision {
 		case "approved":
@@ -150,28 +161,127 @@ func (r *Reconciler) updateRARConditionsOnDecision(ctx context.Context, _ *remed
 	})
 }
 
+// removeApprovalRequestFinalizer removes the RAR cleanup finalizer using a
+// cache-bypassed read and the current resourceVersion. The expected UID keeps
+// a delayed deletion event from finalizing a same-name replacement object.
+func (r *Reconciler) removeApprovalRequestFinalizer(ctx context.Context, key client.ObjectKey, expectedUID types.UID) error {
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.client
+	}
+
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		current := &remediationv1.RemediationApprovalRequest{}
+		if err := reader.Get(ctx, key, current); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("read RemediationApprovalRequest before finalizer removal: %w", err)
+		}
+		if expectedUID != "" && current.UID != expectedUID {
+			return fmt.Errorf("refusing to remove RAR finalizer from UID %q; expected %q", current.UID, expectedUID)
+		}
+		if !controllerutil.ContainsFinalizer(current, creator.ApprovalRequestFinalizerName) {
+			return nil
+		}
+		controllerutil.RemoveFinalizer(current, creator.ApprovalRequestFinalizerName)
+		if err := r.client.Update(ctx, current); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("remove RemediationApprovalRequest finalizer: %w", err)
+		}
+		return nil
+	})
+}
+
 // expireRARWithoutDecision marks a RemediationApprovalRequest as expired when
 // no decision was received before its deadline, retrying on optimistic
 // concurrency conflicts. Extracted from AwaitingApprovalCallbacks.ExpireRAR
 // per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
-func (r *Reconciler) expireRARWithoutDecision(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
-	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+func (r *Reconciler) expireRARWithoutDecision(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) (ExpiryOutcome, error) {
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.client
+	}
+
+	var authoritative *remediationv1.RemediationApprovalRequest
+	outcome := Unavailable
+	err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		current := &remediationv1.RemediationApprovalRequest{}
+		if err := reader.Get(ctx, client.ObjectKeyFromObject(rar), current); err != nil {
+			return fmt.Errorf("read approval request before expiry: %w", err)
+		}
+		authoritative = current
+
+		if current.Status.Decision != remediationv1.ApprovalDecisionPending {
+			outcome = classifyExpiryDecision(current, r.clock.Now())
+			return nil
+		}
+
+		now := r.clock.Now()
+		if current.Spec.RequiredBy.IsZero() || now.Before(current.Spec.RequiredBy.Time) {
+			return fmt.Errorf("approval request is not authoritatively expired")
+		}
+
+		confirmed, err := r.persistAndConfirmRARExpiry(ctx, reader, current, now)
+		if err != nil {
 			return err
 		}
-		remediationapprovalrequest.SetApprovalPending(rar, false, "Expired without decision", r.Metrics)
-		remediationapprovalrequest.SetApprovalExpired(rar, true,
-			fmt.Sprintf("Expired after %v without decision",
-				time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
-		remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
-		rar.Status.Decision = remediationv1.ApprovalDecisionExpired
-		rar.Status.DecidedBy = "system"
-		rar.Status.Expired = true
-		rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-		now := metav1.Now()
-		rar.Status.DecidedAt = &now
-		return r.client.Status().Update(ctx, rar)
+		*current = *confirmed.DeepCopy()
+		authoritative = current
+		outcome = ExpiredConfirmed
+		return nil
 	})
+
+	if authoritative != nil {
+		*rar = *authoritative.DeepCopy()
+	}
+	if err != nil {
+		return Unavailable, err
+	}
+	return outcome, nil
+}
+
+func classifyExpiryDecision(rar *remediationv1.RemediationApprovalRequest, now time.Time) ExpiryOutcome {
+	switch {
+	case isConfirmedExpiredAt(rar, now):
+		return ExpiredConfirmed
+	case isTimelyDecisionAt(rar, now):
+		return DecisionWon
+	default:
+		return Unavailable
+	}
+}
+
+func (r *Reconciler) persistAndConfirmRARExpiry(ctx context.Context, reader client.Reader, current *remediationv1.RemediationApprovalRequest, now time.Time) (*remediationv1.RemediationApprovalRequest, error) {
+	remediationapprovalrequest.SetApprovalPending(current, false, "Expired without decision", r.Metrics)
+	remediationapprovalrequest.SetApprovalExpired(current, true,
+		fmt.Sprintf("Expired after %v without decision",
+			now.Sub(current.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
+	remediationapprovalrequest.SetReady(current, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
+	current.Status.Decision = remediationv1.ApprovalDecisionExpired
+	current.Status.DecidedBy = systemDecisionActor
+	current.Status.DecidedVia = ""
+	current.Status.Expired = true
+	current.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(current.Spec.RequiredBy.Time, now)
+	decidedAt := metav1.NewTime(now)
+	current.Status.DecidedAt = &decidedAt
+	if err := r.client.Status().Update(ctx, current); err != nil {
+		return nil, err
+	}
+
+	// Confirm the status write through the authoritative reader before
+	// allowing the parent to fail. A successful client call alone does not
+	// establish that the terminal expiry is the state now observed by RO.
+	confirmed := &remediationv1.RemediationApprovalRequest{}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(current), confirmed); err != nil {
+		return nil, fmt.Errorf("read approval request after expiry write: %w", err)
+	}
+	if !isConfirmedExpiredAt(confirmed, now) {
+		return nil, fmt.Errorf("approval request expiry write could not be authoritatively confirmed")
+	}
+	return confirmed, nil
 }
 
 // updateRARTimeRemaining refreshes the TimeRemaining status field on a
@@ -183,7 +293,7 @@ func (r *Reconciler) updateRARTimeRemaining(ctx context.Context, rar *remediatio
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
 			return err
 		}
-		rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
+		rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, r.clock.Now())
 		return r.client.Status().Update(ctx, rar)
 	})
 }

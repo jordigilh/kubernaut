@@ -451,7 +451,13 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-010D [BR-E2E-001]: signs AuthWebhook with both service DNS identities", func() {
 		names := qualificationServiceDNSNames("authwebhook-service", "kubernaut-system")
 		Expect(names).To(ContainElements(
+			"authwebhook-service",
+			"authwebhook-service.kubernaut-system",
+			"authwebhook-service.kubernaut-system.svc",
 			"authwebhook-service.kubernaut-system.svc.cluster.local",
+			"authwebhook",
+			"authwebhook.kubernaut-system",
+			"authwebhook.kubernaut-system.svc",
 			"authwebhook.kubernaut-system.svc.cluster.local",
 		))
 	})

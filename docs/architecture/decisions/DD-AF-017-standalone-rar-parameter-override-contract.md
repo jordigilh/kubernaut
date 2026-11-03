@@ -181,6 +181,32 @@ missing RAR after approval begins fails the RR and routes it to manual review,
 not a same-name replacement. Test this production boundary, including a retry
 after partial RO success, independently of the resource-version concurrency guard.
 
+### Approval deadline and expiry races (#2564)
+
+An `Approved` or `Rejected` decision is in time only when its authoritative
+`status.decidedAt` is **strictly earlier than** `spec.requiredBy`. A decision
+at or after the deadline is expired. AuthWebhook assigns `decidedAt` using its
+server clock during admission and enforces this boundary for new human
+decisions, including direct Kubernetes status writes. This is an admission-time
+boundary, not a guarantee that the API server commits before the deadline. AF
+may check the deadline for early feedback, but its check is not authoritative.
+
+RO must not fail the parent RR merely because it previously observed a pending
+RAR after its deadline. If the expiry write conflicts or otherwise fails, RO
+re-reads the authoritative RAR, either immediately or on a subsequent
+reconciliation. RO preserves and handles an `Approved` or `Rejected` decision
+whose authenticated admission timestamp is strictly before `requiredBy`; it
+fails the parent for timeout only after expiry is confirmed. If the RAR or its
+required decision time cannot be established, RO requeues and makes the error
+observable rather than assuming expiry or overwriting a decision. An expiry
+retry must revalidate the newly read decision before writing.
+
+Tests must cover decisions before, exactly at and after the deadline; an
+approval or rejection winning against expiry; expiry winning against a decision;
+expiry write failure and unavailable readback; and permitted controller
+bookkeeping. They must verify both the persisted RAR and the parent RR outcome
+through the production path. Admission audit is not proof of persistence.
+
 ### Effective parameter semantics
 
 - Omitted override or nil parameters: preserve the original RAR spec map.

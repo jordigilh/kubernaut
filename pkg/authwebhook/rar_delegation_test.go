@@ -19,6 +19,7 @@ package authwebhook_test
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,11 +48,11 @@ import (
 // Same model as AF-to-KA acting_user injection.
 
 const (
-	testAFSA        = "system:serviceaccount:kubernaut-system:apifrontend"
-	testHumanUser   = "alice@example.com"
-	testAttackerSA  = "system:serviceaccount:evil-ns:attacker"
-	testDirectUser  = "operator@kubernaut.ai"
-	testPodNS       = "kubernaut-system"
+	testAFSA       = "system:serviceaccount:kubernaut-system:apifrontend"
+	testHumanUser  = "alice@example.com"
+	testAttackerSA = "system:serviceaccount:evil-ns:attacker"
+	testDirectUser = "operator@kubernaut.ai"
+	testPodNS      = "kubernaut-system"
 )
 
 var _ = Describe("Trusted Intermediary Delegation (DD-AUTH-MCP-001 v3.0)", func() {
@@ -311,6 +312,7 @@ func handleApprovalWithDecidedVia(
 			AIAnalysisRef: remediationv1.ObjectRef{
 				Name: "aia-delegation",
 			},
+			RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{
 			Decision:        remediationv1.ApprovalDecision(decision),
