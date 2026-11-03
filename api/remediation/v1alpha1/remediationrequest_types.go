@@ -570,6 +570,10 @@ type RemediationRequestStatus struct {
 // above for the full set of valid values.
 const OutcomeRemediated = "Remediated"
 
+// OutcomeManualReviewRequired marks a terminal remediation that cannot safely
+// continue automatically and requires operator intervention.
+const OutcomeManualReviewRequired = "ManualReviewRequired"
+
 // ========================================
 // GOD-STRUCT DECOMPOSITION SUB-STRUCTS (Issue #2206)
 // Following #2205's AIAnalysisStatus precedent: pointer bundles, nil until

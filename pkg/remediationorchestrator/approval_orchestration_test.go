@@ -3,6 +3,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -127,17 +128,45 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(rar.OwnerReferences).To(HaveLen(1))
 				Expect(rar.OwnerReferences[0].Name).To(Equal("test-rr"))
 				Expect(rar.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+				Expect(rar.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName),
+					"UT-RO-2564-001: the RAR finalizer must be present before the create is persisted")
 			})
 
-			It("should be idempotent - return existing name without error", func() {
+			It("UT-RO-2564-001: fails closed on any deterministic RAR collision", func() {
 				// First creation
 				name1, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Second creation - should return same name
+				// A retry after a successful create must not reuse the existing review.
 				name2, err := ac.Create(ctx, rr, ai)
-				Expect(err).ToNot(HaveOccurred())
 				Expect(name2).To(Equal(name1))
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
+
+				existing := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name1, Namespace: rr.Namespace}, existing)).To(Succeed())
+				Expect(existing.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
+				Expect(existing.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName))
+			})
+
+			It("UT-RO-2564-001: fails closed when an existing RAR has a mismatched parent UID", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+
+				foreign := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, foreign)).To(Succeed())
+				foreign.Spec.RemediationRequestRef.UID = types.UID("foreign-parent-uid")
+				Expect(fakeClient.Update(ctx, foreign)).To(Succeed())
+
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
 			})
 
 			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {

@@ -127,6 +127,33 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			Expect(rendered).To(ContainSubstring("effectiveness-assessment window"))
 			Expect(rendered).To(ContainSubstring("arbitrary retry-count threshold"))
 		})
+
+		It("keeps GitOps mechanism fit separate from precondition enforcement", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "KubePodCrashLooping", Namespace: "production", Severity: "critical",
+					Message: "GitOps-managed configuration regression",
+				},
+				RCASummary: "The GitOps-managed configuration causes the workload failure.",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			for _, text := range []string{
+				"catalog identifies as compatible with the detected GitOps management",
+				"Do not infer a particular action type, workflow, or mechanism solely from this label",
+				"Evaluate every returned candidate against the RCA, target",
+				"choose the best-supported match",
+				"do not infer a specific action family unless the returned catalog guidance supports it",
+				"Treat catalog `preconditions` and other descriptive guidance as",
+				"not, by itself, contrary evidence about mechanism",
+				"follow the existing",
+				"respective stages",
+			} {
+				Expect(rendered).To(ContainSubstring(text), "workflow selection prompt must contain %q", text)
+			}
+		})
 	})
 
 	Describe("UT-KA-433-019: Prompt template handles missing optional enrichment", func() {
