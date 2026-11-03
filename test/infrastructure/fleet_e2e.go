@@ -2877,8 +2877,8 @@ spec:
 	hubClusterName, hubClusterPrefix := fleetHubRegistrationIdentity(authConfig)
 	hubRegistrationManifest := ""
 	if hubClusterName != "" {
-		hubRegistrationManifest = fmt.Sprintf(`---
-apiVersion: mcp.kuadrant.io/v1alpha1
+			hubRegistrationManifest = fmt.Sprintf(`---
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %s
@@ -2911,7 +2911,7 @@ spec:
 	}
 
 	routeManifest := strings.TrimSpace(fmt.Sprintf(`%[2]s%[5]s%[8]s%[11]s---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %[9]s
@@ -2929,7 +2929,7 @@ spec:
     name: %[6]s
     namespace: %[1]s
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %[12]s
@@ -2944,7 +2944,7 @@ spec:
     name: %[4]s
     namespace: %[1]s
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: prod-west

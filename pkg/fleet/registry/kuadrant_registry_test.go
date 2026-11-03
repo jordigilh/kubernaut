@@ -79,7 +79,7 @@ var _ = Describe("KuadrantRegistry.Start (BR-INTEGRATION-065)", func() {
 		for i := 0; i < 20; i++ {
 			reg := &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "mcp.kuadrant.io/v1alpha1",
+					"apiVersion": "mcp.kuadrant.io/v1",
 					"kind":       "MCPServerRegistration",
 					"metadata": map[string]interface{}{
 						"name":      fmt.Sprintf("cluster-%d", i),
