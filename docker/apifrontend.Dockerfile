@@ -11,7 +11,7 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:557f358c83892a8b94fb72649a99e1c303a625d240547fb97a9cbc1620e808c0 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:05619897582acb01ee5dd3eaa2934a7cc2f24409a255142a704b734ef07b68a6 AS builder
 
 ARG TARGETARCH
 ARG GOOS=linux
@@ -93,7 +93,7 @@ LABEL name="kubernaut-apifrontend" \
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified.
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e AS development
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:c039ecb9ac9db2db85e78b332d66521f6ce401cf812006a27bc7827018eac4a2 AS development
 RUN microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
 RUN mkdir -p /tmp && chmod 1777 /tmp
