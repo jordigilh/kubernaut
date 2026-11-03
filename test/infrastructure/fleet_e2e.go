@@ -235,12 +235,12 @@ func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigP
 }
 
 const (
-	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
-	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.7.1"
+	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.8.0"
+	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.8.0"
 	valkeyImage              = "docker.io/valkey/valkey:8.1"
 	gatewayAPICRDsURL        = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
-	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
-	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
+	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
+	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
 	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
 	istioHelmVersion         = "1.30.2"
 	// traefikHelmRepoURL: ingress controller for manual setup-e2e-fleet-infra
@@ -1873,7 +1873,7 @@ spec:
 // broker/router when its targeted Gateway listener uses a private CA. The
 // inter-service-ca ConfigMap is already replicated into mcpGatewayNamespace by
 // prepareMCPGatewayNamespace; this patch makes the controller-created broker
-// trust the HTTPS Gateway hairpin documented by Kuadrant v0.7.1.
+// trust the HTTPS Gateway hairpin documented by Kuadrant v0.8.0.
 func kuadrantBrokerGatewayCAPatch() string {
 	return `[{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"gateway-ca","configMap":{"name":"inter-service-ca"}}},{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"gateway-ca","mountPath":"/certs/gateway-ca.crt","subPath":"ca.crt","readOnly":true}},{"op":"add","path":"/spec/template/spec/containers/0/command/-","value":"--gateway-ca-cert=/certs/gateway-ca.crt"}]`
 }
@@ -1913,7 +1913,7 @@ func installKuadrantIstioControlPlane(ctx context.Context, kubeconfigPath string
 }
 
 // applyKuadrantOverlay renders the pinned upstream overlay before applying it
-// so the test harness can preserve its namespace configurability. The v0.7.1
+// so the test harness can preserve its namespace configurability. The v0.8.0
 // overlay intentionally hard-codes mcp-system in its namespace transformer,
 // ClusterRoleBinding subject, and namespace resource; replacing the exact
 // namespace literal in rendered YAML keeps those references aligned without

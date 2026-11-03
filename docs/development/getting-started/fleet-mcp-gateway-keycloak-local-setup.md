@@ -42,8 +42,9 @@ passthrough+STS token-exchange config** — the RFC 8693 exchange lives inside
 kube-mcp-server itself, not in the gateway (see "Key design decision" in the
 EAIGW plan doc). Only the edge auth/routing layer differs.
 
-The Kuadrant lane requires a gateway release that serves `mcp.kuadrant.io/v1`.
-Kubernaut does not fall back to v1alpha1; use the [#2594 migration note](../../issues/2594-kuadrant-mcpserverregistration-v1-migration.md)
+The Kuadrant lane pins MCP Gateway `v0.8.0`, whose CRDs serve
+`mcp.kuadrant.io/v1`. Kubernaut does not fall back to v1alpha1; use the
+[#2594 migration note](../../issues/2594-kuadrant-mcpserverregistration-v1-migration.md)
 when upgrading an older installation.
 
 ---
@@ -406,8 +407,8 @@ spec:
 EOF
 
 # Kuadrant controller + broker (creates its own mcp-gateway Deployment)
-kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
-kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
+kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
+kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
 
 kubectl apply -f - <<'EOF'
 apiVersion: gateway.networking.k8s.io/v1beta1
