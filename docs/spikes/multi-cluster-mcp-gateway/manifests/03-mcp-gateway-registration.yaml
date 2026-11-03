@@ -34,7 +34,7 @@ spec:
 # MCPServerRegistration: registers the MCP server with the gateway.
 # The gateway discovers tools from this server and federates them
 # with a prefix to avoid name collisions across clusters.
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: cluster-a

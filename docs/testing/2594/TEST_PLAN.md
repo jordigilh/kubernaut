@@ -33,8 +33,8 @@ and filtering behavior while preserving the Envoy AI Gateway registry contract.
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Focused unit tests | 100% pass | `go test ./pkg/fleet/registry/...` |
-| FMC integration tests | 100% pass when envtest/Valkey prerequisites are available | `go test ./test/integration/fleetmetadatacache/...` |
+| Focused unit tests | 100% pass | `go test -race ./pkg/fleet/registry -run TestFleetRegistry -count=1` — 42/42 specs |
+| FMC integration tests | 100% when envtest/Valkey prerequisites are available | `KUBEBUILDER_ASSETS=... go test ./test/integration/fleetmetadatacache/... -count=1` — 26/26 specs |
 | Production wiring | 100% of manifest rows proven | Registry startup and FMC probe/cold-start tests |
 | Envoy regression | 0 behavior regressions | Existing EAIGW registry tests |
 | Active API references | 0 `mcp.kuadrant.io/v1alpha1` references | Scoped repository search |
@@ -45,7 +45,7 @@ and filtering behavior while preserving the Envoy AI Gateway registry contract.
 
 ### 2.1 Authority
 
-- [BR-INTEGRATION-065](../../requirements/BR-INTEGRATION-065-mcp-gateway-fleet-integration.md) — fleet registry integration, if present in the repository
+- BR-INTEGRATION-065 — fleet registry integration requirement referenced by the implementation and test suites
 - [BR-FLEET-003](../../requirements/BR-FLEET-003-cluster-scoped-workflow-targeting.md) — fleet registration labels and registry source
 - Issue [#2594](https://github.com/jordigilh/kubernaut/issues/2594)
 - Kuadrant MCP Gateway v1.0.2 CRD: `mcp.kuadrant.io/v1` served/storage; `v1alpha1` served=false/storage=false
@@ -161,10 +161,10 @@ claim of live deployment validation.
 
 | BR/Issue | Description | Priority | Tier | Test ID | Status |
 |----------|-------------|----------|------|---------|--------|
-| #2594 / BR-INTEGRATION-065 | Production registry uses Kuadrant v1 GVR | P0 | Unit | UT-REG-KUA-2594-001 | RED |
-| #2594 / BR-INTEGRATION-065 | v1 registration is discovered after API changes | P0 | Integration | IT-FMC-2594-001 | Pending |
-| #2594 / BR-INTEGRATION-065 | v1 registrations are synchronously discovered at cold start | P0 | Integration | IT-FMC-2594-002 | Pending |
-| BR-FLEET-003 | Managed labels remain the cluster classification source | P1 | Unit/Integration | Existing UT-REG-KUA-004..006; FMC scenarios | Pending |
+| #2594 / BR-INTEGRATION-065 | Production registry uses Kuadrant v1 GVR | P0 | Unit | UT-REG-KUA-2594-001 | Pass |
+| #2594 / BR-INTEGRATION-065 | v1 registration is discovered after API changes | P0 | Integration | IT-FMC-2594-001 | Pass |
+| #2594 / BR-INTEGRATION-065 | v1 registrations are synchronously discovered at cold start | P0 | Integration | IT-FMC-2594-002 | Pass |
+| BR-FLEET-003 | Managed labels remain the cluster classification source | P1 | Unit/Integration | Existing UT-REG-KUA-004..006; FMC scenarios | Pass |
 
 ---
 
@@ -196,6 +196,6 @@ claim of live deployment validation.
 
 | Phase | Exit criterion | Status |
 |-------|----------------|--------|
-| RED | Contract test fails against v1alpha1 implementation | In progress |
-| GREEN | Production GVR and active fixtures use v1; focused UT/IT pass | Pending |
-| REFACTOR | Active docs/examples aligned; compatibility wording and evidence boundaries reviewed | Pending |
+| RED | Contract test fails against v1alpha1 implementation | Complete |
+| GREEN | Production GVR and active fixtures use v1; focused UT/IT pass | Complete |
+| REFACTOR | Active docs/examples aligned; compatibility wording and evidence boundaries reviewed | Complete |
