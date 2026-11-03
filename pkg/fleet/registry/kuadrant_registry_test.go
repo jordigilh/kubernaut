@@ -33,6 +33,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
+var _ = Describe("KuadrantRegistry API contract (BR-INTEGRATION-065)", func() {
+	It("UT-REG-KUA-2594-001: uses the Kuadrant MCPServerRegistration v1 resource", func() {
+		Expect(registry.MCPServerRegistrationGVR).To(Equal(schema.GroupVersionResource{
+			Group:    "mcp.kuadrant.io",
+			Version:  "v1",
+			Resource: "mcpserverregistrations",
+		}))
+	})
+})
+
 var _ = Describe("KuadrantRegistry.Start (BR-INTEGRATION-065)", func() {
 	// UT-FLEET-2299-001: port of UT-FLEET-003-006 (EAIGWRegistry) to
 	// KuadrantRegistry. Guards against the data race between Start()'s read
