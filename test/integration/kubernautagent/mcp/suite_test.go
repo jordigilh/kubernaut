@@ -288,7 +288,7 @@ var _ = SynchronizedBeforeSuite(
 		// same envtest cluster, one per Ginkgo process.
 		wfScheme, err := workflowcatalog.NewScheme()
 		Expect(err).ToNot(HaveOccurred())
-		wfCache, cancel, err := workflowcatalog.NewInformerCache(sharedK8sConfig, wfScheme, logr.Discard())
+		wfCache, cancel, err := workflowcatalog.NewInformerCache(sharedK8sConfig, wfScheme, mcpSeedNamespace, logr.Discard())
 		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache must sync")
 		sharedWfCatalogCancel = cancel
 		sharedWfCatalog = workflowcatalog.NewCatalog(wfCache, logr.Discard())
