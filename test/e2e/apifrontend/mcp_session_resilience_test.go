@@ -39,11 +39,13 @@ import (
 //
 // Proves the full resilience journey through the deployed AF → KA stack:
 //   1. Establish MCP session, start investigation (session enters pool)
-//   2. Kill KA pod (transport dies for cached session)
-//   3. Wait for KA pod to restart
-//   4. Call discover_workflows through same AF MCP session
-//   5. Assert transparent recovery (pool Ping detected dead session, evicted,
-//      factory reconnected to restarted KA)
+//   2. Expire the interactive Lease so the restarted KA can reclaim ownership
+//   3. Kill KA pod (transport dies for cached session)
+//   4. Wait for KA pod to restart and reconcile the expired Lease
+//   5. Reconnect through the same AF MCP session (reconnect -> takeover)
+//   6. Call discover_workflows through the reconstituted session
+//   7. Assert recovery (pool Ping detected the dead session, evicted it, and
+//      the factory reconnected to restarted KA)
 //
 // NIST 800-53 Controls:
 //   SI-4  — proactive health check detects failure
@@ -118,10 +120,18 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 
 	It("E2E-AF-1387-001 [SI-4, SC-24, CP-10]: dead KA session auto-reconstituted after pod restart", func() {
 		rrName := "e2e-resilience-1387-rr"
+		leaseName := "kubernaut-interactive-" + rrName
 
 		By("Creating RR fixture for investigation")
 		Expect(createRR(e2eNamespace, rrName, "test-deploy-1387")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
+		DeferCleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cleanupCancel()
+			if err := clientset.CoordinationV1().Leases(e2eNamespace).Delete(cleanupCtx, leaseName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("  cleanup Lease %s/%s deletion failed: %v\n", e2eNamespace, leaseName, err)
+			}
+		})
 
 		By("Step 1: Starting investigation to populate AF session pool")
 		raw, err := mcpToolCallWithSession("res-1387-start", "kubernaut_investigate", map[string]interface{}{
@@ -142,7 +152,15 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		Expect(err).NotTo(HaveOccurred(), "baseline discover_workflows should succeed before pod kill")
 		GinkgoWriter.Printf("  baseline discover_workflows: %s\n", string(raw))
 
-		By("Step 3: Killing KA pod to invalidate cached transport session")
+		By("Step 3: Expiring the KA Lease so the restarted epoch can reclaim ownership")
+		lease, err := clientset.CoordinationV1().Leases(e2eNamespace).Get(context.Background(), leaseName, metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred(), "interactive Lease should exist before KA restart")
+		expiredAcquire := metav1.NewMicroTime(time.Now().Add(-2 * time.Hour))
+		lease.Spec.AcquireTime = &expiredAcquire
+		_, err = clientset.CoordinationV1().Leases(e2eNamespace).Update(context.Background(), lease, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "interactive Lease should be backdated before KA restart")
+
+		By("Step 4: Killing KA pod to invalidate cached transport session")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -153,7 +171,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		deleteCmd.Stderr = GinkgoWriter
 		Expect(deleteCmd.Run()).To(Succeed(), "kubectl delete pod should succeed")
 
-		By("Step 4: Waiting for KA pod to restart and become ready")
+		By("Step 5: Waiting for KA pod to restart, become ready, and reconcile the expired Lease")
 		waitCtx, waitCancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer waitCancel()
 
@@ -164,17 +182,30 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		rolloutCmd.Stderr = GinkgoWriter
 		Expect(rolloutCmd.Run()).To(Succeed(), "KA deployment should become ready after pod restart")
 
-		time.Sleep(5 * time.Second)
+		Eventually(func(g Gomega) {
+			_, getErr := clientset.CoordinationV1().Leases(e2eNamespace).Get(context.Background(), leaseName, metav1.GetOptions{})
+			g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
+				"KA startup reconciliation must delete the expired Lease before reconnect")
+		}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-		By("Step 5: Calling discover_workflows — pool should detect dead session and auto-reconnect")
+		By("Step 6: Reconnecting — pool should detect the dead session and takeover should re-establish KA ownership")
+		raw, err = mcpToolCallWithSession("res-1387-reconnect", "kubernaut_reconnect", map[string]interface{}{
+			"rr_id": rrName,
+		})
+		Expect(err).NotTo(HaveOccurred(), "reconnect should fall back to takeover after the restarted KA reports not_driving")
+		Expect(string(raw)).To(ContainSubstring("takeover_started"),
+			"reconnect must successfully take over the fresh KA epoch")
+		GinkgoWriter.Printf("  reconnect/takeover result: %s\n", string(raw))
+
+		By("Step 7: Calling discover_workflows — the reconstituted pooled session should succeed")
 		Eventually(func(g Gomega) {
 			raw, err = mcpToolCallWithSession("res-1387-after-kill", "kubernaut_discover_workflows", map[string]interface{}{
 				"rr_id": rrName,
 			})
 			g.Expect(err).NotTo(HaveOccurred(),
-				"CP-10: discover_workflows must succeed after KA pod restart — pool auto-reconstituted session")
+				"CP-10: discover_workflows must succeed after reconnect — pool auto-reconstituted session")
 		}, 30*time.Second, 3*time.Second).Should(Succeed(),
-			"SI-4+SC-24+CP-10: Ping-on-Acquire must detect dead cached session, evict it, and transparently create a fresh session to the restarted KA")
+			"SI-4+SC-24+CP-10: Ping-on-Acquire must detect the dead cached session, evict it, and transparently create a fresh session to the restarted KA")
 
 		GinkgoWriter.Printf("  post-recovery discover_workflows: %s\n", string(raw))
 	})
