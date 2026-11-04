@@ -106,6 +106,13 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 			return nil, fmt.Errorf("HTTP %d: %s", code, string(raw))
 		}
 		payload := unwrapSSEDataLine(raw)
+		text, toolIsError, parseErr := parseMCPToolPayload(payload)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if toolIsError {
+			return nil, fmt.Errorf("mcp tool error: %s", text)
+		}
 		return []byte(payload), nil
 	}
 
