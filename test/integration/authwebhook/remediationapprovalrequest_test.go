@@ -268,6 +268,8 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// AUDITOR NEED: Separate audit trail for authentication step
 
 			rar := createRAR("audit")
+			// Isolate the audit query from other specs that share the default parent.
+			rar.Spec.RemediationRequestRef.Name = rar.Name
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves via webhook")
