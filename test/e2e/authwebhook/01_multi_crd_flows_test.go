@@ -151,6 +151,10 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				},
 				Workflow: &sharedtypes.WorkflowSnapshot{
 					WorkflowID:             "test-workflow",
+					WorkflowName:           "test-workflow",
+					ActionType:             "RestartPod",
+					Version:                "v1",
+					ExecutionBundle:        "test/image:latest",
 					DeclaredParameterNames: map[string]bool{},
 				},
 				Parameters:      map[string]string{},
