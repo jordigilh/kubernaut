@@ -258,6 +258,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
+			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())

@@ -2879,6 +2879,24 @@ components:
           description: Reason for the transition
 
         # Approval Fields (conditional)
+        original_parameters:
+          type: object
+          description: Original values in the reviewed approval snapshot.
+          additionalProperties:
+            type: string
+        override_parameters:
+          type: object
+          description: Exact changes committed with the approval decision.
+          additionalProperties:
+            type: string
+        effective_parameters:
+          type: object
+          description: Effective parameter values after the committed partial override.
+          additionalProperties:
+            type: string
+        override_rationale:
+          type: string
+          description: Reviewer's rationale for the committed changes.
         rar_name:
           type: string
           description: Name of the RemediationApprovalRequest
@@ -3483,6 +3501,27 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+        workflow_id:
+          type: string
+          description: Content-derived identifier of the reviewed workflow selection.
+        original_parameters:
+          type: object
+          description: Original reviewed parameter values, unchanged from the approval snapshot.
+          additionalProperties:
+            type: string
+        override_parameters:
+          type: object
+          description: Exact parameter changes submitted by the reviewer.
+          additionalProperties:
+            type: string
+        effective_parameters:
+          type: object
+          description: Effective values after applying the partial override.
+          additionalProperties:
+            type: string
+        override_rationale:
+          type: string
+          description: Reviewer's rationale for the parameter changes.
         delegated_user:
           type: string
           description: Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001 v3.0 trusted intermediary pattern.
@@ -7285,6 +7324,33 @@ components:
         target_kind:
           type: string
           description: Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on
+        workflow_id:
+          type: string
+          description: Reviewed workflow identifier for an approval decision.
+        approval_request:
+          type: string
+          description: Name of the reviewed RemediationApprovalRequest.
+        approval_decision:
+          type: string
+          description: Approval decision submitted by the reviewer.
+        original_parameters:
+          type: object
+          description: Original parameter values in the reviewed approval snapshot.
+          additionalProperties:
+            type: string
+        override_parameters:
+          type: object
+          description: Exact parameter changes submitted by the reviewer.
+          additionalProperties:
+            type: string
+        effective_parameters:
+          type: object
+          description: Effective parameter values after the submitted partial override.
+          additionalProperties:
+            type: string
+        override_rationale:
+          type: string
+          description: Reviewer's rationale for the submitted changes.
 
     ApifrontendWorkflowDiscoveryPayload:
       type: object

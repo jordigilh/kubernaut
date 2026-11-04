@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -70,6 +71,9 @@ const (
 //nolint:unparam // see doc comment above -- error kept for call-site signature stability (Issue #1546 Tier 4)
 func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
 	ref := wfe.Spec.WorkflowRef
+	if ref.DeclaredParameterNames == nil {
+		return nil, weexecutor.CreateOptions{}, fmt.Errorf("workflow parameter declarations are missing")
+	}
 	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
 	opts := weexecutor.CreateOptions{
 		Dependencies:           convertWorkflowDependencies(ref.Dependencies),
@@ -124,6 +128,17 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 
 	if result, err, shouldReturn := r.validateAndAnnouncePendingSpec(ctx, wfe, logger); shouldReturn {
 		return result, err
+	}
+	if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
+		if ctx.Err() != nil {
+			return ctrl.Result{}, ctx.Err()
+		}
+		logger.Error(err, "Workflow identity verification failed before dispatch")
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, err.Error())
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
+			return ctrl.Result{}, markErr
+		}
+		return ctrl.Result{}, nil
 	}
 
 	createOpts, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
@@ -216,6 +231,7 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 	// ========================================
 	_, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
 	if schemaErr != nil {
+		logger.Error(schemaErr, "Workflow schema metadata validation failed")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
 			fmt.Sprintf("Workflow dependency validation failed: %v", schemaErr))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())

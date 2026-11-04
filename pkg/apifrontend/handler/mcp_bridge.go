@@ -493,7 +493,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			return handleMarshalError(ctx, cfg, toolName, start, err), nil, nil
 		}
 
-		return handleToolSuccess(ctx, cfg, toolName, start, input, resultJSON), nil, nil
+		return handleToolSuccess(ctx, cfg, toolName, start, input, result, resultJSON), nil, nil
 	}
 }
 
@@ -558,7 +558,7 @@ func handleMarshalError(ctx context.Context, cfg *MCPBridgeConfig, toolName stri
 }
 
 // handleToolSuccess builds the response for a successful tool call.
-func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, resultJSON []byte) *mcp.CallToolResult {
+func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, result any, resultJSON []byte) *mcp.CallToolResult {
 	durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
 	recordMetrics(cfg, toolName, "success", start)
 	auditDetail := map[string]string{
@@ -569,7 +569,22 @@ func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolNa
 	if cfg.Namespace != "" {
 		auditDetail["namespace"] = cfg.Namespace
 	}
-	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
+	var auditOptions []emitAuditOption
+	if approval, ok := result.(tools.ApproveResult); ok && approval.Audit != nil {
+		info := approval.Audit
+		if args, ok := any(input).(tools.ApproveArgs); ok {
+			auditDetail["approval_request"] = args.RARName
+			auditDetail["approval_decision"] = args.Decision
+		}
+		if info.CorrelationID != "" {
+			auditOptions = append(auditOptions, withCorrelationID(info.CorrelationID))
+		}
+		auditOptions = append(auditOptions, func(event *audit.Event) {
+			event.Approval = &audit.ApprovalAudit{WorkflowID: info.WorkflowID, OriginalParameters: info.OriginalParameters,
+				OverrideParameters: info.OverrideParameters, EffectiveParameters: info.EffectiveParameters, OverrideRationale: info.OverrideRationale}
+		})
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail, auditOptions...)
 	cfg.Logger.Info("tool call succeeded",
 		"tool", toolName,
 		"user", usernameFromCtx(ctx),

@@ -54,6 +54,14 @@ import (
 // - Clean error handling for non-owned PipelineRuns
 
 var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Conflict fixture", "tekton") })
+	conflictWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 	Context("BR-WE-002: Concurrent PipelineRun Creation", func() {
 		// ========================================
 		// Test 1: Concurrent Reconcile Loops
@@ -61,7 +69,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		It("should handle concurrent PipelineRun creation gracefully without duplicates", func() {
 			By("Creating WorkflowExecution for concurrent test")
 			targetResource := "test-namespace/deployment/concurrent-test"
-			wfe := createUniqueWFE("concurrent-race", targetResource)
+			wfe := conflictWFE("concurrent-race", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for initial PipelineRun creation")
@@ -149,7 +157,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		It("should handle PipelineRun created externally before reconcile", func() {
 			By("Creating WorkflowExecution")
 			targetResource := "test-namespace/deployment/external-pr-test"
-			wfe := createUniqueWFE("external-pr", targetResource)
+			wfe := conflictWFE("external-pr", targetResource)
 
 			By("Manually creating PipelineRun BEFORE WFE reconciliation")
 			// This simulates external creation (operator, CI/CD, or race with another controller)
@@ -197,7 +205,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		It("IT-WE-190-001: should classify PipelineRun collision as Deduplicated with DeduplicatedBy", func() {
 			By("Creating first WorkflowExecution")
 			targetResource := "test-namespace/deployment/conflict-test"
-			wfe1 := createUniqueWFE("conflict-wfe1", targetResource)
+			wfe1 := conflictWFE("conflict-wfe1", targetResource)
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for first WFE to create PipelineRun")
@@ -207,7 +215,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			By("Creating second WorkflowExecution for SAME target resource")
-			wfe2 := createUniqueWFE("conflict-wfe2", targetResource)
+			wfe2 := conflictWFE("conflict-wfe2", targetResource)
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 			By("Verifying second WFE is marked Failed/Deduplicated")
@@ -247,11 +255,11 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Creating two WFEs for same target (at different times)")
 			targetResource := "test-namespace/deployment/deterministic-test"
 
-			wfe1 := createUniqueWFE("deterministic-wfe1", targetResource)
+			wfe1 := conflictWFE("deterministic-wfe1", targetResource)
 			pr1 := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe1, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 			pr1Name := pr1.Name
 
-			wfe2 := createUniqueWFE("deterministic-wfe2", targetResource)
+			wfe2 := conflictWFE("deterministic-wfe2", targetResource)
 			pr2 := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe2, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 			pr2Name := pr2.Name
 

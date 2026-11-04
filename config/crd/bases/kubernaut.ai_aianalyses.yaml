@@ -1334,7 +1334,7 @@ spec:
                         description: |-
                           DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
                           uses for defense-in-depth stripping of undeclared parameters (#243). Not
-                          "omitempty": nil (no schema, no filtering) and a non-nil empty map
+                          "omitempty": nil (missing schema, fail closed) and a non-nil empty map
                           (schema declares zero allowed parameters, strip everything) are
                           distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
                           encoding/json "omitempty" treats a zero-length map the same as nil and
@@ -1426,11 +1426,57 @@ spec:
                           by the LLM.
                         pattern: ^sha256:[a-f0-9]{64}$
                         type: string
+                      parameterSchema:
+                        description: |-
+                          ParameterSchema is the catalog-resolved schema used to review parameters.
+                          Nil denotes missing metadata; an empty list declares no parameters.
+                        items:
+                          description: RemediationWorkflowParameter defines a workflow
+                            input parameter
+                          properties:
+                            default:
+                              x-kubernetes-preserve-unknown-fields: true
+                            dependsOn:
+                              items:
+                                type: string
+                              type: array
+                            description:
+                              type: string
+                            enum:
+                              items:
+                                type: string
+                              type: array
+                            maximum:
+                              type: number
+                            minimum:
+                              type: number
+                            name:
+                              type: string
+                            pattern:
+                              type: string
+                            required:
+                              type: boolean
+                            type:
+                              enum:
+                              - string
+                              - integer
+                              - boolean
+                              - array
+                              - float
+                              type: string
+                          required:
+                          - description
+                          - name
+                          - required
+                          - type
+                          type: object
+                        type: array
                       parameters:
                         additionalProperties:
                           type: string
-                        description: Workflow parameters (UPPER_SNAKE_CASE keys per
-                          DD-WORKFLOW-003)
+                        description: |-
+                          Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003).
+                          Nil indicates missing data; an explicitly empty map is preserved.
                         type: object
                       priorRemediationUIDs:
                         description: |-
@@ -1591,6 +1637,11 @@ spec:
                     - workflowName
                     type: object
                     x-kubernetes-validations:
+                    - message: selected workflow parameter schema is immutable once
+                        selectedAt is populated (BR-ORCH-025)
+                      rule: '!has(oldSelf.selectedAt) || ((has(self.parameterSchema)
+                        == has(oldSelf.parameterSchema)) && (!has(self.parameterSchema)
+                        || self.parameterSchema == oldSelf.parameterSchema))'
                     - message: 'selectedWorkflow is immutable once selectedAt is populated
                         (Issue #1661, DD-WORKFLOW-018)'
                       rule: '!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId

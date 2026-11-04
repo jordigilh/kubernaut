@@ -154,14 +154,60 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 		})
 	})
 
+	Describe("BR-ORCH-025: partial reviewer parameter overrides (#2570)", func() {
+		It("UT-RO-2570-096 preserves omitted original parameter values", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}}
+
+			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolved.Parameters).To(Equal(map[string]string{"NAMESPACE": defaultFixture, "POD_NAME": "reviewed-pod"}))
+			Expect(aiWorkflow.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
+		})
+
+		It("UT-RO-2570-097 treats an explicit empty override as a no-op", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{}}
+
+			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolved.Parameters).To(Equal(aiWorkflow.Parameters))
+		})
+
+		It("UT-RO-2570-103 rejects keys absent from the original parameters", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"NEW_KEY": "value"}}
+			_, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
+			Expect(err).To(HaveOccurred())
+			Expect(aiWorkflow.Parameters).NotTo(HaveKey("NEW_KEY"))
+		})
+
+		It("UT-RO-2570-104 rejects changes to target resource parameters", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = "original"
+			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"TARGET_RESOURCE_NAME": "different"}}
+			_, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
+			Expect(err).To(HaveOccurred())
+			Expect(aiWorkflow.Parameters["TARGET_RESOURCE_NAME"]).To(Equal("original"))
+		})
+
+		It("UT-RO-2570-105 preserves an unchanged target resource parameter", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = "original"
+			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"TARGET_RESOURCE_NAME": "original"}}
+			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolved.Parameters["TARGET_RESOURCE_NAME"]).To(Equal("original"))
+		})
+	})
+
 	Describe("UT-RO-594-002: Override params only → AIA workflow + override params", func() {
-		It("should keep AIA workflow data but replace parameters", func() {
+		It("should keep workflow data and overlay existing parameters", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
 				Parameters: map[string]string{
-					"TIMEOUT": "60s",
-					"FORCE":   "true",
+					"POD_NAME": "reviewed-pod",
 				},
 			}
 
@@ -174,8 +220,8 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(resolved.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
 			Expect(resolved.ExecutionEngine).To(Equal("tekton"))
 			Expect(resolved.Parameters).To(HaveLen(2))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("TIMEOUT", "60s"))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("FORCE", "true"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
 		})
 	})
 
@@ -205,7 +251,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			overrideSpec := &remediationv1.WorkflowOverride{
 				WorkflowName: "drain-restart",
 				Parameters: map[string]string{
-					"DRAIN_TIMEOUT": "120s",
+					"POD_NAME": "reviewed-pod",
 				},
 			}
 
@@ -215,8 +261,8 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 
 			Expect(resolved.WorkflowID).To(Equal("wf-override-002"))
 			Expect(resolved.Version).To(Equal("2.0.0"))
-			Expect(resolved.Parameters).To(HaveLen(1))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("DRAIN_TIMEOUT", "120s"))
+			Expect(resolved.Parameters).To(HaveLen(2))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
 		})
 	})
 
@@ -242,7 +288,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{"TIMEOUT": "30s"},
+				Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
 				Rationale:  "",
 			}
 
@@ -252,8 +298,8 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 		})
 	})
 
-	Describe("UT-RO-594-006: Params {} → empty; params nil → AIA params", func() {
-		It("should replace with empty params when override.Parameters is empty map", func() {
+	Describe("UT-RO-594-006: empty or nil overrides preserve original params", func() {
+		It("should preserve params when override.Parameters is empty map", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
@@ -263,7 +309,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(applied).To(BeTrue())
-			Expect(resolved.Parameters).To(BeEmpty())
+			Expect(resolved.Parameters).To(Equal(aiWorkflow.Parameters))
 		})
 
 		It("should preserve AIA params when override.Parameters is nil", func() {
@@ -355,7 +401,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 
 			overrideSpec := &remediationv1.WorkflowOverride{
 				WorkflowName: "drain-restart",
-				Parameters:   map[string]string{"NEW_PARAM": "value"},
+				Parameters:   map[string]string{"POD_NAME": "reviewed-pod"},
 			}
 
 			originalID := aiWorkflow.WorkflowID
@@ -370,6 +416,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			// Original should be untouched
 			Expect(aiWorkflow.WorkflowID).To(Equal(originalID))
 			Expect(aiWorkflow.Parameters).To(HaveLen(originalParams))
+			Expect(aiWorkflow.Parameters["POD_NAME"]).To(Equal("app-pod-1"))
 		})
 	})
 })

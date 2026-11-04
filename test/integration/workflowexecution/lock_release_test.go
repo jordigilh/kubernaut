@@ -37,12 +37,16 @@ import (
 // Suite CooldownPeriod: 10 seconds (see suite_test.go)
 
 var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Lock release fixture", "job") })
 
 	It("IT-WE-375-002: cooldown enforcement with eventual lock release via ReconcileTerminal", func() {
 		targetResource := fmt.Sprintf("default/deployment/lock-release-%d", time.Now().UnixNano())
 
 		By("Phase 1: Creating WFE1 and running it to completion")
 		wfe1 := createUniqueJobWFE("lock-rel1", targetResource)
+		wfe1.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe1.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		defer cleanupJobWFE(wfe1)
 		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
@@ -73,6 +77,8 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 
 		By("Phase 2: Creating WFE2 immediately (within cooldown window)")
 		wfe2 := createUniqueJobWFE("lock-rel2", targetResource)
+		wfe2.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		defer cleanupJobWFE(wfe2)
 		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 

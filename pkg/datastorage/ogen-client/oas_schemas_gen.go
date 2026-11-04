@@ -9411,6 +9411,20 @@ type ApifrontendToolExecutedPayload struct {
 	TargetNamespace OptString `json:"target_namespace"`
 	// Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on.
 	TargetKind OptString `json:"target_kind"`
+	// Reviewed workflow identifier for an approval decision.
+	WorkflowID OptString `json:"workflow_id"`
+	// Name of the reviewed RemediationApprovalRequest.
+	ApprovalRequest OptString `json:"approval_request"`
+	// Approval decision submitted by the reviewer.
+	ApprovalDecision OptString `json:"approval_decision"`
+	// Original parameter values in the reviewed approval snapshot.
+	OriginalParameters OptApifrontendToolExecutedPayloadOriginalParameters `json:"original_parameters"`
+	// Exact parameter changes submitted by the reviewer.
+	OverrideParameters OptApifrontendToolExecutedPayloadOverrideParameters `json:"override_parameters"`
+	// Effective parameter values after the submitted partial override.
+	EffectiveParameters OptApifrontendToolExecutedPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the submitted changes.
+	OverrideRationale OptString `json:"override_rationale"`
 }
 
 // GetEventType returns the value of EventType.
@@ -9458,6 +9472,41 @@ func (s *ApifrontendToolExecutedPayload) GetTargetKind() OptString {
 	return s.TargetKind
 }
 
+// GetWorkflowID returns the value of WorkflowID.
+func (s *ApifrontendToolExecutedPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetApprovalRequest returns the value of ApprovalRequest.
+func (s *ApifrontendToolExecutedPayload) GetApprovalRequest() OptString {
+	return s.ApprovalRequest
+}
+
+// GetApprovalDecision returns the value of ApprovalDecision.
+func (s *ApifrontendToolExecutedPayload) GetApprovalDecision() OptString {
+	return s.ApprovalDecision
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *ApifrontendToolExecutedPayload) GetOriginalParameters() OptApifrontendToolExecutedPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *ApifrontendToolExecutedPayload) GetOverrideParameters() OptApifrontendToolExecutedPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *ApifrontendToolExecutedPayload) GetEffectiveParameters() OptApifrontendToolExecutedPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *ApifrontendToolExecutedPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
+}
+
 // SetEventType sets the value of EventType.
 func (s *ApifrontendToolExecutedPayload) SetEventType(val ApifrontendToolExecutedPayloadEventType) {
 	s.EventType = val
@@ -9503,6 +9552,53 @@ func (s *ApifrontendToolExecutedPayload) SetTargetKind(val OptString) {
 	s.TargetKind = val
 }
 
+// SetWorkflowID sets the value of WorkflowID.
+func (s *ApifrontendToolExecutedPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetApprovalRequest sets the value of ApprovalRequest.
+func (s *ApifrontendToolExecutedPayload) SetApprovalRequest(val OptString) {
+	s.ApprovalRequest = val
+}
+
+// SetApprovalDecision sets the value of ApprovalDecision.
+func (s *ApifrontendToolExecutedPayload) SetApprovalDecision(val OptString) {
+	s.ApprovalDecision = val
+}
+
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *ApifrontendToolExecutedPayload) SetOriginalParameters(val OptApifrontendToolExecutedPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *ApifrontendToolExecutedPayload) SetOverrideParameters(val OptApifrontendToolExecutedPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *ApifrontendToolExecutedPayload) SetEffectiveParameters(val OptApifrontendToolExecutedPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *ApifrontendToolExecutedPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
+}
+
+// Effective parameter values after the submitted partial override.
+type ApifrontendToolExecutedPayloadEffectiveParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadEffectiveParameters) init() ApifrontendToolExecutedPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Event type for discriminator (matches parent event_type).
 type ApifrontendToolExecutedPayloadEventType string
 
@@ -9536,6 +9632,30 @@ func (s *ApifrontendToolExecutedPayloadEventType) UnmarshalText(data []byte) err
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Original parameter values in the reviewed approval snapshot.
+type ApifrontendToolExecutedPayloadOriginalParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadOriginalParameters) init() ApifrontendToolExecutedPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Exact parameter changes submitted by the reviewer.
+type ApifrontendToolExecutedPayloadOverrideParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadOverrideParameters) init() ApifrontendToolExecutedPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Outcome of tool execution.
@@ -26652,6 +26772,144 @@ func (o OptApifrontendSessionCompletedPayloadUserDecision) Or(d ApifrontendSessi
 	return d
 }
 
+// NewOptApifrontendToolExecutedPayloadEffectiveParameters returns new OptApifrontendToolExecutedPayloadEffectiveParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadEffectiveParameters(v ApifrontendToolExecutedPayloadEffectiveParameters) OptApifrontendToolExecutedPayloadEffectiveParameters {
+	return OptApifrontendToolExecutedPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadEffectiveParameters is optional ApifrontendToolExecutedPayloadEffectiveParameters.
+type OptApifrontendToolExecutedPayloadEffectiveParameters struct {
+	Value ApifrontendToolExecutedPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadEffectiveParameters was set.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadEffectiveParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadEffectiveParameters) SetTo(v ApifrontendToolExecutedPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) Get() (v ApifrontendToolExecutedPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) Or(d ApifrontendToolExecutedPayloadEffectiveParameters) ApifrontendToolExecutedPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptApifrontendToolExecutedPayloadOriginalParameters returns new OptApifrontendToolExecutedPayloadOriginalParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadOriginalParameters(v ApifrontendToolExecutedPayloadOriginalParameters) OptApifrontendToolExecutedPayloadOriginalParameters {
+	return OptApifrontendToolExecutedPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadOriginalParameters is optional ApifrontendToolExecutedPayloadOriginalParameters.
+type OptApifrontendToolExecutedPayloadOriginalParameters struct {
+	Value ApifrontendToolExecutedPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadOriginalParameters was set.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadOriginalParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadOriginalParameters) SetTo(v ApifrontendToolExecutedPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) Get() (v ApifrontendToolExecutedPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) Or(d ApifrontendToolExecutedPayloadOriginalParameters) ApifrontendToolExecutedPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptApifrontendToolExecutedPayloadOverrideParameters returns new OptApifrontendToolExecutedPayloadOverrideParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadOverrideParameters(v ApifrontendToolExecutedPayloadOverrideParameters) OptApifrontendToolExecutedPayloadOverrideParameters {
+	return OptApifrontendToolExecutedPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadOverrideParameters is optional ApifrontendToolExecutedPayloadOverrideParameters.
+type OptApifrontendToolExecutedPayloadOverrideParameters struct {
+	Value ApifrontendToolExecutedPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadOverrideParameters was set.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadOverrideParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadOverrideParameters) SetTo(v ApifrontendToolExecutedPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) Get() (v ApifrontendToolExecutedPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) Or(d ApifrontendToolExecutedPayloadOverrideParameters) ApifrontendToolExecutedPayloadOverrideParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptAuditEventsQueryResponsePagination returns new OptAuditEventsQueryResponsePagination with value set to v.
 func NewOptAuditEventsQueryResponsePagination(v AuditEventsQueryResponsePagination) OptAuditEventsQueryResponsePagination {
 	return OptAuditEventsQueryResponsePagination{
@@ -29444,6 +29702,144 @@ func (o OptRFC7807ProblemFieldErrors) Or(d RFC7807ProblemFieldErrors) RFC7807Pro
 	return d
 }
 
+// NewOptRemediationApprovalAuditPayloadEffectiveParameters returns new OptRemediationApprovalAuditPayloadEffectiveParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadEffectiveParameters(v RemediationApprovalAuditPayloadEffectiveParameters) OptRemediationApprovalAuditPayloadEffectiveParameters {
+	return OptRemediationApprovalAuditPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadEffectiveParameters is optional RemediationApprovalAuditPayloadEffectiveParameters.
+type OptRemediationApprovalAuditPayloadEffectiveParameters struct {
+	Value RemediationApprovalAuditPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadEffectiveParameters was set.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadEffectiveParameters) Reset() {
+	var v RemediationApprovalAuditPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadEffectiveParameters) SetTo(v RemediationApprovalAuditPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) Get() (v RemediationApprovalAuditPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) Or(d RemediationApprovalAuditPayloadEffectiveParameters) RemediationApprovalAuditPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationApprovalAuditPayloadOriginalParameters returns new OptRemediationApprovalAuditPayloadOriginalParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadOriginalParameters(v RemediationApprovalAuditPayloadOriginalParameters) OptRemediationApprovalAuditPayloadOriginalParameters {
+	return OptRemediationApprovalAuditPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadOriginalParameters is optional RemediationApprovalAuditPayloadOriginalParameters.
+type OptRemediationApprovalAuditPayloadOriginalParameters struct {
+	Value RemediationApprovalAuditPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadOriginalParameters was set.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadOriginalParameters) Reset() {
+	var v RemediationApprovalAuditPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadOriginalParameters) SetTo(v RemediationApprovalAuditPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) Get() (v RemediationApprovalAuditPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) Or(d RemediationApprovalAuditPayloadOriginalParameters) RemediationApprovalAuditPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationApprovalAuditPayloadOverrideParameters returns new OptRemediationApprovalAuditPayloadOverrideParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadOverrideParameters(v RemediationApprovalAuditPayloadOverrideParameters) OptRemediationApprovalAuditPayloadOverrideParameters {
+	return OptRemediationApprovalAuditPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadOverrideParameters is optional RemediationApprovalAuditPayloadOverrideParameters.
+type OptRemediationApprovalAuditPayloadOverrideParameters struct {
+	Value RemediationApprovalAuditPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadOverrideParameters was set.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadOverrideParameters) Reset() {
+	var v RemediationApprovalAuditPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadOverrideParameters) SetTo(v RemediationApprovalAuditPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) Get() (v RemediationApprovalAuditPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) Or(d RemediationApprovalAuditPayloadOverrideParameters) RemediationApprovalAuditPayloadOverrideParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationHealthChecks returns new OptRemediationHealthChecks with value set to v.
 func NewOptRemediationHealthChecks(v RemediationHealthChecks) OptRemediationHealthChecks {
 	return OptRemediationHealthChecks{
@@ -29858,6 +30254,52 @@ func (o OptRemediationOrchestratorAuditPayloadDecision) Or(d RemediationOrchestr
 	return d
 }
 
+// NewOptRemediationOrchestratorAuditPayloadEffectiveParameters returns new OptRemediationOrchestratorAuditPayloadEffectiveParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadEffectiveParameters(v RemediationOrchestratorAuditPayloadEffectiveParameters) OptRemediationOrchestratorAuditPayloadEffectiveParameters {
+	return OptRemediationOrchestratorAuditPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadEffectiveParameters is optional RemediationOrchestratorAuditPayloadEffectiveParameters.
+type OptRemediationOrchestratorAuditPayloadEffectiveParameters struct {
+	Value RemediationOrchestratorAuditPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadEffectiveParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadEffectiveParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadEffectiveParameters) SetTo(v RemediationOrchestratorAuditPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) Get() (v RemediationOrchestratorAuditPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) Or(d RemediationOrchestratorAuditPayloadEffectiveParameters) RemediationOrchestratorAuditPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationOrchestratorAuditPayloadFailurePhase returns new OptRemediationOrchestratorAuditPayloadFailurePhase with value set to v.
 func NewOptRemediationOrchestratorAuditPayloadFailurePhase(v RemediationOrchestratorAuditPayloadFailurePhase) OptRemediationOrchestratorAuditPayloadFailurePhase {
 	return OptRemediationOrchestratorAuditPayloadFailurePhase{
@@ -29950,6 +30392,52 @@ func (o OptRemediationOrchestratorAuditPayloadFailureReason) Or(d RemediationOrc
 	return d
 }
 
+// NewOptRemediationOrchestratorAuditPayloadOriginalParameters returns new OptRemediationOrchestratorAuditPayloadOriginalParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadOriginalParameters(v RemediationOrchestratorAuditPayloadOriginalParameters) OptRemediationOrchestratorAuditPayloadOriginalParameters {
+	return OptRemediationOrchestratorAuditPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadOriginalParameters is optional RemediationOrchestratorAuditPayloadOriginalParameters.
+type OptRemediationOrchestratorAuditPayloadOriginalParameters struct {
+	Value RemediationOrchestratorAuditPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadOriginalParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadOriginalParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadOriginalParameters) SetTo(v RemediationOrchestratorAuditPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) Get() (v RemediationOrchestratorAuditPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) Or(d RemediationOrchestratorAuditPayloadOriginalParameters) RemediationOrchestratorAuditPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationOrchestratorAuditPayloadOutcome returns new OptRemediationOrchestratorAuditPayloadOutcome with value set to v.
 func NewOptRemediationOrchestratorAuditPayloadOutcome(v RemediationOrchestratorAuditPayloadOutcome) OptRemediationOrchestratorAuditPayloadOutcome {
 	return OptRemediationOrchestratorAuditPayloadOutcome{
@@ -29990,6 +30478,52 @@ func (o OptRemediationOrchestratorAuditPayloadOutcome) Get() (v RemediationOrche
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRemediationOrchestratorAuditPayloadOutcome) Or(d RemediationOrchestratorAuditPayloadOutcome) RemediationOrchestratorAuditPayloadOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationOrchestratorAuditPayloadOverrideParameters returns new OptRemediationOrchestratorAuditPayloadOverrideParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadOverrideParameters(v RemediationOrchestratorAuditPayloadOverrideParameters) OptRemediationOrchestratorAuditPayloadOverrideParameters {
+	return OptRemediationOrchestratorAuditPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadOverrideParameters is optional RemediationOrchestratorAuditPayloadOverrideParameters.
+type OptRemediationOrchestratorAuditPayloadOverrideParameters struct {
+	Value RemediationOrchestratorAuditPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadOverrideParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadOverrideParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadOverrideParameters) SetTo(v RemediationOrchestratorAuditPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) Get() (v RemediationOrchestratorAuditPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) Or(d RemediationOrchestratorAuditPayloadOverrideParameters) RemediationOrchestratorAuditPayloadOverrideParameters {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -31809,6 +32343,16 @@ type RemediationApprovalAuditPayload struct {
 	DecisionMessage string `json:"decision_message"`
 	// Name of the referenced AIAnalysis.
 	AiAnalysisRef string `json:"ai_analysis_ref"`
+	// Content-derived identifier of the reviewed workflow selection.
+	WorkflowID OptString `json:"workflow_id"`
+	// Original reviewed parameter values, unchanged from the approval snapshot.
+	OriginalParameters OptRemediationApprovalAuditPayloadOriginalParameters `json:"original_parameters"`
+	// Exact parameter changes submitted by the reviewer.
+	OverrideParameters OptRemediationApprovalAuditPayloadOverrideParameters `json:"override_parameters"`
+	// Effective values after applying the partial override.
+	EffectiveParameters OptRemediationApprovalAuditPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the parameter changes.
+	OverrideRationale OptString `json:"override_rationale"`
 	// Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001
 	// v3.0 trusted intermediary pattern.
 	DelegatedUser OptString `json:"delegated_user"`
@@ -31851,6 +32395,31 @@ func (s *RemediationApprovalAuditPayload) GetDecisionMessage() string {
 // GetAiAnalysisRef returns the value of AiAnalysisRef.
 func (s *RemediationApprovalAuditPayload) GetAiAnalysisRef() string {
 	return s.AiAnalysisRef
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationApprovalAuditPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *RemediationApprovalAuditPayload) GetOriginalParameters() OptRemediationApprovalAuditPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *RemediationApprovalAuditPayload) GetOverrideParameters() OptRemediationApprovalAuditPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *RemediationApprovalAuditPayload) GetEffectiveParameters() OptRemediationApprovalAuditPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *RemediationApprovalAuditPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
 }
 
 // GetDelegatedUser returns the value of DelegatedUser.
@@ -31896,6 +32465,31 @@ func (s *RemediationApprovalAuditPayload) SetDecisionMessage(val string) {
 // SetAiAnalysisRef sets the value of AiAnalysisRef.
 func (s *RemediationApprovalAuditPayload) SetAiAnalysisRef(val string) {
 	s.AiAnalysisRef = val
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationApprovalAuditPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *RemediationApprovalAuditPayload) SetOriginalParameters(val OptRemediationApprovalAuditPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *RemediationApprovalAuditPayload) SetOverrideParameters(val OptRemediationApprovalAuditPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *RemediationApprovalAuditPayload) SetEffectiveParameters(val OptRemediationApprovalAuditPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *RemediationApprovalAuditPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
 }
 
 // SetDelegatedUser sets the value of DelegatedUser.
@@ -31955,6 +32549,18 @@ func (s *RemediationApprovalAuditPayloadDecision) UnmarshalText(data []byte) err
 	}
 }
 
+// Effective values after applying the partial override.
+type RemediationApprovalAuditPayloadEffectiveParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadEffectiveParameters) init() RemediationApprovalAuditPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Event type for discriminator (matches parent event_type).
 type RemediationApprovalAuditPayloadEventType string
 
@@ -31988,6 +32594,30 @@ func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) er
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Original reviewed parameter values, unchanged from the approval snapshot.
+type RemediationApprovalAuditPayloadOriginalParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadOriginalParameters) init() RemediationApprovalAuditPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Exact parameter changes submitted by the reviewer.
+type RemediationApprovalAuditPayloadOverrideParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadOverrideParameters) init() RemediationApprovalAuditPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Post-remediation health check results from EM assessment.
@@ -33527,6 +34157,14 @@ type RemediationOrchestratorAuditPayload struct {
 	ToPhase OptString `json:"to_phase"`
 	// Reason for the transition.
 	TransitionReason OptString `json:"transition_reason"`
+	// Original values in the reviewed approval snapshot.
+	OriginalParameters OptRemediationOrchestratorAuditPayloadOriginalParameters `json:"original_parameters"`
+	// Exact changes committed with the approval decision.
+	OverrideParameters OptRemediationOrchestratorAuditPayloadOverrideParameters `json:"override_parameters"`
+	// Effective parameter values after the committed partial override.
+	EffectiveParameters OptRemediationOrchestratorAuditPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the committed changes.
+	OverrideRationale OptString `json:"override_rationale"`
 	// Name of the RemediationApprovalRequest.
 	RarName OptString `json:"rar_name"`
 	// Approval deadline (RFC3339).
@@ -33664,6 +34302,26 @@ func (s *RemediationOrchestratorAuditPayload) GetToPhase() OptString {
 // GetTransitionReason returns the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) GetTransitionReason() OptString {
 	return s.TransitionReason
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *RemediationOrchestratorAuditPayload) GetOriginalParameters() OptRemediationOrchestratorAuditPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *RemediationOrchestratorAuditPayload) GetOverrideParameters() OptRemediationOrchestratorAuditPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *RemediationOrchestratorAuditPayload) GetEffectiveParameters() OptRemediationOrchestratorAuditPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *RemediationOrchestratorAuditPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
 }
 
 // GetRarName returns the value of RarName.
@@ -33866,6 +34524,26 @@ func (s *RemediationOrchestratorAuditPayload) SetTransitionReason(val OptString)
 	s.TransitionReason = val
 }
 
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *RemediationOrchestratorAuditPayload) SetOriginalParameters(val OptRemediationOrchestratorAuditPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *RemediationOrchestratorAuditPayload) SetOverrideParameters(val OptRemediationOrchestratorAuditPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *RemediationOrchestratorAuditPayload) SetEffectiveParameters(val OptRemediationOrchestratorAuditPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *RemediationOrchestratorAuditPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
+}
+
 // SetRarName sets the value of RarName.
 func (s *RemediationOrchestratorAuditPayload) SetRarName(val OptString) {
 	s.RarName = val
@@ -34058,6 +34736,18 @@ func (s *RemediationOrchestratorAuditPayloadDecision) UnmarshalText(data []byte)
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Effective parameter values after the committed partial override.
+type RemediationOrchestratorAuditPayloadEffectiveParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadEffectiveParameters) init() RemediationOrchestratorAuditPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -34312,6 +35002,18 @@ func (s *RemediationOrchestratorAuditPayloadFailureReason) UnmarshalText(data []
 	}
 }
 
+// Original values in the reviewed approval snapshot.
+type RemediationOrchestratorAuditPayloadOriginalParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadOriginalParameters) init() RemediationOrchestratorAuditPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Final outcome of the orchestration.
 type RemediationOrchestratorAuditPayloadOutcome string
 
@@ -34359,6 +35061,18 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalText(data []byte) 
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Exact changes committed with the approval decision.
+type RemediationOrchestratorAuditPayloadOverrideParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadOverrideParameters) init() RemediationOrchestratorAuditPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // RemediationOrchestrator config rejected event payload (orchestrator.config.rejected) —

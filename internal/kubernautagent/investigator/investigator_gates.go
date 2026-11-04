@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -691,6 +692,11 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	result.Dependencies = meta.Dependencies
 	result.Resources = meta.Resources
 	result.DeclaredParameterNames = meta.DeclaredParameterNames
+	if meta.DeclaredParameterNames != nil {
+		result.ParameterSchema = append([]models.WorkflowParameter{}, meta.Parameters...)
+	} else {
+		result.ParameterSchema = nil
+	}
 	result.EngineConfig = meta.EngineConfig
 
 	// Issue #1661 Change 12: ActionType/WorkflowName are likewise

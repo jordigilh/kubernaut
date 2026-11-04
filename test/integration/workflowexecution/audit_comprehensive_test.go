@@ -53,6 +53,8 @@ import (
 // - E2E tests (10-15%): End-to-end audit persistence with real Data Storage
 
 var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "comprehensive"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Comprehensive audit fixture", "tekton") })
 
 	// ========================================
 	// Test 1: execution.workflow.started Audit Event
@@ -75,12 +77,13 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
-							WorkflowName:    "test-workflow",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "quay.io/kubernaut/test:v1",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{"test": true},
+							WorkflowName:           "test-workflow",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "quay.io/kubernaut/test:v1",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
@@ -133,12 +136,13 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
-							WorkflowName:    "test-workflow",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "quay.io/kubernaut/test:v1",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{"test": true},
+							WorkflowName:           "test-workflow",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "quay.io/kubernaut/test:v1",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
@@ -161,7 +165,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)).To(Succeed())
 			Expect(updated.Spec.TargetResource).To(Equal("default/deployment/test-app"))
-			Expect(updated.Spec.WorkflowRef.WorkflowID).To(Equal("test-workflow"))
+			Expect(updated.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
 			GinkgoWriter.Println("✅ Audit metadata available for execution.workflow.started event")
 		})
 	})
@@ -187,12 +191,13 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow-success",
-							WorkflowName:    "test-workflow-success",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "quay.io/kubernaut/test:v1",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{"test": true},
+							WorkflowName:           "test-workflow-success",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "quay.io/kubernaut/test:v1",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
@@ -343,12 +348,13 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow-ordering",
-							WorkflowName:    "test-workflow-ordering",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "quay.io/kubernaut/test:v1",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{"test": true},
+							WorkflowName:           "test-workflow-ordering",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "quay.io/kubernaut/test:v1",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: "default/deployment/ordering-test",

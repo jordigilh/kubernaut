@@ -17,6 +17,7 @@ limitations under the License.
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/go-logr/logr"
@@ -82,6 +83,21 @@ func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationRes
 	intake := flatLLMResult{InvestigationResult: &result}
 	if err := json.Unmarshal([]byte(coerced), &intake); err != nil || (result.RCASummary == "" && result.WorkflowID == "") {
 		return nil
+	}
+	var raw struct {
+		Parameters json.RawMessage `json:"parameters"`
+	}
+	if err := json.Unmarshal([]byte(coerced), &raw); err != nil {
+		p.logger.Error(err, "Failed to decode workflow parameter envelope")
+		return nil
+	}
+	if len(raw.Parameters) > 0 {
+		decoder := json.NewDecoder(bytes.NewReader(raw.Parameters))
+		decoder.UseNumber()
+		if err := decoder.Decode(&result.Parameters); err != nil {
+			p.logger.Error(err, "Failed to preserve workflow parameter values")
+			return nil
+		}
 	}
 	clearModelSelectionMetadata(&result)
 	if intake.Confidence != nil {

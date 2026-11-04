@@ -52,6 +52,14 @@ import (
 // ========================================
 
 var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we-006"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Dependency resolution fixture", "job") })
+	dependencyWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueJobWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 
 	Context("Job execution backend with schema-declared dependencies", func() {
 
@@ -69,7 +77,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, secret) }()
 
-			wfe := createUniqueJobWFE("depres-001", "default/deployment/dep-test-001")
+			wfe := dependencyWFE("depres-001", "default/deployment/dep-test-001")
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "it-gitea-creds-001"}},
 			}
@@ -119,7 +127,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, cm) }()
 
-			wfe := createUniqueJobWFE("depres-002", "default/deployment/dep-test-002")
+			wfe := dependencyWFE("depres-002", "default/deployment/dep-test-002")
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "it-remediation-config-002"}},
 			}
@@ -147,7 +155,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-2390-002 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
-			wfe := createUniqueJobWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
+			wfe := dependencyWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},
 			}
@@ -185,7 +193,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-1645-001 [BR-WORKFLOW-008]: should enrich the Failed message from the Pod's image-pull-failure event", func() {
-			wfe := createUniqueJobWFE("depres-1645-001", "default/deployment/dep-test-1645-001")
+			wfe := dependencyWFE("depres-1645-001", "default/deployment/dep-test-1645-001")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -210,7 +218,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
-			wfe := createUniqueJobWFE("depres-005", "default/deployment/dep-test-005")
+			wfe := dependencyWFE("depres-005", "default/deployment/dep-test-005")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 

@@ -322,6 +322,7 @@ func handleApprovalWithDecidedVia(
 		},
 	}
 
+	completeSafetySnapshot(&rar.Spec)
 	rawRAR, err := json.Marshal(rar)
 	Expect(err).NotTo(HaveOccurred())
 

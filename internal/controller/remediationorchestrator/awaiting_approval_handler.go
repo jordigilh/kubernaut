@@ -31,6 +31,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
@@ -77,6 +78,7 @@ const (
 // Reference: Issue #666, TP-666-v1 §8.5, ADR-040, BR-ORCH-026
 type AwaitingApprovalHandler struct {
 	k8sClient client.Client
+	apiReader client.Reader
 	m         *metrics.Metrics
 	callbacks AwaitingApprovalCallbacks
 	clock     sharedclock.Clock
@@ -89,9 +91,17 @@ func NewAwaitingApprovalHandler(
 ) *AwaitingApprovalHandler {
 	return &AwaitingApprovalHandler{
 		k8sClient: k8sClient,
+		apiReader: k8sClient,
 		m:         m,
 		callbacks: callbacks,
 		clock:     sharedclock.RealClock{},
+	}
+}
+
+// SetAPIReader supplies the cache-bypassing reader used to confirm absence.
+func (h *AwaitingApprovalHandler) SetAPIReader(reader client.Reader) {
+	if reader != nil {
+		h.apiReader = reader
 	}
 }
 
@@ -116,8 +126,7 @@ func (h *AwaitingApprovalHandler) Handle(ctx context.Context, rr *remediationv1.
 	err := h.k8sClient.Get(ctx, client.ObjectKey{Name: rarName, Namespace: rr.Namespace}, rar)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			logger.Info("RemediationApprovalRequest not found, will be created by approval handler")
-			return phase.Requeue(config.RequeueGenericError, "RAR not found"), nil
+			return h.handleMissingRAR(ctx, rr, rarName)
 		}
 		logger.Error(err, "Failed to get RemediationApprovalRequest")
 		return phase.TransitionIntent{}, err
@@ -151,6 +160,27 @@ func (h *AwaitingApprovalHandler) Handle(ctx context.Context, rr *remediationv1.
 	}
 }
 
+// handleMissingRAR confirms a cache miss before failing the approval phase.
+func (h *AwaitingApprovalHandler) handleMissingRAR(ctx context.Context, rr *remediationv1.RemediationRequest, name string) (phase.TransitionIntent, error) {
+	rar := &remediationv1.RemediationApprovalRequest{}
+	err := h.apiReader.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)
+	if err == nil {
+		// Wait for the cache so deletion/finalizer handling runs before a decision is consumed.
+		return phase.Requeue(config.RequeueGenericError, "waiting for approval request cache"), nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return phase.TransitionIntent{}, fmt.Errorf("confirm approval request absence: %w", err)
+	}
+	reason := fmt.Errorf("%s", approvalRequestMissingReason)
+	log.FromContext(ctx).Error(reason, "Approval request is missing; manual review required", "remediationRequest", rr.Name)
+	h.callbacks.RecordEvent(rr, "Warning", "RemediationFailed", reason.Error())
+	result, transitionErr := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, reason)
+	if transitionErr != nil {
+		return phase.TransitionIntent{}, transitionErr
+	}
+	return resultToIntent(result, "approval request missing"), nil
+}
+
 func isTimelyDecisionAt(rar *remediationv1.RemediationApprovalRequest, now time.Time) bool {
 	if rar == nil || rar.Spec.RequiredBy.IsZero() || rar.Status.DecidedAt == nil || rar.Status.DecidedAt.IsZero() {
 		return false
@@ -179,6 +209,21 @@ func isConfirmedExpiredAt(rar *remediationv1.RemediationApprovalRequest, now tim
 
 func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	var safetyErr error
+	if rar.Status.WorkflowOverride != nil && rar.Status.WorkflowOverride.WorkflowName != "" {
+		safetyErr = fmt.Errorf("approved approval request contains a forbidden workflow switch")
+	} else if err := remediationapprovalrequest.ValidateSnapshotPresence(&rar.Spec); err != nil {
+		safetyErr = fmt.Errorf("approved approval request is missing required workflow snapshot data: %w", err)
+	}
+	if safetyErr != nil {
+		logger.Error(safetyErr, "Cannot execute approval")
+		h.callbacks.RecordEvent(rr, "Warning", "RemediationFailed", safetyErr.Error())
+		result, err := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, safetyErr)
+		if err != nil {
+			return phase.TransitionIntent{}, err
+		}
+		return resultToIntent(result, "unsafe approval request"), nil
+	}
 
 	logger.Info("Approval granted via RemediationApprovalRequest",
 		"decidedBy", rar.Status.DecidedBy)
@@ -195,7 +240,7 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 		return fetchIntent, err
 	}
 
-	preHash := h.capturePostApprovalHash(ctx, rr, ai, logger)
+	preHash := h.capturePostApprovalHash(ctx, rr, ai, rar.Spec.TargetContext, logger)
 
 	// Lock scope must span from acquisition through WFE creation (prevents a
 	// concurrent reconcile from creating a duplicate WFE for the same target
@@ -223,7 +268,13 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 		}
 	}
 
-	return CreateWFEAndTransition(ctx, h.k8sClient, h.m, rr, resolvedAI, preHash, h.callbacks.WFECallbacks)
+	executionRR := rr.DeepCopy()
+	executionRR.Spec.TargetResource = rar.Spec.TargetContext.SignalTarget
+	executionRR.Spec.ClusterID = rar.Spec.TargetContext.SignalClusterID
+	intent, err := CreateWFEAndTransition(ctx, h.k8sClient, h.m, executionRR, resolvedAI, preHash, h.callbacks.WFECallbacks)
+	rr.Status = executionRR.Status
+	rr.ResourceVersion = executionRR.ResourceVersion
+	return intent, err
 }
 
 // resolveApprovedWorkflow fetches the AIAnalysis backing an approved RR and
@@ -232,18 +283,25 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 // from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 // Returns done=true when the caller must return (intent, err) immediately.
 func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, logger logr.Logger) (*aianalysisv1.AIAnalysis, *aianalysisv1.AIAnalysis, phase.TransitionIntent, bool, error) {
-	if rr.Status.EnsurePhaseProgress().AIAnalysisRef == nil {
-		logger.Error(nil, "AIAnalysisRef not set on RemediationRequest (ADR-040 invariant)")
-		return nil, nil, phase.Requeue(config.RequeueGenericError, "AIAnalysisRef nil"), true, nil
-	}
-
+	frozen := rar.DeepCopy()
 	ai := &aianalysisv1.AIAnalysis{}
-	if err := h.k8sClient.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name,
-		Namespace: rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace,
-	}, ai); err != nil {
-		logger.Error(err, "Failed to fetch AIAnalysis CRD")
-		return nil, nil, phase.Requeue(config.RequeueGenericError, "AI fetch failed"), true, nil
+	ai.Name = rar.Spec.AIAnalysisRef.Name
+	ai.Namespace = rr.Namespace
+	ai.Status.RCAResult = &aianalysisv1.RCAResult{
+		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+			WorkflowSnapshot: *frozen.Spec.Workflow,
+			Parameters:       frozen.Spec.Parameters,
+			ParameterSchema:  frozen.Spec.ParameterSchema,
+			Confidence:       rar.Spec.Confidence,
+			Rationale:        rar.Spec.RecommendedWorkflow.Rationale,
+		},
+	}
+	if target := frozen.Spec.TargetContext.RemediationTarget; target != nil {
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
+				Kind: target.Kind, Name: target.Name, Namespace: target.Namespace, APIVersion: target.APIVersion,
+			},
+		}
 	}
 
 	resolvedWorkflow, overrideApplied, resolveErr := h.callbacks.ResolveWorkflow(
@@ -279,10 +337,13 @@ func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, r
 // degraded capture is logged/recorded but does not block WFE creation.
 // Extracted from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
 // (issue #1520).
-func (h *AwaitingApprovalHandler) capturePostApprovalHash(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) string {
-	remTarget := h.callbacks.ResolveDualTargets(rr, ai).Remediation
+func (h *AwaitingApprovalHandler) capturePostApprovalHash(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, target *remediationv1.ApprovalTargetContext, logger logr.Logger) string {
+	targetRR := rr.DeepCopy()
+	targetRR.Spec.TargetResource = target.SignalTarget
+	targetRR.Spec.ClusterID = target.SignalClusterID
+	remTarget := h.callbacks.ResolveDualTargets(targetRR, ai).Remediation
 	preHash, degradedReason, hashErr := h.callbacks.CapturePreRemediationHash(
-		ctx, remTarget.Kind, remTarget.Name, remTarget.Namespace, rr.Spec.ClusterID)
+		ctx, remTarget.Kind, remTarget.Name, remTarget.Namespace, target.SignalClusterID)
 	if hashErr != nil {
 		logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
 	}

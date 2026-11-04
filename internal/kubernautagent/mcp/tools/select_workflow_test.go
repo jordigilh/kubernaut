@@ -893,6 +893,14 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 
 	Describe("UT-KA-SW-BUILDFINAL-001: buildFinalResult merges RCA + workflow fields", func() {
+		It("UT-KA-2570-113: BR-KA-191 retains catalog constraints for an interactive selection", func() {
+			workflow := &mcptools.CatalogWorkflow{}
+			Expect(json.Unmarshal([]byte(`{"workflow_id":"wf-schema","declared_parameter_names":{"REPLICAS":true},"parameter_schema":[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1}]}`), workflow)).To(Succeed())
+			result := mcptools.BuildFinalResult(&katypes.InvestigationResult{}, workflow, nil)
+			Expect(result.ParameterSchema).To(HaveLen(1))
+			Expect(result.ParameterSchema[0].Name).To(Equal("REPLICAS"))
+			Expect(*result.ParameterSchema[0].Minimum).To(Equal(float64(1)))
+		})
 		It("should copy all RCA fields and overlay workflow fields", func() {
 			rca := &katypes.InvestigationResult{
 				RCASummary: "Pod OOM due to memory leak",

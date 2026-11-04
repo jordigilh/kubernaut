@@ -74,7 +74,7 @@ var _ = Describe("IT-KA-1677 EngineConfig and DetectedLabels catalog round-trip"
 		Expect(schemeErr).ToNot(HaveOccurred())
 
 		var err error
-		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, logger)
+		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, logger, "default")
 		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache should build and sync against the shared envtest")
 		catalog = workflowcatalog.NewCatalog(wfCache, logger)
 	})

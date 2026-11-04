@@ -25,12 +25,10 @@ import (
 
 	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,13 +68,14 @@ func BuildTrustedROSA(namespace string) string {
 // 3. Populates status.DecidedVia (trusted intermediary identity, if delegated)
 // 4. Writes complete audit event (WHO + WHAT + ACTION)
 type RemediationApprovalRequestAuthHandler struct {
-	authenticator *Authenticator
-	decoder       admission.Decoder
-	auditStore    audit.AuditStore
-	reader        client.Reader
-	trustedAFSA   string
-	trustedROSA   string
-	clock         sharedclock.Clock
+	authenticator    *Authenticator
+	decoder          admission.Decoder
+	auditStore       audit.AuditStore
+	reader           client.Reader
+	trustedAFSA      string
+	trustedROSA      string
+	trustedNamespace string
+	clock            sharedclock.Clock
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler.
@@ -84,12 +83,13 @@ type RemediationApprovalRequestAuthHandler struct {
 // podNamespace is the namespace where AW + AF are colocated (used to derive the trusted AF SA identity).
 func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reader client.Reader, podNamespace string) *RemediationApprovalRequestAuthHandler {
 	return &RemediationApprovalRequestAuthHandler{
-		authenticator: NewAuthenticator(),
-		auditStore:    auditStore,
-		reader:        reader,
-		trustedAFSA:   BuildTrustedAFSA(podNamespace),
-		trustedROSA:   BuildTrustedROSA(podNamespace),
-		clock:         sharedclock.RealClock{},
+		authenticator:    NewAuthenticator(),
+		auditStore:       auditStore,
+		reader:           reader,
+		trustedAFSA:      BuildTrustedAFSA(podNamespace),
+		trustedROSA:      BuildTrustedROSA(podNamespace),
+		trustedNamespace: podNamespace,
+		clock:            sharedclock.RealClock{},
 	}
 }
 
@@ -137,6 +137,14 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// A status write with no business decision is not an approval attempt.
 	// Preserve the existing no-op behavior for controller bookkeeping.
 	if rar.Status.Decision == remediationv1.ApprovalDecisionPending {
+		if rar.Status.WorkflowOverride != nil {
+			authCtx, err := h.authenticateCaller(ctx, req)
+			if err != nil {
+				logger.Error(err, "Authentication failed")
+				return admission.Denied(fmt.Sprintf("authentication required: %v", err))
+			}
+			return h.denyDecision(ctx, logger, rar, authCtx, "workflow override is only valid for an approved decision")
+		}
 		logger.Info("Skipping RAR (no decision made)")
 		return admission.Allowed("no decision made")
 	}
@@ -183,6 +191,9 @@ func (h *RemediationApprovalRequestAuthHandler) handleSystemDecision(ctx context
 	if !h.isROServiceAccount(authCtx.Username) || rar.Status.DecidedBy != systemDecisionActor {
 		return h.denyDecision(ctx, logger, rar, authCtx, "Expired and Cancelled decisions are system-only")
 	}
+	if rar.Status.WorkflowOverride != nil {
+		return h.denyDecision(ctx, logger, rar, authCtx, "workflow override is only valid for an approved decision")
+	}
 	// The trusted RO identity, not a client field, establishes provenance.
 	rar.Status.DecidedVia = ""
 	// RO supplies the decision timestamp for expiry so it can confirm the
@@ -201,6 +212,11 @@ func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.
 	now := h.clock.Now()
 	if rar.Spec.RequiredBy.IsZero() || !now.Before(rar.Spec.RequiredBy.Time) {
 		return h.denyDecision(ctx, logger, rar, authCtx, "approval decision deadline has passed")
+	}
+	if rar.Status.Decision == remediationv1.ApprovalDecisionApproved && rar.Status.WorkflowOverride == nil {
+		if err := rarconditions.ValidateSnapshotPresence(&rar.Spec); err != nil {
+			return h.denyDecision(ctx, logger, rar, authCtx, err.Error())
+		}
 	}
 	isDelegation := h.attributeDecision(logger, rar, authCtx)
 	decidedAt := metav1.NewTime(now)
@@ -558,9 +574,9 @@ func finalizeRARResponse(logger logr.Logger, req admission.Request, rar *remedia
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledRAR)
 }
 
-// validateWorkflowOverride validates the WorkflowOverride on an RAR (#594).
+// validateWorkflowOverride validates the parameter-only RAR override (BR-ORCH-025).
 // - Override is only valid when decision is Approved
-// - If workflowName is set, the referenced RW must exist and be Active
+// - Workflow switching is outside the approval contract
 func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
 	override := rar.Status.WorkflowOverride
 	if override == nil {
@@ -571,21 +587,14 @@ func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx con
 		return fmt.Errorf("override rejected: workflowOverride is only valid when decision is Approved (got %q)", rar.Status.Decision)
 	}
 
-	if override.WorkflowName == "" {
-		return nil
+	if override.WorkflowName != "" {
+		return fmt.Errorf("override rejected: workflow switching is not supported")
 	}
-
-	rw := &remediationworkflowv1.RemediationWorkflow{}
-	err := h.reader.Get(ctx, client.ObjectKey{Name: override.WorkflowName, Namespace: rar.Namespace}, rw)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return fmt.Errorf("override rejected: RemediationWorkflow %q not found in namespace %q", override.WorkflowName, rar.Namespace)
-		}
-		return fmt.Errorf("override rejected: failed to lookup RemediationWorkflow %q: %w", override.WorkflowName, err)
+	if err := rarconditions.ValidateParameterOverride(&rar.Spec, override.Parameters); err != nil {
+		return fmt.Errorf("override rejected: %w", err)
 	}
-
-	if rw.Status.CatalogStatus != sharedtypes.CatalogStatusActive {
-		return fmt.Errorf("override rejected: RemediationWorkflow %q has catalogStatus %q (must be Active)", override.WorkflowName, rw.Status.CatalogStatus)
+	if err := workflowidentity.Verify(ctx, h.reader, h.trustedNamespace, rar.Spec.Workflow.WorkflowID); err != nil {
+		return fmt.Errorf("override rejected: workflow identity: %w", err)
 	}
 
 	return nil

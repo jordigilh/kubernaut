@@ -126,6 +126,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					},
 				}
 
+				completeSafetySnapshot(&rar.Spec)
 				rarJSON, _ := json.Marshal(rar)
 
 				admReq := admission.Request{
@@ -462,6 +463,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 				},
 			}
 
+			completeSafetySnapshot(&rar.Spec)
 			rarJSON, _ := json.Marshal(rar)
 
 			admReq := admission.Request{

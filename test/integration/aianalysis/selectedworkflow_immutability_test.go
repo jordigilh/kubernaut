@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -109,6 +110,46 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			},
 		}
 	})
+
+	It("IT-AA-2570-001: BR-ORCH-025 preserves an explicitly empty selected parameter map through the API server", func() {
+		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
+		selected := newSelectedWorkflow(nil, map[string]bool{})
+		selected.Parameters = map[string]string{}
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+				return err
+			}
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = selected
+			return k8sClient.Status().Update(ctx, analysis)
+		}, timeout, interval).Should(Succeed())
+		var persisted aianalysisv1.AIAnalysis
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).NotTo(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).To(BeEmpty())
+	})
+
+	DescribeTable("IT-AA-2570-026: BR-ORCH-025 preserves selected parameter schema through the API server", func(schema []remediationworkflowv1.RemediationWorkflowParameter) {
+		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
+		selected := newSelectedWorkflow(nil, map[string]bool{})
+		selected.ParameterSchema = schema
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+				return err
+			}
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = selected
+			return k8sClient.Status().Update(ctx, analysis)
+		}, timeout, interval).Should(Succeed())
+		var persisted aianalysisv1.AIAnalysis
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.ParameterSchema).NotTo(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.ParameterSchema).To(Equal(schema))
+	},
+		Entry("empty schema", []remediationworkflowv1.RemediationWorkflowParameter{}),
+		Entry("declared schema", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "MODE", Type: "string", Required: true, Description: "mode", Enum: []string{"safe", "fast"}, Pattern: "^(safe|fast)$"}}),
+	)
 
 	It("IT-AA-344-001: locks SelectedWorkflow once SelectedAt is populated, while tolerating idempotent no-op retries", func() {
 		defer func() {

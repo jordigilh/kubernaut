@@ -47,6 +47,8 @@ var errPhaseConflict = errors.New("phase changed by concurrent reconcile")
 // stale failure over the winning terminal outcome.
 var errTerminalPhaseWon = errors.New("terminal phase won concurrent failure transition")
 
+const approvalRequestMissingReason = "approval request missing"
+
 // transitionToInheritedCompleted transitions the RR to Completed with outcome "Remediated".
 // Used when an original resource (WFE or RR) that caused deduplication completes successfully.
 // The outcome is "Remediated" (not a separate "InheritedCompleted") because the CRD enum
@@ -446,6 +448,10 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 // when computing VerificationDeadline. Allows for clock skew and final status propagation.
 const VerificationDeadlineBuffer = 30 * time.Second
 
+func missingApprovalPhaseChanged(rr *remediationv1.RemediationRequest, reason string) bool {
+	return reason == approvalRequestMissingReason && rr.Status.OverallPhase != phase.AwaitingApproval
+}
+
 // transitionToFailed transitions the RR to Failed phase.
 // BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
 // triggers consecutive failure blocking (≥3 consecutive failures for same fingerprint).
@@ -483,6 +489,10 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 			"phase", rr.Status.OverallPhase)
 		return ctrl.Result{}, nil
 	}
+	if missingApprovalPhaseChanged(rr, failureReason) {
+		logger.Info("Approval phase already changed; preserving current outcome", "phase", rr.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
 
 	// Capture the phase from the successful status-update attempt, not from the
 	// stale reconcile input. A conflict retry may observe that another
@@ -494,7 +504,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		transitioned = false
-		if phase.IsTerminal(rr.Status.OverallPhase) {
+		if phase.IsTerminal(rr.Status.OverallPhase) || missingApprovalPhaseChanged(rr, failureReason) {
 			return errTerminalPhaseWon
 		}
 		oldPhaseBeforeTransition = rr.Status.OverallPhase
@@ -606,7 +616,8 @@ func isApprovalCreationManualReviewReason(reason string) bool {
 	switch reason {
 	case creator.ApprovalCreationReasonCollision,
 		creator.ApprovalCreationReasonStatusFailed,
-		creator.ApprovalCreationReasonPersistenceUnknown:
+		creator.ApprovalCreationReasonPersistenceUnknown,
+		approvalRequestMissingReason:
 		return true
 	default:
 		return false

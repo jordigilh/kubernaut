@@ -44,6 +44,7 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
 
 // actionTypeFieldIndex indexes RemediationWorkflow CRDs by spec.actionType,
@@ -59,9 +60,7 @@ const actionTypeFieldIndex = ".spec.actionType"
 const actionTypeNameFieldIndex = ".spec.name"
 
 // workflowNameFieldIndex indexes RemediationWorkflow CRDs by metadata.name,
-// so GetWorkflow can resolve a workflow cluster-wide without requiring a
-// namespace -- workflow names are globally unique across the catalog
-// (the same invariant the retired Postgres workflow_name column enforced).
+// so GetWorkflow can resolve a workflow within the trusted catalog namespace.
 const workflowNameFieldIndex = "metadata.name"
 
 // workflowIDFieldIndex indexes RemediationWorkflow CRDs by status.workflowId
@@ -108,7 +107,10 @@ func NewScheme() (*runtime.Scheme, error) {
 // initial sync completes (bounded by syncTimeout). The returned
 // context.CancelFunc stops the underlying informers and MUST be called
 // during graceful shutdown.
-func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger logr.Logger) (*Cache, context.CancelFunc, error) {
+func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger logr.Logger, namespace string) (*Cache, context.CancelFunc, error) {
+	if err := workflowidentity.ValidateNamespace(namespace); err != nil {
+		return nil, nil, err
+	}
 	// A static Mapper is supplied so cache.New never performs live cluster
 	// discovery (GET /api, /apis -- ServerGroups) to resolve these 2 known
 	// GVKs. Without it, controller-runtime lazily builds a dynamic
@@ -122,7 +124,7 @@ func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger lo
 	// run. Bypassing discovery for these 2 fixed, always-present CRD types
 	// removes that unprotected single point of failure entirely -- add any
 	// newly-watched type's mapping here too.
-	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme, Mapper: staticRESTMapper()})
+	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme, Mapper: staticRESTMapper(), DefaultNamespaces: map[string]cache.Config{namespace: {}}})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create workflow catalog cache: %w", err)
 	}
@@ -178,6 +180,9 @@ func staticRESTMapper() meta.RESTMapper {
 		atv1alpha1.GroupVersion.WithResource("actiontype"),
 		meta.RESTScopeNamespace,
 	)
+	// Namespaced cache routing resolves list GVKs as well as object GVKs.
+	mapper.Add(rwv1alpha1.GroupVersion.WithKind("RemediationWorkflowList"), meta.RESTScopeNamespace)
+	mapper.Add(atv1alpha1.GroupVersion.WithKind("ActionTypeList"), meta.RESTScopeNamespace)
 	return mapper
 }
 
@@ -279,9 +284,8 @@ func (c *Cache) ListWorkflowsByActionType(ctx context.Context, actionType string
 	return list.Items, nil
 }
 
-// ListWorkflows returns every RemediationWorkflow CRD across all namespaces,
-// unfiltered -- the cache-backed source for the full-catalog listing
-// (Phase 2b's list_workflows MCP tool).
+// ListWorkflows returns every RemediationWorkflow visible to the backing reader.
+// The production informer reader is scoped to the configured trusted namespace.
 func (c *Cache) ListWorkflows(ctx context.Context) ([]rwv1alpha1.RemediationWorkflow, error) {
 	var list rwv1alpha1.RemediationWorkflowList
 	if err := c.reader.List(ctx, &list); err != nil {

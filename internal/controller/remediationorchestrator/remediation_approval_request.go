@@ -174,14 +174,23 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 		"correlationID", parentRRName,
 		"namespace", rar.Namespace)
 
+	eventContext := roaudit.ApprovalEventContext{
+		CorrelationID:      parentRRName, // correlation_id = parent RR name
+		Namespace:          rar.Namespace,
+		RRName:             parentRRName,
+		ClusterID:          rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
+		RARName:            rar.Name,
+		OriginalParameters: rar.Spec.Parameters,
+	}
+	if rar.Status.WorkflowOverride != nil {
+		eventContext.OverrideParameters = rar.Status.WorkflowOverride.Parameters
+		eventContext.OverrideRationale = &rar.Status.WorkflowOverride.Rationale
+	}
+	if rar.Spec.Workflow != nil {
+		eventContext.WorkflowID = rar.Spec.Workflow.WorkflowID
+	}
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
-		roaudit.ApprovalEventContext{
-			CorrelationID: parentRRName, // correlation_id = parent RR name
-			Namespace:     rar.Namespace,
-			RRName:        parentRRName,
-			ClusterID:     rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
-			RARName:       rar.Name,
-		},
+		eventContext,
 		decision,                   // decision (Approved/Rejected/Expired)
 		decidedBy,                  // decided_by (from AuthWebhook)
 		rar.Status.DecisionMessage, // decision_message

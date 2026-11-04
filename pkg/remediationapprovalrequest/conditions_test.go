@@ -17,9 +17,14 @@ limitations under the License.
 package remediationapprovalrequest_test
 
 import (
+	"os"
+
+	"github.com/google/cel-go/cel"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
@@ -219,5 +224,45 @@ var _ = Describe("RemediationApprovalRequest Conditions", func() {
 
 			Expect(rarNil.Status.Conditions).To(HaveLen(1))
 		})
+	})
+})
+
+var _ = Describe("BR-ORCH-025: frozen approval selection", func() {
+	It("UT-RAR-2570-002 evaluates the generated spec immutability rule against the reviewed selection", func() {
+		data, err := os.ReadFile("../../config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml")
+		Expect(err).NotTo(HaveOccurred())
+		var crd apiextensionsv1.CustomResourceDefinition
+		Expect(yaml.Unmarshal(data, &crd)).To(Succeed())
+		Expect(crd.Spec.Versions).NotTo(BeEmpty())
+		spec := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"]
+		var rule string
+		for _, validation := range spec.XValidations {
+			if validation.Message == "spec is immutable after creation (ADR-040)" {
+				rule = validation.Rule
+				break
+			}
+		}
+		Expect(rule).NotTo(BeEmpty())
+		env, err := cel.NewEnv(cel.Variable("self", cel.DynType), cel.Variable("oldSelf", cel.DynType))
+		Expect(err).NotTo(HaveOccurred())
+		ast, issues := env.Compile(rule)
+		Expect(issues.Err()).NotTo(HaveOccurred())
+		program, err := env.Program(ast)
+		Expect(err).NotTo(HaveOccurred())
+		original := map[string]interface{}{"workflow": map[string]interface{}{"workflowId": "wf-reviewed"}, "parameters": map[string]interface{}{"P": "1.0"}, "targetContext": map[string]interface{}{"signalClusterId": "cluster-a"}}
+		unchanged, _, err := program.Eval(map[string]interface{}{"self": original, "oldSelf": original})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(unchanged.Value()).To(BeTrue())
+		changedSelections := []map[string]interface{}{
+			{"workflow": map[string]interface{}{"workflowId": "wf-substituted"}, "parameters": map[string]interface{}{"P": "1.0"}, "targetContext": map[string]interface{}{"signalClusterId": "cluster-a"}},
+			{"workflow": map[string]interface{}{"workflowId": "wf-reviewed"}, "parameters": map[string]interface{}{"P": "2"}, "targetContext": map[string]interface{}{"signalClusterId": "cluster-a"}},
+			{"workflow": map[string]interface{}{"workflowId": "wf-reviewed"}, "parameters": map[string]interface{}{"P": "1.0"}, "targetContext": map[string]interface{}{"signalClusterId": "cluster-b"}},
+			{"workflow": map[string]interface{}{"workflowId": "wf-reviewed"}, "parameters": map[string]interface{}{"P": "1.0"}},
+		}
+		for _, changed := range changedSelections {
+			rejected, _, evalErr := program.Eval(map[string]interface{}{"self": changed, "oldSelf": original})
+			Expect(evalErr).NotTo(HaveOccurred())
+			Expect(rejected.Value()).To(BeFalse())
+		}
 	})
 })

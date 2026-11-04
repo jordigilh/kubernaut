@@ -71,6 +71,8 @@ import (
 //
 // ========================================
 var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("integration", "audit", "workflow", "soc2"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Workflow reference audit fixture", "tekton") })
 	var (
 		ctx       context.Context
 		namespace string
@@ -152,8 +154,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:   "k8s-restart-pod-v1",
-							WorkflowName: "k8s-restart-pod-v1",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{},
+							WorkflowName:           "k8s-restart-pod-v1",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -229,7 +232,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 			// Access flat fields directly
-			Expect(eventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+			Expect(eventData.WorkflowID).To(Equal(workflowID))
 			Expect(eventData.WorkflowVersion).To(Equal("v1.0.0"))
 			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
@@ -260,7 +263,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 			// Access flat fields directly (note: PipelinerunName, not PipelineRunName)
-			Expect(execEventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+			Expect(execEventData.WorkflowID).To(Equal(workflowID))
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
 
@@ -310,9 +313,10 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:   "k8s-scale-deployment-v1",
-							WorkflowName: "k8s-scale-deployment-v1",
-							ActionType:   "RestartPod",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{},
+							WorkflowName:           "k8s-scale-deployment-v1",
+							ActionType:             "RestartPod",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
@@ -358,7 +362,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 			// Access flat fields directly
-			Expect(eventData.WorkflowID).To(Equal("k8s-scale-deployment-v1"))
+			Expect(eventData.WorkflowID).To(Equal(workflowID))
 		})
 	})
 })

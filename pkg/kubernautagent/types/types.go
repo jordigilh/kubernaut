@@ -149,6 +149,8 @@ type InvestigationResult struct {
 	Dependencies           *models.WorkflowDependencies `json:"dependencies,omitempty"`
 	Resources              *corev1.ResourceRequirements `json:"resources,omitempty"`
 	DeclaredParameterNames map[string]bool              `json:"declared_parameter_names,omitempty"`
+	// ParameterSchema carries catalog constraints; nil means metadata was unavailable.
+	ParameterSchema []models.WorkflowParameter `json:"parameter_schema,omitzero"`
 
 	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
 	HumanReviewNeeded bool   `json:"human_review_needed"`

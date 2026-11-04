@@ -54,6 +54,14 @@ import (
 // are deleted externally (manual cleanup, namespace deletion, etc.)
 
 var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("integration", "external-deletion", "br-we-007"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("External deletion fixture", "tekton") })
+	deletionWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 
 	Context("External Deletion During Running Phase", func() {
 		It("should detect PipelineRun deletion and mark WFE as Failed", func() {
@@ -63,7 +71,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("ext-del-detect", targetResource)
+			wfe := deletionWFE("ext-del-detect", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Running (PipelineRun created)")
@@ -131,7 +139,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-audit-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("ext-del-audit", targetResource)
+			wfe := deletionWFE("ext-del-audit", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Running")
@@ -194,7 +202,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-pending-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("ext-del-pending", targetResource)
+			wfe := deletionWFE("ext-del-pending", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to reach Running phase (ExecutionRef persisted)")
@@ -237,7 +245,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-ref-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("ext-del-ref", targetResource)
+			wfe := deletionWFE("ext-del-ref", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Running")
@@ -297,7 +305,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/normal-complete-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("normal-complete", targetResource)
+			wfe := deletionWFE("normal-complete", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Running")

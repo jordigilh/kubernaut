@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -138,8 +139,15 @@ func ResolveWorkflow(
 		resolved.Rationale = overrideSpec.Rationale
 	}
 
-	if overrideSpec.Parameters != nil {
-		resolved.Parameters = overrideSpec.Parameters
+	for name, value := range overrideSpec.Parameters {
+		original, exists := resolved.Parameters[name]
+		if !exists {
+			return nil, false, fmt.Errorf("override parameter %q is absent from original parameters", name)
+		}
+		if strings.HasPrefix(name, "TARGET_RESOURCE_") && value != original {
+			return nil, false, fmt.Errorf("override parameter %q is locked", name)
+		}
+		resolved.Parameters[name] = value
 	}
 
 	logger.Info("Workflow override resolved",

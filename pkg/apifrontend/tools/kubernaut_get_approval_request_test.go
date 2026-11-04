@@ -6,13 +6,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("kubernaut_get_approval_request", func() {
@@ -20,6 +23,23 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
+	})
+
+	It("UT-AF-2570-034: BR-ORCH-025 exposes the frozen workflow, exact values and complete schema", func() {
+		rar := newTypedDetailedRAR("payments", "rar-oom-1")
+		minimum, maximum := 1.0, 10.0
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed", DeclaredParameterNames: map[string]bool{"P": true}}
+		rar.Spec.Parameters = map[string]string{"P": "1.0"}
+		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold", Required: true, Enum: []string{"1.0"}, Pattern: "", Minimum: &minimum, Maximum: &maximum, Default: &apiextensionsv1.JSON{Raw: []byte(`1.0`)}, DependsOn: []string{"Q"}}}
+		result, err := tools.HandleGetApprovalRequest(ctx, newTypedFakeClient(rar), tools.GetApprovalRequestArgs{Namespace: "payments", Name: rar.Name})
+		Expect(err).NotTo(HaveOccurred())
+		encoded, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		var fields map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &fields)).To(Succeed())
+		Expect(string(fields["parameters"])).To(MatchJSON(`{"P":"1.0"}`))
+		Expect(string(fields["parameter_schema"])).To(MatchJSON(`[{"name":"P","type":"float","required":true,"description":"threshold","enum":["1.0"],"minimum":1,"maximum":10,"default":1.0,"dependsOn":["Q"]}]`))
+		Expect(string(fields["workflow"])).To(ContainSubstring("wf-reviewed"))
 	})
 
 	It("UT-AF-109-001: returns full RAR detail by namespace/name", func() {

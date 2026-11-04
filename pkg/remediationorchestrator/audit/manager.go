@@ -516,11 +516,15 @@ type ApprovalData struct {
 // approval-related Build*Event builders (correlation, resource scoping, and
 // RAR identity). Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type ApprovalEventContext struct {
-	CorrelationID string
-	Namespace     string
-	RRName        string
-	ClusterID     string
-	RARName       string
+	CorrelationID      string
+	Namespace          string
+	RRName             string
+	ClusterID          string
+	RARName            string
+	WorkflowID         string
+	OriginalParameters map[string]string
+	OverrideParameters map[string]string
+	OverrideRationale  *string
 }
 
 // BuildApprovalRequestedEvent builds an audit event for approval requested.
@@ -610,6 +614,32 @@ func (m *Manager) BuildApprovalDecisionEvent(
 		// Note: DecidedBy and Message are intentionally NOT in payload per ADR-034 v1.7
 		// Two-Event Pattern: DecidedBy is captured by AuthWebhook (webhook category event)
 		// Orchestration event focuses on WHAT/WHY (business context), not WHO (attribution)
+	}
+	if evtCtx.WorkflowID != "" {
+		payload.WorkflowID = api.NewOptString(evtCtx.WorkflowID)
+	}
+	if evtCtx.OriginalParameters != nil {
+		original := make(api.RemediationOrchestratorAuditPayloadOriginalParameters, len(evtCtx.OriginalParameters))
+		effective := make(api.RemediationOrchestratorAuditPayloadEffectiveParameters, len(evtCtx.OriginalParameters))
+		for name, value := range evtCtx.OriginalParameters {
+			original[name] = value
+			effective[name] = value
+		}
+		for name, value := range evtCtx.OverrideParameters {
+			effective[name] = value
+		}
+		payload.OriginalParameters = api.NewOptRemediationOrchestratorAuditPayloadOriginalParameters(original)
+		payload.EffectiveParameters = api.NewOptRemediationOrchestratorAuditPayloadEffectiveParameters(effective)
+	}
+	if evtCtx.OverrideParameters != nil {
+		changes := make(api.RemediationOrchestratorAuditPayloadOverrideParameters, len(evtCtx.OverrideParameters))
+		for name, value := range evtCtx.OverrideParameters {
+			changes[name] = value
+		}
+		payload.OverrideParameters = api.NewOptRemediationOrchestratorAuditPayloadOverrideParameters(changes)
+	}
+	if evtCtx.OverrideRationale != nil {
+		payload.OverrideRationale = api.NewOptString(*evtCtx.OverrideRationale)
 	}
 
 	// REFACTOR-RO-AUD-001: Use mapping discriminator wrapper (replaces switch statement)

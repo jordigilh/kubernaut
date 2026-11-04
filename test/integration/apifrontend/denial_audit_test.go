@@ -19,12 +19,15 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	adksession "google.golang.org/adk/v2/session"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -51,6 +54,77 @@ func (t *denialReadTransport) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: schema-valid denied dispatch (AU-2, AU-3, SI-10, AC-6)", func() {
+	It("IT-AUD-2570-037: BR-AUDIT-005 persists correlated MCP approval intent in DataStorage", func() {
+		ctx := context.Background()
+		actor := "approval-2570-" + uuid.NewString()
+		correlationID := "rr-audit-2570-" + uuid.NewString()[:8]
+		role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: actor}, Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{"kubernaut.ai"}, Resources: []string{"console", "tools"}, Verbs: []string{"use"}},
+		}}
+		Expect(k8sClient.Create(ctx, role)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(context.Background(), role)).To(Succeed()) })
+		binding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: actor}, RoleRef: rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: actor}, Subjects: []rbacv1.Subject{{Kind: "User", APIGroup: rbacv1.GroupName, Name: actor}}}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(context.Background(), binding)).To(Succeed()) })
+		rar := &remediationv1.RemediationApprovalRequest{ObjectMeta: metav1.ObjectMeta{Name: "rar-audit-2570-" + uuid.NewString(), Namespace: defaultFixture}, Spec: remediationv1.RemediationApprovalRequestSpec{
+			RemediationRequestRef: corev1.ObjectReference{Name: correlationID, Namespace: defaultFixture}, AIAnalysisRef: remediationv1.ObjectRef{Name: "aia-test"},
+			Confidence: 0.7, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
+			RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-reviewed", Version: "v1", ExecutionBundle: "example:v1", Rationale: "review"},
+			RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
+			Workflow:   &types.WorkflowSnapshot{WorkflowID: "wf-reviewed", WorkflowName: "wf-reviewed", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true, "Q": true}},
+			Parameters: map[string]string{"P": "2", "Q": "keep"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}, {Name: "Q", Type: "string", Description: "unchanged"}},
+			TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
+		}}
+		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+		DeferCleanup(func() { Expect(crclient.IgnoreNotFound(k8sClient.Delete(context.Background(), rar))).To(Succeed()) })
+		logger := zapr.NewLogger(zap.NewNop())
+		transport, err := sharedtls.NewTLSTransport(infrastructure.BootstrapTLSCAFile("https://localhost:18096"))
+		Expect(err).NotTo(HaveOccurred())
+		auditClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport("https://localhost:18096", time.Second, &bearerTransport{token: serviceAccountToken, base: transport})
+		Expect(err).NotTo(HaveOccurred())
+		store, err := sharedaudit.NewBufferedStore(auditClient, sharedaudit.Config{BufferSize: 100, BatchSize: 10, FlushInterval: 50 * time.Millisecond, MaxRetries: 1}, "apifrontend", logger)
+		Expect(err).NotTo(HaveOccurred())
+		emitter := audit.NewStoreAdapter(store, logger)
+		DeferCleanup(func() { Expect(emitter.Close(context.Background())).To(Succeed()) })
+		typedClient, err := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: scheme})
+		Expect(err).NotTo(HaveOccurred())
+		mcpHandler, err := handler.NewMCPHandler(handler.MCPConfig{Enabled: true, ServerName: "approval-audit-it", ServerVersion: "1.0", Bridge: &handler.MCPBridgeConfig{
+			K8sClient: dynamicClient, TypedClient: typedClient, Namespace: defaultFixture, Authorizer: auth.NewSARChecker(k8sClientset, time.Second, logger), Auditor: emitter, Logger: logger, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 2,
+		}})
+		Expect(err).NotTo(HaveOccurred())
+		server := httptest.NewServer(auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: jwtValidator, Logger: logger})(mcpHandler))
+		DeferCleanup(server.Close)
+		token := signValidToken(actor)
+		_, sid := denialRPC(server.URL+"/mcp", token, "", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"audit-it","version":"1"}}}`)
+		denialRPC(server.URL+"/mcp", token, sid, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+		body, _ := denialRPC(server.URL+"/mcp", token, sid, fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}}}`, rar.Name))
+		Expect(body).NotTo(ContainSubstring(`"isError":true`))
+		Expect(store.Flush(ctx)).To(Succeed())
+		query, err := ogenclient.NewClient("https://localhost:18096", ogenclient.WithClient(&http.Client{Transport: &bearerTransport{token: serviceAccountToken, base: transport}, Timeout: 2 * time.Second}))
+		Expect(err).NotTo(HaveOccurred())
+		var events []ogenclient.AuditEvent
+		Eventually(func(g Gomega) {
+			response, queryErr := query.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{CorrelationID: ogenclient.NewOptString(correlationID), EventType: ogenclient.NewOptString("apifrontend.tool.executed")})
+			g.Expect(queryErr).NotTo(HaveOccurred())
+			events = response.Data
+			g.Expect(events).To(HaveLen(1))
+		}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
+		payload, ok := events[0].EventData.GetApifrontendToolExecutedPayload()
+		Expect(ok).To(BeTrue())
+		original, originalPresent := payload.OriginalParameters.Get()
+		changes, changesPresent := payload.OverrideParameters.Get()
+		effective, effectivePresent := payload.EffectiveParameters.Get()
+		Expect(originalPresent && changesPresent && effectivePresent).To(BeTrue())
+		Expect(original).To(HaveKeyWithValue("P", "2"))
+		Expect(changes).To(HaveKeyWithValue("P", "1.0"))
+		Expect(effective).To(HaveKeyWithValue("P", "1.0"))
+		Expect(effective).To(HaveKeyWithValue("Q", "keep"))
+		Expect(payload.WorkflowID.Value).To(Equal("wf-reviewed"))
+		Expect(payload.ApprovalRequest.Value).To(Equal(rar.Name))
+		Expect(payload.ApprovalDecision.Value).To(Equal("Approved"))
+		Expect(payload.OverrideRationale.Value).To(Equal("reviewed"))
+		Expect(events[0].ActorID.Value).To(Equal(actor))
+	})
 	DescribeTable("real MCP HTTP denial remains fail-closed and observable",
 		func(consoleGrant, sarFailure, storeFailure bool) {
 			actor := "denial-2500-" + uuid.NewString()

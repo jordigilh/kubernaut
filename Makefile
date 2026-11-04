@@ -353,6 +353,10 @@ test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests fo
 	fi
 
 # Integration Tests
+.PHONY: test-integration-remediationorchestrator-approvalsafety
+test-integration-remediationorchestrator-approvalsafety: ## Run Podman-free approval safety envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./test/integration/remediationorchestrator/approvalsafety -count=1
+
 .PHONY: test-integration-%
 test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
