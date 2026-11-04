@@ -516,9 +516,10 @@ timeoutSeconds: 120
 		Name:  "apifrontend_ka_test",
 		Image: kaImageName,
 		Env: map[string]string{
-			"KUBECONFIG":    "/tmp/kubeconfig",
-			"POD_NAMESPACE": defaultFixture,
-			"TLS_CA_FILE":   "/etc/tls-ca/ca.crt",
+			"KUBECONFIG":                "/tmp/kubeconfig",
+			"POD_NAMESPACE":             defaultFixture,
+			"KUBERNAUT_AGENT_NAMESPACE": defaultFixture,
+			"TLS_CA_FILE":               "/etc/tls-ca/ca.crt",
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
