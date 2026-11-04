@@ -685,6 +685,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			var persisted isv1alpha1.InvestigationSession
 			Expect(typedClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: "is-" + rrName}, &persisted)).To(Succeed())
 			Expect(persisted.Spec.UserIdentity.Username).To(Equal(testUser.Username))
+			Expect(persisted.Spec.UserIdentity.Groups).To(Equal(testUser.Groups))
 			Expect(persisted.Spec.JoinMode).To(Equal(isv1alpha1.SessionJoinModeStart))
 			Expect(persisted.Status.KACorrelationID).To(Equal(kaSession))
 
