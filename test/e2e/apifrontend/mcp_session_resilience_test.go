@@ -184,14 +184,18 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 			mcpSessionAAfterRestart string
 		)
 		DeferCleanup(func() {
-			if mcpSessionAAfterRestart != "" {
+			cleanupSessionID := mcpSessionAAfterRestart
+			if cleanupSessionID == "" {
+				cleanupSessionID = mcpSessionID
+			}
+			if cleanupSessionID != "" {
 				cleanupBody := buildJSONRPC("af-ka-168-cleanup", "tools/call", map[string]interface{}{
 					"name": "kubernaut_complete",
 					"arguments": map[string]interface{}{
 						"rr_id": rrName,
 					},
 				})
-				cleanupRaw, _, cleanupErr := mcpPOST(authToken, mcpSessionAAfterRestart, cleanupBody)
+				cleanupRaw, _, cleanupErr := mcpPOST(authToken, cleanupSessionID, cleanupBody)
 				if cleanupErr != nil {
 					GinkgoWriter.Printf("  cleanup kubernaut_complete failed: %v\n", cleanupErr)
 				} else {
