@@ -2,9 +2,13 @@
 
 **Test Plan Identifier:** TP-AF-IT-EXP-01
 **Issue:** #87
-**Version:** 1.0
-**Date:** 2026-05-14
+**Version:** 1.1
+**Date:** 2026-11-04
 **Predecessor:** TP-AF-GA-P2 (Phase 2–3 Test Plan)
+
+**Revision 1.1:** Added maintained ownership and Lease-recovery traceability for
+issues #2596/#2597 using the existing AF, KA, integration, and deployed E2E
+scenarios; no duplicate ownership tests were introduced.
 
 ---
 
@@ -19,6 +23,8 @@ This test plan validates the integration tier (IT) expansion for the kubernaut-a
 - Verify resilience contracts (circuit breaker, retry, timeout) using TCP proxy pattern
 - Validate RBAC enforcement per tool
 - Assert metrics emission and audit event fidelity
+- Verify durable AF `InvestigationSession` ownership remains authoritative across
+  ephemeral KA Lease expiry, reclaim, restart, and same-user reacquisition
 
 ### 1.2 Out of Scope
 
@@ -54,6 +60,9 @@ This test plan validates the integration tier (IT) expansion for the kubernaut-a
 | BR-DEDUP-001 | af_check_existing_rr prevents duplicate RR creation | #19 | RR Dedup |
 | BR-DECISION-001 | kubernaut_present_decision surfaces user decision points from KA | #3 | User Decision Flow |
 | BR-E2E-001 | E2E CI pipeline validates full integration stack before merge | #87 | CI Pipeline |
+| BR-INTERACTIVE-004 | Dynamic takeover preserves the durable interactive owner while the ephemeral KA Lease is reclaimed | #2596/#2597 | Durable AF ownership across KA restart |
+| BR-INTERACTIVE-005 | Interactive Lease expiry, release, and reclaim are bounded and recoverable | #2597 | KA Lease lifecycle |
+| BR-INTERACTIVE-010 | InvestigationSession is the AF-side interactive signal and lifecycle authority | #2596/#2597 | Durable IS ownership and terminal admission |
 
 ---
 
@@ -247,6 +256,24 @@ Dedicated MCP handler with `CBFailureThreshold=3, CBTimeout=200ms`.
 
 ---
 
+### 5.9 Category I: Durable AF Ownership and KA Lease Recovery (BR-INTERACTIVE-004, BR-INTERACTIVE-005, BR-INTERACTIVE-010)
+
+These scenarios are the maintained regression coverage for issues #2596/#2597.
+They reuse existing AF, KA, integration, and deployed E2E tests and do not
+duplicate the existing #1293/#2170 ownership coverage.
+
+| TC ID | BR | Description | Input | Expected Result | Type |
+|-------|-----|-------------|-------|-----------------|------|
+| UT-AF-1293-INIT-002 | BR-INTERACTIVE-004, BR-INTERACTIVE-010 | Same user reacquires with a fresh KA session ID | Existing non-terminal IS, same user, new KA session ID | One non-terminal durable owner remains; the original IS is preserved and no duplicate is created | UT |
+| UT-AF-2596-001 | BR-INTERACTIVE-010 | A terminal prior IS does not block a later owner | Terminal IS for RR, later user/session | A new active IS is created for the later owner | UT |
+| UT-KA-RECONCILE-001 | BR-INTERACTIVE-005 | Startup reconciliation removes expired interactive Leases only | Expired, live, and unrelated Leases | Only the expired interactive Lease is removed | UT |
+| UT-KA-2597-001 | BR-INTERACTIVE-005 | Fresh manager preserves a Lease strictly before expiry | Lease acquired 29 minutes ago with 30-minute TTL | Takeover returns `ErrLeaseHeld` and the existing holder remains | UT |
+| UT-KA-2597-002 | BR-INTERACTIVE-005 | Fresh manager reclaims an expired Lease and releases cleanly | Orphaned Lease acquired two hours ago | A fresh holder acquires a new session; release deletes the Lease and clears active capacity | UT |
+| IT-AF-KA-168-001 | BR-INTERACTIVE-004, BR-INTERACTIVE-010 | Durable User A owner survives expired Lease and fresh KA epoch | Real API server: User A owner, expired Lease, fresh User B manager, then User A reacquisition | User B may reclaim only the ephemeral Lease and is rejected by AF with `session_active`; after release, User A reacquires and exactly one non-terminal IS owner remains | IT |
+| E2E-AF-KA-168-001 | BR-INTERACTIVE-004, BR-INTERACTIVE-010 | Deployed AF owner survives KA restart and Lease reconciliation | User A investigation, expired real Lease, KA pod restart, User B attempt, User A reacquisition | KA startup removes the expired Lease; AF denies User B before a replacement Lease; User A obtains a fresh Lease while the original durable IS remains sole owner | E2E |
+
+---
+
 ## 6. Test Environment
 
 - Go 1.26+, Ginkgo v2.28/Gomega
@@ -270,6 +297,7 @@ Dedicated MCP handler with `CBFailureThreshold=3, CBTimeout=200ms`.
 | Phase 5 | RBAC enforcement specs | IT-RBAC-001..004 |
 | Phase 6 | Resilience specs (TCP proxy) | IT-RESIL-001..007 |
 | Phase 7 | Metrics + audit fidelity specs | IT-METRICS-001..003, IT-AUDIT-001 |
+| Phase 8 | Durable AF ownership + KA Lease recovery | UT-AF-1293-INIT-002, UT-AF-2596-001, UT-KA-RECONCILE-001, UT-KA-2597-001..002, IT-AF-KA-168-001, E2E-AF-KA-168-001 |
 | REFACTOR | 100-go-mistakes audit + lint | — |
 
 ---
@@ -304,6 +332,9 @@ Dedicated MCP handler with `CBFailureThreshold=3, CBTimeout=200ms`.
 | BR-DEDUP-001 | IT-TRIAGE-005..006 | 2 |
 | BR-DECISION-001 | IT-KA-004 | 1 |
 | BR-E2E-001 | (All — IT validates components before E2E) | 47 |
+| BR-INTERACTIVE-004 | UT-AF-1293-INIT-002, IT-AF-KA-168-001, E2E-AF-KA-168-001 | 3 |
+| BR-INTERACTIVE-005 | UT-KA-RECONCILE-001, UT-KA-2597-001..002 | 3 |
+| BR-INTERACTIVE-010 | UT-AF-1293-INIT-002, UT-AF-2596-001, IT-AF-KA-168-001, E2E-AF-KA-168-001 | 4 |
 
 ### 9.2 TC → Implementation File Mapping
 
@@ -352,6 +383,13 @@ Dedicated MCP handler with `CBFailureThreshold=3, CBTimeout=200ms`.
 | IT-METRICS-002 | `test/integration/bridge_test.go` | "error increments counter" |
 | IT-METRICS-003 | `test/integration/bridge_test.go` | "duration histogram populated" |
 | IT-AUDIT-001 | `test/integration/bridge_test.go` | "audit event fields correct" |
+| UT-AF-1293-INIT-002 | `pkg/apifrontend/session/deferred_crd_test.go` | "idempotent when same user already has active session" |
+| UT-AF-2596-001 | `pkg/apifrontend/session/deferred_crd_test.go` | "permits a later owner when the prior IS is terminal" |
+| UT-KA-RECONCILE-001 | `internal/kubernautagent/mcp/session_manager_test.go` | "ReconcileOrphanedLeases cleans up expired Leases at startup" |
+| UT-KA-2597-001 | `internal/kubernautagent/mcp/session_manager_test.go` | "preserves a Lease strictly before expiry" |
+| UT-KA-2597-002 | `internal/kubernautagent/mcp/session_manager_test.go` | "fresh manager reclaims an expired Lease and releases cleanly" |
+| IT-AF-KA-168-001 | `test/integration/apifrontend/durable_ownership_test.go` | "retains User A ownership after expired Lease and fresh KA epoch" |
+| E2E-AF-KA-168-001 | `test/e2e/apifrontend/mcp_session_resilience_test.go` | "durable AF owner survives KA Lease reclaim and restart" |
 
 ---
 

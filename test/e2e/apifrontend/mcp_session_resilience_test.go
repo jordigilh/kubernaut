@@ -197,12 +197,25 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 		By("Step 6: Reconnecting — pool should detect the dead session and takeover should re-establish KA ownership")
-		raw, err = mcpToolCallWithSession("res-1387-reconnect", "kubernaut_reconnect", map[string]interface{}{
-			"rr_id": rrName,
-		})
-		Expect(err).NotTo(HaveOccurred(), "reconnect should fall back to takeover after the restarted KA reports not_driving")
-		Expect(string(raw)).To(ContainSubstring("takeover_started"),
-			"reconnect must successfully take over the fresh KA epoch")
+		// The restart records transport failures in AF's shared MCP circuit
+		// breaker. The E2E configuration allows a half-open probe after 10s,
+		// so retry the same reconnect operation until that probe can succeed.
+		var reconnectRaw []byte
+		Eventually(func(g Gomega) {
+			attemptRaw, attemptErr := mcpToolCallWithSession("res-1387-reconnect", "kubernaut_reconnect", map[string]interface{}{
+				"rr_id": rrName,
+			})
+			if attemptErr != nil {
+				g.Expect(attemptErr).NotTo(HaveOccurred(),
+					"reconnect should fall back to takeover after the restarted KA reports not_driving")
+				return
+			}
+			reconnectRaw = attemptRaw
+			g.Expect(string(attemptRaw)).To(ContainSubstring("takeover_started"),
+				"reconnect must successfully take over the fresh KA epoch")
+		}, 45*time.Second, 1*time.Second).Should(Succeed(),
+			"reconnect must recover after the AF MCP circuit breaker permits a half-open probe")
+		raw = reconnectRaw
 		GinkgoWriter.Printf("  reconnect/takeover result: %s\n", string(raw))
 
 		By("Step 7: Calling discover_workflows — the reconstituted pooled session should succeed")
