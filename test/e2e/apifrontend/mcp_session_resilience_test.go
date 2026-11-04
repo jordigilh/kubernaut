@@ -179,8 +179,25 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		userA := e2ePersonas["sre"].Email
 
 		Expect(createRR(e2eNamespace, rrName, "test-deploy-af-ka-168")).To(Succeed())
-		var ownerSessionName string
+		var (
+			ownerSessionName        string
+			mcpSessionAAfterRestart string
+		)
 		DeferCleanup(func() {
+			if mcpSessionAAfterRestart != "" {
+				cleanupBody := buildJSONRPC("af-ka-168-cleanup", "tools/call", map[string]interface{}{
+					"name": "kubernaut_complete",
+					"arguments": map[string]interface{}{
+						"rr_id": rrName,
+					},
+				})
+				cleanupRaw, _, cleanupErr := mcpPOST(authToken, mcpSessionAAfterRestart, cleanupBody)
+				if cleanupErr != nil {
+					GinkgoWriter.Printf("  cleanup kubernaut_complete failed: %v\n", cleanupErr)
+				} else {
+					GinkgoWriter.Printf("  cleanup kubernaut_complete result: %s\n", string(cleanupRaw))
+				}
+			}
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			_ = clientset.CoordinationV1().Leases(e2eNamespace).Delete(cleanupCtx, leaseName, metav1.DeleteOptions{})
@@ -305,7 +322,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 			"AF must deny User B before KA creates a replacement Lease")
 
 		By("Step 7: User A reacquires through a fresh AF MCP session")
-		mcpSessionAAfterRestart, err := initMCPSession(authToken)
+		mcpSessionAAfterRestart, err = initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
 		raw, statusCode, err = callInvestigate(authToken, mcpSessionAAfterRestart, "af-ka-168-reacquire-a")
 		Expect(err).NotTo(HaveOccurred())
