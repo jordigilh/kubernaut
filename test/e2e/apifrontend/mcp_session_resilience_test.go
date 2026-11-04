@@ -176,7 +176,8 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		ctx := context.Background()
 		rrName := fmt.Sprintf("e2e-af-ka-168-%d", time.Now().UnixNano())
 		leaseName := "kubernaut-interactive-" + rrName
-		userA := e2ePersonas["sre"].Email
+		userA, err := auditOIDCSubject(authToken)
+		Expect(err).NotTo(HaveOccurred(), "SRE DEX token must expose the authenticated subject")
 
 		Expect(createRR(e2eNamespace, rrName, "test-deploy-af-ka-168")).To(Succeed())
 		var (
