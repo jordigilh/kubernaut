@@ -1,15 +1,16 @@
 # Test Plan: #2570 RAR Parameter Overrides
 
-**Status:** Proposed; awaiting user approval.
+**Status:** Implementation authorized; RED in progress. The #2564/#2565
+baseline was merged in PR #2589. No #2570 end-to-end completion is claimed.
 
 **Implementation:** [Implementation Plan](IMPLEMENTATION_PLAN.md)
 **Scope:** BR-ORCH-025/026, BR-KA-191, BR-AUTH-001, BR-AUDIT-005/006; #2577 and #2578.
 
 ## Acceptance
 
-Use Ginkgo/Gomega business-outcome tests. The 44 scenarios below are the proposed in-scope critical UT denominator: **0/44 implemented or passing**. All 44 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
+Use Ginkgo/Gomega business-outcome tests. The 45 scenarios below are the in-scope critical UT denominator. Report the number proven by passing UTs against all 45; do not count RED failures or infer a passing count from execution alone. All 45 must pass; add any consequential scenario found during implementation rather than weakening the denominator. Integration tests must pass for every wiring point, and E2E/control tests must prove each applicable objective. Structural line coverage is diagnostic; follow the separate merged-tier CI gate. No skipped or pending executable tests.
 
-The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 44 current scenarios are critical, the current gate is 44/44, not 90% of 44. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
+The pyramid invariant is mandatory: UT proves business logic, IT proves real production wiring, and E2E proves the deployed user journey. Across all defined in-scope UT business scenarios require at least 90% passing and 100% of critical scenarios passing. Because all 45 current scenarios are critical, the current gate is 45/45, not 90% of 45. If legitimate non-critical cases are added, include them in the overall 90% denominator while keeping every critical case mandatory. Higher meaningful coverage is preferred when justified by additional business cases; do not add duplicate or coverage-only tests. Use Engram MCP for recall and code navigation; if disabled, stop and escalate.
 
 ## Unit scenarios
 
@@ -59,6 +60,63 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | 42 | UT-VAL-2570-093 | Integers above signed int64 maximum or below its minimum are rejected without a tighter schema bound. | shared validation; KA-191 / SI-10 |
 | 43 | UT-AW-2570-094 | An override on Pending, Rejected or Expired is rejected with RAR status unchanged. | AW; AUTH-001 / SI-10 |
 | 44 | UT-AW-2570-095 | A rationale-only Approved override retains the original effective parameter map. | AW; ORCH-025 / KA-191 |
+| 45 | UT-AW-2570-098 | A `Cancelled` decision carrying an override is rejected without a status mutation, including a trusted system caller. | AW; AUTH-001 / SI-10 |
+
+## Common schema-validation vectors
+
+Use the same logical cases through the shared core and the production KA, AF,
+and AW adapters. The table expresses the string-valued RAR transport; KA/AF
+fixtures use their actual typed inputs while retaining numeric lexical evidence
+where the input format supplies it. Never use a float64 conversion to represent
+an integer. The `original` map is the frozen RAR map, `changes` is the partial
+reviewer submission, and `effective` is the overlay result. KA exercises the
+same effective values and schema through its own selection adapter, not a
+fabricated approval path. Authorization, managed-key locking and catalog checks
+remain adapter/admission responsibilities; the shared core does not grant them.
+
+`—` means absent, not `null`. Unless stated, schema parameters are optional and
+unconstrained and the named map has a single parameter `P`.
+
+| Vector | Schema and input | Expected outcome |
+|---|---|---|
+| V-01 | `P:string`; original `{"P":"old","Q":"keep"}`, changes `{"P":"new"}`; `Q:string` | Valid effective `{"P":"new","Q":"keep"}`; original unchanged. |
+| V-02 | `P:string`; original `{"P":"old"}`, changes `{}` or omitted | Valid effective `{"P":"old"}`; explicit empty versus omitted remains distinguishable on the RAR wire. |
+| V-03 | `P:integer`; original `{"P":"3"}`, changes `{"P":"1.0"}` | Reject; integer requires integer JSON text, not a decimal or exponent representation. |
+| V-04 | `P:float`; original `{"P":"2"}`, changes `{"P":"1.0"}` | Valid; decoded finite float is 1, but effective and stored text remain exactly `"1.0"`. |
+| V-05 | `P:integer, maximum:9007199254740992`; original `{"P":"9007199254740992"}`, changes `{"P":"9007199254740993"}` | Reject above maximum without rounding the integer to float64. |
+| V-06 | `P:integer`; original `{"P":"3"}`, changes `{"P":"9223372036854775808"}` | Reject signed-int64 overflow; likewise reject values below its minimum. |
+| V-07 | `P:float`; original `{"P":"1"}`, changes `{"P":"NaN"}`, `{"P":"1e400"}`, or `{"P":"1e-4000"}` | Reject respectively non-finite, overflow, and nonzero underflow. |
+| V-08 | `P:boolean`; original `{"P":"false"}`, changes `{"P":"true"}` or `{"P":"notbool"}` | Accept `true` and reject invalid boolean representation. |
+| V-09 | `P:array`; original `{"P":"[]"}`, changes `{"P":"[\"a\",\"b\"]"}` or `{"P":"null"}` | Accept the JSON array without rewriting its text; reject non-array `null`. |
+| V-10 | `P:string, enum:["safe","fast"], pattern:"^[a-z]+$"`; original `{"P":"safe"}`, changes `{"P":"fast"}`, `{"P":"other"}`, or `{"P":"FAST"}` | Accept `fast`; reject enum and pattern violations without modifying status. |
+| V-11 | `P:string, required:true`; original `{}`, changes omitted | Reject missing required effective value. |
+| V-12 | `P:string, default:"auto"`; original `{}`, changes omitted | Valid; effective map remains `{}` and no default is inserted into RAR, WE or audit evidence. |
+| V-13 | `P:string, dependsOn:["Q"]`; `Q:string, default:"auto"`; original `{"P":"x"}`, changes omitted | Reject missing dependency `Q`; the schema default does not insert `Q`. With original `{"P":"x","Q":"y"}`, accept. |
+| V-14 | `P:string, pattern:"["`; original `{"P":"x"}`, changes omitted | Reject malformed schema, not only malformed values. |
+| V-15 | `P:string`; original `{"P":"old"}`, changes `{"NEW":"x"}` | AW rejects the new key; no partial decision. This overlay-policy case is separate from core schema validation. |
+| V-16 | `TARGET_RESOURCE_NAME:string`; original `{"TARGET_RESOURCE_NAME":"pod-a"}`, changes to `"pod-b"` or unchanged `"pod-a"` | AW rejects the changed managed value and accepts an unchanged locked value, subject to other checks. |
+| V-17 | `P:string, pattern:"^[a-z]+$"`; original `{"P":"safe"}`, changes `{"P":"FAST"}` | Reject the pattern violation independently of enum validation. |
+
+If an adapter cannot preserve a required numeric representation or does not
+expose a vector at its boundary, record that as a failed wiring/contract case;
+do not silently coerce it or claim common coverage from core-only tests. Map the
+vectors to the applicable UT scenario IDs above and IT-KA-2570-009,
+IT-AF-2570-003/010 and IT-AW-2570-004/011. These are test specifications, not
+passing evidence. String processing must compare the candidate to the exact
+reviewer-submitted text and byte length, never to the previous value.
+
+## #2589 baseline regression gate
+
+Run the affected tests from `docs/testing/TEST_PLAN_2564_2565_RAR_APPROVAL_SAFETY.md`
+when touching their paths. Explicitly cover: creator outcomes (`Created`,
+`Collision`, `StatusPersistenceFailed`, `PersistenceUnknown`), one probe and
+no create replay on ambiguous creation, and status-only recovery that cannot
+overwrite a terminal decision; before/equal/after deadline, forged versus
+trusted system decisions and both approval/expiry race outcomes; all frozen
+terminal fields including `CreatedAt`, status-parent removal and RO-only
+bookkeeping; and optional, bounded, non-authoritative parent evidence when
+unavailable or invalid. Preserve the baseline's recorded open residuals and
+unverified wiring as such; a merged PR is not proof those gates passed.
 
 ## Integration and end-to-end proof
 
@@ -72,11 +130,12 @@ The pyramid invariant is mandatory: UT proves business logic, IT proves real pro
 | IT-KA-2570-008 / BR-WORKFLOW-006 | Generated RemediationWorkflow CRD supports `status.workflowId` server-side selection within a namespace and returns the matching workflow. | Real Kubernetes API server with generated CRD. |
 | IT-KA-2570-009 / BR-KA-191 | Production KA validation invokes shared core and returns actionable self-correction. | KA integration with schema fixture. |
 | IT-AF-2570-003/010 / BR-KA-191, BR-AUTH-001 | Actual MCP read/approve exposes full schema; omitted override, explicit `{}` and partial override survive the AF→API-server path without clearing omitted values; a rationale-only Approved override preserves the effective map; omitted optional defaults stay absent in WE and audit evidence. | AF, API server, authorization, webhook and execution/audit fixtures. |
-| IT-AW-2570-004/011 / BR-AUTH-001, BR-KA-191 | Real AW admission enforces same-ID lookup, rejects multiple same-ID matches, schema violations, locked-key changes and processing that alters reviewer-submitted text; rejects a non-empty legacy workflowName and overrides on Pending/Rejected/Expired with status unchanged; and covers a rationale-only Approved override. Verify no retry on a successful no-match, 403 or invalid namespace; cancellation/deadline stops retries and transient API/network errors use at most three total attempts. | API server, webhook, trusted/foreign namespaces. |
+| IT-AW-2570-004/011 / BR-AUTH-001, BR-KA-191 | Real AW admission enforces same-ID lookup, rejects multiple same-ID matches, schema violations, locked-key changes and processing that alters reviewer-submitted text; rejects a non-empty legacy workflowName and overrides on Pending/Rejected/Expired/Cancelled with status unchanged, including a trusted system Cancelled path; and covers a rationale-only Approved override. Verify no retry on a successful no-match, 403 or invalid namespace; cancellation/deadline stops retries and transient API/network errors use at most three total attempts. | API server, webhook, trusted/foreign namespaces. |
 | IT-AW-2570-005 / BR-AUTH-001 | Generated RAR CEL blocks terminal mutation and whole-status removal while permitting observation updates; webhook bypass included. | API server with generated RAR CRD. |
 | IT-AF-2570-012 / BR-AUTH-001 | Concurrent approve/reject updates: exactly one commits; conflict differs from network error; ambiguous failures re-read before retry. | Actual AF/AW path and API server. |
 | IT-RO-2570-006 / BR-ORCH-025/026 | Approved RAR → frozen target/lock/hash → WE → actual filtered inputs for Job, Tekton and Ansible; nil declaration metadata fails closed and explicit empty remains empty and passes no inputs. | RO/WE integration, real API and executor fixtures. |
 | IT-WE-2570-012 / BR-ORCH-025 | WE trusted-ID lookup on approval and non-approval execution: same-ID dispatch succeeds; a previously selected ID with no match fails immediately after one lookup; ambiguous, stale/mismatched or foreign-only result never dispatches. Transient API/network failures make at most three total attempts; 403 or invalid namespace configuration is not retried, and cancellation/deadline stops retries. | API server and backend fixtures. |
+| IT-RO-WE-2570-003 / BR-ORCH-025, AC-4 | **Approved replacement for E2E-2570-003:** production RO creates a WE from a freshly approved RAR; delete the unique trusted workflow, confirm the real API server's ID selector returns zero matches, then invoke the production WE reconciler. Assert the specific no-match failure and no Job. The WE reconciler is not running before the explicit invocation. | Real envtest API server and RO/WE code; dedicated catalog and execution namespaces. Upstream status and approval are test fixtures; this suite does not install the admission webhook. |
 | IT-AUD-2570-007 / BR-AUDIT-005/006, BR-AUTH-001 | RO decision → shared buffer → DataStorage HTTP/PostgreSQL; healthy authorized correlated readback preserves included user text, unauthorized RAR/audit reads are denied, and enqueue failure is observable. | Real service and isolated database with authorized/unauthorized identities. |
 | E2E-AUD-2570-008 / BR-AUDIT-005/006 | Authenticated review → admitted RAR → committed decision → correlated audit reconstruction; execute applicable safety and denial journeys. | Deployed AF, AW, RO, WE and DataStorage with TLS. |
 
@@ -90,11 +149,19 @@ received by its workload; observing only the WE spec does not prove execution.
 |---|---|---|
 | E2E-2570-001 | Create an approval-required RR with a selected workflow and at least two original parameters. An authorized reviewer changes one valid value through AF; AW admits it; RO creates WE from the RAR; WE dispatches the workflow. Verify the workload receives the exact changed text and the untouched value, and the RR completes. | ORCH-025/026, KA-191, AC-4, SI-10 |
 | E2E-2570-002 | On a fresh pending RAR, submit an invalid or unauthorized parameter change through AF. Verify rejection, unchanged decision, and no WE or external execution. | AUTH-001, KA-191, AC-6, SI-10 |
-| E2E-2570-003 | On a fresh approved RAR, use an isolated controlled barrier to remove the matching trusted workflow before WE's runtime check, then release reconciliation. Verify WE fails closed and creates no external execution resource; do not rely on timing or sleeps. | ORCH-025, AC-4 |
 
 E2E-AUD-2570-008 additionally proves correlated intent, admission and committed
 decision readback under healthy delivery. Each journey uses isolated fixtures and
-the actual service path. None is implemented or passing evidence yet.
+the actual service path. E2E-2570-001/002 and the audit reconstruction and
+denial journeys are implemented but have not been run. No deployed E2E scenario
+is passing evidence until its CI execution succeeds.
+
+The owner explicitly approved replacing the deployed E2E-2570-003 journey with
+IT-RO-WE-2570-003 above. It does **not** prove deployed RO/WE service-account
+RBAC, webhook admission, network policy, operator wiring, or actual workload
+execution. Those deployment and authorization risks remain unverified by this
+replacement; use IT-2570-020 and separate deployed journeys for applicable
+evidence, without presenting them as a deployed deletion-barrier pass.
 
 The existing WE workflow-deletion E2E test must be updated: a missing same-ID workflow before dispatch now prevents a new execution. Test the separate point-in-time race without claiming atomic deletion prevention. A previously running execution is not canceled merely because a later catalog check fails.
 
@@ -115,7 +182,7 @@ Test actual AIA/RAR CRD round trips and exact reviewer strings. No selection SHA
 | Objective | Planned proving behavior |
 |---|---|
 | SI-10 and ASVS input validation | UT validation scenarios, IT-AW-2570-004/011 and E2E-2570-002 reject invalid input before a committed decision. Verify the precise applicable ASVS 5.0 clause against the standard before reporting it. |
-| AC-4/AC-6 and ASVS access control | IT-KA-2577-001/002, IT-AF-2570-003 and E2E-2570-002/003 prove namespace/authorization boundaries and absence of execution on denial. |
+| AC-4/AC-6 and ASVS access control | IT-KA-2577-001/002, IT-AF-2570-003 and E2E-2570-002 address namespace/authorization boundaries and denial; IT-RO-WE-2570-003 proves the no-match handoff without establishing deployed RBAC. |
 | AU-2/AU-3, SOC2 CC7.2 and ASVS 5.0 V16.2/V16.3 | IT-AUD-2570-007 and E2E-AUD-2570-008 prove correlated actor, decision and safe readback under healthy delivery; test denial/error logging through the actual configured processor. |
 | AU-9/AU-11 | Identify source-attributed inherited evidence or run applicable integrity, retention and legal-hold tests against the supported DataStorage configuration; if unavailable, record as unverified and block the applicable control gate. |
 
