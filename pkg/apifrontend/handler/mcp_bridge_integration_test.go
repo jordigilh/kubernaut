@@ -626,6 +626,13 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				},
 				Spec: agentsessionv1.AgentSessionSpec{
 					RemediationRequestRef: agentsessionv1.ObjectRef{Namespace: namespace, Name: rrName},
+					IncidentID:            "incident-real-session-2596",
+					RemediationID:         "rem-real-session-2596",
+					SignalName:            "test-signal",
+					Severity:              "high",
+					Environment:           "test",
+					Priority:              "P1",
+					SignalMode:            "reactive",
 				},
 				Status: agentsessionv1.AgentSessionStatus{
 					SessionID:   kaSession,

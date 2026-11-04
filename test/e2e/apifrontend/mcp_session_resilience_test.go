@@ -205,11 +205,15 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 			}
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			_ = clientset.CoordinationV1().Leases(e2eNamespace).Delete(cleanupCtx, leaseName, metav1.DeleteOptions{})
+			if err := clientset.CoordinationV1().Leases(e2eNamespace).Delete(cleanupCtx, leaseName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("  cleanup Lease %s/%s deletion failed: %v\n", e2eNamespace, leaseName, err)
+			}
 			if ownerSessionName != "" {
-				_ = k8sClient.Delete(cleanupCtx, &investigationsessionv1alpha1.InvestigationSession{
+				if err := k8sClient.Delete(cleanupCtx, &investigationsessionv1alpha1.InvestigationSession{
 					ObjectMeta: metav1.ObjectMeta{Name: ownerSessionName, Namespace: e2eNamespace},
-				})
+				}); err != nil && !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("  cleanup InvestigationSession %s/%s deletion failed: %v\n", e2eNamespace, ownerSessionName, err)
+				}
 			}
 			deleteRR(e2eNamespace, rrName)
 		})
