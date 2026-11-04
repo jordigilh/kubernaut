@@ -140,7 +140,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		defer cancel()
 
 		deleteCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"-n", e2eNamespace, "delete", "pod", "-l", "app.kubernetes.io/name=kubernaut-agent",
+			"-n", e2eNamespace, "delete", "pod", "-l", "app=kubernaut-agent",
 			"--grace-period=0", "--force")
 		deleteCmd.Stdout = GinkgoWriter
 		deleteCmd.Stderr = GinkgoWriter
@@ -293,7 +293,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		restartCtx, restartCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer restartCancel()
 		deleteCmd := exec.CommandContext(restartCtx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"-n", e2eNamespace, "delete", "pod", "-l", "app.kubernetes.io/name=kubernaut-agent",
+			"-n", e2eNamespace, "delete", "pod", "-l", "app=kubernaut-agent",
 			"--grace-period=0", "--force")
 		deleteCmd.Stdout = GinkgoWriter
 		deleteCmd.Stderr = GinkgoWriter
