@@ -72,7 +72,8 @@ var _ = Describe("BR-ORCH-025 missing approval", func() {
 		rr.Status.StartTime = &now
 		Expect(c.Status().Update(ctx, rr)).To(Succeed())
 		// Nil audit isolates phase/CRD wiring; this test does not prove audit delivery.
-		r := controller.NewReconciler(controller.ReconcilerDeps{Client: c, APIReader: c, Scheme: s, Recorder: record.NewFakeRecorder(20), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())})
+		recorder := record.NewFakeRecorder(20)
+		r := controller.NewReconciler(controller.ReconcilerDeps{Client: c, APIReader: c, Scheme: s, Recorder: recorder, Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())})
 		_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(rr)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(c.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
@@ -88,5 +89,12 @@ var _ = Describe("BR-ORCH-025 missing approval", func() {
 		wes := &workflowv1.WorkflowExecutionList{}
 		Expect(c.List(ctx, wes, client.InNamespace(rr.Namespace))).To(Succeed())
 		Expect(wes.Items).To(BeEmpty())
+		failureEvents := 0
+		for len(recorder.Events) > 0 {
+			if strings.Contains(<-recorder.Events, "RemediationFailed") {
+				failureEvents++
+			}
+		}
+		Expect(failureEvents).To(Equal(1), "only the committed transition emits a failure event")
 	})
 })

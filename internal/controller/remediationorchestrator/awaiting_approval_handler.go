@@ -173,7 +173,6 @@ func (h *AwaitingApprovalHandler) handleMissingRAR(ctx context.Context, rr *reme
 	}
 	reason := fmt.Errorf("%s", approvalRequestMissingReason)
 	log.FromContext(ctx).Error(reason, "Approval request is missing; manual review required", "remediationRequest", rr.Name)
-	h.callbacks.RecordEvent(rr, "Warning", "RemediationFailed", reason.Error())
 	result, transitionErr := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, reason)
 	if transitionErr != nil {
 		return phase.TransitionIntent{}, transitionErr

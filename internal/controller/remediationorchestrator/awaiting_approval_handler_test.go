@@ -228,6 +228,26 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(failed).To(BeTrue())
 		})
 
+		It("UT-RO-2570-133: BR-ORCH-025 does not emit failure before the transition commits", func() {
+			for _, transitionErr := range []error{nil, fmt.Errorf("status update failed")} {
+				rr := awaitingRR("apr-event")
+				c := fake.NewClientBuilder().WithScheme(scheme).Build()
+				cbs := noopAwaitingCallbacks()
+				var emitted []string
+				cbs.RecordEvent = func(_ *remediationv1.RemediationRequest, _, reason, _ string) { emitted = append(emitted, reason) }
+				cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+					return ctrl.Result{}, transitionErr
+				}
+				_, err := newHandler(c, cbs).Handle(ctx, rr)
+				if transitionErr != nil {
+					Expect(err).To(MatchError(transitionErr))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+				Expect(emitted).NotTo(ContainElement("RemediationFailed"))
+			}
+		})
+
 		It("UT-APR-H-004: RAR Get error → propagates error", func() {
 			rr := awaitingRR("apr-err")
 			c := fake.NewClientBuilder().WithScheme(scheme).
