@@ -323,12 +323,7 @@ func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace stri
 
 	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
 		fmt.Sprintf("authwebhook.%s.svc", namespace),
-		[]string{
-			"authwebhook",
-			fmt.Sprintf("authwebhook.%s", namespace),
-			fmt.Sprintf("authwebhook.%s.svc", namespace),
-			fmt.Sprintf("authwebhook.%s.svc.cluster.local", namespace),
-		},
+		authWebhookDNSNames(namespace),
 		nil, 365*24*time.Hour, caCert, caKey)
 	if err != nil {
 		return err

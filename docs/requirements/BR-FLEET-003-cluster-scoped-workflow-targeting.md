@@ -141,7 +141,7 @@ repurpose `ClusterID`/`ClusterName`.
 `input.cluster.labels` (the Rego policy input for this feature) are the Kubernetes
 `metadata.labels` on the MCP Gateway's own cluster-registration CRD — EAIGW's `Backend`
 (`gateway.envoyproxy.io/v1alpha1`) or Kuadrant's `MCPServerRegistration`
-(`mcp.kuadrant.io/v1alpha1`) — read via `ClusterInfo.Labels` in `pkg/fleet/registry`. They
+(`mcp.kuadrant.io/v1`) — read via `ClusterInfo.Labels` in `pkg/fleet/registry`. They
 describe the cluster **as a fleet member** (e.g. `environment: production`,
 `tier: gold`, `region: us-east-1`), set by the fleet operator/administrator at
 cluster-onboarding time. This is the same conceptual role that namespace/workload labels
