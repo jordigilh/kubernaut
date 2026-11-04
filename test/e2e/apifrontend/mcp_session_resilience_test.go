@@ -108,7 +108,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 			return nil, fmt.Errorf("HTTP %d: %s", code, string(raw))
 		}
 		payload := unwrapSSEDataLine(raw)
-		text, toolIsError, parseErr := parseMCPToolPayload(payload)
+		text, toolIsError, parseErr := parseMCPToolPayload(payload, rpcID)
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -126,6 +126,14 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		Expect(createRR(e2eNamespace, rrName, "test-deploy-1387")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
 		DeferCleanup(func() {
+			if mcpSessionID != "" {
+				_, cleanupErr := mcpToolCallWithSession("res-1387-cleanup", "kubernaut_complete", map[string]interface{}{
+					"rr_id": rrName,
+				})
+				if cleanupErr != nil {
+					GinkgoWriter.Printf("  cleanup kubernaut_complete failed: %v\n", cleanupErr)
+				}
+			}
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cleanupCancel()
 			if err := clientset.CoordinationV1().Leases(e2eNamespace).Delete(cleanupCtx, leaseName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
@@ -198,12 +206,41 @@ var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-res
 		GinkgoWriter.Printf("  reconnect/takeover result: %s\n", string(raw))
 
 		By("Step 7: Calling discover_workflows — the reconstituted pooled session should succeed")
+		var recoveredDiscoveryText string
 		Eventually(func(g Gomega) {
 			raw, err = mcpToolCallWithSession("res-1387-after-kill", "kubernaut_discover_workflows", map[string]interface{}{
 				"rr_id": rrName,
 			})
 			g.Expect(err).NotTo(HaveOccurred(),
 				"CP-10: discover_workflows must succeed after reconnect — pool auto-reconstituted session")
+
+			var rpcResponse struct {
+				Result struct {
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"result"`
+			}
+			g.Expect(json.Unmarshal(raw, &rpcResponse)).To(Succeed(),
+				"post-reconnect response must be valid JSON-RPC")
+			g.Expect(rpcResponse.Result.Content).NotTo(BeEmpty(),
+				"post-reconnect discovery must return tool content")
+			recoveredDiscoveryText = rpcResponse.Result.Content[0].Text
+
+			var discovery struct {
+				Workflows []struct {
+					WorkflowID string `json:"workflow_id"`
+				} `json:"workflows"`
+				Count int `json:"count"`
+			}
+			g.Expect(json.Unmarshal([]byte(recoveredDiscoveryText), &discovery)).To(Succeed(),
+				"post-reconnect tool content must be a discovery result")
+			g.Expect(discovery.Count).To(BeNumerically(">", 0),
+				"post-reconnect discovery must find at least one workflow")
+			g.Expect(discovery.Workflows).NotTo(BeEmpty(),
+				"post-reconnect discovery must return a workflow")
+			g.Expect(discovery.Workflows[0].WorkflowID).NotTo(BeEmpty(),
+				"post-reconnect discovery workflow must include its ID")
 		}, 30*time.Second, 3*time.Second).Should(Succeed(),
 			"SI-4+SC-24+CP-10: Ping-on-Acquire must detect the dead cached session, evict it, and transparently create a fresh session to the restarted KA")
 
