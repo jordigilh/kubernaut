@@ -2153,6 +2153,9 @@ func applyCertManagerManifestWithRetry(ctx context.Context, kubeconfigPath strin
 	const maxRetries = 8
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("apply %s: %w", description, err)
+		}
 		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err == nil {
 			if attempt > 1 {
 				_, _ = fmt.Fprintf(writer, "   ✅ %s apply succeeded on attempt %d/%d\n", description, attempt, maxRetries)
@@ -2202,6 +2205,9 @@ func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer i
 	const maxRetries = 8
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("apply clusterissuer: %w", err)
+		}
 		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", issuerPath)

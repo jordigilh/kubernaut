@@ -116,6 +116,16 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		Expect(waitForCertManagerRetry(ctx, time.Hour)).To(MatchError(context.Canceled))
 	})
 
+	It("UT-INFRA-2602-DATASTORAGE-005 [BR-PLATFORM-014]: stops a canceled issuer before retrying", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		var output strings.Builder
+
+		err := ApplyCertManagerIssuer(ctx, filepath.Join(getProjectRoot(), "missing-kubeconfig"), &output)
+		Expect(err).To(MatchError(ContainSubstring("apply clusterissuer: context canceled")))
+		Expect(output.String()).NotTo(ContainSubstring("ClusterIssuer apply failed"))
+	})
+
 	It("UT-INFRA-2602-DATASTORAGE-003 [BR-PLATFORM-014]: renders the approved RSA signing Certificate contract", func() {
 		manifest := BuildDemoDataStorageCertificateManifest("kubernaut-system")
 		expectValidYAMLDocuments(manifest)
