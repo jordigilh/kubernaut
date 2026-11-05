@@ -44,6 +44,20 @@ var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATIO
 		expectValidYAMLDocuments(rendered)
 	})
 
+	It("UT-INFRA-AF-1387-001 [BR-FLEET-054]: renders the seeded UUID for the Mock LLM default scenario", func() {
+		manifestPath := filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/mock-llm.yaml")
+		data, err := os.ReadFile(manifestPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		rendered := renderAFMockLLMManifest(data, "localhost/mock-llm:test", "hub", map[string]string{
+			"generic-restart-v1:staging": "restart-staging-uuid",
+		})
+
+		Expect(rendered).To(ContainSubstring("default:\n        workflow_id: \"restart-staging-uuid\""))
+		Expect(rendered).NotTo(ContainSubstring("__DEFAULT_WORKFLOW_ID__"))
+		expectValidYAMLDocuments(rendered)
+	})
+
 	It("UT-INFRA-AF-FLEET-2462-004 [BR-FLEET-054, BR-INTEGRATION-065]: renders matching Keycloak, FMC, and Gateway settings for AF", func() {
 		baseConfig, err := os.ReadFile(filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/config.yaml"))
 		Expect(err).NotTo(HaveOccurred())

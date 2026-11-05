@@ -21,7 +21,8 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 	// mcpToolCallWith creates a short-lived MCP session and invokes a tool.
 	// Each test gets its own session for parallel safety.
 	mcpToolCallWith := func(token, sessionID, toolName string, args map[string]interface{}) (string, error) {
-		callBody := buildJSONRPC(fmt.Sprintf("g4-%s-%d", toolName, time.Now().UnixNano()),
+		rpcID := fmt.Sprintf("g4-%s-%d", toolName, time.Now().UnixNano())
+		callBody := buildJSONRPC(rpcID,
 			"tools/call", map[string]interface{}{
 				"name":      toolName,
 				"arguments": args,
@@ -34,7 +35,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 			return "", fmt.Errorf("HTTP %d: %s", code, string(raw))
 		}
 		payload := unwrapSSEDataLine(raw)
-		text, toolErr, parseErr := parseMCPToolPayload(payload)
+		text, toolErr, parseErr := parseMCPToolPayload(payload, rpcID)
 		if parseErr != nil {
 			return text, parseErr
 		}
@@ -169,7 +170,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		araw, acode, err := mcpPOST(approverTok, approverSession, apBody)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(acode).To(BeNumerically("<", 400))
-		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw))
+		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw), "g5-01-approve")
 		Expect(aperr).NotTo(HaveOccurred())
 		Expect(toolErr).To(BeFalse(), "approve should succeed: %s", atext)
 		Expect(strings.ToLower(atext)).To(Or(
@@ -195,7 +196,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(code).To(BeNumerically("<", 400))
 
-		text, toolErr, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
+		text, toolErr, perr := parseMCPToolPayload(unwrapSSEDataLine(raw), "g5-02")
 		Expect(perr).NotTo(HaveOccurred())
 		Expect(toolErr).To(BeTrue())
 		Expect(strings.ToLower(text)).To(Or(
@@ -234,7 +235,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		araw, acode, err := mcpPOST(sreTok, sreSession, apBody)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(acode).To(BeNumerically("<", 400))
-		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw))
+		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw), "g5-03-approve")
 		Expect(aperr).NotTo(HaveOccurred())
 		Expect(toolErr).To(BeFalse(), "SRE should be allowed to approve: %s", atext)
 		Expect(strings.ToLower(atext)).To(ContainSubstring("approved"))
@@ -276,7 +277,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		rraw, rcode, err := mcpPOST(approverTok, approverSession, rejBody)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rcode).To(BeNumerically("<", 400))
-		rtext, toolErr, rperr := parseMCPToolPayload(unwrapSSEDataLine(rraw))
+		rtext, toolErr, rperr := parseMCPToolPayload(unwrapSSEDataLine(rraw), "g5-04-reject")
 		Expect(rperr).NotTo(HaveOccurred())
 		Expect(toolErr).To(BeFalse(), "reject should succeed (not a tool-level error): %s", rtext)
 		Expect(strings.ToLower(rtext)).To(ContainSubstring("rejected"))

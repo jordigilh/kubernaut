@@ -29,7 +29,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -142,8 +144,10 @@ func (f *fakeAuditor) Reset() {
 
 func bridgeTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
+	_ = agentsessionv1.AddToScheme(s)
 	_ = remediationv1.AddToScheme(s)
 	_ = eav1alpha1.AddToScheme(s)
+	_ = isv1alpha1.AddToScheme(s)
 	return s
 }
 
@@ -152,6 +156,8 @@ func newBridgeTypedClient(objs ...crclient.Object) crclient.WithWatch {
 		WithScheme(bridgeTestScheme()).
 		WithObjects(objs...).
 		WithStatusSubresource(
+			&agentsessionv1.AgentSession{},
+			&isv1alpha1.InvestigationSession{},
 			&remediationv1.RemediationRequest{},
 			&remediationv1.RemediationApprovalRequest{},
 			&eav1alpha1.EffectivenessAssessment{},

@@ -100,8 +100,36 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 		Expect(schemeErr).ToNot(HaveOccurred())
 
 		var err error
-		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, logger, "default")
+		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, workflowCatalogNamespace, logger)
 		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache should build and sync against the shared envtest")
+	})
+
+	It("IT-KA-2598-001: scopes the workflow catalog cache to the controller namespace", func() {
+		outsideNamespace := uniqueName("it-2598-outside-ns")
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: outsideNamespace}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		insideName := uniqueName("it-2598-inside")
+		outsideName := uniqueName("it-2598-outside")
+		inside := validRW(insideName, "ScopedAction")
+		outside := validRW(outsideName, "ScopedAction")
+		outside.Namespace = outsideNamespace
+		Expect(k8sClient.Create(ctx, inside)).To(Succeed())
+		Expect(k8sClient.Create(ctx, outside)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, inside) })
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, outside) })
+
+		Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+			return wfCache.GetWorkflow(ctx, insideName)
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(),
+			"the controller namespace workflow must be visible through the scoped cache")
+
+		Consistently(func(g Gomega) {
+			got, err := wfCache.GetWorkflow(ctx, outsideName)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(BeNil(), "workflows outside the controller namespace must not enter the catalog cache")
+		}, 2*time.Second, 100*time.Millisecond).Should(Succeed())
 	})
 
 	AfterEach(func() {
@@ -314,7 +342,7 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 		By("constructing a brand new cache -- exactly what a replacement KA pod does on startup")
 		scheme, err := workflowcatalog.NewScheme()
 		Expect(err).ToNot(HaveOccurred())
-		restarted, restartedCancel, err := workflowcatalog.NewInformerCache(k8sConfig, scheme, logger, "default")
+		restarted, restartedCancel, err := workflowcatalog.NewInformerCache(k8sConfig, scheme, workflowCatalogNamespace, logger)
 		Expect(err).ToNot(HaveOccurred(), "replacement cache must build and sync from etcd with no manual re-seeding step")
 		DeferCleanup(restartedCancel)
 

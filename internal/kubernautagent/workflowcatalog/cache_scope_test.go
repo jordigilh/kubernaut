@@ -70,7 +70,7 @@ var _ = Describe("BR-WORKFLOW-006/007: trusted catalog informer scope", func() {
 		defer server.Close()
 		scheme, err := NewScheme()
 		Expect(err).NotTo(HaveOccurred())
-		cache, cancel, err := NewInformerCache(&rest.Config{Host: server.URL}, scheme, logr.Discard(), "trusted")
+		cache, cancel, err := NewInformerCache(&rest.Config{Host: server.URL}, scheme, "trusted", logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 		defer cancel()
 		workflows, err := cache.ListWorkflows(context.Background())

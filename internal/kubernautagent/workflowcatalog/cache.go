@@ -60,12 +60,14 @@ const actionTypeFieldIndex = ".spec.actionType"
 const actionTypeNameFieldIndex = ".spec.name"
 
 // workflowNameFieldIndex indexes RemediationWorkflow CRDs by metadata.name,
-// so GetWorkflow can resolve a workflow within the trusted catalog namespace.
+// so GetWorkflow can resolve a workflow within the configured controller
+// namespace without requiring callers to provide that namespace.
 const workflowNameFieldIndex = "metadata.name"
 
 // workflowIDFieldIndex indexes RemediationWorkflow CRDs by status.workflowId
 // (the deterministic content-hash UUID AuthWebhook computes and stamps),
-// enabling GetWorkflowByID to do an indexed lookup instead of a full scan.
+// enabling GetWorkflowByID to do an indexed lookup within the configured
+// controller namespace instead of a full scan.
 // Step 3 of the discovery protocol (GetWorkflowByID/GetWorkflowWithContext
 // Filters): unlike metadata.name, workflow_id is a content identity, not a
 // naming identity (DD-WORKFLOW-018), which is exactly why callers look
@@ -103,14 +105,15 @@ func NewScheme() (*runtime.Scheme, error) {
 }
 
 // NewInformerCache builds and starts a controller-runtime cache watching
-// RemediationWorkflow and ActionType CRDs cluster-wide, blocking until the
+// RemediationWorkflow and ActionType CRDs in namespace, blocking until the
 // initial sync completes (bounded by syncTimeout). The returned
 // context.CancelFunc stops the underlying informers and MUST be called
 // during graceful shutdown.
-func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger logr.Logger, namespace string) (*Cache, context.CancelFunc, error) {
+func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, namespace string, logger logr.Logger) (*Cache, context.CancelFunc, error) {
 	if err := workflowidentity.ValidateNamespace(namespace); err != nil {
 		return nil, nil, err
 	}
+
 	// A static Mapper is supplied so cache.New never performs live cluster
 	// discovery (GET /api, /apis -- ServerGroups) to resolve these 2 known
 	// GVKs. Without it, controller-runtime lazily builds a dynamic
@@ -124,7 +127,11 @@ func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger lo
 	// run. Bypassing discovery for these 2 fixed, always-present CRD types
 	// removes that unprotected single point of failure entirely -- add any
 	// newly-watched type's mapping here too.
-	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme, Mapper: staticRESTMapper(), DefaultNamespaces: map[string]cache.Config{namespace: {}}})
+	k8sCache, err := cache.New(kubeConfig, cache.Options{
+		Scheme:            scheme,
+		Mapper:            staticRESTMapper(),
+		DefaultNamespaces: map[string]cache.Config{namespace: {}},
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create workflow catalog cache: %w", err)
 	}
@@ -160,16 +167,23 @@ func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger lo
 	return &Cache{reader: k8sCache}, cancel, nil
 }
 
-// staticRESTMapper builds a fixed GVK<->GVR mapping for the exact 2 CRD
-// types this cache ever watches (RemediationWorkflow, ActionType), both
-// namespace-scoped (config/crd/bases/kubernaut.ai_{remediationworkflows,
-// actiontypes}.yaml). Passed as cache.Options.Mapper to NewInformerCache so
-// controller-runtime never falls back to its default dynamic,
-// discovery-backed mapper -- see the doc comment on that call site for why.
+// staticRESTMapper builds fixed GVK<->GVR mappings for the 2 CRD types this
+// cache ever watches (RemediationWorkflow, ActionType), their list kinds, and
+// their namespace-scoped resources (config/crd/bases/kubernaut.ai_{
+// remediationworkflows,actiontypes}.yaml). Passed as cache.Options.Mapper to
+// NewInformerCache so controller-runtime never falls back to its default
+// dynamic, discovery-backed mapper -- see the doc comment on that call site
+// for why.
 func staticRESTMapper() meta.RESTMapper {
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{rwv1alpha1.GroupVersion, atv1alpha1.GroupVersion})
 	mapper.AddSpecific(
 		rwv1alpha1.GroupVersion.WithKind("RemediationWorkflow"),
+		rwv1alpha1.GroupVersion.WithResource("remediationworkflows"),
+		rwv1alpha1.GroupVersion.WithResource("remediationworkflow"),
+		meta.RESTScopeNamespace,
+	)
+	mapper.AddSpecific(
+		rwv1alpha1.GroupVersion.WithKind("RemediationWorkflowList"),
 		rwv1alpha1.GroupVersion.WithResource("remediationworkflows"),
 		rwv1alpha1.GroupVersion.WithResource("remediationworkflow"),
 		meta.RESTScopeNamespace,
@@ -180,9 +194,12 @@ func staticRESTMapper() meta.RESTMapper {
 		atv1alpha1.GroupVersion.WithResource("actiontype"),
 		meta.RESTScopeNamespace,
 	)
-	// Namespaced cache routing resolves list GVKs as well as object GVKs.
-	mapper.Add(rwv1alpha1.GroupVersion.WithKind("RemediationWorkflowList"), meta.RESTScopeNamespace)
-	mapper.Add(atv1alpha1.GroupVersion.WithKind("ActionTypeList"), meta.RESTScopeNamespace)
+	mapper.AddSpecific(
+		atv1alpha1.GroupVersion.WithKind("ActionTypeList"),
+		atv1alpha1.GroupVersion.WithResource("actiontypes"),
+		atv1alpha1.GroupVersion.WithResource("actiontype"),
+		meta.RESTScopeNamespace,
+	)
 	return mapper
 }
 
@@ -242,10 +259,9 @@ func indexWorkflowCacheFields(ctx context.Context, k8sCache cache.Cache) error {
 	return nil
 }
 
-// GetWorkflow returns the RemediationWorkflow CRD named name, or (nil, nil)
-// if it does not exist -- matching the retired Postgres repository's
-// not-found convention. Lookup is cluster-wide by metadata.name: workflow
-// names are globally unique across the catalog.
+// GetWorkflow returns the RemediationWorkflow CRD named name in the configured
+// controller namespace, or (nil, nil) if it does not exist -- matching the
+// retired Postgres repository's not-found convention.
 func (c *Cache) GetWorkflow(ctx context.Context, name string) (*rwv1alpha1.RemediationWorkflow, error) {
 	var list rwv1alpha1.RemediationWorkflowList
 	if err := c.reader.List(ctx, &list, client.MatchingFields{workflowNameFieldIndex: name}); err != nil {
@@ -257,11 +273,12 @@ func (c *Cache) GetWorkflow(ctx context.Context, name string) (*rwv1alpha1.Remed
 	return &list.Items[0], nil
 }
 
-// GetWorkflowByID returns the RemediationWorkflow CRD whose status.workflowId
-// matches workflowID, or (nil, nil) if none exists -- matching the retired
-// Postgres repository's not-found convention. Lookup is cluster-wide by the
-// content-hash identity (DD-WORKFLOW-018), not by name: this is Step 3 of
-// the discovery protocol.
+// GetWorkflowByID returns the RemediationWorkflow CRD in the configured
+// controller namespace whose status.workflowId matches workflowID, or
+// (nil, nil) if none exists -- matching the retired Postgres repository's
+// not-found convention. Lookup uses the content-hash identity
+// (DD-WORKFLOW-018), not the metadata name: this is Step 3 of the discovery
+// protocol.
 func (c *Cache) GetWorkflowByID(ctx context.Context, workflowID string) (*rwv1alpha1.RemediationWorkflow, error) {
 	var list rwv1alpha1.RemediationWorkflowList
 	if err := c.reader.List(ctx, &list, client.MatchingFields{workflowIDFieldIndex: workflowID}); err != nil {
@@ -284,8 +301,9 @@ func (c *Cache) ListWorkflowsByActionType(ctx context.Context, actionType string
 	return list.Items, nil
 }
 
-// ListWorkflows returns every RemediationWorkflow visible to the backing reader.
-// The production informer reader is scoped to the configured trusted namespace.
+// ListWorkflows returns every RemediationWorkflow CRD in the configured
+// controller namespace, unfiltered -- the cache-backed source for the
+// full-catalog listing (Phase 2b's list_workflows MCP tool).
 func (c *Cache) ListWorkflows(ctx context.Context) ([]rwv1alpha1.RemediationWorkflow, error) {
 	var list rwv1alpha1.RemediationWorkflowList
 	if err := c.reader.List(ctx, &list); err != nil {
@@ -309,7 +327,8 @@ func (c *Cache) GetActionType(ctx context.Context, name string) (*atv1alpha1.Act
 	return &list.Items[0], nil
 }
 
-// ListActionTypes returns every ActionType CRD across all namespaces.
+// ListActionTypes returns every ActionType CRD in the configured controller
+// namespace.
 func (c *Cache) ListActionTypes(ctx context.Context) ([]atv1alpha1.ActionType, error) {
 	var list atv1alpha1.ActionTypeList
 	if err := c.reader.List(ctx, &list); err != nil {

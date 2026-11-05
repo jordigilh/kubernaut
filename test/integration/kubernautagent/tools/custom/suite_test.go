@@ -181,7 +181,7 @@ var _ = SynchronizedBeforeSuite(
 		wfScheme, err := workflowcatalog.NewScheme()
 		Expect(err).ToNot(HaveOccurred())
 
-		wfCache, cancel, err := workflowcatalog.NewInformerCache(restConfig, wfScheme, logr.Discard(), "default")
+		wfCache, cancel, err := workflowcatalog.NewInformerCache(restConfig, wfScheme, seedNamespace, logr.Discard())
 		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache must sync")
 		wfCatalogCancel = cancel
 		wfCatalog = workflowcatalog.NewCatalog(wfCache, logr.Discard())

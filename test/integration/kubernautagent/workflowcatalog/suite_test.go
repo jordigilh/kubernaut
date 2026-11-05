@@ -50,6 +50,8 @@ var (
 	cancelCtx context.CancelFunc
 )
 
+const workflowCatalogNamespace = "default"
+
 func TestWorkflowCatalogIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "KubernautAgent Workflow Catalog Integration Suite")
@@ -76,7 +78,7 @@ var _ = BeforeSuite(func() {
 
 	scheme, err := workflowcatalog.NewScheme()
 	Expect(err).ToNot(HaveOccurred(), "workflowcatalog scheme should register RemediationWorkflow/ActionType")
-	Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	Expect(corev1.AddToScheme(scheme)).To(Succeed(), "workflowcatalog integration tests need Namespace fixtures")
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")
