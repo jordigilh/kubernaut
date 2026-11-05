@@ -5,7 +5,7 @@
 **Priority**: P2
 **Target Version**: V1.5
 **Status**: Approved
-**Date**: 2026-08-31
+**Date**: 2026-08-31; amended 2026-11-04
 
 ---
 
@@ -62,7 +62,16 @@ ephemeral.
 4. Because Keycloak's signing keys no longer churn on restart (success criterion 2), dependent
    services' cached JWKS (e.g. the Envoy AI Gateway) remain valid across a Keycloak restart
    without needing their own restart.
-5. The short-lived FMC and Ginkgo "fleet"/"fullpipeline" E2E suites are unaffected: same
+5. The long-lived demo's monitoring CA remains stable for at least one year, while hub and spoke
+   monitoring TLS leaves are issued independently by cert-manager with 90-day validity and renew
+   before expiry; no one-time copied leaf Secret is relied on for continued operation.
+6. Monitoring trust projections and mounted TLS consumers remain ready after a certificate renewal,
+   without manual workload restarts; static `web-config.yml` data is kept in a dedicated Secret
+   separate from cert-manager's renewable `monitoring-tls` Secret.
+7. The demo DataStorage signing certificate is renewed by cert-manager as an RSA-2048 certificate
+   with a one-year validity and 30-day renewal window. Key rotation is explicit and automatic, and
+   DataStorage restarts to load the renewed startup-time signer without manual intervention.
+8. The short-lived FMC and Ginkgo "fleet"/"fullpipeline" E2E suites are unaffected: same
    ephemeral Keycloak, same ad hoc 24-hour chart-CA-signed certificate, zero added dependencies or
    startup time.
 
@@ -82,9 +91,26 @@ ephemeral.
   Keycloak Deployment so a certificate renewal triggers an automatic rolling restart, with no
   engineer intervention.
 - **FR-4 (Scoping)**: All new behavior (FR-1 through FR-3) is gated on the existing
-  `keycloakNamespace != namespace` signal in `provisionFleetCoreInfra`
-  (`test/infrastructure/fleet_e2e.go`), which already distinguishes the demo entry point from the
-  FMC and Ginkgo suites' shared-namespace, short-lived Keycloak deployments.
+   `keycloakNamespace != namespace` signal in `provisionFleetCoreInfra`
+   (`test/infrastructure/fleet_e2e.go`), which already distinguishes the demo entry point from the
+   FMC and Ginkgo suites' shared-namespace, short-lived Keycloak deployments.
+- **FR-5 (Monitoring certificate lifecycle)**: In the long-lived operator-backed demo only, a
+   stable demo monitoring CA is made available in both hub and spoke clusters. cert-manager issues
+   independent `monitoring-tls` leaves in each cluster with 90-day validity and a renewal window;
+   ongoing operation MUST NOT depend on copying the hub leaf Secret to the spoke. `monitoring-ca`,
+   `monitoring-client-ca`, and host-side monitoring trust files remain projections of the shared CA.
+- **FR-6 (Monitoring reload)**: Monitoring workloads that consume the managed TLS or CA material
+   MUST reload or roll out automatically when cert-manager renews it. Managed Prometheus SHOULD use
+   its native configuration reload behavior; direct AlertManager, Thanos, and effectiveness-monitor
+   consumers MUST use an explicit supported reload mechanism.
+- **FR-7 (DataStorage signing certificate lifecycle)**: Before the operator reconciles the demo
+   DataStorage workload, the demo MUST create a cert-manager-owned `datastorage-signing-cert`
+   containing an RSA-2048 certificate with one-year validity, 30-day `renewBefore`, and explicit
+   `rotationPolicy: Always`. Because DataStorage loads the signer during startup, renewal MUST
+   trigger a controlled DataStorage workload restart.
+- **FR-8 (Amended scope)**: FR-5 through FR-7 apply only to the long-lived operator-backed demo
+   entry point. They MUST NOT add cert-manager, Reloader, or certificate lifecycle behavior to the
+   short-lived FMC or Ginkgo "fleet"/"fullpipeline" suites.
 
 ---
 
@@ -95,8 +121,13 @@ ephemeral.
 - Does not add production-grade external-DB backing for Keycloak (e.g. `KC_DB=postgres`) -- a
   `PersistentVolumeClaim` under the existing `dev-file` H2 mode is sufficient for a single-replica
   demo environment.
-- Does not introduce a general-purpose secret-rotation framework -- this is scoped to Keycloak's
-  TLS certificate in the demo environment specifically.
+- Does not introduce a general-purpose secret-rotation framework -- this is scoped to Keycloak,
+  monitoring, and DataStorage certificates in the demo environment specifically.
+- Does not rotate the stable monitoring CA as part of this issue; CA root rotation and its
+  cross-cluster distribution are a separate lifecycle event.
+- Does not change the production operator's ownership contract for DataStorage certificates.
+- Does not provide historical certificate archiving or guarantee external verification of old
+  DataStorage export signatures after `rotationPolicy: Always` rotates the signing key.
 
 ---
 
@@ -114,12 +145,14 @@ tooling).
 - **Root cause incident**: manual Keycloak cert expiry + signing-key churn resolved by hand on the
   running `~/tmp/hub.yaml` demo cluster; this BR codifies the permanent fix.
 - **Reuses**: `test/infrastructure/datastorage.go`'s existing `InstallCertManager`/
-  `WaitForCertManagerReady` helpers (already validated by
-  `test/e2e/datastorage/05_soc2_compliance_test.go`), and `ApplyCertManagerIssuer`'s retry/backoff
-  pattern for webhook-propagation races.
+   `WaitForCertManagerReady` helpers (already validated by
+   `test/e2e/datastorage/05_soc2_compliance_test.go`), and `ApplyCertManagerIssuer`'s retry/backoff
+   pattern for webhook-propagation races.
+- **Approved design**: [DD-PLATFORM-012](../architecture/decisions/DD-PLATFORM-012-long-lived-demo-certificate-lifecycle.md)
+  records the demo-only cert-manager, trust, and reload architecture for Issue #2602.
 
 ---
 
-**Document Status**: ✅ Approved
+**Document Status**: ✅ Approved (amended 2026-11-04 for Issue #2602)
 **Priority**: P2 -- unblocks reliable, long-lived QE testing against the fleet demo environment
 without recurring manual intervention.

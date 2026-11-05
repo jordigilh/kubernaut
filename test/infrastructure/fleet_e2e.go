@@ -823,6 +823,9 @@ func printFleetCoreDemoHeader(gatewayLabel string, writer io.Writer) {
 }
 
 func prepareFleetCoreDemoMonitoring(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, namespace string, writer io.Writer) error {
+	// DD-PLATFORM-012: the long-lived operator demo owns a stable monitoring
+	// trust root and independent cert-manager leaves in hub and spoke. Keep this
+	// in the demo-only path; the shared FMC/Ginkgo setup remains one-shot.
 	// Fleet-wide monitoring (Prometheus+Thanos-sidecar per cluster + hub
 	// Thanos Querier + AlertManager): deliberately NOT added to
 	// provisionFleetCoreInfra (shared with the "fleet"/"fullpipeline"
@@ -858,14 +861,14 @@ func prepareFleetCoreDemoMonitoring(ctx context.Context, kubeconfigPath, remoteK
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create hub monitoring namespace: %w", err)
 	}
-	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
-		return fmt.Errorf("failed to prepare hub monitoring TLS: %w", err)
-	}
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
-	if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
-		return fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+	if err := ensureDemoMonitoringCertificateDependencies(ctx, kubeconfigPath, remoteKubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to prepare demo certificate dependencies: %w", err)
+	}
+	if err := EnsureDemoMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
+		return fmt.Errorf("failed to provision demo monitoring TLS lifecycle: %w", err)
 	}
 	// The fleet AlertManager is hub-only and lives in monitoring. OIDC setup
 	// creates the shared CA in kubernaut-system; replicate it into the hub's
@@ -916,7 +919,7 @@ func installFleetCoreDemoAlertManager(ctx context.Context, kubeconfigPath, names
 		return fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "\n📊 Installing fleet-wide monitoring (Prometheus+Thanos per cluster, hub AlertManager)...")
-	if err := DeployAlertManagerTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
+	if err := DeployAlertManagerDemoTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
 		return fmt.Errorf("alertmanager install failed: %w", err)
 	}
 	return nil
@@ -2877,7 +2880,7 @@ spec:
 	hubClusterName, hubClusterPrefix := fleetHubRegistrationIdentity(authConfig)
 	hubRegistrationManifest := ""
 	if hubClusterName != "" {
-			hubRegistrationManifest = fmt.Sprintf(`---
+		hubRegistrationManifest = fmt.Sprintf(`---
 apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:

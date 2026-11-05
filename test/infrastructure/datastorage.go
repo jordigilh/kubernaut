@@ -2152,7 +2152,7 @@ func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer 
 // recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
 // used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
 // failing the whole SOC2 E2E suite on a one-shot apply.
-func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
+func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
 
 	// Get workspace root to find the issuer manifest
@@ -2176,7 +2176,7 @@ func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 	const maxRetries = 8
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", issuerPath)
 		cmd.Stdout = writer
@@ -2285,6 +2285,67 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 
 	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// BuildDemoDataStorageCertificateManifest renders the cert-manager-owned
+// signing Certificate required before the operator reconciles DataStorage in
+// the long-lived demo. DD-PLATFORM-012 makes private-key rotation explicit.
+func BuildDemoDataStorageCertificateManifest(namespace string) string {
+	return fmt.Sprintf(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-signing-cert
+  namespace: %s
+  labels:
+    app.kubernetes.io/name: data-storage
+    app.kubernetes.io/component: audit-export
+    app.kubernetes.io/managed-by: cert-manager
+    kubernaut.ai/demo-owner: setup-demo-infra
+spec:
+  secretName: datastorage-signing-cert
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: data-storage-service
+  dnsNames:
+    - data-storage-service
+    - data-storage-service.%s
+    - data-storage-service.%s.svc
+    - data-storage-service.%s.svc.cluster.local
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS1
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  subject:
+    organizations:
+      - Kubernaut
+`, namespace, namespace, namespace, namespace)
+}
+
+// EnsureDemoDataStorageSigningCertificate creates and waits for the
+// cert-manager-managed DataStorage signing Certificate before operator CR
+// reconciliation. The self-signed ClusterIssuer is demo/test infrastructure;
+// production ownership remains with the operator contract.
+func EnsureDemoDataStorageSigningCertificate(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	if err := ApplyCertManagerIssuer(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("prepare DataStorage cert-manager issuer: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildDemoDataStorageCertificateManifest(namespace)); err != nil {
+		return fmt.Errorf("apply demo DataStorage Certificate: %w", err)
+	}
+	if err := runKubectl(ctx, kubeconfigPath, writer, "wait", "--for=condition=Ready", "certificate/datastorage-signing-cert", "-n", namespace, "--timeout=120s"); err != nil {
+		return fmt.Errorf("wait for demo DataStorage Certificate: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ demo DataStorage signing Certificate ready (RSA 2048, rotationPolicy=Always)")
 	return nil
 }
 

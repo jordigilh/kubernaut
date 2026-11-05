@@ -55,12 +55,13 @@ func prometheusOperatorChartSource() (string, []string) {
 }
 
 type managedPrometheusOptions struct {
-	clusterLabel       string
-	alertManagerTarget string
-	prometheusName     string
-	statefulSetName    string
-	thanosEnabled      bool
-	tlsEnabled         bool
+	clusterLabel         string
+	alertManagerTarget   string
+	prometheusName       string
+	statefulSetName      string
+	thanosEnabled        bool
+	tlsEnabled           bool
+	reloadOnSecretChange bool
 }
 
 // InstallPrometheusOperator installs the CRDs and controller used by the fleet
@@ -99,12 +100,13 @@ func DeployManagedPrometheusWithThanosSidecar(ctx context.Context, namespace, ku
 // demo CR selects an HTTPS monitoring URL.
 func DeployManagedPrometheusTLS(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
 	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
-		clusterLabel:       clusterLabel,
-		alertManagerTarget: alertManagerTarget,
-		prometheusName:     managedPrometheusName,
-		statefulSetName:    managedPrometheusStatefulSet,
-		thanosEnabled:      true,
-		tlsEnabled:         true,
+		clusterLabel:         clusterLabel,
+		alertManagerTarget:   alertManagerTarget,
+		prometheusName:       managedPrometheusName,
+		statefulSetName:      managedPrometheusStatefulSet,
+		thanosEnabled:        true,
+		tlsEnabled:           true,
+		reloadOnSecretChange: true,
 	}, writer)
 }
 
@@ -237,6 +239,7 @@ subsets:
 		thanosConfig = fmt.Sprintf("  thanos:\n    image: %s\n", ThanosImage)
 	}
 	prometheusWebConfig := ""
+	prometheusPodAnnotations := ""
 	prometheusServicePortName := "http"
 	alertManagerTLSConfig := ""
 	if options.tlsEnabled {
@@ -251,6 +254,11 @@ subsets:
         name: monitoring-tls
         key: tls.key
 `
+		if options.reloadOnSecretChange {
+			prometheusPodAnnotations = `    annotations:
+      secret.reloader.stakater.com/reload: "monitoring-tls"
+`
+		}
 		alertManagerTLSConfig = `
         scheme: https
         tlsConfig:
@@ -406,7 +414,7 @@ spec:
   replicas: 1
   serviceAccountName: prometheus
   podMetadata:
-    labels:
+%[13]s    labels:
       app: prometheus
   externalLabels:
     cluster: %[4]s
@@ -432,5 +440,5 @@ spec:
         namespace: %[1]s
         port: %[9]s
 %[11]s
-%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, prometheusServicePortName, alertManagerTLSConfig, prometheusWebConfig), nil
+%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, prometheusServicePortName, alertManagerTLSConfig, prometheusWebConfig, prometheusPodAnnotations), nil
 }

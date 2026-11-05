@@ -291,6 +291,8 @@ spec:
       app: thanos-querier
   template:
     metadata:
+      annotations:
+        secret.reloader.stakater.com/reload: "monitoring-tls"
       labels:
         app: thanos-querier
     spec:
@@ -317,6 +319,10 @@ spec:
         - name: monitoring-tls
           mountPath: /etc/monitoring-tls
           readOnly: true
+        - name: monitoring-web-config
+          mountPath: /etc/monitoring-tls/web-config.yml
+          subPath: web-config.yml
+          readOnly: true
         resources:
           requests:
             memory: "64Mi"
@@ -328,6 +334,9 @@ spec:
       - name: monitoring-tls
         secret:
           secretName: monitoring-tls
+      - name: monitoring-web-config
+        secret:
+          secretName: monitoring-web-config
 ---
 apiVersion: v1
 kind: Service
