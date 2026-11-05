@@ -24,6 +24,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -114,6 +115,18 @@ data:
 // by the current v1alpha2 CR contract. The operator validates these Secrets but
 // does not own or rotate them; the demo owns this disposable material.
 func EnsureOperatorApplicationTLS(ctx context.Context, kubeconfigPath, namespace string, includeFleet bool, writer io.Writer) error {
+	return ensureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, includeFleet, true, writer)
+}
+
+// EnsureOperatorApplicationTLSForDemo prepares the manual operator service
+// TLS material while leaving the cert-manager-owned DataStorage signing Secret
+// untouched. The long-lived fleet demo provisions that Certificate before the
+// operator CR is applied (BR-PLATFORM-014, DD-PLATFORM-012).
+func EnsureOperatorApplicationTLSForDemo(ctx context.Context, kubeconfigPath, namespace string, includeFleet bool, writer io.Writer) error {
+	return ensureOperatorApplicationTLS(ctx, kubeconfigPath, namespace, includeFleet, false, writer)
+}
+
+func ensureOperatorApplicationTLS(ctx context.Context, kubeconfigPath, namespace string, includeFleet, generateDataStorageSigningSecret bool, writer io.Writer) error {
 	caPEM, caKeyPEM, err := ensureOperatorInternalCA(ctx, kubeconfigPath, namespace, writer)
 	if err != nil {
 		return fmt.Errorf("prepare operator CA for manual service TLS: %w", err)
@@ -161,11 +174,63 @@ data:
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest.String()); err != nil {
 		return fmt.Errorf("apply manual operator service TLS: %w", err)
 	}
-	if err := generateSigningCertSecret(ctx, kubeconfigPath, namespace, operatorDataStorageSigningSecret, writer); err != nil {
-		return fmt.Errorf("apply operator DataStorage signing Secret: %w", err)
+	if generateDataStorageSigningSecret {
+		if err := generateSigningCertSecret(ctx, kubeconfigPath, namespace, operatorDataStorageSigningSecret, writer); err != nil {
+			return fmt.Errorf("apply operator DataStorage signing Secret: %w", err)
+		}
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ manual operator service TLS Secrets ready")
 	return nil
+}
+
+// annotateDemoEffectivenessMonitorCertificateReload adds the demo-only
+// Secret reload annotation after the operator has rendered its
+// EffectivenessMonitor Deployment. The standalone Ginkgo fixture owns its
+// Deployment directly and intentionally does not inherit this long-lived-demo
+// behavior.
+func annotateDemoEffectivenessMonitorCertificateReload(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	const selector = "app.kubernetes.io/managed-by=kubernaut-operator,app.kubernetes.io/component=effectivenessmonitor"
+	deploymentJSON, err := kubectlJSON(ctx, kubeconfigPath, "-n", namespace, "get", "deployments", "-l", selector, "-o", "json")
+	if err != nil {
+		return fmt.Errorf("list operator effectivenessmonitor deployments: %w", err)
+	}
+	var payload struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(deploymentJSON, &payload); err != nil {
+		return fmt.Errorf("decode operator effectivenessmonitor deployments: %w", err)
+	}
+	if len(payload.Items) == 0 {
+		return fmt.Errorf("no operator effectivenessmonitor deployment found for selector %q", selector)
+	}
+
+	const secretName = "monitoring-client-ca"
+	patch := buildCertificateReloadPatch(secretName)
+	for _, deployment := range payload.Items {
+		if strings.TrimSpace(deployment.Metadata.Name) == "" {
+			return errors.New("operator effectivenessmonitor deployment has no name")
+		}
+		if err := runKubectl(ctx, kubeconfigPath, writer,
+			"patch", "deployment/"+deployment.Metadata.Name,
+			"-n", namespace,
+			"--type=merge",
+			"-p", patch,
+		); err != nil {
+			return fmt.Errorf("patch effectivenessmonitor reload annotation on deployment %s: %w", deployment.Metadata.Name, err)
+		}
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ EffectivenessMonitor will restart when the demo monitoring CA Secret changes")
+	return nil
+}
+
+// buildCertificateReloadPatch returns a workload-metadata annotation patch for
+// Reloader's named Secret watch.
+func buildCertificateReloadPatch(secretName string) string {
+	return fmt.Sprintf(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"%s"}}}`, secretName)
 }
 
 // BuildOperatorTLSTrustBundleManifest publishes the administrator-prepared

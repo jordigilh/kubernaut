@@ -93,7 +93,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 
 		// Step 3: Create ClusterIssuer
 		logger.Info("📋 Step 3/4: Creating ClusterIssuer...")
-		err = infrastructure.ApplyCertManagerIssuer(kubeconfigPath, GinkgoWriter)
+		err = infrastructure.ApplyCertManagerIssuer(ctx, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create ClusterIssuer")
 
 		// Step 4: Validate infrastructure

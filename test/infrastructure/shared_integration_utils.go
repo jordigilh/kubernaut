@@ -888,29 +888,62 @@ func findProjectRoot() (string, error) {
 // This is needed for locating configuration files, Dockerfiles, and CRD manifests.
 //
 // Strategy:
-// 1. Use runtime.Caller to go up from test/infrastructure/ to project root
-// 2. Fallback: Search for go.mod in parent directories
+//  1. Search the working directory and its parents for go.mod. This remains
+//     reliable when go run compiles the package with trimmed source paths.
+//  2. Fallback: Search from the caller source path for go.mod.
 //
 // Used by:
 // - datastorage_bootstrap.go (building DataStorage images, running migrations)
 // - gateway_e2e.go (loading CRDs, building Gateway images)
 // - notification_integration.go (building Notification images)
 func getProjectRoot() string {
-	_, currentFile, _, ok := runtime.Caller(0)
-	if ok {
-		// Go up from test/infrastructure/ to project root
-		return filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		workingDirectory = ""
+	}
+	_, currentFile, _, callerOK := runtime.Caller(0)
+	if !callerOK {
+		currentFile = ""
+	}
+	return projectRootFrom(workingDirectory, currentFile)
+}
+
+func projectRootFrom(workingDirectory, currentFile string) string {
+	if root, ok := findGoModuleRoot(workingDirectory); ok {
+		return root
 	}
 
-	// Fallback: try to find go.mod
-	candidates := []string{".", "..", "../..", "../../.."}
-	for _, dir := range candidates {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			absPath, _ := filepath.Abs(dir)
-			return absPath
+	if currentFile != "" {
+		callerRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+		if root, ok := findGoModuleRoot(callerRoot); ok {
+			return root
 		}
 	}
+
 	return "."
+}
+
+func findGoModuleRoot(start string) (string, bool) {
+	if start == "" {
+		return "", false
+	}
+
+	candidate, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(candidate, "go.mod")); err == nil {
+			return candidate, true
+		}
+
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			break
+		}
+		candidate = parent
+	}
+	return "", false
 }
 
 // loadImageToKind loads a pre-built podman image into a Kind cluster using tar archive
