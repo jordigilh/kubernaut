@@ -95,6 +95,7 @@ func buildCoreServices(
 	llmRuntime *kaconfig.LLMRuntimeConfig,
 	swappable *llm.SwappableClient,
 	dsTokenSource *auth.TokenSource,
+	namespace string,
 	logger logr.Logger,
 ) *coreServices {
 	// Construct the injected registry before fleet tools. The provider-backed
@@ -110,7 +111,7 @@ func buildCoreServices(
 	// always non-nil (LazyCatalog) -- it starts Not-Ready and becomes Ready
 	// once its background retry loop completes a successful cache sync; see
 	// buildWorkflowCatalogCache and readinessHandler.
-	wfCatalog := buildWorkflowCatalogCache(infra, logger)
+	wfCatalog := buildWorkflowCatalogCache(infra, namespace, logger)
 
 	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
 	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
@@ -192,7 +193,7 @@ func buildCoreServices(
 // therefore never becomes Ready -- /readyz correctly reports not_ready
 // until the pod is restarted with valid K8s connectivity, rather than
 // silently accepting the condition as intentional.
-func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) *workflowcatalog.LazyCatalog {
+func buildWorkflowCatalogCache(infra *k8sInfra, namespace string, logger logr.Logger) *workflowcatalog.LazyCatalog {
 	lazy := workflowcatalog.NewLazyCatalog(logger)
 
 	if infra == nil {
@@ -209,7 +210,7 @@ func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) *workflowcat
 	}
 
 	lazy.Start(func() (*workflowcatalog.Cache, context.CancelFunc, error) {
-		return workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
+		return workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, namespace, logger)
 	})
 	return lazy
 }

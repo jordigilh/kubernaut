@@ -202,7 +202,7 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 // (core services + investigator + session store/manager + ogen server).
 // Extracted from main() to keep main() under the funlen line budget
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 complexity remediation, Wave C).
-func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig, logger logr.Logger) (swappable *llm.SwappableClient, core *coreServices, stack *investigationStack) {
+func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig, namespace string, logger logr.Logger) (swappable *llm.SwappableClient, core *coreServices, stack *investigationStack) {
 	swappable, phaseSwappables := buildLLMClients(cfg, llmRuntime, logger)
 
 	promptBuilder, err := prompt.NewBuilder()
@@ -219,7 +219,7 @@ func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 	// either side immediately invalidates the token for both.
 	dsTokenSource := buildDSTokenSource(cfg, logger)
 
-	core = buildCoreServices(cfg, llmRuntime, swappable, dsTokenSource, logger)
+	core = buildCoreServices(cfg, llmRuntime, swappable, dsTokenSource, namespace, logger)
 
 	stack = buildInvestigationRunner(investigationRunnerParams{
 		cfg:                  cfg,
@@ -334,7 +334,8 @@ func main() {
 	// 503 instead of "connection refused" throughout that window.
 	bootstrapHealth := startBootstrapHealthServer(cfg.Runtime.Server.HealthAddr, logger)
 
-	swappable, core, stack := initializeAgent(cfg, llmRuntime, logger)
+	controllerNamespace := detectNamespace()
+	swappable, core, stack := initializeAgent(cfg, llmRuntime, controllerNamespace, logger)
 
 	stopBootstrapHealthServer(bootstrapHealth, logger)
 

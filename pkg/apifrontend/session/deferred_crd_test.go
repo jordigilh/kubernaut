@@ -464,9 +464,10 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		scheme = newScheme()
 	)
 
-	newIndexedFakeClient := func() client.Client {
+	newIndexedFakeClient := func(objs ...client.Object) client.Client {
 		return fake.NewClientBuilder().
 			WithScheme(scheme).
+			WithObjects(objs...).
 			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
 			WithIndex(&v1alpha1.InvestigationSession{}, session.FieldIndexRRName,
 				func(obj client.Object) []string {
@@ -523,6 +524,12 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 			}
 		}
 		Expect(activeCount).To(Equal(1), "idempotent call should not create duplicate CRD")
+
+		var existing v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-sess-002"}, &existing)).To(Succeed())
+		Expect(existing.Spec.A2ATaskID).To(Equal("ka-sess-002"), "same-user reacquisition must preserve the original durable session")
+		Expect(existing.Spec.UserIdentity.Username).To(Equal("sre-bob"))
+		Expect(existing.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
 	})
 
 	It("UT-AF-1293-INIT-003: rejects when different user holds active session (single-driver)", func() {
@@ -536,6 +543,46 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("session_active"))
 		Expect(err.Error()).NotTo(ContainSubstring("sre-carol"), "should not leak holder username (SI-11)")
+	})
+
+	It("UT-AF-2596-001: permits a later owner when the prior IS is terminal", func() {
+		terminalIS := &v1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "is-terminal-init-old",
+				Namespace: "test-ns",
+			},
+			Spec: v1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: v1alpha1.ObjectRef{Namespace: "prod", Name: "rr-terminal-init-001"},
+				A2ATaskID:             "old-task",
+				UserIdentity:          v1alpha1.SessionUser{Username: "sre-alice"},
+				JoinMode:              v1alpha1.SessionJoinModeTakeover,
+			},
+			Status: v1alpha1.InvestigationSessionStatus{
+				Phase: v1alpha1.SessionPhaseCompleted,
+			},
+		}
+		k8s := newIndexedFakeClient(terminalIS)
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-terminal-init-001", "ka-terminal-init-new", "sre-bob", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var created v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-terminal-init-new"}, &created)).To(Succeed())
+		Expect(created.Spec.UserIdentity.Username).To(Equal("sre-bob"))
+		Expect(created.Spec.A2ATaskID).To(Equal("ka-terminal-init-new"))
+		Expect(created.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
+
+		var sessions v1alpha1.InvestigationSessionList
+		Expect(k8s.List(ctx, &sessions, client.InNamespace("test-ns"))).To(Succeed())
+		nonTerminal := 0
+		for i := range sessions.Items {
+			is := &sessions.Items[i]
+			if is.Spec.RemediationRequestRef.Name == "rr-terminal-init-001" && !session.IsTerminal(is.Status.Phase) {
+				nonTerminal++
+			}
+		}
+		Expect(nonTerminal).To(Equal(1), "a terminal prior IS must not create competing durable ownership")
 	})
 
 	It("UT-AF-1293-INIT-004: rejects empty kaSessionID", func() {
