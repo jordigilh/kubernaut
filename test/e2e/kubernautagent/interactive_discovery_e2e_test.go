@@ -26,6 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -275,6 +278,11 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 
 	Describe("E2E-KA-DISC-005: cross-resource RCA discovery lifecycle (#1374)", func() {
 		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-KA-261]", func() {
+			By("Verifying the RCA target is discoverable in the cluster")
+			target := &unstructured.Unstructured{}
+			target.SetGroupVersionKind(schema.GroupVersionKind{Group: "security.istio.io", Version: "v1", Kind: "AuthorizationPolicy"})
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: "production", Name: "deny-all-traffic"}, target)).To(Succeed(),
+				"E2E-KA-DISC-005 requires the authoritative RCA target API and resource")
 			rrID := fmt.Sprintf("rr-disc005-%d", time.Now().Unix())
 			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"), withSeverity("critical"))
 

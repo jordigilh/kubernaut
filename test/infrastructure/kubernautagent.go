@@ -612,6 +612,29 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: authorizationpolicies.security.istio.io
+spec:
+  group: security.istio.io
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+  scope: Namespaced
+  names:
+    plural: authorizationpolicies
+    singular: authorizationpolicy
+    kind: AuthorizationPolicy
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: testwidgets.beta.kubernaut-test.ai
 spec:
   group: beta.kubernaut-test.ai
@@ -643,6 +666,7 @@ spec:
 	for _, crd := range []string{
 		"testwidgets.alpha.kubernaut-test.ai",
 		"testwidgets.beta.kubernaut-test.ai",
+		"authorizationpolicies.security.istio.io",
 	} {
 		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"wait", "--for=condition=Established", "crd/"+crd, "--timeout=30s")
@@ -663,13 +687,25 @@ metadata:
   name: test-widget-instance
   namespace: default
 spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-traffic
+  namespace: production
+spec: {}
 `
 	crCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	crCmd.Stdin = strings.NewReader(crManifest)
 	crCmd.Stdout = writer
 	crCmd.Stderr = writer
 	if err := crCmd.Run(); err != nil {
-		return fmt.Errorf("kubectl apply TestWidget CR: %w", err)
+		return fmt.Errorf("kubectl apply E2E target resources: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ TestWidget CR created in default namespace (alpha group)")
 	return nil
