@@ -35,6 +35,9 @@ func handleSlowSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
 	flusher, canFlush := w.(http.Flusher)
+	if canFlush {
+		flusher.Flush()
+	}
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
