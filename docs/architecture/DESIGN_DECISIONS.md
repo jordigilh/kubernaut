@@ -132,6 +132,7 @@
 | DD-PLATFORM-009 | Bootstrap Health Server for Slow Dependency Wiring (FMC + Gateway, `sharedhealth.NewBootstrapServer`) | ✅ Approved & Implemented | 2026-07-28 | [DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md](decisions/DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md) |
 | DD-TEST-015 | Fleet E2E "Deploy Correctly the First Time" (chart-native `global.fleet.*` on the first `helm install`, FMC chart migration, `FleetProvisioner` callback) | ✅ Approved & Implemented | 2026-07-28 | [DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md](decisions/DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md) |
 | DD-PLATFORM-011 | Helm Policy ConfigMap Ownership Boundary (reserved chart identities, distinct external names) | ✅ Approved | 2026-09-28 | [DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md](decisions/DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md) |
+| DD-PLATFORM-012 | Long-lived Demo Certificate Lifecycle (cert-manager leaves, stable monitoring CA, DataStorage restart-on-renewal) | ✅ Approved | 2026-11-04 | [DD-PLATFORM-012-long-lived-demo-certificate-lifecycle.md](decisions/DD-PLATFORM-012-long-lived-demo-certificate-lifecycle.md) |
 | DD-TLS-001 | No-Write Ambient CA Trust Injection (`SSL_CERT_DIR`, read-only CA directory) | ✅ Approved for implementation | 2026-10-23 | [DD-TLS-001-no-write-ambient-ca-trust-injection.md](decisions/DD-TLS-001-no-write-ambient-ca-trust-injection.md) |
 | DD-FLEET-006 | AF's LLM-Facing `list_clusters`/`cluster_id` Is Not an Asymmetry with DD-FLEET-005 (documentation-only, no code change) | ✅ Accepted | 2026-07-29 | [DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md](decisions/DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md) |
 | DD-FLEET-007 | Ansible/AAP Engine Not Supported for Fleet (Remote) WorkflowExecution (fails closed instead) | ✅ Approved | 2026-07-30 | [DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md](decisions/DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md) |
@@ -192,5 +193,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: October 29, 2026
+**Last Updated**: November 5, 2026
 **Maintained By**: Kubernaut Architecture Team

@@ -80,6 +80,7 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 	}
 	if fleetOpts != nil {
 		crOptions.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+		crOptions.DataStorage = OperatorDataStorageOptions{AuditSigningCertificateSecretName: operatorDataStorageSigningSecret}
 		crOptions.Monitoring.PrometheusURL = "https://thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local:9090"
 	}
 	return crOptions
@@ -197,6 +198,11 @@ func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploym
 		return err
 	}
 	RememberOperatorExposure(config.KubeconfigPath, evidence)
+	if config.CR.Fleet != nil && config.CR.Fleet.Enabled {
+		if err := annotateDemoEffectivenessMonitorCertificateReload(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
+			return fmt.Errorf("annotate demo EffectivenessMonitor certificate reload: %w", err)
+		}
+	}
 	if err := waitForServiceEndpointReady(ctx, config.Namespace, config.KubeconfigPath, "kubernaut-console", 60*time.Second, writer); err != nil {
 		return fmt.Errorf("wait for operator Console Service: %w", err)
 	}
@@ -312,7 +318,16 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	if err := EnsureOperatorDataStorageClientRBAC(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("prepare operator demo RBAC: %w", err)
 	}
-	if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, config.Namespace, fleetOpts != nil, writer); err != nil {
+	if fleetOpts != nil {
+		if err := EnsureDemoDataStorageSigningCertificate(ctx, kubeconfigPath, config.Namespace, writer); err != nil {
+			return fmt.Errorf("prepare demo DataStorage signing Certificate: %w", err)
+		}
+	}
+	if fleetOpts != nil {
+		if err := EnsureOperatorApplicationTLSForDemo(ctx, kubeconfigPath, config.Namespace, true, writer); err != nil {
+			return fmt.Errorf("prepare manual operator service TLS: %w", err)
+		}
+	} else if err := EnsureOperatorApplicationTLS(ctx, kubeconfigPath, config.Namespace, false, writer); err != nil {
 		return fmt.Errorf("prepare manual operator service TLS: %w", err)
 	}
 	if err := finalizeDemoOperatorApplication(ctx, config, writer); err != nil {
