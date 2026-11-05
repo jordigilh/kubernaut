@@ -411,8 +411,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			rrName := fmt.Sprintf("rr-rar-delete-%s", uuid.NewString()[:13])
 			rr := createRemediationRequest(ROControllerNamespace, rrName)
 			rar := rarSafetyRequest(rr, time.Now().Add(15*time.Minute), true)
-			setRARSafetyParentPhase(rr.Name, parentPhase)
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+			setRARSafetyParentPhase(rr.Name, parentPhase)
 			DeferCleanup(func() {
 				rarSafetyRemoveFinalizer(rar.Name)
 				_ = k8sClient.Delete(ctx, rr)
@@ -447,8 +447,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		rrName := fmt.Sprintf("rr-rar-orphan-%s", uuid.NewString()[:13])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
 		rar := rarSafetyRequest(rr, time.Now().Add(15*time.Minute), true)
-		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 		DeferCleanup(func() {
 			rarSafetyRemoveFinalizer(rar.Name)
 			_ = k8sClient.Delete(ctx, rr)
@@ -475,8 +475,10 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		rrName := fmt.Sprintf("rr-rar-expiry-%s", uuid.NewString()[:13])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
 		rar := rarSafetyRequest(rr, time.Now().Add(-1*time.Minute), true)
-		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
+		// Production persists the RAR before entering AwaitingApproval; reversing
+		// that order races the missing-approval safety transition.
 		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 		DeferCleanup(func() {
 			rarSafetyRemoveFinalizer(rar.Name)
 			_ = k8sClient.Delete(ctx, rr)
@@ -560,8 +562,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			rr := createRemediationRequest(ROControllerNamespace, rrName)
 			rar := rarSafetyRequest(rr, time.Now().Add(15*time.Minute), true)
 			mutate(rar)
-			setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+			setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 			DeferCleanup(func() {
 				rarSafetyRemoveFinalizer(rar.Name)
 				_ = k8sClient.Delete(ctx, rr)
@@ -590,7 +592,6 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 	It("IT-RO-2564-019: real API persistence fails closed on an existing RAR", func() {
 		rrName := fmt.Sprintf("rr-rar-collision-%s", uuid.NewString()[:13])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
-		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 		ai := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{Name: "ai-" + rrName, Namespace: ROControllerNamespace},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -622,6 +623,7 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		Expect(err).NotTo(HaveOccurred())
 		Expect(name).To(Equal("rar-" + rrName))
 		Expect(outcome).To(Equal(creator.ApprovalCreationCreated))
+		setRARSafetyParentPhase(rr.Name, remediationv1.PhaseAwaitingApproval)
 		DeferCleanup(func() {
 			rarSafetyRemoveFinalizer(name)
 			_ = k8sClient.Delete(ctx, &remediationv1.RemediationApprovalRequest{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ROControllerNamespace}})
