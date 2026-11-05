@@ -317,6 +317,12 @@ type OperatorMonitoringOptions struct {
 	TLSCASecretName string
 }
 
+// OperatorDataStorageOptions contains explicit DataStorage settings used by
+// the long-lived demo certificate lifecycle.
+type OperatorDataStorageOptions struct {
+	AuditSigningCertificateSecretName string
+}
+
 // OperatorNetworkPolicyOptions contains the runtime host peers that must be
 // admitted to test-exposed operator Services. The operator owns the resulting
 // NetworkPolicies; this is an optional generic-Kind qualification setting, not
@@ -356,6 +362,7 @@ type OperatorCROptions struct {
 	ValkeyTLS                        *OperatorValkeyTLSOptions
 	LLM                              OperatorLLMOptions
 	TLS                              OperatorTLSOptions
+	DataStorage                      OperatorDataStorageOptions
 	PolicyConfigMaps                 OperatorPolicyOptions
 	Monitoring                       OperatorMonitoringOptions
 	NetworkPolicies                  OperatorNetworkPolicyOptions
@@ -401,6 +408,7 @@ type operatorCRSpec struct {
 	Gateway                 *operatorGatewaySpec           `yaml:"gateway,omitempty"`
 	APIFrontend             *operatorAPIFrontendSpec       `yaml:"apiFrontend,omitempty"`
 	Console                 *operatorConsoleSpec           `yaml:"console,omitempty"`
+	DataStorage             *operatorDataStorageSpec       `yaml:"dataStorage,omitempty"`
 	Monitoring              *operatorMonitoringSpec        `yaml:"monitoring,omitempty"`
 	NetworkPolicies         *operatorNetworkPoliciesSpec   `yaml:"networkPolicies,omitempty"`
 	TLS                     operatorTLSManifest            `yaml:"tls"`
@@ -523,6 +531,18 @@ type operatorConsoleAuthSpec struct {
 	SecretName        string `yaml:"secretName,omitempty"`
 	RedirectURL       string `yaml:"redirectURL,omitempty"`
 	ProviderLogoutURL string `yaml:"providerLogoutURL,omitempty"`
+}
+
+type operatorDataStorageSpec struct {
+	Audit *operatorDataStorageAuditSpec `yaml:"audit,omitempty"`
+}
+
+type operatorDataStorageAuditSpec struct {
+	SigningCertificate *operatorSigningCertificateSpec `yaml:"signingCertificate,omitempty"`
+}
+
+type operatorSigningCertificateSpec struct {
+	SecretName string `yaml:"secretName"`
 }
 
 type operatorMonitoringSpec struct {
@@ -685,9 +705,24 @@ func buildOperatorCRSpec(options OperatorCROptions, audience string) operatorCRS
 		KubernautAgent:   operatorAgentSpec{},
 		Gateway:          operatorGatewaySpecFor(options),
 		APIFrontend:      operatorAPIFrontendSpecFor(options, audience),
+		DataStorage:      operatorDataStorageSpecFor(options),
 		Monitoring:       operatorMonitoringSpecFor(options),
 		NetworkPolicies:  operatorNetworkPoliciesSpecFor(options),
 		TLS:              operatorTLSManifestFor(options),
+	}
+}
+
+// operatorDataStorageSpecFor renders the optional administrator-selected audit
+// signing Secret reference without adding DataStorage defaults to the CR.
+func operatorDataStorageSpecFor(options OperatorCROptions) *operatorDataStorageSpec {
+	secretName := strings.TrimSpace(options.DataStorage.AuditSigningCertificateSecretName)
+	if secretName == "" {
+		return nil
+	}
+	return &operatorDataStorageSpec{
+		Audit: &operatorDataStorageAuditSpec{
+			SigningCertificate: &operatorSigningCertificateSpec{SecretName: secretName},
+		},
 	}
 }
 

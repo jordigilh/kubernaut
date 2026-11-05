@@ -57,7 +57,7 @@ var _ = Describe("Local demo OIDC CA ordering", func() {
 
 var _ = Describe("Thanos Querier release contract", func() {
 	It("UT-2492-FLEET-THANOS-001 [BR-PLATFORM-014]: uses the Thanos v0.37 HTTP config flag", func() {
-		Expect(thanosQuerierHTTPConfigArg()).To(Equal("--http.config=/etc/monitoring-tls/web-config.yml"))
+		Expect(thanosQuerierHTTPConfigArg()).To(Equal("--http.config=/etc/monitoring-web-config/web-config.yml"))
 	})
 })
 

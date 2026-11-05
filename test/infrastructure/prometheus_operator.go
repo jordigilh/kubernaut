@@ -55,12 +55,13 @@ func prometheusOperatorChartSource() (string, []string) {
 }
 
 type managedPrometheusOptions struct {
-	clusterLabel       string
-	alertManagerTarget string
-	prometheusName     string
-	statefulSetName    string
-	thanosEnabled      bool
-	tlsEnabled         bool
+	clusterLabel         string
+	alertManagerTarget   string
+	prometheusName       string
+	statefulSetName      string
+	thanosEnabled        bool
+	tlsEnabled           bool
+	reloadOnSecretChange bool
 }
 
 // InstallPrometheusOperator installs the CRDs and controller used by the fleet
@@ -99,12 +100,13 @@ func DeployManagedPrometheusWithThanosSidecar(ctx context.Context, namespace, ku
 // demo CR selects an HTTPS monitoring URL.
 func DeployManagedPrometheusTLS(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
 	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
-		clusterLabel:       clusterLabel,
-		alertManagerTarget: alertManagerTarget,
-		prometheusName:     managedPrometheusName,
-		statefulSetName:    managedPrometheusStatefulSet,
-		thanosEnabled:      true,
-		tlsEnabled:         true,
+		clusterLabel:         clusterLabel,
+		alertManagerTarget:   alertManagerTarget,
+		prometheusName:       managedPrometheusName,
+		statefulSetName:      managedPrometheusStatefulSet,
+		thanosEnabled:        true,
+		tlsEnabled:           true,
+		reloadOnSecretChange: true,
 	}, writer)
 }
 
@@ -149,7 +151,29 @@ func deployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath stri
 		"statefulset/"+options.statefulSetName, "-n", namespace, "--timeout=180s"); err != nil {
 		return fmt.Errorf("managed Prometheus rollout failed: %w", err)
 	}
+	if options.reloadOnSecretChange {
+		if err := annotateManagedPrometheusCertificateReload(ctx, kubeconfigPath, namespace, options.statefulSetName, writer); err != nil {
+			return fmt.Errorf("annotate managed Prometheus certificate reload: %w", err)
+		}
+	}
 	_, _ = fmt.Fprintf(writer, "  operator-managed %s ready (cluster=%s, NodePort %d)\n", component, options.clusterLabel, PrometheusNodePort)
+	return nil
+}
+
+// annotateManagedPrometheusCertificateReload adds the Reloader annotation to
+// the operator-created StatefulSet after reconciliation. Prometheus is a CRD,
+// while Reloader matches supported workload metadata (BR-PLATFORM-014,
+// DD-PLATFORM-012).
+func annotateManagedPrometheusCertificateReload(ctx context.Context, kubeconfigPath, namespace, statefulSetName string, writer io.Writer) error {
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"patch", "statefulset/"+statefulSetName,
+		"-n", namespace,
+		"--type=merge",
+		"-p", buildCertificateReloadPatch(monitoringTLSSecretName),
+	); err != nil {
+		return fmt.Errorf("patch Prometheus StatefulSet reload annotation: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Prometheus will restart when cert-manager renews monitoring-tls")
 	return nil
 }
 
