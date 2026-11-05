@@ -711,10 +711,10 @@ func buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayTo
           secretName: monitoring-tls`
 		monitoringProbeScheme = "\n             scheme: HTTPS"
 		if options.separateWebConfig {
+			monitoringTLSArgs = "\n        - \"--web.config.file=/etc/monitoring-web-config/web-config.yml\""
 			monitoringTLSMount += `
         - name: monitoring-web-config
-          mountPath: /etc/monitoring-tls/web-config.yml
-          subPath: web-config.yml
+          mountPath: /etc/monitoring-web-config
           readOnly: true`
 			monitoringTLSVolume += `
       - name: monitoring-web-config

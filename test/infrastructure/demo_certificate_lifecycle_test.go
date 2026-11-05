@@ -124,7 +124,9 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		expectValidYAMLDocuments(alertManagerManifest)
 		Expect(alertManagerManifest).To(ContainSubstring(`secret.reloader.stakater.com/reload: "monitoring-tls"`))
 		Expect(alertManagerManifest).To(ContainSubstring("name: monitoring-web-config"))
-		Expect(alertManagerManifest).To(ContainSubstring("mountPath: /etc/monitoring-tls/web-config.yml"))
+		Expect(alertManagerManifest).To(ContainSubstring("--web.config.file=/etc/monitoring-web-config/web-config.yml"))
+		Expect(alertManagerManifest).To(ContainSubstring("mountPath: /etc/monitoring-web-config"))
+		Expect(alertManagerManifest).NotTo(ContainSubstring("mountPath: /etc/monitoring-tls/web-config.yml"))
 
 		shortLivedAlertManagerManifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "token", true)
 		Expect(shortLivedAlertManagerManifest).NotTo(ContainSubstring("secret.reloader.stakater.com/reload"))
@@ -151,5 +153,11 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		effectivenessSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "effectivenessmonitor_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(effectivenessSource)).NotTo(ContainSubstring("configmap.reloader.stakater.com/reload"))
+
+		thanosSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "thanos_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(thanosSource)).To(ContainSubstring("--http.config=/etc/monitoring-web-config/web-config.yml"))
+		Expect(string(thanosSource)).To(ContainSubstring("mountPath: /etc/monitoring-web-config"))
+		Expect(string(thanosSource)).NotTo(ContainSubstring("mountPath: /etc/monitoring-tls/web-config.yml"))
 	})
 })

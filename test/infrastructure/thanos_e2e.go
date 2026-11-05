@@ -257,7 +257,7 @@ spec:
 }
 
 func thanosQuerierHTTPConfigArg() string {
-	return "--http.config=/etc/monitoring-tls/web-config.yml"
+	return "--http.config=/etc/monitoring-web-config/web-config.yml"
 }
 
 // DeployThanosQuerier deploys a Thanos Querier into the hub cluster,
@@ -320,8 +320,7 @@ spec:
           mountPath: /etc/monitoring-tls
           readOnly: true
         - name: monitoring-web-config
-          mountPath: /etc/monitoring-tls/web-config.yml
-          subPath: web-config.yml
+          mountPath: /etc/monitoring-web-config
           readOnly: true
         resources:
           requests:
