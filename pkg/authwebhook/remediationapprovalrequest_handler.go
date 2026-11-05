@@ -214,7 +214,7 @@ func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.
 		return h.denyDecision(ctx, logger, rar, authCtx, "approval decision deadline has passed")
 	}
 	if rar.Status.Decision == remediationv1.ApprovalDecisionApproved && rar.Status.WorkflowOverride == nil {
-		if err := rarconditions.ValidateSnapshotPresence(&rar.Spec); err != nil {
+		if err := rarconditions.ValidateParameterOverride(&rar.Spec, nil); err != nil {
 			return h.denyDecision(ctx, logger, rar, authCtx, err.Error())
 		}
 	}

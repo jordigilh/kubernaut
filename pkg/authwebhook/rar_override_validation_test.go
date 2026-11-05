@@ -186,6 +186,28 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		}
 	})
 
+	It("UT-AW-2570-099: BR-KA-191 validates original parameters on an ordinary approval", func() {
+		reader = fake.NewClientBuilder().WithScheme(scheme).Build()
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
+		Expect(handler.InjectDecoder(decoder)).To(Succeed())
+
+		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{
+			WorkflowID:             "wf-original",
+			DeclaredParameterNames: map[string]bool{"P": true},
+		}
+		oldRAR.Spec.Parameters = map[string]string{"P": "1.0"}
+		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer"}}
+		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		rar := oldRAR.DeepCopy()
+		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+
+		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
+
+		Expect(response.Allowed).To(BeFalse())
+		Expect(response.Result.Message).To(ContainSubstring("P"))
+	})
+
 	It("UT-AW-2570-087: BR-ORCH-025 rejects legacy workflow switching before approval", func() {
 		rw := buildActiveRW("drain-restart", "kubernaut-system")
 		reader = fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).WithStatusSubresource(rw).Build()

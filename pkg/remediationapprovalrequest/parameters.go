@@ -47,16 +47,24 @@ func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpe
 		if !exists {
 			return fmt.Errorf("parameter %q is absent from original parameters", name)
 		}
-		if strings.HasPrefix(name, "TARGET_RESOURCE_") && value != original {
+		if isManagedTargetParameter(name) && value != original {
 			return fmt.Errorf("parameter %q is locked", name)
 		}
 		effective[name] = value
 	}
 	schema := make([]models.WorkflowParameter, 0, len(spec.ParameterSchema))
-	if len(spec.Workflow.DeclaredParameterNames) != len(spec.ParameterSchema) {
-		return fmt.Errorf("parameter declarations do not match the approval schema")
+	declaredParameterCount := 0
+	for name := range spec.Workflow.DeclaredParameterNames {
+		if !isManagedTargetParameter(name) {
+			declaredParameterCount++
+		}
 	}
+	schemaParameterCount := 0
 	for _, parameter := range spec.ParameterSchema {
+		if isManagedTargetParameter(parameter.Name) {
+			continue
+		}
+		schemaParameterCount++
 		if !spec.Workflow.DeclaredParameterNames[parameter.Name] {
 			return fmt.Errorf("parameter %q is not declared for execution", parameter.Name)
 		}
@@ -66,5 +74,17 @@ func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpe
 			Minimum: parameter.Minimum, Maximum: parameter.Maximum, DependsOn: parameter.DependsOn,
 		})
 	}
+	if declaredParameterCount != schemaParameterCount {
+		return fmt.Errorf("parameter declarations do not match the approval schema")
+	}
+	for name := range effective {
+		if isManagedTargetParameter(name) {
+			delete(effective, name)
+		}
+	}
 	return models.ValidateParameterSet(schema, effective)
+}
+
+func isManagedTargetParameter(name string) bool {
+	return strings.HasPrefix(name, "TARGET_RESOURCE_")
 }
