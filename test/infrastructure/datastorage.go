@@ -2152,6 +2152,7 @@ func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer 
 // recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
 // used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
 // failing the whole SOC2 E2E suite on a one-shot apply.
+// waitForCertManagerRetry sleeps until the next retry or returns when ctx is canceled.
 func waitForCertManagerRetry(ctx context.Context, backoff time.Duration) error {
 	timer := time.NewTimer(backoff)
 	defer timer.Stop()
@@ -2162,6 +2163,35 @@ func waitForCertManagerRetry(ctx context.Context, backoff time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// applyCertManagerManifestWithRetry applies a cert-manager resource manifest
+// with bounded, cancellation-aware retries for webhook propagation races.
+func applyCertManagerManifestWithRetry(ctx context.Context, kubeconfigPath string, writer io.Writer, manifest, description string) error {
+	const maxRetries = 8
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err == nil {
+			if attempt > 1 {
+				_, _ = fmt.Fprintf(writer, "   ✅ %s apply succeeded on attempt %d/%d\n", description, attempt, maxRetries)
+			}
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		if attempt == maxRetries {
+			break
+		}
+		backoff := time.Duration(attempt) * 3 * time.Second
+		_, _ = fmt.Fprintf(writer, "   ⚠️  %s apply failed (attempt %d/%d, likely webhook endpoint not yet propagated), retrying in %v: %v\n",
+			description, attempt, maxRetries, backoff, lastErr)
+		if err := waitForCertManagerRetry(ctx, backoff); err != nil {
+			return fmt.Errorf("wait for %s retry: %w", description, err)
+		}
+	}
+
+	return fmt.Errorf("failed to apply %s after %d attempts: %w", description, maxRetries, lastErr)
 }
 
 func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
@@ -2344,7 +2374,10 @@ func EnsureDemoDataStorageSigningCertificate(ctx context.Context, kubeconfigPath
 	if err := ApplyCertManagerIssuer(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("prepare DataStorage cert-manager issuer: %w", err)
 	}
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildDemoDataStorageCertificateManifest(namespace)); err != nil {
+	if err := applyCertManagerManifestWithRetry(ctx, kubeconfigPath, writer,
+		BuildDemoDataStorageCertificateManifest(namespace),
+		"demo DataStorage Certificate",
+	); err != nil {
 		return fmt.Errorf("apply demo DataStorage Certificate: %w", err)
 	}
 	if err := runKubectl(ctx, kubeconfigPath, writer, "wait", "--for=condition=Ready", "certificate/datastorage-signing-cert", "-n", namespace, "--timeout=120s"); err != nil {

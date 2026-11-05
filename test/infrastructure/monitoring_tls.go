@@ -33,7 +33,7 @@ const (
 	monitoringCAIssuerSecretName  = "monitoring-ca-issuer"
 	monitoringCAIssuerName        = "monitoring-ca-issuer"
 	monitoringCAMinLifetime       = 364 * 24 * time.Hour
-	monitoringCAMinRemaining      = monitoringCAMinLifetime
+	monitoringCAMinRemaining      = 180 * 24 * time.Hour
 )
 
 // MonitoringCAPath returns the host-side trust path for the monitoring CA.
@@ -316,7 +316,10 @@ func EnsureDemoMonitoringTLS(ctx context.Context, hubKubeconfigPath, spokeKubeco
 		if err := removeStaleDemoMonitoringTLSSecret(ctx, cluster.kubeconfigPath, monitoringNamespace, caCert, writer); err != nil {
 			return fmt.Errorf("validate existing monitoring TLS Secret in %s cluster: %w", cluster.name, err)
 		}
-		if err := kubectlApplyManifest(ctx, cluster.kubeconfigPath, writer, BuildDemoMonitoringTLSManifest(monitoringNamespace)); err != nil {
+		if err := applyCertManagerManifestWithRetry(ctx, cluster.kubeconfigPath, writer,
+			BuildDemoMonitoringTLSManifest(monitoringNamespace),
+			fmt.Sprintf("demo monitoring Certificate in %s cluster", cluster.name),
+		); err != nil {
 			return fmt.Errorf("apply demo monitoring Certificate in %s cluster: %w", cluster.name, err)
 		}
 		if err := runKubectl(ctx, cluster.kubeconfigPath, writer, "wait", "--for=condition=Ready", "certificate/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--timeout=120s"); err != nil {
@@ -403,6 +406,8 @@ func validateMonitoringCACertificate(certificate *x509.Certificate) error {
 	return validateMonitoringCACertificateAt(certificate, time.Now())
 }
 
+// validateMonitoringCACertificateAt validates a monitoring CA against an explicit
+// time so reuse checks remain deterministic in contract tests.
 func validateMonitoringCACertificateAt(certificate *x509.Certificate, now time.Time) error {
 	if !certificate.IsCA || !certificate.BasicConstraintsValid {
 		return errors.New("monitoring CA certificate lacks valid CA constraints")

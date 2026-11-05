@@ -104,6 +104,9 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 
 		nearExpiryNow := ca.certificate.NotAfter.Add(-monitoringCAMinRemaining + time.Hour)
 		Expect(validateMonitoringCACertificateAt(ca.certificate, nearExpiryNow)).To(MatchError(ContainSubstring("too close to expiry")))
+
+		agedThirtyDays := ca.certificate.NotBefore.Add(30 * 24 * time.Hour)
+		Expect(validateMonitoringCACertificateAt(ca.certificate, agedThirtyDays)).To(Succeed())
 	})
 
 	It("UT-INFRA-2602-DATASTORAGE-004 [BR-PLATFORM-014]: cancels a cert-manager issuer retry backoff", func() {

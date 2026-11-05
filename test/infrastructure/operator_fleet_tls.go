@@ -246,6 +246,8 @@ func annotateDemoEffectivenessMonitorCertificateReload(ctx context.Context, kube
 	return nil
 }
 
+// buildCertificateReloadPatch returns a workload-metadata annotation patch for
+// Reloader's named Secret watch.
 func buildCertificateReloadPatch(secretName string) string {
 	return fmt.Sprintf(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"%s"}}}`, secretName)
 }
