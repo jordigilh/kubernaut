@@ -1435,6 +1435,55 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			}
 			Expect(found).To(BeTrue())
 		})
+		It("IT-AF-2570-037: BR-AUDIT-005 records invalid approval overrides as denied tool executions", func() {
+			rar := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rar-denied-2570", Namespace: "default"},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-denied-2570"},
+					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-denied", DeclaredParameterNames: map[string]bool{"P": true}},
+					Parameters:            map[string]string{"P": "2"},
+					ParameterSchema:       []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}},
+					TargetContext:         &remediationv1.ApprovalTargetContext{},
+				},
+			}
+			cfg := handler.MCPConfig{ServerName: "kubernaut-apifrontend", ServerVersion: "test", Enabled: true,
+				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			user := &auth.UserIdentity{Username: "reviewer-denied", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+			auditor.Reset()
+
+			_, body := mcpCallTool(h, sid, "kubernaut_approve", map[string]any{
+				"rar_name": rar.Name, "decision": "Approved",
+				"workflow_override": map[string]any{"parameters": map[string]string{"P": "not-a-float"}, "rationale": "invalid review"},
+			}, user)
+
+			Expect(isErrorResult(body)).To(BeTrue())
+			events := auditor.Events()
+			var denied *audit.Event
+			for _, event := range events {
+				if event.Type == audit.EventToolExecuted && event.Detail["tool_name"] == "kubernaut_approve" {
+					denied = event
+					break
+				}
+			}
+			Expect(denied).NotTo(BeNil())
+			Expect(denied.CorrelationID).To(Equal("rr-denied-2570"))
+			Expect(denied.UserID).To(Equal("reviewer-denied"))
+			Expect(denied.Detail).To(HaveKeyWithValue("tool_outcome", "denied"))
+			Expect(denied.Detail).To(HaveKeyWithValue("approval_request", "rar-denied-2570"))
+			Expect(denied.Detail).To(HaveKeyWithValue("approval_decision", "Approved"))
+			Expect(denied.Approval).NotTo(BeNil())
+			Expect(denied.Approval.WorkflowID).To(Equal("wf-denied"))
+			Expect(denied.Approval.OriginalParameters).To(Equal(map[string]string{"P": "2"}))
+			Expect(denied.Approval.OverrideParameters).To(Equal(map[string]string{"P": "not-a-float"}))
+			Expect(denied.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "not-a-float"}))
+			Expect(denied.Approval.OverrideRationale).To(gstruct.PointTo(Equal("invalid review")))
+			for _, event := range events {
+				Expect(event.Type).NotTo(Equal(audit.EventMCPToolFailed), "invalid approval override must not be reduced to generic MCP failure")
+			}
+		})
 		It("UT-AF-B-050: successful tool call emits EventToolExecuted", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",

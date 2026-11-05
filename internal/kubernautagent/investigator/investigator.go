@@ -961,11 +961,12 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	p1Ctx := BuildPhase1Context(p.RCAResult)
 
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, p.RCAResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
-		Tokens:        p.Tokens,
-		CorrelationID: p.CorrelationID,
-		Client:        wfClient,
-		ModelName:     wfModelName,
-		RuntimeParams: wfRuntimeParams,
+		Tokens:             p.Tokens,
+		CorrelationID:      p.CorrelationID,
+		Client:             wfClient,
+		ModelName:          wfModelName,
+		RuntimeParams:      wfRuntimeParams,
+		workflowEnrichment: enrichData,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
@@ -1410,6 +1411,11 @@ type LLMInvocationContext struct {
 	RepeatSelection   *parser.RepeatSelectionContext
 	decisionLoopID    string
 	rcaBudget         *rcaLoopBudget
+	// workflowEnrichment carries the authoritative target enrichment into
+	// Phase 3 validation. Managed TARGET_RESOURCE_* parameters must be present
+	// before dependency checks run, not only during finalization.
+	workflowEnrichment *enrichment.EnrichmentResult
+	workflowSignal     katypes.SignalContext
 }
 
 // workflowDiscoveryAuditContext is the safe provenance summary persisted on

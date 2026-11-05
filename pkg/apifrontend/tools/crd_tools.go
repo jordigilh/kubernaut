@@ -661,6 +661,28 @@ type ApprovalAuditContext struct {
 	OverrideRationale   *string
 }
 
+// ApprovalDecisionDeniedError marks an approval request rejected locally
+// before the status write. The MCP bridge uses the attached reviewed context
+// to emit the same structured denial audit payload as an admission denial.
+type ApprovalDecisionDeniedError struct {
+	Err   error
+	Audit *ApprovalAuditContext
+}
+
+func (e *ApprovalDecisionDeniedError) Error() string {
+	if e == nil || e.Err == nil {
+		return "approval decision denied"
+	}
+	return fmt.Sprintf("approval decision denied: %v", e.Err)
+}
+
+func (e *ApprovalDecisionDeniedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // ApprovalDecisionWriteError reports a conditional decision write that could
 // not be proven from the canonical object after the API response.
 type ApprovalDecisionWriteError struct {
@@ -715,7 +737,10 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	}
 	if args.WorkflowOverride != nil {
 		if err := remediationapprovalrequest.ValidateParameterOverride(&rar.Spec, args.WorkflowOverride.Parameters); err != nil {
-			return ApproveResult{}, fmt.Errorf("%w: parameter override: %w", ErrInvalidInput, err)
+			return ApproveResult{}, &ApprovalDecisionDeniedError{
+				Err:   fmt.Errorf("%w: parameter override: %w", ErrInvalidInput, err),
+				Audit: approvalAuditContext(&rar, args.WorkflowOverride),
+			}
 		}
 	}
 

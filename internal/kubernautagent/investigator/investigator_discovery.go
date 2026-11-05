@@ -119,10 +119,11 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	p1Ctx := BuildPhase1Context(rcaResult)
 	markWorkflowDiscoveryStarted(rcaResult)
 	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, LLMInvocationContext{
-		CorrelationID: correlationID,
-		Client:        client,
-		ModelName:     modelName,
-		RuntimeParams: runtimeParams,
+		CorrelationID:      correlationID,
+		Client:             client,
+		ModelName:          modelName,
+		RuntimeParams:      runtimeParams,
+		workflowEnrichment: rawEnrichData,
 	})
 	if err != nil {
 		return nil, err

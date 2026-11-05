@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -365,6 +366,42 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"))
 			Expect(client.calls).To(HaveLen(1),
 				"UT-KA-WAVE4-005: explicit no-workflow sentinel must not trigger a retry")
+		})
+	})
+
+	Describe("IT-KA-2570-001: managed target parameters are available during workflow validation", func() {
+		It("should accept a workflow parameter that depends on TARGET_RESOURCE_KIND", func() {
+			validator := parser.NewValidator([]string{"managed-dependent"})
+			validator.SetWorkflowMeta("managed-dependent", parser.WorkflowMeta{
+				WorkflowName: "managed-dependent",
+				Parameters: []models.WorkflowParameter{
+					{Name: "TARGET_RESOURCE_KIND", Type: "string", Description: "KA-managed target kind"},
+					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "new memory limit", DependsOn: []string{"TARGET_RESOURCE_KIND"}},
+				},
+			})
+			client.responses = []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"managed-dependent","confidence":0.9,"parameters":{"MEMORY_LIMIT_NEW":"1Gi"}}`),
+			}
+			inv := investigator.New(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				AuditStore: store, Logger: logger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(),
+				Pipeline: investigator.Pipeline{CatalogFetcher: &stubCatalogFetcher{
+					validator: validator, discoveredWorkflowIDs: []string{"managed-dependent"},
+				}},
+			})
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", ResourceKind: "Pod", ResourceName: "api-server",
+			}, &katypes.InvestigationResult{RCASummary: "pod memory limit exceeded"}, nil, "corr-ka-2570-001")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("managed-dependent"))
+			Expect(result.HumanReviewNeeded).To(BeFalse())
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Pod"))
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "1Gi"))
+			Expect(client.calls).To(HaveLen(1), "managed target dependency validation must not trigger self-correction")
 		})
 	})
 

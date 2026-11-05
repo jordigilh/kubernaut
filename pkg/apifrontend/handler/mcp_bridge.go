@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -531,6 +532,10 @@ func denyThrottled(ctx context.Context, cfg *MCPBridgeConfig, toolName string, s
 // exceeded/cancelled) or "error" otherwise. Returns the response and the
 // resultLabel the caller should record for its own bookkeeping.
 func handleToolExecError[In any](ctx, toolCtx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, err error) (*mcp.CallToolResult, string) {
+	var denied *tools.ApprovalDecisionDeniedError
+	if errors.As(err, &denied) {
+		return handleApprovalDecisionDenied(ctx, cfg, toolName, start, input, err, denied), "denied"
+	}
 	resultLabel := "error"
 	if toolCtx.Err() != nil {
 		resultLabel = "timeout"
@@ -546,6 +551,43 @@ func handleToolExecError[In any](ctx, toolCtx context.Context, cfg *MCPBridgeCon
 	cfg.Logger.Error(err, "tool call failed",
 		"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
 	return toolErrorResult(redacted), resultLabel
+}
+
+func handleApprovalDecisionDenied[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, err error, denied *tools.ApprovalDecisionDeniedError) *mcp.CallToolResult {
+	recordMetrics(cfg, toolName, "denied", start)
+	detail := map[string]string{
+		"tool_outcome":          "denied",
+		"execution_duration_ms": fmt.Sprintf("%d", time.Since(start).Milliseconds()),
+		"error_code":            "invalid_input",
+	}
+	enrichAuditFromArgs(detail, input)
+	if args, ok := any(input).(tools.ApproveArgs); ok {
+		detail["approval_request"] = args.RARName
+		detail["approval_decision"] = args.Decision
+	}
+	if cfg.Namespace != "" {
+		detail["namespace"] = cfg.Namespace
+	}
+	var options []emitAuditOption
+	if denied != nil && denied.Audit != nil {
+		info := denied.Audit
+		if info.CorrelationID != "" {
+			options = append(options, withCorrelationID(info.CorrelationID))
+		}
+		options = append(options, func(event *audit.Event) {
+			event.Approval = &audit.ApprovalAudit{
+				WorkflowID:          info.WorkflowID,
+				OriginalParameters:  info.OriginalParameters,
+				OverrideParameters:  info.OverrideParameters,
+				EffectiveParameters: info.EffectiveParameters,
+				OverrideRationale:   info.OverrideRationale,
+			}
+		})
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, detail, options...)
+	redacted := security.RedactError(err)
+	cfg.Logger.Info("tool call denied", "tool", toolName, "user", usernameFromCtx(ctx), "reason", redacted)
+	return toolErrorResult(redacted)
 }
 
 // handleMarshalError builds the response for a tool result that failed to
