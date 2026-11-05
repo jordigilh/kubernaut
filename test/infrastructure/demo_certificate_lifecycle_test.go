@@ -33,6 +33,10 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		root := getProjectRoot()
 		resolved := projectRootFrom(root, "/test/infrastructure/shared_integration_utils.go")
 		Expect(resolved).To(Equal(root))
+
+		datastorageSource, err := os.ReadFile(filepath.Join(root, "test", "infrastructure", "datastorage.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(datastorageSource)).To(ContainSubstring("workspaceRoot = getProjectRoot()"))
 	})
 
 	It("UT-INFRA-2602-MONITORING-001 [BR-PLATFORM-014]: keeps the shared demo monitoring CA valid for at least one year", func() {

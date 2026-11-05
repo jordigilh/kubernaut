@@ -2158,12 +2158,7 @@ func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer i
 	// Get workspace root to find the issuer manifest
 	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
 	if workspaceRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		// Navigate up from test/e2e/datastorage or test/infrastructure to repo root
-		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+		workspaceRoot = getProjectRoot()
 	}
 
 	issuerPath := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "cert-manager", "selfsigned-issuer.yaml")
@@ -2222,11 +2217,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	// Get workspace root
 	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
 	if workspaceRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+		workspaceRoot = getProjectRoot()
 	}
 
 	// Apply Certificate resource first (cert-manager will create Secret)
