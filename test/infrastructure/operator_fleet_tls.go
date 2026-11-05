@@ -183,25 +183,6 @@ data:
 	return nil
 }
 
-// annotateDemoDataStorageCertificateReload adds the Reloader annotation to the
-// operator-generated Deployment after reconciliation. DataStorage loads its
-// signer during process construction, so a Secret volume update alone is not
-// sufficient (BR-PLATFORM-014, DD-PLATFORM-012).
-func annotateDemoDataStorageCertificateReload(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	const secretName = "datastorage-signing-cert"
-	patch := buildCertificateReloadPatch(secretName)
-	if err := runKubectl(ctx, kubeconfigPath, writer,
-		"patch", "deployment/data-storage",
-		"-n", namespace,
-		"--type=merge",
-		"-p", patch,
-	); err != nil {
-		return fmt.Errorf("patch DataStorage reload annotation: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage will restart when cert-manager renews datastorage-signing-cert")
-	return nil
-}
-
 // annotateDemoEffectivenessMonitorCertificateReload adds the demo-only
 // Secret reload annotation after the operator has rendered its
 // EffectivenessMonitor Deployment. The standalone Ginkgo fixture owns its

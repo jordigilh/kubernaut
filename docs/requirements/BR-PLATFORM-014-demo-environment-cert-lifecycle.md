@@ -106,8 +106,10 @@ ephemeral.
 - **FR-7 (DataStorage signing certificate lifecycle)**: Before the operator reconciles the demo
    DataStorage workload, the demo MUST create a cert-manager-owned `datastorage-signing-cert`
    containing an RSA-2048 certificate with one-year validity, 30-day `renewBefore`, and explicit
-   `rotationPolicy: Always`. Because DataStorage loads the signer during startup, renewal MUST
-   trigger a controlled DataStorage workload restart.
+   `rotationPolicy: Always`, and configure the operator's
+   `spec.dataStorage.audit.signingCertificate.secretName` to reference it. Because DataStorage
+   loads the signer during startup, the operator's non-sensitive signing-material revision MUST
+   trigger a controlled DataStorage workload restart on Secret rotation.
 - **FR-8 (Amended scope)**: FR-5 through FR-7 apply only to the long-lived operator-backed demo
    entry point. They MUST NOT add cert-manager, Reloader, or certificate lifecycle behavior to the
    short-lived FMC or Ginkgo "fleet"/"fullpipeline" suites.

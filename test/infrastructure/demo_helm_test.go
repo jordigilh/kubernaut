@@ -229,6 +229,7 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 
 		var renderedCR operatorCRManifest
 		Expect(yaml.Unmarshal([]byte(cr), &renderedCR)).To(Succeed())
+		Expect(renderedCR.Spec.DataStorage).To(BeNil())
 		Expect(renderedCR.Spec.Console).NotTo(BeNil())
 		Expect(renderedCR.Spec.Console.Auth).NotTo(BeNil())
 
@@ -276,5 +277,25 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 		Expect(cr).To(ContainSubstring("credentialsSecretRef: fleet-read"))
 		Expect(cr).To(ContainSubstring("oauth2CredentialsSecretRef: fleet-write"))
 		Expect(cr).NotTo(ContainSubstring("oauth2CredentialsSecretRef: fleet-read"))
+	})
+
+	It("UT-INFRA-2602-DATASTORAGE-005 [BR-PLATFORM-014]: fleet demo CR references the cert-manager signing Secret", func() {
+		fleet := &FleetHelmOptions{
+			MCPGatewayEndpoint:        "https://mcp-gateway.example.invalid/mcp",
+			MCPGatewayType:            "eaigw",
+			OAuth2TokenURL:            "https://keycloak.idp.svc/token",
+			OAuth2CredentialsSecret:   "fleet-read",
+			WEOAuth2CredentialsSecret: "fleet-write",
+		}
+		opts := DemoHelmOptions{Mode: DemoModeFleet, LLMProvider: "openai", LLMModel: "gpt-4o", LLMEndpoint: "https://api.example.invalid/v1"}
+		cr, err := BuildKubernautCRManifest(buildDemoOperatorCROptions(opts, fleet))
+		Expect(err).NotTo(HaveOccurred())
+
+		var renderedCR operatorCRManifest
+		Expect(yaml.Unmarshal([]byte(cr), &renderedCR)).To(Succeed())
+		Expect(renderedCR.Spec.DataStorage).NotTo(BeNil())
+		Expect(renderedCR.Spec.DataStorage.Audit).NotTo(BeNil())
+		Expect(renderedCR.Spec.DataStorage.Audit.SigningCertificate).NotTo(BeNil())
+		Expect(renderedCR.Spec.DataStorage.Audit.SigningCertificate.SecretName).To(Equal(operatorDataStorageSigningSecret))
 	})
 })

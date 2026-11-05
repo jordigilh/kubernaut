@@ -80,6 +80,7 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 	}
 	if fleetOpts != nil {
 		crOptions.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+		crOptions.DataStorage = OperatorDataStorageOptions{AuditSigningCertificateSecretName: operatorDataStorageSigningSecret}
 		crOptions.Monitoring.PrometheusURL = "https://thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local:9090"
 	}
 	return crOptions
@@ -198,9 +199,6 @@ func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploym
 	}
 	RememberOperatorExposure(config.KubeconfigPath, evidence)
 	if config.CR.Fleet != nil && config.CR.Fleet.Enabled {
-		if err := annotateDemoDataStorageCertificateReload(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
-			return fmt.Errorf("annotate demo DataStorage certificate reload: %w", err)
-		}
 		if err := annotateDemoEffectivenessMonitorCertificateReload(ctx, config.KubeconfigPath, config.Namespace, writer); err != nil {
 			return fmt.Errorf("annotate demo EffectivenessMonitor certificate reload: %w", err)
 		}

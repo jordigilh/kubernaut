@@ -143,7 +143,7 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		Expect(string(demoSource)).To(ContainSubstring("EnsureOperatorApplicationTLSForDemo("))
 	})
 
-	It("IT-INFRA-2602-RELOAD-004 [BR-PLATFORM-014]: annotates every certificate-consuming demo workload for renewal", func() {
+	It("IT-INFRA-2602-RELOAD-004 [BR-PLATFORM-014]: uses supported reload mechanisms for every certificate-consuming demo workload", func() {
 		alertManagerManifest := buildDemoAlertManagerManifest("monitoring", "kubernaut-system", "token")
 		expectValidYAMLDocuments(alertManagerManifest)
 		Expect(alertManagerManifest).To(ContainSubstring(`secret.reloader.stakater.com/reload: "monitoring-tls"`))
@@ -185,7 +185,7 @@ spec:`))
 		operatorTLSSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "operator_fleet_tls.go"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(operatorTLSSource)).To(ContainSubstring("buildCertificateReloadPatch("))
-		Expect(buildCertificateReloadPatch("datastorage-signing-cert")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"datastorage-signing-cert"}}}`))
+		Expect(string(operatorTLSSource)).NotTo(ContainSubstring("annotateDemoDataStorageCertificateReload"))
 		Expect(buildCertificateReloadPatch("monitoring-client-ca")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-client-ca"}}}`))
 		Expect(buildCertificateReloadPatch("monitoring-tls")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-tls"}}}`))
 		prometheusOperatorSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "prometheus_operator.go"))

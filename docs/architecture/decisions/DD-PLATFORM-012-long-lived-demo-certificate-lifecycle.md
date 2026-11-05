@@ -30,8 +30,11 @@ The demo SHALL use the following lifecycle:
    rollout mechanism. Reloader is used for workloads that need a pod-template change.
 5. Before the operator reconciles demo DataStorage, cert-manager creates its
    `datastorage-signing-cert` with RSA-2048, one-year validity, 30-day `renewBefore`, and explicit
-   `rotationPolicy: Always`. A renewal triggers a controlled DataStorage restart because the
-   service loads the signing certificate during process construction.
+   `rotationPolicy: Always`. The demo CR references this Secret through
+   `spec.dataStorage.audit.signingCertificate.secretName`; the operator hashes its resource
+   version into `kubernaut.ai/datastorage-signing-material-revision`, which triggers a controlled
+   DataStorage restart because the service loads the signing certificate during process
+   construction.
 
 ---
 
@@ -55,7 +58,8 @@ renewal controller or changing operator/service production code.
 - ✅ Uses the existing cert-manager dependency and its observable Certificate status.
 - ✅ Removes continuous cross-cluster leaf synchronization and gives hub/spoke independent renewal.
 - ✅ Keeps trust-root sharing explicit while limiting the issue to disposable demo infrastructure.
-- ✅ Handles startup-only DataStorage signing through a controlled Reloader restart.
+- ✅ Handles startup-only DataStorage signing through the operator's source-managed
+  `datastorage-signing-material-revision` rollout annotation.
 - ➖ The CA root is intentionally not rotated by this issue; root rotation is a separate lifecycle
   event.
 
@@ -95,7 +99,8 @@ renewal controller or changing operator/service production code.
   windows, `rotationPolicy`, trust projections, and reload annotations.
 - Provision the monitoring CA and per-cluster leaf Certificates before applying the operator CR.
 - Stop the demo path from overwriting the cert-manager-owned DataStorage Secret; retain the manual
-  generator for short-lived callers.
+  generator for short-lived callers. Configure the demo CR's signing Secret reference so the
+  operator owns the durable restart trigger.
 - Verify monitoring HTTPS after renewal, workload readiness, preservation of `web-config.yml`, and
   a successful DataStorage signed export after its renewal-triggered restart.
 - Reference this decision from the demo-only implementation comments and report short-lived suite

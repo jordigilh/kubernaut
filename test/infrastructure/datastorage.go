@@ -2134,24 +2134,6 @@ func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer 
 	return nil
 }
 
-// ApplyCertManagerIssuer creates the ClusterIssuer for self-signed certificate generation.
-// This is used by DataStorage Certificate resources to request TLS certificates.
-//
-// Creates:
-// - ClusterIssuer "selfsigned-issuer" (self-signed CA)
-//
-// Note: For production, this would be replaced with Let's Encrypt or organizational CA.
-//
-// Issue #1765: kubectl wait --for=condition=available on deployment/cert-manager-webhook
-// (in WaitForCertManagerReady) only proves the Deployment's own readiness probe passed --
-// it does NOT prove the webhook Service's Endpoints have propagated through kube-proxy/CNI,
-// nor that cainjector has finished injecting the CA bundle into the
-// ValidatingWebhookConfiguration/MutatingWebhookConfiguration. cert-manager's own webhook
-// troubleshooting guide (https://cert-manager.io/docs/troubleshooting/webhook/) documents
-// "connection refused" errors immediately after install as this exact transient race and
-// recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
-// used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
-// failing the whole SOC2 E2E suite on a one-shot apply.
 // waitForCertManagerRetry sleeps until the next retry or returns when ctx is canceled.
 func waitForCertManagerRetry(ctx context.Context, backoff time.Duration) error {
 	timer := time.NewTimer(backoff)
@@ -2194,6 +2176,13 @@ func applyCertManagerManifestWithRetry(ctx context.Context, kubeconfigPath strin
 	return fmt.Errorf("failed to apply %s after %d attempts: %w", description, maxRetries, lastErr)
 }
 
+// ApplyCertManagerIssuer creates the self-signed ClusterIssuer used by demo
+// DataStorage Certificate resources. For production, this would be replaced
+// with Let's Encrypt or an organizational CA.
+//
+// Issue #1765: cert-manager's webhook Service and cainjector may not be ready
+// immediately after their Deployments report available, so this function uses
+// bounded exponential-backoff retries instead of a one-shot apply.
 func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
 

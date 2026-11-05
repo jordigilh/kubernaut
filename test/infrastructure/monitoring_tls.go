@@ -337,23 +337,8 @@ func loadOrCreateDemoMonitoringCA(ctx context.Context, kubeconfigPath, monitorin
 		return nil, nil, nil, fmt.Errorf("read existing monitoring CA Secret: %w", err)
 	}
 	if len(bytes.TrimSpace(secretJSON)) > 0 {
-		var secret struct {
-			Data map[string]string `json:"data"`
-		}
-		if err := json.Unmarshal(secretJSON, &secret); err != nil {
-			_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret is not valid JSON; replacing it: %v\n", err)
-		} else {
-			certificatePEM, certificateErr := base64.StdEncoding.DecodeString(strings.TrimSpace(secret.Data["tls.crt"]))
-			keyPEM, keyErr := base64.StdEncoding.DecodeString(strings.TrimSpace(secret.Data["tls.key"]))
-			if certificateErr == nil && keyErr == nil {
-				caCert, parseErr := parseMonitoringCACertificate(certificatePEM, keyPEM)
-				if parseErr == nil {
-					return certificatePEM, keyPEM, caCert, nil
-				}
-				_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret is stale or invalid; replacing it: %v\n", parseErr)
-			} else {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret has invalid key material; replacing it: certificate=%v key=%v\n", certificateErr, keyErr)
-			}
+		if certificatePEM, keyPEM, caCert, ok := reuseDemoMonitoringCA(secretJSON, writer); ok {
+			return certificatePEM, keyPEM, caCert, nil
 		}
 	}
 
@@ -370,6 +355,32 @@ func loadOrCreateDemoMonitoringCA(ctx context.Context, kubeconfigPath, monitorin
 		return nil, nil, nil, fmt.Errorf("apply generated monitoring CA Secret: %w", err)
 	}
 	return ca.certificatePEM, keyPEM, ca.certificate, nil
+}
+
+// reuseDemoMonitoringCA validates and returns existing shared CA material when
+// it remains suitable for the long-lived demo; invalid material is rejected.
+func reuseDemoMonitoringCA(secretJSON []byte, writer io.Writer) ([]byte, []byte, *x509.Certificate, bool) {
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(secretJSON, &secret); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret is not valid JSON; replacing it: %v\n", err)
+		return nil, nil, nil, false
+	}
+
+	certificatePEM, certificateErr := base64.StdEncoding.DecodeString(strings.TrimSpace(secret.Data["tls.crt"]))
+	keyPEM, keyErr := base64.StdEncoding.DecodeString(strings.TrimSpace(secret.Data["tls.key"]))
+	if certificateErr != nil || keyErr != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret has invalid key material; replacing it: certificate=%v key=%v\n", certificateErr, keyErr)
+		return nil, nil, nil, false
+	}
+
+	caCert, err := parseMonitoringCACertificate(certificatePEM, keyPEM)
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  existing monitoring CA Secret is stale or invalid; replacing it: %v\n", err)
+		return nil, nil, nil, false
+	}
+	return certificatePEM, keyPEM, caCert, true
 }
 
 func parseMonitoringCACertificate(certificatePEM, keyPEM []byte) (*x509.Certificate, error) {
