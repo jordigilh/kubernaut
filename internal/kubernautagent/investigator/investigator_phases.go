@@ -434,6 +434,7 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 //
 // LLM target handling:
 //   - Kind == "" or same as root: override with K8s-verified root identity
+//     and authoritative apiVersion
 //   - Different Kind (cross-type): preserve the LLM's target
 func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
@@ -442,30 +443,29 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	rootKind := signal.ResourceKind
 	rootName := signal.ResourceName
 	rootNS := signal.Namespace
+	rootAPIVersion := signal.ResourceAPIVersion
 	if enrichData != nil && len(enrichData.OwnerChain) > 0 {
 		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
 		rootKind = root.Kind
 		rootName = root.Name
 		rootNS = root.Namespace
+		rootAPIVersion = root.APIVersion
 	} else if enrichData != nil && enrichData.ResourceKind != "" {
 		rootKind = enrichData.ResourceKind
 		rootName = enrichData.ResourceName
 		rootNS = enrichData.ResourceNamespace
+		// Enrichment source identity is authoritative for the target identity,
+		// but it carries no API version. Do not retain an unverified model value.
+		rootAPIVersion = ""
 	}
 
 	llmKind := result.RemediationTarget.Kind
-	llmAPIVersion := result.RemediationTarget.APIVersion
 	if llmKind == "" || llmKind == rootKind {
-		// Same kind as root: preserve LLM's apiVersion (same kind = same API group). #1040
-		apiVersion := llmAPIVersion
-		if apiVersion == "" && enrichData != nil && len(enrichData.OwnerChain) > 0 {
-			apiVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
-		}
 		result.RemediationTarget = katypes.RemediationTarget{
 			Kind:       rootKind,
 			Name:       rootName,
 			Namespace:  rootNS,
-			APIVersion: apiVersion,
+			APIVersion: rootAPIVersion,
 		}
 		return
 	}
@@ -476,11 +476,6 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	// the LLM's target when its kind is genuinely cross-type (not in
 	// the owner chain at all, e.g. Node vs Deployment).
 	if enrichData != nil && isKindInOwnerChain(llmKind, signal.ResourceKind, enrichData.OwnerChain) {
-		// Use root owner's APIVersion from the chain if available. #1040
-		rootAPIVersion := ""
-		if len(enrichData.OwnerChain) > 0 {
-			rootAPIVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
-		}
 		result.RemediationTarget = katypes.RemediationTarget{
 			Kind:       rootKind,
 			Name:       rootName,

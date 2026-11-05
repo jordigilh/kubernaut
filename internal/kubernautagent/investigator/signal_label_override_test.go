@@ -954,9 +954,10 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 				},
 			}
 			signal := katypes.SignalContext{
-				ResourceKind: "Deployment",
-				ResourceName: "api-server",
-				Namespace:    "production",
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				Namespace:          "production",
+				ResourceAPIVersion: "apps/v1",
 			}
 			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
 			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"))
