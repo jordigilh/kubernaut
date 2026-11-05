@@ -151,7 +151,29 @@ func deployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath stri
 		"statefulset/"+options.statefulSetName, "-n", namespace, "--timeout=180s"); err != nil {
 		return fmt.Errorf("managed Prometheus rollout failed: %w", err)
 	}
+	if options.reloadOnSecretChange {
+		if err := annotateManagedPrometheusCertificateReload(ctx, kubeconfigPath, namespace, options.statefulSetName, writer); err != nil {
+			return fmt.Errorf("annotate managed Prometheus certificate reload: %w", err)
+		}
+	}
 	_, _ = fmt.Fprintf(writer, "  operator-managed %s ready (cluster=%s, NodePort %d)\n", component, options.clusterLabel, PrometheusNodePort)
+	return nil
+}
+
+// annotateManagedPrometheusCertificateReload adds the Reloader annotation to
+// the operator-created StatefulSet after reconciliation. Prometheus is a CRD,
+// while Reloader matches supported workload metadata (BR-PLATFORM-014,
+// DD-PLATFORM-012).
+func annotateManagedPrometheusCertificateReload(ctx context.Context, kubeconfigPath, namespace, statefulSetName string, writer io.Writer) error {
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"patch", "statefulset/"+statefulSetName,
+		"-n", namespace,
+		"--type=merge",
+		"-p", buildCertificateReloadPatch(monitoringTLSSecretName),
+	); err != nil {
+		return fmt.Errorf("patch Prometheus StatefulSet reload annotation: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Prometheus will restart when cert-manager renews monitoring-tls")
 	return nil
 }
 
@@ -239,7 +261,6 @@ subsets:
 		thanosConfig = fmt.Sprintf("  thanos:\n    image: %s\n", ThanosImage)
 	}
 	prometheusWebConfig := ""
-	prometheusPodAnnotations := ""
 	prometheusServicePortName := "http"
 	alertManagerTLSConfig := ""
 	if options.tlsEnabled {
@@ -254,11 +275,6 @@ subsets:
         name: monitoring-tls
         key: tls.key
 `
-		if options.reloadOnSecretChange {
-			prometheusPodAnnotations = `    annotations:
-      secret.reloader.stakater.com/reload: "monitoring-tls"
-`
-		}
 		alertManagerTLSConfig = `
         scheme: https
         tlsConfig:
@@ -414,7 +430,7 @@ spec:
   replicas: 1
   serviceAccountName: prometheus
   podMetadata:
-%[13]s    labels:
+    labels:
       app: prometheus
   externalLabels:
     cluster: %[4]s
@@ -440,5 +456,5 @@ spec:
         namespace: %[1]s
         port: %[9]s
 %[11]s
-%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, prometheusServicePortName, alertManagerTLSConfig, prometheusWebConfig, prometheusPodAnnotations), nil
+%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, prometheusServicePortName, alertManagerTLSConfig, prometheusWebConfig), nil
 }

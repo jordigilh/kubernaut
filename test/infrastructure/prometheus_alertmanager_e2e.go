@@ -722,9 +722,8 @@ func buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayTo
           secretName: monitoring-web-config`
 		}
 		if options.reloadSecretName != "" {
-			monitoringReloadAnnotation = `
-      annotations:
-        secret.reloader.stakater.com/reload: "` + options.reloadSecretName + `"
+			monitoringReloadAnnotation = `  annotations:
+    secret.reloader.stakater.com/reload: "` + options.reloadSecretName + `"
 `
 		}
 		// Operator-managed Gateway serves the application webhook on its
@@ -788,14 +787,14 @@ metadata:
   namespace: %[1]s
   labels:
     app: alertmanager
-spec:
+%[10]sspec:
   replicas: 1
   selector:
     matchLabels:
       app: alertmanager
   template:
     metadata:
-%[10]s      labels:
+      labels:
         app: alertmanager
     spec:
       containers:

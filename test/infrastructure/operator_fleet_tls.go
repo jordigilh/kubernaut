@@ -184,18 +184,19 @@ data:
 }
 
 // annotateDemoDataStorageCertificateReload adds the Reloader annotation to the
-// operator-generated pod template after reconciliation. DataStorage loads its
+// operator-generated Deployment after reconciliation. DataStorage loads its
 // signer during process construction, so a Secret volume update alone is not
 // sufficient (BR-PLATFORM-014, DD-PLATFORM-012).
 func annotateDemoDataStorageCertificateReload(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	const patch = `{"spec":{"template":{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"datastorage-signing-cert"}}}}}`
+	const secretName = "datastorage-signing-cert"
+	patch := buildCertificateReloadPatch(secretName)
 	if err := runKubectl(ctx, kubeconfigPath, writer,
 		"patch", "deployment/data-storage",
 		"-n", namespace,
 		"--type=merge",
 		"-p", patch,
 	); err != nil {
-		return fmt.Errorf("patch DataStorage pod template reload annotation: %w", err)
+		return fmt.Errorf("patch DataStorage reload annotation: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage will restart when cert-manager renews datastorage-signing-cert")
 	return nil
@@ -226,7 +227,8 @@ func annotateDemoEffectivenessMonitorCertificateReload(ctx context.Context, kube
 		return fmt.Errorf("no operator effectivenessmonitor deployment found for selector %q", selector)
 	}
 
-	const patch = `{"spec":{"template":{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-client-ca"}}}}}`
+	const secretName = "monitoring-client-ca"
+	patch := buildCertificateReloadPatch(secretName)
 	for _, deployment := range payload.Items {
 		if strings.TrimSpace(deployment.Metadata.Name) == "" {
 			return errors.New("operator effectivenessmonitor deployment has no name")
@@ -242,6 +244,10 @@ func annotateDemoEffectivenessMonitorCertificateReload(ctx context.Context, kube
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ EffectivenessMonitor will restart when the demo monitoring CA Secret changes")
 	return nil
+}
+
+func buildCertificateReloadPatch(secretName string) string {
+	return fmt.Sprintf(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"%s"}}}`, secretName)
 }
 
 // BuildOperatorTLSTrustBundleManifest publishes the administrator-prepared

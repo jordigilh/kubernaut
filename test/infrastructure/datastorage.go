@@ -2152,6 +2152,18 @@ func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer 
 // recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
 // used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
 // failing the whole SOC2 E2E suite on a one-shot apply.
+func waitForCertManagerRetry(ctx context.Context, backoff time.Duration) error {
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
 
@@ -2183,7 +2195,9 @@ func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer i
 				backoff := time.Duration(attempt) * 3 * time.Second // 3s, 6s, 9s... capped total ~108s
 				_, _ = fmt.Fprintf(writer, "   ⚠️  ClusterIssuer apply failed (attempt %d/%d, likely webhook endpoint not yet propagated), retrying in %v: %v\n",
 					attempt, maxRetries, backoff, err)
-				time.Sleep(backoff)
+				if waitErr := waitForCertManagerRetry(ctx, backoff); waitErr != nil {
+					return fmt.Errorf("wait for ClusterIssuer retry: %w", waitErr)
+				}
 			}
 			continue
 		}

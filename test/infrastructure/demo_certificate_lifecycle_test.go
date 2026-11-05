@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
@@ -100,6 +101,16 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		shortKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: shortKeyDER})
 		_, err = parseMonitoringCACertificate(shortLivedCA.certificatePEM, shortKeyPEM)
 		Expect(err).To(MatchError(ContainSubstring("validity")))
+
+		nearExpiryNow := ca.certificate.NotAfter.Add(-monitoringCAMinRemaining + time.Hour)
+		Expect(validateMonitoringCACertificateAt(ca.certificate, nearExpiryNow)).To(MatchError(ContainSubstring("too close to expiry")))
+	})
+
+	It("UT-INFRA-2602-DATASTORAGE-004 [BR-PLATFORM-014]: cancels a cert-manager issuer retry backoff", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		Expect(waitForCertManagerRetry(ctx, time.Hour)).To(MatchError(context.Canceled))
 	})
 
 	It("UT-INFRA-2602-DATASTORAGE-003 [BR-PLATFORM-014]: renders the approved RSA signing Certificate contract", func() {
@@ -133,6 +144,12 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		alertManagerManifest := buildDemoAlertManagerManifest("monitoring", "kubernaut-system", "token")
 		expectValidYAMLDocuments(alertManagerManifest)
 		Expect(alertManagerManifest).To(ContainSubstring(`secret.reloader.stakater.com/reload: "monitoring-tls"`))
+		Expect(alertManagerManifest).To(ContainSubstring(`  labels:
+    app: alertmanager
+  annotations:
+    secret.reloader.stakater.com/reload: "monitoring-tls"
+spec:`))
+		Expect(alertManagerManifest).NotTo(ContainSubstring("template:\n    metadata:\n      annotations:"))
 		Expect(alertManagerManifest).To(ContainSubstring("name: monitoring-web-config"))
 		Expect(alertManagerManifest).To(ContainSubstring("--web.config.file=/etc/monitoring-web-config/web-config.yml"))
 		Expect(alertManagerManifest).To(ContainSubstring("mountPath: /etc/monitoring-web-config"))
@@ -151,14 +168,26 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		expectValidYAMLDocuments(prometheusManifest)
-		Expect(prometheusManifest).To(ContainSubstring(`secret.reloader.stakater.com/reload: "monitoring-tls"`))
+		Expect(prometheusManifest).NotTo(ContainSubstring(`secret.reloader.stakater.com/reload: "monitoring-tls"`))
+		Expect(prometheusManifest).NotTo(ContainSubstring("podMetadata:\n    annotations:"))
 
 		demoSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "demo_operator.go"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(demoSource)).To(ContainSubstring("annotateDemoEffectivenessMonitorCertificateReload"))
+		keycloakSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "keycloak_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(keycloakSource)).To(ContainSubstring("  namespace: %[2]s\n%[4]sspec:"))
+		Expect(string(keycloakSource)).To(ContainSubstring("app: keycloak\n"))
+		Expect(string(keycloakSource)).NotTo(ContainSubstring("app: keycloak%[4]s"))
 		operatorTLSSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "operator_fleet_tls.go"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(operatorTLSSource)).To(ContainSubstring(`secret.reloader.stakater.com/reload":"monitoring-client-ca"`))
+		Expect(string(operatorTLSSource)).To(ContainSubstring("buildCertificateReloadPatch("))
+		Expect(buildCertificateReloadPatch("datastorage-signing-cert")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"datastorage-signing-cert"}}}`))
+		Expect(buildCertificateReloadPatch("monitoring-client-ca")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-client-ca"}}}`))
+		Expect(buildCertificateReloadPatch("monitoring-tls")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-tls"}}}`))
+		prometheusOperatorSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "prometheus_operator.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(prometheusOperatorSource)).To(ContainSubstring("annotateManagedPrometheusCertificateReload"))
 
 		effectivenessSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "effectivenessmonitor_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())
@@ -167,6 +196,12 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		thanosSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "thanos_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(thanosSource)).To(ContainSubstring("--http.config=/etc/monitoring-web-config/web-config.yml"))
+		Expect(string(thanosSource)).To(ContainSubstring(`  labels:
+    app: thanos-querier
+  annotations:
+    secret.reloader.stakater.com/reload: "monitoring-tls"
+spec:`))
+		Expect(string(thanosSource)).NotTo(ContainSubstring("template:\n    metadata:\n      annotations:"))
 		Expect(string(thanosSource)).To(ContainSubstring("mountPath: /etc/monitoring-web-config"))
 		Expect(string(thanosSource)).NotTo(ContainSubstring("mountPath: /etc/monitoring-tls/web-config.yml"))
 	})

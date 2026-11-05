@@ -33,7 +33,7 @@ const (
 	monitoringCAIssuerSecretName  = "monitoring-ca-issuer"
 	monitoringCAIssuerName        = "monitoring-ca-issuer"
 	monitoringCAMinLifetime       = 364 * 24 * time.Hour
-	monitoringCAMinRemaining      = time.Hour
+	monitoringCAMinRemaining      = monitoringCAMinLifetime
 )
 
 // MonitoringCAPath returns the host-side trust path for the monitoring CA.
@@ -400,6 +400,10 @@ func parseMonitoringCACertificatePEM(certificatePEM []byte) (*x509.Certificate, 
 }
 
 func validateMonitoringCACertificate(certificate *x509.Certificate) error {
+	return validateMonitoringCACertificateAt(certificate, time.Now())
+}
+
+func validateMonitoringCACertificateAt(certificate *x509.Certificate, now time.Time) error {
 	if !certificate.IsCA || !certificate.BasicConstraintsValid {
 		return errors.New("monitoring CA certificate lacks valid CA constraints")
 	}
@@ -409,7 +413,7 @@ func validateMonitoringCACertificate(certificate *x509.Certificate) error {
 	if certificate.NotAfter.Before(certificate.NotBefore.Add(monitoringCAMinLifetime)) {
 		return errors.New("monitoring CA certificate validity is shorter than one year")
 	}
-	if time.Now().Add(monitoringCAMinRemaining).After(certificate.NotAfter) {
+	if now.Add(monitoringCAMinRemaining).After(certificate.NotAfter) {
 		return errors.New("monitoring CA certificate is expired or too close to expiry")
 	}
 	if err := certificate.CheckSignatureFrom(certificate); err != nil {

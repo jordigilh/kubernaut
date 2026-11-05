@@ -284,6 +284,8 @@ metadata:
   namespace: %[1]s
   labels:
     app: thanos-querier
+  annotations:
+    secret.reloader.stakater.com/reload: "monitoring-tls"
 spec:
   replicas: 1
   selector:
@@ -291,8 +293,6 @@ spec:
       app: thanos-querier
   template:
     metadata:
-      annotations:
-        secret.reloader.stakater.com/reload: "monitoring-tls"
       labels:
         app: thanos-querier
     spec:
