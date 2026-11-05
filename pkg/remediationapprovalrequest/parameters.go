@@ -38,20 +38,36 @@ func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpe
 	if err := ValidateSnapshotPresence(spec); err != nil {
 		return err
 	}
-	effective := make(map[string]string, len(spec.Parameters))
-	for name, value := range spec.Parameters {
+	effective, err := mergeParameterChanges(spec.Parameters, changes)
+	if err != nil {
+		return err
+	}
+	schema, err := buildValidationSchema(spec, effective)
+	if err != nil {
+		return err
+	}
+	return models.ValidateParameterSet(schema, effective)
+}
+
+func mergeParameterChanges(original, changes map[string]string) (map[string]string, error) {
+	effective := make(map[string]string, len(original))
+	for name, value := range original {
 		effective[name] = value
 	}
 	for name, value := range changes {
-		original, exists := effective[name]
+		originalValue, exists := effective[name]
 		if !exists {
-			return fmt.Errorf("parameter %q is absent from original parameters", name)
+			return nil, fmt.Errorf("parameter %q is absent from original parameters", name)
 		}
-		if isManagedTargetParameter(name) && value != original {
-			return fmt.Errorf("parameter %q is locked", name)
+		if isManagedTargetParameter(name) && value != originalValue {
+			return nil, fmt.Errorf("parameter %q is locked", name)
 		}
 		effective[name] = value
 	}
+	return effective, nil
+}
+
+func buildValidationSchema(spec *remediationv1.RemediationApprovalRequestSpec, effective map[string]string) ([]models.WorkflowParameter, error) {
 	schema := make([]models.WorkflowParameter, 0, len(spec.ParameterSchema))
 	declaredParameterCount := 0
 	for name := range spec.Workflow.DeclaredParameterNames {
@@ -66,7 +82,7 @@ func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpe
 		}
 		schemaParameterCount++
 		if !spec.Workflow.DeclaredParameterNames[parameter.Name] {
-			return fmt.Errorf("parameter %q is not declared for execution", parameter.Name)
+			return nil, fmt.Errorf("parameter %q is not declared for execution", parameter.Name)
 		}
 		schema = append(schema, models.WorkflowParameter{
 			Name: parameter.Name, Type: parameter.Type, Required: parameter.Required,
@@ -75,14 +91,28 @@ func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpe
 		})
 	}
 	if declaredParameterCount != schemaParameterCount {
-		return fmt.Errorf("parameter declarations do not match the approval schema")
+		return nil, fmt.Errorf("parameter declarations do not match the approval schema")
 	}
+	managedNames := make(map[string]struct{})
 	for name := range effective {
 		if isManagedTargetParameter(name) {
-			delete(effective, name)
+			managedNames[name] = struct{}{}
 		}
 	}
-	return models.ValidateParameterSet(schema, effective)
+	for _, parameter := range schema {
+		for _, dependency := range parameter.DependsOn {
+			if isManagedTargetParameter(dependency) {
+				managedNames[dependency] = struct{}{}
+			}
+		}
+	}
+	// Keep managed target values visible only for dependency presence checks.
+	// Synthetic unconstrained declarations prevent the shared validator from
+	// rejecting injected keys as undeclared workflow parameters.
+	for name := range managedNames {
+		schema = append(schema, models.WorkflowParameter{Name: name, Type: "string"})
+	}
+	return schema, nil
 }
 
 func isManagedTargetParameter(name string) bool {

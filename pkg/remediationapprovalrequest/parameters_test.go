@@ -45,4 +45,40 @@ var _ = Describe("RemediationApprovalRequest parameter validation", func() {
 
 		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, nil)).To(Succeed())
 	})
+
+	It("UT-AW-2570-101: BR-KA-191 accepts an original parameter depending on an injected target value", func() {
+		spec := managedDependencySpec()
+
+		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, nil)).To(Succeed())
+	})
+
+	It("UT-AW-2570-102: BR-KA-191 accepts an override when its dependency is an injected target value", func() {
+		spec := managedDependencySpec()
+
+		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, map[string]string{
+			"MEMORY_LIMIT_NEW": "1Gi",
+		})).To(Succeed())
+	})
 })
+
+func managedDependencySpec() *remediationv1.RemediationApprovalRequestSpec {
+	return &remediationv1.RemediationApprovalRequestSpec{
+		Workflow: &sharedtypes.WorkflowSnapshot{
+			WorkflowID:             "wf-managed-dependency",
+			DeclaredParameterNames: map[string]bool{"MEMORY_LIMIT_NEW": true},
+		},
+		Parameters: map[string]string{
+			"MEMORY_LIMIT_NEW":     "512Mi",
+			"TARGET_RESOURCE_KIND": "Deployment",
+		},
+		ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{
+			{
+				Name:      "MEMORY_LIMIT_NEW",
+				Type:      "string",
+				Required:  true,
+				DependsOn: []string{"TARGET_RESOURCE_KIND"},
+			},
+		},
+		TargetContext: &remediationv1.ApprovalTargetContext{},
+	}
+}
