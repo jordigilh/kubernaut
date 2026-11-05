@@ -29,6 +29,12 @@ import (
 )
 
 var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
+	It("UT-INFRA-2602-ROOT-006 [BR-PLATFORM-014]: resolves the repository root from the working directory before a trimmed caller path", func() {
+		root := getProjectRoot()
+		resolved := projectRootFrom(root, "/test/infrastructure/shared_integration_utils.go")
+		Expect(resolved).To(Equal(root))
+	})
+
 	It("UT-INFRA-2602-MONITORING-001 [BR-PLATFORM-014]: keeps the shared demo monitoring CA valid for at least one year", func() {
 		ca, err := generateMonitoringCAWithValidity(365 * 24 * time.Hour)
 		Expect(err).NotTo(HaveOccurred())
