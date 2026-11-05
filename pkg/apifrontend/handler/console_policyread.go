@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +56,7 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	state := inventory.StateUnavailable
 	ctx := policyread.WithAuditBoundary(r.Context())
 	ctx = policyread.WithRequestID(ctx, requestid.FromContext(r.Context()))
+	r = r.WithContext(ctx)
 	defer func() {
 		if eventType != "" {
 			h.service.EmitReadAudit(ctx, user, eventType, filters, resourceID, state)
@@ -71,7 +71,7 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		state = h.servePolicyScope(w, r, ctx, user, filters)
+		state = h.servePolicyScope(w, r, user, filters)
 	case r.URL.Path == consoleInventoryListPath:
 		var err error
 		filters, err = parseConsoleFilters(r, false)
@@ -79,7 +79,7 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		state = h.serveInventoryList(w, r, ctx, user, filters)
+		state = h.serveInventoryList(w, r, user, filters)
 	case r.PathValue("resourceID") != "":
 		var err error
 		filters, err = parseConsoleFilters(r, true)
@@ -87,14 +87,14 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		state = h.serveInventoryGet(w, r, ctx, user, filters, resourceID)
+		state = h.serveInventoryGet(w, r, user, filters, resourceID)
 	default:
 		h.writeProblem(w, r, http.StatusNotFound, "Not Found", "Console read route not found")
 	}
 }
 
-func (h *ConsolePolicyReadHandler) servePolicyScope(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
-	result, err := h.service.ListPolicyScope(ctx, user, filters)
+func (h *ConsolePolicyReadHandler) servePolicyScope(w http.ResponseWriter, r *http.Request, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
+	result, err := h.service.ListPolicyScope(r.Context(), user, filters)
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)
@@ -102,8 +102,8 @@ func (h *ConsolePolicyReadHandler) servePolicyScope(w http.ResponseWriter, r *ht
 	return h.writeJSON(w, r, http.StatusOK, result, result.State)
 }
 
-func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
-	result, err := h.service.ListInventory(ctx, user, filters)
+func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *http.Request, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
+	result, err := h.service.ListInventory(r.Context(), user, filters)
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)
@@ -118,8 +118,8 @@ func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *
 	}, result.State)
 }
 
-func (h *ConsolePolicyReadHandler) serveInventoryGet(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters, resourceID string) inventory.State {
-	result, err := h.service.GetInventory(ctx, user, filters, resourceID)
+func (h *ConsolePolicyReadHandler) serveInventoryGet(w http.ResponseWriter, r *http.Request, user *auth.UserIdentity, filters inventory.Filters, resourceID string) inventory.State {
+	result, err := h.service.GetInventory(r.Context(), user, filters, resourceID)
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)

@@ -46,8 +46,9 @@ var _ = Describe("BR-API-001 / BR-SCOPE-001: production AF router local projecti
 		})
 		Expect(err).NotTo(HaveOccurred())
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
-			LocalInventory: localReader,
-			Authorizer:     interimRouterAuthorizer{},
+			LocalInventory:  localReader,
+			CurrentPolicies: &consoleCurrentPolicyStub{},
+			Authorizer:      interimRouterAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
 

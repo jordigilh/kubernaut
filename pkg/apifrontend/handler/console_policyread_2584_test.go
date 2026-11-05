@@ -223,7 +223,11 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {
-	service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: reader, Authorizer: authorizer})
+	service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+		LocalInventory:  reader,
+		CurrentPolicies: &consoleCurrentPolicyStub{},
+		Authorizer:      authorizer,
+	})
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	return handler.NewConsolePolicyReadHandler(service, logrDiscard())
 }
@@ -253,6 +257,17 @@ type consoleInventoryStub struct {
 	resource  inventory.Resource
 	listCalls int
 	getCalls  int
+}
+
+type consoleCurrentPolicyStub struct{}
+
+func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
+	return []policyread.PolicyMetadata{{
+		Type:         "aiAnalysis",
+		ConfigMapName: "aianalysis-policy",
+		ConfigMapKey:  "approval.rego",
+		Revision:     "sha256:ai",
+	}}, nil
 }
 
 func (s *consoleInventoryStub) List(context.Context, inventory.Filters) (inventory.Page, error) {

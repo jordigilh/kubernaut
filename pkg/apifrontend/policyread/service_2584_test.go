@@ -52,6 +52,16 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.State).To(Equal(inventory.StateEmpty))
 		Expect(result.Items).To(BeEmpty())
 	})
+	It("UT-AF-2584-POLICY-EMPTY-001 [BR-AI-085]: fails closed when policy metadata is unavailable for an empty inventory", func() {
+		page := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete}
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: &inventoryStub{page: page}, Authorizer: allowAuthorizer{}})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"})
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(result.State).To(Equal(inventory.StateUnavailable))
+	})
 	It("IT-AF-2592-EMPTY-001 [BR-SECURITY-016]: reports unavailable when the production ACM scope check cannot verify an exact target", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			if _, err := io.WriteString(w, `{"data":{"searchResult":[{"count":0,"items":[]}]}}`); err != nil {

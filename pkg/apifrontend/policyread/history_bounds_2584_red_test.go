@@ -52,8 +52,11 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 		history := &streamingHistoryStub{streamErr: errors.New("history page unavailable")}
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete, Items: []inventory.Resource{{ID: "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Name: "checkout", Scope: inventory.Scope{Included: true}}}}},
-			History:        history,
-			Authorizer:     allowAuthorizer{},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
+			}},
+			History:    history,
+			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -61,6 +64,7 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(history.streamCalls).To(BeNumerically(">", 0))
 	})
 })
 

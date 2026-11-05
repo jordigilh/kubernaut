@@ -190,14 +190,14 @@ func (s *Service) ListPolicyScope(ctx context.Context, user *auth.UserIdentity, 
 		Completeness: page.Completeness,
 		NextCursor:   page.NextCursor,
 	}
-	if page.State == inventory.StateEmpty {
-		return result, nil
-	}
 
 	policies, err := s.readCurrentPolicies(guardCtx)
 	if err != nil {
 		state = inventory.StateUnavailable
 		return stateOnlyPolicyPage(state), stateError(state, err)
+	}
+	if page.State == inventory.StateEmpty {
+		return result, nil
 	}
 	history, err := s.readHistory(guardCtx, page.Items)
 	if err != nil {
