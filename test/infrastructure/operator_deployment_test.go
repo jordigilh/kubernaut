@@ -56,7 +56,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(operatorRevision).To(Equal("bbeba743627af654df848f37074d0d9f2a351655"))
+		Expect(operatorRevision).To(Equal("ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906"))
 		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
@@ -180,11 +180,11 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "bbeba743627af654df848f37074d0d9f2a351655",
-			ResolvedSHA:   "bbeba743627af654df848f37074d0d9f2a351655",
+			RequestedRef:  "ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906",
+			ResolvedSHA:   "ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "bbeba743627af654df848f37074d0d9f2a351655",
+			ChartRevision: "ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -192,7 +192,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "bbeba743627af654df848f37074d0d9f2a351655"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
@@ -323,7 +323,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(manifest).To(ContainSubstring("secretName: postgresql-secret"))
 		Expect(manifest).To(ContainSubstring("configMapName: aianalysis-policy"))
 		Expect(manifest).To(ContainSubstring("configMapName: signalprocessing-policy"))
-		Expect(manifest).To(ContainSubstring("confidenceThreshold: \"0.85\""))
+		Expect(manifest).To(ContainSubstring("confidenceThreshold: 0.85"))
 		Expect(manifest).To(ContainSubstring("provider: openai"))
 		Expect(manifest).To(ContainSubstring("kubernautAgent:"))
 		Expect(manifest).To(MatchRegexp(`(?m)^\s+apiFrontend:\s*\n\s+enabled: true\s`))
@@ -362,13 +362,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		}
 	})
 
-	It("UT-AF-2584-INFRA-003 [BR-AI-088]: preserves a valid confidence threshold string in the CR", func() {
+	It("UT-AF-2584-INFRA-003 [BR-AI-088]: renders a valid confidence threshold numerically in the CR", func() {
 		options := testOperatorCROptions()
 		options.AIAnalysisConfidenceThreshold = "0.850"
 
 		manifest, err := BuildKubernautCRManifest(options)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(manifest).To(ContainSubstring(`confidenceThreshold: "0.850"`))
+		Expect(manifest).To(ContainSubstring("confidenceThreshold: 0.85"))
+		Expect(manifest).NotTo(ContainSubstring(`confidenceThreshold: "0.850"`))
 	})
 
 	It("UT-2492-007B [BR-PLATFORM-014]: explicitly enables API Frontend when the demo requests it", func() {

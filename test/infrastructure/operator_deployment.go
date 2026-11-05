@@ -53,7 +53,7 @@ const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision             = "bbeba743627af654df848f37074d0d9f2a351655"
+	operatorRevision             = "ad80481c3fb7cd1ea3c9d29c26b3d9a36a360906"
 	operatorRepository           = "jordigilh/kubernaut-operator"
 	applicationNamespace         = "kubernaut-system"
 	operatorNamespace            = "kubernaut-operator-system"
@@ -452,7 +452,7 @@ type operatorValkeyTLS struct {
 
 type operatorPolicySpec struct {
 	Policy              operatorPolicyRef `yaml:"policy"`
-	ConfidenceThreshold string            `yaml:"confidenceThreshold,omitempty"`
+	ConfidenceThreshold float64           `yaml:"confidenceThreshold,omitempty"`
 }
 
 type operatorPolicyRef struct {
@@ -656,11 +656,15 @@ func BuildKubernautCRManifest(options OperatorCROptions) (string, error) {
 		audience = "kubernaut-apifrontend"
 	}
 
+	spec, err := buildOperatorCRSpec(options, audience)
+	if err != nil {
+		return "", err
+	}
 	cr := operatorCRManifest{
 		APIVersion: operatorCRAPIVersion,
 		Kind:       "Kubernaut",
 		Metadata:   operatorMetadata{Name: options.Name, Namespace: options.Namespace},
-		Spec:       buildOperatorCRSpec(options, audience),
+		Spec:       spec,
 	}
 	if err := applyOperatorCRFeatureOverrides(&cr.Spec, options); err != nil {
 		return "", err
@@ -704,15 +708,20 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 }
 
 func validateOperatorAIAnalysisConfidenceThreshold(threshold string) error {
+	_, err := parseOperatorAIAnalysisConfidenceThreshold(threshold)
+	return err
+}
+
+func parseOperatorAIAnalysisConfidenceThreshold(threshold string) (float64, error) {
 	trimmed := strings.TrimSpace(threshold)
 	if trimmed == "" {
-		return errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
+		return 0, errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
 	}
 	value, err := strconv.ParseFloat(trimmed, 64)
 	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
-		return fmt.Errorf("kubernaut CR requires confidence threshold in (0, 1], got %q", threshold)
+		return 0, fmt.Errorf("kubernaut CR requires confidence threshold in (0, 1], got %q", threshold)
 	}
-	return nil
+	return value, nil
 }
 
 func validateOperatorLLMProfile(profile OperatorLLMOptions) error {
@@ -722,12 +731,16 @@ func validateOperatorLLMProfile(profile OperatorLLMOptions) error {
 	return nil
 }
 
-func buildOperatorCRSpec(options OperatorCROptions, audience string) operatorCRSpec {
+func buildOperatorCRSpec(options OperatorCROptions, audience string) (operatorCRSpec, error) {
+	confidenceThreshold, err := parseOperatorAIAnalysisConfidenceThreshold(options.AIAnalysisConfidenceThreshold)
+	if err != nil {
+		return operatorCRSpec{}, err
+	}
 	return operatorCRSpec{
 		Image:            operatorImageSpec{Overrides: options.ImageOverrides},
 		PostgreSQL:       operatorPostgreSQLSpec{Host: options.PostgreSQLHost, SecretName: options.PostgreSQLSecret, SSLMode: options.PostgreSQLSSLMode},
 		Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret, TLS: operatorValkeyTLSManifest(options.ValkeyTLS)},
-		AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}, ConfidenceThreshold: options.AIAnalysisConfidenceThreshold},
+		AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}, ConfidenceThreshold: confidenceThreshold},
 		SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
 		LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
 		KubernautAgent:   operatorAgentSpec{},
@@ -737,7 +750,7 @@ func buildOperatorCRSpec(options OperatorCROptions, audience string) operatorCRS
 		Monitoring:       operatorMonitoringSpecFor(options),
 		NetworkPolicies:  operatorNetworkPoliciesSpecFor(options),
 		TLS:              operatorTLSManifestFor(options),
-	}
+	}, nil
 }
 
 // operatorDataStorageSpecFor renders the optional administrator-selected audit
