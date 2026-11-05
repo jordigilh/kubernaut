@@ -48,7 +48,7 @@ reads fail closed and that existing A2A/MCP and service-account paths remain unc
 4. Prove runtime ConfigMap policy metadata is separated from historical evaluation metadata and that
    no raw Rego, ConfigMap data, token, secret, or private reasoning crosses the response boundary.
 5. Prove the production router wiring and per-operation runtime ConfigMap discovery work
-   without changing A2A/MCP behavior; legacy `policyRead` remains decode-compatible only.
+   without changing A2A/MCP behavior; AF owns no duplicate policy reference config.
 
 ### 1.3 Success Metrics
 
@@ -113,7 +113,7 @@ declared GREEN while any of those ITs is absent or failing.
 
 ### 4.1 Features to be Tested
 
-- `pkg/apifrontend/config`: legacy `policyRead` compatibility decoding; runtime policy metadata is tested in `policyread`.
+- `pkg/apifrontend/config`: general AF configuration only; runtime policy metadata is tested in `policyread`.
 - `pkg/apifrontend/handler`: authenticated AF REST handlers and router registration.
 - `pkg/apifrontend/auth`: named read-capability and target-scope authorization.
 - New policy-read projection package: policy ConfigMap metadata, scope provenance,
@@ -122,7 +122,7 @@ declared GREEN while any of those ITs is absent or failing.
 - `cmd/apifrontend`: production dependency and router wiring.
 - `api/apifrontend/openapi/apifrontend-v1.yaml`: schemas, paths, error states, and security contract.
 - AF audit emission and DataStorage adapter mapping for attributable read attempts.
-- Operator-generated `aianalysis-config`/`signalprocessing-config` runtime metadata and compatibility with merged PR #604's legacy `policyRead` shape.
+- Operator-generated `aianalysis-config`/`signalprocessing-config` runtime metadata; merged PR #604's AF `policyRead` output is being removed before first deployment.
 
 ### 4.2 Features Not to be Tested
 
@@ -139,22 +139,21 @@ declared GREEN while any of those ITs is absent or failing.
 | Decision | Recommended contract | Alternative | Approval effect |
 |---|---|---|---|
 | Boundary | Authenticated AF REST under `/api/v1/console/...` | Separate user API/BFF or direct browser API calls | REST is required for the planned tests; direct browser-to-DS is rejected |
-| Policy metadata | AF reads operator-generated runtime ConfigMaps per operation; threshold source is `runtime-config`; legacy `policyRead` is compatibility-only | Maintain a second AF `policyRead` source, parse arbitrary Rego, or infer a default | Runtime metadata is validated, policy bytes are hashed only, and missing/invalid sources fail closed |
+| Policy metadata | AF reads operator-generated runtime ConfigMaps per operation; threshold source is `runtime-config`; AF owns no policy reference config | Maintain a second AF `policyRead` source, mount policy ConfigMaps into AF, parse arbitrary Rego, or infer a default | Runtime metadata is validated, policy bytes are hashed only, and missing/invalid sources fail closed |
 | Authorization | Named read capabilities plus user/target SARs; optional coarse `kubernaut.ai/console` gate remains additive | Coarse console gate only | **Approved**; coarse-only is rejected as insufficiently granular and optional by current config |
 | Service accounts | Console REST accepts verified interactive users only; A2A/MCP service accounts remain unchanged | Permit service accounts on the console route | **Approved**; any exception requires a separate machine-read contract and tests |
 | Fleet inventory source | Local Kubernetes clients for `local`; non-local list operations unavailable in this release; existing typed FMC/ACM exact/get and `ScopeChecker` behavior remains unchanged | AF Console path reads remote Kubernetes/MCP directly or enables an unqualified remote list | **Approved**; AF must not create a second remote-cluster access path or delegate browser tokens |
 
-The runtime policy decision is approved: AF reads the operator-generated runtime
-ConfigMaps per policy-scope operation and reports threshold source `runtime-config`.
-The threshold must be finite and in `(0.0, 1.0]`; AF never infers a Rego default.
-AIAnalysis currently exposes a mounted policy path rather than a ConfigMap reference,
-so AF uses the existing `aianalysis-policy` / `approval.rego` convention and fails
-closed when it is unavailable. The operator team owns the future stable AIA reference
-and removal of generated legacy `policyRead` duplication; this branch does not extend
-operator PR #615. The implementation also uses the approved named capabilities, local
-target SARs, existing FMC/ACM managed-scope checks for remote targets, and minimal
-SignalProcessing `get/list` RBAC. This preserves least privilege and gives the Console
-a server-side user/scope boundary rather than treating a browser session as a permission.
+The runtime policy decision is approved: the operator derives the resolved policy
+ConfigMap name/key from the Kubernaut resource and publishes those fields in the
+existing AIA/SP runtime ConfigMaps. AF reads those ConfigMaps per policy-scope
+operation, reports threshold source `runtime-config`, and never mounts policy
+ConfigMaps or reads the operator CR. The threshold must be finite and in `(0.0, 1.0]`;
+AF never infers a Rego default. The implementation also uses the approved named
+capabilities, local target SARs, existing FMC/ACM managed-scope checks for remote
+targets, and minimal SignalProcessing `get/list` RBAC. This preserves least privilege
+and gives the Console a server-side user/scope boundary rather than treating a browser
+session as a permission.
 
 ---
 
@@ -243,7 +242,7 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 
 | File/package | Functions/behavior |
 |---|---|
-| `pkg/apifrontend/config` | Legacy `PolicyRead` YAML decode for compatibility only |
+| `pkg/apifrontend/config` | General AF configuration validation; no policy reference source |
 | New policy-read package | Runtime ConfigMap metadata, threshold/name/key validation, revision hashing, canonical identity, label precedence, projection allowlist, history join, cursor, state mapping |
 | `pkg/apifrontend/auth` | capability names, user/service-account distinction, target SAR request construction |
 | `pkg/shared/scope` | structured provenance resolution and compatibility wrapper |
@@ -260,14 +259,14 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `cmd/apifrontend/backend_deps.go` | local typed/dynamic readers, FMC/ACM inventory adapters, scope resolver, SAR dependencies |
 | `pkg/fleet/fmc`, `pkg/fleet/acm` | control-plane inventory endpoints/query transport and typed response mapping |
 | `api/apifrontend/openapi/apifrontend-v1.yaml` | schema and operation contract validation |
-| Runtime policy fixture | Operator-generated runtime ConfigMaps, explicit SignalProcessing custom name/key, and fail-closed AIA convention |
+| Runtime policy fixture | Operator-generated runtime ConfigMaps with explicit AIA/SP name/key fields and fail-closed missing-reference behavior |
 
 ### 6.3 Version Identification
 
 | Item | Version/commit | Notes |
 |---|---|---|
 | Kubernaut | `origin/main` at `16bb28c6e` before implementation | Clean preflight baseline |
-| Operator | PR #604 merge `b29f3c89058f0a96f9464788b6a99b2bc9581311` | Legacy names-only `policyRead` shape retained only for compatibility; runtime ConfigMap contract is current |
+| Operator | PR #604 merge `b29f3c89058f0a96f9464788b6a99b2bc9581311`; follow-up [PR #616](https://github.com/jordigilh/kubernaut-operator/pull/616) | PR #616 removes the superseded AF `policyRead` output and adds the AIA runtime name/key fields |
 | Console | PR #162 merged; issue #164 open | Consumer remains blocked on this contract |
 
 ---
@@ -457,9 +456,9 @@ contract exists.
 
 | Dependency | Type | Status | Impact | Workaround |
 |---|---|---|---|---|
-| Stable AIA policy reference | Operator follow-up | Direction approved; operator rollout pending | AF currently has only the mounted policy path and must identify the policy ConfigMap safely | Use the existing `aianalysis-policy` / `approval.rego` convention and fail closed; do not enumerate or infer |
+| Stable AIA policy reference | Operator follow-up | Direction approved; operator rollout pending | AF requires the resolved name/key in `aianalysis-config` | Add the fields to the existing AIA runtime config; do not mount policy ConfigMaps into AF or enumerate them |
 | Authorization contract | Design/security | Approved in DD-AF-018 | Named capabilities plus local target SARs and existing FMC/ACM managed-scope checks for remote targets | Implement the approved split; do not delegate user tokens to remote Kubernetes |
-| Operator PR #604 | Cross-repo code | Merged | Legacy `policyRead` shape remains decode-compatible | Pin compatibility fixtures to merge SHA; do not use it as a metadata source |
+| Operator PR #604 / follow-up #616 | Cross-repo code | #604 merged; #616 open | #604's AF `policyRead` output is obsolete before first deployment | Merge #616 before deploying AF policy reads |
 | SignalProcessing history RBAC | Cross-repo security | AF reader complete; operator RBAC follow-up pending | Required for complete history projection in deployment | Add only AF ServiceAccount `get/list` on `signalprocessings`; no write verbs |
 | FMC/ACM inventory projection | Cross-repo architecture/implementation | AF adapters complete; live control-plane deployment pending | Required for remote Console exact/get and scope-check qualification; list remains unavailable | Preserve the shared sanitized contract and adapter ITs; no direct remote Kubernetes/MCP reader |
 | Console #164 | Cross-repo consumer | Open/blocked | Blocks browser/deployed acceptance | Run AF focused suites first |
@@ -541,7 +540,6 @@ Unit tests do not count as wiring proof.
 | Location | Evidence added | Reason |
 |---|---|---|---|
 | `pkg/apifrontend/handler/router*_test.go` | Additive Console route assertions retain existing paths and middleware tiers | Prove no A2A/MCP route replacement |
-| `pkg/apifrontend/config/*_test.go` | Legacy `policyRead` compatibility fixtures and ignored-source behavior | Preserve decoding without retaining a second policy source |
 | `pkg/apifrontend/policyread/*_test.go` | Runtime ConfigMap metadata, threshold/range, referenced-name/key, revision, no-cache, and fail-closed fixtures | Validate the authoritative policy source |
 | `cmd/apifrontend/main_wiring_test.go` | Local readers, FMC/ACM adapters, existing `ScopeChecker`, and auth dependencies are wired without `FleetReaderFactory` | CHECKPOINT W |
 | `pkg/apifrontend/audit/*_test.go` | Typed read actions, state-aware outcomes, safe payloads, and DataStorage union mapping | AU-2/AU-3 attribution |
@@ -849,3 +847,4 @@ qualify ACM/FMC list visibility or completeness; that gate remains closed.
 | 1.5 | 2026-11-04 | Local metadata-only inventory containment, client-go page-allocation limitation, bounded working set, cancellation/concurrency guard, response-size guard, and local-only list contract recorded |
 | 1.6 | 2026-11-05 | Added the 16 MiB decrypted Kubernetes response-body containment test and documented its HTTPS-preserving, non-RSS-complete scope |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |
+| 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration; tests now require resolved AIA/SP policy name/key fields in the service runtime ConfigMaps and fail closed when references are missing |

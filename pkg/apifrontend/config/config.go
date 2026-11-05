@@ -36,7 +36,6 @@ type Config struct {
 	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
 	Session        SessionConfig        `yaml:"session"`
 	Interactive    InteractiveConfig    `yaml:"interactive"`
-	PolicyRead     PolicyReadConfig     `yaml:"policyRead"`
 	// Fleet holds multi-cluster federation settings (BR-FLEET-054). When
 	// Enabled and MCPGatewayEndpoint is set, kubectl_get/kubectl_list/
 	// list_clusters tools route to remote managed clusters via the MCP
@@ -56,27 +55,6 @@ type InteractiveConfig struct {
 	AwaitSessionTimeout     time.Duration `yaml:"awaitSessionTimeout,omitempty"`
 	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
-
-// PolicyReadConfig is retained for compatibility with older operator-rendered
-// AF ConfigMaps. New AF code ignores this block and reads policy metadata from
-// the AIAnalysis and SignalProcessing runtime ConfigMaps.
-type PolicyReadConfig struct {
-	AIAnalysis       PolicyReadReference `yaml:"aiAnalysis"`
-	SignalProcessing PolicyReadReference `yaml:"signalProcessing"`
-}
-
-// PolicyReadReference is the legacy compatibility shape for one policy source.
-type PolicyReadReference struct {
-	ConfigMapName       string `yaml:"configMapName"`
-	ConfidenceThreshold string `yaml:"confidenceThreshold,omitempty"`
-}
-
-const (
-	// AIAnalysisPolicyKey is the only AIAnalysis policy key AF reads.
-	AIAnalysisPolicyKey = "approval.rego"
-	// SignalProcessingPolicyKey is the only SignalProcessing policy key AF reads.
-	SignalProcessingPolicyKey = "policy.rego"
-)
 
 // SessionConfig holds InvestigationSession CRD controller settings.
 type SessionConfig struct {

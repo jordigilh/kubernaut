@@ -21,19 +21,13 @@ const (
 	// are the existing operator-generated runtime configuration identities.
 	AIAnalysisRuntimeConfigMapName       = "aianalysis-config"
 	SignalProcessingRuntimeConfigMapName = "signalprocessing-config"
-	// AIAnalysisPolicyConfigMapName is the existing default policy identity.
-	// Current AIAnalysis runtime configuration exposes the mounted policy path
-	// but not a ConfigMap reference. Custom AIAnalysis policy names therefore
-	// fail closed until the operator publishes that reference in its runtime
-	// configuration contract; AF must not guess or enumerate ConfigMaps.
-	AIAnalysisPolicyConfigMapName = "aianalysis-policy"
-	policyRuntimeConfigKey        = "config.yaml"
-	aiAnalysisPolicyKey           = "approval.rego"
-	signalProcessingPolicyKey     = "policy.rego"
+	policyRuntimeConfigKey               = "config.yaml"
 )
 
 type aiAnalysisRuntimeConfig struct {
 	Rego struct {
+		PolicyConfigMapName string `yaml:"policyConfigMapName"`
+		PolicyConfigMapKey  string `yaml:"policyConfigMapKey"`
 		ConfidenceThreshold string `yaml:"confidenceThreshold"`
 	} `yaml:"rego"`
 }
@@ -86,6 +80,14 @@ func (s *KubernetesSource) ReadCurrentPolicies(ctx context.Context, namespace st
 	if err != nil {
 		return nil, fmt.Errorf("validate AIAnalysis runtime threshold: %w", err)
 	}
+	aiName := strings.TrimSpace(aiConfig.Rego.PolicyConfigMapName)
+	if err := validateRuntimePolicyName(aiName, "AIAnalysis policy ConfigMap"); err != nil {
+		return nil, err
+	}
+	aiKey := strings.TrimSpace(aiConfig.Rego.PolicyConfigMapKey)
+	if err := validateRuntimePolicyKey(aiKey, "AIAnalysis policy ConfigMap key"); err != nil {
+		return nil, err
+	}
 
 	spConfigData, err := s.readConfigMapKey(ctx, namespace, SignalProcessingRuntimeConfigMapName, policyRuntimeConfigKey)
 	if err != nil {
@@ -99,30 +101,31 @@ func (s *KubernetesSource) ReadCurrentPolicies(ctx context.Context, namespace st
 	if err := validateRuntimePolicyName(spName, "SignalProcessing policy ConfigMap"); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(spConfig.Classifier.RegoConfigMapKey) != signalProcessingPolicyKey {
-		return nil, fmt.Errorf("SignalProcessing runtime policy key must be %q", signalProcessingPolicyKey)
+	spKey := strings.TrimSpace(spConfig.Classifier.RegoConfigMapKey)
+	if err := validateRuntimePolicyKey(spKey, "SignalProcessing policy ConfigMap key"); err != nil {
+		return nil, err
 	}
 
-	aiValue, err := s.Read(ctx, namespace, AIAnalysisPolicyConfigMapName, aiAnalysisPolicyKey)
+	aiValue, err := s.Read(ctx, namespace, aiName, aiKey)
 	if err != nil {
 		return nil, fmt.Errorf("read AIAnalysis policy metadata: %w", err)
 	}
-	spValue, err := s.Read(ctx, namespace, spName, signalProcessingPolicyKey)
+	spValue, err := s.Read(ctx, namespace, spName, spKey)
 	if err != nil {
 		return nil, fmt.Errorf("read SignalProcessing policy metadata: %w", err)
 	}
 	return []PolicyMetadata{
 		{
 			Type:          "aiAnalysis",
-			ConfigMapName: AIAnalysisPolicyConfigMapName,
-			ConfigMapKey:  aiAnalysisPolicyKey,
+			ConfigMapName: aiName,
+			ConfigMapKey:  aiKey,
 			Revision:      revision(aiValue),
 			Threshold:     &Threshold{Value: threshold, Source: "runtime-config", Kind: "rego-approval"},
 		},
 		{
 			Type:          "signalProcessing",
 			ConfigMapName: spName,
-			ConfigMapKey:  signalProcessingPolicyKey,
+			ConfigMapKey:  spKey,
 			Revision:      revision(spValue),
 		},
 	}, nil
@@ -154,6 +157,16 @@ func validateRuntimePolicyName(name, description string) error {
 	}
 	if errs := utilvalidation.IsDNS1123Subdomain(name); len(errs) > 0 {
 		return fmt.Errorf("%s must be a DNS-1123 name: %s", description, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func validateRuntimePolicyKey(key, description string) error {
+	if key == "" {
+		return fmt.Errorf("%s is required", description)
+	}
+	if errs := utilvalidation.IsConfigMapKey(key); len(errs) > 0 {
+		return fmt.Errorf("%s is invalid: %s", description, strings.Join(errs, "; "))
 	}
 	return nil
 }

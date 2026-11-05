@@ -15,7 +15,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
@@ -224,9 +223,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {
-	service, err := policyread.NewService(policyread.Config{
-		PolicyRead: config.PolicyReadConfig{},
-	}, policyread.Dependencies{LocalInventory: reader, Authorizer: authorizer})
+	service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: reader, Authorizer: authorizer})
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	return handler.NewConsolePolicyReadHandler(service, logrDiscard())
 }

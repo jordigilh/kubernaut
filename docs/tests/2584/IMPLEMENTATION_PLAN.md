@@ -60,8 +60,7 @@ The feature is complete only when:
   access. Console inventory must use the local clients or a new typed FMC/ACM control-plane
   projection; it must not reuse the Console path's fleet reader hooks. The operator-generated
   `aianalysis-config` and `signalprocessing-config` ConfigMaps are the runtime metadata
-  sources; the legacy `policyRead` block remains decodable for compatibility but is not a
-  policy metadata source.
+  sources; AF has no policy-name/key configuration of its own.
 - The existing `ScopeChecker` proves an exact remote managed-scope decision but does not
   enumerate resources or return provenance. FMC and ACM retain the shared sanitized
   exact/detail projection contract; remote list qualification is outside this release.
@@ -134,25 +133,24 @@ ConfigMap data:
 
 | Policy | Runtime metadata | Policy source |
 |---|---|---|
-| AIAnalysis | `rego.confidenceThreshold` | `aianalysis-policy` / `approval.rego` convention |
-| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key, default key `policy.rego` |
+| AIAnalysis | `rego.policyConfigMapName`, `rego.policyConfigMapKey`, and `rego.confidenceThreshold` | Referenced ConfigMap/key |
+| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key |
 
 The AIAnalysis threshold must be finite and in `(0.0, 1.0]`. SignalProcessing's
 ConfigMap name and key must be present and valid. The projection reports threshold
 source `runtime-config`; it does not infer a Rego default or describe the threshold as
 the universal effective value of arbitrary custom policy logic.
 
-Current AIAnalysis runtime configuration exposes the mounted policy path but not a
-ConfigMap reference. AF therefore uses the existing `aianalysis-policy` convention and
-fails closed when that ConfigMap/key is unavailable. It does not enumerate ConfigMaps
-or guess a custom name. The operator team owns the future runtime-config contract that
-will publish a stable AIA policy reference and remove the generated legacy `policyRead`
-duplication; this branch does not extend operator PR #615.
+The operator derives the AIAnalysis policy name/key from the Kubernaut resource and
+publishes them in `aianalysis-config`; AF does not mount the policy ConfigMap or read
+the operator CR. Runtime ConfigMap reads are uncached and visible on the next operation
+under normal Kubernetes API read semantics. Missing or invalid runtime references fail
+closed; AF never enumerates ConfigMaps, infers a name from `policyPath`, or parses a
+Rego default.
 
-The legacy `policyRead` block remains decodable for compatibility but is ignored for
-policy metadata discovery and is not validated as a second source of truth. Runtime
-ConfigMap reads are uncached and visible on the next operation under normal Kubernetes
-API read semantics.
+The separate operator-generated AF `policyRead` block is removed by the coordinated
+operator follow-up. Because no deployment consumes this feature yet, AF does not retain
+a compatibility decoder or migration path for that block.
 
 ### 3.3 Authorization Contract — Recommended
 
@@ -264,7 +262,7 @@ allowlisted; the example below is illustrative, not permission to return source 
     },
     "currentPolicies": [{
       "type": "aiAnalysis",
-      "configMapName": "aianalysis-policy",
+      "configMapName": "custom-ai-policy",
       "configMapKey": "approval.rego",
       "revision": "sha256:...",
       "threshold": {"value": 0.85, "source": "runtime-config", "kind": "rego-approval"}
@@ -312,19 +310,17 @@ never include counts, policy names, ConfigMap names, labels, namespaces, or prov
 
 ### 5.1 Configuration
 
-Retain `pkg/apifrontend/config.Config.PolicyRead` as a compatibility decode shape for
-older generated configuration, but do not use it as a policy metadata source. At
-request time AF reads only the operator-generated runtime ConfigMaps in the AF namespace:
+AF has no policy-specific configuration of its own. At request time it reads only the
+operator-generated runtime ConfigMaps in the AF namespace:
 
 | Policy | Runtime metadata | ConfigMap/key used for revision |
 |---|---|---|
-| AIAnalysis | `aianalysis-config` → `rego.confidenceThreshold` | `aianalysis-policy` / `approval.rego` convention |
-| SignalProcessing | `signalprocessing-config` → `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key, default `policy.rego` |
+| AIAnalysis | `aianalysis-config` → `rego.policyConfigMapName`, `rego.policyConfigMapKey`, and `rego.confidenceThreshold` | Referenced ConfigMap/key |
+| SignalProcessing | `signalprocessing-config` → `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key |
 
 Missing or invalid metadata, an unavailable referenced ConfigMap/key, or a read error is
-a source failure. AF never enumerates ConfigMaps, infers a Rego default, or falls back to
-the legacy `policyRead` block. These reads are uncached and visible on the next policy-
-scope operation; configuration reload does not mutate a policy metadata source.
+a source failure. These reads are uncached and visible on the next policy-scope
+operation; configuration reload does not mutate a policy metadata source.
 
 ### 5.2 Projection Service
 
@@ -491,7 +487,7 @@ project explicitly elects to pursue SOC 2 certification.
 
 Write failing Ginkgo/Gomega tests before production implementation:
 
-- runtime ConfigMap metadata decode/validation and legacy `policyRead` compatibility fixtures;
+- runtime ConfigMap metadata decode/validation and fail-closed missing-reference fixtures;
 - OpenAPI paths, schemas, state enum, and no-undocumented-fields contract;
 - scope precedence/provenance and canonical resource identity;
 - projection sanitization and current/history separation;
@@ -519,7 +515,7 @@ in the validation sections below.
 Implement the smallest path that makes RED pass, in this order:
 
 1. Extend the typed audit union/adapter and fix `apifrontend` category normalization.
-2. Add compatibility config decoding and additive route registration without modifying existing protocol handlers.
+2. Remove obsolete AF policy config decoding and add additive route registration without modifying existing protocol handlers.
 3. Add projection interfaces and construct real local plus FMC/ACM control-plane
    dependencies in `cmd/apifrontend`.
 4. Add identity/service-account/capability checks, local target SARs, the existing remote
@@ -582,7 +578,7 @@ implementation failure, not a deferred cleanup item.
 
 ### 8.1 Kubernaut Repository
 
-1. `pkg/apifrontend/config/config.go` and tests: retain legacy `PolicyRead` decoding for compatibility while policy metadata moves to runtime ConfigMap discovery.
+1. `pkg/apifrontend/config/config.go`: remove the obsolete AF `PolicyRead` configuration; policy metadata is discovered from runtime service ConfigMaps.
 2. `pkg/apifrontend/auth` and tests: add named capability/target authorization without changing existing MCP/A2A checks.
 3. `pkg/shared/scope`: add structured provenance while preserving current callers.
 4. New `pkg/apifrontend/policyread`: source adapters, canonical IDs, projection service,
@@ -599,11 +595,14 @@ implementation failure, not a deferred cleanup item.
 
 ### 8.2 Operator Repository Follow-Up
 
-- Publish a stable AIAnalysis policy ConfigMap name/key reference in runtime
-  configuration. Until that contract exists, AF uses the existing `aianalysis-policy` /
-  `approval.rego` convention and fails closed when it is unavailable.
-- Remove the generated legacy `policyRead` duplication only in a separately approved
-  operator change; this branch does not extend operator PR #615.
+- Publish the resolved AIAnalysis policy ConfigMap name/key in `aianalysis-config` under
+  `rego`, derived from the Kubernaut resource.
+- Remove the generated AF `policyRead` block and its threshold propagation; the threshold
+  remains in `aianalysis-config` because AIAnalysis consumes it.
+- Operator issue [#603](https://github.com/jordigilh/kubernaut-operator/issues/603) is
+  implemented by [PR #616](https://github.com/jordigilh/kubernaut-operator/pull/616);
+  obsolete PR #615 is closed as superseded. No deployed compatibility window is
+  required.
 - Do not create an independent AF override, parse arbitrary policy source, or invent a default.
 - Add the named read capabilities to selected built-in personas/custom-role documentation.
 - Add only AF ServiceAccount `get/list` on `signalprocessings`, with RBAC tests.
@@ -736,6 +735,7 @@ Fleet-only E2E port collision.
 | 1.5 | 2026-11-04 | Local Console inventory containment finalized: metadata-only required client, paginated projection/discard, bounded working set, cancellation/concurrency limits, pre-write response guard, and no public page-count/snapshot semantics |
 | 1.6 | 2026-11-05 | Added the dedicated policy-read HTTPS response-body limiter: 16 MiB per decrypted Kubernetes response before client-go decoding, while retaining the 2 MiB serialized Console response guard and documenting the remaining process-RSS limitation |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery; exposed bounded observed/freshness metadata without snapshot semantics and recorded the stable AIA reference follow-up |
+| 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration and compatibility decoding; AIA and SignalProcessing runtime ConfigMaps now provide the resolved policy name/key values directly |
 
 ## 13. Scope visibility clarification for review (2026-11-04)
 

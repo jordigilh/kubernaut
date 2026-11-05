@@ -202,25 +202,24 @@ fields:
 
 | Policy | Runtime metadata | Policy ConfigMap/key |
 |---|---|---|
-| AIAnalysis | `rego.confidenceThreshold` | Existing `aianalysis-policy` / `approval.rego` convention |
-| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | The referenced name / `policy.rego` |
+| AIAnalysis | `rego.policyConfigMapName`, `rego.policyConfigMapKey`, and `rego.confidenceThreshold` | The referenced name/key |
+| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | The referenced name/key |
 
 The threshold must be finite and in `(0.0, 1.0]`; the SignalProcessing name/key must
 be present and valid. AF hashes the referenced policy bytes for a revision and never
 returns their contents. Missing, malformed, unauthorized, or inconsistent runtime
 metadata fails closed for the operation. AF does not cache these ConfigMap reads.
 
-Current AIAnalysis runtime configuration exposes the mounted policy path but not a
-ConfigMap name. AF therefore uses the existing `aianalysis-policy` convention and
-fails closed when that ConfigMap/key is unavailable; it does not enumerate ConfigMaps
-or guess a custom name. The operator team owns the follow-up contract that will publish
-the stable AIA policy reference and remove this limitation and the generated legacy
-`policyRead` duplication. That follow-up must be a new approved operator change; this
-PR does not extend operator PR #615.
+The operator derives the AIAnalysis policy name/key from the Kubernaut resource and
+publishes them in `aianalysis-config`; it does not mount the policy ConfigMap into AF.
+AF reads the service runtime ConfigMaps through the Kubernetes API, then reads only the
+referenced policy keys. It does not read the operator CR, enumerate ConfigMaps, infer a
+name from the mounted `policyPath`, or parse arbitrary Rego. Missing or invalid runtime
+references fail closed.
 
-The legacy `policyRead` block remains decodable for compatibility but is ignored for
-policy metadata discovery and is not validated as a second source of truth. AF does
-not parse arbitrary Rego or infer a Rego default.
+The separate operator-generated AF `policyRead` block is not part of this contract and
+must be removed before the first deployment of this feature. No compatibility decoder
+or migration window is required because no deployed release consumes that block.
 
 ### 3. Authorization is per user and per target
 
@@ -308,11 +307,9 @@ tests and graceful shutdown to wait for the queued write attempt; it is not a cr
 durability guarantee before the flush. Buffer drops and write failures remain observable
 through the existing store error/metric/log paths.
 
-AF policy-scope reads resolve runtime ConfigMap metadata per operation. The existing AF
-configuration watcher may continue to decode legacy `policyRead` content for compatibility,
-but changing that block does not alter policy-read behavior and does not require an AF
-restart. Runtime ConfigMap changes are visible on the next operation, subject to the
-Kubernetes API's normal read semantics.
+AF policy-scope reads resolve runtime ConfigMap metadata per operation. The AF
+configuration has no policy-name/key source of its own. Runtime ConfigMap changes are
+visible on the next operation, subject to the Kubernetes API's normal read semantics.
 
 This supports SOC 2 CC7.2 investigation/monitoring and FedRAMP AU-2/AU-3 event and
 content requirements. Typed events alone are not a complete SOC 2 certification: the
@@ -364,13 +361,13 @@ authorization for the exact requested resource.
 
 ### AF maintains a second policy metadata block — ❌ Rejected
 
-The legacy `policyRead` block is compatibility-only. AF reads the operator-owned runtime
-ConfigMaps used by AIAnalysis and SignalProcessing so policy metadata is not duplicated
-in a second operator-owned source.
+AF reads the operator-owned runtime ConfigMaps used by AIAnalysis and SignalProcessing;
+it does not maintain a separate policy-name/key configuration block.
 
 ### AF parses arbitrary Rego or infers defaults — ❌ Rejected
 
-AF reads only the small allowlisted runtime metadata fields and hashes fixed policy keys.
+AF reads only the small allowlisted runtime metadata fields and hashes the referenced
+policy keys after Kubernetes ConfigMap-key validation.
 It must not interpret arbitrary customer policy source or claim a Rego default that the
 operator did not publish.
 
@@ -422,9 +419,12 @@ history source is unavailable.
 
 ### Trade-offs
 
-- The operator repository must publish a stable AIAnalysis policy ConfigMap reference in
-  runtime configuration, then remove the generated legacy `policyRead` duplication;
-  this follow-up is owned by the operator team and is not an extension of PR #615.
+- Operator issue [#603](https://github.com/jordigilh/kubernaut-operator/issues/603) is
+  implemented by [operator PR #616](https://github.com/jordigilh/kubernaut-operator/pull/616):
+  it publishes the resolved AIAnalysis policy ConfigMap name/key in `aianalysis-config`
+  and removes the generated AF `policyRead` block before first deployment. The threshold
+  remains in the AIA runtime config for AIAnalysis itself; obsolete operator PR #615 is
+  closed as superseded.
 - Remote Console list qualification remains gated on shared FMC/ACM inventory evidence; existing
   remote exact/get and scope-check behavior remains unchanged.
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
@@ -454,9 +454,9 @@ capability plus target authorization, structured scope provenance, typed audit e
 OpenAPI schemas, generated DataStorage client artifacts, and production dependency wiring.
 
 Policy metadata is resolved from the existing runtime ConfigMaps on every policy-scope
-operation. Legacy `policyRead` values remain decodable but are not consumed. The AIA
-custom policy-name gap is intentionally fail-closed and is assigned to the operator
-follow-up contract rather than guessed in AF.
+operation. Operator PR #616 adds the resolved AIA policy name/key to
+`aianalysis-config`; AF does not mount policy ConfigMaps or duplicate their references
+in its own configuration.
 
 Scoped validation passed for affected packages, full compilation/build, lint, typed audit
 persistence, and FMC/ACM adapter behavior. Fleet-only AF E2E is blocked by an unrelated

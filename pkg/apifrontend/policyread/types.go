@@ -13,7 +13,6 @@ import (
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
@@ -33,11 +32,7 @@ const (
 // read from the operator-generated service ConfigMaps at request time; AF does
 // not maintain a second operator-owned policy metadata source.
 type Config struct {
-	Namespace string
-	// PolicyRead is retained so older callers and generated operator config can
-	// be decoded during migration. It is ignored; CurrentPolicySource reads the
-	// authoritative runtime ConfigMaps instead.
-	PolicyRead   config.PolicyReadConfig
+	Namespace    string
 	BasePath     string
 	HistoryLimit int
 }
