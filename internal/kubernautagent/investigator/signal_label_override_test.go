@@ -964,6 +964,21 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"))
 			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"))
 		})
+
+		It("UT-KA-2570-041: removes model-supplied API version when the authoritative target has none [BR-KA-191]", func() {
+			result := &katypes.InvestigationResult{
+				Parameters: map[string]interface{}{"TARGET_RESOURCE_API_VERSION": "v1"},
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Deployment",
+					Name:      "api-server",
+					Namespace: "production",
+				},
+			}
+
+			investigator.InjectTargetResourceParameters(result)
+
+			Expect(result.Parameters).NotTo(HaveKey("TARGET_RESOURCE_API_VERSION"))
+		})
 	})
 
 	Describe("UT-KA-1374-F8-005: apiVersion propagation from RCA when result lacks it", func() {

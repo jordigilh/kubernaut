@@ -46,6 +46,7 @@ import (
 // goconst dedup: test-fixture literals deduplicated below.
 const (
 	kubernautListRemediations = "kubernaut_list_remediations"
+	kubernautApprove          = "kubernaut_approve"
 )
 
 // allowAllAuthorizer is a ToolAuthorizer mock that always allows access.
@@ -671,7 +672,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		})
 
 		It("UT-AF-B-004: kubernaut_approve dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
+			_, body := mcpCallTool(h, sessionID, kubernautApprove,
 				map[string]any{"rar_name": "test-rar", "decision": "Approved"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Approved"))
@@ -911,7 +912,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(err).NotTo(HaveOccurred())
 			user := &auth.UserIdentity{Username: "viewer", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "kubernaut_approve", map[string]any{"rar_name": rar.Name, "decision": "Approved"}, user)
+			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{"rar_name": rar.Name, "decision": "Approved"}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			Expect(extractTextContent(body)).To(ContainSubstring("permission denied"))
 			persisted := &remediationv1.RemediationApprovalRequest{}
@@ -1414,11 +1415,11 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "reviewer", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
-			_, body := mcpCallTool(h, sid, "kubernaut_approve", map[string]any{"rar_name": rar.Name, "decision": "Approved", "workflow_override": map[string]any{"parameters": map[string]string{"P": "1.0"}, "rationale": "reviewed"}}, user)
+			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{"rar_name": rar.Name, "decision": "Approved", "workflow_override": map[string]any{"parameters": map[string]string{"P": "1.0"}, "rationale": "reviewed"}}, user)
 			Expect(body).NotTo(ContainSubstring("isError"))
 			var found bool
 			for _, event := range auditor.Events() {
-				if event.Type != audit.EventToolExecuted || event.Detail["tool_name"] != "kubernaut_approve" {
+				if event.Type != audit.EventToolExecuted || event.Detail["tool_name"] != kubernautApprove {
 					continue
 				}
 				found = true
@@ -1454,7 +1455,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			_, body := mcpCallTool(h, sid, "kubernaut_approve", map[string]any{
+			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{
 				"rar_name": rar.Name, "decision": "Approved",
 				"workflow_override": map[string]any{"parameters": map[string]string{"P": "not-a-float"}, "rationale": "invalid review"},
 			}, user)
@@ -1463,7 +1464,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			events := auditor.Events()
 			var denied *audit.Event
 			for _, event := range events {
-				if event.Type == audit.EventToolExecuted && event.Detail["tool_name"] == "kubernaut_approve" {
+				if event.Type == audit.EventToolExecuted && event.Detail["tool_name"] == kubernautApprove {
 					denied = event
 					break
 				}
@@ -1480,6 +1481,55 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(denied.Approval.OverrideParameters).To(Equal(map[string]string{"P": "not-a-float"}))
 			Expect(denied.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "not-a-float"}))
 			Expect(denied.Approval.OverrideRationale).To(gstruct.PointTo(Equal("invalid review")))
+			for _, event := range events {
+				Expect(event.Type).NotTo(Equal(audit.EventMCPToolFailed), "invalid approval override must not be reduced to generic MCP failure")
+			}
+		})
+		It("IT-AF-2570-039: BR-AUDIT-005 records rejected decisions with overrides as denied tool executions", func() {
+			rar := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rar-rejected-2570", Namespace: "default"},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-rejected-2570"},
+					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-rejected", DeclaredParameterNames: map[string]bool{"P": true}},
+					Parameters:            map[string]string{"P": "2"},
+					ParameterSchema:       []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}},
+					TargetContext:         &remediationv1.ApprovalTargetContext{},
+				},
+			}
+			cfg := handler.MCPConfig{ServerName: "kubernaut-apifrontend", ServerVersion: "test", Enabled: true,
+				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			user := &auth.UserIdentity{Username: "reviewer-rejected", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+			auditor.Reset()
+
+			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{
+				"rar_name": rar.Name, "decision": "Rejected",
+				"workflow_override": map[string]any{"parameters": map[string]string{"P": "1.0"}, "rationale": "not allowed"},
+			}, user)
+
+			Expect(isErrorResult(body)).To(BeTrue())
+			events := auditor.Events()
+			var denied *audit.Event
+			for _, event := range events {
+				if event.Type == audit.EventToolExecuted && event.Detail["tool_name"] == kubernautApprove {
+					denied = event
+					break
+				}
+			}
+			Expect(denied).NotTo(BeNil())
+			Expect(denied.CorrelationID).To(Equal("rr-rejected-2570"))
+			Expect(denied.UserID).To(Equal("reviewer-rejected"))
+			Expect(denied.Detail).To(HaveKeyWithValue("tool_outcome", "denied"))
+			Expect(denied.Detail).To(HaveKeyWithValue("approval_request", "rar-rejected-2570"))
+			Expect(denied.Detail).To(HaveKeyWithValue("approval_decision", "Rejected"))
+			Expect(denied.Approval).NotTo(BeNil())
+			Expect(denied.Approval.WorkflowID).To(Equal("wf-rejected"))
+			Expect(denied.Approval.OriginalParameters).To(Equal(map[string]string{"P": "2"}))
+			Expect(denied.Approval.OverrideParameters).To(Equal(map[string]string{"P": "1.0"}))
+			Expect(denied.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "1.0"}))
+			Expect(denied.Approval.OverrideRationale).To(gstruct.PointTo(Equal("not allowed")))
 			for _, event := range events {
 				Expect(event.Type).NotTo(Equal(audit.EventMCPToolFailed), "invalid approval override must not be reduced to generic MCP failure")
 			}
@@ -2044,7 +2094,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 		})
 
 		It("UT-AF-B-074: kubernaut_approve with empty decision returns error", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
+			_, body := mcpCallTool(h, sessionID, kubernautApprove,
 				map[string]any{"rar_name": "test-rar", "decision": ""}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
@@ -2117,7 +2167,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 
 	Context("Invalid severity values", func() {
 		It("UT-AF-B-085: kubernaut_approve with invalid decision is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
+			_, body := mcpCallTool(h, sessionID, kubernautApprove,
 				map[string]any{"rar_name": "test-rar", "decision": "CATASTROPHIC"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})

@@ -184,6 +184,8 @@ var _ = Describe("kubernaut_approve", func() {
 			WorkflowOverride: &remediationv1.WorkflowOverride{WorkflowName: "fast-restart"},
 		}, "bob")
 		Expect(err).To(HaveOccurred())
+		var denied *tools.ApprovalDecisionDeniedError
+		Expect(errors.As(err, &denied)).To(BeTrue(), "workflow override admission denials must preserve structured approval context")
 	})
 
 	It("UT-AF-104-006: nil client returns ErrK8sUnavailable", func() {

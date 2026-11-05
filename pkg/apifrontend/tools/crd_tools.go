@@ -719,11 +719,13 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.RARName}, &rar); err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
 	}
-	defer func() {
-		if resultErr == nil {
-			result.Audit = approvalAuditContext(&rar, args.WorkflowOverride)
+	defer setApprovalAuditOnSuccess(&result, &resultErr, &rar, args.WorkflowOverride)
+	if err := validateApprovalOverrideArgs(args); err != nil {
+		return ApproveResult{}, &ApprovalDecisionDeniedError{
+			Err:   err,
+			Audit: approvalAuditContext(&rar, args.WorkflowOverride),
 		}
-	}()
+	}
 
 	if rar.DeletionTimestamp != nil {
 		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest is terminating", ErrAlreadyTerminal)
@@ -774,6 +776,12 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	}, nil
 }
 
+func setApprovalAuditOnSuccess(result *ApproveResult, resultErr *error, rar *remediationv1.RemediationApprovalRequest, override *remediationv1.WorkflowOverride) {
+	if *resultErr == nil {
+		result.Audit = approvalAuditContext(rar, override)
+	}
+}
+
 func approvalAuditContext(rar *remediationv1.RemediationApprovalRequest, override *remediationv1.WorkflowOverride) *ApprovalAuditContext {
 	info := &ApprovalAuditContext{CorrelationID: rar.Spec.RemediationRequestRef.Name}
 	if rar.Spec.Workflow != nil {
@@ -816,6 +824,10 @@ func validateApproveArgs(args ApproveArgs) error {
 	if args.Decision != string(remediationv1.ApprovalDecisionApproved) && args.Decision != string(remediationv1.ApprovalDecisionRejected) {
 		return fmt.Errorf("%w: decision %q is not valid; must be exactly one of: Approved, Rejected", ErrInvalidInput, args.Decision)
 	}
+	return nil
+}
+
+func validateApprovalOverrideArgs(args ApproveArgs) error {
 	if args.WorkflowOverride != nil && (args.Decision != string(remediationv1.ApprovalDecisionApproved) || args.WorkflowOverride.WorkflowName != "") {
 		return fmt.Errorf("%w: overrides are parameter-only and require approval", ErrInvalidInput)
 	}

@@ -43,7 +43,7 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		EventTimestamp: time.Now().UTC(),
 		EventCategory:  ogenclient.AuditEventRequestEventCategoryApifrontend,
 		EventAction:    eventAction(e.Type),
-		EventOutcome:   eventOutcome(e.Type),
+		EventOutcome:   eventOutcome(e),
 		CorrelationID:  correlationID(e),
 	}
 
@@ -182,8 +182,14 @@ var failureEvents = map[EventType]bool{
 	EventInteractiveSignalFailed: true,
 }
 
-func eventOutcome(t EventType) ogenclient.AuditEventRequestEventOutcome {
-	if failureEvents[t] {
+func eventOutcome(e *Event) ogenclient.AuditEventRequestEventOutcome {
+	if e.Type == EventToolExecuted {
+		switch detailStr(e.Detail, "tool_outcome") {
+		case "denied", "failure", "timeout":
+			return ogenclient.AuditEventRequestEventOutcomeFailure
+		}
+	}
+	if failureEvents[e.Type] {
 		return ogenclient.AuditEventRequestEventOutcomeFailure
 	}
 	return ogenclient.AuditEventRequestEventOutcomeSuccess

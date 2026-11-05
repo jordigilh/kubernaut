@@ -518,6 +518,8 @@ func InjectTargetResourceParameters(result *katypes.InvestigationResult) {
 	result.Parameters["TARGET_RESOURCE_NAMESPACE"] = result.RemediationTarget.Namespace
 	if result.RemediationTarget.APIVersion != "" {
 		result.Parameters["TARGET_RESOURCE_API_VERSION"] = result.RemediationTarget.APIVersion
+	} else {
+		delete(result.Parameters, "TARGET_RESOURCE_API_VERSION")
 	}
 }
 
