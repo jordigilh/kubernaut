@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,6 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const workflowIDFieldPath = "status.workflowId"
+
 // Verify performs a point-in-time direct server-side lookup and recomputes the
 // content-derived identity. It never returns live catalog data for execution.
 func Verify(ctx context.Context, reader client.Reader, namespace, workflowID string) error {
@@ -42,10 +45,9 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 	}
 	backoffConfig := backoff.Config{BasePeriod: 100 * time.Millisecond, MaxPeriod: 500 * time.Millisecond, Multiplier: 2, JitterPercent: 20}
 	for attempt := 1; attempt <= 3; attempt++ {
-		var workflows remediationworkflowv1.RemediationWorkflowList
-		err := reader.List(ctx, &workflows, client.InNamespace(namespace), client.MatchingFields{"status.workflowId": workflowID})
+		workflows, err := listTrustedWorkflows(ctx, reader, namespace, workflowID)
 		if err == nil {
-			return verifyMatches(workflows.Items, namespace, workflowID)
+			return verifyMatches(workflows, namespace, workflowID)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -62,6 +64,36 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 		}
 	}
 	return fmt.Errorf("workflow identity lookup exhausted")
+}
+
+func listTrustedWorkflows(ctx context.Context, reader client.Reader, namespace, workflowID string) ([]remediationworkflowv1.RemediationWorkflow, error) {
+	var workflows remediationworkflowv1.RemediationWorkflowList
+	err := reader.List(ctx, &workflows, client.InNamespace(namespace), client.MatchingFields{workflowIDFieldPath: workflowID})
+	if err == nil {
+		return workflows.Items, nil
+	}
+	if !isUnsupportedWorkflowIDSelector(err) {
+		return nil, err
+	}
+
+	// Older operator releases install the workflow CRD without selectableFields.
+	// Keep the server-side selector as the fast path, but preserve compatibility
+	// by listing only the trusted namespace and filtering the status field locally.
+	var allWorkflows remediationworkflowv1.RemediationWorkflowList
+	if err := reader.List(ctx, &allWorkflows, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	matches := make([]remediationworkflowv1.RemediationWorkflow, 0, len(allWorkflows.Items))
+	for _, workflow := range allWorkflows.Items {
+		if workflow.Status.WorkflowID == workflowID {
+			matches = append(matches, workflow)
+		}
+	}
+	return matches, nil
+}
+
+func isUnsupportedWorkflowIDSelector(err error) bool {
+	return apierrors.IsBadRequest(err) && strings.Contains(err.Error(), "field label not supported: "+workflowIDFieldPath)
 }
 
 func verifyMatches(workflows []remediationworkflowv1.RemediationWorkflow, namespace, workflowID string) error {

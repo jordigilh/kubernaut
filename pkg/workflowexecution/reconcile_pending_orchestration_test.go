@@ -197,6 +197,23 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		Expect(pipelines.Items).To(BeEmpty())
 	})
 
+	It("UT-WE-2570-061: BR-ORCH-025 verifies identity when the catalog CRD lacks a selectable workflow ID field", func() {
+		wfe := buildPendingWFE("wfe-legacy-catalog-crd", "default/deployment/legacy-catalog")
+		rw := buildCatalogWorkflow(wfe)
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(rw).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				calls++
+				if calls == 1 {
+					return apierrors.NewBadRequest("field label not supported: status.workflowId")
+				}
+				return c.List(ctx, list, opts...)
+			}}).Build()
+
+		Expect(workflowidentity.Verify(rpoCtx, fakeClient, "default", wfe.Spec.WorkflowRef.WorkflowID)).To(Succeed())
+		Expect(calls).To(Equal(2))
+	})
+
 	It("UT-WE-2570-125: BR-ORCH-025 does not retry an authoritative no-match", func() {
 		calls := 0
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
