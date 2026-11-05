@@ -44,6 +44,8 @@ var _ = Describe("BR-ORCH-025 selected parameter schema immutability", func() {
 		Expect(c.Status().Update(ctx, analysis)).To(Succeed())
 		key := client.ObjectKeyFromObject(analysis)
 		Expect(c.Get(ctx, key, analysis)).To(Succeed())
+		Expect(analysis.Status.RCAResult.SelectedWorkflow.ParameterSchema).To(Equal(initial),
+			"API-server status persistence must retain the selected workflow parameter schema")
 		Expect(c.Status().Update(ctx, analysis)).To(Succeed(), "unchanged schema must allow retries")
 		Expect(c.Get(ctx, key, analysis)).To(Succeed())
 		original := analysis.Status.RCAResult.SelectedWorkflow.DeepCopy()
