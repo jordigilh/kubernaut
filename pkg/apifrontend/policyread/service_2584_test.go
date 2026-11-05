@@ -20,7 +20,6 @@ import (
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
@@ -196,16 +195,15 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 
 		svc, err := policyread.NewService(policyread.Config{
 			Namespace: "kubernaut-system",
-			PolicyRead: config.PolicyReadConfig{
-				AIAnalysis:       config.PolicyReadReference{ConfigMapName: "aianalysis-policy", ConfidenceThreshold: "0.85"},
-				SignalProcessing: config.PolicyReadReference{ConfigMapName: "signalprocessing-policy"},
-			},
-			BasePath: "/api/v1/console",
+			BasePath:  "/api/v1/console",
 		}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: page},
-			Policies:       &policyStub{values: map[string][]byte{"aianalysis-policy/approval.rego": []byte("package approval\nallow := true\n"), "signalprocessing-policy/policy.rego": []byte("package signal\n")}},
-			History:        &historyStub{ai: []aianalysisv1.AIAnalysis{ai}, sp: []spv1.SignalProcessing{sp}},
-			Authorizer:     allowAuthorizer{},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
+				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
+			}},
+			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai}, sp: []spv1.SignalProcessing{sp}},
+			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -215,8 +213,8 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items).To(HaveLen(1))
 		Expect(result.Items[0].CurrentPolicies).To(HaveLen(2))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Value).To(Equal(0.85))
-		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("operator-config"))
-		Expect(result.Items[0].CurrentPolicies[0].Revision).To(HavePrefix("sha256:"))
+		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("runtime-config"))
+		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:ai"))
 		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(2))
 		Expect(result.Items[0].HistoricalEvaluations[0].Source).To(Equal("AIAnalysis"))
 		Expect(result.Items[0].HistoricalEvaluations[0].MatchedRules).To(ConsistOf("production_requires_review"))
@@ -231,9 +229,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 	})
 
 	It("returns a state-only stale result without records", func() {
-		svc, err := policyread.NewService(policyread.Config{
-			PolicyRead: config.PolicyReadConfig{AIAnalysis: config.PolicyReadReference{ConfigMapName: "a", ConfidenceThreshold: "0.8"}, SignalProcessing: config.PolicyReadReference{ConfigMapName: "s"}},
-		}, policyread.Dependencies{
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateStale, Completeness: inventory.CompletenessPartial}},
 			Authorizer:     allowAuthorizer{},
 		})
@@ -245,20 +241,6 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.State).To(Equal(inventory.StateStale))
 		Expect(result.Items).To(BeEmpty())
 	})
-
-	DescribeTable("rejects non-finite operator thresholds independently of config validation", func(threshold string) {
-		_, err := policyread.NewService(policyread.Config{
-			PolicyRead: config.PolicyReadConfig{
-				AIAnalysis:       config.PolicyReadReference{ConfigMapName: "a", ConfidenceThreshold: threshold},
-				SignalProcessing: config.PolicyReadReference{ConfigMapName: "s"},
-			},
-		}, policyread.Dependencies{})
-		Expect(err).To(HaveOccurred())
-	},
-		Entry("NaN", "NaN"),
-		Entry("positive infinity", "+Inf"),
-		Entry("negative infinity", "-Inf"),
-	)
 
 	DescribeTable("rejects non-interactive callers before inventory reads", func(identity *auth.UserIdentity) {
 		reader := &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete}}
@@ -344,16 +326,13 @@ func (s *inventoryStub) Get(context.Context, string, string) (inventory.Resource
 	return s.resource, nil
 }
 
-type policyStub struct {
-	values map[string][]byte
+type currentPolicyStub struct {
+	policies []policyread.PolicyMetadata
+	err      error
 }
 
-func (s *policyStub) Read(_ context.Context, _, name, key string) ([]byte, error) {
-	value, ok := s.values[name+"/"+key]
-	if !ok {
-		return nil, errors.New("policy not found")
-	}
-	return value, nil
+func (s *currentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
+	return s.policies, s.err
 }
 
 type historyStub struct {
@@ -380,6 +359,6 @@ func (allowAuthorizer) CheckTarget(context.Context, string, []string, auth.Targe
 }
 
 var _ policyread.InventoryReader = (*inventoryStub)(nil)
-var _ policyread.PolicySource = (*policyStub)(nil)
+var _ policyread.CurrentPolicySource = (*currentPolicyStub)(nil)
 var _ policyread.HistorySource = (*historyStub)(nil)
 var _ policyread.Authorizer = allowAuthorizer{}

@@ -3,13 +3,47 @@ package policyread
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	corev1 "k8s.io/api/core/v1"
+	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
+
+const (
+	// AIAnalysisRuntimeConfigMapName and SignalProcessingRuntimeConfigMapName
+	// are the existing operator-generated runtime configuration identities.
+	AIAnalysisRuntimeConfigMapName       = "aianalysis-config"
+	SignalProcessingRuntimeConfigMapName = "signalprocessing-config"
+	// AIAnalysisPolicyConfigMapName is the existing default policy identity.
+	// Current AIAnalysis runtime configuration exposes the mounted policy path
+	// but not a ConfigMap reference. Custom AIAnalysis policy names therefore
+	// fail closed until the operator publishes that reference in its runtime
+	// configuration contract; AF must not guess or enumerate ConfigMaps.
+	AIAnalysisPolicyConfigMapName = "aianalysis-policy"
+	policyRuntimeConfigKey        = "config.yaml"
+	aiAnalysisPolicyKey           = "approval.rego"
+	signalProcessingPolicyKey     = "policy.rego"
+)
+
+type aiAnalysisRuntimeConfig struct {
+	Rego struct {
+		ConfidenceThreshold string `yaml:"confidenceThreshold"`
+	} `yaml:"rego"`
+}
+
+type signalProcessingRuntimeConfig struct {
+	Classifier struct {
+		RegoConfigMapName string `yaml:"regoConfigMapName"`
+		RegoConfigMapKey  string `yaml:"regoConfigMapKey"`
+	} `yaml:"classifier"`
+}
 
 // KubernetesSource reads only the explicitly required ConfigMap keys and CRD
 // list fields through a controller-runtime reader. It never returns arbitrary
@@ -29,15 +63,99 @@ func NewKubernetesSource(reader client.Reader) (*KubernetesSource, error) {
 // Read returns one configured ConfigMap data key. The caller hashes the bytes
 // immediately and never exposes them in a response.
 func (s *KubernetesSource) Read(ctx context.Context, namespace, name, key string) ([]byte, error) {
+	value, err := s.readConfigMapKey(ctx, namespace, name, key)
+	if err != nil {
+		return nil, fmt.Errorf("read policy ConfigMap %s/%s: %w", namespace, name, err)
+	}
+	return value, nil
+}
+
+// ReadCurrentPolicies reads the current policy identities, revisions, and
+// threshold from the existing operator-generated runtime ConfigMaps. It does
+// not cache either runtime configuration or policy content.
+func (s *KubernetesSource) ReadCurrentPolicies(ctx context.Context, namespace string) ([]PolicyMetadata, error) {
+	aiConfigData, err := s.readConfigMapKey(ctx, namespace, AIAnalysisRuntimeConfigMapName, policyRuntimeConfigKey)
+	if err != nil {
+		return nil, fmt.Errorf("read AIAnalysis runtime configuration: %w", err)
+	}
+	var aiConfig aiAnalysisRuntimeConfig
+	if err := yaml.Unmarshal(aiConfigData, &aiConfig); err != nil {
+		return nil, fmt.Errorf("parse AIAnalysis runtime configuration: %w", err)
+	}
+	threshold, err := parseRuntimeThreshold(aiConfig.Rego.ConfidenceThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("validate AIAnalysis runtime threshold: %w", err)
+	}
+
+	spConfigData, err := s.readConfigMapKey(ctx, namespace, SignalProcessingRuntimeConfigMapName, policyRuntimeConfigKey)
+	if err != nil {
+		return nil, fmt.Errorf("read SignalProcessing runtime configuration: %w", err)
+	}
+	var spConfig signalProcessingRuntimeConfig
+	if err := yaml.Unmarshal(spConfigData, &spConfig); err != nil {
+		return nil, fmt.Errorf("parse SignalProcessing runtime configuration: %w", err)
+	}
+	spName := strings.TrimSpace(spConfig.Classifier.RegoConfigMapName)
+	if err := validateRuntimePolicyName(spName, "SignalProcessing policy ConfigMap"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(spConfig.Classifier.RegoConfigMapKey) != signalProcessingPolicyKey {
+		return nil, fmt.Errorf("SignalProcessing runtime policy key must be %q", signalProcessingPolicyKey)
+	}
+
+	aiValue, err := s.Read(ctx, namespace, AIAnalysisPolicyConfigMapName, aiAnalysisPolicyKey)
+	if err != nil {
+		return nil, fmt.Errorf("read AIAnalysis policy metadata: %w", err)
+	}
+	spValue, err := s.Read(ctx, namespace, spName, signalProcessingPolicyKey)
+	if err != nil {
+		return nil, fmt.Errorf("read SignalProcessing policy metadata: %w", err)
+	}
+	return []PolicyMetadata{
+		{
+			Type:          "aiAnalysis",
+			ConfigMapName: AIAnalysisPolicyConfigMapName,
+			ConfigMapKey:  aiAnalysisPolicyKey,
+			Revision:      revision(aiValue),
+			Threshold:     &Threshold{Value: threshold, Source: "runtime-config", Kind: "rego-approval"},
+		},
+		{
+			Type:          "signalProcessing",
+			ConfigMapName: spName,
+			ConfigMapKey:  signalProcessingPolicyKey,
+			Revision:      revision(spValue),
+		},
+	}, nil
+}
+
+func (s *KubernetesSource) readConfigMapKey(ctx context.Context, namespace, name, key string) ([]byte, error) {
 	var configMap corev1.ConfigMap
 	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &configMap); err != nil {
-		return nil, fmt.Errorf("get policy ConfigMap %s/%s: %w", namespace, name, err)
+		return nil, err
 	}
 	value, ok := configMap.Data[key]
 	if !ok {
-		return nil, fmt.Errorf("policy ConfigMap %s/%s does not contain key %q", namespace, name, key)
+		return nil, fmt.Errorf("ConfigMap does not contain key %q", key)
 	}
 	return []byte(value), nil
+}
+
+func parseRuntimeThreshold(raw string) (float64, error) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
+		return 0, fmt.Errorf("confidenceThreshold must be finite and in range (0.0, 1.0]")
+	}
+	return value, nil
+}
+
+func validateRuntimePolicyName(name, description string) error {
+	if name == "" {
+		return fmt.Errorf("%s is required", description)
+	}
+	if errs := utilvalidation.IsDNS1123Subdomain(name); len(errs) > 0 {
+		return fmt.Errorf("%s must be a DNS-1123 name: %s", description, strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // ListAIAnalysis returns typed history records for exact-target matching.
@@ -133,5 +251,6 @@ func validateHistoryContinuation(continuation, nextContinuation string, seenCont
 }
 
 var _ PolicySource = (*KubernetesSource)(nil)
+var _ CurrentPolicySource = (*KubernetesSource)(nil)
 var _ HistorySource = (*KubernetesSource)(nil)
 var _ StreamingHistorySource = (*KubernetesSource)(nil)

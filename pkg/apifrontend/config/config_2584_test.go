@@ -6,8 +6,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("BR-AI-088 / UT-AF-2584-001: policyRead configuration", func() {
-	It("loads the operator-rendered names and required threshold", func() {
+var _ = Describe("BR-AI-088 / UT-AF-2584-001: runtime policy metadata compatibility", func() {
+	It("loads a legacy policyRead block without making it a validation dependency", func() {
 		cfg, err := config.Load([]byte(`policyRead:
   aiAnalysis:
     configMapName: aianalysis-policy
@@ -22,33 +22,8 @@ var _ = Describe("BR-AI-088 / UT-AF-2584-001: policyRead configuration", func() 
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
-	DescribeTable("rejects an absent or invalid operator threshold",
-		func(threshold string, want string) {
-			cfg := validConfig()
-			cfg.PolicyRead = config.PolicyReadConfig{
-				AIAnalysis: config.PolicyReadReference{
-					ConfigMapName:       "aianalysis-policy",
-					ConfidenceThreshold: threshold,
-				},
-				SignalProcessing: config.PolicyReadReference{ConfigMapName: "signalprocessing-policy"},
-			}
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring(want)))
-		},
-		Entry("missing", "", "confidenceThreshold is required"),
-		Entry("zero", "0", "confidenceThreshold must be finite"),
-		Entry("above one", "1.01", "confidenceThreshold must be finite"),
-		Entry("nan", "NaN", "confidenceThreshold must be finite"),
-	)
-
-	It("rejects an invalid ConfigMap name without reading policy data", func() {
+	It("accepts an absent legacy block", func() {
 		cfg := validConfig()
-		cfg.PolicyRead = config.PolicyReadConfig{
-			AIAnalysis: config.PolicyReadReference{
-				ConfigMapName:       "../raw-policy",
-				ConfidenceThreshold: "0.85",
-			},
-			SignalProcessing: config.PolicyReadReference{ConfigMapName: "signalprocessing-policy"},
-		}
-		Expect(cfg.Validate()).To(MatchError(ContainSubstring("configMapName")))
+		Expect(cfg.Validate()).To(Succeed())
 	})
 })

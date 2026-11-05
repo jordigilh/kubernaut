@@ -29,11 +29,14 @@ const (
 	DefaultHistoryLimit = 20
 )
 
-// Config contains startup-only policy projection settings. The PolicyRead
-// block is operator-rendered; AF never discovers policy names or thresholds
-// from arbitrary ConfigMaps or Rego source.
+// Config contains startup-only policy projection settings. Policy metadata is
+// read from the operator-generated service ConfigMaps at request time; AF does
+// not maintain a second operator-owned policy metadata source.
 type Config struct {
-	Namespace    string
+	Namespace string
+	// PolicyRead is retained so older callers and generated operator config can
+	// be decoded during migration. It is ignored; CurrentPolicySource reads the
+	// authoritative runtime ConfigMaps instead.
 	PolicyRead   config.PolicyReadConfig
 	BasePath     string
 	HistoryLimit int
@@ -44,6 +47,7 @@ type Dependencies struct {
 	LocalInventory  InventoryReader
 	RemoteInventory InventoryReader
 	Policies        PolicySource
+	CurrentPolicies CurrentPolicySource
 	History         HistorySource
 	Authorizer      Authorizer
 	ScopeChecker    scope.ScopeChecker
@@ -63,6 +67,14 @@ type InventoryReader interface {
 // service hashes the bytes and never places them in a response or audit event.
 type PolicySource interface {
 	Read(ctx context.Context, namespace, name, key string) ([]byte, error)
+}
+
+// CurrentPolicySource reads the current policy projection metadata from the
+// operator-generated AIAnalysis and SignalProcessing runtime ConfigMaps. The
+// implementation must read through an uncached source for each operation and
+// must never return policy source text.
+type CurrentPolicySource interface {
+	ReadCurrentPolicies(ctx context.Context, namespace string) ([]PolicyMetadata, error)
 }
 
 // HistorySource returns the existing CRD records used for bounded, exact-target
@@ -93,7 +105,8 @@ type PolicyScopePage struct {
 	APIVersion   string                      `json:"apiVersion"`
 	Kind         string                      `json:"kind"`
 	State        inventory.State             `json:"state"`
-	ObservedAt   time.Time                   `json:"-"`
+	ObservedAt   time.Time                   `json:"observedAt"`
+	Freshness    inventory.Freshness         `json:"freshness"`
 	Completeness inventory.CompletenessState `json:"completeness"`
 	Items        []PolicyScopeItem           `json:"items,omitempty"`
 	NextCursor   string                      `json:"nextCursor,omitempty"`

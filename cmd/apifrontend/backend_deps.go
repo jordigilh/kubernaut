@@ -112,11 +112,12 @@ type backendDeps struct {
 	ScopeChecker scope.ScopeChecker
 	// Console projection sources are kept separate from MCP/Fleet tool readers.
 	// They are consumed only by the authenticated /api/v1/console routes.
-	LocalInventory  policyread.InventoryReader
-	RemoteInventory policyread.InventoryReader
-	PolicySource    policyread.PolicySource
-	HistorySource   policyread.HistorySource
-	ReadGuard       *policyread.ReadGuard
+	LocalInventory      policyread.InventoryReader
+	RemoteInventory     policyread.InventoryReader
+	PolicySource        policyread.PolicySource
+	CurrentPolicySource policyread.CurrentPolicySource
+	HistorySource       policyread.HistorySource
+	ReadGuard           *policyread.ReadGuard
 }
 
 // FleetResilientClient returns the MCP Gateway connection backing
@@ -218,6 +219,7 @@ func buildPolicyReadDeps(cfg *config.Config, deps *backendDeps, logger logr.Logg
 			return fmt.Errorf("create Kubernetes policy source: %w", err)
 		}
 		deps.PolicySource = kubernetesSource
+		deps.CurrentPolicySource = kubernetesSource
 		deps.HistorySource = kubernetesSource
 	}
 	if deps.k8sMetadataClient != nil && deps.k8sPolicyClient != nil {
@@ -264,6 +266,9 @@ func buildScopeCheckerDeps(cfg *config.Config, deps *backendDeps, logger logr.Lo
 	scopeMgr := scope.NewManager(deps.k8sTypedClient)
 	var options []fleet.ScopeCheckerOption
 	if cfg.Fleet.Enabled && cfg.Fleet.Backend == fleet.BackendACM {
+		if deps.FleetClusterRegistry == nil {
+			return fmt.Errorf("acm scope checking requires a managed gateway registry")
+		}
 		options = append(options, fleet.WithClusterRegistry(registry.NewClusterLookupAdapter(deps.FleetClusterRegistry)))
 	}
 	scopeChecker, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger.WithName("scope"), options...)

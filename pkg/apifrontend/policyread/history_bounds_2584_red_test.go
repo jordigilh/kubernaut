@@ -10,7 +10,6 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 )
@@ -30,15 +29,14 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 		}
 		service, err := policyread.NewService(policyread.Config{
 			Namespace: "kubernaut-system",
-			PolicyRead: config.PolicyReadConfig{
-				AIAnalysis:       config.PolicyReadReference{ConfigMapName: "ai", ConfidenceThreshold: "0.8"},
-				SignalProcessing: config.PolicyReadReference{ConfigMapName: "sp"},
-			},
 		}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete, Items: []inventory.Resource{resource}}},
-			Policies:       &policyStub{values: map[string][]byte{"ai/approval.rego": []byte("package approval"), "sp/policy.rego": []byte("package signal")}},
-			History:        history,
-			Authorizer:     allowAuthorizer{},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.8, Source: "runtime-config", Kind: "rego-approval"}},
+				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
+			}},
+			History:    history,
+			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
 

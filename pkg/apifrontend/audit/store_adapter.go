@@ -502,7 +502,7 @@ func buildConsolePolicyScopeReadPayload(e *Event) ogenclient.AuditEventRequestEv
 	return ogenclient.NewApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData(
 		ogenclient.ApifrontendConsolePolicyScopeReadPayload{
 			EventType:         ogenclient.ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead,
-			ClusterID:         consoleClusterID(e),
+			ClusterID:         optionalConsoleClusterID(e),
 			ResultState:       ogenclient.ApifrontendConsolePolicyScopeReadPayloadResultState(consoleResultState(e)),
 			FilterFingerprint: optionalOpaqueFingerprint(detailStr(e.Detail, "filter_fingerprint")),
 			RequestID:         ogenclient.NewOptString(e.RequestID),
@@ -514,7 +514,7 @@ func buildConsoleManagedResourceListReadPayload(e *Event) ogenclient.AuditEventR
 	return ogenclient.NewApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData(
 		ogenclient.ApifrontendConsoleManagedResourceListReadPayload{
 			EventType:         ogenclient.ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead,
-			ClusterID:         consoleClusterID(e),
+			ClusterID:         optionalConsoleClusterID(e),
 			ResultState:       ogenclient.ApifrontendConsoleManagedResourceListReadPayloadResultState(consoleResultState(e)),
 			FilterFingerprint: optionalOpaqueFingerprint(detailStr(e.Detail, "filter_fingerprint")),
 			RequestID:         ogenclient.NewOptString(e.RequestID),
@@ -526,7 +526,7 @@ func buildConsoleManagedResourceGetReadPayload(e *Event) ogenclient.AuditEventRe
 	return ogenclient.NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData(
 		ogenclient.ApifrontendConsoleManagedResourceGetReadPayload{
 			EventType:           ogenclient.ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead,
-			ClusterID:           consoleClusterID(e),
+			ClusterID:           optionalConsoleClusterID(e),
 			ResultState:         ogenclient.ApifrontendConsoleManagedResourceGetReadPayloadResultState(consoleResultState(e)),
 			ResourceFingerprint: opaqueFingerprint(detailStr(e.Detail, "resource_fingerprint")),
 			RequestID:           ogenclient.NewOptString(e.RequestID),
@@ -539,6 +539,16 @@ func consoleClusterID(e *Event) string {
 		return e.ClusterID
 	}
 	return detailStr(e.Detail, "cluster_id")
+}
+
+func optionalConsoleClusterID(e *Event) ogenclient.NilString {
+	clusterID := consoleClusterID(e)
+	if clusterID == "" {
+		var result ogenclient.NilString
+		result.SetToNull()
+		return result
+	}
+	return ogenclient.NewNilString(clusterID)
 }
 
 func consoleResultState(e *Event) string {

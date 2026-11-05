@@ -7388,8 +7388,9 @@ func (s *ApifrontendConfigReloadedPayloadEventType) UnmarshalText(data []byte) e
 type ApifrontendConsoleManagedResourceGetReadPayload struct {
 	// Event type for discriminator (matches parent event_type).
 	EventType ApifrontendConsoleManagedResourceGetReadPayloadEventType `json:"event_type"`
-	// Explicit cluster identity used for the read.
-	ClusterID string `json:"cluster_id"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
 	// Bounded Console result state; loading is client-only.
 	ResultState ApifrontendConsoleManagedResourceGetReadPayloadResultState `json:"result_state"`
 	// Opaque exact-resource fingerprint, never a returned object or raw target.
@@ -7404,7 +7405,7 @@ func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetEventType() Apifron
 }
 
 // GetClusterID returns the value of ClusterID.
-func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetClusterID() string {
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetClusterID() NilString {
 	return s.ClusterID
 }
 
@@ -7429,7 +7430,7 @@ func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetEventType(val Apifr
 }
 
 // SetClusterID sets the value of ClusterID.
-func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetClusterID(val string) {
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetClusterID(val NilString) {
 	s.ClusterID = val
 }
 
@@ -7565,8 +7566,9 @@ func (s *ApifrontendConsoleManagedResourceGetReadPayloadResultState) UnmarshalTe
 type ApifrontendConsoleManagedResourceListReadPayload struct {
 	// Event type for discriminator (matches parent event_type).
 	EventType ApifrontendConsoleManagedResourceListReadPayloadEventType `json:"event_type"`
-	// Explicit cluster identity used for the read.
-	ClusterID string `json:"cluster_id"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
 	// Bounded Console result state; loading is client-only.
 	ResultState ApifrontendConsoleManagedResourceListReadPayloadResultState `json:"result_state"`
 	// Opaque normalized filter fingerprint, never raw query values.
@@ -7581,7 +7583,7 @@ func (s *ApifrontendConsoleManagedResourceListReadPayload) GetEventType() Apifro
 }
 
 // GetClusterID returns the value of ClusterID.
-func (s *ApifrontendConsoleManagedResourceListReadPayload) GetClusterID() string {
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetClusterID() NilString {
 	return s.ClusterID
 }
 
@@ -7606,7 +7608,7 @@ func (s *ApifrontendConsoleManagedResourceListReadPayload) SetEventType(val Apif
 }
 
 // SetClusterID sets the value of ClusterID.
-func (s *ApifrontendConsoleManagedResourceListReadPayload) SetClusterID(val string) {
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetClusterID(val NilString) {
 	s.ClusterID = val
 }
 
@@ -7742,8 +7744,9 @@ func (s *ApifrontendConsoleManagedResourceListReadPayloadResultState) UnmarshalT
 type ApifrontendConsolePolicyScopeReadPayload struct {
 	// Event type for discriminator (matches parent event_type).
 	EventType ApifrontendConsolePolicyScopeReadPayloadEventType `json:"event_type"`
-	// Explicit cluster identity used for the read.
-	ClusterID string `json:"cluster_id"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
 	// Bounded Console result state; loading is client-only.
 	ResultState ApifrontendConsolePolicyScopeReadPayloadResultState `json:"result_state"`
 	// Opaque normalized filter fingerprint, never raw query values.
@@ -7758,7 +7761,7 @@ func (s *ApifrontendConsolePolicyScopeReadPayload) GetEventType() ApifrontendCon
 }
 
 // GetClusterID returns the value of ClusterID.
-func (s *ApifrontendConsolePolicyScopeReadPayload) GetClusterID() string {
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetClusterID() NilString {
 	return s.ClusterID
 }
 
@@ -7783,7 +7786,7 @@ func (s *ApifrontendConsolePolicyScopeReadPayload) SetEventType(val ApifrontendC
 }
 
 // SetClusterID sets the value of ClusterID.
-func (s *ApifrontendConsolePolicyScopeReadPayload) SetClusterID(val string) {
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetClusterID(val NilString) {
 	s.ClusterID = val
 }
 
@@ -25280,6 +25283,51 @@ func (s *ListLegalHoldsOKHoldsItem) SetPlacedAt(val OptDateTime) {
 // SetReason sets the value of Reason.
 func (s *ListLegalHoldsOKHoldsItem) SetReason(val OptString) {
 	s.Reason = val
+}
+
+// NewNilString returns new NilString with value set to v.
+func NewNilString(v string) NilString {
+	return NilString{
+		Value: v,
+	}
+}
+
+// NilString is nullable string.
+type NilString struct {
+	Value string
+	Null  bool
+}
+
+// SetTo sets value to v.
+func (o *NilString) SetTo(v string) {
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o NilString) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *NilString) SetToNull() {
+	o.Null = true
+	var v string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o NilString) Get() (v string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o NilString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // Notification audit record for tracking delivery attempts.

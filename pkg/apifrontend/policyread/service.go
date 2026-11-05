@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"sort"
 	"strconv"
@@ -34,13 +33,12 @@ const (
 type Service struct {
 	config       Config
 	dependencies Dependencies
-	threshold    float64
 	historyLimit int
 }
 
-// NewService validates the operator-rendered projection settings and creates a
-// read-only service. An empty PolicyRead block is permitted for legacy callers
-// that use only inventory reads; policy reads fail closed until configured.
+// NewService creates a read-only Console projection service. Current policy
+// metadata is resolved from the operator-generated runtime ConfigMaps by the
+// configured CurrentPolicySource.
 func NewService(cfg Config, deps Dependencies) (*Service, error) {
 	service := &Service{
 		config:       cfg,
@@ -56,21 +54,6 @@ func NewService(cfg Config, deps Dependencies) (*Service, error) {
 	if service.historyLimit <= 0 {
 		service.historyLimit = DefaultHistoryLimit
 	}
-
-	configured := cfg.PolicyRead.AIAnalysis.ConfigMapName != "" ||
-		cfg.PolicyRead.AIAnalysis.ConfidenceThreshold != "" ||
-		cfg.PolicyRead.SignalProcessing.ConfigMapName != ""
-	if !configured {
-		return service, nil
-	}
-	if cfg.PolicyRead.AIAnalysis.ConfigMapName == "" || cfg.PolicyRead.SignalProcessing.ConfigMapName == "" {
-		return nil, fmt.Errorf("policyRead requires both policy ConfigMap names")
-	}
-	value, err := strconv.ParseFloat(strings.TrimSpace(cfg.PolicyRead.AIAnalysis.ConfidenceThreshold), 64)
-	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
-		return nil, fmt.Errorf("policyRead.aiAnalysis.confidenceThreshold must be finite and in range (0.0, 1.0]")
-	}
-	service.threshold = value
 	return service, nil
 }
 
@@ -203,6 +186,7 @@ func (s *Service) ListPolicyScope(ctx context.Context, user *auth.UserIdentity, 
 		Kind:         PolicyScopeKind,
 		State:        page.State,
 		ObservedAt:   page.ObservedAt,
+		Freshness:    page.Freshness,
 		Completeness: page.Completeness,
 		NextCursor:   page.NextCursor,
 	}
@@ -440,32 +424,14 @@ func stateOnlyPolicyPage(state inventory.State) PolicyScopePage {
 }
 
 func (s *Service) readCurrentPolicies(ctx context.Context) ([]PolicyMetadata, error) {
-	if s.dependencies.Policies == nil || s.threshold <= 0 {
-		return nil, errors.New("policy source or required threshold unavailable")
+	if s.dependencies.CurrentPolicies == nil {
+		return nil, errors.New("current policy metadata source unavailable")
 	}
-	aiValue, err := s.dependencies.Policies.Read(ctx, s.config.Namespace, s.config.PolicyRead.AIAnalysis.ConfigMapName, "approval.rego")
+	policies, err := s.dependencies.CurrentPolicies.ReadCurrentPolicies(ctx, s.config.Namespace)
 	if err != nil {
-		return nil, fmt.Errorf("read AIAnalysis policy metadata: %w", err)
+		return nil, fmt.Errorf("read current policy metadata: %w", err)
 	}
-	spValue, err := s.dependencies.Policies.Read(ctx, s.config.Namespace, s.config.PolicyRead.SignalProcessing.ConfigMapName, "policy.rego")
-	if err != nil {
-		return nil, fmt.Errorf("read SignalProcessing policy metadata: %w", err)
-	}
-	return []PolicyMetadata{
-		{
-			Type:          "aiAnalysis",
-			ConfigMapName: s.config.PolicyRead.AIAnalysis.ConfigMapName,
-			ConfigMapKey:  "approval.rego",
-			Revision:      revision(aiValue),
-			Threshold:     &Threshold{Value: s.threshold, Source: "operator-config", Kind: "rego-approval"},
-		},
-		{
-			Type:          "signalProcessing",
-			ConfigMapName: s.config.PolicyRead.SignalProcessing.ConfigMapName,
-			ConfigMapKey:  "policy.rego",
-			Revision:      revision(spValue),
-		},
-	}, nil
+	return policies, nil
 }
 
 type historicalRecord struct {

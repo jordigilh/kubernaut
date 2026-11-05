@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -94,7 +95,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
 		Expect(requests.Load()).To(BeZero())
 	})
-	It("IT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: returns an inventory result without backend freshness metadata", func() {
+	It("IT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: returns observed time and backend freshness metadata", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -105,11 +106,12 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		var result map[string]json.RawMessage
 		Expect(json.Unmarshal(recorder.Body.Bytes(), &result)).To(Succeed())
-		Expect(result).NotTo(HaveKey("freshness"))
+		Expect(result).To(HaveKey("observed_at"))
+		Expect(result).To(HaveKey("freshness"))
 		Expect(result).To(HaveKey("items"))
 	})
 
-	It("IT-AF-2593-PUBLIC-METADATA-002 [BR-API-001]: does not reject a successful result based on an internal freshness marker", func() {
+	It("IT-AF-2593-PUBLIC-METADATA-002 [BR-API-001]: exposes stale freshness without rejecting a complete result", func() {
 		page := successfulPage()
 		page.Freshness.State = inventory.FreshnessStale
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: page})
@@ -121,10 +123,15 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"success"`))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"stale"`))
 	})
 
-	It("IT-AF-2593-PUBLIC-METADATA-003 [BR-API-001]: returns policy-scope data without backend freshness metadata", func() {
-		page := inventory.Page{State: inventory.StateEmpty, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
+	It("IT-AF-2593-PUBLIC-METADATA-003 [BR-API-001]: returns policy-scope observed time and freshness metadata", func() {
+		page := inventory.Page{
+			State:      inventory.StateEmpty,
+			ObservedAt: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
+			Freshness:  inventory.Freshness{State: inventory.FreshnessStale, AsOf: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)},
+		}
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: page})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/policies/scope?cluster_id=local", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -135,7 +142,8 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		var result map[string]json.RawMessage
 		Expect(json.Unmarshal(recorder.Body.Bytes(), &result)).To(Succeed())
-		Expect(result).NotTo(HaveKey("freshness"))
+		Expect(result).To(HaveKey("observedAt"))
+		Expect(result).To(HaveKey("freshness"))
 		Expect(string(result["state"])).To(Equal(`"empty"`))
 	})
 	It("returns an RFC 7807 error for duplicated filters", func() {
@@ -224,8 +232,11 @@ func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.I
 }
 
 func successfulPage() inventory.Page {
+	observedAt := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	return inventory.Page{
 		State:        inventory.StateSuccess,
+		ObservedAt:   observedAt,
+		Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: observedAt},
 		Completeness: inventory.CompletenessComplete,
 		Items: []inventory.Resource{{
 			ID:        "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",

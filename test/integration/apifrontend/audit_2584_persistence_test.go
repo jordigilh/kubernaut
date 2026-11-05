@@ -95,7 +95,7 @@ var _ = Describe("BR-AUDIT-005 / IT-AF-2584-012: Console audit persistence", fun
 		Expect(event.EventData.Validate()).To(Succeed())
 		payload, ok := event.EventData.GetApifrontendConsolePolicyScopeReadPayload()
 		Expect(ok).To(BeTrue())
-		Expect(payload.ClusterID).To(Equal("local"))
+		Expect(payload.ClusterID.Value).To(Equal("local"))
 		Expect(string(payload.ResultState)).To(Equal("success"))
 		Expect(payload.FilterFingerprint.Value).To(Equal(fingerprint))
 		Expect(payload.RequestID.Value).To(Equal(requestID))

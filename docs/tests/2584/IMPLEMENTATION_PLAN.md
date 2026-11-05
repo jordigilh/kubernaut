@@ -13,10 +13,11 @@
 > resolved. ACM inventory qualification remains an implementation blocker, alongside
 > the separately scoped cross-repository deployment evidence.
 >
-> **Console metadata decision (2026-11-03/04):** The user approved query-time
-> reads without a Console API freshness object, freshness-marker rejection,
-> snapshot identifier, count/total, reload metadata, or page-observation
-> timestamp. The Console owns render time; historical evaluation timestamps
+> **Console metadata decision (2026-11-03/05):** Complete and empty query-time
+> reads expose the backend observation timestamp and bounded freshness envelope.
+> They do not expose count/total, reload, or snapshot metadata and do not claim
+> cross-request synchronization. A freshness value does not by itself change a
+> successful read to the shared `stale` state; historical evaluation timestamps
 > remain source record timestamps. Detected backend errors, identity mismatches,
 > authorization failures, and incomplete traversal remain fail-closed.
 
@@ -29,7 +30,7 @@ Console user inspect a sanitized projection of:
 
 - effective Kubernaut resource scope and provenance;
 - current AIAnalysis and SignalProcessing policy identity/revision metadata;
-- the required operator-supplied AIAnalysis approval threshold;
+- the runtime-configured AIAnalysis approval threshold;
 - bounded historical evaluation metadata from existing CRD fields; and
 - stable links to the shared managed-resource inventory.
 
@@ -41,7 +42,8 @@ The feature is complete only when:
 4. Raw Rego, secrets, tokens, arbitrary payloads, private reasoning, and internal URLs never appear.
 5. `success`, `empty`, `partial`, `unavailable`, `forbidden`, and `not_found` are explicit;
    `loading` remains a Console client state. Failure states contain no data or counts;
-   the shared `stale` state is not derived from local freshness metadata.
+   the shared `stale` state is not derived from local freshness metadata alone;
+   complete and empty pages include observed time and bounded freshness metadata.
 6. Existing A2A/MCP and service-account protocol behavior is unchanged.
 7. AF unit, integration, wiring, build, lint, and control tests pass; Console #164 receives the frozen contract.
 
@@ -56,9 +58,10 @@ The feature is complete only when:
 - AF already has local dynamic/typed Kubernetes clients, REST mapping, the existing
   FMC/ACM-backed `ScopeChecker`, fleet reader hooks for agentic/MCP tools, and ConfigMap
   access. Console inventory must use the local clients or a new typed FMC/ACM control-plane
-  projection; it must not reuse the Console path's fleet reader hooks. Operator PR #604
-  injects the two effective policy names under `policyRead` without parsing service runtime
-  ConfigMaps.
+  projection; it must not reuse the Console path's fleet reader hooks. The operator-generated
+  `aianalysis-config` and `signalprocessing-config` ConfigMaps are the runtime metadata
+  sources; the legacy `policyRead` block remains decodable for compatibility but is not a
+  policy metadata source.
 - The existing `ScopeChecker` proves an exact remote managed-scope decision but does not
   enumerate resources or return provenance. FMC and ACM retain the shared sanitized
   exact/detail projection contract; remote list qualification is outside this release.
@@ -80,7 +83,7 @@ contracts are written.
 
 ### 2.1 In Scope
 
-- AF config for operator-rendered `policyRead` names and the required threshold metadata.
+- AF policy-scope reads of operator-generated runtime ConfigMap metadata and the required threshold metadata.
 - Three read operations:
   - `GET /api/v1/console/policies/scope`
   - `GET /api/v1/console/inventory/managed-resources`
@@ -91,7 +94,7 @@ contracts are written.
   behavior remains unchanged; no direct Console reads through MCP or remote Kubernetes
   clients.
 - Structured scope provenance built on existing `pkg/shared/scope` rules.
-- Current policy metadata from only the configured ConfigMap name/key and a safe revision hash.
+- Current policy metadata from validated runtime ConfigMap references and safe revision hashes.
 - Bounded historical matching against existing AIAnalysis/SignalProcessing CRD fields.
 - Cursor pagination, completeness, exact filters, safe opaque resource IDs, and links.
 - Named read capabilities, target-scope SARs, service-account separation, and audit attribution.
@@ -122,38 +125,34 @@ middleware and is intended to be reached through the same-origin OAuth2 Proxy pa
 Console stores no bearer token and never calls DataStorage directly. A2A/MCP routes and
 their service-account delegation remain separate.
 
-### 3.2 Threshold Contract — Direction Approved
+### 3.2 Runtime Policy Metadata Contract — Direction Approved
 
-Every new v1 deployment must provide the threshold already owned by AIAnalysis:
-`spec.aiAnalysis.confidenceThreshold`. The operator continues rendering that value into
-AIAnalysis `rego.confidenceThreshold` and additionally injects the same validated value
-into AF's generated `policyRead` block:
+AF reads the existing operator-generated runtime ConfigMaps for every policy-scope
+operation. It reads only typed metadata from the allowlisted `config.yaml` key and
+hashes the referenced policy bytes; it never returns raw policy source or arbitrary
+ConfigMap data:
 
-```yaml
-policyRead:
-  aiAnalysis:
-    configMapName: aianalysis-policy
-    confidenceThreshold: "0.85"
-  signalProcessing:
-    configMapName: signalprocessing-policy
-```
+| Policy | Runtime metadata | Policy source |
+|---|---|---|
+| AIAnalysis | `rego.confidenceThreshold` | `aianalysis-policy` / `approval.rego` convention |
+| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key, default key `policy.rego` |
 
-`policyRead.aiAnalysis.confidenceThreshold` is derived output, not a second user-editable
-source of truth. The operator must require a finite decimal in `(0.0, 1.0]` and reject a
-missing or invalid value during validation/reconciliation. AF repeats the validation at
-startup and does not become ready when the required value is absent or invalid.
+The AIAnalysis threshold must be finite and in `(0.0, 1.0]`. SignalProcessing's
+ConfigMap name and key must be present and valid. The projection reports threshold
+source `runtime-config`; it does not infer a Rego default or describe the threshold as
+the universal effective value of arbitrary custom policy logic.
 
-The read projection returns a required, non-null configured/supplied approval threshold
-with source `operator-config`. It does not return `unknown` in v1. The field must not be
-described as the universal effective threshold of arbitrary Rego: custom policy logic
-may apply different rules, and AIAnalysis's separate `lowConfidenceFloor` is not this
-approval threshold. If the Console later needs both values, that is a separate explicit
-contract addition.
+Current AIAnalysis runtime configuration exposes the mounted policy path but not a
+ConfigMap reference. AF therefore uses the existing `aianalysis-policy` convention and
+fails closed when that ConfigMap/key is unavailable. It does not enumerate ConfigMaps
+or guess a custom name. The operator team owns the future runtime-config contract that
+will publish a stable AIA policy reference and remove the generated legacy `policyRead`
+duplication; this branch does not extend operator PR #615.
 
-AF must not parse `aianalysis-config`, inspect arbitrary Rego to discover defaults, or
-claim a policy default that the operator did not supply. Existing deployments upgraded
-to this clean-break contract must provide the field before reconciliation succeeds;
-backward-compatible inference is intentionally not supported.
+The legacy `policyRead` block remains decodable for compatibility but is ignored for
+policy metadata discovery and is not validated as a second source of truth. Runtime
+ConfigMap reads are uncached and visible on the next operation under normal Kubernetes
+API read semantics.
 
 ### 3.3 Authorization Contract — Recommended
 
@@ -244,6 +243,8 @@ allowlisted; the example below is illustrative, not permission to return source 
   "apiVersion": "console.kubernaut.ai/v1",
   "kind": "PolicyScopeList",
   "state": "success",
+  "observedAt": "2026-11-05T12:00:00Z",
+  "freshness": {"state": "fresh", "as_of": "2026-11-05T12:00:00Z"},
   "completeness": "complete",
   "items": [{
     "id": "opaque-stable-resource-id",
@@ -266,7 +267,7 @@ allowlisted; the example below is illustrative, not permission to return source 
       "configMapName": "aianalysis-policy",
       "configMapKey": "approval.rego",
       "revision": "sha256:...",
-      "threshold": {"value": 0.85, "source": "operator-config", "kind": "rego-approval"}
+      "threshold": {"value": 0.85, "source": "runtime-config", "kind": "rego-approval"}
     }],
     "historicalEvaluations": [{
       "source": "AIAnalysis",
@@ -283,8 +284,10 @@ allowlisted; the example below is illustrative, not permission to return source 
 
 SignalProcessing history exposes only fields actually persisted. Missing rules or
 decision data is `null`/unknown, never reconstructed from Rego guesses. The
-`historicalEvaluations[].observedAt` value is the source record timestamp; it is not
-a page observation time or a Console freshness marker.
+page-level `observedAt` and `freshness` fields describe the completed backend read;
+they do not provide a transactional snapshot, cross-request synchronization guarantee,
+or source synchronization watermark. The `historicalEvaluations[].observedAt` value
+is the source record timestamp and is not a page observation time.
 
 ### 4.3 Read-State and Error Contract
 
@@ -293,7 +296,7 @@ a page observation time or a Console freshness marker.
 | `success` | 200 | Complete items and cursor |
 | `empty` | 200 | Empty items, no total |
 | `partial` | 503 | State, request ID, generic message only |
-| `stale` | 503 | Reserved shared state; no local freshness metadata is exposed |
+| `stale` | 503 | Reserved shared state; a freshness value alone does not produce this state |
 | `unavailable` | 503 | State, request ID, generic message only |
 | `forbidden` | 403 | State, request ID, generic message only |
 | `not_found` | 404 | State, request ID, generic message only |
@@ -309,19 +312,19 @@ never include counts, policy names, ConfigMap names, labels, namespaces, or prov
 
 ### 5.1 Configuration
 
-Extend `pkg/apifrontend/config.Config` with a typed `PolicyRead` block matching the
-operator-rendered YAML. The default policy keys are fixed by policy type:
+Retain `pkg/apifrontend/config.Config.PolicyRead` as a compatibility decode shape for
+older generated configuration, but do not use it as a policy metadata source. At
+request time AF reads only the operator-generated runtime ConfigMaps in the AF namespace:
 
-| Policy | ConfigMap source | Key |
+| Policy | Runtime metadata | ConfigMap/key used for revision |
 |---|---|---|
-| AIAnalysis | `policyRead.aiAnalysis.configMapName` | `approval.rego` |
-| SignalProcessing | `policyRead.signalProcessing.configMapName` | `policy.rego` |
+| AIAnalysis | `aianalysis-config` → `rego.confidenceThreshold` | `aianalysis-policy` / `approval.rego` convention |
+| SignalProcessing | `signalprocessing-config` → `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | Referenced ConfigMap/key, default `policy.rego` |
 
-AF reads only configured ConfigMaps in the AF/operator namespace. A missing name,
-invalid name, missing key, missing required threshold, or read error is a source
-failure; it never falls back to a hard-coded name or runtime-config parse.
-The existing AF config watcher validates changed content for drift detection only;
-`policyRead` changes are startup-only and require an AF restart before they apply.
+Missing or invalid metadata, an unavailable referenced ConfigMap/key, or a read error is
+a source failure. AF never enumerates ConfigMaps, infers a Rego default, or falls back to
+the legacy `policyRead` block. These reads are uncached and visible on the next policy-
+scope operation; configuration reload does not mutate a policy metadata source.
 
 ### 5.2 Projection Service
 
@@ -346,8 +349,8 @@ The service sequence is:
    Non-local list operations remain unavailable in this release.
 5. Resolve scope with resource-label precedence, namespace fallback only for namespaced resources,
    and safe unmanaged defaults.
-6. Read current policy metadata and calculate a non-reversible `sha256:` revision from the
-   configured policy key without returning policy contents.
+6. Read current runtime policy metadata and calculate a non-reversible `sha256:` revision
+   from the validated policy key without returning policy contents.
 7. Match bounded historical CRD records by exact target identity and cluster attribution.
 8. Require all required reads and joins to complete. On partial/unavailable results,
    discard all records and return a state-only response.
@@ -476,8 +479,9 @@ project explicitly elects to pursue SOC 2 certification.
 
 ### Phase 0 — Approval and Design Decision — **COMPLETE**
 
-- Carry the approved threshold, named-capability/target-SAR, SignalProcessing RBAC, and
-  typed-audit decisions into `DD-AF-018`; no additional contract approval is pending.
+- Carry the approved runtime ConfigMap policy source, named-capability/target-SAR,
+  SignalProcessing RBAC, and typed-audit decisions into `DD-AF-018`; no additional
+  contract approval is pending.
 - Use the accepted `DD-AF-018` as the implementation authority; do not create a second
   design decision for the same boundary.
 - Freeze OpenAPI paths, fields, nullable values, state/status mapping, capability names,
@@ -487,7 +491,7 @@ project explicitly elects to pursue SOC 2 certification.
 
 Write failing Ginkgo/Gomega tests before production implementation:
 
-- config decode/validation and exact operator YAML fixtures;
+- runtime ConfigMap metadata decode/validation and legacy `policyRead` compatibility fixtures;
 - OpenAPI paths, schemas, state enum, and no-undocumented-fields contract;
 - scope precedence/provenance and canonical resource identity;
 - projection sanitization and current/history separation;
@@ -505,14 +509,17 @@ Write failing Ginkgo/Gomega tests before production implementation:
 3. Add `UT-DS-2584-001` proving `apifrontend` remains a recognized bounded metric category
    and does not normalize to `other`.
 
-RED is incomplete until both UT and IT tests fail for the intended missing behavior.
+The RED gate was required before GREEN: each first-RED slice had to fail for the
+intended missing behavior in both UT and IT coverage. That historical gate was
+completed before implementation; the same scenarios are now recorded as passing
+in the validation sections below.
 
 ### Phase 2 — GREEN: Minimal Wiring and Behavior — **COMPLETE**
 
 Implement the smallest path that makes RED pass, in this order:
 
 1. Extend the typed audit union/adapter and fix `apifrontend` category normalization.
-2. Add typed config and additive route registration without modifying existing protocol handlers.
+2. Add compatibility config decoding and additive route registration without modifying existing protocol handlers.
 3. Add projection interfaces and construct real local plus FMC/ACM control-plane
    dependencies in `cmd/apifrontend`.
 4. Add identity/service-account/capability checks, local target SARs, the existing remote
@@ -552,7 +559,7 @@ browser, accessibility, and deployed qualification without adding a second trans
 
 | Component | Production entry point | Wiring location | IT proof |
 |---|---|---|---|
-| `config.PolicyRead` | AF ConfigMap load | `pkg/apifrontend/config/config.go` and startup load | IT-AF-2584-001 |
+| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | `pkg/apifrontend/policyread/kubernetes_sources.go` and policy-scope request path | IT-AF-2584-001/003 |
 | Policy scope handler | `GET /api/v1/console/policies/scope` | `pkg/apifrontend/handler/router.go` and handler construction | IT-AF-2584-001/003 |
 | Inventory list handler | `GET /api/v1/console/inventory/managed-resources` | same router/handler construction | IT-AF-2584-002/007 |
 | Inventory exact handler | `.../managed-resources/{resourceID}` | same router/handler construction | IT-AF-2584-005 |
@@ -575,7 +582,7 @@ implementation failure, not a deferred cleanup item.
 
 ### 8.1 Kubernaut Repository
 
-1. `pkg/apifrontend/config/config.go` and tests: add `PolicyRead` typed config and validation.
+1. `pkg/apifrontend/config/config.go` and tests: retain legacy `PolicyRead` decoding for compatibility while policy metadata moves to runtime ConfigMap discovery.
 2. `pkg/apifrontend/auth` and tests: add named capability/target authorization without changing existing MCP/A2A checks.
 3. `pkg/shared/scope`: add structured provenance while preserving current callers.
 4. New `pkg/apifrontend/policyread`: source adapters, canonical IDs, projection service,
@@ -592,10 +599,12 @@ implementation failure, not a deferred cleanup item.
 
 ### 8.2 Operator Repository Follow-Up
 
-- Keep PR #604's names as the baseline and extend its generated `policyRead` block with
-  the required value derived from `spec.aiAnalysis.confidenceThreshold`.
-- Make the operator field required for new v1 deployments and validate `(0.0, 1.0]`.
-- Do not create an independent AF override, parse policy source, or invent a default.
+- Publish a stable AIAnalysis policy ConfigMap name/key reference in runtime
+  configuration. Until that contract exists, AF uses the existing `aianalysis-policy` /
+  `approval.rego` convention and fails closed when it is unavailable.
+- Remove the generated legacy `policyRead` duplication only in a separately approved
+  operator change; this branch does not extend operator PR #615.
+- Do not create an independent AF override, parse arbitrary policy source, or invent a default.
 - Add the named read capabilities to selected built-in personas/custom-role documentation.
 - Add only AF ServiceAccount `get/list` on `signalprocessings`, with RBAC tests.
 - Do not grant projection write access or create a second policy-reader ServiceAccount.
@@ -664,9 +673,9 @@ Before implementation is declared complete:
 8. Audit mapping contains required actor/action/outcome/request fields and safe details;
    live DataStorage retrieval, safe payload boundaries, and audit-pipeline failure
    observability are proven.
-9. `apifrontend` is preserved as a bounded DataStorage metric category; operator contract
-   tests pass for default/custom names, the required threshold, and minimal
-   SignalProcessing read RBAC; no write permission is introduced.
+9. `apifrontend` is preserved as a bounded DataStorage metric category; runtime
+   ConfigMap discovery tests pass for threshold validation, referenced policy name/key,
+   no-cache reads, and minimal SignalProcessing read RBAC; no write permission is introduced.
 10. Console #164 receives the frozen contract and completes its same-origin/deployed acceptance evidence.
 11. SOC2 certification-specific evidence is not treated as a release blocker unless the
     project explicitly authorizes that certification scope.
@@ -724,8 +733,9 @@ Fleet-only E2E port collision.
 | 1.2 | 2026-11-01 | Named capabilities/target SARs, minimal SignalProcessing read RBAC, and typed audit events approved |
 | 1.3 | 2026-11-01 | Operator release boundary set: first RED slice is typed audit persistence/retrieval plus `apifrontend` category normalization; broader SOC2 evidence deferred |
 | 1.4 | 2026-11-01 | Implementation completed; scoped build/test/lint and adapter/audit evidence recorded; Fleet-only E2E port collision and cross-repository deferrals documented |
-| 1.5 | 2026-11-04 | Local Console inventory containment finalized: metadata-only required client, paginated projection/discard, bounded working set, cancellation/concurrency limits, pre-write response guard, and no public page-freshness/count semantics |
+| 1.5 | 2026-11-04 | Local Console inventory containment finalized: metadata-only required client, paginated projection/discard, bounded working set, cancellation/concurrency limits, pre-write response guard, and no public page-count/snapshot semantics |
 | 1.6 | 2026-11-05 | Added the dedicated policy-read HTTPS response-body limiter: 16 MiB per decrypted Kubernetes response before client-go decoding, while retaining the 2 MiB serialized Console response guard and documenting the remaining process-RSS limitation |
+| 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery; exposed bounded observed/freshness metadata without snapshot semantics and recorded the stable AIA reference follow-up |
 
 ## 13. Scope visibility clarification for review (2026-11-04)
 
@@ -793,10 +803,11 @@ The final local-read contract is narrower than the original generic inventory de
 - Console policy/inventory list operations are local-only for this release. ACM/FMC list
   operations remain unavailable; existing remote exact/get behavior is unchanged except
   for the common response safety guard.
-- These are implementation safeguards, not public count/total/reload/snapshot/freshness
-  or page-level `observed_at` semantics. The response has no total/count field and makes
-  no cross-request snapshot or source-freshness claim. Historical evaluation timestamps
-  remain source timestamps, not freshness markers.
+- These are implementation safeguards, not public count/total/reload/snapshot semantics.
+  Complete and empty responses include per-read `observed_at`/`observedAt` and bounded
+  `freshness` metadata. The response has no total/count field and makes no cross-request
+  snapshot or source synchronization claim. Historical evaluation timestamps remain
+  source timestamps, not page-observation timestamps.
 
 Containment evidence is recorded by `UT-AF-2592-METADATA-001`,
 `UT-AF-2592-PAGE-001/002`, `UT-AF-2592-KINDS-001`, `UT-AF-2592-CONTINUATION-001`,

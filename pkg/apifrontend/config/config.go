@@ -5,7 +5,6 @@ package config
 
 import (
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,7 +19,6 @@ import (
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
-	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Config holds all operational configuration for the API Frontend.
@@ -59,22 +57,15 @@ type InteractiveConfig struct {
 	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
-// PolicyReadConfig describes the operator-rendered, read-only policy metadata
-// exposed by the authenticated Console projection (DD-AF-018).
-//
-// The confidence threshold is deliberately a string at the YAML boundary so
-// the operator's decimal value can be validated and carried without binary
-// float formatting changes. It is converted to float64 only in the typed
-// projection response.
+// PolicyReadConfig is retained for compatibility with older operator-rendered
+// AF ConfigMaps. New AF code ignores this block and reads policy metadata from
+// the AIAnalysis and SignalProcessing runtime ConfigMaps.
 type PolicyReadConfig struct {
 	AIAnalysis       PolicyReadReference `yaml:"aiAnalysis"`
 	SignalProcessing PolicyReadReference `yaml:"signalProcessing"`
 }
 
-// PolicyReadReference identifies one operator-owned policy ConfigMap.
-// SignalProcessing does not use ConfidenceThreshold; the field is kept in the
-// shared shape so the YAML remains compact and future policy metadata can be
-// added without a second top-level contract.
+// PolicyReadReference is the legacy compatibility shape for one policy source.
 type PolicyReadReference struct {
 	ConfigMapName       string `yaml:"configMapName"`
 	ConfidenceThreshold string `yaml:"confidenceThreshold,omitempty"`
@@ -438,54 +429,11 @@ func (c *Config) Validate() error {
 		c.validateTLSPaths,
 		c.validateSeverityTriage,
 		c.validateSession,
-		c.validatePolicyRead,
 		c.Fleet.Validate,
 	} {
 		if err := validate(); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// validatePolicyRead validates an explicitly rendered policyRead block.
-// Existing non-Console configurations may omit the block while they are being
-// upgraded; once any policyRead field is rendered, the complete operator
-// contract is required and no threshold fallback is accepted.
-func (c *Config) validatePolicyRead() error {
-	p := c.PolicyRead
-	configured := p.AIAnalysis.ConfigMapName != "" ||
-		p.AIAnalysis.ConfidenceThreshold != "" ||
-		p.SignalProcessing.ConfigMapName != ""
-	if !configured {
-		return nil
-	}
-	if err := validatePolicyReadName("policyRead.aiAnalysis.configMapName", p.AIAnalysis.ConfigMapName); err != nil {
-		return err
-	}
-	if err := validatePolicyReadName("policyRead.signalProcessing.configMapName", p.SignalProcessing.ConfigMapName); err != nil {
-		return err
-	}
-	threshold := strings.TrimSpace(p.AIAnalysis.ConfidenceThreshold)
-	if threshold == "" {
-		return fmt.Errorf("policyRead.aiAnalysis.confidenceThreshold is required")
-	}
-	value, err := strconv.ParseFloat(threshold, 64)
-	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
-		return fmt.Errorf("policyRead.aiAnalysis.confidenceThreshold must be finite and in range (0.0, 1.0], got %q", p.AIAnalysis.ConfidenceThreshold)
-	}
-	if p.SignalProcessing.ConfidenceThreshold != "" {
-		return fmt.Errorf("policyRead.signalProcessing.confidenceThreshold is not supported")
-	}
-	return nil
-}
-
-func validatePolicyReadName(field, name string) error {
-	if name == "" {
-		return fmt.Errorf("%s is required", field)
-	}
-	if errs := utilvalidation.IsDNS1123Subdomain(name); len(errs) > 0 {
-		return fmt.Errorf("%s must be a DNS-1123 name: %s", field, strings.Join(errs, "; "))
 	}
 	return nil
 }

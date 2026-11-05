@@ -14,12 +14,13 @@
 > and typed-audit decisions were approved before implementation. This record separates
 > completed AF evidence from deferred Console/deployment qualification.
 >
-> **Console metadata decision (2026-11-03/04):** The user approved removing
-> Console freshness objects and freshness-marker rejection. The wire contract
-> exposes no count, total, reload, snapshot, freshness, or page-observation
-> metadata; the Console owns render time. Historical evaluation timestamps remain
-> source record timestamps. Explicit backend errors, identity, authorization, and
-> detected incomplete results remain fail-closed. See DD-AF-018 and
+> **Console metadata decision (2026-11-03/05):** Complete and empty responses expose
+> backend observation time and the bounded freshness envelope for that read. The wire
+> contract exposes no count, total, reload, or snapshot metadata and makes no
+> cross-request synchronization claim. A freshness value does not by itself produce
+> the shared `stale` state. Historical evaluation timestamps remain source record
+> timestamps. Explicit backend errors, identity, authorization, and detected incomplete
+> results remain fail-closed. See DD-AF-018 and
 > `IT-AF-2593-PUBLIC-METADATA-001/002/003`.
 
 ---
@@ -44,10 +45,10 @@ reads fail closed and that existing A2A/MCP and service-account paths remain unc
    and missing/invalid-label safe defaults match BR-SCOPE-001 and ADR-053.
 3. Prove verified user identity, named read capabilities, and target-scope authorization
    are enforced server-side; invalid filters and opaque IDs cannot widen access.
-4. Prove current policy metadata is separated from historical evaluation metadata and that
+4. Prove runtime ConfigMap policy metadata is separated from historical evaluation metadata and that
    no raw Rego, ConfigMap data, token, secret, or private reasoning crosses the response boundary.
-5. Prove the production router wiring and operator-provided `policyRead` references work
-   without changing A2A/MCP behavior.
+5. Prove the production router wiring and per-operation runtime ConfigMap discovery work
+   without changing A2A/MCP behavior; legacy `policyRead` remains decode-compatible only.
 
 ### 1.3 Success Metrics
 
@@ -112,7 +113,7 @@ declared GREEN while any of those ITs is absent or failing.
 
 ### 4.1 Features to be Tested
 
-- `pkg/apifrontend/config`: typed `policyRead` configuration and validation.
+- `pkg/apifrontend/config`: legacy `policyRead` compatibility decoding; runtime policy metadata is tested in `policyread`.
 - `pkg/apifrontend/handler`: authenticated AF REST handlers and router registration.
 - `pkg/apifrontend/auth`: named read-capability and target-scope authorization.
 - New policy-read projection package: policy ConfigMap metadata, scope provenance,
@@ -121,7 +122,7 @@ declared GREEN while any of those ITs is absent or failing.
 - `cmd/apifrontend`: production dependency and router wiring.
 - `api/apifrontend/openapi/apifrontend-v1.yaml`: schemas, paths, error states, and security contract.
 - AF audit emission and DataStorage adapter mapping for attributable read attempts.
-- Operator configuration compatibility with merged PR #604's `policyRead` block.
+- Operator-generated `aianalysis-config`/`signalprocessing-config` runtime metadata and compatibility with merged PR #604's legacy `policyRead` shape.
 
 ### 4.2 Features Not to be Tested
 
@@ -138,23 +139,22 @@ declared GREEN while any of those ITs is absent or failing.
 | Decision | Recommended contract | Alternative | Approval effect |
 |---|---|---|---|
 | Boundary | Authenticated AF REST under `/api/v1/console/...` | Separate user API/BFF or direct browser API calls | REST is required for the planned tests; direct browser-to-DS is rejected |
-| Threshold | Every new deployment must provide the AIAnalysis approval threshold; the operator injects the validated value into AF `policyRead` for read-only display | Parse `aianalysis-config` or infer a custom Rego default | The configured value is sourced from existing `spec.aiAnalysis.confidenceThreshold`; missing/invalid values fail deployment/readiness |
+| Policy metadata | AF reads operator-generated runtime ConfigMaps per operation; threshold source is `runtime-config`; legacy `policyRead` is compatibility-only | Maintain a second AF `policyRead` source, parse arbitrary Rego, or infer a default | Runtime metadata is validated, policy bytes are hashed only, and missing/invalid sources fail closed |
 | Authorization | Named read capabilities plus user/target SARs; optional coarse `kubernaut.ai/console` gate remains additive | Coarse console gate only | **Approved**; coarse-only is rejected as insufficiently granular and optional by current config |
 | Service accounts | Console REST accepts verified interactive users only; A2A/MCP service accounts remain unchanged | Permit service accounts on the console route | **Approved**; any exception requires a separate machine-read contract and tests |
 | Fleet inventory source | Local Kubernetes clients for `local`; non-local list operations unavailable in this release; existing typed FMC/ACM exact/get and `ScopeChecker` behavior remains unchanged | AF Console path reads remote Kubernetes/MCP directly or enables an unqualified remote list | **Approved**; AF must not create a second remote-cluster access path or delegate browser tokens |
 
-The threshold direction is approved: v1 does not expose a nullable `unknown` threshold.
-The operator's existing `spec.aiAnalysis.confidenceThreshold` is the single source of
-truth, and the AF `policyRead` value is derived from it. Missing or invalid values fail
-operator validation/reconciliation and AF startup/readiness rather than silently using a
-Rego default. The API describes this as the configured/supplied approval threshold, not
-the universal effective threshold of arbitrary custom Rego. The implementation phase
-also uses the approved named capabilities, local target SARs, existing FMC/ACM managed-
-scope checks for remote targets, and the approved minimal SignalProcessing `get/list`
-RBAC. This preserves least privilege and gives the Console a server-side user/scope
-boundary rather than treating a browser session as a permission. AF config reload
-validates changed `policyRead` content for drift detection but applies it only after
-restart; no live projection dependency is mutated by the watcher.
+The runtime policy decision is approved: AF reads the operator-generated runtime
+ConfigMaps per policy-scope operation and reports threshold source `runtime-config`.
+The threshold must be finite and in `(0.0, 1.0]`; AF never infers a Rego default.
+AIAnalysis currently exposes a mounted policy path rather than a ConfigMap reference,
+so AF uses the existing `aianalysis-policy` / `approval.rego` convention and fails
+closed when it is unavailable. The operator team owns the future stable AIA reference
+and removal of generated legacy `policyRead` duplication; this branch does not extend
+operator PR #615. The implementation also uses the approved named capabilities, local
+target SARs, existing FMC/ACM managed-scope checks for remote targets, and minimal
+SignalProcessing `get/list` RBAC. This preserves least privilege and gives the Console
+a server-side user/scope boundary rather than treating a browser session as a permission.
 
 ---
 
@@ -203,8 +203,8 @@ The shared state vocabulary exposes these eight logical states:
 2. `success` — complete non-empty response, HTTP 200.
 3. `empty` — complete response with zero items, HTTP 200, no `total` field.
 4. `partial` — one or more required reads/joins/traversals incomplete, HTTP 503, no data.
-5. `stale` — reserved shared state for qualified backends; the local release does not
-   derive this state from a freshness marker or expose freshness metadata, HTTP 503, no data.
+5. `stale` — reserved shared state for qualified backends; a freshness value alone does
+   not produce this state, HTTP 503, no data.
 6. `unavailable` — required backend/configuration cannot be read, HTTP 503, no data.
 7. `forbidden` — authenticated caller lacks the endpoint or requested scope permission,
    HTTP 403, no records, counts, or provenance.
@@ -243,8 +243,8 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 
 | File/package | Functions/behavior |
 |---|---|
-| `pkg/apifrontend/config` | `PolicyRead` YAML decode, required names, required threshold/range validation |
-| New policy-read package | canonical identity, label precedence, projection allowlist, history join, cursor, state mapping |
+| `pkg/apifrontend/config` | Legacy `PolicyRead` YAML decode for compatibility only |
+| New policy-read package | Runtime ConfigMap metadata, threshold/name/key validation, revision hashing, canonical identity, label precedence, projection allowlist, history join, cursor, state mapping |
 | `pkg/apifrontend/auth` | capability names, user/service-account distinction, target SAR request construction |
 | `pkg/shared/scope` | structured provenance resolution and compatibility wrapper |
 | `pkg/fleet/fmc`, `pkg/fleet/acm` | canonical sanitized inventory page/detail adapters and fail-closed control-plane errors |
@@ -260,14 +260,14 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `cmd/apifrontend/backend_deps.go` | local typed/dynamic readers, FMC/ACM inventory adapters, scope resolver, SAR dependencies |
 | `pkg/fleet/fmc`, `pkg/fleet/acm` | control-plane inventory endpoints/query transport and typed response mapping |
 | `api/apifrontend/openapi/apifrontend-v1.yaml` | schema and operation contract validation |
-| Operator contract fixture | merged `policyRead` names and explicit custom-name behavior |
+| Runtime policy fixture | Operator-generated runtime ConfigMaps, explicit SignalProcessing custom name/key, and fail-closed AIA convention |
 
 ### 6.3 Version Identification
 
 | Item | Version/commit | Notes |
 |---|---|---|
 | Kubernaut | `origin/main` at `16bb28c6e` before implementation | Clean preflight baseline |
-| Operator | PR #604 merge `b29f3c89058f0a96f9464788b6a99b2bc9581311` | Names-only `policyRead` contract |
+| Operator | PR #604 merge `b29f3c89058f0a96f9464788b6a99b2bc9581311` | Legacy names-only `policyRead` shape retained only for compatibility; runtime ConfigMap contract is current |
 | Console | PR #162 merged; issue #164 open | Consumer remains blocked on this contract |
 
 ---
@@ -295,7 +295,7 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| `UT-AF-2584-001` | Required operator threshold is represented exactly; missing, malformed, or out-of-range values fail closed and are never inferred from raw policy | **PASS** — config and finite-value regression tests |
+| `UT-AF-2584-001` | Runtime ConfigMap threshold is represented exactly; missing, malformed, or out-of-range values fail closed and are never inferred from raw policy | **PASS** — runtime-source and finite-value regression tests |
 | `UT-AF-2584-002` | Current policy identity/revision is projected without Rego source or arbitrary ConfigMap data | **PASS** — sanitized policy projection tests |
 | `UT-AF-2584-003` | Resource label overrides namespace label and reports resource provenance | **PASS** — structured scope provenance tests |
 | `UT-AF-2584-004` | Cluster-scoped resources do not inherit namespace scope; invalid labels are treated as absent, so namespaced resources may inherit a valid namespace label; no valid labels remain unmanaged | **PASS** — scope and local inventory tests |
@@ -322,12 +322,12 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection using operator `policyRead` names | **PASS** — production wiring and route-tier tests; deployed qualification remains separate |
+| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection using runtime ConfigMap policy metadata | **PASS** — production wiring and route-tier tests; deployed qualification remains separate |
 | `IT-AF-2584-002` | A real envtest inventory read reports exact resource identity, effective scope, precedence, provenance, and links | **PASS** — local inventory and dependency-wiring tests |
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests |
 | `IT-AF-2584-004` | Unauthorized capability or target-scope SAR returns forbidden with no records, counts, provenance, or existence detail | **PASS** — authenticated handler denial tests |
 | `IT-AF-2584-005` | Invalid filters, cross-cluster IDs, cross-namespace IDs, and guessed direct IDs cannot widen the result | **PASS** — filter, opaque-ID, and target-denial tests |
-| `IT-AF-2584-006` | Missing config, ConfigMap permission failure, history permission failure, unavailable source, and incomplete join return state-only failure responses | **PASS** — fail-closed source/state tests; live deployment qualification remains separate |
+| `IT-AF-2584-006` | Missing/invalid runtime metadata, ConfigMap permission failure, history permission failure, unavailable source, and incomplete join return state-only failure responses | **PASS** — fail-closed source/state tests; live deployment qualification remains separate |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
 | `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites |
 | `IT-AF-2584-009` | Existing A2A/MCP and verified service-account behavior remain unchanged after route/config wiring | **PASS** — broad affected AF package regression suite |
@@ -336,7 +336,7 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `IT-AF-2584-012` | **First RED gate:** a live DataStorage audit write is queryable by correlation/request ID, preserves required actor/action/outcome fields, excludes sensitive payloads, and makes persistence failure observable | **PASS** — live DataStorage integration evidence |
 | `IT-FLEET-2584-001` | FMC's typed inventory projection returns only canonical managed-resource identity/scope fields, preserves cursor/state metadata, and rejects unsupported or widening filters | **PASS** — focused FMC adapter suite |
 | `IT-FLEET-2584-002` | ACM's typed inventory projection matches the FMC canonical model and returns state-only failure on query/auth/backend errors | **NOT QUALIFIED** — fixture suite passed, but live ACM spike exposed incompatible filters, label/ID representation, and scope behavior; see §16.3 |
-| `IT-AF-2592-LOCAL-ROUTER-001` | The production AF router serves the local metadata projection without exposing page observation or other count/reload/freshness/snapshot metadata | **PASS** |
+| `IT-AF-2592-LOCAL-ROUTER-001` | The production AF router serves the local metadata projection with observed time and bounded freshness, without exposing count/reload/snapshot metadata | **PASS** |
 | `IT-AF-2592-RESPONSE-001` | An oversized serialized Console projection becomes state-only unavailable before any success body is written | **PASS** |
 | `IT-AF-2584-AUDIT-001/002` | Malformed authenticated requests and oversized serialized responses each produce exactly one final-outcome audit event | **PASS** |
 
@@ -344,9 +344,9 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 
 | ID | Business outcome | Owner | Phase |
 |---|---|---|---|
-| `E2E-CONSOLE-2584-001` | Console calls same-origin AF through OAuth2 Proxy with no browser bearer token and no direct DataStorage request | Console #164 | Deferred until AF contract lands |
-| `E2E-CONSOLE-2584-002` | `policies.scope` navigates to the exact managed-resource identity and maps all eight read states honestly | Console #164 | Deferred until AF contract lands |
-| `E2E-CONSOLE-2584-003` | Deployed user/group RBAC permits only approved read capabilities and blocks cross-scope access | Console/operator qualification | Deferred until auth decision lands |
+| `E2E-CONSOLE-2584-001` | Console calls same-origin AF through OAuth2 Proxy with no browser bearer token and no direct DataStorage request | Console #164 | Deferred — AF contract is implemented; Console qualification remains cross-repository |
+| `E2E-CONSOLE-2584-002` | `policies.scope` navigates to the exact managed-resource identity, displays observed/freshness metadata, and maps all eight read states honestly | Console #164 | Deferred — AF contract is implemented; browser qualification remains cross-repository |
+| `E2E-CONSOLE-2584-003` | Deployed user/group RBAC permits only approved read capabilities and blocks cross-scope access | Console/operator qualification | Deferred — deployment/RBAC evidence remains cross-repository |
 
 ### 8.4 Tier Skip Rationale
 
@@ -400,8 +400,8 @@ reads remain available to the same user.
 **Type**: Integration
 **File**: AF handler/backend integration spec
 
-Exercise missing `policyRead`, missing policy ConfigMap, forbidden history source,
-backend timeout, unavailable cached source, and incomplete history join independently.
+Exercise missing or invalid runtime policy metadata, missing referenced policy ConfigMap,
+forbidden history source, backend timeout, unavailable source, and incomplete history join independently.
 Each case must return only the corresponding state envelope and safe request ID. No
 case may return a partial `200`, partial records, a count, a source reference, or a
 fallback result from another cluster/source.
@@ -457,9 +457,9 @@ contract exists.
 
 | Dependency | Type | Status | Impact | Workaround |
 |---|---|---|---|---|
-| Threshold contract | Operator follow-up | Direction approved; operator rollout pending | Operator/AF must share one required configured value | Derive AF `policyRead` from `spec.aiAnalysis.confidenceThreshold`; do not infer Rego defaults |
+| Stable AIA policy reference | Operator follow-up | Direction approved; operator rollout pending | AF currently has only the mounted policy path and must identify the policy ConfigMap safely | Use the existing `aianalysis-policy` / `approval.rego` convention and fail closed; do not enumerate or infer |
 | Authorization contract | Design/security | Approved in DD-AF-018 | Named capabilities plus local target SARs and existing FMC/ACM managed-scope checks for remote targets | Implement the approved split; do not delegate user tokens to remote Kubernetes |
-| Operator PR #604 | Cross-repo code | Merged | Supplies policy names | Pin contract to merge SHA |
+| Operator PR #604 | Cross-repo code | Merged | Legacy `policyRead` shape remains decode-compatible | Pin compatibility fixtures to merge SHA; do not use it as a metadata source |
 | SignalProcessing history RBAC | Cross-repo security | AF reader complete; operator RBAC follow-up pending | Required for complete history projection in deployment | Add only AF ServiceAccount `get/list` on `signalprocessings`; no write verbs |
 | FMC/ACM inventory projection | Cross-repo architecture/implementation | AF adapters complete; live control-plane deployment pending | Required for remote Console exact/get and scope-check qualification; list remains unavailable | Preserve the shared sanitized contract and adapter ITs; no direct remote Kubernetes/MCP reader |
 | Console #164 | Cross-repo consumer | Open/blocked | Blocks browser/deployed acceptance | Run AF focused suites first |
@@ -518,14 +518,15 @@ unit-only handler calls.
 
 | Code path | Production entry point | Exit point | Wiring IT | Status |
 |---|---|---|---|---|
-| Typed `policyRead` config | AF ConfigMap load in `cmd/apifrontend` | Validated runtime config | IT-AF-2584-001 | **PASS** |
+| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | Validated policy metadata and revision | IT-AF-2584-001/003 | **PASS** |
 | Policy scope handler | `GET /api/v1/console/policies/scope` | Sanitized 200/state response | IT-AF-2584-001/003 | **PASS** |
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | Paginated identity projection | IT-AF-2584-002/007 | **PASS** |
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
 | Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-002 | **PASS** |
 | Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003/006 | **PASS** |
-| Fleet inventory projection | FMC/ACM control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001/002, IT-AF-2584-008 | **PASS** |
+| FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
+| ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-002, IT-AF-2584-008 | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
 | Audit persistence/retrieval | AF adapter → DataStorage audit store → query | Searchable typed event and observable failure | IT-AF-2584-012 | **PASS** |
 | `apifrontend` metric category | DataStorage audit handler | Bounded category/lag metric | UT-DS-2584-001 | **PASS** |
@@ -540,7 +541,8 @@ Unit tests do not count as wiring proof.
 | Location | Evidence added | Reason |
 |---|---|---|---|
 | `pkg/apifrontend/handler/router*_test.go` | Additive Console route assertions retain existing paths and middleware tiers | Prove no A2A/MCP route replacement |
-| `pkg/apifrontend/config/*_test.go` | Valid, malformed, missing-threshold, and operator-rendered `policyRead` fixtures | Validate the clean-break contract and fail-closed reads |
+| `pkg/apifrontend/config/*_test.go` | Legacy `policyRead` compatibility fixtures and ignored-source behavior | Preserve decoding without retaining a second policy source |
+| `pkg/apifrontend/policyread/*_test.go` | Runtime ConfigMap metadata, threshold/range, referenced-name/key, revision, no-cache, and fail-closed fixtures | Validate the authoritative policy source |
 | `cmd/apifrontend/main_wiring_test.go` | Local readers, FMC/ACM adapters, existing `ScopeChecker`, and auth dependencies are wired without `FleetReaderFactory` | CHECKPOINT W |
 | `pkg/apifrontend/audit/*_test.go` | Typed read actions, state-aware outcomes, safe payloads, and DataStorage union mapping | AU-2/AU-3 attribution |
 | `pkg/datastorage/server/audit_events_handler_test.go` | `UT-DS-2584-001` preserves the bounded `apifrontend` metric category | Operator audit observability |
@@ -566,6 +568,10 @@ Unit tests do not count as wiring proof.
   while unrelated `fullpipeline-e2e` owns host port `8088`. The active unrelated cluster
   was not stopped or removed. Both the default and offset attempts recorded the same
   `listen tcp4 :8088: bind: address already in use` failure.
+- The full `test/integration/apifrontend` suite was attempted after the final changes but
+  stopped before executing specs because the local envtest asset
+  `/usr/local/kubebuilder/bin/etcd` is missing. The affected package suites and all
+  compile/build checks pass; this is an environment prerequisite, not a test assertion failure.
 - The standalone local AF E2E run exercised 231 specs: 220 passed and 11 Fleet-only
   specifications failed because they ran in the local lane. Those failures are not
   counted as Issue #2584 projection failures or as a clean full-E2E pass.
@@ -640,9 +646,10 @@ gate. `IT-AF-2584-ACM-FAIL-CLOSED` exercises production dependency construction
 and verifies remote inventory list, exact read, and policy-scope list return
 `unavailable` with no records. `UT-AF-2584-FMC-READER` verifies that FMC wiring
 remains enabled. The ACM shared scope checker is unaffected by the inventory
-gate. Live least-privilege visibility, freshness, pagination, and production AF
-journey evidence are required before enabling ACM inventory. The subsequent
-snapshot decision supersedes the source-freshness requirement stated above.
+gate. Live least-privilege visibility, pagination, and production AF journey evidence
+are required before enabling ACM inventory. Complete local and qualified remote pages
+may expose per-read observation/freshness metadata, but no backend synchronization
+watermark or cross-request snapshot is claimed.
 
 #### ACM scope and registry follow-up (2026-11-03)
 
@@ -820,8 +827,9 @@ pre-write response check are the enforceable safeguards.
 Console policy/inventory list operations are local-only for this release; ACM/FMC list
 operations remain unavailable. Existing exact/get behavior is unchanged except for the
 common response safety guard. These bounds do not introduce public count/total/reload/
-snapshot/freshness or page-level `observed_at` semantics. The Console makes no
-cross-request snapshot or source-freshness claim.
+snapshot semantics; complete and empty pages expose per-read `observed_at`/`observedAt`
+and bounded `freshness` metadata. The Console makes no cross-request snapshot or source
+synchronization claim.
 
 The containment tests listed in §8 prove metadata-client enforcement, positive default
 page hint, Gateway-aligned default kinds, page traversal, continuation failure,
@@ -840,3 +848,4 @@ qualify ACM/FMC list visibility or completeness; that gate remains closed.
 | 1.4 | 2026-11-01 | Implementation and scoped validation completed; AF gates, adapter/audit evidence, Fleet E2E port collision, and cross-repository deferrals recorded |
 | 1.5 | 2026-11-04 | Local metadata-only inventory containment, client-go page-allocation limitation, bounded working set, cancellation/concurrency guard, response-size guard, and local-only list contract recorded |
 | 1.6 | 2026-11-05 | Added the 16 MiB decrypted Kubernetes response-body containment test and documented its HTTPS-preserving, non-RSS-complete scope |
+| 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |

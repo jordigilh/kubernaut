@@ -69,13 +69,8 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		DeferCleanup(server.Close)
 		deps := &backendDeps{k8sTypedClient: crfake.NewClientBuilder().Build()}
 		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}}
-		Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
-		strict, ok := deps.ScopeChecker.(scope.StrictScopeChecker)
-		Expect(ok).To(BeTrue())
-
-		managed, err := strict.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
-		Expect(managed).To(BeFalse(), "an unavailable registry must not authorize a cluster")
-		Expect(err).To(HaveOccurred())
+		Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(MatchError("acm scope checking requires a managed gateway registry"))
+		Expect(deps.ScopeChecker).To(BeNil())
 	})
 
 	It("IT-AF-2593-REGISTRY-001 [BR-SECURITY-016]: rejects an ACM target outside the managed gateway registry", func() {

@@ -8104,9 +8104,10 @@ components:
           description: Event type for discriminator (matches parent event_type)
         cluster_id:
           type: string
+          nullable: true
           minLength: 1
           maxLength: 253
-          description: Explicit cluster identity used for the read
+          description: Explicit cluster identity used for the read; null when the authenticated request was rejected before a cluster identity could be validated
         result_state:
           type: string
           enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
@@ -8132,9 +8133,10 @@ components:
           description: Event type for discriminator (matches parent event_type)
         cluster_id:
           type: string
+          nullable: true
           minLength: 1
           maxLength: 253
-          description: Explicit cluster identity used for the read
+          description: Explicit cluster identity used for the read; null when the authenticated request was rejected before a cluster identity could be validated
         result_state:
           type: string
           enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
@@ -8160,9 +8162,10 @@ components:
           description: Event type for discriminator (matches parent event_type)
         cluster_id:
           type: string
+          nullable: true
           minLength: 1
           maxLength: 253
-          description: Explicit cluster identity used for the read
+          description: Explicit cluster identity used for the read; null when the authenticated request was rejected before a cluster identity could be validated
         result_state:
           type: string
           enum: [success, empty, partial, stale, unavailable, forbidden, not_found]

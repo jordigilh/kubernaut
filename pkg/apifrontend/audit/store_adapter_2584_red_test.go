@@ -89,4 +89,20 @@ var _ = Describe("IT-AF-2584-012: typed Console read audit events", func() {
 		Expect(event.EventData.Validate()).To(Succeed())
 		Expect(event.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataType("apifrontend.console.managed_resource_get_read")))
 	})
+
+	It("UT-AF-2584-011: preserves an authenticated malformed request with a null cluster identity", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventType("console.policy_scope_read"),
+			CorrelationID: "request-2584-no-cluster",
+			UserID:        "alice",
+			Detail:        map[string]string{"result_state": "unavailable"},
+		})
+
+		event := store.lastEvent()
+		Expect(event).NotTo(BeNil())
+		Expect(event.EventData.Validate()).To(Succeed())
+		payload, err := json.Marshal(event.EventData)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(payload)).To(ContainSubstring(`"cluster_id":null`))
+	})
 })

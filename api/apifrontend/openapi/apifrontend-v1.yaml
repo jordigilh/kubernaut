@@ -571,9 +571,11 @@ components:
       description: |
         Server-emitted projection state. `loading` is a Console client state
         and is never emitted by API Frontend. The wire contract exposes no
-        count, total, reload, snapshot, freshness, or page-observation metadata.
-        `stale` remains in the shared state vocabulary for qualified backends;
-        local reads do not derive it from freshness metadata.
+        count, total, reload, or snapshot metadata. Successful and empty pages
+        include the time observed and bounded freshness state for that read;
+        these fields do not provide a cross-request snapshot or synchronization
+        watermark. `stale` remains in the shared state vocabulary for qualified
+        backends; a freshness value does not change the read state by itself.
 
     ConsoleStateEnvelope:
       type: object
@@ -597,10 +599,10 @@ components:
           type: boolean
         resource_label:
           type: string
-          enum: [true, false, absent, invalid]
+          enum: ["true", "false", absent, invalid]
         namespace_label:
           type: string
-          enum: [true, false, absent, invalid]
+          enum: ["true", "false", absent, invalid]
         source:
           type: string
           enum: [resource-label, namespace-label, none, unavailable]
@@ -631,11 +633,17 @@ components:
           $ref: "#/components/schemas/ManagedScope"
     ManagedResourcePage:
       type: object
-      required: [state, completeness]
+      required: [state, observed_at, freshness, completeness]
       additionalProperties: false
       properties:
         state:
           $ref: "#/components/schemas/ConsoleReadState"
+        observed_at:
+          type: string
+          format: date-time
+          description: Time at which this page was observed by the backend read
+        freshness:
+          $ref: "#/components/schemas/ConsoleFreshness"
         completeness:
           type: string
           enum: [complete, partial]
@@ -657,7 +665,7 @@ components:
           maximum: 1
         source:
           type: string
-          const: operator-config
+          const: runtime-config
         kind:
           type: string
           const: rego-approval
@@ -704,6 +712,21 @@ components:
         decision:
           type: string
 
+    ConsoleFreshness:
+      type: object
+      required: [state, as_of]
+      additionalProperties: false
+      description: |
+        Bounded freshness metadata for the completed backend read. This is not
+        a transactional snapshot or a source synchronization watermark.
+      properties:
+        state:
+          type: string
+          enum: [fresh, stale]
+        as_of:
+          type: string
+          format: date-time
+
     PolicyScopeItem:
       type: object
       required: [id, resource, currentPolicies, inventoryLink]
@@ -728,7 +751,7 @@ components:
 
     PolicyScopePage:
       type: object
-      required: [apiVersion, kind, state, completeness]
+      required: [apiVersion, kind, state, observedAt, freshness, completeness]
       additionalProperties: false
       properties:
         apiVersion:
@@ -739,6 +762,12 @@ components:
           const: PolicyScopeList
         state:
           $ref: "#/components/schemas/ConsoleReadState"
+        observedAt:
+          type: string
+          format: date-time
+          description: Time at which this page was observed by the backend read
+        freshness:
+          $ref: "#/components/schemas/ConsoleFreshness"
         completeness:
           type: string
           enum: [complete, partial]

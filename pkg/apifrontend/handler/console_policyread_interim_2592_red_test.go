@@ -2,7 +2,6 @@ package handler_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -23,7 +22,7 @@ import (
 )
 
 var _ = Describe("BR-API-001 / BR-SCOPE-001: production AF router local projection", func() {
-	It("IT-AF-2592-LOCAL-ROUTER-001 [BR-API-001]: serves the local backend through the authenticated router without page metadata", func() {
+	It("IT-AF-2592-LOCAL-ROUTER-001 [BR-API-001]: serves the local backend with observed time and freshness metadata", func() {
 		deploymentObject := &unstructuredDeployment{
 			name:      "checkout",
 			namespace: "payments",
@@ -73,13 +72,15 @@ var _ = Describe("BR-API-001 / BR-SCOPE-001: production AF router local projecti
 
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		Expect(recorder.Body.String()).To(ContainSubstring("checkout"))
-		expectNoInterimPublicMetadata(recorder.Body.Bytes())
+		Expect(recorder.Body.String()).To(ContainSubstring(`"observed_at"`))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"freshness"`))
 	})
 
-	It("IT-AF-2592-PUBLIC-002 [BR-API-001]: omits observation and pagination metadata from the policy-scope wire response", func() {
+	It("IT-AF-2592-PUBLIC-002 [BR-API-001]: exposes policy-scope observation and freshness metadata", func() {
 		page := inventory.Page{
 			State:        inventory.StateEmpty,
 			ObservedAt:   time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC),
+			Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)},
 			Completeness: inventory.CompletenessComplete,
 		}
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: page})
@@ -90,36 +91,10 @@ var _ = Describe("BR-API-001 / BR-SCOPE-001: production AF router local projecti
 		readHandler.ServeHTTP(recorder, req)
 
 		Expect(recorder.Code).To(Equal(http.StatusOK))
-		expectNoInterimPublicMetadata(recorder.Body.Bytes())
+		Expect(recorder.Body.String()).To(ContainSubstring(`"observedAt"`))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"freshness"`))
 	})
 })
-
-func expectNoInterimPublicMetadata(body []byte) {
-	var value interface{}
-	ExpectWithOffset(1, json.Unmarshal(body, &value)).To(Succeed())
-	keys := make(map[string]struct{})
-	collectJSONKeys(value, keys)
-	for _, key := range []string{
-		"observed_at", "observedAt", "freshness", "count", "total",
-		"snapshot", "snapshot_id", "snapshotId", "reload", "reload_id", "reloadId",
-	} {
-		ExpectWithOffset(1, keys).NotTo(HaveKey(key), "public interim contract must not expose %q", key)
-	}
-}
-
-func collectJSONKeys(value interface{}, keys map[string]struct{}) {
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		for key, child := range typed {
-			keys[key] = struct{}{}
-			collectJSONKeys(child, keys)
-		}
-	case []interface{}:
-		for _, child := range typed {
-			collectJSONKeys(child, keys)
-		}
-	}
-}
 
 type unstructuredDeployment struct {
 	name      string

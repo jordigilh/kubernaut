@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	metadatafake "k8s.io/client-go/metadata/fake"
+	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection", func() {
@@ -49,6 +50,43 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection"
 		resource, err := reader.Get(context.Background(), "local", page1.Items[0].ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resource.ID).To(Equal(page1.Items[0].ID))
+	})
+
+	It("reuses Namespace label resolution within one list operation", func() {
+		scheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		namespace := &metav1.PartialObjectMetadata{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Namespace"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "payments",
+				Labels: map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
+			},
+		}
+		alpha := metadataDeployment("alpha")
+		alpha.Labels = nil
+		beta := metadataDeployment("beta")
+		beta.Labels = nil
+		client := metadatafake.NewSimpleMetadataClient(scheme, namespace, alpha, beta)
+		reader, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
+			MetadataClient: client,
+			ScopeResolver:  scope.NewManager(crfake.NewClientBuilder().WithScheme(scheme).Build()),
+			Kinds: []policyread.LocalResourceKind{{
+				Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true,
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		page, err := reader.List(context.Background(), inventory.Filters{ClusterID: "local", Limit: 10})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(page.Items).To(HaveLen(2))
+
+		namespaceGets := 0
+		for _, action := range client.Actions() {
+			if action.GetVerb() == "get" && action.GetResource().Resource == "namespaces" {
+				namespaceGets++
+			}
+		}
+		Expect(namespaceGets).To(Equal(1))
 	})
 })
 

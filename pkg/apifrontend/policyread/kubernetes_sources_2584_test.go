@@ -16,6 +16,59 @@ import (
 )
 
 var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", func() {
+	It("reads current policy metadata from the operator-generated runtime ConfigMaps", func() {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(spv1.AddToScheme(scheme)).To(Succeed())
+		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "aianalysis-config", Namespace: "kubernaut-system"},
+				Data:       map[string]string{"config.yaml": "rego:\n  policyPath: /etc/aianalysis/policies/approval.rego\n  confidenceThreshold: \"0.85\"\n"},
+			},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "signalprocessing-config", Namespace: "kubernaut-system"},
+				Data:       map[string]string{"config.yaml": "classifier:\n  regoConfigMapName: custom-signal-policy\n  regoConfigMapKey: policy.rego\n"},
+			},
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "aianalysis-policy", Namespace: "kubernaut-system"}, Data: map[string]string{"approval.rego": "package approval"}},
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "custom-signal-policy", Namespace: "kubernaut-system"}, Data: map[string]string{"policy.rego": "package signal"}},
+		).Build()
+		source, err := policyread.NewKubernetesSource(reader)
+		Expect(err).NotTo(HaveOccurred())
+
+		policies, err := source.ReadCurrentPolicies(context.Background(), "kubernaut-system")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(policies).To(HaveLen(2))
+		Expect(policies[0].Type).To(Equal("aiAnalysis"))
+		Expect(policies[0].ConfigMapName).To(Equal("aianalysis-policy"))
+		Expect(policies[0].ConfigMapKey).To(Equal("approval.rego"))
+		Expect(policies[0].Threshold).NotTo(BeNil())
+		Expect(policies[0].Threshold.Value).To(Equal(0.85))
+		Expect(policies[1].Type).To(Equal("signalProcessing"))
+		Expect(policies[1].ConfigMapName).To(Equal("custom-signal-policy"))
+		Expect(policies[1].ConfigMapKey).To(Equal("policy.rego"))
+	})
+
+	It("fails closed when the runtime threshold is missing", func() {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "aianalysis-config", Namespace: "kubernaut-system"},
+				Data:       map[string]string{"config.yaml": "rego:\n  policyPath: /etc/aianalysis/policies/approval.rego\n"},
+			},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "signalprocessing-config", Namespace: "kubernaut-system"},
+				Data:       map[string]string{"config.yaml": "classifier:\n  regoConfigMapName: signalprocessing-policy\n  regoConfigMapKey: policy.rego\n"},
+			},
+		).Build()
+		source, err := policyread.NewKubernetesSource(reader)
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = source.ReadCurrentPolicies(context.Background(), "kubernaut-system")
+		Expect(err).To(MatchError(ContainSubstring("confidenceThreshold")))
+	})
+
 	It("reads only configured ConfigMap keys and lists typed history records", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())

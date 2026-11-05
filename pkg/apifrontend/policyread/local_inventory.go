@@ -8,6 +8,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/metadata"
@@ -157,6 +158,7 @@ func (r *LocalInventoryReader) List(ctx context.Context, filters inventory.Filte
 func (r *LocalInventoryReader) list(ctx context.Context, filters inventory.Filters) (inventory.Page, error) {
 	resources := make([]inventory.Resource, 0)
 	workingSet := &retainedWorkingSet{limit: r.workingSetBytes}
+	namespaceLabels := make(map[string]map[string]string)
 	if inherited, ok := ctx.Value(workingSetContextKey{}).(*retainedWorkingSet); ok && inherited != nil {
 		workingSet = inherited
 	}
@@ -164,7 +166,7 @@ func (r *LocalInventoryReader) list(ctx context.Context, filters inventory.Filte
 		if !matchesKindFilter(kind, filters) {
 			continue
 		}
-		if readErr := r.readKind(ctx, kind, filters, &resources, workingSet); readErr != nil {
+		if readErr := r.readKind(ctx, kind, filters, &resources, workingSet, namespaceLabels); readErr != nil {
 			return inventory.StateOnly(inventory.StateUnavailable), readErr
 		}
 	}
@@ -196,7 +198,7 @@ func (r *LocalInventoryReader) list(ctx context.Context, filters inventory.Filte
 	return page, nil
 }
 
-func (r *LocalInventoryReader) readKind(ctx context.Context, kind LocalResourceKind, filters inventory.Filters, resources *[]inventory.Resource, workingSet *retainedWorkingSet) error {
+func (r *LocalInventoryReader) readKind(ctx context.Context, kind LocalResourceKind, filters inventory.Filters, resources *[]inventory.Resource, workingSet *retainedWorkingSet, namespaceLabels map[string]map[string]string) error {
 	resourceGetter := r.metadataClient.Resource(schema.GroupVersionResource{Group: kind.Group, Version: kind.Version, Resource: kind.Resource})
 	var resourceReader metadata.ResourceInterface = resourceGetter
 	if kind.Namespaced && filters.Namespace != "" {
@@ -210,7 +212,7 @@ func (r *LocalInventoryReader) readKind(ctx context.Context, kind LocalResourceK
 		if err != nil {
 			return err
 		}
-		if err := r.projectMetadataPage(ctx, kind, filters, metadataList, resources, workingSet); err != nil {
+		if err := r.projectMetadataPage(ctx, kind, filters, metadataList, resources, workingSet, namespaceLabels); err != nil {
 			return err
 		}
 		if nextContinuation == "" {
@@ -258,12 +260,12 @@ func validateMetadataContinuation(continuation, nextContinuation string, seenCon
 	return nil
 }
 
-func (r *LocalInventoryReader) projectMetadataPage(ctx context.Context, kind LocalResourceKind, filters inventory.Filters, metadataList *metav1.PartialObjectMetadataList, resources *[]inventory.Resource, workingSet *retainedWorkingSet) error {
+func (r *LocalInventoryReader) projectMetadataPage(ctx context.Context, kind LocalResourceKind, filters inventory.Filters, metadataList *metav1.PartialObjectMetadataList, resources *[]inventory.Resource, workingSet *retainedWorkingSet, namespaceLabels map[string]map[string]string) error {
 	for index := range metadataList.Items {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("project local inventory metadata: %w", err)
 		}
-		resource, included, err := r.projectMetadata(ctx, kind, &metadataList.Items[index], filters)
+		resource, included, err := r.projectMetadata(ctx, kind, &metadataList.Items[index], filters, namespaceLabels)
 		if err != nil {
 			return err
 		}
@@ -283,7 +285,7 @@ func (r *LocalInventoryReader) projectMetadataPage(ctx context.Context, kind Loc
 	return nil
 }
 
-func (r *LocalInventoryReader) projectMetadata(ctx context.Context, kind LocalResourceKind, object *metav1.PartialObjectMetadata, filters inventory.Filters) (inventory.Resource, bool, error) {
+func (r *LocalInventoryReader) projectMetadata(ctx context.Context, kind LocalResourceKind, object *metav1.PartialObjectMetadata, filters inventory.Filters, namespaceLabels map[string]map[string]string) (inventory.Resource, bool, error) {
 	// scope.Manager is the local Kubernetes resolver and rejects non-empty
 	// cluster IDs. The canonical projection adds the explicit hub ID after
 	// local resolution succeeds.
@@ -300,7 +302,13 @@ func (r *LocalInventoryReader) projectMetadata(ctx context.Context, kind LocalRe
 	}
 	var resolution scope.Resolution
 	var err error
-	if metadataResolver, ok := r.scopeResolver.(metadataScopeResolver); ok {
+	if _, isLocalManager := r.scopeResolver.(*scope.Manager); isLocalManager {
+		labels, labelsErr := r.namespaceLabels(ctx, scopeIdentity, object.GetLabels(), namespaceLabels)
+		if labelsErr != nil {
+			return inventory.Resource{}, false, labelsErr
+		}
+		resolution = scope.ResolveLabels(object.GetLabels(), labels, scope.IsClusterScopedKind(kind.Kind) || scopeIdentity.Namespace == "")
+	} else if metadataResolver, ok := r.scopeResolver.(metadataScopeResolver); ok {
 		resolution, err = metadataResolver.ResolveWithResourceLabels(ctx, scopeIdentity, object.GetLabels())
 	} else {
 		resolution, err = r.scopeResolver.Resolve(ctx, scopeIdentity)
@@ -328,6 +336,29 @@ func (r *LocalInventoryReader) projectMetadata(ctx context.Context, kind LocalRe
 		return inventory.Resource{}, false, nil
 	}
 	return resource, true, nil
+}
+
+func (r *LocalInventoryReader) namespaceLabels(ctx context.Context, resource scope.ResourceIdentity, resourceLabels map[string]string, cache map[string]map[string]string) (map[string]string, error) {
+	emptyLabels := map[string]string{}
+	clusterScoped := scope.IsClusterScopedKind(resource.Kind) || resource.Namespace == ""
+	resourceLabel, hasResourceLabel := resourceLabels[scope.ManagedLabelKey]
+	if clusterScoped || (hasResourceLabel && (resourceLabel == scope.ManagedLabelValueTrue || resourceLabel == scope.ManagedLabelValueFalse)) {
+		return emptyLabels, nil
+	}
+	if labels, cached := cache[resource.Namespace]; cached {
+		return labels, nil
+	}
+	namespaceObject, err := r.metadataClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}).Get(ctx, resource.Namespace, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			cache[resource.Namespace] = emptyLabels
+			return emptyLabels, nil
+		}
+		return nil, fmt.Errorf("resolve local resource scope: get Namespace %q: %w", resource.Namespace, err)
+	}
+	labels := namespaceObject.GetLabels()
+	cache[resource.Namespace] = labels
+	return labels, nil
 }
 
 // Get resolves an opaque ID by applying the same bounded list projection; no

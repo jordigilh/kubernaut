@@ -54,10 +54,10 @@ tests before release. The production ACM Console inventory gate remains closed.
   contents. AF owns the authenticated, versioned API contract and authorization;
   the Console consumes its states and identities without evaluating scope itself,
   storing browser tokens, or directly accessing Kubernetes or DataStorage.
-- The Console may render each request result at query time, but the API exposes no
-  snapshot identifier, cross-request snapshot guarantee, source-freshness marker, or
-  page-observation timestamp. Its exact API semantics remain subject to the local-only
-  release contract below.
+- The Console renders each request result at query time. Complete and empty pages expose
+  the backend observation time and bounded freshness state for that read, but the API
+  exposes no snapshot identifier, cross-request snapshot guarantee, or synchronization
+  watermark. Its exact API semantics remain subject to the local-only release contract below.
 
 ## Decision
 
@@ -107,6 +107,11 @@ genuine not-managed result. These are implementation and regression risks, not
 evidence that the approved boundary is complete. Detailed live observations and
 required RED scenarios are in `docs/tests/2584/TEST_PLAN.md` §16.3.
 
+The strict Console scope path is additive. Legacy `IsManagedResource` callers retain
+their existing fail-closed behavior and compatibility signature; they do not consume
+the Console-only error-preserving result. Both paths use the same shared managed-scope
+decision and backend routing.
+
 **Alternatives considered:** a Console-only additional scope check was rejected
 because it leaves the shared checker producing false managed decisions and
 duplicates security policy. Trusting Search identity/existence or treating an
@@ -127,21 +132,20 @@ the condition and does not fall back to a different cluster. The shared ACM
 scope checker remains wired for existing consumers. This is a temporary
 fail-closed release limitation, not completed ACM inventory functionality.
 
-#### Console result metadata (2026-11-03)
+#### Console result metadata (2026-11-03/05)
 
-The user approved removing the backend freshness object and freshness-based
-rejection for Console reads. The Console displays the result of a query and may
-record its own render time; neither live synchronization nor a source-index
-freshness guarantee is part of this API. The wire contract exposes no count,
-total, reload, snapshot, freshness, or page-level `observed_at` field. Historical
-evaluation timestamps, where already persisted and explicitly projected, remain
-source record timestamps rather than freshness markers.
+Complete and empty policy-scope and managed-resource pages expose the backend
+observation time and the existing bounded `freshness` envelope. These values describe
+the completed read that produced the response; they do not claim a transactional
+snapshot, cross-request consistency, or an ACM synchronization watermark. A backend
+freshness value does not automatically change a successful read into the shared
+`stale` state. Detected identity, authorization, backend, and incomplete-traversal
+failures remain state-only and fail closed.
 
-Alternatives considered: maintaining source freshness was rejected as unnecessary
-live-data machinery without an ACM synchronization watermark; exposing `fresh`
-based on request time was rejected as a misleading claim. Explicit identity,
-authorization, detected backend errors, and fail-closed handling of detected
-incomplete traversal remain.
+Alternatives considered: hiding observation/freshness metadata was rejected because
+Issue #2584 requires the Console to display observed time and freshness/completeness;
+inventing a synchronization watermark or snapshot identifier was rejected because no
+qualified backend provides one.
 
 ### Local inventory memory-containment contract (2026-11-04)
 
@@ -183,27 +187,40 @@ cancellation, concurrency bound, and pre-write serialized-response check. A seri
 response that exceeds 2 MiB becomes a state-only `unavailable` response; no partial success body
 is written.
 
-These implementation bounds do not add public count, total, reload, snapshot, freshness, or
-page-level `observed_at` semantics. The Console exposes no inventory total/count or backend
-freshness claim, and it does not promise a cross-request transactional snapshot. Historical
-evaluation timestamps, where already persisted and explicitly projected, remain source record
-timestamps rather than freshness markers.
+These implementation bounds do not add public count, total, reload, or snapshot semantics.
+Complete and empty responses expose the per-read `observed_at`/`observedAt` timestamp and
+bounded `freshness` envelope; they do not claim a cross-request transactional snapshot or an
+ACM synchronization watermark. Historical evaluation timestamps, where already persisted and
+explicitly projected, remain source record timestamps rather than page-observation timestamps.
 
-### 2. The threshold is operator-owned and required
+### 2. Runtime ConfigMaps are the policy metadata source
 
-For new v1 deployments, `spec.aiAnalysis.confidenceThreshold` is required and must be a
-finite decimal in `(0.0, 1.0]`. The operator continues rendering it into AIAnalysis
-`rego.confidenceThreshold` and injects the same validated value into AF's generated
-`policyRead` configuration.
+AF reads the existing operator-generated `aianalysis-config` and
+`signalprocessing-config` ConfigMaps in the AF namespace for each policy-scope
+operation. It reads only the allowlisted `config.yaml` key and the following typed
+fields:
 
-`policyRead.aiAnalysis.confidenceThreshold` is derived output, not an independent AF
-override. Missing or invalid values fail operator validation/reconciliation and AF
-startup/readiness. AF does not parse arbitrary Rego or infer a policy default.
+| Policy | Runtime metadata | Policy ConfigMap/key |
+|---|---|---|
+| AIAnalysis | `rego.confidenceThreshold` | Existing `aianalysis-policy` / `approval.rego` convention |
+| SignalProcessing | `classifier.regoConfigMapName` and `classifier.regoConfigMapKey` | The referenced name / `policy.rego` |
 
-The Console displays this as the **configured/supplied approval threshold**. It is not
-described as the universal effective threshold of arbitrary custom Rego. AIAnalysis's
-separate `lowConfidenceFloor` remains a distinct concern and is not silently conflated
-with this field.
+The threshold must be finite and in `(0.0, 1.0]`; the SignalProcessing name/key must
+be present and valid. AF hashes the referenced policy bytes for a revision and never
+returns their contents. Missing, malformed, unauthorized, or inconsistent runtime
+metadata fails closed for the operation. AF does not cache these ConfigMap reads.
+
+Current AIAnalysis runtime configuration exposes the mounted policy path but not a
+ConfigMap name. AF therefore uses the existing `aianalysis-policy` convention and
+fails closed when that ConfigMap/key is unavailable; it does not enumerate ConfigMaps
+or guess a custom name. The operator team owns the follow-up contract that will publish
+the stable AIA policy reference and remove this limitation and the generated legacy
+`policyRead` duplication. That follow-up must be a new approved operator change; this
+PR does not extend operator PR #615.
+
+The legacy `policyRead` block remains decodable for compatibility but is ignored for
+policy metadata discovery and is not validated as a second source of truth. AF does
+not parse arbitrary Rego or infer a Rego default.
 
 ### 3. Authorization is per user and per target
 
@@ -291,9 +308,11 @@ tests and graceful shutdown to wait for the queued write attempt; it is not a cr
 durability guarantee before the flush. Buffer drops and write failures remain observable
 through the existing store error/metric/log paths.
 
-AF configuration reload validates a candidate `policyRead` document for drift detection,
-but does not mutate the live handler or projection dependencies. A restart is required
-to apply a changed policy reference or threshold.
+AF policy-scope reads resolve runtime ConfigMap metadata per operation. The existing AF
+configuration watcher may continue to decode legacy `policyRead` content for compatibility,
+but changing that block does not alter policy-read behavior and does not require an AF
+restart. Runtime ConfigMap changes are visible on the next operation, subject to the
+Kubernetes API's normal read semantics.
 
 This supports SOC 2 CC7.2 investigation/monitoring and FedRAMP AU-2/AU-3 event and
 content requirements. Typed events alone are not a complete SOC 2 certification: the
@@ -343,11 +362,17 @@ user/scope authorization, and make the Console responsible for sensitive credent
 The existing coarse gate is optional and does not prove named endpoint permission or
 authorization for the exact requested resource.
 
-### AF parses runtime ConfigMap or Rego defaults — ❌ Rejected
+### AF maintains a second policy metadata block — ❌ Rejected
 
-AF must not interpret arbitrary customer policy source or claim a default that the
-operator did not supply. The operator already owns the configured threshold and can
-inject the same value into AF.
+The legacy `policyRead` block is compatibility-only. AF reads the operator-owned runtime
+ConfigMaps used by AIAnalysis and SignalProcessing so policy metadata is not duplicated
+in a second operator-owned source.
+
+### AF parses arbitrary Rego or infers defaults — ❌ Rejected
+
+AF reads only the small allowlisted runtime metadata fields and hashes fixed policy keys.
+It must not interpret arbitrary customer policy source or claim a Rego default that the
+operator did not publish.
 
 ### Nullable threshold with an `unknown` fallback — ❌ Rejected
 
@@ -397,8 +422,9 @@ history source is unavailable.
 
 ### Trade-offs
 
-- The operator repository must extend PR #604 with required threshold output, read
-  capability bindings, and minimal SignalProcessing RBAC.
+- The operator repository must publish a stable AIAnalysis policy ConfigMap reference in
+  runtime configuration, then remove the generated legacy `policyRead` duplication;
+  this follow-up is owned by the operator team and is not an extension of PR #615.
 - Remote Console list qualification remains gated on shared FMC/ACM inventory evidence; existing
   remote exact/get and scope-check behavior remains unchanged.
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
@@ -410,7 +436,7 @@ history source is unavailable.
 
 | Component | Production entry point | Wiring location | Integration proof |
 |---|---|---|---|
-| Required threshold projection | Operator-rendered AF config | Operator policyRead builder | IT-AF-2584-001 / operator RBAC/config tests |
+| Runtime policy metadata | Operator-generated AIA/SP runtime ConfigMaps | AF policy source and policy-scope request path | UT-AF-2584-006 / IT-AF-2584-001 |
 | Console policy read | `GET /api/v1/console/policies/scope` | AF router and handler construction | IT-AF-2584-001/003 |
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | AF router and projection service | IT-AF-2584-002/007 |
 | Managed inventory exact read | `.../managed-resources/{resourceID}` | AF router and projection service | IT-AF-2584-005 |
@@ -426,6 +452,11 @@ using wiring-first RED/GREEN/REFACTOR. The implementation includes the authentic
 REST handlers, local Kubernetes projection, typed FMC/ACM inventory adapters, named
 capability plus target authorization, structured scope provenance, typed audit events,
 OpenAPI schemas, generated DataStorage client artifacts, and production dependency wiring.
+
+Policy metadata is resolved from the existing runtime ConfigMaps on every policy-scope
+operation. Legacy `policyRead` values remain decodable but are not consumed. The AIA
+custom policy-name gap is intentionally fail-closed and is assigned to the operator
+follow-up contract rather than guessed in AF.
 
 Scoped validation passed for affected packages, full compilation/build, lint, typed audit
 persistence, and FMC/ACM adapter behavior. Fleet-only AF E2E is blocked by an unrelated

@@ -747,6 +747,7 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 			LocalInventory:  p.HDeps.Backends.LocalInventory,
 			RemoteInventory: p.HDeps.Backends.RemoteInventory,
 			Policies:        p.HDeps.Backends.PolicySource,
+			CurrentPolicies: p.HDeps.Backends.CurrentPolicySource,
 			History:         p.HDeps.Backends.HistorySource,
 			ScopeChecker:    p.HDeps.Backends.ScopeChecker,
 			ReadGuard:       p.HDeps.Backends.ReadGuard,
@@ -758,9 +759,8 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 		}
 	}
 	projectionService, err := policyread.NewService(policyread.Config{
-		Namespace:  cfg.Session.Namespace,
-		PolicyRead: cfg.PolicyRead,
-		BasePath:   "/api/v1/console",
+		Namespace: cfg.Session.Namespace,
+		BasePath:  "/api/v1/console",
 	}, projectionDeps)
 	if err != nil {
 		return handler.RouterConfig{}, nil, fmt.Errorf("create Console policy-read service: %w", err)

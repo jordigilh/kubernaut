@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -69,13 +71,7 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		result, err := h.service.ListPolicyScope(ctx, user, filters)
-		if err != nil {
-			state = unavailableState(err)
-			h.writeServiceError(w, r, err)
-			return
-		}
-		state = h.writeJSON(w, r, http.StatusOK, result, result.State)
+		state = h.servePolicyScope(w, r, ctx, user, filters)
 	case r.URL.Path == consoleInventoryListPath:
 		var err error
 		filters, err = parseConsoleFilters(r, false)
@@ -83,23 +79,7 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		result, err := h.service.ListInventory(ctx, user, filters)
-		if err != nil {
-			state = unavailableState(err)
-			h.writeServiceError(w, r, err)
-			return
-		}
-		state = h.writeJSON(w, r, http.StatusOK, struct {
-			State        inventory.State             `json:"state"`
-			Completeness inventory.CompletenessState `json:"completeness"`
-			Items        []inventory.Resource        `json:"items,omitempty"`
-			NextCursor   string                      `json:"next_cursor,omitempty"`
-		}{
-			State:        result.State,
-			Completeness: result.Completeness,
-			Items:        result.Items,
-			NextCursor:   result.NextCursor,
-		}, result.State)
+		state = h.serveInventoryList(w, r, ctx, user, filters)
 	case r.PathValue("resourceID") != "":
 		var err error
 		filters, err = parseConsoleFilters(r, true)
@@ -107,16 +87,53 @@ func (h *ConsolePolicyReadHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			h.writeInvalidFilter(w, r)
 			return
 		}
-		result, err := h.service.GetInventory(ctx, user, filters, r.PathValue("resourceID"))
-		if err != nil {
-			state = unavailableState(err)
-			h.writeServiceError(w, r, err)
-			return
-		}
-		state = h.writeJSON(w, r, http.StatusOK, result, resultState(result))
+		state = h.serveInventoryGet(w, r, ctx, user, filters, resourceID)
 	default:
 		h.writeProblem(w, r, http.StatusNotFound, "Not Found", "Console read route not found")
 	}
+}
+
+func (h *ConsolePolicyReadHandler) servePolicyScope(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
+	result, err := h.service.ListPolicyScope(ctx, user, filters)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return unavailableState(err)
+	}
+	return h.writeJSON(w, r, http.StatusOK, result, result.State)
+}
+
+func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
+	result, err := h.service.ListInventory(ctx, user, filters)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return unavailableState(err)
+	}
+	return h.writeJSON(w, r, http.StatusOK, managedResourceListResponse{
+		ObservedAt:   result.ObservedAt,
+		Freshness:    result.Freshness,
+		State:        result.State,
+		Completeness: result.Completeness,
+		Items:        result.Items,
+		NextCursor:   result.NextCursor,
+	}, result.State)
+}
+
+func (h *ConsolePolicyReadHandler) serveInventoryGet(w http.ResponseWriter, r *http.Request, ctx context.Context, user *auth.UserIdentity, filters inventory.Filters, resourceID string) inventory.State {
+	result, err := h.service.GetInventory(ctx, user, filters, resourceID)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return unavailableState(err)
+	}
+	return h.writeJSON(w, r, http.StatusOK, result, resultState(result))
+}
+
+type managedResourceListResponse struct {
+	ObservedAt   time.Time                   `json:"observed_at"`
+	Freshness    inventory.Freshness         `json:"freshness"`
+	State        inventory.State             `json:"state"`
+	Completeness inventory.CompletenessState `json:"completeness"`
+	Items        []inventory.Resource        `json:"items,omitempty"`
+	NextCursor   string                      `json:"next_cursor,omitempty"`
 }
 
 func parseConsoleFilters(r *http.Request, exact bool) (inventory.Filters, error) {

@@ -12845,7 +12845,7 @@ func (s *ApifrontendConsoleManagedResourceGetReadPayload) encodeFields(e *jx.Enc
 	}
 	{
 		e.FieldStart("cluster_id")
-		e.Str(s.ClusterID)
+		s.ClusterID.Encode(e)
 	}
 	{
 		e.FieldStart("result_state")
@@ -12893,9 +12893,7 @@ func (s *ApifrontendConsoleManagedResourceGetReadPayload) Decode(d *jx.Decoder) 
 		case "cluster_id":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.ClusterID = string(v)
-				if err != nil {
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -13093,7 +13091,7 @@ func (s *ApifrontendConsoleManagedResourceListReadPayload) encodeFields(e *jx.En
 	}
 	{
 		e.FieldStart("cluster_id")
-		e.Str(s.ClusterID)
+		s.ClusterID.Encode(e)
 	}
 	{
 		e.FieldStart("result_state")
@@ -13143,9 +13141,7 @@ func (s *ApifrontendConsoleManagedResourceListReadPayload) Decode(d *jx.Decoder)
 		case "cluster_id":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.ClusterID = string(v)
-				if err != nil {
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -13341,7 +13337,7 @@ func (s *ApifrontendConsolePolicyScopeReadPayload) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("cluster_id")
-		e.Str(s.ClusterID)
+		s.ClusterID.Encode(e)
 	}
 	{
 		e.FieldStart("result_state")
@@ -13391,9 +13387,7 @@ func (s *ApifrontendConsolePolicyScopeReadPayload) Decode(d *jx.Decoder) error {
 		case "cluster_id":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.ClusterID = string(v)
-				if err != nil {
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -23391,7 +23385,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsolePolicyScopeReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -23417,7 +23411,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsoleManagedResourceListReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -23443,7 +23437,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsoleManagedResourceGetReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -29455,7 +29449,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsolePolicyScopeReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -29481,7 +29475,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsoleManagedResourceListReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -29507,7 +29501,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			s := s.ApifrontendConsoleManagedResourceGetReadPayload
 			{
 				e.FieldStart("cluster_id")
-				e.Str(s.ClusterID)
+				s.ClusterID.Encode(e)
 			}
 			{
 				e.FieldStart("result_state")
@@ -41116,6 +41110,52 @@ func (s *ListLegalHoldsOKHoldsItem) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ListLegalHoldsOKHoldsItem) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes string as json.
+func (o NilString) Encode(e *jx.Encoder) {
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes string from json.
+func (o *NilString) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode NilString to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v string
+		o.Value = v
+		o.Null = true
+		return nil
+	}
+	o.Null = false
+	v, err := d.Str()
+	if err != nil {
+		return err
+	}
+	o.Value = string(v)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s NilString) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NilString) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
