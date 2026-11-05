@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -52,7 +53,7 @@ const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision             = "9dc9394fd1844be4f4d4adb89db9a881dbc066ed"
+	operatorRevision             = "90c48437ebc4dde020daa2ae3555c7f34f934fc3"
 	operatorRepository           = "jordigilh/kubernaut-operator"
 	applicationNamespace         = "kubernaut-system"
 	operatorNamespace            = "kubernaut-operator-system"
@@ -703,8 +704,13 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 }
 
 func validateOperatorAIAnalysisConfidenceThreshold(threshold string) error {
-	if strings.TrimSpace(threshold) == "" {
+	trimmed := strings.TrimSpace(threshold)
+	if trimmed == "" {
 		return errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
+		return fmt.Errorf("kubernaut CR requires confidence threshold in (0, 1], got %q", threshold)
 	}
 	return nil
 }

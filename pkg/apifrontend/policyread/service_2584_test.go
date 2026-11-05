@@ -28,6 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const policyReadTestResourceID = "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 type policyReadAuditRecorder struct {
 	events []*audit.Event
 }
@@ -150,7 +152,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 	It("projects only sanitized current policy and exact historical metadata", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
-			ID:         "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			ID:         policyReadTestResourceID,
 			ClusterID:  "local",
 			Group:      "apps",
 			Version:    "v1",
@@ -267,7 +269,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 	)
 
 	It("keeps exact backend failures distinct from not-found", func() {
-		resourceID := "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{getErr: inventory.ErrUnavailable},
 			Authorizer:     allowAuthorizer{},
@@ -279,8 +281,60 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
 
+	It("maps exact local target authorizer failures to unavailable", func() {
+		resourceID := policyReadTestResourceID
+		authorizer := &targetAuthorizer{err: errors.New("subject access review unavailable")}
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{resource: inventory.Resource{
+				ID: resourceID, ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment",
+				Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true},
+			}},
+			Authorizer: authorizer,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = svc.GetInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"}, resourceID)
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(authorizer.target.Resource).To(Equal("deployments"))
+	})
+
+	It("maps exact local target denials to not-found", func() {
+		resourceID := policyReadTestResourceID
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{resource: inventory.Resource{
+				ID: resourceID, ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment",
+				Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true},
+			}},
+			Authorizer: &targetAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = svc.GetInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"}, resourceID)
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateNotFound))
+	})
+
+	It("fails closed when an exact local resource kind is not allowlisted", func() {
+		resourceID := policyReadTestResourceID
+		authorizer := &targetAuthorizer{allowed: true}
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{resource: inventory.Resource{
+				ID: resourceID, ClusterID: "local", Version: "v1", Kind: "ConfigMap",
+				Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true},
+			}},
+			Authorizer: authorizer,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = svc.GetInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"}, resourceID)
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(authorizer.calls).To(BeZero())
+	})
+
 	It("maps malformed exact backend identity to unavailable", func() {
-		resourceID := "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{resource: inventory.Resource{ID: resourceID, ClusterID: "other-cluster", Kind: "Deployment", Version: "v1", Name: "checkout"}},
 			Authorizer:     allowAuthorizer{},
@@ -366,6 +420,23 @@ func (allowAuthorizer) Check(context.Context, string, []string, string) (bool, e
 
 func (allowAuthorizer) CheckTarget(context.Context, string, []string, auth.TargetAccess) (bool, error) {
 	return true, nil
+}
+
+type targetAuthorizer struct {
+	allowed bool
+	err     error
+	target  auth.TargetAccess
+	calls   int
+}
+
+func (a *targetAuthorizer) Check(context.Context, string, []string, string) (bool, error) {
+	return true, nil
+}
+
+func (a *targetAuthorizer) CheckTarget(_ context.Context, _ string, _ []string, target auth.TargetAccess) (bool, error) {
+	a.calls++
+	a.target = target
+	return a.allowed, a.err
 }
 
 var _ policyread.InventoryReader = (*inventoryStub)(nil)

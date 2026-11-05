@@ -99,7 +99,7 @@ func (h *ConsolePolicyReadHandler) servePolicyScope(w http.ResponseWriter, r *ht
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)
 	}
-	return h.writeJSON(w, r, http.StatusOK, result, result.State)
+	return writeConsoleJSON(h, w, r, http.StatusOK, result, result.State)
 }
 
 func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *http.Request, user *auth.UserIdentity, filters inventory.Filters) inventory.State {
@@ -108,7 +108,7 @@ func (h *ConsolePolicyReadHandler) serveInventoryList(w http.ResponseWriter, r *
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)
 	}
-	return h.writeJSON(w, r, http.StatusOK, managedResourceListResponse{
+	return writeConsoleJSON(h, w, r, http.StatusOK, managedResourceListResponse{
 		ObservedAt:   result.ObservedAt,
 		Freshness:    result.Freshness,
 		State:        result.State,
@@ -124,7 +124,7 @@ func (h *ConsolePolicyReadHandler) serveInventoryGet(w http.ResponseWriter, r *h
 		h.writeServiceError(w, r, err)
 		return unavailableState(err)
 	}
-	return h.writeJSON(w, r, http.StatusOK, result, resultState(result))
+	return writeConsoleJSON(h, w, r, http.StatusOK, result, resultState(result))
 }
 
 type managedResourceListResponse struct {
@@ -186,7 +186,7 @@ func (h *ConsolePolicyReadHandler) writeServiceError(w http.ResponseWriter, r *h
 	}
 	status := projectionStatus(state)
 	message := projectionMessage(state)
-	h.writeJSON(w, r, status, consoleStateEnvelope{
+	writeConsoleJSON(h, w, r, status, consoleStateEnvelope{
 		State: state, RequestID: requestid.FromContext(r.Context()), Message: message,
 	}, state)
 	if status >= http.StatusInternalServerError {
@@ -232,7 +232,7 @@ func (h *ConsolePolicyReadHandler) writeProblem(w http.ResponseWriter, r *http.R
 }
 
 func (h *ConsolePolicyReadHandler) writeState(w http.ResponseWriter, r *http.Request, state inventory.State) {
-	_ = h.writeJSON(w, r, projectionStatus(state), consoleStateEnvelope{
+	_ = writeConsoleJSON(h, w, r, projectionStatus(state), consoleStateEnvelope{
 		State: state, RequestID: requestid.FromContext(r.Context()), Message: projectionMessage(state),
 	}, state)
 }
@@ -243,17 +243,25 @@ type consoleStateEnvelope struct {
 	Message   string          `json:"message"`
 }
 
-func (h *ConsolePolicyReadHandler) writeJSON(w http.ResponseWriter, r *http.Request, status int, value interface{}, state inventory.State) inventory.State {
+func writeConsoleJSON[T any](h *ConsolePolicyReadHandler, w http.ResponseWriter, r *http.Request, status int, value T, state inventory.State) inventory.State {
 	body, err := json.Marshal(value)
 	if err != nil {
-		h.logger.Error(err, "encode Console projection response")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if _, writeErr := w.Write([]byte(`{"state":"unavailable","message":"Console projection unavailable"}`)); writeErr != nil {
-			h.logger.Error(writeErr, "write Console projection encoding failure")
-		}
-		return inventory.StateUnavailable
+		return h.writeJSONEncodingFailure(w, err)
 	}
+	return h.writeJSON(w, r, status, body, state)
+}
+
+func (h *ConsolePolicyReadHandler) writeJSONEncodingFailure(w http.ResponseWriter, err error) inventory.State {
+	h.logger.Error(err, "encode Console projection response")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	if _, writeErr := w.Write([]byte(`{"state":"unavailable","message":"Console projection unavailable"}`)); writeErr != nil {
+		h.logger.Error(writeErr, "write Console projection encoding failure")
+	}
+	return inventory.StateUnavailable
+}
+
+func (h *ConsolePolicyReadHandler) writeJSON(w http.ResponseWriter, r *http.Request, status int, body []byte, state inventory.State) inventory.State {
 	if int64(len(body)) > policyread.DefaultInventoryResponseBytes {
 		// This is a provisional serialized-response safety guard, not a
 		// Console item cap. The check happens before the first write so an

@@ -123,18 +123,18 @@ func (s *Service) GetInventory(ctx context.Context, user *auth.UserIdentity, fil
 		state = stateForInventoryError(err, inventory.StateUnavailable)
 		return inventory.Resource{}, stateError(state, err)
 	}
-	if err := validateResource(resource, normalized.ClusterID, resourceID); err != nil {
-		state = stateForInventoryError(err, inventory.StateUnavailable)
-		return inventory.Resource{}, stateError(state, err)
+	if validateErr := validateResource(resource, normalized.ClusterID, resourceID); validateErr != nil {
+		state = stateForInventoryError(validateErr, inventory.StateUnavailable)
+		return inventory.Resource{}, stateError(state, validateErr)
 	}
 	if !resource.Scope.Included {
 		state = inventory.StateNotFound
 		return inventory.Resource{}, stateError(state, inventory.ErrNotFound)
 	}
 
-	if err := s.authorizeInventoryTarget(ctx, user, resource, normalized.ClusterID); err != nil {
-		state = StateOf(err)
-		return inventory.Resource{}, err
+	if authorizeErr := s.authorizeInventoryTarget(ctx, user, resource, normalized.ClusterID); authorizeErr != nil {
+		state = StateOf(authorizeErr)
+		return inventory.Resource{}, authorizeErr
 	}
 
 	state = inventory.StateSuccess
@@ -230,21 +230,22 @@ func (s *Service) readInventoryPage(ctx context.Context, filters inventory.Filte
 	}
 	if filters.ClusterID == LocalClusterID && (page.State == inventory.StatePartial ||
 		(page.State == inventory.StateSuccess && page.Completeness != inventory.CompletenessComplete)) {
-		err := fmt.Errorf("%w: local inventory page is incomplete", inventory.ErrUnavailable)
-		return inventory.StateOnly(inventory.StatePartial), stateError(inventory.StatePartial, err)
+		incompleteErr := fmt.Errorf("%w: local inventory page is incomplete", inventory.ErrUnavailable)
+		return inventory.StateOnly(inventory.StatePartial), stateError(inventory.StatePartial, incompleteErr)
 	}
-	if err := page.Validate(); err != nil {
-		return inventory.StateOnly(inventory.StateUnavailable), stateError(inventory.StateUnavailable, err)
+	if validateErr := page.Validate(); validateErr != nil {
+		return inventory.StateOnly(inventory.StateUnavailable), stateError(inventory.StateUnavailable, validateErr)
 	}
 	if page.State != inventory.StateSuccess && page.State != inventory.StateEmpty {
 		return inventory.StateOnly(page.State), stateError(page.State, errors.New(string(page.State)))
 	}
 	for _, resource := range page.Items {
-		if err := validateResource(resource, filters.ClusterID, resource.ID); err != nil || !resource.Scope.Included {
-			if err == nil {
-				err = inventory.ErrUnavailable
+		validateErr := validateResource(resource, filters.ClusterID, resource.ID)
+		if validateErr != nil || !resource.Scope.Included {
+			if validateErr == nil {
+				validateErr = inventory.ErrUnavailable
 			}
-			return inventory.StateOnly(inventory.StateUnavailable), stateError(inventory.StateUnavailable, err)
+			return inventory.StateOnly(inventory.StateUnavailable), stateError(inventory.StateUnavailable, validateErr)
 		}
 	}
 	return page, nil
@@ -306,31 +307,32 @@ func (s *Service) authorize(ctx context.Context, user *auth.UserIdentity, capabi
 
 func (s *Service) authorizeTarget(ctx context.Context, user *auth.UserIdentity, resource inventory.Resource, exact bool) error {
 	if !exact || s.dependencies.Authorizer == nil {
-		return errors.New("console target authorizer unavailable")
+		return stateError(inventory.StateUnavailable, errors.New("console target authorizer unavailable"))
+	}
+	resourceName, ok := resourceNameFor(resource.Group, resource.Version, resource.Kind)
+	if !ok {
+		return stateError(inventory.StateUnavailable, fmt.Errorf("local resource kind %q is not allowlisted for %s/%s", resource.Kind, resource.Group, resource.Version))
 	}
 	allowed, err := s.dependencies.Authorizer.CheckTarget(ctx, user.Username, user.Groups, auth.TargetAccess{
 		Verb:      "get",
 		Group:     resource.Group,
 		Version:   resource.Version,
-		Resource:  resourceName(resource.Kind),
+		Resource:  resourceName,
 		Namespace: resource.Namespace,
 		Name:      resource.Name,
 	})
 	if err != nil {
-		return err
+		return stateError(inventory.StateUnavailable, err)
 	}
 	if !allowed {
-		return errors.New("console target get denied")
+		return stateError(inventory.StateNotFound, errors.New("console target get denied"))
 	}
 	return nil
 }
 
 func (s *Service) authorizeInventoryTarget(ctx context.Context, user *auth.UserIdentity, resource inventory.Resource, clusterID string) error {
 	if clusterID == LocalClusterID {
-		if err := s.authorizeTarget(ctx, user, resource, true); err != nil {
-			return stateError(inventory.StateNotFound, err)
-		}
-		return nil
+		return s.authorizeTarget(ctx, user, resource, true)
 	}
 	if s.dependencies.ScopeChecker == nil {
 		return stateError(inventory.StateUnavailable, errors.New("remote scope checker unavailable"))
@@ -383,20 +385,13 @@ func listTargetForKind(filters inventory.Filters, kind LocalResourceKind) auth.T
 	}
 }
 
-func resourceName(kind string) string {
-	if kind == "" {
-		return ""
+func resourceNameFor(group, version, kind string) (string, bool) {
+	for _, allowedKind := range DefaultLocalResourceKinds {
+		if allowedKind.Group == group && allowedKind.Version == version && allowedKind.Kind == kind {
+			return allowedKind.Resource, true
+		}
 	}
-	known := map[string]string{
-		"Pod": "pods", "Deployment": "deployments", "StatefulSet": "statefulsets",
-		"DaemonSet": "daemonsets", "ReplicaSet": "replicasets", "Job": "jobs",
-		"CronJob": "cronjobs", "Service": "services", "ConfigMap": "configmaps",
-		"Node": "nodes", "PersistentVolume": "persistentvolumes", "Namespace": "namespaces",
-	}
-	if resource, ok := known[kind]; ok {
-		return resource
-	}
-	return strings.ToLower(kind) + "s"
+	return "", false
 }
 
 func validateResource(resource inventory.Resource, clusterID, resourceID string) error {
