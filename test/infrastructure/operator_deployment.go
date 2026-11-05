@@ -661,11 +661,11 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 	if options.PostgreSQLSecret == "" || options.ValkeySecret == "" {
 		return errors.New("kubernaut CR requires PostgreSQL and Valkey Secret names")
 	}
-	if strings.TrimSpace(options.AIAnalysisConfidenceThreshold) == "" {
-		return errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
+	if err := validateOperatorAIAnalysisConfidenceThreshold(options.AIAnalysisConfidenceThreshold); err != nil {
+		return err
 	}
-	if options.LLM.Provider == "" || options.LLM.Model == "" || options.LLM.CredentialsSecret == "" {
-		return errors.New("kubernaut CR requires a complete LLM profile")
+	if err := validateOperatorLLMProfile(options.LLM); err != nil {
+		return err
 	}
 	if options.TLS.Mode == "" {
 		return errors.New("kubernaut CR requires an explicit TLS mode")
@@ -678,6 +678,20 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 	}
 	if options.APIFrontendEnabled && options.IssuerURL == "" {
 		return errors.New("kubernaut CR requires an API Frontend issuer URL when API Frontend is enabled")
+	}
+	return nil
+}
+
+func validateOperatorAIAnalysisConfidenceThreshold(threshold string) error {
+	if strings.TrimSpace(threshold) == "" {
+		return errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
+	}
+	return nil
+}
+
+func validateOperatorLLMProfile(profile OperatorLLMOptions) error {
+	if profile.Provider == "" || profile.Model == "" || profile.CredentialsSecret == "" {
+		return errors.New("kubernaut CR requires a complete LLM profile")
 	}
 	return nil
 }
