@@ -457,7 +457,7 @@ func (h *RemediationApprovalRequestAuthHandler) checkWorkflowOverride(ctx contex
 	)
 	if err := h.validateWorkflowOverride(ctx, rar); err != nil {
 		overrideLog.Info("Override validation failed", "error", err.Error(), "decision", rar.Status.Decision)
-		return admission.Denied(err.Error()), true
+		return h.denyDecision(ctx, logger, rar, authCtx, err.Error()), true
 	}
 	overrideLog.Info("Override validation passed")
 	return admission.Response{}, false

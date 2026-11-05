@@ -243,6 +243,31 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		Entry("UT-AW-2570-004: unknown key", map[string]string{"NEW": "value"}, "NEW"),
 	)
 
+	It("UT-AW-2570-103: BR-AUDIT-005 records an audit event for an invalid override denial", func() {
+		reader = fake.NewClientBuilder().WithScheme(scheme).Build()
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
+		Expect(handler.InjectDecoder(decoder)).To(Succeed())
+
+		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{
+			WorkflowID:             "wf-invalid-override-audit",
+			DeclaredParameterNames: map[string]bool{"P": true},
+		}
+		oldRAR.Spec.Parameters = map[string]string{"P": "original"}
+		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}
+		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		rar := oldRAR.DeepCopy()
+		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"NEW": "value"}}
+
+		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
+
+		Expect(response.Allowed).To(BeFalse())
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		Expect(mockStore.StoredEvents[0].EventAction).To(Equal("approval_decision_denied"))
+		Expect(string(mockStore.StoredEvents[0].EventOutcome)).To(Equal("failure"))
+	})
+
 	It("UT-AW-2570-017: BR-AUTH-001 rejects a valid override when the trusted workflow ID is absent", func() {
 		reader = fake.NewClientBuilder().WithScheme(scheme).WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj client.Object) []string {
 			return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
