@@ -65,8 +65,9 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 			CredentialsSecret: demoLLMSecretName, VertexProject: opts.VertexProject,
 			VertexLocation: opts.VertexLocation, Reasoning: reasoning,
 		},
-		TLS:              OperatorTLSOptions{Mode: "manual"},
-		PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
+		TLS:                           OperatorTLSOptions{Mode: "manual"},
+		PolicyConfigMaps:              OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
+		AIAnalysisConfidenceThreshold: "0.85",
 		Monitoring: OperatorMonitoringOptions{
 			PrometheusURL:   "https://prometheus-svc." + monitoringNamespace + ".svc.cluster.local:9090",
 			AlertManagerURL: "https://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093",

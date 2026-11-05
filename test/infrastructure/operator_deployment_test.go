@@ -323,6 +323,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(manifest).To(ContainSubstring("secretName: postgresql-secret"))
 		Expect(manifest).To(ContainSubstring("configMapName: aianalysis-policy"))
 		Expect(manifest).To(ContainSubstring("configMapName: signalprocessing-policy"))
+		Expect(manifest).To(ContainSubstring("confidenceThreshold: \"0.85\""))
 		Expect(manifest).To(ContainSubstring("provider: openai"))
 		Expect(manifest).To(ContainSubstring("kubernautAgent:"))
 		Expect(manifest).To(MatchRegexp(`(?m)^\s+apiFrontend:\s*\n\s+enabled: true\s`))
@@ -341,6 +342,14 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		minimalManifest, minimalErr := BuildKubernautCRManifest(minimal)
 		Expect(minimalErr).NotTo(HaveOccurred())
 		Expect(minimalManifest).NotTo(ContainSubstring("monitoring:"))
+	})
+
+	It("UT-AF-2584-INFRA-001 [BR-AI-088, SI-10]: requires an explicit policy-read confidence threshold", func() {
+		options := testOperatorCROptions()
+		options.AIAnalysisConfidenceThreshold = ""
+
+		_, err := BuildKubernautCRManifest(options)
+		Expect(err).To(MatchError("kubernaut CR requires an AIAnalysis confidence threshold"))
 	})
 
 	It("UT-2492-007B [BR-PLATFORM-014]: explicitly enables API Frontend when the demo requests it", func() {
@@ -692,6 +701,7 @@ func testOperatorOperandImages() map[string]string {
 
 func testOperatorCROptions() OperatorCROptions {
 	return OperatorCROptions{
-		Name: "kubernaut", Namespace: "kubernaut-system", PostgreSQLHost: "postgresql.kubernaut-system.svc.cluster.local", PostgreSQLSSLMode: "require", ValkeyHost: "valkey.kubernaut-system.svc.cluster.local", PostgreSQLSecret: "postgresql-secret", ValkeySecret: "valkey-secret", ValkeyTLS: &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"}, LLM: OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm.kubernaut-system.svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"}, TLS: OperatorTLSOptions{Mode: "manual", ManualInternalCASecret: "kubernaut-internal-ca"}, PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"}, Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc.monitoring.svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc.monitoring.svc.cluster.local:9093", TLSCASecretName: "monitoring-client-ca"}, GatewayEnabled: true, APIFrontendEnabled: true, IssuerURL: "https://idp.example.com/realms/kubernaut", Audience: "kubernaut-apifrontend",
+		AIAnalysisConfidenceThreshold: "0.85",
+		Name:                          "kubernaut", Namespace: "kubernaut-system", PostgreSQLHost: "postgresql.kubernaut-system.svc.cluster.local", PostgreSQLSSLMode: "require", ValkeyHost: "valkey.kubernaut-system.svc.cluster.local", PostgreSQLSecret: "postgresql-secret", ValkeySecret: "valkey-secret", ValkeyTLS: &OperatorValkeyTLSOptions{Enabled: true, CASecretName: "valkey-ca", ClientCertSecretName: "valkey-tls-client"}, LLM: OperatorLLMOptions{Provider: "openai", Model: "mock-model", Endpoint: "http://mock-llm.kubernaut-system.svc.cluster.local:8080", CredentialsSecret: "llm-credentials-primary"}, TLS: OperatorTLSOptions{Mode: "manual", ManualInternalCASecret: "kubernaut-internal-ca"}, PolicyConfigMaps: OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"}, Monitoring: OperatorMonitoringOptions{PrometheusURL: "https://prometheus-svc.monitoring.svc.cluster.local:9090", AlertManagerURL: "https://alertmanager-svc.monitoring.svc.cluster.local:9093", TLSCASecretName: "monitoring-client-ca"}, GatewayEnabled: true, APIFrontendEnabled: true, IssuerURL: "https://idp.example.com/realms/kubernaut", Audience: "kubernaut-apifrontend",
 	}
 }

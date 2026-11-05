@@ -349,14 +349,18 @@ type OperatorCROptions struct {
 	// the operator default; disposable Kind bootstrap profiles may set
 	// "require" when their CA is not part of the operator migration trust
 	// bundle.
-	PostgreSQLSSLMode                string
-	ValkeyHost                       string
-	PostgreSQLSecret                 string
-	ValkeySecret                     string
-	ValkeyTLS                        *OperatorValkeyTLSOptions
-	LLM                              OperatorLLMOptions
-	TLS                              OperatorTLSOptions
-	PolicyConfigMaps                 OperatorPolicyOptions
+	PostgreSQLSSLMode string
+	ValkeyHost        string
+	PostgreSQLSecret  string
+	ValkeySecret      string
+	ValkeyTLS         *OperatorValkeyTLSOptions
+	LLM               OperatorLLMOptions
+	TLS               OperatorTLSOptions
+	PolicyConfigMaps  OperatorPolicyOptions
+	// AIAnalysisConfidenceThreshold is the operator-owned approval threshold
+	// copied into API Frontend's policyRead configuration. Keep this as a
+	// string so the decimal value is preserved exactly at the YAML boundary.
+	AIAnalysisConfidenceThreshold    string
 	Monitoring                       OperatorMonitoringOptions
 	NetworkPolicies                  OperatorNetworkPolicyOptions
 	Fleet                            *OperatorFleetOptions
@@ -438,7 +442,8 @@ type operatorValkeyTLS struct {
 }
 
 type operatorPolicySpec struct {
-	Policy operatorPolicyRef `yaml:"policy"`
+	Policy              operatorPolicyRef `yaml:"policy"`
+	ConfidenceThreshold string            `yaml:"confidenceThreshold,omitempty"`
 }
 
 type operatorPolicyRef struct {
@@ -656,6 +661,9 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 	if options.PostgreSQLSecret == "" || options.ValkeySecret == "" {
 		return errors.New("kubernaut CR requires PostgreSQL and Valkey Secret names")
 	}
+	if strings.TrimSpace(options.AIAnalysisConfidenceThreshold) == "" {
+		return errors.New("kubernaut CR requires an AIAnalysis confidence threshold")
+	}
 	if options.LLM.Provider == "" || options.LLM.Model == "" || options.LLM.CredentialsSecret == "" {
 		return errors.New("kubernaut CR requires a complete LLM profile")
 	}
@@ -679,7 +687,7 @@ func buildOperatorCRSpec(options OperatorCROptions, audience string) operatorCRS
 		Image:            operatorImageSpec{Overrides: options.ImageOverrides},
 		PostgreSQL:       operatorPostgreSQLSpec{Host: options.PostgreSQLHost, SecretName: options.PostgreSQLSecret, SSLMode: options.PostgreSQLSSLMode},
 		Valkey:           operatorValkeySpec{Host: options.ValkeyHost, SecretName: options.ValkeySecret, TLS: operatorValkeyTLSManifest(options.ValkeyTLS)},
-		AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}},
+		AIAnalysis:       operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.AIAnalysis}, ConfidenceThreshold: options.AIAnalysisConfidenceThreshold},
 		SignalProcessing: operatorPolicySpec{Policy: operatorPolicyRef{ConfigMapName: options.PolicyConfigMaps.SignalProcessing}},
 		LLMProfiles:      map[string]operatorLLMProfile{"primary": {Provider: options.LLM.Provider, Model: options.LLM.Model, Endpoint: options.LLM.Endpoint, CredentialsSecret: options.LLM.CredentialsSecret, VertexProject: options.LLM.VertexProject, VertexLocation: options.LLM.VertexLocation, Reasoning: operatorReasoningManifest(options.LLM.Reasoning)}},
 		KubernautAgent:   operatorAgentSpec{},
