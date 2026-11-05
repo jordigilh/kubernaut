@@ -53,7 +53,7 @@ const (
 	// operatorRevision is the only operator source revision accepted by the
 	// #2492 qualification profile. Release workflows may replace it with an
 	// explicitly supplied candidate manifest, but never with a mutable latest.
-	operatorRevision             = "90c48437ebc4dde020daa2ae3555c7f34f934fc3"
+	operatorRevision             = "bbeba743627af654df848f37074d0d9f2a351655"
 	operatorRepository           = "jordigilh/kubernaut-operator"
 	applicationNamespace         = "kubernaut-system"
 	operatorNamespace            = "kubernaut-operator-system"

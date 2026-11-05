@@ -284,7 +284,7 @@ remediation-side effect.
 | Item | Current value | Required final evidence |
 |---|---|---|
 | Kubernaut source | `a8dc554ae758d0a3f4f13f4114f960b5d119ab25` / branch `issue-2574-triage` | Reviewed implementation revision; record the final validation SHA in the qualification evidence |
-| Operator source | `90c48437ebc4dde020daa2ae3555c7f34f934fc3` | Pinned operator qualification revision |
+| Operator source | `bbeba743627af654df848f37074d0d9f2a351655` | Pinned operator qualification revision |
 | Dependency chart | `0.1.1-run.4`, digest `sha256:53a3155522cab4d743d304badab45863d2b099edbcc30e7a48861a2f5c9bcb2d` | Published from source `7b1b6b10e7fb4521120e59609e5f79adef5a108d`; PostgreSQL/Valkey-only ownership |
 | Keycloak realm | `test/infrastructure/keycloak-realm-demo.json` | Client/redirect/group values unchanged and matched by live Secret/test |
 

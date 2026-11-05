@@ -56,7 +56,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-ARTIFACT-001 [BR-PLATFORM-014]: defaults to the pinned rc27 release inputs", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(operatorRevision).To(Equal("90c48437ebc4dde020daa2ae3555c7f34f934fc3"))
+		Expect(operatorRevision).To(Equal("bbeba743627af654df848f37074d0d9f2a351655"))
 		Expect(resolved.KubernautVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorVersion).To(Equal("1.6.0-rc27"))
 		Expect(resolved.OperatorImage).To(Equal("quay.io/kubernaut-ai/kubernaut-operator-image@sha256:bb98764927daef2e8e5feb871187799840174ca1ec35cc991247e94f34931c3a"))
@@ -180,11 +180,11 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 	It("UT-2492-001 [BR-PLATFORM-014]: records exact operator provenance", func() {
 		data, err := BuildOperatorProvenanceJSON(OperatorArtifactProvenance{
 			Repository:    "jordigilh/kubernaut-operator",
-			RequestedRef:  "90c48437ebc4dde020daa2ae3555c7f34f934fc3",
-			ResolvedSHA:   "90c48437ebc4dde020daa2ae3555c7f34f934fc3",
+			RequestedRef:  "bbeba743627af654df848f37074d0d9f2a351655",
+			ResolvedSHA:   "bbeba743627af654df848f37074d0d9f2a351655",
 			ImageRef:      "localhost/kubernaut-operator:cebebf7",
 			ImageDigest:   "sha256:operator",
-			ChartRevision: "90c48437ebc4dde020daa2ae3555c7f34f934fc3",
+			ChartRevision: "bbeba743627af654df848f37074d0d9f2a351655",
 			UpstreamSHA:   "upstream-app-sha",
 			WorkflowURL:   "https://github.example/runs/1",
 			Profile:       "generic-kind-v1.6",
@@ -192,7 +192,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var decoded map[string]string
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "90c48437ebc4dde020daa2ae3555c7f34f934fc3"))
+		Expect(decoded).To(HaveKeyWithValue("resolvedSHA", "bbeba743627af654df848f37074d0d9f2a351655"))
 		Expect(decoded).To(HaveKeyWithValue("imageDigest", "sha256:operator"))
 		Expect(decoded).To(HaveKeyWithValue("profile", "generic-kind-v1.6"))
 	})
