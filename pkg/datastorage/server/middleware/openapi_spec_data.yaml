@@ -1967,6 +1967,9 @@ components:
             - $ref: '#/components/schemas/ApifrontendConfigReloadedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigRejectedPayload'
             - $ref: '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
+            - $ref: '#/components/schemas/ApifrontendConsolePolicyScopeReadPayload'
+            - $ref: '#/components/schemas/ApifrontendConsoleManagedResourceListReadPayload'
+            - $ref: '#/components/schemas/ApifrontendConsoleManagedResourceGetReadPayload'
             - $ref: '#/components/schemas/DatastorageRatelimitDeniedPayload'
             - $ref: '#/components/schemas/GatewayConfigReloadedPayload'
             - $ref: '#/components/schemas/GatewayConfigRejectedPayload'
@@ -2140,6 +2143,9 @@ components:
               'apifrontend.config.reloaded': '#/components/schemas/ApifrontendConfigReloadedPayload'
               'apifrontend.config.rejected': '#/components/schemas/ApifrontendConfigRejectedPayload'
               'apifrontend.interactive_signal.failed': '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
+              'apifrontend.console.policy_scope_read': '#/components/schemas/ApifrontendConsolePolicyScopeReadPayload'
+              'apifrontend.console.managed_resource_list_read': '#/components/schemas/ApifrontendConsoleManagedResourceListReadPayload'
+              'apifrontend.console.managed_resource_get_read': '#/components/schemas/ApifrontendConsoleManagedResourceGetReadPayload'
               # Issue #2285: CA hot-reload audit-trail parity (GAP-11 onReload
               # callback wired into the 8 remaining StartCAFileWatcher callers;
               # gateway.config.{reloaded,rejected} and
@@ -8081,3 +8087,92 @@ components:
         error:
           type: string
           description: Final error returned by SignalInteractive after exhausting retries
+
+    # ── Authenticated Console read audit payloads (Issue #2584) ────────────
+    # These payloads intentionally contain only bounded attribution and result
+    # state. Returned records, policy source, labels, tokens, and arbitrary
+    # query values remain outside the audit event.
+    ApifrontendConsolePolicyScopeReadPayload:
+      type: object
+      additionalProperties: false
+      required: [event_type, cluster_id, result_state]
+      description: Authenticated Console policy/scope read result (BR-AUDIT-005, AU-2/AU-3, Issue #2584)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.console.policy_scope_read']
+          description: Event type for discriminator (matches parent event_type)
+        cluster_id:
+          type: string
+          minLength: 1
+          maxLength: 253
+          description: Explicit cluster identity used for the read
+        result_state:
+          type: string
+          enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
+          description: Bounded Console result state; loading is client-only
+        filter_fingerprint:
+          type: string
+          maxLength: 128
+          description: Opaque normalized filter fingerprint, never raw query values
+        request_id:
+          type: string
+          maxLength: 255
+          description: Bounded request identifier when supplied by AF middleware
+
+    ApifrontendConsoleManagedResourceListReadPayload:
+      type: object
+      additionalProperties: false
+      required: [event_type, cluster_id, result_state]
+      description: Authenticated Console managed-resource list result (BR-AUDIT-005, AU-2/AU-3, Issue #2584)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.console.managed_resource_list_read']
+          description: Event type for discriminator (matches parent event_type)
+        cluster_id:
+          type: string
+          minLength: 1
+          maxLength: 253
+          description: Explicit cluster identity used for the read
+        result_state:
+          type: string
+          enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
+          description: Bounded Console result state; loading is client-only
+        filter_fingerprint:
+          type: string
+          maxLength: 128
+          description: Opaque normalized filter fingerprint, never raw query values
+        request_id:
+          type: string
+          maxLength: 255
+          description: Bounded request identifier when supplied by AF middleware
+
+    ApifrontendConsoleManagedResourceGetReadPayload:
+      type: object
+      additionalProperties: false
+      required: [event_type, cluster_id, result_state, resource_fingerprint]
+      description: Authenticated Console managed-resource exact read result (BR-AUDIT-005, AU-2/AU-3, Issue #2584)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.console.managed_resource_get_read']
+          description: Event type for discriminator (matches parent event_type)
+        cluster_id:
+          type: string
+          minLength: 1
+          maxLength: 253
+          description: Explicit cluster identity used for the read
+        result_state:
+          type: string
+          enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
+          description: Bounded Console result state; loading is client-only
+        resource_fingerprint:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Opaque exact-resource fingerprint, never a returned object or raw target
+        request_id:
+          type: string
+          maxLength: 255
+          description: Bounded request identifier when supplied by AF middleware
