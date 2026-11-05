@@ -60,7 +60,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	inv.autoResolveRCATargetAPIVersion(rcaResult, correlationID)
 
 	preKind := signal.ResourceKind
-	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
+	signal = syncSignalFromRCAForWorkflowDiscovery(signal, rcaResult.RemediationTarget)
 	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
 	var err error
 	ctx, err = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
@@ -140,6 +140,16 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	return workflowResult, nil
 }
 
+func syncSignalFromRCAForWorkflowDiscovery(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
+	if !target.APIVersionValidated {
+		// A non-empty model value is not authoritative. Keep the original
+		// signal version when the target kind is unchanged; clear stale signal
+		// GVK data when RCA changes kind without a validated version.
+		target.APIVersion = ""
+	}
+	return SyncSignalFromRCA(signal, target)
+}
+
 func ensureEvidenceStatusScope(ctx context.Context) (context.Context, *katypes.EvidenceStatusScope) {
 	if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
 		return ctx, scope
@@ -199,7 +209,7 @@ func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context
 	markHistoryEnrichmentUnavailable(result, enrichData)
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
-	InjectRemediationTarget(result, signal, enrichData)
+	injectFinalizedRemediationTarget(result, signal, result, enrichData)
 	InjectTargetResourceParameters(result)
 	inv.applyMetricsFromScope(result, correlationID)
 	inv.setTokenUsageFromScope(result, correlationID)
@@ -224,6 +234,7 @@ func (inv *Investigator) autoResolveRCATargetAPIVersion(rcaResult *katypes.Inves
 	}
 	if !ambiguous && len(gvrs) == 1 {
 		rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+		rcaResult.RemediationTarget.APIVersionValidated = true
 		inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
 			"kind", rcaResult.RemediationTarget.Kind,
 			"api_version", rcaResult.RemediationTarget.APIVersion,
@@ -311,7 +322,7 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 		}
 		applySignalSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, rawEnrichData)
-		InjectRemediationTarget(rcaResult, signal, rawEnrichData)
+		injectFinalizedRemediationTarget(rcaResult, signal, rcaResult, rawEnrichData)
 		InjectTargetResourceParameters(rcaResult)
 		return rawEnrichData, true, rcaResult
 	}

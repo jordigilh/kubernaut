@@ -414,8 +414,8 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		})
 	})
 
-	Describe("UT-KA-1044-006: api_version already populated bypasses gate", func() {
-		It("should skip the gate when api_version is present (BR-AI-1044 AC2)", func() {
+	Describe("UT-KA-1044-006: unvalidated api_version bypasses retry but not finalization", func() {
+		It("should clear a model api_version when authoritative target enrichment has none (BR-KA-191)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Subscription etcd needs restart",
@@ -435,8 +435,8 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.RemediationTarget.APIVersion).To(Equal("operators.coreos.com/v1alpha1"),
-				"UT-KA-1044-006: existing api_version must be preserved")
+			Expect(result.RemediationTarget.APIVersion).To(BeEmpty(),
+				"UT-KA-1044-006: unvalidated model api_version must not survive finalization")
 			// Only 2 LLM calls: RCA + workflow (no gate retry)
 			Expect(mockClient.calls).To(HaveLen(2),
 				"UT-KA-1044-006: gate must not fire when api_version is already populated")

@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -982,8 +983,8 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 		})
 	})
 
-	Describe("UT-KA-1374-F8-005: apiVersion propagation from RCA when result lacks it", func() {
-		It("should copy apiVersion from rcaResult when workflowResult has none [BR-WORKFLOW-004]", func() {
+	Describe("UT-KA-2570-044: finalization preserves authoritative apiVersion", func() {
+		It("should not restore an RCA apiVersion when the authoritative target has none [BR-KA-191]", func() {
 			result := &katypes.InvestigationResult{
 				RCASummary: "test rca",
 				RemediationTarget: katypes.RemediationTarget{
@@ -1003,8 +1004,76 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 				},
 			}
 			investigator.FinalizeWorkflowResult(result, signal, rcaResult, nil)
-			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"apiVersion must be propagated from rcaResult when workflowResult lacks it")
+			Expect(result.RemediationTarget.APIVersion).To(BeEmpty(),
+				"model/RCA apiVersion must not survive without authoritative version")
+			Expect(result.Parameters).NotTo(HaveKey("TARGET_RESOURCE_API_VERSION"))
+		})
+
+		It("should preserve owner-chain apiVersion over a conflicting RCA value [BR-KA-191]", func() {
+			result := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "worker",
+					Namespace:  "production",
+					APIVersion: "extensions/v1beta1",
+				},
+			}
+			signal := katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-pod",
+				Namespace:    "production",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					APIVersion: "extensions/v1beta1",
+				},
+			}
+			enrichData := &enrichment.EnrichmentResult{
+				ResourceKind:      "Pod",
+				ResourceName:      "worker-pod",
+				ResourceNamespace: "production",
+				OwnerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Deployment", Name: "worker", Namespace: "production", APIVersion: "apps/v1"},
+				},
+			}
+
+			investigator.FinalizeWorkflowResult(result, signal, rcaResult, enrichData)
+
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"))
+		})
+
+		It("should preserve a mapper-validated RCA apiVersion when source enrichment omits it [BR-KA-191]", func() {
+			result := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Deployment",
+					Name:      "api-server",
+					Namespace: "production",
+				},
+			}
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:                "Deployment",
+					APIVersion:          "apps/v1",
+					APIVersionValidated: true,
+				},
+			}
+			enrichData := &enrichment.EnrichmentResult{
+				ResourceKind:      "Deployment",
+				ResourceName:      "api-server",
+				ResourceNamespace: "production",
+			}
+
+			investigator.FinalizeWorkflowResult(result, signal, rcaResult, enrichData)
+
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"))
 		})
 	})
 })

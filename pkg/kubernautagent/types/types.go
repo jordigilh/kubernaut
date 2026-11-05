@@ -364,6 +364,10 @@ type RemediationTarget struct {
 	// Format: "group/version" (e.g. "route.openshift.io/v1") or "version" for core (e.g. "v1").
 	// Issue #1040.
 	APIVersion string `json:"api_version,omitempty"`
+	// APIVersionValidated is internal provenance for API versions resolved by
+	// the REST mapper or the API-version validation gate. It must never cross
+	// the API boundary or be inferred for model-supplied values.
+	APIVersionValidated bool `json:"-"`
 }
 
 // DefaultClusterNameSentinel is the display-only placeholder

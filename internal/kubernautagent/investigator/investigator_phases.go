@@ -182,7 +182,7 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 //
 // Parity with the autonomous path at investigator.go L492-509:
 //   - Kind, Name, Namespace are always synced from a non-empty RCA target
-//   - APIVersion from RCA target is authoritative (overrides signal)
+//   - APIVersion from a validated RCA target is authoritative (overrides signal)
 //   - Stale GVK guard: when Kind changes but RCA has no apiVersion,
 //     the signal's apiVersion is cleared to prevent invalid combinations
 //     (e.g. "security.istio.io/v1/Deployment")
@@ -231,10 +231,7 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 	}
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
-	InjectRemediationTarget(result, signal, enrichData)
-	if result.RemediationTarget.APIVersion == "" && rcaResult != nil && rcaResult.RemediationTarget.APIVersion != "" {
-		result.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
-	}
+	injectFinalizedRemediationTarget(result, signal, rcaResult, enrichData)
 	// BR-AI-086 AC6 / IT-KA-1578-002: RCA reasoning is Phase-1-specific
 	// forensic metadata (mirrors mergeAndFinalizeWorkflowResult's autonomous
 	// path). Copied by reference, never fed back into a Phase 3 prompt.
@@ -242,6 +239,18 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 		result.Reasoning = rcaResult.Reasoning
 	}
 	InjectTargetResourceParameters(result)
+}
+
+// injectFinalizedRemediationTarget carries a validated RCA API version into
+// the finalization boundary without treating an arbitrary model value as
+// authoritative. Signal API versions are already server-owned; owner-chain
+// versions still take precedence inside InjectRemediationTarget.
+func injectFinalizedRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
+	if rcaResult != nil && rcaResult.RemediationTarget.APIVersionValidated &&
+		rcaResult.RemediationTarget.APIVersion != "" {
+		signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
+	}
+	InjectRemediationTarget(result, signal, enrichData)
 }
 
 // ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
@@ -454,9 +463,13 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		rootKind = enrichData.ResourceKind
 		rootName = enrichData.ResourceName
 		rootNS = enrichData.ResourceNamespace
-		// Enrichment source identity is authoritative for the target identity,
-		// but it carries no API version. Do not retain an unverified model value.
+		// Enrichment source identity is authoritative for the target identity.
+		// When it carries no API version, retain only a server-owned signal
+		// version for the same resource; never retain the model's value.
 		rootAPIVersion = ""
+		if rootKind == signal.ResourceKind && rootName == signal.ResourceName && rootNS == signal.Namespace {
+			rootAPIVersion = signal.ResourceAPIVersion
+		}
 	}
 
 	llmKind := result.RemediationTarget.Kind

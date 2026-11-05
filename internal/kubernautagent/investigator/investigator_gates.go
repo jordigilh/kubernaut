@@ -468,6 +468,7 @@ func (inv *Investigator) apiVersionValidationGate(
 func (inv *Investigator) autoResolveNonAmbiguousAPIVersion(result *katypes.InvestigationResult, gvrs []schema.GroupVersionResource, kind, correlationID string) *katypes.InvestigationResult {
 	if len(gvrs) == 1 {
 		result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+		result.RemediationTarget.APIVersionValidated = true
 		inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
 			"kind", kind,
 			"api_version", result.RemediationTarget.APIVersion,
@@ -585,6 +586,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 			"kind", kind, "correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryExhausted)
 	}
+	retryResult.RemediationTarget.APIVersionValidated = true
 
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	if usedReminder {
