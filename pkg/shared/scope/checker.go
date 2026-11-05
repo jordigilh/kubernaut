@@ -60,5 +60,12 @@ type ScopeChecker interface {
 	IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
 }
 
+// StrictScopeChecker preserves failures from the actual scope evaluation so
+// callers can distinguish an unavailable backend from an unmanaged resource.
+// DD-AF-018: legacy fail-closed callers retain ScopeChecker behavior.
+type StrictScopeChecker interface {
+	IsManagedResourceStrict(ctx context.Context, resource ResourceIdentity) (bool, error)
+}
+
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)

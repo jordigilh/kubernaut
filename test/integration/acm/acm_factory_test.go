@@ -67,19 +67,28 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 		graphQLServer *httptest.Server
 		fedChecker    scope.ScopeChecker
 		nextCount     int
+		nextStatus    int
 	)
 
 	BeforeAll(func() {
 		By("Starting fake ACM Search GraphQL server")
-		graphQLServer = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		graphQLServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			Expect(r.Method).To(Equal(http.MethodPost), "ACM Search uses POST for GraphQL")
 			Expect(r.URL.Path).To(Equal("/searchapi/graphql"), "endpoint path must match ACM convention")
+			if nextStatus != 0 {
+				w.WriteHeader(nextStatus)
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
+			items := []map[string]string{}
+			if nextCount == 1 {
+				items = append(items, map[string]string{"cluster": "prod-east", "apigroup": "apps", "apiversion": "v1", "kind": "Deployment", "namespace": "default", "name": "nginx", "label": "kubernaut.ai/managed=true"})
+			}
 			resp := map[string]interface{}{
 				"data": map[string]interface{}{
 					"searchResult": []map[string]interface{}{
-						{"count": nextCount},
+						{"count": nextCount, "items": items},
 					},
 				},
 			}
@@ -142,6 +151,79 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeFalse(),
 				"AC-4: absent resource must return false through the full production path")
+		})
+
+		It("IT-ACM-2584-STRICT-001: strict factory dispatch preserves errors while legacy dispatch fails closed", func() {
+			nextStatus = http.StatusForbidden
+			DeferCleanup(func() { nextStatus = 0 })
+			strict, ok := fedChecker.(scope.StrictScopeChecker)
+			Expect(ok).To(BeTrue())
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx"}
+			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			Expect(managed).To(BeFalse())
+			Expect(err).To(HaveOccurred())
+			managed, err = fedChecker.IsManagedResource(context.Background(), target)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed).To(BeFalse())
+		})
+
+		It("IT-ACM-2592-EMPTY-001 [BR-SECURITY-016]: distinguishes an unverified Search miss from an authoritative scope decision", func() {
+			nextCount = 0
+			strict, ok := fedChecker.(scope.StrictScopeChecker)
+			Expect(ok).To(BeTrue())
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
+
+			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			Expect(managed).To(BeFalse())
+			Expect(err).To(HaveOccurred(), "an empty Search result can be caused by restricted visibility and must not be reported as a verified absence")
+
+			managed, err = fedChecker.IsManagedResource(context.Background(), target)
+			Expect(err).NotTo(HaveOccurred(), "legacy Gateway and RO callers retain their fail-closed contract")
+			Expect(managed).To(BeFalse())
+		})
+
+		It("IT-ACM-2592-EMPTY-002 [BR-SCOPE-001]: does not treat an invisible namespace as an unmanaged decision", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Variables struct {
+						Input []struct {
+							Filters []struct {
+								Property string   `json:"property"`
+								Values   []string `json:"values"`
+							} `json:"filters"`
+						} `json:"input"`
+					} `json:"variables"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				if len(request.Variables.Input) != 1 {
+					http.Error(w, "invalid input", http.StatusBadRequest)
+					return
+				}
+				for _, filter := range request.Variables.Input[0].Filters {
+					if filter.Property == "kind" && len(filter.Values) > 0 && filter.Values[0] == "Namespace" {
+						if _, err := io.WriteString(w, `{"data":{"searchResult":[{"count":0,"items":[]}]}}`); err != nil {
+							GinkgoWriter.Printf("write namespace response: %v\n", err)
+						}
+						return
+					}
+				}
+				if _, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx"}]}]}}`); err != nil {
+					GinkgoWriter.Printf("write resource response: %v\n", err)
+				}
+			}))
+			DeferCleanup(server.Close)
+			checker, err := fleet.NewScopeChecker(&localAlwaysFalse{}, fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+			strict, ok := checker.(scope.StrictScopeChecker)
+			Expect(ok).To(BeTrue())
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
+
+			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			Expect(managed).To(BeFalse())
+			Expect(err).To(HaveOccurred(), "namespace inheritance cannot be decided from an authorization-filtered empty result")
 		})
 	})
 })

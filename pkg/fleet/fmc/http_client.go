@@ -101,6 +101,16 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 // (fail-safe per SC-7) -- retries improve resilience to short blips, they
 // never change the fail-closed guarantee on exhaustion.
 func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	managed, err := c.IsManagedResourceStrict(ctx, r)
+	if err != nil {
+		return false, nil //nolint:nilerr // preserve the established fail-closed legacy contract
+	}
+	return managed, nil
+}
+
+// IsManagedResourceStrict preserves failures from the actual FMC check for
+// Console, while the legacy wrapper remains fail-closed (DD-AF-018).
+func (c *HTTPClient) IsManagedResourceStrict(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
 	reqURL := c.buildScopeCheckURL(r)
 
 	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)
@@ -112,16 +122,16 @@ func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIden
 			return managed, nil
 		}
 		if !retryable || attempt == scopeCheckMaxAttempts {
-			return false, nil
+			return false, fmt.Errorf("fmc scope check failed")
 		}
 
 		select {
 		case <-ctx.Done():
-			return false, nil
+			return false, fmt.Errorf("fmc scope check canceled: %w", ctx.Err())
 		case <-time.After(scopeCheckBackoff.Calculate(attempt)):
 		}
 	}
-	return false, nil
+	return false, fmt.Errorf("fmc scope check failed")
 }
 
 // buildScopeCheckURL constructs the FMC scope-check request URL for a resource.

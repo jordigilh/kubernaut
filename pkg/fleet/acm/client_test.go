@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -46,14 +47,108 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}
 	})
 
-	// AC-4 Information Flow Enforcement: the scope check API is the enforcement
-	// point for multi-cluster resource governance. When ACM Search reports that a
-	// resource exists on a managed cluster (count > 0), the adapter MUST return
-	// managed=true so GW/RO act on it.
-	It("UT-ACM-054-001 [AC-4]: returns managed=true when ACM Search reports count > 0", func() {
+	It("UT-ACM-2584-LIVE-001 [BR-SCOPE-001]: rejects an explicitly unmanaged resource returned by Search", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+			_, err := w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"ConfigMap","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=false"}]}]}}`))
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		client = acm.NewClient(server.URL)
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed).To(BeFalse(), "an explicit false label must override any namespace opt-in")
+	})
+
+	DescribeTable("UT-ACM-2584-LIVE-005 [BR-SCOPE-001]: resolves live Search resource and namespace labels",
+		func(resourceLabel, namespaceLabel string, expected bool) {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				Expect(err).NotTo(HaveOccurred())
+				kind, name, namespace, label := "ConfigMap", "checkout", "payments", resourceLabel
+				if strings.Contains(string(body), `"Namespace"`) {
+					kind, name, namespace, label = "Namespace", "payments", "", namespaceLabel
+				}
+				item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": kind, "namespace": namespace, "name": name, "label": label}
+				Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
+			}))
+			client = acm.NewClient(server.URL)
+			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed).To(Equal(expected))
+		},
+		Entry("explicit true", "other=allowed; kubernaut.ai/managed=true", "", true),
+		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
+		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
+		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
+		Entry("invalid inherits namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", true),
+		Entry("missing labels default unmanaged", "", "", false),
+	)
+
+	DescribeTable("UT-ACM-2592-001 [BR-SECURITY-016]: empty Search results do not prove an unmanaged target",
+		func(missingNamespace bool) {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				Expect(err).NotTo(HaveOccurred())
+				response := `{"data":{"searchResult":[{"count":0,"items":[]}]}}`
+				if missingNamespace && !strings.Contains(string(body), `"Namespace"`) {
+					response = `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"ConfigMap","namespace":"payments","name":"checkout"}]}]}}`
+				}
+				_, err = io.WriteString(w, response)
+				Expect(err).NotTo(HaveOccurred())
+			}))
+			client = acm.NewClient(server.URL)
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"}
+			managed, err := client.IsManagedResourceStrict(context.Background(), target)
+			Expect(managed).To(BeFalse())
+			Expect(err).To(HaveOccurred())
+			managed, err = client.IsManagedResource(context.Background(), target)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed).To(BeFalse())
+		},
+		Entry("resource not visible", false),
+		Entry("namespace not visible", true),
+	)
+
+	It("UT-ACM-2592-002 [BR-SCOPE-001]: defaults an unlabeled cluster-scoped resource to unmanaged", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"worker"}]}]}}`)
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		client = acm.NewClient(server.URL)
+		managed, err := client.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed).To(BeFalse())
+	})
+
+	It("UT-ACM-2584-STRICT-001 [BR-SECURITY-016]: strict checking surfaces Search failures", func() {
+		client = acm.NewClient("http://127.0.0.1:1")
+		strict, ok := interface{}(client).(interface {
+			IsManagedResourceStrict(context.Context, scope.ResourceIdentity) (bool, error)
+		})
+		Expect(ok).To(BeTrue())
+		managed, err := strict.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("UT-ACM-2584-LIVE-006 [BR-SCOPE-001]: infers the GVK when existing callers supply only kind", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, err := w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`))
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		client = acm.NewClient(server.URL)
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed).To(BeTrue())
+	})
+
+	// AC-4: Search existence alone is insufficient; the explicit scope label is required.
+	It("UT-ACM-054-001 [AC-4]: returns managed=true for an explicitly opted-in resource", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
 		}))
 		client = acm.NewClient(server.URL)
 
@@ -64,12 +159,12 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed).To(BeTrue(),
-			"AC-4: resource found by ACM Search (count=1) must be reported as managed "+
+			"AC-4: resource explicitly opted into scope must be reported as managed "+
 				"so the gateway enforces the correct information flow decision")
 	})
 
-	// AC-4: When ACM Search reports count=0, the resource is not on the managed
-	// cluster. The adapter MUST return managed=false so GW/RO skip it.
+	// AC-4: An empty Search response is ambiguous. Legacy GW/RO callers must
+	// still conservatively treat it as unmanaged without propagating an error.
 	It("UT-ACM-054-002 [AC-4]: returns managed=false when ACM Search reports count == 0", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -84,7 +179,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed).To(BeFalse(),
-			"AC-4: resource absent from ACM Search (count=0) must be reported as unmanaged "+
+			"AC-4: an unverified Search result (count=0) must be treated as unmanaged "+
 				"so the gateway does not act on resources outside its scope")
 	})
 
@@ -305,7 +400,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		It("UT-ACM-TLS-001 [SC-8]: should connect to TLS server when CA cert is provided via WithHTTPClient", func() {
 			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
 			}))
 
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(server.Client()))
@@ -338,7 +433,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		It("UT-ACM-TLS-003 [SC-8]: WithHTTPClient overrides default transport", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
 			}))
 
 			customClient := &http.Client{Timeout: 5 * time.Second}

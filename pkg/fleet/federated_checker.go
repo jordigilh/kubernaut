@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -118,4 +119,20 @@ func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource 
 		return false, nil
 	}
 	return managed, nil
+}
+
+// IsManagedResourceStrict preserves backend errors for Console reads (DD-AF-018).
+// It uses the same routing and cluster precondition as the legacy scope check.
+func (f *FederatedScopeChecker) IsManagedResourceStrict(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if resource.ClusterID == "" {
+		return f.local.IsManagedResource(ctx, resource)
+	}
+	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
+		return false, fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
+	}
+	strict, ok := f.remote.(scope.StrictScopeChecker)
+	if !ok {
+		return false, fmt.Errorf("remote scope checker does not support strict checks")
+	}
+	return strict.IsManagedResourceStrict(ctx, resource)
 }

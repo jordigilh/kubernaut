@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -75,49 +76,124 @@ func NewClient(endpoint string, opts ...ClientOption) *Client {
 // by querying ACM Search's GraphQL API.
 // Returns false on any error (fail-safe per SC-7).
 func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	managed, err := c.IsManagedResourceStrict(ctx, r)
+	if err != nil {
+		return false, nil //nolint:nilerr // preserve the established fail-closed legacy contract
+	}
+	return managed, nil
+}
+
+// IsManagedResourceStrict resolves ACM Search metadata with the shared ADR-053
+// label precedence rules while preserving read failures for Console (DD-AF-018).
+func (c *Client) IsManagedResourceStrict(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
+		return false, fmt.Errorf("acm scope: cluster, kind and name are required")
+	}
+	if r.Group == "" && r.Version == "" {
+		gvk := scope.InferGVK(r.Kind)
+		r.Group, r.Version = gvk.Group, gvk.Version
+	}
+	item, found, err := c.searchScopeItem(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, fmt.Errorf("acm scope: resource visibility cannot be verified")
+	}
+	resourceLabels := searchManagedLabels(item)
+	clusterScoped := r.Namespace == "" || scope.IsClusterScopedKind(r.Kind)
+	resolution := scope.ResolveLabels(resourceLabels, nil, clusterScoped)
+	if clusterScoped || resolution.ResourceLabel == scope.LabelStateTrue || resolution.ResourceLabel == scope.LabelStateFalse {
+		return resolution.Included, nil
+	}
+	namespace := scope.ResourceIdentity{ClusterID: r.ClusterID, Version: "v1", Kind: "Namespace", Name: r.Namespace}
+	ns, found, err := c.searchScopeItem(ctx, namespace)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, fmt.Errorf("acm scope: namespace visibility cannot be verified")
+	}
+	return scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false).Included, nil
+}
+
+func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {
 	filters := buildFilters(r)
+	if r.Version != "" {
+		filters = append(filters, searchFilter{Property: "apiversion", Values: []string{r.Version}})
+	}
 	reqBody := graphQLRequest{
 		Query: SearchQuery,
 		Variables: map[string]interface{}{
-			"input": []searchInput{{Filters: filters}},
+			"input": []searchInput{{Filters: filters, Limit: 2}},
 		},
 	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return false, nil
+		return nil, false, fmt.Errorf("encode acm scope query: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+graphQLPath, bytes.NewReader(body))
 	if err != nil {
-		return false, nil
+		return nil, false, fmt.Errorf("build acm scope query: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, nil
+		return nil, false, fmt.Errorf("execute acm scope query: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, nil
+		return nil, false, fmt.Errorf("acm scope query returned status %d", resp.StatusCode)
 	}
 
 	var gqlResp graphQLResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
-		return false, nil
+		return nil, false, fmt.Errorf("decode acm scope response: %w", err)
 	}
+	return scopeItemFromResponse(gqlResp, r)
+}
 
+func scopeItemFromResponse(gqlResp graphQLResponse, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {
 	if len(gqlResp.Errors) > 0 {
-		return false, nil
+		return nil, false, fmt.Errorf("acm scope query returned graphql errors")
 	}
 
 	if gqlResp.Data == nil || len(gqlResp.Data.SearchResult) == 0 {
-		return false, nil
+		return nil, false, fmt.Errorf("acm scope response is missing search results")
 	}
+	result := gqlResp.Data.SearchResult[0]
+	if result.Count == 0 && len(result.Items) == 0 {
+		return nil, false, nil
+	}
+	if result.Count != 1 || len(result.Items) != 1 {
+		return nil, false, fmt.Errorf("acm scope query returned an ambiguous or incomplete result")
+	}
+	item := result.Items[0]
+	if firstString(item, "cluster") != r.ClusterID || firstString(item, "kind") != r.Kind ||
+		firstString(item, "name") != r.Name || firstString(item, "namespace") != r.Namespace ||
+		firstString(item, "apigroup") != r.Group || (r.Version != "" && firstString(item, "apiversion") != r.Version) {
+		return nil, false, fmt.Errorf("acm scope query returned a mismatched identity")
+	}
+	return item, true, nil
+}
 
-	return gqlResp.Data.SearchResult[0].Count > 0, nil
+func searchManagedLabels(item map[string]json.RawMessage) map[string]string {
+	labels := make(map[string]string, 1)
+	for _, pair := range strings.Split(firstString(item, "label"), ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if ok && key == scope.ManagedLabelKey {
+			if _, exists := labels[key]; exists {
+				labels[key] = "invalid-duplicate"
+				break
+			}
+			labels[key] = value
+		}
+	}
+	return labels
 }
 
 // Ping checks connectivity to the ACM Search GraphQL API by issuing the

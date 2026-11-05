@@ -607,6 +607,7 @@ var knownEventCategories = map[string]bool{
 	"system":            true,
 	"alert":             true,
 	"aianalysis":        true,
+	"apifrontend":       true,
 }
 
 // normalizeEventCategory maps request-supplied event categories to a bounded

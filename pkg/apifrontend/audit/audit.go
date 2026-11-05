@@ -84,6 +84,12 @@ const (
 	// consent-gating guarantee IS CRD creation is meant to provide
 	// (DD-INTERACTIVE-002, BR-INTERACTIVE-010).
 	EventInteractiveSignalFailed EventType = "interactive_signal.failed"
+
+	// Authenticated, read-only Console projections (Issue #2584,
+	// BR-AUDIT-005, DD-AF-018).
+	EventConsolePolicyScopeRead         EventType = "console.policy_scope_read"
+	EventConsoleManagedResourceListRead EventType = "console.managed_resource_list_read"
+	EventConsoleManagedResourceGetRead  EventType = "console.managed_resource_get_read"
 )
 
 // Event represents a SOC2-compatible audit event.

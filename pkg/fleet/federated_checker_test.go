@@ -50,6 +50,10 @@ func (m *mockRemoteChecker) IsManagedResource(_ context.Context, resource scope.
 	return m.managed[key], nil
 }
 
+func (m *mockRemoteChecker) IsManagedResourceStrict(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	return m.IsManagedResource(ctx, resource)
+}
+
 var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 	var (
 		ctx    context.Context
@@ -133,6 +137,20 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed).To(BeFalse(), "remote error should fall back to unmanaged (fail-safe)")
+	})
+
+	It("UT-FLEET-2584-STRICT-001 [BR-SECURITY-016]: preserves errors for strict reads without changing legacy behavior", func() {
+		remote.err = fmt.Errorf("backend unavailable")
+		strict, ok := interface{}(fc).(interface {
+			IsManagedResourceStrict(context.Context, scope.ResourceIdentity) (bool, error)
+		})
+		Expect(ok).To(BeTrue(), "Console requires a strict scope path")
+		managed, err := strict.IsManagedResourceStrict(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "nginx"})
+		Expect(managed).To(BeFalse())
+		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
+		managed, err = fc.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "nginx"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed).To(BeFalse())
 	})
 })
 

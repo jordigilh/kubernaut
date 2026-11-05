@@ -216,12 +216,259 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
 
+  /api/v1/console/policies/scope:
+    get:
+      operationId: getConsolePolicyScope
+      summary: Read sanitized policy and managed-scope metadata
+      description: |
+        Returns the authenticated Console projection of effective managed scope,
+        configured policy identity/revision metadata, the operator-supplied
+        AIAnalysis approval threshold, and bounded historical evaluations.
+        Policy source, secrets, arbitrary labels, and full Kubernetes objects are
+        never returned. `cluster_id=local` is the only supported list target for
+        this release; non-local policy-scope requests return a state-only
+        `unavailable` response. The endpoint is same-origin compatible and
+        requires the verified interactive user identity from the Bearer token.
+      tags: [console]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConsoleClusterID"
+        - $ref: "#/components/parameters/ConsoleNamespace"
+        - $ref: "#/components/parameters/ConsoleGroup"
+        - $ref: "#/components/parameters/ConsoleVersion"
+        - $ref: "#/components/parameters/ConsoleKind"
+        - $ref: "#/components/parameters/ConsoleName"
+        - $ref: "#/components/parameters/ConsoleResourceID"
+        - $ref: "#/components/parameters/ConsoleLimit"
+        - $ref: "#/components/parameters/ConsoleCursor"
+      responses:
+        "200":
+          description: Complete policy/scope projection, including an empty page when no records match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyScopePage"
+        "400":
+          description: Invalid, duplicated, unsupported, or contradictory filter
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "401":
+          description: Missing or invalid authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Endpoint capability or requested list scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+        "503":
+          description: Required local source is unavailable or incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+
+  /api/v1/console/inventory/managed-resources:
+    get:
+      operationId: listConsoleManagedResources
+      summary: List sanitized managed-resource inventory
+      description: |
+        Returns bounded, cursor-paginated managed-resource identity metadata for
+        the API Frontend hub. `local` is the only supported list target for this
+        release; non-local list requests return a state-only `unavailable`
+        response and do not invoke a remote inventory list projection.
+      tags: [console]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConsoleClusterID"
+        - $ref: "#/components/parameters/ConsoleNamespace"
+        - $ref: "#/components/parameters/ConsoleGroup"
+        - $ref: "#/components/parameters/ConsoleVersion"
+        - $ref: "#/components/parameters/ConsoleKind"
+        - $ref: "#/components/parameters/ConsoleName"
+        - $ref: "#/components/parameters/ConsoleResourceID"
+        - $ref: "#/components/parameters/ConsoleLimit"
+        - $ref: "#/components/parameters/ConsoleCursor"
+      responses:
+        "200":
+          description: Complete inventory page, including an empty page when no records match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedResourcePage"
+        "400":
+          description: Invalid, duplicated, unsupported, or contradictory filter
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "401":
+          description: Missing or invalid authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Endpoint capability or requested list scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+        "503":
+          description: Required local source is unavailable or incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+
+  /api/v1/console/inventory/managed-resources/{resourceID}:
+    get:
+      operationId: getConsoleManagedResource
+      summary: Read one sanitized managed-resource identity
+      description: |
+        Resolves an opaque resource ID without decoding target identity from the
+        URL. Local exact reads require a target-scope SAR; remote exact reads
+        additionally require the existing managed-scope checker. Denial is
+        intentionally indistinguishable from absence.
+      tags: [console]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: resourceID
+          in: path
+          required: true
+          description: Opaque canonical resource ID returned by the list operation
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9._~-]+$"
+            maxLength: 253
+        - $ref: "#/components/parameters/ConsoleClusterID"
+      responses:
+        "200":
+          description: Sanitized managed-resource identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedResource"
+        "400":
+          description: Invalid or contradictory exact-read filter
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "401":
+          description: Missing or invalid authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Resource is absent or exact target access is denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+        "503":
+          description: Required source is unavailable or incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    ConsoleClusterID:
+      name: cluster_id
+      in: query
+      required: true
+      description: Explicit cluster identity; `local` is supported for list and
+        policy-scope reads, while non-local identities remain supported for
+        exact reads only
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleNamespace:
+      name: namespace
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleGroup:
+      name: group
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleVersion:
+      name: version
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleKind:
+      name: kind
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleName:
+      name: name
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._:/-]+$"
+    ConsoleResourceID:
+      name: resource_id
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 253
+        pattern: "^[A-Za-z0-9._~-]+$"
+    ConsoleLimit:
+      name: limit
+      in: query
+      required: false
+      description: Bounded page size; defaults to 50 and cannot exceed 100
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    ConsoleCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque continuation token returned by a previous list page
+      schema:
+        type: string
+        maxLength: 512
+        pattern: "^[A-Za-z0-9._~-]+$"
 
   schemas:
     AgentCard:
@@ -317,6 +564,190 @@ components:
             message:
               type: string
             data: {}
+
+    ConsoleReadState:
+      type: string
+      enum: [success, empty, partial, stale, unavailable, forbidden, not_found]
+      description: |
+        Server-emitted projection state. `loading` is a Console client state
+        and is never emitted by API Frontend. The wire contract exposes no
+        count, total, reload, snapshot, freshness, or page-observation metadata.
+        `stale` remains in the shared state vocabulary for qualified backends;
+        local reads do not derive it from freshness metadata.
+
+    ConsoleStateEnvelope:
+      type: object
+      required: [state, message]
+      additionalProperties: false
+      properties:
+        state:
+          $ref: "#/components/schemas/ConsoleReadState"
+        request_id:
+          type: string
+        message:
+          type: string
+          description: Safe generic message without source or target details
+
+    ManagedScope:
+      type: object
+      required: [included, resource_label, namespace_label, source, cluster_scoped]
+      additionalProperties: false
+      properties:
+        included:
+          type: boolean
+        resource_label:
+          type: string
+          enum: [true, false, absent, invalid]
+        namespace_label:
+          type: string
+          enum: [true, false, absent, invalid]
+        source:
+          type: string
+          enum: [resource-label, namespace-label, none, unavailable]
+        cluster_scoped:
+          type: boolean
+
+    ManagedResource:
+      type: object
+      required: [id, cluster_id, group, version, kind, name, scope]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9._~-]+$"
+        cluster_id:
+          type: string
+        group:
+          type: string
+        version:
+          type: string
+        kind:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        scope:
+          $ref: "#/components/schemas/ManagedScope"
+    ManagedResourcePage:
+      type: object
+      required: [state, completeness]
+      additionalProperties: false
+      properties:
+        state:
+          $ref: "#/components/schemas/ConsoleReadState"
+        completeness:
+          type: string
+          enum: [complete, partial]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManagedResource"
+        next_cursor:
+          type: string
+
+    PolicyThreshold:
+      type: object
+      required: [value, source, kind]
+      additionalProperties: false
+      properties:
+        value:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1
+        source:
+          type: string
+          const: operator-config
+        kind:
+          type: string
+          const: rego-approval
+
+    PolicyMetadata:
+      type: object
+      required: [type, configMapName, configMapKey, revision]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [aiAnalysis, signalProcessing]
+        configMapName:
+          type: string
+        configMapKey:
+          type: string
+          enum: [approval.rego, policy.rego]
+        revision:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        threshold:
+          $ref: "#/components/schemas/PolicyThreshold"
+
+    HistoricalEvaluation:
+      type: object
+      required: [source, observedAt]
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+          enum: [AIAnalysis, SignalProcessing]
+        observedAt:
+          type: string
+          format: date-time
+          description: Source-record evaluation timestamp; not a Console freshness marker
+        policyHash:
+          type: string
+        matchedRules:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            maxLength: 128
+        decision:
+          type: string
+
+    PolicyScopeItem:
+      type: object
+      required: [id, resource, currentPolicies, inventoryLink]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        resource:
+          $ref: "#/components/schemas/ManagedResource"
+        currentPolicies:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyMetadata"
+        historicalEvaluations:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/HistoricalEvaluation"
+        inventoryLink:
+          type: string
+          format: uri-reference
+
+    PolicyScopePage:
+      type: object
+      required: [apiVersion, kind, state, completeness]
+      additionalProperties: false
+      properties:
+        apiVersion:
+          type: string
+          const: console.kubernaut.ai/v1
+        kind:
+          type: string
+          const: PolicyScopeList
+        state:
+          $ref: "#/components/schemas/ConsoleReadState"
+        completeness:
+          type: string
+          enum: [complete, partial]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyScopeItem"
+        nextCursor:
+          type: string
 
     ProblemDetail:
       description: >
