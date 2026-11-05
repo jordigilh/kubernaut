@@ -232,7 +232,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	})
 
 	Describe("UT-KA-WAVE4-003: apiVersion auto-resolved for a non-ambiguous kind (Issue #1051 parity)", func() {
-		It("should populate api_version from the REST mapper without an extra LLM turn", func() {
+		It("should validate the target api_version from the REST mapper without an extra LLM turn", func() {
 			mapper := newAmbiguousSubscriptionMapper() // has exactly one Deployment GVK registered
 			resolver := investigator.NewMapperScopeResolver(mapper)
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
@@ -252,6 +252,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 				RCASummary: "needs more replicas",
 				RemediationTarget: katypes.RemediationTarget{
 					Kind: "Deployment", Name: "api-server", Namespace: "production",
+					APIVersion: "wrong.example/v1",
 				},
 			}
 
@@ -260,7 +261,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"UT-KA-WAVE4-003: unambiguous Deployment kind must auto-resolve apiVersion")
+				"UT-KA-WAVE4-003: REST mapper must replace an untrusted model apiVersion")
 			Expect(client.calls).To(HaveLen(1),
 				"UT-KA-WAVE4-003: auto-resolve must not consume an extra LLM turn")
 		})

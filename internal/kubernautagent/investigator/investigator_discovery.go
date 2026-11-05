@@ -217,13 +217,13 @@ func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context
 	return result
 }
 
-// autoResolveRCATargetAPIVersion auto-resolves rcaResult.RemediationTarget.APIVersion
-// when the LLM omitted it, mirroring the autonomous apiVersionValidationGate in
-// runRCA. It mutates rcaResult in place. Uses the REST mapper via
-// scopeResolver: if the kind maps to exactly one API group, the apiVersion
-// can be inferred deterministically without an extra LLM turn.
+// autoResolveRCATargetAPIVersion resolves and validates
+// rcaResult.RemediationTarget.APIVersion, mirroring the autonomous
+// apiVersionValidationGate in runRCA. It mutates rcaResult in place. Uses the
+// REST mapper via scopeResolver: if the kind maps to exactly one API group,
+// the mapper version replaces any model proposal and is marked as validated.
 func (inv *Investigator) autoResolveRCATargetAPIVersion(rcaResult *katypes.InvestigationResult, correlationID string) {
-	if rcaResult.RemediationTarget.APIVersion != "" || rcaResult.RemediationTarget.Kind == "" || inv.scopeResolver == nil {
+	if rcaResult.RemediationTarget.Kind == "" || inv.scopeResolver == nil {
 		return
 	}
 	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)

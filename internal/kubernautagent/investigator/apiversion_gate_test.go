@@ -289,7 +289,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment needs more replicas",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}
+					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"wrong.example/v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"scale-up","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
@@ -309,7 +309,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			Expect(result.WorkflowID).To(Equal("scale-up"),
 				"UT-KA-1044-003: pipeline should proceed to workflow selection")
 			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"UT-KA-1051-010 (TP-1051): gate must auto-resolve apiVersion for non-ambiguous Deployment")
+				"UT-KA-1051-010 (TP-1051): mapper must validate and replace a model apiVersion for non-ambiguous Deployment")
 			Expect(mockClient.calls).To(HaveLen(2),
 				"UT-KA-1044-003: gate must not add extra LLM calls for unambiguous kinds")
 		})
