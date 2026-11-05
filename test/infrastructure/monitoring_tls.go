@@ -325,6 +325,9 @@ func EnsureDemoMonitoringTLS(ctx context.Context, hubKubeconfigPath, spokeKubeco
 		if err := runKubectl(ctx, cluster.kubeconfigPath, writer, "wait", "--for=condition=Ready", "certificate/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--timeout=120s"); err != nil {
 			return fmt.Errorf("wait for demo monitoring Certificate in %s cluster: %w", cluster.name, err)
 		}
+		if err := runKubectl(ctx, cluster.kubeconfigPath, writer, "wait", "--for=jsonpath={.data.tls\\.crt}", "secret/"+monitoringTLSSecretName, "-n", monitoringNamespace, "--timeout=120s"); err != nil {
+			return fmt.Errorf("wait for demo monitoring TLS Secret in %s cluster: %w", cluster.name, err)
+		}
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ✅ demo monitoring CA and independent cert-manager leaves ready in hub and spoke clusters")
@@ -342,7 +345,7 @@ func loadOrCreateDemoMonitoringCA(ctx context.Context, kubeconfigPath, monitorin
 		}
 	}
 
-	ca, err := generateMonitoringCAWithValidity(365 * 24 * time.Hour)
+	ca, err := generateMonitoringCAWithValidity(545 * 24 * time.Hour)
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -44,6 +44,9 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		ca, err := generateMonitoringCAWithValidity(365 * 24 * time.Hour)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ca.certificate.NotAfter.Sub(ca.certificate.NotBefore)).To(BeNumerically(">=", 364*24*time.Hour))
+		monitoringSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "monitoring_tls.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(monitoringSource)).To(ContainSubstring("generateMonitoringCAWithValidity(545 * 24 * time.Hour)"))
 
 		manifest := BuildDemoMonitoringCAIssuerSecretManifest("monitoring", ca.certificatePEM, []byte("private-key"))
 		Expect(manifest).To(ContainSubstring("name: monitoring-ca-issuer"))
@@ -74,6 +77,11 @@ var _ = Describe("Issue #2602 long-lived demo certificate lifecycle", func() {
 		Expect(strings.Count(trustManifest, "name: monitoring-ca")).To(Equal(2))
 		Expect(trustManifest).To(ContainSubstring("name: monitoring-client-ca"))
 		Expect(trustManifest).To(ContainSubstring("CA DATA"))
+
+		monitoringSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "monitoring_tls.go"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(monitoringSource)).To(ContainSubstring(`"--for=jsonpath={.data.tls\\.crt}"`))
+		Expect(string(monitoringSource)).To(ContainSubstring(`"secret/"+monitoringTLSSecretName`))
 	})
 
 	It("UT-INFRA-2602-MONITORING-003 [BR-PLATFORM-014]: rejects expired, short-lived, or mismatched reused monitoring CAs", func() {
@@ -194,13 +202,14 @@ spec:`))
 		Expect(string(keycloakSource)).NotTo(ContainSubstring("app: keycloak%[4]s"))
 		operatorTLSSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "operator_fleet_tls.go"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(operatorTLSSource)).To(ContainSubstring("buildCertificateReloadPatch("))
+		Expect(string(operatorTLSSource)).To(ContainSubstring("patch := buildCertificateReloadPatch(secretName)"))
 		Expect(string(operatorTLSSource)).NotTo(ContainSubstring("annotateDemoDataStorageCertificateReload"))
 		Expect(buildCertificateReloadPatch("monitoring-client-ca")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-client-ca"}}}`))
 		Expect(buildCertificateReloadPatch("monitoring-tls")).To(Equal(`{"metadata":{"annotations":{"secret.reloader.stakater.com/reload":"monitoring-tls"}}}`))
 		prometheusOperatorSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "prometheus_operator.go"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(prometheusOperatorSource)).To(ContainSubstring("annotateManagedPrometheusCertificateReload"))
+		Expect(string(prometheusOperatorSource)).To(ContainSubstring("if err := annotateManagedPrometheusCertificateReload("))
+		Expect(string(prometheusOperatorSource)).To(ContainSubstring(`"-p", buildCertificateReloadPatch(monitoringTLSSecretName),`))
 
 		effectivenessSource, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "effectivenessmonitor_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())
