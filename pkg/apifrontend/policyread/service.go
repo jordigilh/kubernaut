@@ -337,11 +337,7 @@ func (s *Service) authorizeInventoryTarget(ctx context.Context, user *auth.UserI
 	if s.dependencies.ScopeChecker == nil {
 		return stateError(inventory.StateUnavailable, errors.New("remote scope checker unavailable"))
 	}
-	strict, ok := s.dependencies.ScopeChecker.(scope.StrictScopeChecker)
-	if !ok {
-		return stateError(inventory.StateUnavailable, errors.New("remote strict scope checker unavailable"))
-	}
-	managed, err := strict.IsManagedResourceStrict(ctx, resource.Identity())
+	managed, err := s.dependencies.ScopeChecker.IsManagedResource(ctx, resource.Identity())
 	if err != nil {
 		return stateError(inventory.StateUnavailable, err)
 	}

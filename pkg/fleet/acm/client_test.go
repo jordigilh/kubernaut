@@ -100,12 +100,9 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			}))
 			client = acm.NewClient(server.URL)
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"}
-			managed, err := client.IsManagedResourceStrict(context.Background(), target)
+			managed, err := client.IsManagedResource(context.Background(), target)
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred())
-			managed, err = client.IsManagedResource(context.Background(), target)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeFalse())
 		},
 		Entry("resource not visible", false),
 		Entry("namespace not visible", true),
@@ -117,18 +114,14 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			Expect(err).NotTo(HaveOccurred())
 		}))
 		client = acm.NewClient(server.URL)
-		managed, err := client.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(managed).To(BeFalse())
 	})
 
-	It("UT-ACM-2584-STRICT-001 [BR-SECURITY-016]: strict checking surfaces Search failures", func() {
+	It("UT-ACM-2584-SCOPE-001 [BR-SECURITY-016]: canonical scope checking surfaces Search failures", func() {
 		client = acm.NewClient("http://127.0.0.1:1")
-		strict, ok := interface{}(client).(interface {
-			IsManagedResourceStrict(context.Context, scope.ResourceIdentity) (bool, error)
-		})
-		Expect(ok).To(BeTrue())
-		managed, err := strict.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
 		Expect(managed).To(BeFalse())
 		Expect(err).To(HaveOccurred())
 	})
@@ -163,9 +156,9 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 				"so the gateway enforces the correct information flow decision")
 	})
 
-	// AC-4: An empty Search response is ambiguous. Legacy GW/RO callers must
-	// still conservatively treat it as unmanaged without propagating an error.
-	It("UT-ACM-054-002 [AC-4]: returns managed=false when ACM Search reports count == 0", func() {
+	// AC-4: An empty Search response is ambiguous and must not be returned as
+	// an authoritative unmanaged decision.
+	It("UT-ACM-054-002 [AC-4]: surfaces an error when ACM Search reports count == 0", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0}]}}`))
@@ -177,17 +170,14 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			Kind: "Deployment", Namespace: "default", Name: "nonexistent",
 		})
 
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).To(HaveOccurred())
 		Expect(managed).To(BeFalse(),
-			"AC-4: an unverified Search result (count=0) must be treated as unmanaged "+
-				"so the gateway does not act on resources outside its scope")
+			"AC-4: an unverified Search result (count=0) must not become a positive scope decision")
 	})
 
 	// SC-7 Boundary Protection: under failure, the managed-resource boundary must
-	// be conservative. Every error condition must fall back to "unmanaged" (false)
-	// with nil error, so the caller never propagates a transient failure as a
-	// positive scope decision.
-	DescribeTable("UT-ACM-054-003..005 [SC-7]: fail-safe returns managed=false — boundary remains conservative under failure",
+	// remain conservative while preserving the infrastructure error for callers.
+	DescribeTable("UT-ACM-054-003..005 [SC-7]: surfaces backend errors with managed=false",
 		func(setupServer func() string) {
 			client = acm.NewClient(setupServer())
 
@@ -195,9 +185,8 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
-			Expect(err).ToNot(HaveOccurred(),
-				"SC-7: errors must be absorbed (fail-safe), not propagated — "+
-					"the boundary must remain conservative under infrastructure failure")
+			Expect(err).To(HaveOccurred(),
+				"SC-7: infrastructure failures must be observable to the caller")
 			Expect(managed).To(BeFalse(),
 				"SC-7: boundary protection requires unmanaged default when the "+
 					"backend is unreachable or returns an error")
@@ -221,10 +210,9 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 	)
 
 	// SC-7: GraphQL-level errors (the API returns 200 but the errors array is
-	// non-empty) must also trigger fail-safe. This protects against authorization
-	// failures, malformed queries, or backend-internal errors being interpreted
-	// as "not managed" vs "error checking".
-	It("UT-ACM-054-006 [SC-7]: GraphQL-level error triggers fail-safe — boundary conservative on API error", func() {
+	// non-empty) must remain observable instead of being interpreted as an
+	// authoritative unmanaged decision.
+	It("UT-ACM-054-006 [SC-7]: GraphQL-level error is surfaced to the caller", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"errors":[{"message":"unauthorized"}],"data":{"searchResult":null}}`))
@@ -235,8 +223,8 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 		})
 
-		Expect(err).ToNot(HaveOccurred(),
-			"SC-7: GraphQL errors must be absorbed, not propagated")
+		Expect(err).To(HaveOccurred(),
+			"SC-7: GraphQL errors must be observable, not absorbed")
 		Expect(managed).To(BeFalse(),
 			"SC-7: GraphQL errors must default to unmanaged — the boundary "+
 				"cannot widen due to an authorization or query failure")
@@ -326,7 +314,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient("http://127.0.0.1:1")
 			err := client.Ping(context.Background())
 			Expect(err).To(HaveOccurred(),
-				"unlike IsManagedResource, Ping must surface the transport error for the readiness gate")
+				"Ping must surface the transport error for the readiness gate")
 		})
 
 		It("UT-ACM-054-011: returns an error when ACM Search responds with a non-200 status", func() {
@@ -413,7 +401,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 				"SC-8: TLS connection with valid CA must succeed")
 		})
 
-		It("UT-ACM-TLS-002 [SC-8]: should fail-safe when TLS server cert is untrusted (no InsecureSkipVerify)", func() {
+		It("UT-ACM-TLS-002 [SC-8]: should surface an error when TLS server cert is untrusted", func() {
 			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
@@ -424,8 +412,8 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
-			Expect(err).ToNot(HaveOccurred(),
-				"SC-8: TLS failure must be absorbed (fail-safe per SC-7)")
+			Expect(err).To(HaveOccurred(),
+				"SC-8: TLS failure must be observable to the caller")
 			Expect(managed).To(BeFalse(),
 				"SC-8: untrusted TLS cert must not allow managed=true — prevents MITM")
 		})

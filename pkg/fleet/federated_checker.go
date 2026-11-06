@@ -106,33 +106,17 @@ func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource 
 	}
 
 	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
-		f.logger.V(1).Info("cluster not in registry, resource not managed",
+		f.logger.V(1).Info("cluster not in registry, scope check cannot be completed",
 			"cluster", resource.ClusterID)
-		return false, nil
+		return false, fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
 	}
 
 	managed, err := f.remote.IsManagedResource(ctx, resource)
 	if err != nil {
-		f.logger.V(1).Info("remote scope check error, falling back to unmanaged",
+		f.logger.V(1).Info("remote scope check failed",
 			"cluster", resource.ClusterID, "namespace", resource.Namespace,
 			"kind", resource.Kind, "name", resource.Name, "error", err)
-		return false, nil
+		return false, err
 	}
 	return managed, nil
-}
-
-// IsManagedResourceStrict preserves backend errors for Console reads (DD-AF-018).
-// It uses the same routing and cluster precondition as the legacy scope check.
-func (f *FederatedScopeChecker) IsManagedResourceStrict(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	if resource.ClusterID == "" {
-		return f.local.IsManagedResource(ctx, resource)
-	}
-	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
-		return false, fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
-	}
-	strict, ok := f.remote.(scope.StrictScopeChecker)
-	if !ok {
-		return false, fmt.Errorf("remote scope checker does not support strict checks")
-	}
-	return strict.IsManagedResourceStrict(ctx, resource)
 }

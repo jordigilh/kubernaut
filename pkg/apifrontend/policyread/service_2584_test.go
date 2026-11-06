@@ -140,9 +140,9 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(checker.identity).To(Equal(resource.Identity()))
 	})
 
-	It("UT-AF-2584-STRICT-001 [BR-SECURITY-016]: maps a strict remote scope failure to unavailable", func() {
+	It("UT-AF-2584-SCOPE-001 [BR-SECURITY-016]: maps a remote scope failure to unavailable", func() {
 		resource := inventory.Resource{ID: "opaque-id", ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true}}
-		checker := &recordingScopeChecker{strictErr: errors.New("scope backend unavailable")}
+		checker := &recordingScopeChecker{err: errors.New("scope backend unavailable")}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{RemoteInventory: &inventoryStub{resource: resource}, Authorizer: allowAuthorizer{}, ScopeChecker: checker})
 		Expect(err).NotTo(HaveOccurred())
 		_, err = svc.GetInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "prod-east"}, "opaque-id")
@@ -359,20 +359,16 @@ type inventoryStub struct {
 }
 
 type recordingScopeChecker struct {
-	identity  scope.ResourceIdentity
-	strictErr error
+	identity scope.ResourceIdentity
+	err      error
 }
 
 func (s *recordingScopeChecker) IsManagedResource(_ context.Context, identity scope.ResourceIdentity) (bool, error) {
 	s.identity = identity
-	return true, nil
-}
-
-func (s *recordingScopeChecker) IsManagedResourceStrict(ctx context.Context, identity scope.ResourceIdentity) (bool, error) {
-	if s.strictErr != nil {
-		return false, s.strictErr
+	if s.err != nil {
+		return false, s.err
 	}
-	return s.IsManagedResource(ctx, identity)
+	return true, nil
 }
 
 func (s *inventoryStub) List(context.Context, inventory.Filters) (inventory.Page, error) {

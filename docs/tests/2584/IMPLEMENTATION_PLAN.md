@@ -355,8 +355,10 @@ The service sequence is:
 
 ### 5.3 Scope Provenance
 
-Extend `pkg/shared/scope` with a structured resolution result and keep
-`IsManagedResource` as a compatibility wrapper. The structured result preserves:
+Extend `pkg/shared/scope` with a structured resolution result while keeping
+`IsManagedResource` as the canonical scope-check contract. Backend and visibility
+errors remain observable to callers; boundary services decide how to fail closed.
+The structured result preserves:
 
 - included/managed boolean;
 - resource label state: true, false, absent, or invalid;
@@ -580,7 +582,8 @@ implementation failure, not a deferred cleanup item.
 
 1. `pkg/apifrontend/config/config.go`: remove the obsolete AF `PolicyRead` configuration; policy metadata is discovered from runtime service ConfigMaps.
 2. `pkg/apifrontend/auth` and tests: add named capability/target authorization without changing existing MCP/A2A checks.
-3. `pkg/shared/scope`: add structured provenance while preserving current callers.
+3. `pkg/shared/scope`: add structured provenance and keep the canonical
+   error-preserving `IsManagedResource` contract for all callers.
 4. New `pkg/apifrontend/policyread`: source adapters, canonical IDs, projection service,
    history matcher, pagination, completeness, and unit tests.
 5. `pkg/apifrontend/handler`: three GET operations, state/error serialization, and tests.
@@ -588,8 +591,8 @@ implementation failure, not a deferred cleanup item.
 7. `cmd/apifrontend/main.go` and `backend_deps.go`: dependency construction and RouterConfig wiring.
 8. `pkg/apifrontend/audit`: approved read action mapping and safe payload tests.
 9. `pkg/fleet/fmc` and `pkg/fleet/acm`: preserve the shared sanitized exact/detail
-   control-plane contract and existing `ScopeChecker` behavior; remote list qualification
-   remains gated.
+   control-plane contract and canonical error-preserving `ScopeChecker` behavior;
+   remote list qualification remains gated.
 10. `api/apifrontend/openapi/apifrontend-v1.yaml`: paths, schemas, security, errors, and examples.
 11. Focused AF/fleet integration tests and generated contract artifacts required by the repository.
 
@@ -736,6 +739,7 @@ Fleet-only E2E port collision.
 | 1.6 | 2026-11-05 | Added the dedicated policy-read HTTPS response-body limiter: 16 MiB per decrypted Kubernetes response before client-go decoding, while retaining the 2 MiB serialized Console response guard and documenting the remaining process-RSS limitation |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery; exposed bounded observed/freshness metadata without snapshot semantics and recorded the stable AIA reference follow-up |
 | 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration and compatibility decoding; AIA and SignalProcessing runtime ConfigMaps now provide the resolved policy name/key values directly |
+| 1.9 | 2026-11-05 | Made `IsManagedResource` the canonical error-preserving scope contract and removed the separate scope-check path |
 
 ## 13. Scope visibility clarification for review (2026-11-04)
 

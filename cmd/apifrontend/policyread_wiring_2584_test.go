@@ -50,9 +50,7 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 			deps := &backendDeps{FleetClusterRegistry: clusterRegistry, k8sTypedClient: crfake.NewClientBuilder().Build()}
 			cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}}
 			Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
-			strict, ok := deps.ScopeChecker.(scope.StrictScopeChecker)
-			Expect(ok).To(BeTrue())
-			managed, err := strict.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "local-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+			managed, err := deps.ScopeChecker.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "local-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		},
@@ -96,15 +94,10 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		deps := &backendDeps{FleetClusterRegistry: clusterRegistry, k8sTypedClient: crfake.NewClientBuilder().Build()}
 		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}}
 		Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
-		strict, ok := deps.ScopeChecker.(scope.StrictScopeChecker)
-		Expect(ok).To(BeTrue())
-
 		target := scope.ResourceIdentity{ClusterID: "other-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"}
-		managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+		managed, err := deps.ScopeChecker.IsManagedResource(context.Background(), target)
 		Expect(managed).To(BeFalse(), "an unregistered cluster is not an authorized ACM target")
-		Expect(err).To(HaveOccurred(), "strict checking must explain the unregistered target")
-		managed, err = deps.ScopeChecker.IsManagedResource(context.Background(), target)
-		Expect(err).NotTo(HaveOccurred(), "legacy callers retain fail-closed behavior")
+		Expect(err).To(HaveOccurred(), "canonical checking must explain the unregistered target")
 		Expect(managed).To(BeFalse())
 	})
 	It("IT-AF-2584-ACM-FAIL-CLOSED [BR-SECURITY-016]: production ACM wiring returns unavailable for Console inventory", func() {

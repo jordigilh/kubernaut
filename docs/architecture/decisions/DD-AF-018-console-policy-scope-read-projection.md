@@ -95,33 +95,27 @@ precedence rules, including explicit false, invalid-label provenance, inheritanc
 only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
-enable remote inventory list projection. Legacy exact/get and `IsManagedResource`
-callers retain their fail-closed compatibility behavior; the additive strict
-Console exact-target scope path preserves backend errors.
+enable remote inventory list projection. The shared `IsManagedResource` contract
+is canonical and preserves backend errors so callers can distinguish an unavailable
+scope backend from an unmanaged resource.
 
 The live ACM 2.17.3 spike found that the existing checker query matched an
 explicitly unmanaged object and that existing inventory fixture shapes did not
 match Search. Gateway and Remediation Orchestrator also consume this shared
-checker. The existing federated wrapper currently collapses remote errors to
-`false, nil`, so a Console caller cannot distinguish backend failure from a
-genuine not-managed result. These are implementation and regression risks, not
-evidence that the approved boundary is complete. Detailed live observations and
-required RED scenarios are in `docs/tests/2584/TEST_PLAN.md` §16.3.
-
-The strict Console scope path is additive. Legacy `IsManagedResource` callers retain
-their existing fail-closed behavior and compatibility signature; they do not consume
-the Console-only error-preserving result. Both paths use the same shared managed-scope
-decision and backend routing.
+checker, so the shared checker and federated wrapper now preserve remote errors
+through the same canonical method. These are implementation and regression risks,
+not evidence that the approved boundary is complete. Detailed live observations
+and required RED scenarios are in `docs/tests/2584/TEST_PLAN.md` §16.3.
 
 **Alternatives considered:** a Console-only additional scope check was rejected
 because it leaves the shared checker producing false managed decisions and
 duplicates security policy. Trusting Search identity/existence or treating an
 incomplete page as complete was rejected because neither proves managed scope.
-The user approved an error-preserving strict scope path for Console while keeping
-the existing fail-closed `IsManagedResource` behavior for Gateway, Remediation
-Orchestrator, and other existing callers. Both paths must share the same managed
-scope decision, backend, and cluster routing; a health probe is not a substitute
-for propagating the outcome of the actual check. Bounded pagination remains
+The user approved one canonical error-preserving `IsManagedResource` contract for
+all callers. Gateway, Remediation Orchestrator, and Console apply their own
+fail-closed handling at their respective boundaries. The canonical check must
+share the same managed-scope decision, backend, and cluster routing; a health probe
+is not a substitute for propagating the outcome of the actual check. Bounded pagination remains
 subject to evidence-based preflight; no new authorization or data-access boundary
 is authorized by this correction.
 
@@ -428,9 +422,9 @@ history source is unavailable.
   and removes the generated AF `policyRead` block before first deployment. The threshold
   remains in the AIA runtime config for AIAnalysis itself; obsolete operator PR #615 is
   closed as superseded.
-- Remote Console list qualification remains gated on shared FMC/ACM inventory evidence; legacy
-  remote exact/get and `IsManagedResource` behavior remains fail-closed, while strict Console
-  exact-target scope checks are additive and preserve backend errors.
+- Remote Console list qualification remains gated on shared FMC/ACM inventory evidence;
+  remote exact/get and `IsManagedResource` checks use the shared canonical scope contract
+  and preserve backend errors.
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
 - Historical matching remains bounded by existing CRD fields until a separately approved
   index exists.

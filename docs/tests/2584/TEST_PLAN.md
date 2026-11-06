@@ -118,7 +118,8 @@ declared GREEN while any of those ITs is absent or failing.
 - `pkg/apifrontend/auth`: named read-capability and target-scope authorization.
 - New policy-read projection package: policy ConfigMap metadata, scope provenance,
   historical evaluation matching, inventory identity, pagination, and state mapping.
-- `pkg/shared/scope`: structured scope resolution preserving existing `IsManagedResource` behavior.
+- `pkg/shared/scope`: structured scope resolution through the canonical,
+  error-preserving `IsManagedResource` contract.
 - `cmd/apifrontend`: production dependency and router wiring.
 - `api/apifrontend/openapi/apifrontend-v1.yaml`: schemas, paths, error states, and security contract.
 - AF audit emission and DataStorage adapter mapping for attributable read attempts.
@@ -245,8 +246,8 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `pkg/apifrontend/config` | General AF configuration validation; no policy reference source |
 | New policy-read package | Runtime ConfigMap metadata, threshold/name/key validation, revision hashing, canonical identity, label precedence, projection allowlist, history join, cursor, state mapping |
 | `pkg/apifrontend/auth` | capability names, user/service-account distinction, target SAR request construction |
-| `pkg/shared/scope` | structured provenance resolution and compatibility wrapper |
-| `pkg/fleet/fmc`, `pkg/fleet/acm` | canonical sanitized inventory page/detail adapters and fail-closed control-plane errors |
+| `pkg/shared/scope` | structured provenance resolution and canonical scope-check contract |
+| `pkg/fleet/fmc`, `pkg/fleet/acm` | canonical sanitized inventory page/detail adapters and error-preserving control-plane scope checks |
 | `pkg/apifrontend/audit` | read action/outcome attribution and safe detail filtering |
 
 ### 6.2 Integration-Testable Code
@@ -628,16 +629,16 @@ against three ConfigMaps and their managed namespace established these results:
    failure and insufficient result visibility are not misrepresented as empty
    or as an authoritative managed decision.
 
-The user approved correcting the shared checker and a strict error-preserving
-Console path, with legacy callers retaining fail-closed error behavior. The
-production Go ACM checker was subsequently exercised against the live Search
-service: explicit true returned managed, explicit false returned unmanaged, and
-an unlabelled resource inherited its namespace's true label. This is checker
-evidence only; it does not qualify the inventory adapter, production AF dispatch,
-bounded traversal, or a least-privilege ACM Search deployment. The live spike used
-a short-lived privileged test identity, whose temporary cluster-role binding was
-removed afterward. See `IT-ACM-2584-STRICT-001` for factory-level strict/legacy
-error-path coverage. Existing fixture-only inventory PASS is not live evidence.
+The user approved correcting the shared checker to use one canonical,
+error-preserving `IsManagedResource` contract. The production Go ACM checker was
+subsequently exercised against the live Search service: explicit true returned
+managed, explicit false returned unmanaged, and an unlabelled resource inherited
+its namespace's true label. This is checker evidence only; it does not qualify
+the inventory adapter, production AF dispatch, bounded traversal, or a
+least-privilege ACM Search deployment. The live spike used a short-lived
+privileged test identity, whose temporary cluster-role binding was removed
+afterward. See `IT-ACM-2584-SCOPE-001` for factory-level error-path coverage.
+Existing fixture-only inventory PASS is not live evidence.
 
 The user subsequently approved a temporary fail-closed ACM Console inventory
 gate. `IT-AF-2584-ACM-FAIL-CLOSED` exercises production dependency construction
@@ -666,9 +667,9 @@ The user requires the managed gateway registration ID, ACM cluster name, and
 Console cluster ID to be identical; no automatic mapping or alias is authorized.
 AF's ACM scope factory now receives the existing gateway-neutral cluster
 registry lookup; an absent, unready, or unknown registry entry fails closed.
-An ACM Search miss is ambiguous, so the strict path returns an error for an
-invisible resource or namespace, while the legacy scope API returns false and
-nil error. This does not establish freshness of positive Search results.
+An ACM Search miss is ambiguous, so the canonical scope API returns an error for
+an invisible resource or namespace rather than claiming an authoritative
+unmanaged result. This does not establish freshness of positive Search results.
 
 `IT-ACM-2592-EMPTY-001/002`, `IT-AF-2592-EMPTY-001`, and
 `IT-AF-2593-REGISTRY-001/002` passed after failing in RED. The registry wiring

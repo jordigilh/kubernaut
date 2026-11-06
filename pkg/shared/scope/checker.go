@@ -57,14 +57,11 @@ type ResourceIdentity struct {
 //	ADR-053: Resource Scope Management Architecture
 //	ADR-068: Federated Control Plane Interface
 type ScopeChecker interface {
+	// IsManagedResource returns an evaluated managed decision. A false result
+	// with a nil error means the resource is verified as unmanaged; an error
+	// means the scope decision could not be completed and must remain visible
+	// to the caller.
 	IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
-}
-
-// StrictScopeChecker preserves failures from the actual scope evaluation so
-// callers can distinguish an unavailable backend from an unmanaged resource.
-// DD-AF-018: legacy fail-closed callers retain ScopeChecker behavior.
-type StrictScopeChecker interface {
-	IsManagedResourceStrict(ctx context.Context, resource ResourceIdentity) (bool, error)
 }
 
 // Compile-time interface compliance: Manager implements ScopeChecker.

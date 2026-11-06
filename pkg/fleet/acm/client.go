@@ -35,7 +35,8 @@ const graphQLPath = "/searchapi/graphql"
 
 // Client is a scope.ScopeChecker that queries the ACM Search GraphQL API.
 // ADR-068: used in non-FMC environments where ACM/OCM is the fleet control plane.
-// All failures are fail-safe (return unmanaged) per SC-7.
+// Backend failures are returned to the caller so the caller can apply the
+// appropriate fail-closed policy.
 type Client struct {
 	endpoint   string
 	httpClient *http.Client
@@ -73,19 +74,11 @@ func NewClient(endpoint string, opts ...ClientOption) *Client {
 }
 
 // IsManagedResource checks whether a resource exists on a managed cluster
-// by querying ACM Search's GraphQL API.
-// Returns false on any error (fail-safe per SC-7).
+// by querying ACM Search's GraphQL API. Search visibility and backend failures
+// are returned so callers can distinguish an unavailable scope backend from an
+// unmanaged resource.
 func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
-	managed, err := c.IsManagedResourceStrict(ctx, r)
-	if err != nil {
-		return false, nil //nolint:nilerr // preserve the established fail-closed legacy contract
-	}
-	return managed, nil
-}
-
-// IsManagedResourceStrict resolves ACM Search metadata with the shared ADR-053
-// label precedence rules while preserving read failures for Console (DD-AF-018).
-func (c *Client) IsManagedResourceStrict(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	// Resolve ACM Search metadata with the shared ADR-053 label precedence rules.
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
 		return false, fmt.Errorf("acm scope: cluster, kind and name are required")
 	}
@@ -205,8 +198,8 @@ func searchManagedLabels(item map[string]json.RawMessage) map[string]string {
 // syntactically valid and satisfiable on every real ACM hub. Namespace is
 // always indexed (the hub cluster itself always has namespaces), so this
 // filter never depends on Kubernaut-specific fleet state.
-// Unlike IsManagedResource, Ping does NOT swallow errors: the readiness
-// gate (pkg/fleet/readiness.ScopeCheckerProber) needs the real
+// Ping returns errors directly: the readiness gate
+// (pkg/fleet/readiness.ScopeCheckerProber) needs the real
 // transport/status/GraphQL error to correctly flip /readyz to NotReady
 // when ACM Search is unreachable.
 func (c *Client) Ping(ctx context.Context) error {

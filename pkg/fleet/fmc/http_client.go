@@ -36,8 +36,7 @@ import (
 // This sits on Gateway/RO's synchronous alert-ingestion path, so the ceiling
 // is deliberately short (seconds, not the 45s a test's own outer retry
 // loop might use) -- a transient blip gets a couple of quick retries, but a
-// real outage still fails safe (managed=false, SC-7) promptly rather than
-// stalling the caller.
+// real outage still returns an error promptly rather than stalling the caller.
 const (
 	scopeCheckMaxAttempts  = 3
 	scopeCheckRetryCeiling = 2 * time.Second
@@ -57,7 +56,8 @@ var scopeCheckBackoff = backoff.Config{
 
 // HTTPClient is a scope.ScopeChecker that calls the FMC REST API over HTTP.
 // ADR-068: GW/RO use this client to resolve federated scope instead of connecting
-// to Valkey directly. All failures are fail-safe (return unmanaged).
+// to Valkey directly. Backend failures are returned to the caller so the caller
+// can apply the appropriate fail-closed policy.
 type HTTPClient struct {
 	baseURL    string
 	httpClient *http.Client
@@ -97,20 +97,10 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 // /api/v1/scope/check endpoint. A transient failure (5xx / transport error)
 // is retried a bounded number of times with backoff (see scopeCheckMaxAttempts,
 // scopeCheckRetryCeiling); a definitive response (200, whether managed true
-// or false) is never retried. All failures ultimately return false, nil
-// (fail-safe per SC-7) -- retries improve resilience to short blips, they
-// never change the fail-closed guarantee on exhaustion.
+// or false) is never retried. Exhausted or non-retryable failures are returned
+// so callers can distinguish an unavailable scope backend from an unmanaged
+// resource.
 func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
-	managed, err := c.IsManagedResourceStrict(ctx, r)
-	if err != nil {
-		return false, nil //nolint:nilerr // preserve the established fail-closed legacy contract
-	}
-	return managed, nil
-}
-
-// IsManagedResourceStrict preserves failures from the actual FMC check for
-// Console, while the legacy wrapper remains fail-closed (DD-AF-018).
-func (c *HTTPClient) IsManagedResourceStrict(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
 	reqURL := c.buildScopeCheckURL(r)
 
 	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)
@@ -154,7 +144,7 @@ func (c *HTTPClient) buildScopeCheckURL(r scope.ResourceIdentity) string {
 // retryable=true means the failure looks transient (transport error, or a
 // 5xx indicating FMC's own check failed rather than completed) and is worth
 // a bounded retry. A non-retryable failure (e.g. 4xx, or a malformed 200
-// body) ends the attempt loop immediately, fail-safe.
+// body) ends the attempt loop immediately.
 func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (managed, final, retryable bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -183,8 +173,8 @@ func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (mana
 }
 
 // Ping checks connectivity to FMC's API by calling ReadyzPath on the same
-// base URL used for scope checks. Unlike IsManagedResource, Ping does NOT
-// swallow errors: the readiness gate (pkg/fleet/readiness.ScopeCheckerProber)
+// base URL used for scope checks. It returns transport and status errors so
+// the readiness gate (pkg/fleet/readiness.ScopeCheckerProber)
 // needs the real transport/status error to correctly flip GW/RO's own
 // /readyz to NotReady when FMC is unreachable or unready.
 //

@@ -97,19 +97,14 @@ var _ = Describe("IT-FLEET-2584-001: FMC canonical inventory projection", func()
 		Expect(resource.ID).To(BeEmpty())
 	})
 
-	It("UT-FMC-2584-STRICT-001 [BR-SECURITY-016]: strict scope check preserves backend failure", func() {
+	It("UT-FMC-2584-SCOPE-001 [BR-SECURITY-016]: canonical scope check preserves backend failure", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 		}))
 		DeferCleanup(server.Close)
 		client := fmc.NewHTTPClient(server.URL)
-		strict, ok := interface{}(client).(scope.StrictScopeChecker)
-		Expect(ok).To(BeTrue())
-		managed, err := strict.IsManagedResourceStrict(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "checkout"})
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "checkout"})
 		Expect(managed).To(BeFalse())
 		Expect(err).To(HaveOccurred())
-		managed, err = client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "checkout"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeFalse())
 	})
 })

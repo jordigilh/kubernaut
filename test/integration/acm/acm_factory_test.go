@@ -148,38 +148,27 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 				Namespace: "orphan-ns",
 				Name:      "no-such-deploy",
 			})
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred(), "an empty Search result is not an authoritative unmanaged decision")
 			Expect(managed).To(BeFalse(),
 				"AC-4: absent resource must return false through the full production path")
 		})
 
-		It("IT-ACM-2584-STRICT-001: strict factory dispatch preserves errors while legacy dispatch fails closed", func() {
+		It("IT-ACM-2584-SCOPE-001: canonical factory dispatch preserves backend errors", func() {
 			nextStatus = http.StatusForbidden
 			DeferCleanup(func() { nextStatus = 0 })
-			strict, ok := fedChecker.(scope.StrictScopeChecker)
-			Expect(ok).To(BeTrue())
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx"}
-			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			managed, err := fedChecker.IsManagedResource(context.Background(), target)
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred())
-			managed, err = fedChecker.IsManagedResource(context.Background(), target)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeFalse())
 		})
 
 		It("IT-ACM-2592-EMPTY-001 [BR-SECURITY-016]: distinguishes an unverified Search miss from an authoritative scope decision", func() {
 			nextCount = 0
-			strict, ok := fedChecker.(scope.StrictScopeChecker)
-			Expect(ok).To(BeTrue())
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
 
-			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			managed, err := fedChecker.IsManagedResource(context.Background(), target)
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred(), "an empty Search result can be caused by restricted visibility and must not be reported as a verified absence")
-
-			managed, err = fedChecker.IsManagedResource(context.Background(), target)
-			Expect(err).NotTo(HaveOccurred(), "legacy Gateway and RO callers retain their fail-closed contract")
-			Expect(managed).To(BeFalse())
 		})
 
 		It("IT-ACM-2592-EMPTY-002 [BR-SCOPE-001]: does not treat an invisible namespace as an unmanaged decision", func() {
@@ -217,11 +206,9 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 			DeferCleanup(server.Close)
 			checker, err := fleet.NewScopeChecker(&localAlwaysFalse{}, fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}, logr.Discard())
 			Expect(err).NotTo(HaveOccurred())
-			strict, ok := checker.(scope.StrictScopeChecker)
-			Expect(ok).To(BeTrue())
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
 
-			managed, err := strict.IsManagedResourceStrict(context.Background(), target)
+			managed, err := checker.IsManagedResource(context.Background(), target)
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred(), "namespace inheritance cannot be decided from an authorization-filtered empty result")
 		})
@@ -244,7 +231,7 @@ var _ = Describe("ACM Search Factory Bearer-Token Auth (BR-INTEGRATION-065, #155
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotAuthHeader = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx","label":"kubernaut.ai/managed=false"}]}]}}`))
 		}))
 		defer server.Close()
 
