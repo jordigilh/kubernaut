@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -338,19 +339,33 @@ const (
 // a nil checker preserves the pre-existing immediate-fallback behavior
 // exactly, so unit tests that don't need this guard are unaffected.
 func (t *InvestigateTool) waitForRaceyDispatch(ctx context.Context, rrID string) (string, bool) {
-	if t.agentSessionExists == nil {
+	return waitForAgentSessionDispatch(ctx, rrID, t.agentSessionExists, t.autoMgr, t.logger, "start", false)
+}
+
+// waitForAgentSessionDispatch closes the bounded handoff window between AA
+// creating an AgentSession and KA registering its corresponding in-memory
+// investigation. It is shared by action=start and completion because both
+// otherwise treat a late dispatcher registration as a missing session.
+func waitForAgentSessionDispatch(ctx context.Context, rrID string, checker AgentSessionExistenceChecker, finder runningSessionFinder, logger logr.Logger, action string, waitForCreation bool) (string, bool) {
+	if checker == nil || finder == nil {
 		return "", false
 	}
-	exists, err := t.agentSessionExists.AgentSessionExists(ctx, rrID)
+	if autoSessionID, found := finder.FindByRemediationID(rrID); found {
+		return autoSessionID, true
+	}
+
+	exists, err := checker.AgentSessionExists(ctx, rrID)
 	if err != nil {
-		t.logger.Error(err, "start: check AgentSession existence for race guard failed (proceeding as genuinely fresh)",
-			"rr_id", rrID)
+		logger.Error(err, "check AgentSession existence for dispatch race guard failed",
+			"action", action, "rr_id", rrID)
 		return "", false
 	}
 	if !exists {
-		// No AgentSession anywhere for this RR: genuinely fresh, not a
-		// race. createFreshInteractiveSession is the correct path.
-		return "", false
+		if !waitForCreation {
+			// action=start must preserve its immediate fallback for a genuinely
+			// fresh RR with no AgentSession anywhere.
+			return "", false
+		}
 	}
 	for attempt := 0; attempt < raceyDispatchMaxAttempts; attempt++ {
 		select {
@@ -358,14 +373,20 @@ func (t *InvestigateTool) waitForRaceyDispatch(ctx context.Context, rrID string)
 			return "", false
 		case <-time.After(raceyDispatchPollInterval):
 		}
-		if autoSessionID, found := t.autoMgr.FindByRemediationID(rrID); found {
+		if autoSessionID, found := finder.FindByRemediationID(rrID); found {
 			return autoSessionID, true
 		}
+		if waitForCreation {
+			_, err = checker.AgentSessionExists(ctx, rrID)
+			if err != nil {
+				logger.Error(err, "check AgentSession existence for dispatch race guard failed",
+					"action", action, "rr_id", rrID)
+				return "", false
+			}
+		}
 	}
-	// AgentSession CRD exists but never registered in session.Manager
-	// within the wait budget (e.g. its dispatch is itself stuck/erroring,
-	// not merely slow) -- fall through to the existing fallback chain
-	// rather than waiting indefinitely.
+	// AgentSession exists but never registered in session.Manager within the
+	// wait budget. The caller must fall through rather than wait indefinitely.
 	return "", false
 }
 
