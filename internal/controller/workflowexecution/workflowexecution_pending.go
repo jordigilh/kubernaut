@@ -37,6 +37,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
@@ -47,10 +48,23 @@ import (
 )
 
 const (
-	executionEngineAnsible     = "ansible"
-	executionEngineJob         = "job"
-	workflowIdentityRetryDelay = 5 * time.Second
+	executionEngineAnsible = "ansible"
+	executionEngineJob     = "job"
 )
+
+// Verify owns the bounded three-attempt catalog lookup. This backoff only
+// schedules the next reconciliation after that local retry budget is exhausted;
+// no process-local or CRD-persisted attempt counter is needed for the wake-up.
+var workflowIdentityRetryBackoff = backoff.Config{
+	BasePeriod:    5 * time.Second,
+	MaxPeriod:     5 * time.Minute,
+	Multiplier:    2,
+	JitterPercent: 20,
+}
+
+func workflowIdentityRetryDelay() time.Duration {
+	return workflowIdentityRetryBackoff.Calculate(1)
+}
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from
 // wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
@@ -137,7 +151,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		logger.Error(err, "Workflow identity verification failed before dispatch")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, err.Error())
 		if workflowidentity.IsTransient(err) {
-			return ctrl.Result{RequeueAfter: workflowIdentityRetryDelay}, nil
+			return ctrl.Result{RequeueAfter: workflowIdentityRetryDelay()}, nil
 		}
 		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
 			return ctrl.Result{}, markErr

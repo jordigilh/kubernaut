@@ -247,7 +247,8 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		result, err := reconciler.Reconcile(rpoCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(wfe)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(calls).To(Equal(3))
-		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+		Expect(result.RequeueAfter).To(BeNumerically(">=", 5*time.Second))
+		Expect(result.RequeueAfter).To(BeNumerically("<", 6*time.Second))
 
 		persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
 		Expect(fakeClient.Get(rpoCtx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
