@@ -66,9 +66,10 @@ var (
 	suiteLogger logr.Logger
 
 	// Real adapters shared across tests.
-	suiteK8sAdapter *enrichment.K8sAdapter
-	suiteDSAdapter  enrichment.DataStorageClient
-	suiteAuditStore *audit.DSAuditStore
+	suiteK8sAdapter    *enrichment.K8sAdapter
+	suiteDynamicClient dynamic.Interface
+	suiteDSAdapter     enrichment.DataStorageClient
+	suiteAuditStore    *audit.DSAuditStore
 )
 
 // capturingAuditStore wraps a real DSAuditStore, forwarding all events to DS
@@ -202,6 +203,7 @@ var _ = SynchronizedBeforeSuite(
 
 		dynClient, err := dynamic.NewForConfig(k8sConfig)
 		Expect(err).ToNot(HaveOccurred())
+		suiteDynamicClient = dynClient
 
 		discoveryClient, err := discovery.NewDiscoveryClientForConfig(k8sConfig)
 		Expect(err).ToNot(HaveOccurred())
