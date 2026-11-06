@@ -13,7 +13,10 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
-const eventTypePrefix = "apifrontend."
+const (
+	eventTypePrefix               = "apifrontend."
+	consoleResultStateUnavailable = "unavailable"
+)
 
 // StoreAdapter bridges the AF-internal audit.Emitter interface to the shared
 // pkg/audit.AuditStore, constructing per-event typed OpenAPI payloads.
@@ -43,7 +46,7 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		EventTimestamp: time.Now().UTC(),
 		EventCategory:  ogenclient.AuditEventRequestEventCategoryApifrontend,
 		EventAction:    eventAction(e.Type),
-		EventOutcome:   eventOutcome(e.Type),
+		EventOutcome:   eventOutcome(e),
 		CorrelationID:  correlationID(e),
 	}
 
@@ -131,37 +134,40 @@ func errorDetails(e *Event) ogenclient.ErrorDetails {
 }
 
 var typedPayloadEvents = map[EventType]bool{
-	EventAuthSuccess:             true,
-	EventAuthFailure:             true,
-	EventRateLimitDenied:         true,
-	EventCircuitBreakerTrip:      true,
-	EventJWTDelegation:           true,
-	EventSessionCreated:          true,
-	EventSessionPhaseChanged:     true,
-	EventSessionDeleted:          true,
-	EventSessionAutoCancelled:    true,
-	EventSessionRetentionDeleted: true,
-	EventSessionCompleted:        true,
-	EventA2ATaskStarted:          true,
-	EventA2ATaskCompleted:        true,
-	EventA2ATaskFailed:           true,
-	EventMCPToolFailed:           true,
-	EventMCPSessionInit:          true,
-	EventConfigReloaded:          true,
-	EventConfigRejected:          true,
-	EventSeverityTriageCompleted: true,
-	EventSeverityTriageFailed:    true,
-	EventTriageStarted:           true,
-	EventTriageCompleted:         true,
-	EventRRCreated:               true,
-	EventRRDeduplicated:          true,
-	EventKADelegated:             true,
-	EventKAResultReceived:        true,
-	EventUserDecision:            true,
-	EventAuthAccessDenied:        true,
-	EventToolExecuted:            true,
-	EventWorkflowDiscovery:       true,
-	EventInteractiveSignalFailed: true,
+	EventAuthSuccess:                    true,
+	EventAuthFailure:                    true,
+	EventRateLimitDenied:                true,
+	EventCircuitBreakerTrip:             true,
+	EventJWTDelegation:                  true,
+	EventSessionCreated:                 true,
+	EventSessionPhaseChanged:            true,
+	EventSessionDeleted:                 true,
+	EventSessionAutoCancelled:           true,
+	EventSessionRetentionDeleted:        true,
+	EventSessionCompleted:               true,
+	EventA2ATaskStarted:                 true,
+	EventA2ATaskCompleted:               true,
+	EventA2ATaskFailed:                  true,
+	EventMCPToolFailed:                  true,
+	EventMCPSessionInit:                 true,
+	EventConfigReloaded:                 true,
+	EventConfigRejected:                 true,
+	EventSeverityTriageCompleted:        true,
+	EventSeverityTriageFailed:           true,
+	EventTriageStarted:                  true,
+	EventTriageCompleted:                true,
+	EventRRCreated:                      true,
+	EventRRDeduplicated:                 true,
+	EventKADelegated:                    true,
+	EventKAResultReceived:               true,
+	EventUserDecision:                   true,
+	EventAuthAccessDenied:               true,
+	EventToolExecuted:                   true,
+	EventWorkflowDiscovery:              true,
+	EventInteractiveSignalFailed:        true,
+	EventConsolePolicyScopeRead:         true,
+	EventConsoleManagedResourceListRead: true,
+	EventConsoleManagedResourceGetRead:  true,
 }
 
 func hasTypedPayload(t EventType) bool {
@@ -182,11 +188,23 @@ var failureEvents = map[EventType]bool{
 	EventInteractiveSignalFailed: true,
 }
 
-func eventOutcome(t EventType) ogenclient.AuditEventRequestEventOutcome {
-	if failureEvents[t] {
+func eventOutcome(e *Event) ogenclient.AuditEventRequestEventOutcome {
+	if failureEvents[e.Type] {
+		return ogenclient.AuditEventRequestEventOutcomeFailure
+	}
+	if isConsoleReadFailure(e) {
 		return ogenclient.AuditEventRequestEventOutcomeFailure
 	}
 	return ogenclient.AuditEventRequestEventOutcomeSuccess
+}
+
+func isConsoleReadFailure(e *Event) bool {
+	switch e.Type {
+	case EventConsolePolicyScopeRead, EventConsoleManagedResourceListRead, EventConsoleManagedResourceGetRead:
+		return consoleResultState(e) != "success" && consoleResultState(e) != "empty"
+	default:
+		return false
+	}
 }
 
 var actionMap = map[EventType]string{
@@ -210,20 +228,23 @@ var actionMap = map[EventType]string{
 	EventConfigRejected:          "rejected",
 	EventCircuitBreakerTrip:      "tripped",
 	// EventImpersonation removed (ADR-022: impersonation deprecated)
-	EventJWTDelegation:           "delegated",
-	EventSeverityTriageCompleted: "completed",
-	EventSeverityTriageFailed:    "failed",
-	EventWorkflowDiscovery:       "discovered",
-	EventTriageStarted:           "started",
-	EventTriageCompleted:         "completed",
-	EventRRCreated:               "created",
-	EventRRDeduplicated:          "deduplicated",
-	EventKADelegated:             "delegated",
-	EventKAResultReceived:        "received",
-	EventUserDecision:            "decided",
-	EventAgentCardAccessed:       "accessed",
-	EventInvestigationTimeout:    "timed_out",
-	EventInteractiveSignalFailed: "failed",
+	EventJWTDelegation:                  "delegated",
+	EventSeverityTriageCompleted:        "completed",
+	EventSeverityTriageFailed:           "failed",
+	EventWorkflowDiscovery:              "discovered",
+	EventTriageStarted:                  "started",
+	EventTriageCompleted:                "completed",
+	EventRRCreated:                      "created",
+	EventRRDeduplicated:                 "deduplicated",
+	EventKADelegated:                    "delegated",
+	EventKAResultReceived:               "received",
+	EventUserDecision:                   "decided",
+	EventAgentCardAccessed:              "accessed",
+	EventInvestigationTimeout:           "timed_out",
+	EventInteractiveSignalFailed:        "failed",
+	EventConsolePolicyScopeRead:         "read",
+	EventConsoleManagedResourceListRead: "read",
+	EventConsoleManagedResourceGetRead:  "read",
 }
 
 func eventAction(t EventType) string {
@@ -240,37 +261,40 @@ func eventAction(t EventType) string {
 type eventDataBuilder func(e *Event) ogenclient.AuditEventRequestEventData
 
 var eventDataBuilders = map[EventType]eventDataBuilder{
-	EventAuthSuccess:             buildAuthSuccessPayload,
-	EventAuthFailure:             buildAuthFailurePayload,
-	EventRateLimitDenied:         buildRateLimitDeniedPayload,
-	EventCircuitBreakerTrip:      buildCircuitBreakerTripPayload,
-	EventJWTDelegation:           buildJWTDelegationPayload,
-	EventSessionCreated:          buildSessionCreatedPayload,
-	EventSessionPhaseChanged:     buildSessionPhaseChangedPayload,
-	EventSessionDeleted:          buildSessionDeletedPayload,
-	EventSessionAutoCancelled:    buildSessionAutoCancelledPayload,
-	EventSessionRetentionDeleted: buildSessionRetentionDeletedPayload,
-	EventSessionCompleted:        buildSessionCompletedPayload,
-	EventA2ATaskStarted:          buildA2ATaskStartedPayload,
-	EventA2ATaskCompleted:        buildA2ATaskCompletedPayload,
-	EventA2ATaskFailed:           buildA2ATaskFailedPayload,
-	EventMCPToolFailed:           buildMCPToolFailedPayload,
-	EventMCPSessionInit:          buildMCPSessionInitPayload,
-	EventConfigReloaded:          buildConfigReloadedPayload,
-	EventConfigRejected:          buildConfigRejectedPayload,
-	EventSeverityTriageCompleted: buildSeverityTriageCompletedPayload,
-	EventSeverityTriageFailed:    buildSeverityTriageFailedPayload,
-	EventTriageStarted:           buildTriageStartedPayload,
-	EventTriageCompleted:         buildTriageCompletedPayload,
-	EventRRCreated:               buildRRCreatedPayload,
-	EventRRDeduplicated:          buildRRDeduplicatedPayload,
-	EventKADelegated:             buildKADelegatedPayload,
-	EventKAResultReceived:        buildKAResultReceivedPayload,
-	EventUserDecision:            buildUserDecisionPayload,
-	EventAuthAccessDenied:        buildAuthAccessDeniedPayload,
-	EventToolExecuted:            buildToolExecutedPayload,
-	EventWorkflowDiscovery:       buildWorkflowDiscoveryPayload,
-	EventInteractiveSignalFailed: buildInteractiveSignalFailedPayload,
+	EventAuthSuccess:                    buildAuthSuccessPayload,
+	EventAuthFailure:                    buildAuthFailurePayload,
+	EventRateLimitDenied:                buildRateLimitDeniedPayload,
+	EventCircuitBreakerTrip:             buildCircuitBreakerTripPayload,
+	EventJWTDelegation:                  buildJWTDelegationPayload,
+	EventSessionCreated:                 buildSessionCreatedPayload,
+	EventSessionPhaseChanged:            buildSessionPhaseChangedPayload,
+	EventSessionDeleted:                 buildSessionDeletedPayload,
+	EventSessionAutoCancelled:           buildSessionAutoCancelledPayload,
+	EventSessionRetentionDeleted:        buildSessionRetentionDeletedPayload,
+	EventSessionCompleted:               buildSessionCompletedPayload,
+	EventA2ATaskStarted:                 buildA2ATaskStartedPayload,
+	EventA2ATaskCompleted:               buildA2ATaskCompletedPayload,
+	EventA2ATaskFailed:                  buildA2ATaskFailedPayload,
+	EventMCPToolFailed:                  buildMCPToolFailedPayload,
+	EventMCPSessionInit:                 buildMCPSessionInitPayload,
+	EventConfigReloaded:                 buildConfigReloadedPayload,
+	EventConfigRejected:                 buildConfigRejectedPayload,
+	EventSeverityTriageCompleted:        buildSeverityTriageCompletedPayload,
+	EventSeverityTriageFailed:           buildSeverityTriageFailedPayload,
+	EventTriageStarted:                  buildTriageStartedPayload,
+	EventTriageCompleted:                buildTriageCompletedPayload,
+	EventRRCreated:                      buildRRCreatedPayload,
+	EventRRDeduplicated:                 buildRRDeduplicatedPayload,
+	EventKADelegated:                    buildKADelegatedPayload,
+	EventKAResultReceived:               buildKAResultReceivedPayload,
+	EventUserDecision:                   buildUserDecisionPayload,
+	EventAuthAccessDenied:               buildAuthAccessDeniedPayload,
+	EventToolExecuted:                   buildToolExecutedPayload,
+	EventWorkflowDiscovery:              buildWorkflowDiscoveryPayload,
+	EventInteractiveSignalFailed:        buildInteractiveSignalFailedPayload,
+	EventConsolePolicyScopeRead:         buildConsolePolicyScopeReadPayload,
+	EventConsoleManagedResourceListRead: buildConsoleManagedResourceListReadPayload,
+	EventConsoleManagedResourceGetRead:  buildConsoleManagedResourceGetReadPayload,
 }
 
 func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
@@ -472,6 +496,86 @@ func buildInteractiveSignalFailedPayload(e *Event) ogenclient.AuditEventRequestE
 		RrID:      detailStr(d, "rr_id"),
 		Error:     detailStr(d, "error"),
 	})
+}
+
+func buildConsolePolicyScopeReadPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	return ogenclient.NewApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData(
+		ogenclient.ApifrontendConsolePolicyScopeReadPayload{
+			EventType:         ogenclient.ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead,
+			ClusterID:         optionalConsoleClusterID(e),
+			ResultState:       ogenclient.ApifrontendConsolePolicyScopeReadPayloadResultState(consoleResultState(e)),
+			FilterFingerprint: optionalOpaqueFingerprint(detailStr(e.Detail, "filter_fingerprint")),
+			RequestID:         ogenclient.NewOptString(e.RequestID),
+		},
+	)
+}
+
+func buildConsoleManagedResourceListReadPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	return ogenclient.NewApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData(
+		ogenclient.ApifrontendConsoleManagedResourceListReadPayload{
+			EventType:         ogenclient.ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead,
+			ClusterID:         optionalConsoleClusterID(e),
+			ResultState:       ogenclient.ApifrontendConsoleManagedResourceListReadPayloadResultState(consoleResultState(e)),
+			FilterFingerprint: optionalOpaqueFingerprint(detailStr(e.Detail, "filter_fingerprint")),
+			RequestID:         ogenclient.NewOptString(e.RequestID),
+		},
+	)
+}
+
+func buildConsoleManagedResourceGetReadPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	return ogenclient.NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData(
+		ogenclient.ApifrontendConsoleManagedResourceGetReadPayload{
+			EventType:           ogenclient.ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead,
+			ClusterID:           optionalConsoleClusterID(e),
+			ResultState:         ogenclient.ApifrontendConsoleManagedResourceGetReadPayloadResultState(consoleResultState(e)),
+			ResourceFingerprint: opaqueFingerprint(detailStr(e.Detail, "resource_fingerprint")),
+			RequestID:           ogenclient.NewOptString(e.RequestID),
+		},
+	)
+}
+
+func consoleClusterID(e *Event) string {
+	if e.ClusterID != "" {
+		return e.ClusterID
+	}
+	return detailStr(e.Detail, "cluster_id")
+}
+
+func optionalConsoleClusterID(e *Event) ogenclient.NilString {
+	clusterID := consoleClusterID(e)
+	if clusterID == "" {
+		var result ogenclient.NilString
+		result.SetToNull()
+		return result
+	}
+	return ogenclient.NewNilString(clusterID)
+}
+
+func consoleResultState(e *Event) string {
+	state := detailStr(e.Detail, "result_state")
+	if state == "" {
+		return consoleResultStateUnavailable
+	}
+	switch state {
+	case "success", "empty", "partial", "stale", consoleResultStateUnavailable, "forbidden", "not_found":
+		return state
+	default:
+		return consoleResultStateUnavailable
+	}
+}
+
+func optionalOpaqueFingerprint(value string) ogenclient.OptString {
+	if value == "" {
+		return ogenclient.OptString{}
+	}
+	return ogenclient.NewOptString(opaqueFingerprint(value))
+}
+
+func opaqueFingerprint(value string) string {
+	if len(value) > 128 || len(value) < len("sha256:") || value[:len("sha256:")] != "sha256:" {
+		return "sha256:invalid"
+	}
+	return value
 }
 
 func buildSeverityTriageCompletedPayload(e *Event) ogenclient.AuditEventRequestEventData {

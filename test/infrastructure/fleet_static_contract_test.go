@@ -68,6 +68,8 @@ var _ = Describe("Fleet static operator contract", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(manifest).To(ContainSubstring("endpoint: https://mcp-gateway.envoy-gateway-system.svc.cluster.local:8080/mcp"))
 		Expect(manifest).To(ContainSubstring("namespace: mcp-system"))
+		Expect(manifest).To(ContainSubstring("confidenceThreshold: 0.85"))
+		Expect(manifest).NotTo(ContainSubstring(`confidenceThreshold: "0.85"`))
 		Expect(manifest).To(ContainSubstring("apiFrontend:\n    enabled: true"))
 		Expect(manifest).To(ContainSubstring("groups: claims.groups"))
 		Expect(manifest).To(ContainSubstring("role: sre"))

@@ -178,11 +178,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			// made a transient backend hiccup indistinguishable from a real
 			// scope decision, so callers (Gateway/RO's HTTPClient) had no
 			// signal to retry on. A checker error now surfaces as 503 so the
-			// caller can retry with backoff instead of failing the alert
-			// closed on the very first transient blip; if retries are
-			// exhausted, HTTPClient still falls back to fail-safe
-			// managed=false (SC-7 unchanged), just no longer on transient
-			// failure alone.
+			// caller can retry with backoff instead of treating the failed
+			// check as a completed managed=false decision.
 			checker.err = fmt.Errorf("valkey: connection refused")
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")

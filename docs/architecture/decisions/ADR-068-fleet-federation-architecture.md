@@ -981,6 +981,19 @@ query listClusters($input: [SearchInput]) {
 > end-to-end on a live cluster. See `docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/`
 > for raw spike data.
 
+> **Console inventory qualification, ACM 2.17.3 (2026-11-03):** A scoped
+> SNO-b spike observed the known Search results with `fine-grained-rbac` enabled,
+> `global-search-user`, list access to `userpermissions`, and `view` RoleBindings
+> in both the managed-cluster namespace and the test workload namespace. TLS was
+> verified with the OpenShift service CA and a short-lived service-account token.
+> These grants were tested together; the spike did not establish that every grant
+> is individually necessary or sufficient for every deployment. Search can return
+> a silent empty response when an identity lacks visibility, so an empty response
+> alone is not proof that a cluster or resource is absent. ACM Console inventory
+> remains disabled until fleet visibility, gateway registration identity and the
+> production AF journey are qualified. The temporary spike privileges were removed
+> and the MCH setting restored. See `docs/tests/2584/TEST_PLAN.md` §16.3.
+
 Kubernaut's ACM adapter queries the Search GraphQL API for resource metadata (name,
 namespace, kind, cluster, labels). ACM Search controls result visibility through two
 independent RBAC layers:

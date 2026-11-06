@@ -11,11 +11,13 @@ import (
 	"cloud.google.com/go/auth/credentials"
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -28,6 +30,7 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -35,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -69,7 +73,9 @@ type backendDeps struct {
 	DSResilientTransport  *resilience.CircuitBreakerTransport
 	CAWatchers            []caWatcherEntry
 	k8sDynClient          dynamic.Interface
+	k8sMetadataClient     metadata.Interface
 	k8sTypedClient        crclient.WithWatch
+	k8sPolicyClient       crclient.WithWatch
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
@@ -104,6 +110,14 @@ type backendDeps struct {
 	// client is unavailable (graceful degradation, matches every other
 	// backendDeps field's nil-safe convention).
 	ScopeChecker scope.ScopeChecker
+	// Console projection sources are kept separate from MCP/Fleet tool readers.
+	// They are consumed only by the authenticated /api/v1/console routes.
+	LocalInventory      policyread.InventoryReader
+	RemoteInventory     policyread.InventoryReader
+	PolicySource        policyread.PolicySource
+	CurrentPolicySource policyread.CurrentPolicySource
+	HistorySource       policyread.HistorySource
+	ReadGuard           *policyread.ReadGuard
 }
 
 // FleetResilientClient returns the MCP Gateway connection backing
@@ -173,6 +187,10 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	// Fail-fast: log clearly on failure instead of returning silent nil.
 	buildK8sClientDeps(cfg, deps, metricsReg, logger)
 
+	if err := buildPolicyReadDeps(cfg, deps, logger); err != nil {
+		return nil, fmt.Errorf("policy-read dependency wiring: %w", err)
+	}
+
 	if err := buildSeverityTriageDeps(ctx, cfg, deps, auditor, logger); err != nil {
 		return nil, err
 	}
@@ -186,6 +204,49 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	}
 
 	return deps, nil
+}
+
+// buildPolicyReadDeps wires the Console projection sources. Local list reads
+// use AF's metadata client and structured scope manager; remote inventory list
+// reads remain unavailable. The existing remote reader is retained only for
+// exact/get behavior that is outside the local list contract.
+func buildPolicyReadDeps(cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
+	readGuard := policyread.NewReadGuard(policyread.DefaultInventoryMaxConcurrentReads)
+	deps.ReadGuard = readGuard
+	if deps.k8sPolicyClient != nil {
+		kubernetesSource, err := policyread.NewKubernetesSource(deps.k8sPolicyClient)
+		if err != nil {
+			return fmt.Errorf("create Kubernetes policy source: %w", err)
+		}
+		deps.PolicySource = kubernetesSource
+		deps.CurrentPolicySource = kubernetesSource
+		deps.HistorySource = kubernetesSource
+	}
+	if deps.k8sMetadataClient != nil && deps.k8sPolicyClient != nil {
+		localInventory, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
+			MetadataClient:   deps.k8sMetadataClient,
+			ScopeResolver:    scope.NewManager(deps.k8sPolicyClient),
+			WorkingSetBytes:  policyread.DefaultInventoryWorkingSetBytes,
+			OperationTimeout: policyread.DefaultInventoryOperationTimeout,
+			ReadGuard:        readGuard,
+		})
+		if err != nil {
+			return fmt.Errorf("create local inventory reader: %w", err)
+		}
+		deps.LocalInventory = localInventory
+	}
+	remoteInventory, err := fleet.NewInventoryReader(cfg.Fleet)
+	if err != nil {
+		return err
+	}
+	deps.RemoteInventory = remoteInventory
+	if cfg.Fleet.Enabled && cfg.Fleet.Backend == fleet.BackendACM && cfg.Fleet.EffectiveEndpoint() != "" {
+		logger.Info("Console ACM inventory unavailable pending Search visibility and completeness qualification", "decision", "DD-AF-018")
+	}
+	if remoteInventory != nil {
+		logger.Info("Console remote exact inventory projection initialized; list remains unavailable", "backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+	}
+	return nil
 }
 
 // buildScopeCheckerDeps wires the ADR-053/#2025 scope checker used by
@@ -203,7 +264,14 @@ func buildScopeCheckerDeps(cfg *config.Config, deps *backendDeps, logger logr.Lo
 		return nil
 	}
 	scopeMgr := scope.NewManager(deps.k8sTypedClient)
-	scopeChecker, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger.WithName("scope"))
+	var options []fleet.ScopeCheckerOption
+	if cfg.Fleet.Enabled && cfg.Fleet.Backend == fleet.BackendACM {
+		if deps.FleetClusterRegistry == nil {
+			return fmt.Errorf("acm scope checking requires a managed gateway registry")
+		}
+		options = append(options, fleet.WithClusterRegistry(registry.NewClusterLookupAdapter(deps.FleetClusterRegistry)))
+	}
+	scopeChecker, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger.WithName("scope"), options...)
 	if err != nil {
 		return fmt.Errorf("create fleet scope checker: %w", err)
 	}
@@ -376,8 +444,21 @@ func buildK8sClientDeps(cfg *config.Config, deps *backendDeps, metricsReg *metri
 	deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
 	logger.Info("K8s dynamic client initialized with circuit breaker")
 
+	metadataCfg := policyread.WithResponseBodyLimit(restCfg, policyread.DefaultInventoryBackendResponseBytes)
+	metadataClient, metadataErr := metadata.NewForConfig(metadataCfg)
+	if metadataErr != nil {
+		// Metadata-only listing is a separate dependency. Do not fall back to
+		// dynamic full-object listing when it is unavailable; Console inventory
+		// must fail closed rather than widen retained Kubernetes data.
+		logger.Error(metadataErr, "K8s metadata client creation failed — Console inventory will be unavailable")
+	} else {
+		deps.k8sMetadataClient = metadataClient
+		logger.Info("K8s metadata client initialized for bounded Console inventory")
+	}
+
 	buildK8sDiscoveryMapper(restCfg, deps, logger)
 	buildK8sTypedClient(restCfg, deps, logger)
+	buildPolicyReadTypedClient(restCfg, deps, logger)
 }
 
 // buildK8sDiscoveryMapper wires the RESTMapper used for CRD kind resolution.
@@ -396,14 +477,7 @@ func buildK8sDiscoveryMapper(restCfg *rest.Config, deps *backendDeps, logger log
 // kubernaut CRDs (RR, RAR, EA, AIAnalysis, IS, AgentSession, #1428, #2172).
 // Unavailable falls back to dynamic-only CRD operations.
 func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
-	typedScheme := k8sruntime.NewScheme()
-	_ = eav1alpha1.AddToScheme(typedScheme)
-	_ = remediationv1.AddToScheme(typedScheme)
-	_ = aianalysisv1.AddToScheme(typedScheme)
-	_ = isv1alpha1.AddToScheme(typedScheme)
-	// DD-AA-KA-001 Amendment Gap 1 / #2172: AwaitAgentSessionInteractive
-	// watches AgentSession directly via this same typed client.
-	_ = agentsessionv1.AddToScheme(typedScheme)
+	typedScheme := buildK8sTypedScheme()
 	typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
 	if tcErr != nil {
 		logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
@@ -411,6 +485,31 @@ func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Lo
 	}
 	deps.k8sTypedClient = typedClient
 	logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
+}
+
+func buildPolicyReadTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
+	boundedCfg := policyread.WithResponseBodyLimit(restCfg, policyread.DefaultInventoryBackendResponseBytes)
+	policyClient, err := crclient.NewWithWatch(boundedCfg, crclient.Options{Scheme: buildK8sTypedScheme()})
+	if err != nil {
+		logger.Error(err, "bounded K8s policy-read client creation failed — Console policy reads will be unavailable")
+		return
+	}
+	deps.k8sPolicyClient = policyClient
+	logger.Info("bounded K8s policy-read client initialized with HTTPS response-body limit")
+}
+
+func buildK8sTypedScheme() *k8sruntime.Scheme {
+	typedScheme := k8sruntime.NewScheme()
+	_ = corev1.AddToScheme(typedScheme)
+	_ = eav1alpha1.AddToScheme(typedScheme)
+	_ = remediationv1.AddToScheme(typedScheme)
+	_ = aianalysisv1.AddToScheme(typedScheme)
+	_ = spv1.AddToScheme(typedScheme)
+	_ = isv1alpha1.AddToScheme(typedScheme)
+	// DD-AA-KA-001 Amendment Gap 1 / #2172: AwaitAgentSessionInteractive
+	// watches AgentSession directly via this same typed client.
+	_ = agentsessionv1.AddToScheme(typedScheme)
+	return typedScheme
 }
 
 // buildSeverityTriageDeps wires the optional Prometheus-backed severity-triage
