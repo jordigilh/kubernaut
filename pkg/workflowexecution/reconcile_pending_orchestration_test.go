@@ -226,6 +226,37 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		Expect(calls).To(Equal(1))
 	})
 
+	It("UT-WE-2570-129: BR-ORCH-025 requeues transient identity lookup exhaustion without dispatching", func() {
+		wfe := buildPendingWFE("wfe-transient-catalog", "default/deployment/transient-catalog")
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithObjects(wfe).
+			WithStatusSubresource(wfe).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*remediationworkflowv1.RemediationWorkflowList); ok {
+					calls++
+					return apierrors.NewServiceUnavailable("temporary")
+				}
+				return c.List(ctx, list, opts...)
+			}}).Build()
+		registry := weexecutor.NewRegistry()
+		tektonExec := weexecutor.NewTektonExecutor(fakeClient)
+		registry.Register(tektonExec.Engine(), tektonExec)
+		reconciler := buildReconciler(fakeClient, registry, &mockAuditStore{})
+
+		result, err := reconciler.Reconcile(rpoCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(wfe)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(calls).To(Equal(3))
+		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+		persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Expect(fakeClient.Get(rpoCtx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
+		Expect(persisted.Status.Phase).NotTo(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		var pipelines tektonv1.PipelineRunList
+		Expect(fakeClient.List(rpoCtx, &pipelines)).To(Succeed())
+		Expect(pipelines.Items).To(BeEmpty())
+	})
+
 	It("UT-WE-2570-128: BR-ORCH-025 does not retry a forbidden catalog lookup", func() {
 		calls := 0
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).

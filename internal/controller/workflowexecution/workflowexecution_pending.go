@@ -47,8 +47,9 @@ import (
 )
 
 const (
-	executionEngineAnsible = "ansible"
-	executionEngineJob     = "job"
+	executionEngineAnsible     = "ansible"
+	executionEngineJob         = "job"
+	workflowIdentityRetryDelay = 5 * time.Second
 )
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from
@@ -135,6 +136,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 		logger.Error(err, "Workflow identity verification failed before dispatch")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, err.Error())
+		if workflowidentity.IsTransient(err) {
+			return ctrl.Result{RequeueAfter: workflowIdentityRetryDelay}, nil
+		}
 		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
 			return ctrl.Result{}, markErr
 		}

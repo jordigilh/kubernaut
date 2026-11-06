@@ -66,6 +66,12 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 	return fmt.Errorf("workflow identity lookup exhausted")
 }
 
+// IsTransient reports whether an error from workflow identity verification is
+// caused by a temporary API or network failure that may succeed on retry.
+func IsTransient(err error) bool {
+	return isTransient(err)
+}
+
 func listTrustedWorkflows(ctx context.Context, reader client.Reader, namespace, workflowID string) ([]remediationworkflowv1.RemediationWorkflow, error) {
 	var workflows remediationworkflowv1.RemediationWorkflowList
 	err := reader.List(ctx, &workflows, client.InNamespace(namespace), client.MatchingFields{workflowIDFieldPath: workflowID})
