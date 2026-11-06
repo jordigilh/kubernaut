@@ -52,18 +52,11 @@ const (
 	executionEngineJob     = "job"
 )
 
-// Verify owns the bounded three-attempt catalog lookup. This backoff only
-// schedules the next reconciliation after that local retry budget is exhausted;
-// no process-local or CRD-persisted attempt counter is needed for the wake-up.
-var workflowIdentityRetryBackoff = backoff.Config{
-	BasePeriod:    5 * time.Second,
-	MaxPeriod:     5 * time.Minute,
-	Multiplier:    2,
-	JitterPercent: 20,
-}
-
+// Verify owns the bounded three-attempt catalog lookup. This schedules the
+// next reconciliation after that local retry budget is exhausted using the
+// shared production default rather than a bespoke fixed delay.
 func workflowIdentityRetryDelay() time.Duration {
-	return workflowIdentityRetryBackoff.Calculate(1)
+	return backoff.CalculateWithDefaults(1)
 }
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from

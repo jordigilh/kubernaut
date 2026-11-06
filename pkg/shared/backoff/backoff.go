@@ -116,7 +116,8 @@ type Config struct {
 //   - Extracted from Notification service (lines 302-346 of notificationrequest_controller.go)
 //   - Jitter prevents thundering herd when many operations fail simultaneously
 //   - Multiplier enables flexible strategies (conservative/standard/aggressive)
-//   - Bounds checking ensures jitter never violates [BasePeriod, MaxPeriod] range
+//   - MaxPeriod remains a hard upper bound after jitter; BasePeriod is the
+//     nominal period, so negative jitter may produce a shorter delay
 func (c Config) Calculate(attempts int32) time.Duration {
 	// Set defaults
 	if c.Multiplier == 0 {
@@ -166,9 +167,10 @@ func (c Config) Calculate(attempts int32) time.Duration {
 	return backoff
 }
 
-// applyJitter adds randomized jitter (±JitterPercent%) to backoff, then
-// re-clamps the result to [BasePeriod, MaxPeriod] since jitter can push the
-// value outside either bound.
+// applyJitter adds randomized jitter (±JitterPercent%) to backoff and keeps the
+// result below MaxPeriod. BasePeriod is the nominal period, not a lower bound:
+// clamping negative jitter to BasePeriod would synchronize roughly half of the
+// callers at the same retry time.
 func (c Config) applyJitter(backoff time.Duration) time.Duration {
 	jitterRange := backoff * time.Duration(c.JitterPercent) / 100
 	if jitterRange <= 0 {
@@ -179,10 +181,8 @@ func (c Config) applyJitter(backoff time.Duration) time.Duration {
 	jitter := time.Duration(rand.Int63n(int64(jitterRange)*2)) - jitterRange
 	backoff += jitter
 
-	// Ensure backoff remains within bounds after jitter.
-	if backoff < c.BasePeriod {
-		backoff = c.BasePeriod
-	}
+	// MaxPeriod is the hard upper bound after jitter. Do not clamp to
+	// BasePeriod: the negative half of the jitter range must remain effective.
 	if c.MaxPeriod > 0 && backoff > c.MaxPeriod {
 		backoff = c.MaxPeriod
 	}

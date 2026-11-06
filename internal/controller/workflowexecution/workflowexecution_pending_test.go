@@ -93,8 +93,8 @@ var _ = Describe("workflow identity retry scheduling", func() {
 	It("UT-WE-2570-130: uses the shared bounded jittered backoff for the next transient requeue", func() {
 		for range 32 {
 			delay := workflowIdentityRetryDelay()
-			Expect(delay).To(BeNumerically(">=", 5*time.Second))
-			Expect(delay).To(BeNumerically("<", 6*time.Second))
+			Expect(delay).To(BeNumerically(">=", 27*time.Second))
+			Expect(delay).To(BeNumerically("<", 33*time.Second))
 		}
 	})
 })
