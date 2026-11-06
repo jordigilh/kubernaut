@@ -44,6 +44,7 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
 
 // actionTypeFieldIndex indexes RemediationWorkflow CRDs by spec.actionType,
@@ -109,8 +110,8 @@ func NewScheme() (*runtime.Scheme, error) {
 // context.CancelFunc stops the underlying informers and MUST be called
 // during graceful shutdown.
 func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, namespace string, logger logr.Logger) (*Cache, context.CancelFunc, error) {
-	if namespace == "" {
-		return nil, nil, fmt.Errorf("workflow catalog namespace must not be empty")
+	if err := workflowidentity.ValidateNamespace(namespace); err != nil {
+		return nil, nil, err
 	}
 
 	// A static Mapper is supplied so cache.New never performs live cluster

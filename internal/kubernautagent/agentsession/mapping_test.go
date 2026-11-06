@@ -415,6 +415,21 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 		})
 	})
 
+	It("UT-AA-KA-065-012: BR-ORCH-025 preserves an explicitly empty selected-workflow parameter map", func() {
+		result := &katypes.InvestigationResult{
+			WorkflowID: "wf-empty-parameters",
+			Parameters: map[string]interface{}{},
+		}
+
+		res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-empty-parameters")
+
+		Expect(res.SelectedWorkflow).NotTo(BeNil())
+		var selected map[string]json.RawMessage
+		Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selected)).To(Succeed())
+		Expect(selected).To(HaveKey("parameters"))
+		Expect(string(selected["parameters"])).To(MatchJSON(`{}`))
+	})
+
 	Describe("UT-KA-2327-001: ExecutionClusterID propagates onto the wire selected_workflow map", func() {
 		It("should include execution_cluster_id when the workflow declares an execution cluster (DD-FLEET-008, BR-FLEET-004)", func() {
 			result := &katypes.InvestigationResult{

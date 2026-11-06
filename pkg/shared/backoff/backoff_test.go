@@ -178,7 +178,7 @@ var _ = Describe("Backoff Utility", func() {
 			}
 		})
 
-		It("should clamp jitter to stay within bounds [BasePeriod, MaxPeriod]", func() {
+		It("should spread jitter around the nominal period", func() {
 			config := backoff.Config{
 				BasePeriod:    30 * time.Second,
 				MaxPeriod:     60 * time.Second,
@@ -186,14 +186,19 @@ var _ = Describe("Backoff Utility", func() {
 				JitterPercent: 50, // ±50% (extreme, for testing bounds)
 			}
 
-			// Even with large jitter, should never violate bounds
+			sawBelowBase := false
+			sawAboveBase := false
 			for i := 0; i < 100; i++ {
 				duration := config.Calculate(1)
-				Expect(duration).To(BeNumerically(">=", 30*time.Second),
-					"Jitter should not reduce below BasePeriod")
-				Expect(duration).To(BeNumerically("<=", 60*time.Second),
-					"Jitter should not exceed MaxPeriod")
+				Expect(duration).To(BeNumerically(">=", 15*time.Second),
+					"Jitter should stay within the nominal ±50%% range")
+				Expect(duration).To(BeNumerically("<", 45*time.Second),
+					"Jitter should stay within the nominal ±50%% range")
+				sawBelowBase = sawBelowBase || duration < 30*time.Second
+				sawAboveBase = sawAboveBase || duration > 30*time.Second
 			}
+			Expect(sawBelowBase).To(BeTrue(), "negative jitter must not be clamped to BasePeriod")
+			Expect(sawAboveBase).To(BeTrue(), "positive jitter must remain possible")
 		})
 
 		It("should distribute jitter around base duration", func() {
@@ -296,20 +301,6 @@ var _ = Describe("Backoff Utility", func() {
 
 		// Jitter-at-bounds tests require statistical loops — not table-driven.
 		Context("with jitter at bounds", func() {
-			It("should never reduce below BasePeriod even with jitter", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					MaxPeriod:     100 * time.Second,
-					Multiplier:    2.0,
-					JitterPercent: 50, // Extreme jitter
-				}
-
-				for i := 0; i < 100; i++ {
-					duration := config.Calculate(1)
-					Expect(duration).To(BeNumerically(">=", 30*time.Second))
-				}
-			})
-
 			It("should never exceed MaxPeriod even with jitter", func() {
 				config := backoff.Config{
 					BasePeriod:    30 * time.Second,

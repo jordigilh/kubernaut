@@ -373,6 +373,7 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		UpdateRARTimeRemaining:    r.updateRARTimeRemaining,
 		WFECallbacks:              wfeCallbacks,
 	})
+	awaitingApprovalHandler.SetAPIReader(r.apiReader)
 	awaitingApprovalHandler.SetClock(r.clock)
 	r.phaseRegistry.MustRegister(awaitingApprovalHandler)
 }

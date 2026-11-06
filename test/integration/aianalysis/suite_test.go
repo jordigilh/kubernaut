@@ -581,8 +581,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// requiring cluster-wide RBAC.
 	err = infrastructure.SeedActionTypesViaCRD(specCtx, phase1Data.KubeconfigPath, processNamespace, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "ActionType fixtures must be seeded in the KA controller namespace")
-	_, err = SeedTestWorkflowsViaDirectCRDCreation(specCtx, k8sClient, processNamespace, GinkgoWriter)
+	processWorkflowIDs, err := SeedTestWorkflowsViaDirectCRDCreation(specCtx, k8sClient, processNamespace, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "RemediationWorkflow fixtures must be seeded in the KA controller namespace")
+	Expect(processWorkflowIDs).To(Equal(workflowUUIDs), "mock LLM IDs must match the per-process catalog")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller manager", processNum))
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{

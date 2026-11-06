@@ -125,6 +125,26 @@ func standardClaims(issuer, subject string, audiences, groups []string, expiry t
 var _ = Describe("Auth", func() {
 	Describe("JWT validation", func() {
 		Context("token lifecycle and provider routing", func() {
+			It("UT-AF-2570-identity-002 [BR-AUDIT-005]: derives the readable reviewer from a verified email claim", func() {
+				kp := newTestKeyPair("dex-key")
+				jwksSrv := newJWKSServer(kp.jwks())
+				cfg := auth.Config{AllowInsecureIssuers: true, JWT: []auth.ProviderConfig{{
+					Issuer:        auth.IssuerConfig{URL: jwksSrv.URL, Audiences: []string{"kubernaut-apifrontend"}},
+					ClaimMappings: auth.ClaimMappings{Username: "claims.email", Groups: "claims.groups"},
+				}}}
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+				claims := standardClaims(jwksSrv.URL, "opaque-dex-subject", []string{"kubernaut-apifrontend"}, []string{"sre"}, time.Now().Add(time.Hour))
+				delete(claims, "preferred_username")
+				claims["email"] = "fp-a2a-4@kubernaut.ai"
+				identity, err := validator.Validate(context.Background(), kp.signToken(claims))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(identity.Username).To(Equal("fp-a2a-4@kubernaut.ai"))
+				Expect(identity.Groups).To(Equal([]string{"sre"}))
+				_, err = validator.Validate(context.Background(), newTestKeyPair("untrusted").signToken(claims))
+				Expect(err).To(HaveOccurred())
+			})
+
 			It("UT-AF-002-001: valid token returns user identity", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())

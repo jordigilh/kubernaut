@@ -21,8 +21,11 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
@@ -298,26 +301,29 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
-	Name                   string                     `json:"name"`
-	Namespace              string                     `json:"namespace"`
-	RemediationRequest     string                     `json:"remediation_request"`
-	AIAnalysis             string                     `json:"ai_analysis"`
-	Confidence             float64                    `json:"confidence"`
-	ConfidenceLevel        string                     `json:"confidence_level"`
-	Reason                 string                     `json:"reason"`
-	InvestigationSummary   string                     `json:"investigation_summary"`
-	WhyApprovalRequired    string                     `json:"why_approval_required"`
-	RecommendedWorkflow    RecommendedWorkflowInfo    `json:"recommended_workflow"`
-	RecommendedActions     []RecommendedActionSummary `json:"recommended_actions"`
-	EvidenceCollected      []string                   `json:"evidence_collected"`
-	AlternativesConsidered []AlternativeSummary       `json:"alternatives_considered"`
-	RequiredBy             string                     `json:"required_by,omitempty"`
-	Decision               string                     `json:"decision"`
-	DecidedBy              string                     `json:"decided_by,omitempty"`
-	DecidedAt              string                     `json:"decided_at,omitempty"`
-	TimeRemaining          string                     `json:"time_remaining,omitempty"`
-	Expired                bool                       `json:"expired"`
-	ParentEvidence         *ParentEvidence            `json:"parent_evidence,omitempty"`
+	Name                   string                                               `json:"name"`
+	Namespace              string                                               `json:"namespace"`
+	RemediationRequest     string                                               `json:"remediation_request"`
+	AIAnalysis             string                                               `json:"ai_analysis"`
+	Confidence             float64                                              `json:"confidence"`
+	ConfidenceLevel        string                                               `json:"confidence_level"`
+	Reason                 string                                               `json:"reason"`
+	InvestigationSummary   string                                               `json:"investigation_summary"`
+	WhyApprovalRequired    string                                               `json:"why_approval_required"`
+	RecommendedWorkflow    RecommendedWorkflowInfo                              `json:"recommended_workflow"`
+	Workflow               *sharedtypes.WorkflowSnapshot                        `json:"workflow"`
+	Parameters             map[string]string                                    `json:"parameters"`
+	ParameterSchema        []remediationworkflowv1.RemediationWorkflowParameter `json:"parameter_schema"`
+	RecommendedActions     []RecommendedActionSummary                           `json:"recommended_actions"`
+	EvidenceCollected      []string                                             `json:"evidence_collected"`
+	AlternativesConsidered []AlternativeSummary                                 `json:"alternatives_considered"`
+	RequiredBy             string                                               `json:"required_by,omitempty"`
+	Decision               string                                               `json:"decision"`
+	DecidedBy              string                                               `json:"decided_by,omitempty"`
+	DecidedAt              string                                               `json:"decided_at,omitempty"`
+	TimeRemaining          string                                               `json:"time_remaining,omitempty"`
+	Expired                bool                                                 `json:"expired"`
+	ParentEvidence         *ParentEvidence                                      `json:"parent_evidence,omitempty"`
 }
 
 const (
@@ -438,6 +444,7 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		requiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
 	}
 
+	snapshot := rar.DeepCopy()
 	result := GetApprovalRequestResult{
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
@@ -449,6 +456,9 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		InvestigationSummary:   rar.Spec.InvestigationSummary,
 		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
 		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: rar.Spec.RecommendedWorkflow.WorkflowID, Version: rar.Spec.RecommendedWorkflow.Version},
+		Workflow:               snapshot.Spec.Workflow,
+		Parameters:             snapshot.Spec.Parameters,
+		ParameterSchema:        snapshot.Spec.ParameterSchema,
 		RecommendedActions:     actions,
 		EvidenceCollected:      evidence,
 		AlternativesConsidered: alternatives,
@@ -626,17 +636,51 @@ func NewGetApprovalRequestTool(client crclient.Client, controllerNS string) (too
 
 // ApproveArgs defines the input for kubernaut_approve.
 type ApproveArgs struct {
-	Namespace        string `json:"-"`
-	RARName          string `json:"rar_name"`
-	Decision         string `json:"decision"`
-	Reason           string `json:"reason,omitempty"`
-	WorkflowOverride string `json:"workflow_override,omitempty"`
+	Namespace        string                          `json:"-"`
+	RARName          string                          `json:"rar_name"`
+	Decision         string                          `json:"decision"`
+	Reason           string                          `json:"reason,omitempty"`
+	WorkflowOverride *remediationv1.WorkflowOverride `json:"workflow_override,omitempty"`
 }
 
 // ApproveResult is the output of kubernaut_approve.
 type ApproveResult struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
+	// Audit carries the frozen decision context to the tool bridge, not to the MCP caller.
+	Audit *ApprovalAuditContext `json:"-"`
+}
+
+// ApprovalAuditContext contains the values needed to correlate approval intent.
+type ApprovalAuditContext struct {
+	CorrelationID       string
+	WorkflowID          string
+	OriginalParameters  map[string]string
+	OverrideParameters  map[string]string
+	EffectiveParameters map[string]string
+	OverrideRationale   *string
+}
+
+// ApprovalDecisionDeniedError marks an approval request rejected locally
+// before the status write. The MCP bridge uses the attached reviewed context
+// to emit the same structured denial audit payload as an admission denial.
+type ApprovalDecisionDeniedError struct {
+	Err   error
+	Audit *ApprovalAuditContext
+}
+
+func (e *ApprovalDecisionDeniedError) Error() string {
+	if e == nil || e.Err == nil {
+		return "approval decision denied"
+	}
+	return fmt.Sprintf("approval decision denied: %v", e.Err)
+}
+
+func (e *ApprovalDecisionDeniedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // ApprovalDecisionWriteError reports a conditional decision write that could
@@ -663,26 +707,24 @@ func (e *ApprovalDecisionWriteError) Unwrap() error {
 // HandleApprove implements the kubernaut_approve logic.
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
-func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs, username string) (ApproveResult, error) {
+func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs, username string) (result ApproveResult, resultErr error) {
 	if client == nil {
 		return ApproveResult{}, ErrK8sUnavailable
 	}
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return ApproveResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if err := validate.ResourceName(args.RARName); err != nil {
-		return ApproveResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if args.Decision == "" {
-		return ApproveResult{}, fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)
-	}
-	if args.Decision != "Approved" && args.Decision != "Rejected" {
-		return ApproveResult{}, fmt.Errorf("%w: decision %q is not valid; must be exactly one of: Approved, Rejected", ErrInvalidInput, args.Decision)
+	if err := validateApproveArgs(args); err != nil {
+		return ApproveResult{}, err
 	}
 
 	var rar remediationv1.RemediationApprovalRequest
 	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.RARName}, &rar); err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
+	}
+	defer setApprovalAuditOnSuccess(&result, &resultErr, &rar, args.WorkflowOverride)
+	if err := validateApprovalOverrideArgs(args); err != nil {
+		return ApproveResult{}, &ApprovalDecisionDeniedError{
+			Err:   err,
+			Audit: approvalAuditContext(&rar, args.WorkflowOverride),
+		}
 	}
 
 	if rar.DeletionTimestamp != nil {
@@ -695,6 +737,14 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 		}
 		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest already has terminal decision %q", ErrAlreadyTerminal, rar.Status.Decision)
 	}
+	if args.WorkflowOverride != nil {
+		if err := remediationapprovalrequest.ValidateParameterOverride(&rar.Spec, args.WorkflowOverride.Parameters); err != nil {
+			return ApproveResult{}, &ApprovalDecisionDeniedError{
+				Err:   fmt.Errorf("%w: parameter override: %w", ErrInvalidInput, err),
+				Audit: approvalAuditContext(&rar, args.WorkflowOverride),
+			}
+		}
+	}
 
 	// Status().Update carries the fetched metadata.resourceVersion. The API
 	// server therefore makes the first concurrent business decision win.
@@ -703,14 +753,17 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	if args.Reason != "" {
 		rar.Status.DecisionMessage = args.Reason
 	}
-	if args.WorkflowOverride != "" {
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-			WorkflowName: args.WorkflowOverride,
-			Rationale:    "User override via kubernaut_approve",
-		}
+	if args.WorkflowOverride != nil {
+		rar.Status.WorkflowOverride = args.WorkflowOverride.DeepCopy()
 	}
 
 	if err := client.Status().Update(ctx, &rar); err != nil {
+		// The apiserver may retry admission after another decision commits. In
+		// that case the webhook denies the stale decision as terminal, rather
+		// than returning a resourceVersion conflict. Prove the winner by readback.
+		if isTerminalAdmissionDenial(err) {
+			return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
+		}
 		if isDefinitiveApprovalDecisionRejection(err) {
 			return ApproveResult{}, toUserFriendlyApprovalDecisionError(err)
 		}
@@ -723,12 +776,74 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	}, nil
 }
 
+func setApprovalAuditOnSuccess(result *ApproveResult, resultErr *error, rar *remediationv1.RemediationApprovalRequest, override *remediationv1.WorkflowOverride) {
+	if *resultErr == nil {
+		result.Audit = approvalAuditContext(rar, override)
+	}
+}
+
+func approvalAuditContext(rar *remediationv1.RemediationApprovalRequest, override *remediationv1.WorkflowOverride) *ApprovalAuditContext {
+	info := &ApprovalAuditContext{CorrelationID: rar.Spec.RemediationRequestRef.Name}
+	if rar.Spec.Workflow != nil {
+		info.WorkflowID = rar.Spec.Workflow.WorkflowID
+	}
+	if rar.Spec.Parameters != nil {
+		info.OriginalParameters = make(map[string]string, len(rar.Spec.Parameters))
+		info.EffectiveParameters = make(map[string]string, len(rar.Spec.Parameters))
+		for name, value := range rar.Spec.Parameters {
+			info.OriginalParameters[name] = value
+			info.EffectiveParameters[name] = value
+		}
+	}
+	if override != nil {
+		rationale := override.Rationale
+		info.OverrideRationale = &rationale
+		if override.Parameters != nil {
+			info.OverrideParameters = make(map[string]string, len(override.Parameters))
+			for name, value := range override.Parameters {
+				info.OverrideParameters[name] = value
+				if info.EffectiveParameters != nil {
+					info.EffectiveParameters[name] = value
+				}
+			}
+		}
+	}
+	return info
+}
+
+func validateApproveArgs(args ApproveArgs) error {
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if err := validate.ResourceName(args.RARName); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if args.Decision == "" {
+		return fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)
+	}
+	if args.Decision != string(remediationv1.ApprovalDecisionApproved) && args.Decision != string(remediationv1.ApprovalDecisionRejected) {
+		return fmt.Errorf("%w: decision %q is not valid; must be exactly one of: Approved, Rejected", ErrInvalidInput, args.Decision)
+	}
+	return nil
+}
+
+func validateApprovalOverrideArgs(args ApproveArgs) error {
+	if args.WorkflowOverride != nil && (args.Decision != string(remediationv1.ApprovalDecisionApproved) || args.WorkflowOverride.WorkflowName != "") {
+		return fmt.Errorf("%w: overrides are parameter-only and require approval", ErrInvalidInput)
+	}
+	return nil
+}
+
 func isDefinitiveApprovalDecisionRejection(err error) bool {
 	return apierrors.IsForbidden(err) ||
 		apierrors.IsUnauthorized(err) ||
 		apierrors.IsInvalid(err) ||
 		apierrors.IsBadRequest(err) ||
 		apierrors.IsNotFound(err)
+}
+
+func isTerminalAdmissionDenial(err error) bool {
+	return apierrors.IsForbidden(err) && strings.Contains(err.Error(), "admission webhook") && strings.Contains(err.Error(), "terminal decision is immutable")
 }
 
 func toUserFriendlyApprovalDecisionError(err error) error {
@@ -769,13 +884,7 @@ func approvalRequestMatches(args ApproveArgs, username string, rar *remediationv
 	if rar.Status.DecisionMessage != args.Reason {
 		return false
 	}
-	if args.WorkflowOverride == "" {
-		return rar.Status.WorkflowOverride == nil
-	}
-	return reflect.DeepEqual(rar.Status.WorkflowOverride, &remediationv1.WorkflowOverride{
-		WorkflowName: args.WorkflowOverride,
-		Rationale:    "User override via kubernaut_approve",
-	})
+	return reflect.DeepEqual(rar.Status.WorkflowOverride, args.WorkflowOverride)
 }
 
 func approvalResult(args ApproveArgs, username string) ApproveResult {
@@ -795,7 +904,7 @@ func proveConditionalDecision(ctx context.Context, client crclient.Client, args 
 			return approvalResult(args, username), nil
 		}
 		outcome := "unknown"
-		if apierrors.IsConflict(writeErr) {
+		if apierrors.IsConflict(writeErr) || (apierrors.IsForbidden(writeErr) && canonical.Status.Decision != remediationv1.ApprovalDecisionPending) {
 			outcome = "conflict"
 		}
 		return ApproveResult{}, &ApprovalDecisionWriteError{Outcome: outcome, Err: writeErr}
@@ -836,8 +945,12 @@ func approveInputSchema() *jsonschema.Schema {
 				Description: "Optional reason for the decision",
 			},
 			"workflow_override": {
-				Type:        "string",
-				Description: "Optional workflow name to override the recommended workflow",
+				Type:        "object",
+				Description: "Optional changes to existing workflow parameter values; workflow selection cannot be changed",
+				Properties: map[string]*jsonschema.Schema{
+					"parameters": {Type: "object", AdditionalProperties: &jsonschema.Schema{Type: "string"}},
+					"rationale":  {Type: "string"},
+				},
 			},
 		},
 		Required:      []string{"rar_name", "decision"},

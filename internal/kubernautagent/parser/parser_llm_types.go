@@ -17,6 +17,7 @@ limitations under the License.
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -90,6 +91,14 @@ type llmWorkflow struct {
 	Parameters          map[string]interface{} `json:"parameters,omitempty"`
 	ExecutionEngine     string                 `json:"execution_engine,omitempty"`
 	RepeatJustification json.RawMessage        `json:"repeat_justification,omitempty"`
+}
+
+// UnmarshalJSON preserves numeric tokens in selected workflow parameters.
+func (w *llmWorkflow) UnmarshalJSON(data []byte) error {
+	type workflowJSON llmWorkflow
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode((*workflowJSON)(w))
 }
 
 // unwrapDoubleSerializedJSON detects when an LLM has double-serialized a

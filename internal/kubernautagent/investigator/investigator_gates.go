@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -400,12 +401,15 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	return retryResult
 }
 
-// apiVersionValidationGate rejects ambiguous kinds missing api_version (Issue #1044).
-// When the LLM's remediation_target.kind exists in multiple API groups (e.g.
-// Subscription in operators.coreos.com and messaging.knative.dev) but api_version
-// is empty, the gate injects a correction message naming the conflicting groups
-// and retries once. On exhaustion, sets HumanReviewNeeded=true to prevent incorrect
-// RBAC grants from resolving to the wrong API group.
+// apiVersionValidationGate validates target API versions against the REST mapper
+// (Issues #1044/#1051). For a kind with one mapper result, the mapper version
+// replaces any model proposal and is marked as validated. When the kind exists
+// in multiple API groups (e.g. Subscription in operators.coreos.com and
+// messaging.knative.dev) and api_version is empty, the gate injects a correction
+// message naming the conflicting groups and retries once. A non-empty model value
+// still bypasses that retry but remains unvalidated. On exhaustion, the gate sets
+// HumanReviewNeeded=true to prevent incorrect RBAC grants from resolving to the
+// wrong API group.
 func (inv *Investigator) apiVersionValidationGate(
 	ctx context.Context,
 	result *katypes.InvestigationResult,
@@ -421,9 +425,6 @@ func (inv *Investigator) apiVersionValidationGate(
 	if kind == "" {
 		return result
 	}
-	if result.RemediationTarget.APIVersion != "" {
-		return result
-	}
 
 	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(kind)
 	if err != nil {
@@ -433,6 +434,12 @@ func (inv *Investigator) apiVersionValidationGate(
 	}
 	if !ambiguous {
 		return inv.autoResolveNonAmbiguousAPIVersion(result, gvrs, kind, correlationID)
+	}
+	if result.RemediationTarget.APIVersion != "" {
+		// A model-supplied version does not resolve an ambiguous kind. It is
+		// retained for the gate's existing no-retry behavior, but remains
+		// unvalidated and cannot become final target authority.
+		return result
 	}
 
 	groupList := conflictingGroupList(gvrs)
@@ -467,6 +474,7 @@ func (inv *Investigator) apiVersionValidationGate(
 func (inv *Investigator) autoResolveNonAmbiguousAPIVersion(result *katypes.InvestigationResult, gvrs []schema.GroupVersionResource, kind, correlationID string) *katypes.InvestigationResult {
 	if len(gvrs) == 1 {
 		result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+		result.RemediationTarget.APIVersionValidated = true
 		inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
 			"kind", kind,
 			"api_version", result.RemediationTarget.APIVersion,
@@ -584,6 +592,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 			"kind", kind, "correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryExhausted)
 	}
+	retryResult.RemediationTarget.APIVersionValidated = true
 
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	if usedReminder {
@@ -691,6 +700,11 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	result.Dependencies = meta.Dependencies
 	result.Resources = meta.Resources
 	result.DeclaredParameterNames = meta.DeclaredParameterNames
+	if meta.DeclaredParameterNames != nil {
+		result.ParameterSchema = append([]models.WorkflowParameter{}, meta.Parameters...)
+	} else {
+		result.ParameterSchema = nil
+	}
 	result.EngineConfig = meta.EngineConfig
 
 	// Issue #1661 Change 12: ActionType/WorkflowName are likewise

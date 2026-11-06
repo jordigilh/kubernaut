@@ -103,6 +103,16 @@ type Event struct {
 	ClusterID     string                    `json:"cluster_id,omitempty"`
 	Detail        map[string]string         `json:"detail,omitempty"`
 	ErrorDetails  *sharedaudit.ErrorDetails `json:"error_details,omitempty"`
+	Approval      *ApprovalAudit            `json:"approval,omitempty"`
+}
+
+// ApprovalAudit carries a reviewed approval snapshot to the typed audit adapter.
+type ApprovalAudit struct {
+	WorkflowID          string
+	OriginalParameters  map[string]string
+	OverrideParameters  map[string]string
+	EffectiveParameters map[string]string
+	OverrideRationale   *string
 }
 
 // Emitter is the interface for writing audit events.

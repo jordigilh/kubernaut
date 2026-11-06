@@ -28,6 +28,7 @@ limitations under the License.
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,6 +115,34 @@ func mapFromAgentSessionJSON(j *apiextensionsv1.JSON) map[string]interface{} {
 	if err := json.Unmarshal(j.Raw, &m); err != nil {
 		return nil
 	}
+	return m
+}
+
+// mapSelectedWorkflowJSON preserves the numeric lexemes of workflow parameters
+// while retaining existing float64 decoding for unrelated response fields.
+func mapSelectedWorkflowJSON(j *apiextensionsv1.JSON) map[string]interface{} {
+	m := mapFromAgentSessionJSON(j)
+	if m == nil {
+		return nil
+	}
+	var raw struct {
+		Parameters json.RawMessage `json:"parameters"`
+	}
+	if err := json.Unmarshal(j.Raw, &raw); err != nil {
+		ctrl.Log.Error(err, "Failed to decode selected workflow parameters")
+		return nil
+	}
+	if len(raw.Parameters) == 0 {
+		return m
+	}
+	var parameters interface{}
+	decoder := json.NewDecoder(bytes.NewReader(raw.Parameters))
+	decoder.UseNumber()
+	if err := decoder.Decode(&parameters); err != nil {
+		ctrl.Log.Error(err, "Failed to preserve selected workflow parameter values")
+		return nil
+	}
+	m["parameters"] = parameters
 	return m
 }
 
@@ -460,7 +489,7 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 // parameters and BR-WE-016 raw engine_config pass-through. No-op if the map
 // can't be extracted.
 func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapFromAgentSessionJSON(res.SelectedWorkflow)
+	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
 	if swMap == nil {
 		return
 	}
@@ -516,6 +545,7 @@ func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]i
 	sw.Dependencies = extractWorkflowDependencies(swMap)
 	sw.Resources = extractResourceRequirements(swMap)
 	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
+	sw.ParameterSchema = extractParameterSchema(swMap)
 	stampSelectionMetadata(sw, swMap)
 	now := metav1.Now()
 	sw.SelectedAt = &now
@@ -840,7 +870,7 @@ func recordValidationAttemptsHistory(analysis *aianalysisv1.AIAnalysis, resAttem
 // selected_workflow (when present) on a failed-resolution analysis, so
 // operators retain visibility into what KA was considering.
 func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapFromAgentSessionJSON(res.SelectedWorkflow)
+	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
 	if swMap == nil {
 		return
 	}
@@ -1149,7 +1179,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 // (partial information, for operator/human-review context) on a
 // low-confidence-failed analysis.
 func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapFromAgentSessionJSON(res.SelectedWorkflow)
+	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
 	if swMap == nil {
 		return
 	}

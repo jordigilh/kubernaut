@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -66,6 +67,26 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 	})
 	AfterEach(func() {
 		Expect(kube.Delete(ctx, ns)).To(Succeed())
+	})
+
+	It("IT-AA-2570-027: BR-ORCH-025 persists exact parameters and schema from AgentSession through AA", func() {
+		analysis := newCapacityRetryAnalysis(ns.Name, "selection-precision", 0, 5*time.Second)
+		result := historySelectionResult2496(0.92)
+		result.Parameters = map[string]interface{}{"P": json.Number("9007199254740993")}
+		result.DeclaredParameterNames = map[string]bool{"P": true}
+		minimum := float64(1)
+		result.ParameterSchema = []models.WorkflowParameter{{Name: "P", Type: "integer", Required: true, Description: "count", Minimum: &minimum}}
+		seedHistorySelection2496(ctx, kube, analysis, result)
+		_, err := newCapacityRetryReconciler(kube).Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(analysis)})
+		Expect(err).NotTo(HaveOccurred())
+		persisted := &aianalysisv1.AIAnalysis{}
+		Expect(kube.Get(ctx, client.ObjectKeyFromObject(analysis), persisted)).To(Succeed())
+		selected := persisted.Status.GetRCAResult().SelectedWorkflow
+		Expect(selected).NotTo(BeNil())
+		Expect(selected.Parameters).To(HaveKeyWithValue("P", "9007199254740993"))
+		Expect(selected.ParameterSchema).To(HaveLen(1))
+		Expect(selected.ParameterSchema[0].Name).To(Equal("P"))
+		Expect(*selected.ParameterSchema[0].Minimum).To(Equal(float64(1)))
 	})
 
 	DescribeTable("IT-AA-2496-001: KA mapping survives admitted AgentSession -> real AA reconciliation",

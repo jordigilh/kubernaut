@@ -21,6 +21,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	remediationworkflowv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -603,6 +604,13 @@ func (in *SelectedWorkflow) DeepCopyInto(out *SelectedWorkflow) {
 		*out = make(map[string]string, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
+		}
+	}
+	if in.ParameterSchema != nil {
+		in, out := &in.ParameterSchema, &out.ParameterSchema
+		*out = make([]remediationworkflowv1alpha1.RemediationWorkflowParameter, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.RepeatJustification != nil {

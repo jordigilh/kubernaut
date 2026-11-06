@@ -625,6 +625,12 @@ func mergeRCAContinuationTarget(previous, merged *katypes.InvestigationResult) {
 	}
 	if merged.RemediationTarget.APIVersion == "" {
 		merged.RemediationTarget.APIVersion = previous.RemediationTarget.APIVersion
+		merged.RemediationTarget.APIVersionValidated = previous.RemediationTarget.APIVersionValidated
+	} else if merged.RemediationTarget.APIVersion == previous.RemediationTarget.APIVersion &&
+		previous.RemediationTarget.APIVersionValidated {
+		// Preserve trusted provenance when a continuation repeats the same
+		// target version without carrying the internal marker itself.
+		merged.RemediationTarget.APIVersionValidated = true
 	}
 }
 
@@ -961,11 +967,12 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	p1Ctx := BuildPhase1Context(p.RCAResult)
 
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, p.RCAResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
-		Tokens:        p.Tokens,
-		CorrelationID: p.CorrelationID,
-		Client:        wfClient,
-		ModelName:     wfModelName,
-		RuntimeParams: wfRuntimeParams,
+		Tokens:             p.Tokens,
+		CorrelationID:      p.CorrelationID,
+		Client:             wfClient,
+		ModelName:          wfModelName,
+		RuntimeParams:      wfRuntimeParams,
+		workflowEnrichment: enrichData,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
@@ -1061,7 +1068,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	})
 	applySignalSeverity(rcaResult, signal)
 	attachDetectedLabels(rcaResult, enrichData)
-	InjectRemediationTarget(rcaResult, signal, enrichData)
+	injectFinalizedRemediationTarget(rcaResult, signal, rcaResult, enrichData)
 	InjectTargetResourceParameters(rcaResult)
 	// #2387 (BR-KA-OBSERVABILITY-001): inject server-computed call-level
 	// counts before the result leaves KA — the LLM is never asked to supply
@@ -1202,7 +1209,7 @@ func (inv *Investigator) enrichWorkflowSignalForDiscovery(workflowSignal, signal
 	// When APIVersion is empty but the RCA changed the target kind, clear any
 	// stale ResourceAPIVersion to prevent an invalid GVK combination (old
 	// apiVersion + new kind).
-	if rcaResult.RemediationTarget.APIVersion != "" {
+	if rcaResult.RemediationTarget.APIVersionValidated && rcaResult.RemediationTarget.APIVersion != "" {
 		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 	} else if workflowSignal.ResourceKind != signal.ResourceKind {
 		workflowSignal.ResourceAPIVersion = ""
@@ -1279,13 +1286,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 
 	applySignalSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
-	// Issue #1044: propagate RCA-identified api_version to the workflow result
-	// when the workflow selection didn't produce one. The RCA gate ensures
-	// api_version is set for ambiguous kinds; this must survive through Phase 3.
-	if workflowResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.APIVersion != "" {
-		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
-	}
+	injectFinalizedRemediationTarget(workflowResult, workflowSignal, rcaResult, enrichData)
 	InjectTargetResourceParameters(workflowResult)
 	// #2387 (BR-KA-OBSERVABILITY-001): see finalizeAndEmitRCAOnlyResult —
 	// the full-path result gets the same server-side injection.
@@ -1410,6 +1411,11 @@ type LLMInvocationContext struct {
 	RepeatSelection   *parser.RepeatSelectionContext
 	decisionLoopID    string
 	rcaBudget         *rcaLoopBudget
+	// workflowEnrichment carries the authoritative target enrichment into
+	// Phase 3 validation. Managed TARGET_RESOURCE_* parameters must be present
+	// before dependency checks run, not only during finalization.
+	workflowEnrichment *enrichment.EnrichmentResult
+	workflowSignal     katypes.SignalContext
 }
 
 // workflowDiscoveryAuditContext is the safe provenance summary persisted on

@@ -38,13 +38,21 @@ import (
 // Per 03-testing-strategy.mdc: >50% integration coverage for microservices
 
 var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("CRD lifecycle fixture", "tekton") })
+	lifecycleWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 	// Use unique target resources per test for parallel isolation (4 procs)
 
 	Context("CRD Creation", func() {
 		It("should create WorkflowExecution successfully", func() {
 			// Unique target for this test
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-create-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("create", targetResource)
+			wfe := lifecycleWFE("create", targetResource)
 
 			// Cleanup in defer (parallel-safe pattern per 03-testing-strategy.mdc)
 			defer func() {
@@ -65,7 +73,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 		It("should preserve spec fields after creation", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-spec-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("spec", targetResource)
+			wfe := lifecycleWFE("spec", targetResource)
 			wfe.Spec.Parameters = map[string]string{"KEY": "value"}
 			wfe.Spec.Confidence = 0.95
 
@@ -79,7 +87,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			created, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal(targetResource))
-			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("test-workflow"))
+			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
 			Expect(created.Spec.Parameters).To(HaveKeyWithValue("KEY", "value"))
 			Expect(created.Spec.Confidence).To(Equal(0.95))
 
@@ -92,7 +100,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 		It("should update status to Running via controller", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-status-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("status", targetResource)
+			wfe := lifecycleWFE("status", targetResource)
 
 			defer func() {
 				cleanupWFE(wfe)
@@ -120,7 +128,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 		It("should set ExecutionRef when Running", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-prref-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("prref", targetResource)
+			wfe := lifecycleWFE("prref", targetResource)
 
 			defer func() {
 				cleanupWFE(wfe)
@@ -153,7 +161,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 	Context("CRD Deletion", func() {
 		It("should delete WorkflowExecution with controller cleanup", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-delete-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("delete", targetResource)
+			wfe := lifecycleWFE("delete", targetResource)
 
 			// Create first
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -180,7 +188,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 		It("should handle finalizer during deletion", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-finalizer-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("finalizer", targetResource)
+			wfe := lifecycleWFE("finalizer", targetResource)
 
 			// Create WFE
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -217,7 +225,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			// TESTING_GUIDELINES.md: Integration tests validate CRD-based flows and cross-service coordination
 
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-restart-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("restart-recovery", targetResource)
+			wfe := lifecycleWFE("restart-recovery", targetResource)
 
 			// Create WFE
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -264,7 +272,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 	Context("Spec Validation", func() {
 		It("should accept valid WorkflowExecution spec", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-valid-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("valid", targetResource)
+			wfe := lifecycleWFE("valid", targetResource)
 
 			defer func() {
 				cleanupWFE(wfe)

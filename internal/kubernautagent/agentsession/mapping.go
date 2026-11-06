@@ -358,7 +358,7 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 	if safe := katypes.SafeRepeatJustification(r.RepeatJustification); safe != nil {
 		sw["repeat_justification"] = safe
 	}
-	if len(r.Parameters) > 0 {
+	if r.Parameters != nil {
 		sw["parameters"] = r.Parameters
 	}
 	addWorkflowExecutionMetadata(sw, r)
@@ -376,6 +376,9 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 	}
 	if r.DeclaredParameterNames != nil {
 		sw["declared_parameter_names"] = r.DeclaredParameterNames
+	}
+	if r.ParameterSchema != nil {
+		sw["parameter_schema"] = r.ParameterSchema
 	}
 	if r.ActionType != "" {
 		sw["action_type"] = r.ActionType

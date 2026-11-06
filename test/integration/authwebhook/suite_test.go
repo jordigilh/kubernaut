@@ -330,8 +330,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("   ✅ Registered WorkflowExecution webhook handler")
 
 	// Register RemediationApprovalRequest mutating webhook (DD-WEBHOOK-003: Complete audit events)
-	// I1: Use mgr.GetClient() for override validation (F2, #594)
-	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, k8sManager.GetClient(), "kubernaut-system")
+	// Use the direct API reader so status.workflowId is filtered by the API server.
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, k8sManager.GetAPIReader(), defaultFixture)
 	err = rarHandler.InjectDecoder(decoder)
 	Expect(err).ToNot(HaveOccurred())
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})

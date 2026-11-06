@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -94,4 +96,24 @@ func extractDeclaredParameterNames(swMap map[string]interface{}) map[string]bool
 		}
 	}
 	return names
+}
+
+// extractParameterSchema preserves an explicit empty schema while treating
+// missing or malformed catalog metadata as unavailable.
+func extractParameterSchema(swMap map[string]interface{}) []remediationworkflowv1.RemediationWorkflowParameter {
+	raw, ok := swMap["parameter_schema"]
+	if !ok || raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		log.Log.Error(err, "Failed to encode selected workflow parameter schema")
+		return nil
+	}
+	var parameters []remediationworkflowv1.RemediationWorkflowParameter
+	if err := json.Unmarshal(encoded, &parameters); err != nil {
+		log.Log.Error(err, "Failed to decode selected workflow parameter schema")
+		return nil
+	}
+	return parameters
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -493,7 +494,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			return handleMarshalError(ctx, cfg, toolName, start, err), nil, nil
 		}
 
-		return handleToolSuccess(ctx, cfg, toolName, start, input, resultJSON), nil, nil
+		return handleToolSuccess(ctx, cfg, toolName, start, input, result, resultJSON), nil, nil
 	}
 }
 
@@ -531,6 +532,10 @@ func denyThrottled(ctx context.Context, cfg *MCPBridgeConfig, toolName string, s
 // exceeded/cancelled) or "error" otherwise. Returns the response and the
 // resultLabel the caller should record for its own bookkeeping.
 func handleToolExecError[In any](ctx, toolCtx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, err error) (*mcp.CallToolResult, string) {
+	var denied *tools.ApprovalDecisionDeniedError
+	if errors.As(err, &denied) {
+		return handleApprovalDecisionDenied(ctx, cfg, toolName, start, input, err, denied), "denied"
+	}
 	resultLabel := "error"
 	if toolCtx.Err() != nil {
 		resultLabel = "timeout"
@@ -548,6 +553,43 @@ func handleToolExecError[In any](ctx, toolCtx context.Context, cfg *MCPBridgeCon
 	return toolErrorResult(redacted), resultLabel
 }
 
+func handleApprovalDecisionDenied[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, err error, denied *tools.ApprovalDecisionDeniedError) *mcp.CallToolResult {
+	recordMetrics(cfg, toolName, "denied", start)
+	detail := map[string]string{
+		"tool_outcome":          "denied",
+		"execution_duration_ms": fmt.Sprintf("%d", time.Since(start).Milliseconds()),
+		"error_code":            "invalid_input",
+	}
+	enrichAuditFromArgs(detail, input)
+	if args, ok := any(input).(tools.ApproveArgs); ok {
+		detail["approval_request"] = args.RARName
+		detail["approval_decision"] = args.Decision
+	}
+	if cfg.Namespace != "" {
+		detail["namespace"] = cfg.Namespace
+	}
+	var options []emitAuditOption
+	if denied != nil && denied.Audit != nil {
+		info := denied.Audit
+		if info.CorrelationID != "" {
+			options = append(options, withCorrelationID(info.CorrelationID))
+		}
+		options = append(options, func(event *audit.Event) {
+			event.Approval = &audit.ApprovalAudit{
+				WorkflowID:          info.WorkflowID,
+				OriginalParameters:  info.OriginalParameters,
+				OverrideParameters:  info.OverrideParameters,
+				EffectiveParameters: info.EffectiveParameters,
+				OverrideRationale:   info.OverrideRationale,
+			}
+		})
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, detail, options...)
+	redacted := security.RedactError(err)
+	cfg.Logger.Info("tool call denied", "tool", toolName, "user", usernameFromCtx(ctx), "reason", redacted)
+	return toolErrorResult(redacted)
+}
+
 // handleMarshalError builds the response for a tool result that failed to
 // marshal to JSON (should not normally happen; indicates a bug in the tool).
 func handleMarshalError(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, err error) *mcp.CallToolResult {
@@ -558,7 +600,7 @@ func handleMarshalError(ctx context.Context, cfg *MCPBridgeConfig, toolName stri
 }
 
 // handleToolSuccess builds the response for a successful tool call.
-func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, resultJSON []byte) *mcp.CallToolResult {
+func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, result any, resultJSON []byte) *mcp.CallToolResult {
 	durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
 	recordMetrics(cfg, toolName, "success", start)
 	auditDetail := map[string]string{
@@ -569,7 +611,22 @@ func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolNa
 	if cfg.Namespace != "" {
 		auditDetail["namespace"] = cfg.Namespace
 	}
-	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
+	var auditOptions []emitAuditOption
+	if approval, ok := result.(tools.ApproveResult); ok && approval.Audit != nil {
+		info := approval.Audit
+		if args, ok := any(input).(tools.ApproveArgs); ok {
+			auditDetail["approval_request"] = args.RARName
+			auditDetail["approval_decision"] = args.Decision
+		}
+		if info.CorrelationID != "" {
+			auditOptions = append(auditOptions, withCorrelationID(info.CorrelationID))
+		}
+		auditOptions = append(auditOptions, func(event *audit.Event) {
+			event.Approval = &audit.ApprovalAudit{WorkflowID: info.WorkflowID, OriginalParameters: info.OriginalParameters,
+				OverrideParameters: info.OverrideParameters, EffectiveParameters: info.EffectiveParameters, OverrideRationale: info.OverrideRationale}
+		})
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail, auditOptions...)
 	cfg.Logger.Info("tool call succeeded",
 		"tool", toolName,
 		"user", usernameFromCtx(ctx),

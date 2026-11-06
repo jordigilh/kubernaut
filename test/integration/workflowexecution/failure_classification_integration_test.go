@@ -257,6 +257,8 @@ func updatePipelineRunStatus(ctx context.Context, pr *tektonv1.PipelineRun, reas
 func testFailureClassification(ctx context.Context, namespace, testSuffix, tektonReason, tektonMessage string, executionStarted bool, expectedReason string, expectedWasExecution bool) {
 	testName := fmt.Sprintf("test-%s-%s", testSuffix, generateRandomString(8))
 	wfe := createMinimalWorkflowExecution(testName, namespace)
+	wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixture("Failure classification fixture", "tekton")
+	wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 
 	By("Creating WorkflowExecution")
 	Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

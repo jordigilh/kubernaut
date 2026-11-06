@@ -25,6 +25,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	authwebhookpkg "github.com/jordigilh/kubernaut/pkg/authwebhook"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -79,7 +82,10 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
 				},
-				RequiredBy: metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes
+				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{}},
+				Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				TargetContext: &remediationv1.ApprovalTargetContext{},
+				RequiredBy:    metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes
 			},
 		}
 	}
@@ -263,6 +269,8 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// AUDITOR NEED: Separate audit trail for authentication step
 
 			rar := createRAR("audit")
+			// Isolate the audit query from other specs that share the default parent.
+			rar.Spec.RemediationRequestRef.Name = rar.Name
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves via webhook")
@@ -283,8 +291,9 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// Correlation ID is PARENT RR name (per DD-AUDIT-CORRELATION-002)
 			// This ensures webhook + orchestration events share the same correlation_id
 			parentRRName := rar.Spec.RemediationRequestRef.Name
+			webhookEventType := authwebhookpkg.EventTypeRARDecided
 			Eventually(func() int {
-				events, err := queryAuditEvents(dsClient, parentRRName, nil)
+				events, err := queryAuditEvents(dsClient, parentRRName, &webhookEventType)
 				if err != nil {
 					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
 					return 0
@@ -294,7 +303,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				"COMPLIANCE FAILURE: No webhook audit event (DD-WEBHOOK-003)")
 
 			// BUSINESS VALIDATION: Query for webhook category events
-			events, err := queryAuditEvents(dsClient, parentRRName, nil)
+			events, err := queryAuditEvents(dsClient, parentRRName, &webhookEventType)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Filter for approval events

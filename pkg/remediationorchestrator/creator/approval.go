@@ -140,6 +140,15 @@ func validateApprovalPreconditions(ai *aianalysisv1.AIAnalysis) error {
 	if sw.WorkflowID == "" {
 		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
 	}
+	if sw.Parameters == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing original parameters", ai.Namespace, ai.Name)
+	}
+	if sw.DeclaredParameterNames == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter declarations", ai.Namespace, ai.Name)
+	}
+	if sw.ParameterSchema == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter schema", ai.Namespace, ai.Name)
+	}
 	return nil
 }
 
@@ -432,6 +441,22 @@ func (c *ApprovalCreator) buildApprovalRequest(
 	}
 
 	applyApprovalContext(rar, ai.Status.GetApproval().ApprovalContext)
+	rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{
+		SignalTarget:    rr.Spec.TargetResource,
+		SignalClusterID: rr.Spec.ClusterID,
+	}
+	if rca := ai.Status.GetRCAResult().RootCauseAnalysis; rca != nil && rca.RemediationTarget != nil {
+		target := rca.RemediationTarget
+		rar.Spec.TargetContext.RemediationTarget = &remediationv1.ResourceIdentifier{
+			APIVersion: target.APIVersion, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name,
+		}
+	}
+	if selected := ai.Status.GetRCAResult().SelectedWorkflow; selected != nil {
+		frozen := selected.DeepCopy()
+		rar.Spec.Workflow = &frozen.WorkflowSnapshot
+		rar.Spec.Parameters = frozen.Parameters
+		rar.Spec.ParameterSchema = frozen.ParameterSchema
+	}
 
 	return rar
 }

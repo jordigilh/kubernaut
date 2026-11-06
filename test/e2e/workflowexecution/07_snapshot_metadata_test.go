@@ -61,7 +61,7 @@ var _ = Describe("E2E-WE-2390: cross-engine workflow snapshot metadata", Label("
 		wfe.Spec.WorkflowRef.ServiceAccountName = "workflow-job-executor"
 		defer func() { _ = deleteWFE(wfe) }()
 
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWFEFromCatalog(wfe)).To(Succeed())
 		assertSnapshotRoundTrip(wfe, resources, nil)
 
 		Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
@@ -91,7 +91,7 @@ var _ = Describe("E2E-WE-2390: cross-engine workflow snapshot metadata", Label("
 		})
 		defer func() { _ = deleteWFE(wfe) }()
 
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWFEFromCatalog(wfe)).To(Succeed())
 		assertSnapshotRoundTrip(wfe, nil, nil)
 		Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
 			Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
@@ -167,7 +167,7 @@ var _ = Describe("E2E-WE-2390: cross-engine workflow snapshot metadata", Label("
 		})
 		defer func() { _ = deleteWFE(wfe) }()
 
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWFEFromCatalog(wfe)).To(Succeed())
 		assertSnapshotRoundTrip(wfe, nil, engineConfig)
 		Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
 			Should(Equal(workflowexecutionv1alpha1.PhaseRunning))

@@ -32,7 +32,9 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
@@ -195,6 +197,23 @@ func buildCoreServices(
 // silently accepting the condition as intentional.
 func buildWorkflowCatalogCache(infra *k8sInfra, namespace string, logger logr.Logger) *workflowcatalog.LazyCatalog {
 	lazy := workflowcatalog.NewLazyCatalog(logger)
+	trustedNamespace, configured := os.LookupEnv("KUBERNAUT_AGENT_NAMESPACE")
+	if !configured {
+		var err error
+		trustedNamespace, err = scope.GetControllerNamespace()
+		if err != nil {
+			logger.Error(err, "unable to determine trusted workflow catalog namespace")
+			os.Exit(1)
+		}
+	}
+	if err := workflowidentity.ValidateNamespace(trustedNamespace); err != nil {
+		logger.Error(err, "invalid trusted workflow catalog namespace")
+		os.Exit(1)
+	}
+	if namespace != trustedNamespace {
+		logger.Error(nil, "agent and trusted workflow catalog namespaces differ", "agentNamespace", namespace, "catalogNamespace", trustedNamespace)
+		os.Exit(1)
+	}
 
 	if infra == nil {
 		logger.Error(nil, "K8s infrastructure unavailable -- workflow catalog cache cannot start and will never become "+

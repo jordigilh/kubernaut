@@ -26,8 +26,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -105,6 +107,56 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 		Expect(resp.Allowed).To(BeTrue())
 	})
 
+	It("UT-AW-2570-098: BR-AUTH-001 rejects overrides on trusted system cancellation", func() {
+		trusted := authwebhook.BuildTrustedROSA("kubernaut-system")
+		rar := safetyRAR(remediationv1.ApprovalDecisionCancelled, "system", time.Now().Add(-time.Second))
+		oldRAR := safetyPendingRAR(rar)
+		control := handleSafetyAdmission(ctx, handler, rar, oldRAR, trusted)
+		Expect(control.Allowed).To(BeTrue(), "the trusted cancellation without an override is valid")
+
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Rationale: "must not accompany cancellation"}
+		response := handleSafetyAdmission(ctx, handler, rar, oldRAR, trusted)
+		Expect(response.Allowed).To(BeFalse())
+		Expect(response.Result).NotTo(BeNil())
+		Expect(response.Result.Message).To(ContainSubstring("override"))
+	})
+
+	It("UT-AW-2570-094: BR-AUTH-001 rejects overrides on trusted expiry", func() {
+		trusted := authwebhook.BuildTrustedROSA("kubernaut-system")
+		rar := safetyRAR(remediationv1.ApprovalDecisionExpired, "system", time.Now().Add(-time.Second))
+		oldRAR := safetyPendingRAR(rar)
+		Expect(handleSafetyAdmission(ctx, handler, rar, oldRAR, trusted).Allowed).To(BeTrue())
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Rationale: "must not accompany expiry"}
+		response := handleSafetyAdmission(ctx, handler, rar, oldRAR, trusted)
+		Expect(response.Allowed).To(BeFalse())
+		Expect(response.Result).NotTo(BeNil())
+		Expect(response.Result.Message).To(ContainSubstring("override"))
+		Expect(response.Patches).To(BeEmpty())
+	})
+
+	It("UT-AW-2570-019: BR-AUTH-001 permits ordinary approval without catalog access", func() {
+		rar := safetyRAR(remediationv1.ApprovalDecisionApproved, "operator@example.com", time.Time{})
+		response := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
+		Expect(response.Allowed).To(BeTrue(), "the test handler has no catalog reader")
+	})
+
+	It("UT-AW-2570-094: BR-AUTH-001 rejects an override while approval is pending", func() {
+		rar := safetyRAR(remediationv1.ApprovalDecisionPending, "", time.Time{})
+		oldRAR := safetyPendingRAR(rar)
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Rationale: "not permitted"}
+		response := handleSafetyAdmission(ctx, handler, rar, oldRAR, "operator@example.com")
+		Expect(response.Allowed).To(BeFalse())
+		Expect(response.Result.Message).To(ContainSubstring("override"))
+	})
+
+	It("UT-AW-2570-123: BR-ORCH-025 rejects approval of a legacy RAR without a snapshot", func() {
+		rar := safetyRAR(remediationv1.ApprovalDecisionApproved, "operator@example.com", time.Time{})
+		rar.Spec.ParameterSchema = nil
+		response := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
+		Expect(response.Allowed).To(BeFalse())
+		Expect(response.Result.Message).To(ContainSubstring("snapshot"))
+	})
+
 	It("IT-AW-2564-016: preserves the trusted RO expiry timestamp", func() {
 		decidedAt := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 		handler.SetClock(approvalSafetyClock{now: decidedAt.Add(time.Second)})
@@ -134,6 +186,25 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 		Expect(resp.Result.Message).To(ContainSubstring("terminal"))
 		Expect(store.StoredEvents).To(HaveLen(1))
 	})
+
+	DescribeTable("UT-AW-2570-021: BR-AUTH-001 rejects terminal decision and override mutation", func(mutate func(*remediationv1.RemediationApprovalRequest)) {
+		oldRAR := safetyRAR(remediationv1.ApprovalDecisionApproved, "original@example.com", time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC))
+		oldRAR.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "reviewed"}, Rationale: "original"}
+		newRAR := oldRAR.DeepCopy()
+		mutate(newRAR)
+		resp := handleSafetyAdmission(ctx, handler, newRAR, oldRAR, "original@example.com")
+		Expect(resp.Allowed).To(BeFalse())
+		Expect(resp.Result.Message).To(ContainSubstring("terminal"))
+		Expect(resp.Patches).To(BeEmpty())
+	},
+		Entry("change decision", func(rar *remediationv1.RemediationApprovalRequest) {
+			rar.Status.Decision = remediationv1.ApprovalDecisionRejected
+		}),
+		Entry("change override value", func(rar *remediationv1.RemediationApprovalRequest) {
+			rar.Status.WorkflowOverride.Parameters["P"] = "changed"
+		}),
+		Entry("remove override", func(rar *remediationv1.RemediationApprovalRequest) { rar.Status.WorkflowOverride = nil }),
+	)
 
 	DescribeTable("IT-AW-2564-015: persists terminal approval conditions with the decision", func(decision remediationv1.ApprovalDecision, reason string) {
 		rar := safetyRAR(decision, "", time.Time{})
@@ -267,7 +338,15 @@ func safetyRARWithRequiredBy(decision remediationv1.ApprovalDecision, decidedBy 
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{Decision: decision, DecidedBy: decidedBy},
 	}
+	completeSafetySnapshot(&rar.Spec)
 	return rar
+}
+
+func completeSafetySnapshot(spec *remediationv1.RemediationApprovalRequestSpec) {
+	spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-safety", DeclaredParameterNames: map[string]bool{}}
+	spec.Parameters = map[string]string{}
+	spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
+	spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 }
 
 func safetyPendingRAR(rar *remediationv1.RemediationApprovalRequest) *remediationv1.RemediationApprovalRequest {

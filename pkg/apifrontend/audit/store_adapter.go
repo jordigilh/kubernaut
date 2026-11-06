@@ -189,6 +189,12 @@ var failureEvents = map[EventType]bool{
 }
 
 func eventOutcome(e *Event) ogenclient.AuditEventRequestEventOutcome {
+	if e.Type == EventToolExecuted {
+		switch detailStr(e.Detail, "tool_outcome") {
+		case "denied", "failure", "timeout":
+			return ogenclient.AuditEventRequestEventOutcomeFailure
+		}
+	}
 	if failureEvents[e.Type] {
 		return ogenclient.AuditEventRequestEventOutcomeFailure
 	}
@@ -710,6 +716,23 @@ func buildToolExecutedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 	}
 	if v := detailStr(d, "error_code"); v != "" {
 		payload.ErrorCode = ogenclient.NewOptString(v)
+	}
+	if approval := e.Approval; approval != nil {
+		payload.WorkflowID = ogenclient.NewOptString(approval.WorkflowID)
+		payload.ApprovalRequest = ogenclient.NewOptString(detailStr(d, "approval_request"))
+		payload.ApprovalDecision = ogenclient.NewOptString(detailStr(d, "approval_decision"))
+		if approval.OverrideRationale != nil {
+			payload.OverrideRationale = ogenclient.NewOptString(*approval.OverrideRationale)
+		}
+		if approval.OriginalParameters != nil {
+			payload.OriginalParameters = ogenclient.NewOptApifrontendToolExecutedPayloadOriginalParameters(ogenclient.ApifrontendToolExecutedPayloadOriginalParameters(approval.OriginalParameters))
+		}
+		if approval.OverrideParameters != nil {
+			payload.OverrideParameters = ogenclient.NewOptApifrontendToolExecutedPayloadOverrideParameters(ogenclient.ApifrontendToolExecutedPayloadOverrideParameters(approval.OverrideParameters))
+		}
+		if approval.EffectiveParameters != nil {
+			payload.EffectiveParameters = ogenclient.NewOptApifrontendToolExecutedPayloadEffectiveParameters(ogenclient.ApifrontendToolExecutedPayloadEffectiveParameters(approval.EffectiveParameters))
+		}
 	}
 	return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(payload)
 }

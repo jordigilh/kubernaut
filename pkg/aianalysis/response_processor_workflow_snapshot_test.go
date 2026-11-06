@@ -131,6 +131,59 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		Expect(sw.SelectedAt.Time).ToNot(BeZero())
 	})
 
+	It("UT-AA-2570-112: BR-ORCH-025 preserves the full selected parameter schema", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID: "test-schema", Analysis: "Root cause", Confidence: 0.92,
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id": "wf-schema", "execution_bundle": "example:v1", "confidence": 0.92,
+				"parameter_schema": []interface{}{map[string]interface{}{"name": "REPLICAS", "type": "integer", "required": true, "description": "count", "minimum": 1.0, "maximum": 9.0, "dependsOn": []string{"MODE"}}},
+			}),
+		}
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).NotTo(HaveOccurred())
+		schema := analysis.Status.GetRCAResult().SelectedWorkflow.ParameterSchema
+		Expect(schema).To(HaveLen(1))
+		Expect(schema[0].Name).To(Equal("REPLICAS"))
+		Expect(*schema[0].Minimum).To(Equal(float64(1)))
+		Expect(*schema[0].Maximum).To(Equal(float64(9)))
+		Expect(schema[0].DependsOn).To(Equal([]string{"MODE"}))
+	})
+
+	It("UT-AA-2570-119: BR-ORCH-025 preserves a large integer through AgentSession decoding", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID: "test-precision", Analysis: "Root cause", Confidence: 0.92,
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id": "wf-precision", "execution_bundle": "example:v1", "confidence": 0.92,
+				"parameters": map[string]interface{}{"P": int64(9007199254740993)},
+			}),
+		}
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("P", "9007199254740993"))
+	})
+
+	DescribeTable("UT-AA-2570-116: BR-ORCH-025 distinguishes empty and unavailable schema", func(raw interface{}, shouldBePresent bool) {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID: "test-schema-presence", Analysis: "Root cause", Confidence: 0.92,
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id": "wf-schema", "execution_bundle": "example:v1", "confidence": 0.92, "parameter_schema": raw,
+			}),
+		}
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).NotTo(HaveOccurred())
+		schema := analysis.Status.GetRCAResult().SelectedWorkflow.ParameterSchema
+		if shouldBePresent {
+			Expect(schema).NotTo(BeNil())
+			Expect(schema).To(BeEmpty())
+		} else {
+			Expect(schema).To(BeNil())
+		}
+	},
+		Entry("empty list", []interface{}{}, true),
+		Entry("malformed value", "not-an-array", false),
+		Entry("null", nil, false),
+	)
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-338-002: round-trip when the fields are absent — no panic, nil/empty
 	// ═══════════════════════════════════════════════════════════════════════

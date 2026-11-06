@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -820,6 +821,9 @@ type RemediationTarget struct {
 // makes it CEL-inaccessible ("undefined field 'engineConfig'" at compile
 // time) -- a documented, narrow trade-off (see EngineConfig's own doc
 // comment for the precedent of pushing that validation to the Go/RO layer).
+// Parameter defaults use preserve-unknown JSON. They cannot be accessed directly
+// in CEL; the API-server integration test verifies equality for default changes.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || ((has(self.parameterSchema) == has(oldSelf.parameterSchema)) && (!has(self.parameterSchema) || self.parameterSchema == oldSelf.parameterSchema))",message="selected workflow parameter schema is immutable once selectedAt is populated (BR-ORCH-025)"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId && self.workflowName == oldSelf.workflowName && self.actionType == oldSelf.actionType && self.version == oldSelf.version && self.executionBundle == oldSelf.executionBundle && self.confidence == oldSelf.confidence && self.rationale == oldSelf.rationale && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest)) && (!has(self.executionBundleDigest) || self.executionBundleDigest == oldSelf.executionBundleDigest) && (has(self.executionEngine) == has(oldSelf.executionEngine)) && (!has(self.executionEngine) || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName) == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName) || self.serviceAccountName == oldSelf.serviceAccountName) && (has(self.dependencies) == has(oldSelf.dependencies)) && (!has(self.dependencies) || self.dependencies == oldSelf.dependencies) && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources) || self.resources == oldSelf.resources) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt) && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames)) && (!has(self.declaredParameterNames) || self.declaredParameterNames == oldSelf.declaredParameterNames))",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || ((has(self.repeatJustification) == has(oldSelf.repeatJustification)) && (!has(self.repeatJustification) || self.repeatJustification == oldSelf.repeatJustification) && (has(self.workflowSelectionConfidence) == has(oldSelf.workflowSelectionConfidence)) && (!has(self.workflowSelectionConfidence) || self.workflowSelectionConfidence == oldSelf.workflowSelectionConfidence) && (has(self.repeatJustificationRequired) == has(oldSelf.repeatJustificationRequired)) && (!has(self.repeatJustificationRequired) || self.repeatJustificationRequired == oldSelf.repeatJustificationRequired) && (has(self.priorWorkflowMatch) == has(oldSelf.priorWorkflowMatch)) && (!has(self.priorWorkflowMatch) || self.priorWorkflowMatch == oldSelf.priorWorkflowMatch) && (has(self.repeatValidationOutcome) == has(oldSelf.repeatValidationOutcome)) && (!has(self.repeatValidationOutcome) || self.repeatValidationOutcome == oldSelf.repeatValidationOutcome) && (has(self.handoffDigest) == has(oldSelf.handoffDigest)) && (!has(self.handoffDigest) || self.handoffDigest == oldSelf.handoffDigest) && (has(self.priorRemediationUIDs) == has(oldSelf.priorRemediationUIDs)) && (!has(self.priorRemediationUIDs) || self.priorRemediationUIDs == oldSelf.priorRemediationUIDs))",message="selection metadata is immutable once selectedAt is populated (DD-KA-2496)"
 type SelectedWorkflow struct {
@@ -846,8 +850,14 @@ type SelectedWorkflow struct {
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
 	Confidence float64 `json:"confidence"`
-	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
-	Parameters map[string]string `json:"parameters,omitempty"`
+	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003).
+	// Nil indicates missing data; an explicitly empty map is preserved.
+	// +optional
+	Parameters map[string]string `json:"parameters,omitzero"`
+	// ParameterSchema is the catalog-resolved schema used to review parameters.
+	// Nil denotes missing metadata; an empty list declares no parameters.
+	// +optional
+	ParameterSchema []remediationworkflowv1.RemediationWorkflowParameter `json:"parameterSchema,omitzero"`
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
 

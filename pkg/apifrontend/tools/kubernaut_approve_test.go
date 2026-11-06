@@ -2,21 +2,26 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 func newTypedRAR() *remediationv1.RemediationApprovalRequest {
@@ -35,6 +40,94 @@ var _ = Describe("kubernaut_approve", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 	})
+
+	It("UT-AF-2570-121: BR-ORCH-025 accepts a structured parameter-only override", func() {
+		rar := newTypedRAR()
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: map[string]bool{"P": true}}
+		rar.Spec.Parameters = map[string]string{"P": "2"}
+		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}}
+		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		tc := newTypedFakeClientWithStatus(rar)
+		var args tools.ApproveArgs
+		Expect(json.Unmarshal([]byte(`{"rar_name":"rar-1","decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}`), &args)).To(Succeed())
+		args.Namespace = "payments"
+		_, err := tools.HandleApprove(ctx, tc, args, "bob")
+		Expect(err).NotTo(HaveOccurred())
+		persisted := &remediationv1.RemediationApprovalRequest{}
+		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
+		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(map[string]string{"P": "1.0"}))
+		Expect(persisted.Status.WorkflowOverride.Rationale).To(Equal("reviewed"))
+	})
+
+	DescribeTable("UT-AF-2570-122: BR-KA-191 rejects invalid approval changes before status update", func(decision string, changes map[string]string) {
+		rar := newTypedRAR()
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: map[string]bool{"P": true, "TARGET_RESOURCE_NAME": true}}
+		rar.Spec.Parameters = map[string]string{"P": "3", "TARGET_RESOURCE_NAME": "pod"}
+		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}, {Name: "TARGET_RESOURCE_NAME", Type: "string", Description: "target"}}
+		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		tc := newTypedFakeClientWithStatus(rar)
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: decision, WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: changes}}, "bob")
+		Expect(err).To(HaveOccurred())
+		persisted := &remediationv1.RemediationApprovalRequest{}
+		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
+		Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
+		Expect(persisted.Status.WorkflowOverride).To(BeNil())
+	},
+		Entry("decimal integer", "Approved", map[string]string{"P": "1.0"}),
+		Entry("unknown key", "Approved", map[string]string{"NEW": "value"}),
+		Entry("changed target", "Approved", map[string]string{"TARGET_RESOURCE_NAME": "other"}),
+		Entry("rejection with override", "Rejected", map[string]string{"P": "4"}),
+	)
+
+	DescribeTable("UT-AF-2570-123: BR-KA-191 validates shared vectors before persisting reviewer text", func(parameters []remediationworkflowv1.RemediationWorkflowParameter, original, changes map[string]string, valid bool) {
+		rar := newTypedRAR()
+		declared := make(map[string]bool, len(parameters))
+		for _, parameter := range parameters {
+			declared[parameter.Name] = true
+		}
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: declared}
+		rar.Spec.Parameters = original
+		rar.Spec.ParameterSchema = parameters
+		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		tc := newTypedFakeClientWithStatus(rar)
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: "Approved", WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: changes}}, "bob")
+		persisted := &remediationv1.RemediationApprovalRequest{}
+		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
+		Expect(persisted.Spec.Parameters).To(Equal(original))
+		if valid {
+			Expect(err).NotTo(HaveOccurred())
+			Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
+			Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(changes))
+		} else {
+			Expect(err).To(HaveOccurred())
+			Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
+			Expect(persisted.Status.WorkflowOverride).To(BeNil())
+		}
+	},
+		Entry("V-01 partial override", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}, {Name: "Q", Type: "string", Required: true}}, map[string]string{"P": "old", "Q": "keep"}, map[string]string{"P": "new"}, true),
+		Entry("V-02 empty override", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}, map[string]string{"P": "old"}, map[string]string{}, true),
+		Entry("V-03 decimal integer", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer"}}, map[string]string{"P": "3"}, map[string]string{"P": "1.0"}, false),
+		Entry("V-04 exact float", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}}, map[string]string{"P": "2"}, map[string]string{"P": "1.0"}, true),
+		Entry("V-05 exact integer bound", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Maximum: ptr.To(float64(9007199254740992))}}, map[string]string{"P": "9007199254740992"}, map[string]string{"P": "9007199254740993"}, false),
+		Entry("V-06 integer overflow", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer"}}, map[string]string{"P": "3"}, map[string]string{"P": "9223372036854775808"}, false),
+		Entry("V-07 float nonfinite", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}}, map[string]string{"P": "1"}, map[string]string{"P": "NaN"}, false),
+		Entry("V-07 float overflow", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}}, map[string]string{"P": "1"}, map[string]string{"P": "1e400"}, false),
+		Entry("V-07 float underflow", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}}, map[string]string{"P": "1"}, map[string]string{"P": "1e-4000"}, false),
+		Entry("V-08 boolean", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "boolean"}}, map[string]string{"P": "false"}, map[string]string{"P": "true"}, true),
+		Entry("V-08 invalid boolean", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "boolean"}}, map[string]string{"P": "false"}, map[string]string{"P": "notbool"}, false),
+		Entry("V-09 exact array", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "array"}}, map[string]string{"P": "[]"}, map[string]string{"P": `["a","b"]`}, true),
+		Entry("V-09 null array", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "array"}}, map[string]string{"P": "[]"}, map[string]string{"P": "null"}, false),
+		Entry("V-10 enum violation", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Enum: []string{"safe", "fast"}}}, map[string]string{"P": "safe"}, map[string]string{"P": "other"}, false),
+		Entry("V-11 required missing", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Required: true}}, map[string]string{}, map[string]string{}, false),
+		Entry("V-12 optional default remains omitted", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Default: &apiextensionsv1.JSON{Raw: []byte(`"auto"`)}}}, map[string]string{}, map[string]string{}, true),
+		Entry("V-13 missing dependency", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", DependsOn: []string{"Q"}}, {Name: "Q", Type: "string"}}, map[string]string{"P": "x"}, map[string]string{}, false),
+		Entry("V-13 present dependency", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", DependsOn: []string{"Q"}}, {Name: "Q", Type: "string"}}, map[string]string{"P": "x", "Q": "y"}, map[string]string{}, true),
+		Entry("V-14 malformed schema", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Pattern: "["}}, map[string]string{"P": "x"}, map[string]string{}, false),
+		Entry("V-15 unknown key", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}, map[string]string{"P": "old"}, map[string]string{"NEW": "x"}, false),
+		Entry("V-16 unchanged target", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "TARGET_RESOURCE_NAME", Type: "string"}}, map[string]string{"TARGET_RESOURCE_NAME": "pod-a"}, map[string]string{"TARGET_RESOURCE_NAME": "pod-a"}, true),
+		Entry("V-16 changed target", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "TARGET_RESOURCE_NAME", Type: "string"}}, map[string]string{"TARGET_RESOURCE_NAME": "pod-a"}, map[string]string{"TARGET_RESOURCE_NAME": "pod-b"}, false),
+		Entry("V-17 pattern violation", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Pattern: "^[a-z]+$"}}, map[string]string{"P": "safe"}, map[string]string{"P": "FAST"}, false),
+	)
 
 	It("UT-AF-104-001: patches RAR status to Approved", func() {
 		tc := newTypedFakeClientWithStatus(newTypedRAR())
@@ -82,16 +175,17 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
-	It("UT-AF-104-005: supports workflowOverride in approval", func() {
+	It("UT-AF-104-005: rejects workflow switching in approval", func() {
 		tc := newTypedFakeClientWithStatus(newTypedRAR())
-		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace:        "payments",
 			RARName:          "rar-1",
 			Decision:         "Approved",
-			WorkflowOverride: "fast-restart",
+			WorkflowOverride: &remediationv1.WorkflowOverride{WorkflowName: "fast-restart"},
 		}, "bob")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Status).To(Equal("Approved"))
+		Expect(err).To(HaveOccurred())
+		var denied *tools.ApprovalDecisionDeniedError
+		Expect(errors.As(err, &denied)).To(BeTrue(), "workflow override admission denials must preserve structured approval context")
 	})
 
 	It("UT-AF-104-006: nil client returns ErrK8sUnavailable", func() {
@@ -283,6 +377,26 @@ var _ = Describe("kubernaut_approve", func() {
 		var writeErr *tools.ApprovalDecisionWriteError
 		Expect(errors.As(err, &writeErr)).To(BeFalse(), "a definitive API rejection is not an unknown write outcome")
 		Expect(err.Error()).To(ContainSubstring("lack access"))
+	})
+
+	It("UT-AF-2570-025: BR-AUTH-001 reports a webhook-denied concurrent decision as a conflict after readback", func() {
+		rar := newTypedRAR()
+		rar.UID = "rar-webhook-race"
+		tc := fake.NewClientBuilder().WithScheme(rrTestScheme()).WithObjects(rar).
+			WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, underlying crclient.Client, subresource string, obj crclient.Object, _ ...crclient.SubResourceUpdateOption) error {
+					winner := obj.(*remediationv1.RemediationApprovalRequest).DeepCopy()
+					winner.Status.Decision = remediationv1.ApprovalDecisionRejected
+					winner.Status.DecidedBy = "alice"
+					Expect(underlying.SubResource(subresource).Update(ctx, winner)).To(Succeed())
+					return apierrors.NewForbidden(schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationapprovalrequests/status"}, "rar-1", errors.New("admission webhook denied the request: terminal decision is immutable"))
+				},
+			}).Build()
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: "Approved"}, "bob")
+		var writeErr *tools.ApprovalDecisionWriteError
+		Expect(errors.As(err, &writeErr)).To(BeTrue())
+		Expect(writeErr.Outcome).To(Equal("conflict"))
 	})
 
 	DescribeTable("IT-AF-2564-010: preserves known AuthWebhook denial reasons", func(denial, expected string) {

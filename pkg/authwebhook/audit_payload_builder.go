@@ -42,6 +42,34 @@ func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest)
 		DecisionMessage: rar.Status.DecisionMessage,
 		AiAnalysisRef:   rar.Spec.AIAnalysisRef.Name,
 	}
+	if rar.Spec.Workflow != nil {
+		payload.WorkflowID = api.NewOptString(rar.Spec.Workflow.WorkflowID)
+	}
+	if rar.Spec.Parameters != nil {
+		original := make(api.RemediationApprovalAuditPayloadOriginalParameters, len(rar.Spec.Parameters))
+		effective := make(api.RemediationApprovalAuditPayloadEffectiveParameters, len(rar.Spec.Parameters))
+		for name, value := range rar.Spec.Parameters {
+			original[name] = value
+			effective[name] = value
+		}
+		if rar.Status.WorkflowOverride != nil {
+			for name, value := range rar.Status.WorkflowOverride.Parameters {
+				effective[name] = value
+			}
+		}
+		payload.OriginalParameters = api.NewOptRemediationApprovalAuditPayloadOriginalParameters(original)
+		payload.EffectiveParameters = api.NewOptRemediationApprovalAuditPayloadEffectiveParameters(effective)
+	}
+	if rar.Status.WorkflowOverride != nil {
+		if rar.Status.WorkflowOverride.Parameters != nil {
+			changes := make(api.RemediationApprovalAuditPayloadOverrideParameters, len(rar.Status.WorkflowOverride.Parameters))
+			for name, value := range rar.Status.WorkflowOverride.Parameters {
+				changes[name] = value
+			}
+			payload.OverrideParameters = api.NewOptRemediationApprovalAuditPayloadOverrideParameters(changes)
+		}
+		payload.OverrideRationale = api.NewOptString(rar.Status.WorkflowOverride.Rationale)
+	}
 	if rar.Status.DecidedVia != "" {
 		payload.DelegatedUser = api.NewOptString(rar.Status.DecidedBy)
 		payload.DelegatedVia = api.NewOptString(rar.Status.DecidedVia)

@@ -404,6 +404,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 							Confidence: 0.65,
 							Rationale:  "Test rationale - approval required",
 						}
+						supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
 						return k8sClient.Status().Update(ctx, ai)
 					}, timeout, interval).Should(Succeed())
 					break

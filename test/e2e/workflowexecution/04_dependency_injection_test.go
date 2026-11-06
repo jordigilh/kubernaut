@@ -109,7 +109,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe1) }()
 
 			By("E2E-WE-006-001: Creating a WFE referencing a workflow with declared secret dependency")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe1)).To(Succeed())
 
 			By("E2E-WE-006-001: Waiting for Running phase (Job created)")
 			Eventually(func() string {
@@ -220,7 +220,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe2) }()
 
 			By("E2E-WE-006-002: Creating a WFE whose declared secret no longer exists")
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe2)).To(Succeed())
 
 			By("E2E-WE-006-002 [BR-WORKFLOW-008]: Waiting for the Job's ActiveDeadlineSeconds to elapse and WFE to transition to Failed")
 			Eventually(func() string {
@@ -288,7 +288,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("Creating a WFE for a workflow without dependencies")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Running phase (Job created)")
 			Eventually(func() string {
@@ -374,7 +374,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("Creating a Tekton WFE referencing a workflow with declared secret dependency")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Running phase (PipelineRun created)")
 			Eventually(func() string {
@@ -473,7 +473,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("E2E-WE-006-005: Creating a WFE referencing a workflow with declared ConfigMap dependency")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("E2E-WE-006-005: Waiting for Running phase (Job created)")
 			Eventually(func() string {
@@ -563,7 +563,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("E2E-WE-006-006: Creating a Tekton WFE referencing a workflow with declared ConfigMap dependency")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("E2E-WE-006-006: Waiting for Running phase (PipelineRun created)")
 			Eventually(func() string {

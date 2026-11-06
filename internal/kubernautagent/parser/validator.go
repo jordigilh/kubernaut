@@ -19,7 +19,6 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -298,46 +297,46 @@ func (v *Validator) ValidateParameters(params map[string]interface{}, schema []m
 	return v.validateParameters(params, schema, nil)
 }
 
-func (v *Validator) validateParameters(params map[string]interface{}, schema []models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp) *ParameterValidationResult {
+func (v *Validator) validateParameters(params map[string]interface{}, schema []models.WorkflowParameter, _ map[string]*regexp.Regexp) *ParameterValidationResult {
 	result := &ParameterValidationResult{IsValid: true}
-
 	stripUndeclaredParameters(params, schema, result)
 
-	// Validate each declared parameter (BR-KA-191: 8 constraint checks).
-	for _, p := range schema {
-		if kaManagedParams[p.Name] {
+	adaptedSchema := make([]models.WorkflowParameter, 0, len(schema)+len(kaManagedParams))
+	adaptedValues := make(map[string]string, len(params))
+	managedDeclared := make(map[string]bool, len(kaManagedParams))
+	for _, parameter := range schema {
+		if kaManagedParams[parameter.Name] {
+			managedDeclared[parameter.Name] = true
+			adaptedSchema = append(adaptedSchema, models.WorkflowParameter{Name: parameter.Name, Type: "string"})
 			continue
 		}
-
-		val, exists := params[p.Name]
-
-		// 1. Required check
-		if !exists {
-			if p.Required {
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("%s: required parameter is missing", p.Name))
+		if value, exists := params[parameter.Name]; exists {
+			encoded, err := models.TypedParameterValue(parameter, value)
+			if err != nil {
+				result.Errors = append(result.Errors, err.Error())
+				parameter.Required = false
+			} else {
+				adaptedValues[parameter.Name] = encoded
 			}
+		}
+		adaptedSchema = append(adaptedSchema, parameter)
+	}
+	for name := range kaManagedParams {
+		if _, exists := params[name]; !exists {
 			continue
 		}
-
-		// 2. Type check
-		if !validateType(val, p.Type) {
-			result.Errors = append(result.Errors,
-				fmt.Sprintf("%s: expected type %s, got %T", p.Name, p.Type, val))
-			continue // skip further checks if type is wrong
+		if !managedDeclared[name] {
+			adaptedSchema = append(adaptedSchema, models.WorkflowParameter{Name: name, Type: "string"})
 		}
-
-		validateNumericBounds(val, p, result)                  // 3-4. Minimum / Maximum
-		validateEnumMembership(val, p, result)                 // 5. Enum check
-		validatePatternMatch(val, p, compiledPatterns, result) // 6. Pattern check
-		validateDependsOn(params, p, result)                   // 7. DependsOn check
+		adaptedValues[name] = "managed"
 	}
-
+	for _, err := range models.ValidateParameterSetErrors(adaptedSchema, adaptedValues) {
+		result.Errors = append(result.Errors, err.Error())
+	}
 	if len(result.Errors) > 0 {
 		result.IsValid = false
 		result.SchemaHint = FormatSchemaHint(schema)
 	}
-
 	return result
 }
 
@@ -362,83 +361,6 @@ func stripUndeclaredParameters(params map[string]interface{}, schema []models.Wo
 	for _, k := range toDelete {
 		delete(params, k)
 		result.StrippedParams = append(result.StrippedParams, k)
-	}
-}
-
-// validateNumericBounds checks p.Minimum/p.Maximum for numeric-typed values.
-func validateNumericBounds(val interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
-	numVal, ok := toFloat64(val)
-	if !ok {
-		return
-	}
-	if p.Minimum != nil && numVal < *p.Minimum {
-		result.Errors = append(result.Errors,
-			fmt.Sprintf("%s: value %v is below minimum %v", p.Name, numVal, *p.Minimum))
-	}
-	if p.Maximum != nil && numVal > *p.Maximum {
-		result.Errors = append(result.Errors,
-			fmt.Sprintf("%s: value %v exceeds maximum %v", p.Name, numVal, *p.Maximum))
-	}
-}
-
-// validateEnumMembership checks p.Enum membership for string-typed values.
-func validateEnumMembership(val interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
-	if len(p.Enum) == 0 {
-		return
-	}
-	strVal, ok := val.(string)
-	if !ok {
-		return
-	}
-	for _, allowed := range p.Enum {
-		if strVal == allowed {
-			return
-		}
-	}
-	result.Errors = append(result.Errors,
-		fmt.Sprintf("%s: value %q not in enum [%s]", p.Name, strVal, strings.Join(p.Enum, ", ")))
-}
-
-// validatePatternMatch checks p.Pattern against string-typed values,
-// compiling (but, matching pre-refactor behavior, not caching back into)
-// compiledPatterns on demand.
-func validatePatternMatch(val interface{}, p models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp, result *ParameterValidationResult) {
-	if p.Pattern == "" {
-		return
-	}
-	strVal, ok := val.(string)
-	if !ok {
-		return
-	}
-	if len(p.Pattern) > maxPatternLength {
-		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("%s: pattern exceeds %d chars, skipping pattern validation", p.Name, maxPatternLength))
-		return
-	}
-	re := compiledPatterns[p.Name]
-	if re == nil {
-		var err error
-		re, err = regexp.Compile(p.Pattern)
-		if err != nil {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
-			return
-		}
-	}
-	if !re.MatchString(strVal) {
-		result.Errors = append(result.Errors,
-			fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
-	}
-}
-
-// validateDependsOn checks that every parameter p.DependsOn names is present
-// in params.
-func validateDependsOn(params map[string]interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
-	for _, dep := range p.DependsOn {
-		if _, depExists := params[dep]; !depExists {
-			result.Errors = append(result.Errors,
-				fmt.Sprintf("%s: depends on %q which is not present", p.Name, dep))
-		}
 	}
 }
 
@@ -479,42 +401,6 @@ func FormatSchemaHint(schema []models.WorkflowParameter) string {
 		return "No parameter schema available."
 	}
 	return sb.String()
-}
-
-func validateType(val interface{}, expectedType string) bool {
-	switch expectedType {
-	case "string":
-		_, ok := val.(string)
-		return ok
-	case "integer":
-		f, ok := val.(float64)
-		if !ok {
-			return false
-		}
-		return f == math.Trunc(f)
-	case "float":
-		_, ok := val.(float64)
-		return ok
-	case "boolean":
-		_, ok := val.(bool)
-		return ok
-	case "array":
-		_, ok := val.([]interface{})
-		return ok
-	default:
-		return true
-	}
-}
-
-func toFloat64(val interface{}) (float64, bool) {
-	switch v := val.(type) {
-	case float64:
-		return v, true
-	case int:
-		return float64(v), true
-	default:
-		return 0, false
-	}
 }
 
 // SelfCorrect runs a validation-correction loop up to maxAttempts times.
