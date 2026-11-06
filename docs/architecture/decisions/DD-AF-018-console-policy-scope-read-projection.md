@@ -95,8 +95,9 @@ precedence rules, including explicit false, invalid-label provenance, inheritanc
 only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
-enable remote inventory list projection; exact/get and scope-check behavior remain
-unchanged.
+enable remote inventory list projection. Legacy exact/get and `IsManagedResource`
+callers retain their fail-closed compatibility behavior; the additive strict
+Console exact-target scope path preserves backend errors.
 
 The live ACM 2.17.3 spike found that the existing checker query matched an
 explicitly unmanaged object and that existing inventory fixture shapes did not
@@ -208,7 +209,9 @@ fields:
 The threshold must be finite and in `(0.0, 1.0]`; the SignalProcessing name/key must
 be present and valid. AF hashes the referenced policy bytes for a revision and never
 returns their contents. Missing, malformed, unauthorized, or inconsistent runtime
-metadata fails closed for the operation. AF does not cache these ConfigMap reads.
+metadata fails closed for the operation. This validation also applies to empty
+inventory pages: `ListPolicyScope` reads and validates runtime metadata before
+returning an empty result. AF does not cache these ConfigMap reads.
 
 The operator derives the AIAnalysis policy name/key from the Kubernaut resource and
 publishes them in `aianalysis-config`; it does not mount the policy ConfigMap into AF.
@@ -425,8 +428,9 @@ history source is unavailable.
   and removes the generated AF `policyRead` block before first deployment. The threshold
   remains in the AIA runtime config for AIAnalysis itself; obsolete operator PR #615 is
   closed as superseded.
-- Remote Console list qualification remains gated on shared FMC/ACM inventory evidence; existing
-  remote exact/get and scope-check behavior remains unchanged.
+- Remote Console list qualification remains gated on shared FMC/ACM inventory evidence; legacy
+  remote exact/get and `IsManagedResource` behavior remains fail-closed, while strict Console
+  exact-target scope checks are additive and preserve backend errors.
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
 - Historical matching remains bounded by existing CRD fields until a separately approved
   index exists.
