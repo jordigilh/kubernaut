@@ -39,6 +39,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -230,28 +231,27 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, tool := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(tool)
 			}
-			scheme := runtime.NewScheme()
-			Expect(corev1.AddToScheme(scheme)).To(Succeed())
-			Expect(appsv1.AddToScheme(scheme)).To(Succeed())
-			Expect(autoscalingv2.AddToScheme(scheme)).To(Succeed())
-			Expect(policyv1.AddToScheme(scheme)).To(Succeed())
-			Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
 			mapper := newItTestMapper()
 			mapper.(*meta.DefaultRESTMapper).Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
-			root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "app-config", Namespace: "production", Annotations: map[string]string{"argocd.argoproj.io/instance": "app"}}}
-			ld := enrichment.NewLabelDetector(dynamicfake.NewSimpleDynamicClient(scheme, root, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "production"}}), mapper, invLogger)
-			k8sClient := &resourceAwareFixtureClient{chains: map[string][]enrichment.OwnerChainEntry{
-				"worker": {{Kind: "ConfigMap", Name: "app-config", Namespace: "production", APIVersion: "v1"}},
-			}}
-			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
+			configmaps := suiteDynamicClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default")
+			root, err := configmaps.Create(context.Background(), &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1", "kind": "ConfigMap",
+				"metadata": map[string]interface{}{"generateName": "it-ka-1052-", "namespace": "default", "annotations": map[string]interface{}{"argocd.argoproj.io/instance": "app"}},
+			}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				Expect(configmaps.Delete(context.Background(), root.GetName(), metav1.DeleteOptions{})).To(Succeed())
+			})
+			ld := enrichment.NewLabelDetector(suiteDynamicClient, mapper, invLogger)
+			enricher := enrichment.NewEnricher(suiteK8sAdapter, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant"}, ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "list_available_actions", Arguments: `{}`}}},
 				wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
 			}}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
-			_, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
-				Name: "api-server", Namespace: "production", Severity: "critical", ResourceKind: "Deployment", ResourceName: "api-server", Environment: "production", Priority: "P0",
-			}, &katypes.InvestigationResult{RCASummary: "worker configuration", RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "worker", Namespace: "production", APIVersion: "apps/v1"}}, nil, "corr-1052-004")
+			_, err = inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "api-server", Namespace: "default", Severity: "critical", ResourceKind: "Deployment", ResourceName: "api-server", Environment: "production", Priority: "P0",
+			}, &katypes.InvestigationResult{RCASummary: "worker configuration", RemediationTarget: katypes.RemediationTarget{Kind: "ConfigMap", Name: root.GetName(), Namespace: "default", APIVersion: "v1"}}, nil, "corr-1052-004")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(capturingDS.actionsCalled).To(BeTrue())
 			labels := capturingDS.listActionsFilters.DetectedLabels
