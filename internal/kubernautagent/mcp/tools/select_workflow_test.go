@@ -47,12 +47,16 @@ import (
 // mockHTTPCompleter implements mcptools.HTTPSessionCompleter for unit tests.
 // Fields written by goroutines are guarded by mu.
 type mockHTTPCompleter struct {
-	mu              sync.Mutex
-	completedID     string
-	completedResult *katypes.InvestigationResult
-	completeErr     error
-	foundID         string
-	found           bool
+	mu               sync.Mutex
+	completedID      string
+	completedResult  *katypes.InvestigationResult
+	completeErr      error
+	foundID          string
+	found            bool
+	runningID        string
+	runningAfter     int
+	runningLookups   int
+	forceCompletions int
 }
 
 func (m *mockHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
@@ -69,9 +73,20 @@ func (m *mockHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bo
 	return m.foundID, m.found
 }
 
+func (m *mockHTTPCompleter) FindByRemediationID(_ string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runningLookups++
+	if m.runningAfter > 0 && m.runningLookups < m.runningAfter {
+		return "", false
+	}
+	return m.runningID, m.runningID != ""
+}
+
 func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.forceCompletions++
 	m.completedResult = result
 	return m.completeErr
 }

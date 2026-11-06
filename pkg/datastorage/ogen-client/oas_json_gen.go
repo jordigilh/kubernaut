@@ -12831,6 +12831,744 @@ func (s *ApifrontendConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) e
 }
 
 // Encode implements json.Marshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("cluster_id")
+		s.ClusterID.Encode(e)
+	}
+	{
+		e.FieldStart("result_state")
+		s.ResultState.Encode(e)
+	}
+	{
+		e.FieldStart("resource_fingerprint")
+		e.Str(s.ResourceFingerprint)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfApifrontendConsoleManagedResourceGetReadPayload = [5]string{
+	0: "event_type",
+	1: "cluster_id",
+	2: "result_state",
+	3: "resource_fingerprint",
+	4: "request_id",
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceGetReadPayload from json.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceGetReadPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "cluster_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.ClusterID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "result_state":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.ResultState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"result_state\"")
+			}
+		case "resource_fingerprint":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.ResourceFingerprint = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resource_fingerprint\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendConsoleManagedResourceGetReadPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendConsoleManagedResourceGetReadPayload) {
+					name = jsonFieldsNameOfApifrontendConsoleManagedResourceGetReadPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsoleManagedResourceGetReadPayloadEventType as json.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceGetReadPayloadEventType from json.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceGetReadPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsoleManagedResourceGetReadPayloadEventType(v) {
+	case ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead
+	default:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsoleManagedResourceGetReadPayloadResultState as json.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadResultState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceGetReadPayloadResultState from json.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadResultState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceGetReadPayloadResultState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsoleManagedResourceGetReadPayloadResultState(v) {
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound
+	default:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadResultState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadResultState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("cluster_id")
+		s.ClusterID.Encode(e)
+	}
+	{
+		e.FieldStart("result_state")
+		s.ResultState.Encode(e)
+	}
+	{
+		if s.FilterFingerprint.Set {
+			e.FieldStart("filter_fingerprint")
+			s.FilterFingerprint.Encode(e)
+		}
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfApifrontendConsoleManagedResourceListReadPayload = [5]string{
+	0: "event_type",
+	1: "cluster_id",
+	2: "result_state",
+	3: "filter_fingerprint",
+	4: "request_id",
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceListReadPayload from json.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceListReadPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "cluster_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.ClusterID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "result_state":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.ResultState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"result_state\"")
+			}
+		case "filter_fingerprint":
+			if err := func() error {
+				s.FilterFingerprint.Reset()
+				if err := s.FilterFingerprint.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"filter_fingerprint\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendConsoleManagedResourceListReadPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendConsoleManagedResourceListReadPayload) {
+					name = jsonFieldsNameOfApifrontendConsoleManagedResourceListReadPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsoleManagedResourceListReadPayloadEventType as json.
+func (s ApifrontendConsoleManagedResourceListReadPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceListReadPayloadEventType from json.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceListReadPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsoleManagedResourceListReadPayloadEventType(v) {
+	case ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead
+	default:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsoleManagedResourceListReadPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsoleManagedResourceListReadPayloadResultState as json.
+func (s ApifrontendConsoleManagedResourceListReadPayloadResultState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsoleManagedResourceListReadPayloadResultState from json.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadResultState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsoleManagedResourceListReadPayloadResultState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsoleManagedResourceListReadPayloadResultState(v) {
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateStale:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateStale
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound
+	default:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsoleManagedResourceListReadPayloadResultState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadResultState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendConsolePolicyScopeReadPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("cluster_id")
+		s.ClusterID.Encode(e)
+	}
+	{
+		e.FieldStart("result_state")
+		s.ResultState.Encode(e)
+	}
+	{
+		if s.FilterFingerprint.Set {
+			e.FieldStart("filter_fingerprint")
+			s.FilterFingerprint.Encode(e)
+		}
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfApifrontendConsolePolicyScopeReadPayload = [5]string{
+	0: "event_type",
+	1: "cluster_id",
+	2: "result_state",
+	3: "filter_fingerprint",
+	4: "request_id",
+}
+
+// Decode decodes ApifrontendConsolePolicyScopeReadPayload from json.
+func (s *ApifrontendConsolePolicyScopeReadPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsolePolicyScopeReadPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "cluster_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.ClusterID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "result_state":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.ResultState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"result_state\"")
+			}
+		case "filter_fingerprint":
+			if err := func() error {
+				s.FilterFingerprint.Reset()
+				if err := s.FilterFingerprint.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"filter_fingerprint\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendConsolePolicyScopeReadPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendConsolePolicyScopeReadPayload) {
+					name = jsonFieldsNameOfApifrontendConsolePolicyScopeReadPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsolePolicyScopeReadPayloadEventType as json.
+func (s ApifrontendConsolePolicyScopeReadPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsolePolicyScopeReadPayloadEventType from json.
+func (s *ApifrontendConsolePolicyScopeReadPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsolePolicyScopeReadPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsolePolicyScopeReadPayloadEventType(v) {
+	case ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead:
+		*s = ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead
+	default:
+		*s = ApifrontendConsolePolicyScopeReadPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsolePolicyScopeReadPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendConsolePolicyScopeReadPayloadResultState as json.
+func (s ApifrontendConsolePolicyScopeReadPayloadResultState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendConsolePolicyScopeReadPayloadResultState from json.
+func (s *ApifrontendConsolePolicyScopeReadPayloadResultState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendConsolePolicyScopeReadPayloadResultState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendConsolePolicyScopeReadPayloadResultState(v) {
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty
+	case ApifrontendConsolePolicyScopeReadPayloadResultStatePartial:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStatePartial
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateStale:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateStale
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound
+	default:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendConsolePolicyScopeReadPayloadResultState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayloadResultState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ApifrontendImpersonationCreatedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -23023,6 +23761,82 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Error)
 			}
 		}
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.policy_scope_read")
+		{
+			s := s.ApifrontendConsolePolicyScopeReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				if s.FilterFingerprint.Set {
+					e.FieldStart("filter_fingerprint")
+					s.FilterFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.managed_resource_list_read")
+		{
+			s := s.ApifrontendConsoleManagedResourceListReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				if s.FilterFingerprint.Set {
+					e.FieldStart("filter_fingerprint")
+					s.FilterFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.managed_resource_get_read")
+		{
+			s := s.ApifrontendConsoleManagedResourceGetReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				e.FieldStart("resource_fingerprint")
+				e.Str(s.ResourceFingerprint)
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("datastorage.ratelimit.denied")
@@ -23806,6 +24620,15 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.interactive_signal.failed":
 					s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventEventData
 					found = true
+				case "apifrontend.console.policy_scope_read":
+					s.Type = ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData
+					found = true
+				case "apifrontend.console.managed_resource_list_read":
+					s.Type = ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData
+					found = true
+				case "apifrontend.console.managed_resource_get_read":
+					s.Type = ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData
+					found = true
 				case "datastorage.ratelimit.denied":
 					s.Type = DatastorageRatelimitDeniedPayloadAuditEventEventData
 					found = true
@@ -24269,6 +25092,18 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendInteractiveSignalFailedPayloadAuditEventEventData:
 		if err := s.ApifrontendInteractiveSignalFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsolePolicyScopeReadPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsoleManagedResourceListReadPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsoleManagedResourceGetReadPayload.Decode(d); err != nil {
 			return err
 		}
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
@@ -29086,6 +29921,82 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Error)
 			}
 		}
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.policy_scope_read")
+		{
+			s := s.ApifrontendConsolePolicyScopeReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				if s.FilterFingerprint.Set {
+					e.FieldStart("filter_fingerprint")
+					s.FilterFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.managed_resource_list_read")
+		{
+			s := s.ApifrontendConsoleManagedResourceListReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				if s.FilterFingerprint.Set {
+					e.FieldStart("filter_fingerprint")
+					s.FilterFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.console.managed_resource_get_read")
+		{
+			s := s.ApifrontendConsoleManagedResourceGetReadPayload
+			{
+				e.FieldStart("cluster_id")
+				s.ClusterID.Encode(e)
+			}
+			{
+				e.FieldStart("result_state")
+				s.ResultState.Encode(e)
+			}
+			{
+				e.FieldStart("resource_fingerprint")
+				e.Str(s.ResourceFingerprint)
+			}
+			{
+				if s.RequestID.Set {
+					e.FieldStart("request_id")
+					s.RequestID.Encode(e)
+				}
+			}
+		}
 	case DatastorageRatelimitDeniedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("datastorage.ratelimit.denied")
@@ -29869,6 +30780,15 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.interactive_signal.failed":
 					s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData
 					found = true
+				case "apifrontend.console.policy_scope_read":
+					s.Type = ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData
+					found = true
+				case "apifrontend.console.managed_resource_list_read":
+					s.Type = ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData
+					found = true
+				case "apifrontend.console.managed_resource_get_read":
+					s.Type = ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData
+					found = true
 				case "datastorage.ratelimit.denied":
 					s.Type = DatastorageRatelimitDeniedPayloadAuditEventRequestEventData
 					found = true
@@ -30332,6 +31252,18 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendInteractiveSignalFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsolePolicyScopeReadPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsoleManagedResourceListReadPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsoleManagedResourceGetReadPayload.Decode(d); err != nil {
 			return err
 		}
 	case DatastorageRatelimitDeniedPayloadAuditEventRequestEventData:
@@ -40657,6 +41589,52 @@ func (s *ListLegalHoldsOKHoldsItem) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ListLegalHoldsOKHoldsItem) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes string as json.
+func (o NilString) Encode(e *jx.Encoder) {
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes string from json.
+func (o *NilString) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode NilString to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v string
+		o.Value = v
+		o.Null = true
+		return nil
+	}
+	o.Null = false
+	v, err := d.Str()
+	if err != nil {
+		return err
+	}
+	o.Value = string(v)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s NilString) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NilString) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

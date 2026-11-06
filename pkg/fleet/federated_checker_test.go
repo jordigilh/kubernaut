@@ -112,7 +112,7 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(managed).To(BeTrue())
 	})
 
-	It("UT-FLEET-FC-004: remote miss returns false (fail-safe)", func() {
+	It("UT-FLEET-FC-004: remote miss returns an evaluated unmanaged result", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
 			Kind:      "Deployment",
@@ -123,7 +123,7 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(managed).To(BeFalse())
 	})
 
-	It("UT-FLEET-FC-005: remote error falls back to unmanaged", func() {
+	It("UT-FLEET-FC-005: remote error is preserved by the canonical checker", func() {
 		remote.err = fmt.Errorf("connection refused")
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
@@ -131,8 +131,15 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 			Namespace: "default",
 			Name:      "nginx",
 		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse(), "remote error should fall back to unmanaged (fail-safe)")
+		Expect(err).To(HaveOccurred())
+		Expect(managed).To(BeFalse())
+	})
+
+	It("UT-FLEET-2584-SCOPE-001 [BR-SECURITY-016]: preserves remote errors through the federated checker", func() {
+		remote.err = fmt.Errorf("backend unavailable")
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "nginx"})
+		Expect(managed).To(BeFalse())
+		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
 	})
 })
 
@@ -176,7 +183,7 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 			Namespace: "default",
 			Name:      "nginx",
 		})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).To(HaveOccurred())
 		Expect(managed).To(BeFalse(),
 			"resource from unknown cluster must be rejected at cluster level")
 	})

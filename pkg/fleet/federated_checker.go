@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -105,17 +106,17 @@ func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource 
 	}
 
 	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
-		f.logger.V(1).Info("cluster not in registry, resource not managed",
+		f.logger.V(1).Info("cluster not in registry, scope check cannot be completed",
 			"cluster", resource.ClusterID)
-		return false, nil
+		return false, fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
 	}
 
 	managed, err := f.remote.IsManagedResource(ctx, resource)
 	if err != nil {
-		f.logger.V(1).Info("remote scope check error, falling back to unmanaged",
+		f.logger.V(1).Info("remote scope check failed",
 			"cluster", resource.ClusterID, "namespace", resource.Namespace,
 			"kind", resource.Kind, "name", resource.Name, "error", err)
-		return false, nil
+		return false, err
 	}
 	return managed, nil
 }

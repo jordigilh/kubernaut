@@ -357,6 +357,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			EffectivenessValidityWindow:      "120s",
 			TLS:                              OperatorTLSOptions{Mode: "manual"},
 			PolicyConfigMaps:                 OperatorPolicyOptions{AIAnalysis: "aianalysis-policy", SignalProcessing: "signalprocessing-policy"},
+			AIAnalysisConfidenceThreshold:    "0.85",
 			// Prometheus/AlertManager are test-owned endpoints signed by the
 			// monitoring CA. Mount that CA into operator-managed clients instead
 			// of the application inter-service trust bundle.
