@@ -699,6 +699,31 @@ metadata:
   name: deny-all-traffic
   namespace: production
 spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ka-e2e-authorizationpolicy-reader
+  namespace: production
+rules:
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies"]
+    resourceNames: ["deny-all-traffic"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ka-e2e-authorizationpolicy-reader
+  namespace: production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ka-e2e-authorizationpolicy-reader
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: kubernaut-agent-e2e
 `
 	crCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	crCmd.Stdin = strings.NewReader(crManifest)

@@ -367,6 +367,8 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			NetworkPolicies: OperatorNetworkPolicyOptions{},
 			GatewayEnabled:  true, APIFrontendEnabled: true,
 			IssuerURL: "https://dex:5556/dex", JWKSURL: "https://dex:5556/dex/keys", Audience: "kubernaut-apifrontend",
+			// Dex's subject is opaque; its signed email claim identifies the test reviewer.
+			APIFrontendUsernameClaim: "claims.email",
 		},
 	}
 	if err := prepareFullPipelineOperatorResources(ctx, operatorConfig, kubeconfigPath, namespace, monitoringNamespace, fleetProvisioner != nil, writer); err != nil {
@@ -553,6 +555,8 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 			operatorConfig.CR.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
 			operatorConfig.CR.IssuerURL = "https://keycloak:8443/realms/kubernaut-demo"
 			operatorConfig.CR.JWKSURL = "https://keycloak." + namespace + ".svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
+			// Fleet uses Keycloak, not the Dex test persona mapping.
+			operatorConfig.CR.APIFrontendUsernameClaim = ""
 		}
 		evidence, deployErr := ApplyOperatorCRAndWait(ctx, operatorConfig, writer)
 		if deployErr == nil {

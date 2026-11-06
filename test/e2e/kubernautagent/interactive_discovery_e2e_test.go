@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -283,6 +284,13 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			target.SetGroupVersionKind(schema.GroupVersionKind{Group: "security.istio.io", Version: "v1", Kind: "AuthorizationPolicy"})
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: "production", Name: "deny-all-traffic"}, target)).To(Succeed(),
 				"E2E-KA-DISC-005 requires the authoritative RCA target API and resource")
+			Expect(authorizationv1.AddToScheme(k8sClient.Scheme())).To(Succeed())
+			access := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
+				User:               "system:serviceaccount:" + sharedNamespace + ":kubernaut-agent-sa",
+				ResourceAttributes: &authorizationv1.ResourceAttributes{Namespace: "production", Verb: "get", Group: "security.istio.io", Resource: "authorizationpolicies", Name: "deny-all-traffic"},
+			}}
+			Expect(k8sClient.Create(ctx, access)).To(Succeed())
+			Expect(access.Status.Allowed).To(BeTrue(), "KA must be allowed to read the RCA target for history enrichment")
 			rrID := fmt.Sprintf("rr-disc005-%d", time.Now().Unix())
 			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"), withSeverity("critical"))
 

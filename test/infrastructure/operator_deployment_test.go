@@ -353,6 +353,24 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(*decoded.Spec.APIFrontend.Enabled).To(BeTrue())
 	})
 
+	It("UT-2570-identity-001 [BR-AUDIT-005]: renders an explicitly configured Dex username mapping", func() {
+		options := testOperatorCROptions()
+		options.JWKSURL = "https://idp.example.com/keys"
+		options.APIFrontendUsernameClaim = "claims.email"
+		manifest, err := BuildKubernautCRManifest(options)
+		Expect(err).NotTo(HaveOccurred())
+		var decoded operatorCRManifest
+		Expect(yaml.Unmarshal([]byte(manifest), &decoded)).To(Succeed())
+		Expect(decoded.Spec.APIFrontend.Auth.JWTProviders).To(Equal([]operatorJWTProviderSpec{{
+			Name: "e2e", IssuerURL: options.IssuerURL, JWKSURL: options.JWKSURL,
+			Audiences:     []string{options.Audience},
+			ClaimMappings: operatorJWTClaimMappings{Username: "claims.email", Groups: "claims.groups"},
+		}}))
+		options.JWKSURL = ""
+		_, err = BuildKubernautCRManifest(options)
+		Expect(err).To(MatchError(ContainSubstring("JWKS URL")))
+	})
+
 	It("UT-2492-007C [BR-E2E-001]: explicitly enables configured monitoring endpoints", func() {
 		manifest, err := BuildKubernautCRManifest(testOperatorCROptions())
 		Expect(err).NotTo(HaveOccurred())

@@ -382,6 +382,7 @@ type OperatorCROptions struct {
 	IssuerURL                        string
 	JWKSURL                          string
 	Audience                         string
+	APIFrontendUsernameClaim         string
 }
 
 type operatorCRManifest struct {
@@ -511,10 +512,24 @@ type operatorAPIFrontendSpec struct {
 }
 
 type operatorAPIAuthSpec struct {
-	IssuerURL  string `yaml:"issuerURL,omitempty"`
-	JWKSURL    string `yaml:"jwksURL,omitempty"`
-	Audience   string `yaml:"audience,omitempty"`
-	OIDCCAFile string `yaml:"oidcCaFile,omitempty"`
+	IssuerURL    string                    `yaml:"issuerURL,omitempty"`
+	JWKSURL      string                    `yaml:"jwksURL,omitempty"`
+	Audience     string                    `yaml:"audience,omitempty"`
+	OIDCCAFile   string                    `yaml:"oidcCaFile,omitempty"`
+	JWTProviders []operatorJWTProviderSpec `yaml:"jwtProviders,omitempty"`
+}
+
+type operatorJWTProviderSpec struct {
+	Name          string                   `yaml:"name"`
+	IssuerURL     string                   `yaml:"issuerURL"`
+	JWKSURL       string                   `yaml:"jwksURL"`
+	Audiences     []string                 `yaml:"audiences"`
+	ClaimMappings operatorJWTClaimMappings `yaml:"claimMappings"`
+}
+
+type operatorJWTClaimMappings struct {
+	Username string `yaml:"username"`
+	Groups   string `yaml:"groups"`
 }
 
 type operatorRateLimitSpec struct {
@@ -688,8 +703,18 @@ func validateOperatorCROptions(options *OperatorCROptions) error {
 	if options.Fleet != nil && options.Fleet.Enabled && options.Fleet.WriteCredentialsSecret == "" {
 		return errors.New("fleet kubernaut CR requires a write OAuth2 Secret")
 	}
-	if options.APIFrontendEnabled && options.IssuerURL == "" {
+	return validateOperatorAPIFrontend(options)
+}
+
+func validateOperatorAPIFrontend(options *OperatorCROptions) error {
+	if !options.APIFrontendEnabled {
+		return nil
+	}
+	if options.IssuerURL == "" {
 		return errors.New("kubernaut CR requires an API Frontend issuer URL when API Frontend is enabled")
+	}
+	if options.APIFrontendUsernameClaim != "" && options.JWKSURL == "" {
+		return errors.New("kubernaut CR requires an API Frontend JWKS URL for username claim mapping")
 	}
 	return nil
 }
@@ -740,6 +765,13 @@ func operatorAPIFrontendSpecFor(options OperatorCROptions, audience string) *ope
 	auth := &operatorAPIAuthSpec{IssuerURL: options.IssuerURL, Audience: audience}
 	if options.JWKSURL != "" {
 		auth.JWKSURL = options.JWKSURL
+	}
+	if options.APIFrontendUsernameClaim != "" {
+		auth.JWTProviders = []operatorJWTProviderSpec{{
+			Name: "e2e", IssuerURL: options.IssuerURL, JWKSURL: options.JWKSURL,
+			Audiences:     []string{audience},
+			ClaimMappings: operatorJWTClaimMappings{Username: options.APIFrontendUsernameClaim, Groups: "claims.groups"},
+		}}
 	}
 	return &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth}
 }
