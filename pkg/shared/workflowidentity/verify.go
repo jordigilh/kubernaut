@@ -37,6 +37,23 @@ import (
 
 const workflowIDFieldPath = "status.workflowId"
 
+// retryExhaustedError marks a transient lookup that consumed Verify's complete
+// retry budget. Its cause remains unwrap-able for diagnostics and API error
+// inspection, while IsTransient deliberately treats the exhausted operation as
+// terminal to prevent an unbounded controller-level retry loop.
+type retryExhaustedError struct {
+	attempts int
+	cause    error
+}
+
+func (e *retryExhaustedError) Error() string {
+	return fmt.Sprintf("workflow identity lookup exhausted after %d attempts: %v", e.attempts, e.cause)
+}
+
+func (e *retryExhaustedError) Unwrap() error {
+	return e.cause
+}
+
 // Verify performs a point-in-time direct server-side lookup and recomputes the
 // content-derived identity. It never returns live catalog data for execution.
 func Verify(ctx context.Context, reader client.Reader, namespace, workflowID string) error {
@@ -52,8 +69,14 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if !isTransient(err) || attempt == 3 {
+		if !isTransient(err) {
 			return fmt.Errorf("lookup trusted workflow ID %q: %w", workflowID, err)
+		}
+		if attempt == 3 {
+			return &retryExhaustedError{
+				attempts: attempt,
+				cause:    fmt.Errorf("lookup trusted workflow ID %q: %w", workflowID, err),
+			}
 		}
 		timer := time.NewTimer(backoffConfig.Calculate(int32(attempt)))
 		select {
@@ -69,6 +92,10 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 // IsTransient reports whether an error from workflow identity verification is
 // caused by a temporary API or network failure that may succeed on retry.
 func IsTransient(err error) bool {
+	var exhausted *retryExhaustedError
+	if errors.As(err, &exhausted) {
+		return false
+	}
 	return isTransient(err)
 }
 

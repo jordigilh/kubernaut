@@ -18,7 +18,6 @@ package workflowexecution
 
 import (
 	"context"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -86,15 +85,5 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 		Expect(opts.Dependencies).To(BeNil())
 		Expect(opts.DeclaredParameterNames).NotTo(BeNil())
 		Expect(opts.DeclaredParameterNames).To(BeEmpty())
-	})
-})
-
-var _ = Describe("workflow identity retry scheduling", func() {
-	It("UT-WE-2570-130: uses the shared bounded jittered backoff for the next transient requeue", func() {
-		for range 32 {
-			delay := workflowIdentityRetryDelay()
-			Expect(delay).To(BeNumerically(">=", 27*time.Second))
-			Expect(delay).To(BeNumerically("<", 33*time.Second))
-		}
 	})
 })
