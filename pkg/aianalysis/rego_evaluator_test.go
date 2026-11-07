@@ -60,6 +60,46 @@ var _ = Describe("RegoEvaluator", func() {
 
 	// BR-AI-011: Policy evaluation
 	Describe("Evaluate", func() {
+		It("UT-AA-2586-007: an unconfigured threshold stays absent for user policy (BR-AI-012, SI-10)", func() {
+			e := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			Expect(e.LoadPolicy(`package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { not input.confidence_threshold }`)).To(Succeed())
+			result, err := e.Evaluate(ctx, &rego.PolicyInput{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Degraded).To(BeFalse())
+			Expect(result.ApprovalRequired).To(BeTrue())
+		})
+		DescribeTable("UT-AA-2586-003: user policy controls missing and present RCA confidence (BR-AI-028, SI-10)",
+			func(score *float64, policy string, expected bool) {
+				e := rego.NewEvaluator(rego.Config{}, logr.Discard())
+				Expect(e.LoadPolicy(policy)).To(Succeed())
+				result, err := e.Evaluate(ctx, &rego.PolicyInput{KAResponse: rego.KAResponseInput{Confidence: .95, RCAConfidence: score}, ConfidenceThreshold: ptr(.8)})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.Degraded).To(BeFalse())
+				Expect(result.ApprovalRequired).To(Equal(expected))
+			},
+			Entry("low RCA requires review", ptr(.65), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold; input.workflow_confidence == 0.95 }`, true),
+			Entry("high RCA permits execution", ptr(.95), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold }`, false),
+			Entry("missing requires review when policy says so", nil, `package aianalysis.approval
+import rego.v1
+default require_approval := true
+require_approval := false if { input.rca_confidence >= input.confidence_threshold }`, true),
+			Entry("missing allowed by permissive policy", nil, `package aianalysis.approval
+import rego.v1
+require_approval := false`, false),
+			Entry("explicit zero is present", ptr(0), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence == 0 }`, true),
+		)
 		Context("with valid policy and input", func() {
 			BeforeEach(func() {
 				evaluator = rego.NewEvaluator(rego.Config{

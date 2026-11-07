@@ -69,6 +69,37 @@ func recurrentHistory2511(target, action, signal string) *enrichment.Remediation
 
 // BR-KA-016 / DD-KA-2511; FedRAMP SI-10/AC-4/AU-3; SOC 2 CC7.2.
 var _ = Describe("#2511 recurrent RCA continuation", func() {
+	It("UT-KA-2586-017: invalid history continuation retries and fails without replacing the prior RCA (BR-AI-012, SI-10)", func() {
+		logger := logr.Discard()
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		invalid := `{"root_cause_analysis":{"summary":"invalid continuation","remediation_target":{"kind":"Deployment","name":"api-a","namespace":"prod","api_version":"apps/v1"}},"confidence":1.1,"selected_workflow":{"workflow_id":"wf","confidence":0.8}}`
+		client := &gateMockLLMClient{responses: []llm.ChatResponse{
+			{ToolCalls: []llm.ToolCall{{ID: "initial", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"initial symptom","remediation_target":{"kind":"Deployment","name":"api-a","namespace":"prod","api_version":"apps/v1"}},"confidence":0.8}`}}},
+			{ToolCalls: []llm.ToolCall{{ID: "continuation", Name: investigator.SubmitResultToolName, Arguments: invalid}}},
+			{ToolCalls: []llm.ToolCall{{ID: "correction", Name: investigator.SubmitResultToolName, Arguments: invalid}}},
+		}}
+		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
+			"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+		}}
+		inv := newTestInvestigator(investigator.Config{
+			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
+			Enricher:   enrichment.NewEnricher(&historySpecHashK8sClient2511{}, ds, &gateRecordingAuditStore{}, logger),
+			AuditStore: &gateRecordingAuditStore{}, Logger: logger, MaxTurns: 6,
+			PhaseTools: investigator.DefaultPhaseToolMap(),
+		})
+		result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+			ResourceKind: "Pod", ResourceName: "api-a-pod", Name: "HighCPU", Namespace: "prod", Severity: "high", Message: "recurring signal",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+		Expect(result.RCASummary).To(Equal("initial symptom"))
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.8)))
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(client.calls).To(HaveLen(3))
+	})
+
 	It("IT-KA-2511-002: continues within the existing RCA budget when the Agent changes target", func() {
 		logger := logr.Discard()
 		builder, err := prompt.NewBuilder()

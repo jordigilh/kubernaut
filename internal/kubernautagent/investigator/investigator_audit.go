@@ -377,6 +377,9 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		"confidence":         r.Confidence,
 		"needs_human_review": r.HumanReviewNeeded,
 	}
+	if r.RCAConfidence != nil {
+		m["rca_confidence"] = *r.RCAConfidence
+	}
 	applyWorkflowIdentityFields(m, r)
 	applySelectionAuditFields(m, r)
 	applyReviewReasonFields(m, r)

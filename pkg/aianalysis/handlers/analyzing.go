@@ -258,7 +258,7 @@ func (h *AnalyzingHandler) recordApprovalDecision(ctx context.Context, analysis 
 	alreadyRecorded := approvalCondition != nil && approvalCondition.Status != ""
 
 	outcome := aianalysis.OutcomeAutoApproved
-	reason := "Policy evaluation does not require manual approval"
+	reason := result.Reason
 
 	// BR-AI-019: Populate ApprovalContext if approval is required
 	if result.ApprovalRequired {
@@ -331,6 +331,9 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 	rca := analysis.Status.RCAResult
 
 	// Get confidence from SelectedWorkflow
+	if rca != nil {
+		ctx.RCAConfidence = rca.RCAConfidence
+	}
 	if rca != nil && rca.SelectedWorkflow != nil {
 		ctx.ConfidenceScore = rca.SelectedWorkflow.Confidence
 
@@ -414,6 +417,9 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 	rca := analysis.Status.RCAResult
 
+	if rca != nil {
+		input.KAResponse.RCAConfidence = rca.RCAConfidence
+	}
 	// Get confidence and action type from SelectedWorkflow (populated by InvestigatingHandler)
 	// #247: ActionType enables infrastructure-action approval gating independent
 	// of remediation_target.kind (see rego.PolicyInput.ActionType doc comment).

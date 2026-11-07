@@ -468,11 +468,11 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 }
 
 // RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
-// conversation and runs a single LLM call with only submit_result as the
-// available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
+// conversation and extracts RCA with submit_result, retrying malformed output
+// once via the standard RCA correction path. Returns RCA only, no workflow.
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
-	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
 		{
@@ -503,6 +503,9 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	if err != nil {
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
 	}
+	// Account for the initial call even if it needs correction.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 
 	var content string
 	if len(resp.ToolCalls) > 0 && resp.ToolCalls[0].Name == SubmitResultToolName {
@@ -511,17 +514,23 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 		content = resp.Message.Content
 	}
 
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
+	result, parseErr := inv.parseRCA(content)
+	if parseErr == nil {
+		result.Reasoning = toReasoningSummary(resp.Message.Reasoning)
 	}
-	// #2387: this single submit-only extraction call is one LLM turn with no
-	// real tool dispatches. Recorded into the per-RR scope (the single source
-	// of truth — results never pre-carry counts), so later legs accumulate on
-	// top without double-counting. Token usage likewise joins the cumulative
-	// per-RR scope; this leg carries no TokenAccumulator of its own.
-	inv.metricsFor(correlationID).IncLLMTurns()
-	inv.recordTokenUsage(correlationID, resp.Usage)
+	if parseErr != nil {
+		var retriedReasoning *llm.ReasoningBlock
+		result, retriedReasoning = inv.retryRCASubmit(ctx, content, messages, LLMInvocationContext{
+			CorrelationID: correlationID, Client: client, ModelName: modelName, RuntimeParams: runtimeParams,
+		})
+		if result == nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("RCA extraction correction: %w", ctx.Err())
+			}
+			return nil, fmt.Errorf("RCA extraction parse after correction: %w", parseErr)
+		}
+		result.Reasoning = toReasoningSummary(retriedReasoning)
+	}
 	return result, nil
 }
 
@@ -686,7 +695,7 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 	if done {
 		return mergeRCAContinuationResult(result, finalized), messages, true, nil
 	}
-	updated, parseErr := inv.resultParser.Parse(content)
+	updated, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
 		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, p.LLMContext); retried != nil {
 			updated = retried

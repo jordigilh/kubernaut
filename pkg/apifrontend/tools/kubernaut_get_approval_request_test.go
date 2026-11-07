@@ -61,6 +61,22 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(result.Expired).To(BeFalse())
 	})
 
+	It("UT-AF-2586-002: approval list and detail preserve explicit zero RCA independently (BR-AI-076, AU-3)", func() {
+		rar := newTypedDetailedRAR("payments", "rar-2586")
+		zero := 0.0
+		rar.Spec.RCAConfidence = &zero
+		tc := newTypedFakeClient(rar)
+		detail, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{Namespace: "payments", Name: rar.Name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(detail.RCAConfidence).To(HaveValue(Equal(0.0)))
+		Expect(detail.WorkflowConfidence).To(Equal(.72))
+		list, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list.ApprovalRequests).To(HaveLen(1))
+		Expect(list.ApprovalRequests[0].RCAConfidence).To(HaveValue(Equal(0.0)))
+		Expect(list.ApprovalRequests[0].WorkflowConfidence).To(Equal(.72))
+	})
+
 	It("UT-AF-1959-003 (was UT-AF-109-002): returns full RAR detail by bare rar_id shorthand", func() {
 		tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
 		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{

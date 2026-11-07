@@ -118,9 +118,9 @@ func applyRepeatJustification(result *katypes.InvestigationResult, raw json.RawM
 
 // parseLLMFormat parses the nested LLM response format and converts
 // it to a flat InvestigationResult.
-func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationResult, error) {
+func parseLLMFormat(jsonStr string, logger logr.Logger, strictRCA bool) (*katypes.InvestigationResult, error) {
 	fixed := unwrapDoubleSerializedJSON(jsonStr, logger)
-	fixed = coerceKnownFields(fixed)
+	fixed = coerceKnownFields(fixed, strictRCA)
 
 	var resp llmResponse
 	if err := json.Unmarshal([]byte(fixed), &resp); err != nil {
@@ -129,6 +129,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 
 	result := &katypes.InvestigationResult{}
 	applyLLMRCA(result, resp.resolvedRCA(), logger)
+	result.ParsedTopLevelConfidence = resp.Confidence
 
 	// Top-level confidence serves as fallback when selected_workflow is absent
 	// (e.g., not-actionable outcomes where the LLM still provides a confidence score).
@@ -191,7 +192,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 //
 // This function extracts each section's content, assembles an llmResponse,
 // and maps it to InvestigationResult via parseLLMFormat.
-func parseSectionHeaders(content string, logger logr.Logger) (*katypes.InvestigationResult, error) {
+func parseSectionHeaders(content string, logger logr.Logger, strictRCA bool) (*katypes.InvestigationResult, error) {
 	sections := extractSections(content)
 	if len(sections) == 0 {
 		return nil, fmt.Errorf("no section headers found")
@@ -216,7 +217,7 @@ func parseSectionHeaders(content string, logger logr.Logger) (*katypes.Investiga
 		return nil, fmt.Errorf("assembling section headers: %w", err)
 	}
 
-	return parseLLMFormat(string(compositeJSON), logger)
+	return parseLLMFormat(string(compositeJSON), logger, strictRCA)
 }
 
 // sectionBodyToJSON converts a single trimmed, non-empty section body into

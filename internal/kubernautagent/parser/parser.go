@@ -19,6 +19,8 @@ package parser
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/go-logr/logr"
 
@@ -48,24 +50,36 @@ func NewResultParser(logger ...logr.Logger) *ResultParser {
 //     produced when structured output is unavailable (e.g. Vertex AI)
 //  3. JSON embedded in markdown code blocks or prose
 func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, error) {
+	return p.parse(content, false)
+}
+
+// ParseRCA rejects malformed top-level confidence instead of treating it as absent.
+func (p *ResultParser) ParseRCA(content string) (*katypes.InvestigationResult, error) {
+	return p.parse(content, true)
+}
+
+func (p *ResultParser) parse(content string, strictRCA bool) (*katypes.InvestigationResult, error) {
 	if content == "" {
 		return nil, &ErrEmptyContent{}
 	}
 
 	jsonStr := extractJSON(content)
+	if strictRCA && hasNullRCAConfidence(content, jsonStr) {
+		return nil, errors.New("rca confidence must be a number when present")
+	}
 	if jsonStr != "" {
-		if parsed := p.parseFlatResult(coerceKnownFields(jsonStr)); parsed != nil {
+		if parsed := p.parseFlatResult(coerceKnownFields(jsonStr, strictRCA)); parsed != nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 
-		if parsed, err := parseLLMFormat(jsonStr, p.logger); err == nil {
+		if parsed, err := parseLLMFormat(jsonStr, p.logger, strictRCA); err == nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 	}
 
-	if parsed, err := parseSectionHeaders(content, p.logger); err == nil {
+	if parsed, err := parseSectionHeaders(content, p.logger, strictRCA); err == nil {
 		applyOutcomeRouting(parsed)
 		return parsed, nil
 	}
@@ -74,6 +88,20 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 		return nil, &ErrNoJSON{Content: content}
 	}
 	return nil, &ErrNoRecognizedFields{Raw: jsonStr}
+}
+
+// hasNullRCAConfidence distinguishes an explicitly null score from omission
+// before JSON decoding collapses both into the same nil pointer.
+func hasNullRCAConfidence(content, jsonStr string) bool {
+	const jsonNull = "null"
+	if section, ok := extractSections(content)["confidence"]; ok && strings.TrimSpace(section) == jsonNull {
+		return true
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(jsonStr), &fields) != nil {
+		return false
+	}
+	return bytes.Equal(bytes.TrimSpace(fields["confidence"]), []byte(jsonNull))
 }
 
 // Flat intake owns its provenance clearing/coercion. Nested and section-header
@@ -100,6 +128,7 @@ func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationRes
 		}
 	}
 	clearModelSelectionMetadata(&result)
+	result.ParsedTopLevelConfidence = intake.Confidence
 	if intake.Confidence != nil {
 		result.Confidence = *intake.Confidence
 		result.ConfidenceSet = true

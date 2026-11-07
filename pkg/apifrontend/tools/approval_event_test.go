@@ -49,6 +49,25 @@ func newTypedDetailedRAR(namespace, name string) *remediationv1.RemediationAppro
 }
 
 var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
+	DescribeTable("UT-AF-2586-001: review event distinguishes workflow score and RCA presence (BR-AI-076, AU-3)",
+		func(score *float64) {
+			rar := newTypedDetailedRAR("kubernaut-system", "rar-2586")
+			rar.Spec.RCAConfidence = score
+			payload, err := tools.MarshalApprovalRequestPayload(rar)
+			Expect(err).NotTo(HaveOccurred())
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal([]byte(payload), &parsed)).To(Succeed())
+			Expect(parsed).To(HaveKeyWithValue("workflowConfidence", .72))
+			if score == nil {
+				Expect(parsed).NotTo(HaveKey("rcaConfidence"))
+			} else {
+				Expect(parsed).To(HaveKeyWithValue("rcaConfidence", *score))
+			}
+		},
+		Entry("unknown", nil),
+		Entry("zero", func() *float64 { v := 0.0; return &v }()),
+		Entry("known", func() *float64 { v := .65; return &v }()),
+	)
 
 	It("UT-AF-1398-001: MarshalApprovalRequestPayload produces valid JSON with all spec fields", func() {
 		rar := newTypedDetailedRAR("kubernaut-system", "rar-rr-oom-1")

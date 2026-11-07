@@ -36,6 +36,7 @@ import (
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -70,6 +71,108 @@ func selectionObject2496(raw []byte) map[string]json.RawMessage {
 // BR-KA-016 / BR-AI-088 / DD-KA-2496: these are real mapper/processor tests,
 // not a substitute for the admitted AgentSession -> AA controller IT.
 var _ = Describe("#2496 selection persistence", func() {
+	DescribeTable("UT-AA-2586-009: terminal audit events retain RCA confidence independently (BR-AUDIT-005, AU-3, CC7.2)", func(score *float64) {
+		analysis := buildLowConfidenceFloorTestAnalysis()
+		analysis.Status.RCAResult = &aianalysisv1.RCAResult{RCAConfidence: score, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{Confidence: .95}}
+		store := &aiAuditStoreSpy{}
+		client := aiaudit.NewAuditClient(store, logr.Discard())
+		client.RecordAnalysisComplete(context.Background(), analysis)
+		Expect(client.RecordAnalysisFailed(context.Background(), analysis, errors.New("investigation failed"))).To(Succeed())
+		Expect(store.events).To(HaveLen(2))
+		for _, event := range store.events {
+			raw, err := json.Marshal(event.EventData)
+			Expect(err).NotTo(HaveOccurred())
+			payload := selectionObject2496(raw)
+			if score == nil {
+				Expect(payload).NotTo(HaveKey("rca_confidence"))
+			} else {
+				var actual float64
+				Expect(json.Unmarshal(payload["rca_confidence"], &actual)).To(Succeed())
+				Expect(actual).To(Equal(*score))
+			}
+			var workflow float64
+			Expect(json.Unmarshal(payload["confidence"], &workflow)).To(Succeed())
+			Expect(workflow).To(BeNumerically("~", .95, .00001))
+		}
+	}, Entry("missing", (*float64)(nil)), Entry("zero", func() *float64 { v := 0.0; return &v }()), Entry("known", func() *float64 { v := .65; return &v }()))
+	DescribeTable("UT-AA-2586-008: analyzing handler leaves approval to user policy in both modes (BR-AI-028, SI-10)",
+		func(interactive bool, score *float64, requireApproval bool) {
+			analysis := buildLowConfidenceFloorTestAnalysis()
+			analysis.Status.RCAResult = &aianalysisv1.RCAResult{RCAConfidence: score, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{Confidence: .95}}
+			if interactive {
+				analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{ActingUser: "operator"}
+			}
+			evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			policy := `package aianalysis.approval
+import rego.v1
+require_approval := false`
+			if requireApproval {
+				policy = `package aianalysis.approval
+import rego.v1
+require_approval := true`
+			}
+			Expect(evaluator.LoadPolicy(policy)).To(Succeed())
+			threshold := .8
+			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			_, err := handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).WithConfidenceThreshold(&threshold).Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(Equal(requireApproval))
+		},
+		Entry("interactive missing allowed", true, nil, false),
+		Entry("interactive low allowed", true, ptr(.2), false),
+		Entry("autonomous missing allowed", false, nil, false),
+		Entry("autonomous missing requires review", false, nil, true),
+	)
+	It("IT-AA-2586-001: KA handoff reaches the user policy with independent RCA confidence (BR-AI-012, AU-3, SI-10)", func() {
+		r := selectionResult2496(.95, false)
+		low := .65
+		r.RCAConfidence = &low
+		mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-2586")
+		analysis := buildLowConfidenceFloorTestAnalysis()
+		auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+		_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, mapped)
+		Expect(err).NotTo(HaveOccurred())
+		evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+		Expect(evaluator.LoadPolicy(`package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold; input.workflow_confidence == 0.95 }
+reason := "user policy"`)).To(Succeed())
+		threshold := .8
+		handler := handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).WithConfidenceThreshold(&threshold)
+		_, err = handler.Handle(context.Background(), analysis)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue())
+	})
+	DescribeTable("IT-AA-2586-003: interactive and autonomous paths respect user policy (BR-AI-028, SI-10)",
+		func(interactive bool, score *float64, policy string, approval bool) {
+			r := selectionResult2496(.95, false)
+			r.RCAConfidence = score
+			analysis := buildLowConfidenceFloorTestAnalysis()
+			if interactive {
+				analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{ActingUser: "operator"}
+			}
+			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-2586"))
+			Expect(err).NotTo(HaveOccurred())
+			evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			Expect(evaluator.LoadPolicy(policy)).To(Succeed())
+			_, err = handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(Equal(approval))
+		},
+		Entry("interactive missing score permitted", true, nil, `package aianalysis.approval
+import rego.v1
+require_approval := false`, false),
+		Entry("autonomous missing score requires review", false, nil, `package aianalysis.approval
+import rego.v1
+default require_approval := true
+require_approval := false if { input.rca_confidence >= 0.8 }`, true),
+		Entry("interactive zero requires review", true, ptr(0), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.identity.user == "operator"; input.rca_confidence == 0 }`, true),
+	)
 	DescribeTable("UT-AA-2496-AUDIT-002: AA status independently sanitizes admitted selected and rejected narratives",
 		func(rejected bool) {
 			r := selectionResult2496(.84, rejected)

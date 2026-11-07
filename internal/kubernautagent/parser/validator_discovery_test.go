@@ -25,6 +25,25 @@ import (
 )
 
 var _ = Describe("Workflow selection discovery membership", func() {
+	It("UT-KA-2586-029: RCA parser distinguishes omitted, zero, and null scores (BR-AI-012, SI-10)", func() {
+		p := parser.NewResultParser()
+		missing, err := p.ParseRCA(`{"root_cause_analysis":{"summary":"RCA"}}`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(missing.ParsedTopLevelConfidence).To(BeNil())
+		zero, err := p.ParseRCA(`{"root_cause_analysis":{"summary":"RCA"},"confidence":0}`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(zero.ParsedTopLevelConfidence).To(HaveValue(Equal(0.0)))
+		_, err = p.ParseRCA(`{"root_cause_analysis":{"summary":"RCA"},"confidence":null}`)
+		Expect(err).To(MatchError(ContainSubstring("confidence")))
+	})
+	DescribeTable("UT-KA-2586-007: invalid investigation confidence is rejected rather than converted to a score (BR-AI-012, SI-10)",
+		func(confidence float64) {
+			validator := parser.NewValidator(nil)
+			Expect(validator.Validate(&katypes.InvestigationResult{Confidence: confidence, ConfidenceSet: true})).To(MatchError(ContainSubstring("confidence")))
+		},
+		Entry("negative", -.01),
+		Entry("above one", 1.01),
+	)
 	Describe("UT-KA-2442-003: validator enforces presented workflow membership (BR-KA-017-003, BR-KA-191, FedRAMP AC-6/SI-10, ASVS V2/V8)", func() {
 		It("should reject a catalog workflow that was not returned by list_workflows", func() {
 			state := katypes.NewDiscoveredWorkflowState()

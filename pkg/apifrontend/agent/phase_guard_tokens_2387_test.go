@@ -17,6 +17,7 @@ limitations under the License.
 package agent
 
 import (
+	"encoding/json"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -30,12 +31,30 @@ import (
 // llm_turns — server-substituted, never LLM-supplied, never schema-required
 // (#2073/#2074 lesson).
 var _ = Describe("phase guard token reporting — #2387", func() {
+	It("UT-AF-2586-004: grounded decision preserves absent and zero RCA confidence (BR-AI-012, AU-3)", func() {
+		for _, tc := range []struct {
+			wire    string
+			present bool
+		}{{`{"severity":"critical"}`, false}, {`{"severity":"critical","confidence":0}`, true}} {
+			var rca tools.InvestigateRCA
+			Expect(json.Unmarshal([]byte(tc.wire), &rca)).To(Succeed())
+			got := canonicalGroundedRCA(&rca)
+			if tc.present {
+				Expect(got).To(HaveKeyWithValue("confidence", 0.0))
+			} else {
+				Expect(got).NotTo(HaveKey("confidence"))
+			}
+		}
+		schema, err := jsonschema.For[tools.RCAData](nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(schema.Required).NotTo(ContainElement("confidence"))
+	})
 
 	Describe("UT-AF-2387-021: canonicalGroundedRCA renames token fields", func() {
 		It("should map prompt/completion/total tokens into RCAData names", func() {
 			rca := &tools.InvestigateRCA{
 				Severity:         "critical",
-				Confidence:       0.92,
+				Confidence:       func() *float64 { v := 0.92; return &v }(),
 				CausalChain:      []string{"Memory leak"},
 				Target:           "Deployment/worker",
 				TotalToolCalls:   10,

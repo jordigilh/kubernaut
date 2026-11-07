@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -26,6 +27,27 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// parseRCA validates RCA confidence without changing workflow-selection parsing.
+func (inv *Investigator) parseRCA(content string) (*katypes.InvestigationResult, error) {
+	result, err := inv.resultParser.ParseRCA(content)
+	if err != nil {
+		return nil, err
+	}
+	confidence := result.ParsedTopLevelConfidence
+	if confidence != nil && (math.IsNaN(*confidence) || math.IsInf(*confidence, 0) || *confidence < 0 || *confidence > 1) {
+		return nil, fmt.Errorf("rca confidence must be between 0 and 1")
+	}
+	// The legacy field may now hold workflow confidence or a synthesized floor.
+	// RCA consumers need the model's independent, optional RCA score instead.
+	result.Confidence = 0
+	result.ConfidenceSet = confidence != nil
+	result.RCAConfidence = confidence
+	if confidence != nil {
+		result.Confidence = *confidence
+	}
+	return result, nil
+}
 
 // runRCAWithMessages starts the signal-only RCA conversation and returns its
 // paired history for any server-assisted continuation before RCA completion.
@@ -57,7 +79,7 @@ func (inv *Investigator) runRCAWithMessages(ctx context.Context, signal katypes.
 	if done {
 		return finalized, messages, nil
 	}
-	result, parseErr := inv.resultParser.Parse(content)
+	result, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
 		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, llmCtx); retried != nil {
 			result = retried
@@ -169,6 +191,8 @@ func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string,
 	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
 {"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns","api_version":"apps/v1"}},"confidence":0.9}
 
+If confidence is provided, it must be a number between 0 and 1 inclusive.
+
 CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap it in quotes.`
 
 	retryMessages := make([]llm.Message, len(history))
@@ -277,7 +301,7 @@ func (inv *Investigator) tryParseRCASubmitToolCall(resp llm.ChatResponse, correl
 		if tc.Name != SubmitResultToolName {
 			continue
 		}
-		parsed, parseErr := inv.resultParser.Parse(tc.Arguments)
+		parsed, parseErr := inv.parseRCA(tc.Arguments)
 		if parseErr != nil {
 			inv.logger.Error(parseErr, "RCA retry parse still failed",
 				"correlation_id", correlationID)
@@ -289,7 +313,7 @@ func (inv *Investigator) tryParseRCASubmitToolCall(resp llm.ChatResponse, correl
 	}
 
 	if resp.Message.Content != "" {
-		parsed, parseErr := inv.resultParser.Parse(resp.Message.Content)
+		parsed, parseErr := inv.parseRCA(resp.Message.Content)
 		if parseErr == nil {
 			inv.logger.Info("RCA retry succeeded from message content",
 				"correlation_id", correlationID)

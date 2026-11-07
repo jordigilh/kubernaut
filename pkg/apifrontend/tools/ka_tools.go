@@ -381,7 +381,7 @@ func HandleListWorkflowsKA(ctx context.Context, mcpClient ka.MCPClient, args Lis
 // This field is required — ADK schema validation enforces self-correction
 // if omitted by the LLM (#1396).
 type RCAData struct {
-	Confidence  float64  `json:"confidence"`
+	Confidence  *float64 `json:"confidence,omitempty"`
 	CausalChain []string `json:"causal_chain,omitempty"`
 	Target      string   `json:"target"`
 	// ToolCallsCount and LLMTurns are omitempty (#2073/#2074): prompt.txt

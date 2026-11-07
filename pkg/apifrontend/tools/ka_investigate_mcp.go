@@ -274,7 +274,7 @@ type InvestigateMCPResult struct {
 type InvestigateRCA struct {
 	katypes.LiveSelectionContext
 	Severity       string   `json:"severity,omitempty"`
-	Confidence     float64  `json:"confidence,omitempty"`
+	Confidence     *float64 `json:"confidence,omitempty"`
 	CausalChain    []string `json:"causal_chain,omitempty"`
 	Target         string   `json:"target,omitempty"`
 	RCASummary     string   `json:"rca_summary,omitempty"`

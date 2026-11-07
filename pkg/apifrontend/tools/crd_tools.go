@@ -192,14 +192,16 @@ type ListApprovalRequestsResult struct {
 
 // ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
 type ApprovalRequestSummary struct {
-	Name               string  `json:"name"`
-	Namespace          string  `json:"namespace"`
-	Decision           string  `json:"decision"`
-	RemediationRequest string  `json:"remediation_request"`
-	Confidence         float64 `json:"confidence"`
-	ConfidenceLevel    string  `json:"confidence_level"`
-	TimeRemaining      string  `json:"time_remaining,omitempty"`
-	RequiredBy         string  `json:"required_by,omitempty"`
+	RCAConfidence      *float64 `json:"rca_confidence,omitempty"`
+	WorkflowConfidence float64  `json:"workflow_confidence"`
+	Name               string   `json:"name"`
+	Namespace          string   `json:"namespace"`
+	Decision           string   `json:"decision"`
+	RemediationRequest string   `json:"remediation_request"`
+	Confidence         float64  `json:"confidence"`
+	ConfidenceLevel    string   `json:"confidence_level"`
+	TimeRemaining      string   `json:"time_remaining,omitempty"`
+	RequiredBy         string   `json:"required_by,omitempty"`
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
@@ -230,6 +232,8 @@ func HandleListApprovalRequests(ctx context.Context, client crclient.Client, arg
 		}
 
 		result = append(result, ApprovalRequestSummary{
+			RCAConfidence:      item.Spec.RCAConfidence,
+			WorkflowConfidence: item.Spec.Confidence,
 			Name:               item.Name,
 			Namespace:          item.Namespace,
 			Decision:           displayDecision,
@@ -301,6 +305,8 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
+	RCAConfidence          *float64                                             `json:"rca_confidence,omitempty"`
+	WorkflowConfidence     float64                                              `json:"workflow_confidence"`
 	Name                   string                                               `json:"name"`
 	Namespace              string                                               `json:"namespace"`
 	RemediationRequest     string                                               `json:"remediation_request"`
@@ -396,7 +402,6 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 	if client == nil {
 		return GetApprovalRequestResult{}, ErrK8sUnavailable
 	}
-
 	ns, name, err := ParseRARID(args.RARID, args.Namespace, args.Name)
 	if err != nil {
 		return GetApprovalRequestResult{}, err
@@ -407,7 +412,6 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 	if errV := validate.ResourceName(name); errV != nil {
 		return GetApprovalRequestResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, errV)
 	}
-
 	var rar remediationv1.RemediationApprovalRequest
 	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rar); err != nil {
 		return GetApprovalRequestResult{}, ToUserFriendlyError(err)
@@ -446,6 +450,8 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 
 	snapshot := rar.DeepCopy()
 	result := GetApprovalRequestResult{
+		RCAConfidence:          snapshot.Spec.RCAConfidence,
+		WorkflowConfidence:     rar.Spec.Confidence,
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
 		RemediationRequest:     rar.Spec.RemediationRequestRef.Name,
