@@ -107,6 +107,7 @@
 | DD-PROD-001 | Production Readiness Checklist Standard | ✅ Approved | 2025-12-07 | [DD-PROD-001-production-readiness-checklist-standard.md](decisions/DD-PROD-001-production-readiness-checklist-standard.md) |
 | DD-LLM-003 | Mock-First Development Strategy for LLM Integration | ✅ Approved | 2025-12-11 | [DD-LLM-003-mock-first-development-strategy.md](decisions/DD-LLM-003-mock-first-development-strategy.md) |
 | DD-AIANALYSIS-004 | Storm Context NOT Exposed to LLM | ✅ Approved | 2025-12-13 | [DD-AIANALYSIS-004-storm-context-not-exposed.md](decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) |
+| DD-AIANALYSIS-2586 | Independent RCA Confidence in Approval Policy | ✅ Approved | 2026-11-07 | [DD-AIANALYSIS-2586-independent-confidence.md](decisions/DD-AIANALYSIS-2586-independent-confidence.md) |
 | DD-TESTING-001 | Audit Event Validation Standards (Authoritative) | ✅ Approved | 2026-01-02 | [DD-TESTING-001-audit-event-validation-standards.md](decisions/DD-TESTING-001-audit-event-validation-standards.md) |
 | DD-TESTING-002 | Integration Test Diagnostics (Must-Gather Pattern) | ✅ Approved | 2026-01-14 | [DD-TESTING-002-integration-test-diagnostics-must-gather.md](decisions/DD-TESTING-002-integration-test-diagnostics-must-gather.md) |
 | DD-AUTH-004 | OpenShift OAuth-Proxy for SOC2 Legal Hold Authentication | ✅ Approved | 2026-01-07 | [DD-AUTH-004-openshift-oauth-proxy-legal-hold.md](decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) |
