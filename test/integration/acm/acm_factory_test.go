@@ -212,6 +212,47 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred(), "namespace inheritance cannot be decided from an authorization-filtered empty result")
 		})
+
+		DescribeTable("IT-ACM-2592-LIVE-001 [BR-SCOPE-001, AC-4]: resolves live-shaped Search labels through the factory",
+			func(resourceLabel string, expected bool) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var request struct {
+						Variables struct {
+							Input []struct {
+								Filters []struct {
+									Property string   `json:"property"`
+									Values   []string `json:"values"`
+								} `json:"filters"`
+							} `json:"input"`
+						} `json:"variables"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Variables.Input) != 1 {
+						http.Error(w, "invalid Search request", http.StatusBadRequest)
+						return
+					}
+					item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "ConfigMap", "namespace": "payments", "name": "checkout", "label": resourceLabel}
+					for _, filter := range request.Variables.Input[0].Filters {
+						if filter.Property == "kind" && len(filter.Values) == 1 && filter.Values[0] == "Namespace" {
+							item = map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "Namespace", "name": "payments", "label": "kubernaut.ai/managed=true"}
+						}
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}}); err != nil {
+						GinkgoWriter.Printf("write Search response: %v\n", err)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				checker, err := fleet.NewScopeChecker(&localAlwaysFalse{}, fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}, logr.Discard())
+				Expect(err).NotTo(HaveOccurred())
+				managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(managed).To(Equal(expected))
+			},
+			Entry("explicitly managed resource", "kubernaut.ai/managed=true", true),
+			Entry("explicitly unmanaged resource overrides managed namespace", "kubernaut.ai/managed=false", false),
+			Entry("unlabeled resource inherits managed namespace", "", true),
+		)
 	})
 })
 
