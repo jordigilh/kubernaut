@@ -165,25 +165,20 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	defaultAIWorkflow := func() *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:             "wf-ai-original",
-				WorkflowName:           "wf-ai-original",
-				ActionType:             "RestartPod",
-				Version:                "1.0.0",
-				ExecutionBundle:        "ai-bundle:v1.0@sha256:aaa",
-				ExecutionBundleDigest:  "sha256:aaa",
-				ExecutionEngine:        "tekton",
-				DeclaredParameterNames: map[string]bool{"NAMESPACE": true, "POD_NAME": true},
+				WorkflowID:            "wf-ai-original",
+				WorkflowName:          "wf-ai-original",
+				ActionType:            "RestartPod",
+				Version:               "1.0.0",
+				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
+				ExecutionBundleDigest: "sha256:aaa",
+				ExecutionEngine:       "tekton",
 			},
 			Confidence: 0.72,
 			Rationale:  "AI recommended restart",
-			Parameters: map[string]string{
+			Parameters: typedStringParameters(map[string]string{
 				"NAMESPACE": "default",
 				"POD_NAME":  "app-pod-1",
-			},
-			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{
-				{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"},
-				{Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"},
-			},
+			}),
 		}
 	}
 
@@ -249,11 +244,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
 		}, timeout, interval).Should(Succeed())
-		Expect(rar.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "app-pod-1"}))
+		Expect(rar.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "app-pod-1"})))
 
 		ai := &aianalysisv1.AIAnalysis{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "ai-" + rrName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-		ai.Status.RCAResult.SelectedWorkflow.Parameters["NAMESPACE"] = "changed-after-review"
+		ai.Status.RCAResult.SelectedWorkflow.Parameters["NAMESPACE"] = typedStringParameter("changed-after-review")
 		ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name = "changed-after-review"
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
@@ -262,7 +257,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}, Rationale: "operator review"}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}), Rationale: "operator review"}
 		})).To(Succeed())
 
 		we := &workflowexecutionv1.WorkflowExecution{}
@@ -270,7 +265,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
-		Expect(we.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"}))
+		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
 		Expect(we.Spec.TargetResource).To(Equal(fmt.Sprintf("%s/Deployment/test-app", namespace)))
 	})
 
@@ -282,13 +277,13 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}, Rationale: "operator review"}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}), Rationale: "operator review"}
 		})).To(Succeed())
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
-		Expect(we.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"}))
+		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
 	})
 
 	It("IT-RO-WE-2570-003: BR-ORCH-025 fails closed when the approved catalog identity disappears before WE dispatch", func() {
@@ -302,7 +297,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Isolated approval fixture", WhenToUse: "Integration test"},
 				Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
 				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: "job", Bundle: testutil.ValidBundleRef},
-				Parameters:  selected.ParameterSchema,
+				Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"}, {Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"}},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
@@ -374,7 +369,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		if injectUndeclared {
 			// This suite has no admission webhook. Deliberately model a malformed
 			// stored snapshot to prove WE's independent allowlist strips the value.
-			selected.Parameters["UNDECLARED"] = "must-not-reach-executor"
+			selected.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
 		}
 		var engineConfig *apiextensionsv1.JSON
 		if engine == ansibleEngine {
@@ -387,7 +382,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Approval job fixture", WhenToUse: "For integration tests"},
 				Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
 				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef, EngineConfig: engineConfig},
-				Parameters:  selected.ParameterSchema,
+				Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"}, {Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"}},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
@@ -408,7 +403,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"})}
 		})).To(Succeed())
 		key := types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}
 		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, &workflowexecutionv1.WorkflowExecution{}) }, timeout, interval).Should(Succeed())
@@ -612,7 +607,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				decidedAt := metav1.Now()
 				rar.Status.DecidedAt = &decidedAt
 				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-					Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
+					Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}),
 					Rationale:  "change pod name",
 				}
 			})).To(Succeed())
@@ -647,7 +642,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				decidedAt := metav1.Now()
 				rar.Status.DecidedAt = &decidedAt
 				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-					Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
+					Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}),
 					Rationale:  "operator review",
 				}
 			})).To(Succeed())

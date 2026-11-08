@@ -99,6 +99,11 @@ type Reconciler struct {
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
 
+	// CatalogNamespace is the trusted namespace containing admitted
+	// RemediationWorkflow objects. RO uses it for direct live identity/schema
+	// verification before creating approval or execution CRDs.
+	catalogNamespace string
+
 	// BR-FLEET-054: Fleet reader factory for remote cluster reads.
 	// nil = local-only mode (all reads go through apiReader).
 	readerFactory fleet.ReaderFactory
@@ -174,15 +179,16 @@ type TimeoutConfig struct {
 // separate from the variadic optional eaCreator argument. Extracted per
 // AGENTS.md's 8+-param Options-pattern rule.
 type ReconcilerDeps struct {
-	Client        client.Client
-	APIReader     client.Reader
-	Scheme        *runtime.Scheme
-	AuditStore    audit.AuditStore
-	Recorder      record.EventRecorder
-	Metrics       *metrics.Metrics
-	Timeouts      TimeoutConfig
-	RoutingEngine routing.Engine
-	Clock         sharedclock.Clock
+	Client           client.Client
+	APIReader        client.Reader
+	Scheme           *runtime.Scheme
+	CatalogNamespace string
+	AuditStore       audit.AuditStore
+	Recorder         record.EventRecorder
+	Metrics          *metrics.Metrics
+	Timeouts         TimeoutConfig
+	RoutingEngine    routing.Engine
+	Clock            sharedclock.Clock
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -239,8 +245,9 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 		routingEngine:       routingEngine, // Use provided or default routing engine
 		Metrics:             m,
 		Recorder:            recorder,
-		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
-		apiReader:           apiReader,           // DD-EM-002: Uncached reader for pre-remediation hash
+		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+		apiReader:           apiReader,     // DD-EM-002: Uncached reader for pre-remediation hash
+		catalogNamespace:    deps.CatalogNamespace,
 		retentionPeriod:     24 * time.Hour,      // #265: Default CRD TTL
 		phaseRegistry:       phase.NewRegistry(), // Issue #666: Phase handler registry
 		clock:               roClock,
@@ -329,6 +336,9 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 	wfeCallbacks := WFECreationCallbacks{
 		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
 		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error) {
+			if err := r.verifySelectedWorkflowForExecution(ctx, ai); err != nil {
+				return "", false, err
+			}
 			return r.weCreator.CreateWithResult(ctx, rr, ai)
 		},
 	}
@@ -339,6 +349,9 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		IsWorkflowNotNeeded:     handler.IsWorkflowNotNeeded,
 		HandleWorkflowNotNeeded: r.aiAnalysisHandler.HandleAIAnalysisStatus,
 		CreateApproval: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
+			if err := r.verifySelectedWorkflowForExecution(ctx, ai); err != nil {
+				return "", err
+			}
 			return r.approvalCreator.Create(ctx, rr, ai)
 		},
 		TransitionApprovalCreationFailure: r.transitionApprovalCreationFailure,
@@ -374,6 +387,7 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		WFECallbacks:              wfeCallbacks,
 	})
 	awaitingApprovalHandler.SetAPIReader(r.apiReader)
+	awaitingApprovalHandler.SetCatalogNamespace(r.catalogNamespace)
 	awaitingApprovalHandler.SetClock(r.clock)
 	r.phaseRegistry.MustRegister(awaitingApprovalHandler)
 }

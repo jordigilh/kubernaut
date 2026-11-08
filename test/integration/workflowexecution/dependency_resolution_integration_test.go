@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -53,11 +54,14 @@ import (
 
 var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we-006"), func() {
 	var workflowID string
-	BeforeEach(func() { workflowID = trustedWorkflowFixture("Dependency resolution fixture", "job") })
+	BeforeEach(func() {
+		workflowID = trustedWorkflowFixtureWithParameters("Dependency resolution fixture", "job", []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Description: "execution namespace"},
+		})
+	})
 	dependencyWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 
@@ -85,8 +89,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
 			}
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"NAMESPACE": true}
-			wfe.Spec.Parameters = map[string]string{"NAMESPACE": "default", "UNDECLARED": "must-not-reach-job"}
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"NAMESPACE": `"default"`, "UNDECLARED": `"must-not-reach-job"`})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 

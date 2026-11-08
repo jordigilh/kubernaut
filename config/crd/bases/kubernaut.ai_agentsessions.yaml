@@ -754,7 +754,248 @@ spec:
                       SelectedWorkflow is the workflow KA selected (workflow_id,
                       execution_bundle, confidence, parameters), free-form per KA's schema.
                       Absent (nil) means no workflow was selected.
-                    x-kubernetes-preserve-unknown-fields: true
+                    properties:
+                      actionType:
+                        type: string
+                      confidence:
+                        type: number
+                      dependencies:
+                        description: |-
+                          WorkflowDependencies declares the Secrets/ConfigMaps a workflow's execution
+                          requires to exist in the target namespace (DD-WE-006). This is the
+                          canonical, kubebuilder-annotated type shared between the CRD-embedded
+                          execution snapshot on AIAnalysis.Status.SelectedWorkflow and
+                          WorkflowExecution.Spec.WorkflowRef (Issue #1661 Change 11, DD-WORKFLOW-018),
+                          mirroring the shape of RemediationWorkflowDependencies
+                          (api/remediationworkflow/v1alpha1) so KA's wire-format JSON
+                          ({"secrets":[...],"configMaps":[...]}) unmarshals directly into it.
+                        properties:
+                          configMaps:
+                            items:
+                              description: |-
+                                WorkflowResourceDependency identifies a required Kubernetes Secret or
+                                ConfigMap by name in the execution namespace.
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          secrets:
+                            items:
+                              description: |-
+                                WorkflowResourceDependency identifies a required Kubernetes Secret or
+                                ConfigMap by name in the execution namespace.
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                        type: object
+                      engineConfig:
+                        x-kubernetes-preserve-unknown-fields: true
+                      executionBundle:
+                        type: string
+                      executionBundleDigest:
+                        type: string
+                      executionClusterId:
+                        type: string
+                      executionEngine:
+                        type: string
+                      handoffDigest:
+                        type: string
+                      parameterEvidence:
+                        type: string
+                      parameters:
+                        additionalProperties:
+                          description: |-
+                            TypedParameterValue is the persisted structural discriminated union for one
+                            workflow parameter. The strict ordinary-JSON codec rejects null, objects,
+                            malformed values and nested arrays before this type reaches the API server.
+                          properties:
+                            arrayValue:
+                              items:
+                                description: |-
+                                  TypedPrimitiveParameter is one primitive element of a workflow parameter
+                                  array. Arrays deliberately cannot contain arrays or objects.
+                                properties:
+                                  booleanValue:
+                                    type: boolean
+                                  floatValue:
+                                    type: number
+                                  integerValue:
+                                    format: int64
+                                    type: integer
+                                  kind:
+                                    enum:
+                                    - string
+                                    - integer
+                                    - float
+                                    - boolean
+                                    type: string
+                                  stringValue:
+                                    type: string
+                                required:
+                                - kind
+                                type: object
+                                x-kubernetes-validations:
+                                - message: kind must match exactly one primitive value
+                                  rule: (self.kind == 'string') == has(self.stringValue)
+                                    && (self.kind == 'integer') == has(self.integerValue)
+                                    && (self.kind == 'float') == has(self.floatValue)
+                                    && (self.kind == 'boolean') == has(self.booleanValue)
+                              type: array
+                            booleanValue:
+                              type: boolean
+                            floatValue:
+                              type: number
+                            integerValue:
+                              format: int64
+                              type: integer
+                            kind:
+                              enum:
+                              - string
+                              - integer
+                              - float
+                              - boolean
+                              - array
+                              type: string
+                            stringValue:
+                              type: string
+                          required:
+                          - kind
+                          type: object
+                          x-kubernetes-validations:
+                          - message: kind must match exactly one value
+                            rule: (self.kind == 'string') == has(self.stringValue)
+                              && (self.kind == 'integer') == has(self.integerValue)
+                              && (self.kind == 'float') == has(self.floatValue) &&
+                              (self.kind == 'boolean') == has(self.booleanValue) &&
+                              (self.kind == 'array') == has(self.arrayValue)
+                        description: |-
+                          TypedParameterMap is the single persisted parameter representation shared by
+                          AgentSession, AIAnalysis, RemediationApprovalRequest and WorkflowExecution.
+                        type: object
+                      priorRemediationUIDs:
+                        items:
+                          type: string
+                        type: array
+                      priorWorkflowMatch:
+                        type: boolean
+                      rationale:
+                        type: string
+                      repeatJustification:
+                        description: |-
+                          RepeatJustification is selection reasoning, not execution configuration.
+                          DD-KA-2496 / BR-KA-016: each part is required for a same-ID repeat with a
+                          completed valid prior assessment. Acceptance is structural, never semantic.
+                        properties:
+                          evidence_basis:
+                            description: EvidenceBasis describes current observations
+                              supporting the choice.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                          expected_mechanism:
+                            description: ExpectedMechanism describes how the workflow
+                              is expected to help now.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                          prior_outcome_relevance:
+                            description: PriorOutcomeRelevance explains the relevance
+                              of the previous outcome.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                        required:
+                        - evidence_basis
+                        - expected_mechanism
+                        - prior_outcome_relevance
+                        type: object
+                      repeatJustificationRequired:
+                        type: boolean
+                      repeatValidationOutcome:
+                        type: string
+                      resources:
+                        description: ResourceRequirements describes the compute resource
+                          requirements.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This field depends on the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      serviceAccountName:
+                        type: string
+                      version:
+                        type: string
+                      workflowId:
+                        type: string
+                      workflowName:
+                        type: string
+                      workflowSelectionConfidence:
+                        type: number
+                    required:
+                    - parameters
+                    type: object
                   selectionAssessment:
                     description: |-
                       SelectionAssessment retains curated rejected-proposal reasoning, never

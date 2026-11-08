@@ -24,13 +24,15 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 )
 
 // ========================================
 // #243 / F1 / F8: Parameter Filtering Integration Tests
 // ========================================
 // Authority: #243 (Defense-in-depth parameter filtering), F1/F8 (coverage gap)
-// Pattern: Real envtest K8s API + CRD-embedded WorkflowRef.DeclaredParameterNames
+// Pattern: Real envtest K8s API + live RemediationWorkflow.spec.parameters
 //          + real executor — verifies the full reconciler→resolveSchemaMetadata
 //          →CreateOptions→executor→filtered resource pipeline.
 // ========================================
@@ -38,24 +40,23 @@ import (
 var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func() {
 	var workflowID string
 	BeforeEach(func() {
-		workflowID = trustedWorkflowFixture("Parameter filtering fixture", "job")
+		workflowID = trustedWorkflowFixtureWithParameters("Parameter filtering fixture", "job", []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Description: "execution namespace"},
+			{Name: "REPLICAS", Type: "integer", Description: "replica count"},
+		})
 	})
 
-	Context("Job executor with DeclaredParameterNames", func() {
+	Context("Job executor with live workflow parameter declarations", func() {
 
 		It("IT-WE-243-001: should strip undeclared params from Job env vars", func() {
 			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
-				"NAMESPACE": true,
-				"REPLICAS":  true,
-			}
-			wfe.Spec.Parameters = map[string]string{
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE":    "default",
 				"REPLICAS":     "3",
 				"HALLUCINATED": "should-be-stripped",
 				"INJECTED":     "malicious-value",
-			}
+			})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -74,33 +75,32 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(envMap).NotTo(HaveKey("INJECTED"), "Undeclared param should be stripped")
 		})
 
-		It("IT-WE-243-002: BR-ORCH-025 rejects missing Job parameter declarations", func() {
+		It("IT-WE-243-002: BR-ORCH-025 fails closed for an unverifiable Job workflow", func() {
 			wfe := createUniqueJobWFE("pf-job-nil", "default/deployment/pf-job-nil-app")
-			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			wfe.Spec.Parameters = map[string]string{
+			wfe.Spec.WorkflowRef.WorkflowID = "missing-workflow"
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE": "default",
 				"CUSTOM":    "value",
-			}
+			})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failed.Status.FailureDetails).NotTo(BeNil())
-			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow parameter declarations are missing"))
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow"))
 			var jobs batchv1.JobList
 			Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 			Expect(jobs.Items).To(BeEmpty())
 		})
 
-		It("IT-WE-243-003: should strip all user params when DeclaredParameterNames is empty map", func() {
+		It("IT-WE-243-003: should strip all user params when the live workflow declares none", func() {
 			wfe := createUniqueJobWFE("pf-job-empty", "default/deployment/pf-job-empty-app")
-			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
-			wfe.Spec.Parameters = map[string]string{
+			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithParameters("Empty parameter filtering fixture", "job", nil)
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE": "default",
 				"REPLICAS":  "3",
-			}
+			})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -113,25 +113,21 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			}
 
 			Expect(envMap).To(HaveKey("TARGET_RESOURCE"), "System-injected TARGET_RESOURCE should always be present")
-			Expect(envMap).NotTo(HaveKey("NAMESPACE"), "All user params should be stripped with empty declared map")
-			Expect(envMap).NotTo(HaveKey("REPLICAS"), "All user params should be stripped with empty declared map")
+			Expect(envMap).NotTo(HaveKey("NAMESPACE"), "All user params should be stripped with empty live schema")
+			Expect(envMap).NotTo(HaveKey("REPLICAS"), "All user params should be stripped with empty live schema")
 		})
 	})
 
-	Context("Tekton executor with DeclaredParameterNames", func() {
+	Context("Tekton executor with live workflow parameter declarations", func() {
 
 		It("IT-WE-243-010: should strip undeclared params from PipelineRun params", func() {
-			wfe := createUniqueWFEWithParams("pf-tekton-strip", "default/deployment/pf-tekton-strip-app",
-				map[string]string{
+			wfe := createUniqueWFEWithTypedParams("pf-tekton-strip", "default/deployment/pf-tekton-strip-app",
+				typedParametersFromStrings(map[string]string{
 					"NAMESPACE":    "default",
 					"REPLICAS":     "3",
 					"HALLUCINATED": "should-be-stripped",
-				})
+				}))
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
-				"NAMESPACE": true,
-				"REPLICAS":  true,
-			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
@@ -149,20 +145,20 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(paramMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param should be stripped")
 		})
 
-		It("IT-WE-243-011: BR-ORCH-025 rejects missing Tekton parameter declarations", func() {
-			wfe := createUniqueWFEWithParams("pf-tekton-nil", "default/deployment/pf-tekton-nil-app",
-				map[string]string{
+		It("IT-WE-243-011: BR-ORCH-025 fails closed for an unverifiable Tekton workflow", func() {
+			wfe := createUniqueWFEWithTypedParams("pf-tekton-nil", "default/deployment/pf-tekton-nil-app",
+				typedParametersFromStrings(map[string]string{
 					"NAMESPACE": "default",
 					"CUSTOM":    "value",
-				})
-			wfe.Spec.WorkflowRef.WorkflowID = workflowID
+				}))
+			wfe.Spec.WorkflowRef.WorkflowID = "missing-workflow"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
 			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failed.Status.FailureDetails).NotTo(BeNil())
-			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow parameter declarations are missing"))
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow"))
 			var runs tektonv1.PipelineRunList
 			Expect(k8sClient.List(ctx, &runs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 			Expect(runs.Items).To(BeEmpty())

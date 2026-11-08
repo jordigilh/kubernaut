@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // PooledToolCallTimeout bounds a single pooled-session KA MCP call
@@ -280,6 +282,44 @@ type SelectWorkflowArgs struct {
 	// which keys everything off RRID.
 	ClusterID string `json:"cluster_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
+}
+
+// UnmarshalJSON preserves number tokens as json.Number at the AF tool boundary.
+// ADK decodes function-tool arguments through encoding/json; the default
+// interface{} path would convert every number to float64 before the shared
+// typed-parameter codec can reject rounding or construct the persisted union.
+func (a *SelectWorkflowArgs) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		RRID       string          `json:"rr_id"`
+		WorkflowID string          `json:"workflow_id"`
+		Kind       string          `json:"kind,omitempty"`
+		Name       string          `json:"name,omitempty"`
+		Namespace  string          `json:"namespace,omitempty"`
+		Parameters json.RawMessage `json:"parameters"`
+		ClusterID  string          `json:"cluster_id,omitempty"`
+		SessionID  string          `json:"session_id,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*a = SelectWorkflowArgs{
+		RRID: wire.RRID, WorkflowID: wire.WorkflowID, Kind: wire.Kind,
+		Name: wire.Name, Namespace: wire.Namespace,
+		ClusterID: wire.ClusterID, SessionID: wire.SessionID,
+	}
+	raw := bytes.TrimSpace(wire.Parameters)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	if _, _, err := sharedtypes.DecodeTypedParameterMap(raw); err != nil {
+		return fmt.Errorf("invalid workflow parameters: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&a.Parameters); err != nil {
+		return fmt.Errorf("decode workflow parameters: %w", err)
+	}
+	return nil
 }
 
 // SelectWorkflowResult is the output of kubernaut_select_workflow.

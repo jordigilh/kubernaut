@@ -77,18 +77,23 @@ var _ = Describe("#2496 selection persistence", func() {
 				r.WorkflowID, r.ProposedWorkflowID, r.RepeatValidationOutcome = "", aaCatalogID2496, aaRejected2496
 			}
 			mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-aa-narrative")
-			raw := mapped.SelectedWorkflow
 			if rejected {
-				raw = mapped.SelectionAssessment
+				var body map[string]any
+				Expect(json.Unmarshal(mapped.SelectionAssessment.Raw, &body)).To(Succeed())
+				body["repeat_justification"] = map[string]string{"evidence_basis": "Current password=private-private", "prior_outcome_relevance": "Prior password=private-private", "expected_mechanism": "Mechanism password=private-private"}
+				wire, err := json.Marshal(body)
+				Expect(err).NotTo(HaveOccurred())
+				mapped.SelectionAssessment.Raw = wire
+			} else {
+				mapped.SelectedWorkflow.RepeatJustification = &sharedtypes.RepeatJustification{
+					EvidenceBasis:         "Current password=private-private",
+					PriorOutcomeRelevance: "Prior password=private-private",
+					ExpectedMechanism:     "Mechanism password=private-private",
+				}
 			}
-			var body map[string]any
-			Expect(json.Unmarshal(raw.Raw, &body)).To(Succeed())
-			body["repeat_justification"] = map[string]string{"evidence_basis": "Current password=private-private", "prior_outcome_relevance": "Prior password=private-private", "expected_mechanism": "Mechanism password=private-private"}
-			wire, err := json.Marshal(body)
-			Expect(err).NotTo(HaveOccurred())
-			raw.Raw = wire
 			analysis := buildLowConfidenceFloorTestAnalysis()
 			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			var err error
 			_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, mapped)
 			Expect(err).NotTo(HaveOccurred())
 			var persisted []byte
@@ -296,12 +301,14 @@ var _ = Describe("#2496 selection persistence", func() {
 			r := selectionResult2496(confidence, review)
 			res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "incident-2496")
 			Expect(res.SelectedWorkflow).NotTo(BeNil())
-			wire := selectionObject2496(res.SelectedWorkflow.Raw)
-			Expect(string(wire["repeat_justification"])).To(MatchJSON(`{"evidence_basis":"New memory limit observed","prior_outcome_relevance":"Prior Full assessment was ineffective","expected_mechanism":"Increase the current limit"}`))
-			Expect(string(wire["workflow_selection_confidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
+			raw, err := json.Marshal(res.SelectedWorkflow)
+			Expect(err).NotTo(HaveOccurred())
+			wire := selectionObject2496(raw)
+			Expect(string(wire["repeatJustification"])).To(MatchJSON(`{"evidence_basis":"New memory limit observed","prior_outcome_relevance":"Prior Full assessment was ineffective","expected_mechanism":"Increase the current limit"}`))
+			Expect(string(wire["workflowSelectionConfidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
 			analysis := buildLowConfidenceFloorTestAnalysis()
 			processor := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{})
-			_, err := processor.ProcessAgentSessionResult(context.Background(), analysis, res)
+			_, err = processor.ProcessAgentSessionResult(context.Background(), analysis, res)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(analysis.Status.Phase).To(Equal(phase))
 			Expect(analysis.Status.GetReview().NeedsHumanReview).To(Equal(phase == aianalysis.PhaseFailed))
@@ -311,10 +318,10 @@ var _ = Describe("#2496 selection persistence", func() {
 			Expect(sw.WorkflowName).To(Equal(r.WorkflowName))
 			Expect(sw.Confidence).To(Equal(confidence))
 			Expect(sw.SelectedAt).NotTo(BeNil())
-			raw, err := json.Marshal(sw)
+			raw, err = json.Marshal(sw)
 			Expect(err).NotTo(HaveOccurred())
 			stored := selectionObject2496(raw)
-			Expect(string(stored["repeatJustification"])).To(MatchJSON(string(wire["repeat_justification"])))
+			Expect(string(stored["repeatJustification"])).To(MatchJSON(string(wire["repeatJustification"])))
 			Expect(string(stored["workflowSelectionConfidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
 			Expect(string(stored["repeatJustificationRequired"])).To(Equal("true"))
 			Expect(string(stored["priorWorkflowMatch"])).To(Equal("true"))
@@ -331,13 +338,15 @@ var _ = Describe("#2496 selection persistence", func() {
 		r := selectionResult2496(0, false)
 		r.WorkflowSelectionConfidence = nil
 		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "incident-unknown-2496")
-		Expect(selectionObject2496(res.SelectedWorkflow.Raw)).NotTo(HaveKey("workflow_selection_confidence"))
+		raw, err := json.Marshal(res.SelectedWorkflow)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectionObject2496(raw)).NotTo(HaveKey("workflowSelectionConfidence"))
 		analysis := buildLowConfidenceFloorTestAnalysis()
-		_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{}).
+		_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{}).
 			ProcessAgentSessionResult(context.Background(), analysis, res)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
-		raw, err := json.Marshal(analysis.Status.GetRCAResult().SelectedWorkflow)
+		raw, err = json.Marshal(analysis.Status.GetRCAResult().SelectedWorkflow)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(selectionObject2496(raw)).NotTo(HaveKey("workflowSelectionConfidence"))
 		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Confidence).To(BeZero())

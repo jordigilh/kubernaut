@@ -133,7 +133,7 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 			},
 			TargetResource: targetResource,
 			ClusterID:      clusterID,
-			Parameters:     map[string]string{"TIMEOUT": "30s"},
+			Parameters:     typedParametersFromStrings(map[string]string{"TIMEOUT": "30s"}),
 		},
 	}
 }
@@ -1242,7 +1242,7 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 			Namespace: "kubernaut-system",
 			UID:       types.UID("550e8400-e29b-41d4-a716-446655440006"),
 		}
-		wfe.Spec.Parameters = map[string]string{"workflow_output": secretOutput}
+		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"workflow_output": secretOutput})
 
 		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())

@@ -149,9 +149,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 							ExecutionEngine: "job",
 						},
 					},
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"NAMESPACE": "default",
-					},
+					}),
 				},
 			}
 
@@ -1489,7 +1489,7 @@ func newTestWFE(name, namespace, targetResource, workflowID, containerImage stri
 					ExecutionEngine: "tekton",
 				},
 			},
-			Parameters: params,
+			Parameters: typedParametersFromStrings(params),
 		},
 	}
 }

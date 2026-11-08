@@ -52,6 +52,9 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 		It("IT-AF-2570-012: BR-AUTH-001 concurrent decisions cannot overwrite the first committed decision", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
+			workflow := createTrustedWorkflow(ctx, "af-concurrent-workflow", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}})
+			parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"P":2.0}`))
+			Expect(err).NotTo(HaveOccurred())
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: "rar-2570-concurrent", Namespace: defaultFixture},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
@@ -59,8 +62,8 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 					Confidence: 0.7, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-test", Version: "v1", ExecutionBundle: "example:v1", Rationale: "review"},
 					RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-					Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true}},
-					Parameters: map[string]string{"P": "2"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}},
+					Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: workflow.Status.WorkflowID, WorkflowName: workflow.Name, ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1"},
+					Parameters: parameters, ParameterEvidence: evidence,
 					TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 				},
 			}
@@ -89,6 +92,9 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 
 		It("IT-AF-2570-003: BR-ORCH-025 persists a structured parameter-only approval override", func() {
 			ctx := context.Background()
+			workflow := createTrustedWorkflow(ctx, "af-structured-workflow", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}})
+			parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"P":2.0}`))
+			Expect(err).NotTo(HaveOccurred())
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: "rar-2570-structured", Namespace: defaultFixture},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
@@ -96,8 +102,8 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 					Confidence: 0.7, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-test", Version: "v1", ExecutionBundle: "example:v1", Rationale: "review"},
 					RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-					Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true}},
-					Parameters: map[string]string{"P": "2"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}},
+					Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: workflow.Status.WorkflowID, WorkflowName: workflow.Name, ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1"},
+					Parameters: parameters, ParameterEvidence: evidence,
 					TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 				},
 			}
@@ -109,16 +115,17 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			var detail map[string]json.RawMessage
 			Expect(json.Unmarshal(encoded, &detail)).To(Succeed())
-			Expect(string(detail["parameters"])).To(MatchJSON(`{"P":"2"}`))
+			Expect(string(detail["parameters"])).To(MatchJSON(`{"P":2}`))
 			Expect(string(detail["parameter_schema"])).To(ContainSubstring(`"name":"P"`))
 			var args tools.ApproveArgs
-			Expect(json.Unmarshal([]byte(`{"rar_name":"rar-2570-structured","decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}`), &args)).To(Succeed())
+			Expect(json.Unmarshal([]byte(`{"rar_name":"rar-2570-structured","decision":"Approved","workflow_override":{"parameters":{"P":1.0},"rationale":"reviewed"}}`), &args)).To(Succeed())
 			args.Namespace = defaultFixture
 			_, err = tools.HandleApprove(ctx, k8sClient, args, "operator@example.com")
 			Expect(err).NotTo(HaveOccurred())
 			persisted := &remediationv1.RemediationApprovalRequest{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), persisted)).To(Succeed())
-			Expect(persisted.Status.WorkflowOverride.Parameters).To(HaveKeyWithValue("P", "1.0"))
+			Expect(persisted.Status.WorkflowOverride.Parameters["P"].Kind).To(Equal("float"))
+			Expect(*persisted.Status.WorkflowOverride.Parameters["P"].FloatValue).To(Equal(float64(1)))
 			Expect(persisted.Status.WorkflowOverride.Rationale).To(Equal("reviewed"))
 		})
 		It("IT-AF-1195-035: list_remediations returns list from envtest", func() {

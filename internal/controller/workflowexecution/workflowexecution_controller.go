@@ -71,6 +71,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -303,6 +304,16 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// ========================================
 	if !wfe.DeletionTimestamp.IsZero() {
 		return r.ReconcileDelete(ctx, &wfe)
+	}
+
+	// Pending with an existing finalizer handles verification failure by marking
+	// the execution failed. Every other path must verify before any mutation.
+	pending := wfe.Status.Phase == "" || wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending
+	if !pending || !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
+		if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
+			logger.Error(err, "Workflow identity verification failed before reconciliation")
+			return ctrl.Result{}, fmt.Errorf("verify workflow before reconciliation: %w", err)
+		}
 	}
 
 	// ========================================

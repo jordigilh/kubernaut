@@ -154,9 +154,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "k8s-restart-pod-v1",
+							WorkflowID:   workflowID,
+							WorkflowName: "k8s-restart-pod-v1",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -165,10 +164,10 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
-					},
+					}),
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -313,10 +312,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "k8s-scale-deployment-v1",
-							ActionType:             "RestartPod",
+							WorkflowID:   workflowID,
+							WorkflowName: "k8s-scale-deployment-v1",
+							ActionType:   "RestartPod",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",

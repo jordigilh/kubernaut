@@ -100,9 +100,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource1,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
 						"MESSAGE": "DD-WE-006 E2E dependency injection test",
-					},
+					}),
 				},
 			}
 
@@ -280,9 +280,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
 						"MESSAGE": "E2E no-deps test",
-					},
+					}),
 				},
 			}
 			defer func() { _ = deleteWFE(wfe) }()
@@ -365,9 +365,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
 						"MESSAGE": "DD-WE-006 Tekton dependency injection test",
-					},
+					}),
 				},
 			}
 
@@ -464,9 +464,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
 						"MESSAGE": "DD-WE-006 E2E ConfigMap dependency injection test",
-					},
+					}),
 				},
 			}
 
@@ -554,9 +554,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
 						"MESSAGE": "DD-WE-006 Tekton ConfigMap dependency injection test",
-					},
+					}),
 				},
 			}
 

@@ -41,7 +41,6 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -113,16 +112,15 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 	It("IT-AUD-2570-007: BR-AUDIT-005 reads the committed approval values from DataStorage", func() {
 		rar := rarSafetyRequest(nil, time.Now().Add(15*time.Minute), false)
 		rar.Spec.RemediationRequestRef.Name = "rr-audit-2570-" + uuid.NewString()[:8]
-		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed", WorkflowName: "wf-reviewed", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true, "Q": true}}
-		rar.Spec.Parameters = map[string]string{"P": "2", "Q": "keep"}
-		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}, {Name: "Q", Type: "string", Description: "unchanged"}}
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed", WorkflowName: "wf-reviewed", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1"}
+		rar.Spec.Parameters = typedStringParameters(map[string]string{"P": "2", "Q": "keep"})
 		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}}
 		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, rar))).To(Succeed()) })
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 		rar.Status.DecidedBy = "reviewer@example.com"
 		rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "1.0"}, Rationale: "reviewed exactly"}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"P": "1.0"}), Rationale: "reviewed exactly"}
 		Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
 		var events []ogenclient.AuditEvent
 		Eventually(func() int {
@@ -182,8 +180,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			Status: aianalysisv1.AIAnalysisStatus{
 				Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "low confidence"},
 				RCAResult: &aianalysisv1.RCAResult{SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-schema", WorkflowName: "wf-schema", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test", DeclaredParameterNames: map[string]bool{}},
-					Confidence:       0.4, Rationale: "schema fixture", Parameters: map[string]string{},
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-schema", WorkflowName: "wf-schema", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test"},
+					Confidence:       0.4, Rationale: "schema fixture", Parameters: sharedtypes.TypedParameterMap{},
 				}},
 			},
 		}
@@ -196,7 +194,7 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
 
-	It("IT-RO-2570-024: BR-ORCH-025 persists the selected parameter schema through the API server", func() {
+	It("IT-RO-2575-024: BR-ORCH-025 does not persist a selected parameter schema", func() {
 		rrName := fmt.Sprintf("rr-rar-schema-%s", uuid.NewString()[:8])
 		rr := createRemediationRequest(ROControllerNamespace, rrName)
 		name := "rar-" + rrName
@@ -205,8 +203,12 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			_ = k8sClient.Delete(ctx, &remediationv1.RemediationApprovalRequest{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ROControllerNamespace}})
 			_ = k8sClient.Delete(ctx, rr)
 		})
-		selected := &aianalysisv1.SelectedWorkflow{}
-		Expect(json.Unmarshal([]byte(`{"workflowId":"wf-schema","workflowName":"wf-schema","actionType":"RestartPod","version":"v1","executionBundle":"oci://example.invalid/workflows:test","declaredParameterNames":{"REPLICAS":true},"parameters":{"REPLICAS":"3"},"confidence":0.4,"rationale":"schema fixture","parameterSchema":[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1,"maximum":9,"default":3}]}`), selected)).To(Succeed())
+		selected := &aianalysisv1.SelectedWorkflow{
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-schema", WorkflowName: "wf-schema", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test"},
+			Parameters:       typedStringParameters(map[string]string{"REPLICAS": "3"}),
+			Confidence:       0.4,
+			Rationale:        "schema fixture",
+		}
 		ai := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{Name: "ai-" + rrName, Namespace: ROControllerNamespace},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -223,8 +225,7 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		Expect(err).NotTo(HaveOccurred())
 		var spec map[string]json.RawMessage
 		Expect(json.Unmarshal(raw, &spec)).To(Succeed())
-		Expect(spec).To(HaveKey("parameterSchema"))
-		Expect(string(spec["parameterSchema"])).To(MatchJSON(`[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1,"maximum":9,"default":3}]`))
+		Expect(spec).NotTo(HaveKey("parameterSchema"))
 	})
 
 	It("IT-2570-021: BR-ORCH-025 fails an approved legacy RAR without a snapshot", func() {
@@ -270,7 +271,7 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 				Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "low confidence"},
 				RCAResult: &aianalysisv1.RCAResult{SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-declarations", WorkflowName: "wf-declarations", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test"},
-					Confidence:       0.4, Rationale: "declaration fixture", Parameters: map[string]string{},
+					Confidence:       0.4, Rationale: "declaration fixture", Parameters: sharedtypes.TypedParameterMap{},
 				}},
 			},
 		}
@@ -299,8 +300,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 				RCAResult: &aianalysisv1.RCAResult{
 					RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{RemediationTarget: target},
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-target", WorkflowName: "wf-target", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test", DeclaredParameterNames: map[string]bool{}},
-						Confidence:       0.4, Rationale: "target fixture", Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-target", WorkflowName: "wf-target", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test"},
+						Confidence:       0.4, Rationale: "target fixture", Parameters: sharedtypes.TypedParameterMap{},
 					},
 				},
 			},
@@ -340,8 +341,8 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 				Phase:    aianalysisv1.PhaseCompleted,
 				Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "low confidence"},
 				RCAResult: &aianalysisv1.RCAResult{RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{RemediationTarget: &aianalysisv1.RemediationTarget{APIVersion: "apps/v1", Kind: "Deployment", Namespace: ROControllerNamespace, Name: "app-a"}}, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-snapshot", WorkflowName: "wf-snapshot", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test", DeclaredParameterNames: map[string]bool{"REPLICAS": true, "MODE": true}},
-					Confidence:       0.4, Rationale: "snapshot fixture", Parameters: map[string]string{"REPLICAS": "3", "MODE": "safe"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "REPLICAS", Type: "integer", Required: true, Description: "replicas"}, {Name: "MODE", Type: "string", Required: true, Description: "mode"}},
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-snapshot", WorkflowName: "wf-snapshot", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflows:test"},
+					Confidence:       0.4, Rationale: "snapshot fixture", Parameters: typedStringParameters(map[string]string{"REPLICAS": "3", "MODE": "safe"}),
 				}},
 			},
 		}
@@ -359,11 +360,11 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		var workflow struct {
 			WorkflowID string `json:"workflowId"`
 		}
-		var params map[string]string
+		var params sharedtypes.TypedParameterMap
 		Expect(json.Unmarshal(spec["workflow"], &workflow)).To(Succeed())
 		Expect(json.Unmarshal(spec["parameters"], &params)).To(Succeed())
 		Expect(workflow.WorkflowID).To(Equal("wf-snapshot"))
-		Expect(params).To(Equal(map[string]string{"REPLICAS": "3", "MODE": "safe"}))
+		Expect(params).To(Equal(typedStringParameters(map[string]string{"REPLICAS": "3", "MODE": "safe"})))
 		Expect(spec).To(HaveKey("targetContext"))
 		var target struct {
 			RemediationTarget *remediationv1.ResourceIdentifier `json:"remediationTarget"`
@@ -603,17 +604,15 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 				RCAResult: &aianalysisv1.RCAResult{
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             "wf-rar-collision",
-							WorkflowName:           "wf-rar-collision",
-							ActionType:             "RestartPod",
-							Version:                "v1",
-							ExecutionBundle:        "oci://example.invalid/workflows:collision",
-							DeclaredParameterNames: map[string]bool{},
+							WorkflowID:      "wf-rar-collision",
+							WorkflowName:    "wf-rar-collision",
+							ActionType:      "RestartPod",
+							Version:         "v1",
+							ExecutionBundle: "oci://example.invalid/workflows:collision",
 						},
-						Confidence:      0.4,
-						Rationale:       "integration collision fixture",
-						Parameters:      map[string]string{},
-						ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+						Confidence: 0.4,
+						Rationale:  "integration collision fixture",
+						Parameters: sharedtypes.TypedParameterMap{},
 					},
 				},
 			},

@@ -40,9 +40,9 @@ import (
 // ========================================
 //
 // Authority: DD-WORKFLOW-018 Change 11e (Issue #1661) -- WorkflowExecution's
-// spec.workflowRef is a fully self-sufficient snapshot taken at creation time
-// (WorkflowID, Version, ExecutionBundle, ExecutionEngine, ServiceAccountName,
-// Dependencies, Resources, DeclaredParameterNames all copied verbatim from
+// spec.workflowRef is a fully self-sufficient execution snapshot taken at
+// creation time (WorkflowID, Version, ExecutionBundle, ExecutionEngine,
+// ServiceAccountName, Dependencies, and Resources copied verbatim from
 // AIAnalysis.Status.SelectedWorkflow -- pkg/remediationorchestrator/creator/
 // workflowexecution.go:121-134). WE's reconciler builds its CreateOptions
 // directly from this embedded snapshot and makes zero WorkflowQuerier/DataStorage
@@ -144,9 +144,9 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 					},
 				},
 				TargetResource: targetResource,
-				Parameters: map[string]string{
+				Parameters: typedStringParameters(map[string]string{
 					"MESSAGE": "E2E snapshot-isolation test message",
-				},
+				}),
 			},
 		}
 		Expect(createWFEFromCatalog(wfe)).To(Succeed())

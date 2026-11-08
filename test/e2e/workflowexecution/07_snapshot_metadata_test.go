@@ -206,7 +206,7 @@ func newSnapshotWFE(options snapshotWFEOptions) *workflowexecutionv1alpha1.Workf
 				ExecutionBundle: options.bundle, ExecutionEngine: options.engine, Dependencies: options.dependencies, Resources: options.resources, EngineConfig: options.engineConfig,
 			}},
 			TargetResource: "default/deployment/e2e-2390-" + options.name,
-			Parameters:     map[string]string{"MESSAGE": "E2E-FP-2390 snapshot metadata"},
+			Parameters:     typedStringParameters(map[string]string{"MESSAGE": "E2E-FP-2390 snapshot metadata"}),
 		},
 	}
 }

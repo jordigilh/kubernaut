@@ -172,9 +172,9 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 				},
 				Confidence: 0.95,
 				Rationale:  "High confidence match for pod restart scenario",
-				Parameters: map[string]string{
+				Parameters: typedStringParameters(map[string]string{
 					"TARGET_POD": "test-pod-completion",
-				},
+				}),
 			}
 			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Memory exhaustion due to unbounded cache growth",

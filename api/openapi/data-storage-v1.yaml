@@ -1258,6 +1258,72 @@ paths:
 
 components:
   schemas:
+    WorkflowParameterPrimitive:
+      oneOf:
+        - $ref: '#/components/schemas/WorkflowParameterString'
+        - $ref: '#/components/schemas/WorkflowParameterInteger'
+        - $ref: '#/components/schemas/WorkflowParameterFloat'
+        - $ref: '#/components/schemas/WorkflowParameterBoolean'
+      discriminator:
+        propertyName: kind
+        mapping:
+          string: '#/components/schemas/WorkflowParameterString'
+          integer: '#/components/schemas/WorkflowParameterInteger'
+          float: '#/components/schemas/WorkflowParameterFloat'
+          boolean: '#/components/schemas/WorkflowParameterBoolean'
+    WorkflowParameterString:
+      type: object
+      required: [kind, stringValue]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [string]}
+        stringValue: {type: string}
+    WorkflowParameterInteger:
+      type: object
+      required: [kind, integerValue]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [integer]}
+        integerValue: {type: integer, format: int64}
+    WorkflowParameterFloat:
+      type: object
+      required: [kind, floatValue]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [float]}
+        floatValue: {type: number, format: double}
+    WorkflowParameterBoolean:
+      type: object
+      required: [kind, booleanValue]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [boolean]}
+        booleanValue: {type: boolean}
+    WorkflowParameterValue:
+      oneOf:
+        - $ref: '#/components/schemas/WorkflowParameterString'
+        - $ref: '#/components/schemas/WorkflowParameterInteger'
+        - $ref: '#/components/schemas/WorkflowParameterFloat'
+        - $ref: '#/components/schemas/WorkflowParameterBoolean'
+        - $ref: '#/components/schemas/WorkflowParameterArray'
+      discriminator:
+        propertyName: kind
+        mapping:
+          string: '#/components/schemas/WorkflowParameterString'
+          integer: '#/components/schemas/WorkflowParameterInteger'
+          float: '#/components/schemas/WorkflowParameterFloat'
+          boolean: '#/components/schemas/WorkflowParameterBoolean'
+          array: '#/components/schemas/WorkflowParameterArray'
+    WorkflowParameterArray:
+      type: object
+      required: [kind, arrayValue]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [array]}
+        arrayValue:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowParameterPrimitive'
     # ========================================
     # Effectiveness Assessment Response
     # ========================================
@@ -2885,21 +2951,24 @@ components:
           description: Reason for the transition
 
         # Approval Fields (conditional)
+        parameter_evidence:
+          type: string
+          description: Disposable lossless parameter evidence.
         original_parameters:
           type: object
           description: Original values in the reviewed approval snapshot.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_parameters:
           type: object
           description: Exact changes committed with the approval decision.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         effective_parameters:
           type: object
           description: Effective parameter values after the committed partial override.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_rationale:
           type: string
           description: Reviewer's rationale for the committed changes.
@@ -3383,8 +3452,11 @@ components:
         parameters:
           type: object
           additionalProperties:
-            type: string
-          description: Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody.
+            $ref: '#/components/schemas/WorkflowParameterValue'
+          description: Typed workflow parameters applied to the execution resource. SOC2 CC7.1-CC7.3 chain of custody.
+        parameter_evidence:
+          type: string
+          description: Lossless compact JSON preserving submitted numeric parameter lexemes.
 
         # Retry Completeness (BR-WE-019 AC10 / DD-WE-008)
         retry_count:
@@ -3510,21 +3582,24 @@ components:
         workflow_id:
           type: string
           description: Content-derived identifier of the reviewed workflow selection.
+        parameter_evidence:
+          type: string
+          description: Disposable lossless parameter evidence.
         original_parameters:
           type: object
           description: Original reviewed parameter values, unchanged from the approval snapshot.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_parameters:
           type: object
           description: Exact parameter changes submitted by the reviewer.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         effective_parameters:
           type: object
           description: Effective values after applying the partial override.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_rationale:
           type: string
           description: Reviewer's rationale for the parameter changes.
@@ -7339,21 +7414,24 @@ components:
         approval_decision:
           type: string
           description: Approval decision submitted by the reviewer.
+        parameter_evidence:
+          type: string
+          description: Disposable lossless parameter evidence.
         original_parameters:
           type: object
           description: Original parameter values in the reviewed approval snapshot.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_parameters:
           type: object
           description: Exact parameter changes submitted by the reviewer.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         effective_parameters:
           type: object
           description: Effective parameter values after the submitted partial override.
           additionalProperties:
-            type: string
+            $ref: '#/components/schemas/WorkflowParameterValue'
         override_rationale:
           type: string
           description: Reviewer's rationale for the submitted changes.

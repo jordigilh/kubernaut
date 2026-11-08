@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -85,11 +86,12 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockStore = &MockAuditStore{}
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, nil, "kubernaut-system")
 
 		// Setup decoder (required by admission.Handler)
 		scheme = runtime.NewScheme()
 		_ = remediationv1.AddToScheme(scheme)
+		_ = remediationworkflowv1.AddToScheme(scheme)
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, completeSafetyWorkflowReader(scheme), "kubernaut-system")
 		decoder = admission.NewDecoder(scheme)
 		_ = handler.InjectDecoder(decoder)
 

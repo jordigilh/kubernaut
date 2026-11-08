@@ -83,6 +83,7 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
@@ -497,14 +498,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	)
 
 	reconciler := controller.NewReconciler(controller.ReconcilerDeps{
-		Client:        k8sManager.GetClient(),
-		APIReader:     k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
-		Scheme:        k8sManager.GetScheme(),
-		AuditStore:    auditStore,                                                           // Real audit store for ADR-032 compliance
-		Recorder:      k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
-		Metrics:       roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
-		Timeouts:      controller.TimeoutConfig{},                                           // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
-		RoutingEngine: routingEngine,                                                        // Real routing engine for integration tests (BR-ORCH-042)
+		Client:           k8sManager.GetClient(),
+		APIReader:        k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
+		CatalogNamespace: ROControllerNamespace,
+		Scheme:           k8sManager.GetScheme(),
+		AuditStore:       auditStore,                                                           // Real audit store for ADR-032 compliance
+		Recorder:         k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
+		Metrics:          roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
+		Timeouts:         controller.TimeoutConfig{},                                           // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
+		RoutingEngine:    routingEngine,                                                        // Real routing engine for integration tests (BR-ORCH-042)
 	}, eaCreator) // ADR-EM-001: EA creation on terminal phases
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
@@ -781,9 +783,7 @@ func approveRAR(rarName string, mutate func(rar *remediationv1.RemediationApprov
 // sp.Status.Phase directly (no caller currently needs a non-Completed phase).
 // supplyEmptyApprovalSnapshot marks a selected workflow as explicitly having no parameters.
 func supplyEmptyApprovalSnapshot(selected *aianalysisv1.SelectedWorkflow) {
-	selected.Parameters = map[string]string{}
-	selected.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
-	selected.DeclaredParameterNames = map[string]bool{}
+	selected.Parameters = sharedtypes.TypedParameterMap{}
 }
 
 func updateSPStatus(name string, severity ...string) error {

@@ -34,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -519,10 +518,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 						Rationale:       "Standard pod restart",
 					},
 					Workflow: &sharedtypes.WorkflowSnapshot{
-						WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{},
+						WorkflowID: "restart-pod-v1",
 					},
-					Parameters:      map[string]string{},
-					ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+					Parameters: sharedtypes.TypedParameterMap{},
 					TargetContext: &remediationv1.ApprovalTargetContext{
 						SignalTarget: testRR.Spec.TargetResource,
 					},

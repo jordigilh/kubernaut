@@ -279,7 +279,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 // including the cache-sync-aware readyz check that prevents premature
 // reconciliation before controller watches are established. Exits the
 // process on any failure, matching main()'s original fail-fast behavior.
-func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, clients *aiAnalysisClients, dsGate *readiness.Gate) *metrics.Metrics {
+func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, clients *aiAnalysisClients, dsGate *readiness.Gate, controllerNS string) *metrics.Metrics {
 	// DD-METRICS-001: Per V1.0 Service Maturity Requirements - P0 Blocker.
 	setupLog.Info("Initializing AIAnalysis metrics (DD-METRICS-001)")
 	aianalysisMetrics := metrics.NewMetrics()
@@ -294,6 +294,7 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, clients *ai
 	// retired direct InvestigationSession terminal-close write.
 	agentSessionCreator := creator.NewAgentSessionCreator(mgr.GetClient(), mgr.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, controllerLog, aianalysisMetrics, clients.auditClient,
+		handlers.WithWorkflowCatalog(mgr.GetAPIReader(), controllerNS),
 		handlers.WithRecorder(eventRecorder),                         // DD-EVENT-001: Session lifecycle events
 		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor)) // BR-AI-088.4, #1828: operator-configurable floor
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
@@ -475,7 +476,7 @@ func run() int {
 	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
 	defer dsGate.Stop()
 
-	setupAIAnalysisReconciler(mgr, cfg, clients, dsGate)
+	setupAIAnalysisReconciler(mgr, cfg, clients, dsGate, controllerNS)
 
 	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel, clients.auditClient)
 	defer cleanupHotReload()

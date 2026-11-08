@@ -17,6 +17,7 @@ limitations under the License.
 package repository
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -139,7 +140,9 @@ func scanQueryRow(rows *sql.Rows) (*AuditEvent, error) {
 
 	// Unmarshal event_data JSONB
 	if len(eventDataJSON) > 0 {
-		if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(eventDataJSON))
+		decoder.UseNumber()
+		if err := decoder.Decode(&event.EventData); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
 		}
 	}

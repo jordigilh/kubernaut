@@ -255,8 +255,7 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
-// createWFEFromCatalog reproduces RO's frozen parameter declarations from the
-// selected trusted workflow instead of inferring them from submitted values.
+// createWFEFromCatalog requires a unique live workflow before fixture creation.
 func createWFEFromCatalog(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	var workflows rwv1alpha1.RemediationWorkflowList
 	if err := apiReader.List(ctx, &workflows, client.InNamespace(controllerNamespace), client.MatchingFields{"status.workflowId": wfe.Spec.WorkflowRef.WorkflowID}); err != nil {
@@ -265,11 +264,6 @@ func createWFEFromCatalog(wfe *workflowexecutionv1alpha1.WorkflowExecution) erro
 	if len(workflows.Items) != 1 {
 		return fmt.Errorf("expected one trusted workflow for fixture %q, got %d", wfe.Spec.WorkflowRef.WorkflowID, len(workflows.Items))
 	}
-	declared := make(map[string]bool, len(workflows.Items[0].Spec.Parameters))
-	for _, parameter := range workflows.Items[0].Spec.Parameters {
-		declared[parameter.Name] = true
-	}
-	wfe.Spec.WorkflowRef.DeclaredParameterNames = declared
 	return k8sClient.Create(ctx, wfe)
 }
 
@@ -473,9 +467,9 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: map[string]string{
+			Parameters: typedStringParameters(map[string]string{
 				"MESSAGE": "E2E test message",
-			},
+			}),
 		},
 	}
 }

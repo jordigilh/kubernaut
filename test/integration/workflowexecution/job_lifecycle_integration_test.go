@@ -55,19 +55,22 @@ import (
 
 var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	var trustedWorkflowID string
+	const missingWorkflowID = "missing-workflow"
 	BeforeEach(func() {
-		trustedWorkflowID = trustedWorkflowFixture("Job lifecycle fixture", "job")
+		trustedWorkflowID = trustedWorkflowFixtureWithParameters("Job lifecycle fixture", "job", []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "REMEDIATION_TYPE", Type: "string", Description: "remediation type"},
+			{Name: "TIMEOUT", Type: "integer", Description: "timeout"},
+		})
 	})
 	trustedJobWFE := func(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, targetResource)
 		wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"REMEDIATION_TYPE": true, "TIMEOUT": true}
 		return wfe
 	}
-	It("IT-WE-2570-040: BR-ORCH-025 rejects missing parameter declarations before dispatch", func() {
+	It("IT-WE-2570-040: BR-ORCH-025 rejects an unverifiable workflow before dispatch", func() {
 		wfe := trustedJobWFE("missing-declarations", fmt.Sprintf("default/deployment/missing-declarations-%d", time.Now().UnixNano()))
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
-		wfe.Spec.Parameters = map[string]string{"UNDECLARED": "must-not-run"}
+		wfe.Spec.WorkflowRef.WorkflowID = missingWorkflowID
+		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		Eventually(func() string {
@@ -81,10 +84,10 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 		Expect(jobs.Items).To(BeEmpty())
 	})
-	It("IT-WE-2570-042: BR-ORCH-025 an explicit empty declaration map dispatches without undeclared inputs", func() {
+	It("IT-WE-2570-042: BR-ORCH-025 an empty live schema dispatches without undeclared inputs", func() {
 		wfe := trustedJobWFE("empty-declarations", fmt.Sprintf("default/deployment/empty-declarations-%d", time.Now().UnixNano()))
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
-		wfe.Spec.Parameters = map[string]string{"UNDECLARED": "must-not-run"}
+		wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithParameters("Empty job lifecycle fixture", "job", nil)
+		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -122,7 +125,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		}
 		wfe := createUniqueJobWFE(fmt.Sprintf("identity-%d", time.Now().UnixNano()), fmt.Sprintf("default/deployment/identity-%d", time.Now().UnixNano()))
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		wantPhase := string(workflowexecutionv1alpha1.PhaseFailed)
@@ -262,10 +264,10 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		It("should create Job with correct labels and env vars (IT-WE-014-003)", func() {
 			targetResource := fmt.Sprintf("default/deployment/job-spec-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("spec-check", targetResource)
-			wfe.Spec.Parameters = map[string]string{
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"REMEDIATION_TYPE": "restart",
 				"TIMEOUT":          "300",
-			}
+			})
 
 			defer func() {
 				cleanupJobWFE(wfe)
@@ -846,7 +848,6 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 	sequentialWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 
@@ -1075,7 +1076,6 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	governanceWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 

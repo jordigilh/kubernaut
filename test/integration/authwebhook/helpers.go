@@ -41,6 +41,16 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+func typedStringParameters(values map[string]string) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		valueCopy := value
+		result[name] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &valueCopy}
+	}
+	return result
+}
+
 // uniqueActionType generates a unique action type name that satisfies the
 // PascalCase-only kubebuilder Pattern on ActionType.spec.name / RW's
 // spec.actionType (#1661 CRD schema hardening): no hyphens, so it also
@@ -148,6 +158,7 @@ func updateStatusAndWaitForWebhook(
 	}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
 		"Webhook should mutate CRD within 10 seconds")
 }
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUDIT EVENT VALIDATION HELPERS - DD-TESTING-001 Compliance
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

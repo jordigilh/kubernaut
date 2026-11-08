@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
@@ -312,7 +313,7 @@ type GetApprovalRequestResult struct {
 	WhyApprovalRequired    string                                               `json:"why_approval_required"`
 	RecommendedWorkflow    RecommendedWorkflowInfo                              `json:"recommended_workflow"`
 	Workflow               *sharedtypes.WorkflowSnapshot                        `json:"workflow"`
-	Parameters             map[string]string                                    `json:"parameters"`
+	Parameters             map[string]interface{}                               `json:"parameters"`
 	ParameterSchema        []remediationworkflowv1.RemediationWorkflowParameter `json:"parameter_schema"`
 	RecommendedActions     []RecommendedActionSummary                           `json:"recommended_actions"`
 	EvidenceCollected      []string                                             `json:"evidence_collected"`
@@ -393,58 +394,16 @@ type AlternativeSummary struct {
 
 // HandleGetApprovalRequest implements the kubernaut_get_approval_request logic.
 func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
-	if client == nil {
-		return GetApprovalRequestResult{}, ErrK8sUnavailable
-	}
-
-	ns, name, err := ParseRARID(args.RARID, args.Namespace, args.Name)
+	rar, liveWorkflow, err := loadApprovalRequest(ctx, client, args)
 	if err != nil {
 		return GetApprovalRequestResult{}, err
 	}
-	if errV := validate.Namespace(ns); errV != nil {
-		return GetApprovalRequestResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, errV)
-	}
-	if errV := validate.ResourceName(name); errV != nil {
-		return GetApprovalRequestResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, errV)
-	}
+	display := buildApprovalRequestDisplay(rar)
 
-	var rar remediationv1.RemediationApprovalRequest
-	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rar); err != nil {
-		return GetApprovalRequestResult{}, ToUserFriendlyError(err)
+	parameters, err := sharedtypes.TypedParameterMapToJSONValues(rar.Spec.Parameters)
+	if err != nil {
+		return GetApprovalRequestResult{}, fmt.Errorf("convert approval parameters for tool output: %w", err)
 	}
-
-	evidence := rar.Spec.EvidenceCollected
-	if evidence == nil {
-		evidence = []string{}
-	}
-
-	actions := make([]RecommendedActionSummary, 0, len(rar.Spec.RecommendedActions))
-	for _, a := range rar.Spec.RecommendedActions {
-		actions = append(actions, RecommendedActionSummary{Action: a.Action, Rationale: a.Rationale})
-	}
-
-	alternatives := make([]AlternativeSummary, 0, len(rar.Spec.AlternativesConsidered))
-	for _, a := range rar.Spec.AlternativesConsidered {
-		alternatives = append(alternatives, AlternativeSummary{Approach: a.Approach, ProsCons: a.ProsCons})
-	}
-
-	decision := string(rar.Status.Decision)
-	displayDecision := decision
-	if displayDecision == "" {
-		displayDecision = "Pending"
-	}
-
-	decidedAt := ""
-	if rar.Status.DecidedAt != nil {
-		decidedAt = rar.Status.DecidedAt.Format(time.RFC3339)
-	}
-
-	requiredBy := ""
-	if !rar.Spec.RequiredBy.IsZero() {
-		requiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
-	}
-
-	snapshot := rar.DeepCopy()
 	result := GetApprovalRequestResult{
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
@@ -456,23 +415,98 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		InvestigationSummary:   rar.Spec.InvestigationSummary,
 		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
 		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: rar.Spec.RecommendedWorkflow.WorkflowID, Version: rar.Spec.RecommendedWorkflow.Version},
-		Workflow:               snapshot.Spec.Workflow,
-		Parameters:             snapshot.Spec.Parameters,
-		ParameterSchema:        snapshot.Spec.ParameterSchema,
-		RecommendedActions:     actions,
-		EvidenceCollected:      evidence,
-		AlternativesConsidered: alternatives,
-		RequiredBy:             requiredBy,
-		Decision:               displayDecision,
+		Workflow:               rar.Spec.Workflow,
+		Parameters:             parameters,
+		ParameterSchema:        liveWorkflowParameters(liveWorkflow),
+		RecommendedActions:     display.actions,
+		EvidenceCollected:      display.evidence,
+		AlternativesConsidered: display.alternatives,
+		RequiredBy:             display.requiredBy,
+		Decision:               display.decision,
 		DecidedBy:              rar.Status.DecidedBy,
-		DecidedAt:              decidedAt,
+		DecidedAt:              display.decidedAt,
 		TimeRemaining:          rar.Status.TimeRemaining,
 		Expired:                rar.Status.Expired,
 	}
 	if args.IncludeParentEvidence {
-		result.ParentEvidence = resolveParentEvidence(ctx, client, &rar)
+		result.ParentEvidence = resolveParentEvidence(ctx, client, rar)
 	}
 	return result, nil
+}
+
+func loadApprovalRequest(ctx context.Context, client crclient.Client, args GetApprovalRequestArgs) (*remediationv1.RemediationApprovalRequest, *remediationworkflowv1.RemediationWorkflow, error) {
+	if client == nil {
+		return nil, nil, ErrK8sUnavailable
+	}
+	ns, name, err := ParseRARID(args.RARID, args.Namespace, args.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validate.Namespace(ns); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if err := validate.ResourceName(name); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	rar := &remediationv1.RemediationApprovalRequest{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, rar); err != nil {
+		return nil, nil, ToUserFriendlyError(err)
+	}
+	if rar.Spec.Workflow == nil || rar.Spec.Workflow.WorkflowID == "" {
+		return rar, nil, nil
+	}
+	liveWorkflow, err := workflowidentity.GetVerified(ctx, client, ns, rar.Spec.Workflow.WorkflowID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("verify approval workflow: %w", err)
+	}
+	return rar, liveWorkflow, nil
+}
+
+type approvalRequestDisplay struct {
+	evidence     []string
+	actions      []RecommendedActionSummary
+	alternatives []AlternativeSummary
+	decision     string
+	decidedAt    string
+	requiredBy   string
+}
+
+func buildApprovalRequestDisplay(rar *remediationv1.RemediationApprovalRequest) approvalRequestDisplay {
+	evidence := rar.Spec.EvidenceCollected
+	if evidence == nil {
+		evidence = []string{}
+	}
+	actions := make([]RecommendedActionSummary, 0, len(rar.Spec.RecommendedActions))
+	for _, action := range rar.Spec.RecommendedActions {
+		actions = append(actions, RecommendedActionSummary{Action: action.Action, Rationale: action.Rationale})
+	}
+	alternatives := make([]AlternativeSummary, 0, len(rar.Spec.AlternativesConsidered))
+	for _, alternative := range rar.Spec.AlternativesConsidered {
+		alternatives = append(alternatives, AlternativeSummary{Approach: alternative.Approach, ProsCons: alternative.ProsCons})
+	}
+	decision := string(rar.Status.Decision)
+	if decision == "" {
+		decision = "Pending"
+	}
+	decidedAt := ""
+	if rar.Status.DecidedAt != nil {
+		decidedAt = rar.Status.DecidedAt.Format(time.RFC3339)
+	}
+	requiredBy := ""
+	if !rar.Spec.RequiredBy.IsZero() {
+		requiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
+	}
+	return approvalRequestDisplay{
+		evidence: evidence, actions: actions, alternatives: alternatives,
+		decision: decision, decidedAt: decidedAt, requiredBy: requiredBy,
+	}
+}
+
+func liveWorkflowParameters(workflow *remediationworkflowv1.RemediationWorkflow) []remediationworkflowv1.RemediationWorkflowParameter {
+	if workflow == nil {
+		return nil
+	}
+	return workflow.Spec.Parameters
 }
 
 func resolveParentEvidence(ctx context.Context, client crclient.Client, rar *remediationv1.RemediationApprovalRequest) *ParentEvidence {
@@ -655,9 +689,10 @@ type ApproveResult struct {
 type ApprovalAuditContext struct {
 	CorrelationID       string
 	WorkflowID          string
-	OriginalParameters  map[string]string
-	OverrideParameters  map[string]string
-	EffectiveParameters map[string]string
+	OriginalParameters  sharedtypes.TypedParameterMap
+	OverrideParameters  sharedtypes.TypedParameterMap
+	EffectiveParameters sharedtypes.TypedParameterMap
+	ParameterEvidence   string
 	OverrideRationale   *string
 }
 
@@ -730,22 +765,41 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	if rar.DeletionTimestamp != nil {
 		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest is terminating", ErrAlreadyTerminal)
 	}
-
 	if rar.Status.Decision != remediationv1.ApprovalDecisionPending {
 		if approvalRequestMatches(args, username, &rar) {
 			return approvalResult(args, username), nil
 		}
 		return ApproveResult{}, fmt.Errorf("%w: RemediationApprovalRequest already has terminal decision %q", ErrAlreadyTerminal, rar.Status.Decision)
 	}
-	if args.WorkflowOverride != nil {
-		if err := remediationapprovalrequest.ValidateParameterOverride(&rar.Spec, args.WorkflowOverride.Parameters); err != nil {
-			return ApproveResult{}, &ApprovalDecisionDeniedError{
-				Err:   fmt.Errorf("%w: parameter override: %w", ErrInvalidInput, err),
-				Audit: approvalAuditContext(&rar, args.WorkflowOverride),
-			}
-		}
+	if err := validateApprovalWorkflowOverride(ctx, client, args, &rar); err != nil {
+		return ApproveResult{}, err
 	}
 
+	applyApprovalDecision(&rar, args, username)
+	return persistApprovalDecision(ctx, client, args, username, rar)
+}
+
+func validateApprovalWorkflowOverride(ctx context.Context, client crclient.Client, args ApproveArgs, rar *remediationv1.RemediationApprovalRequest) error {
+	if args.WorkflowOverride == nil {
+		return nil
+	}
+	denied := func(err error) error {
+		return &ApprovalDecisionDeniedError{Err: err, Audit: approvalAuditContext(rar, args.WorkflowOverride)}
+	}
+	if rar.Spec.Workflow == nil || rar.Spec.Workflow.WorkflowID == "" {
+		return denied(fmt.Errorf("%w: workflow identity is missing", ErrInvalidInput))
+	}
+	workflow, err := workflowidentity.GetVerified(ctx, client, args.Namespace, rar.Spec.Workflow.WorkflowID)
+	if err != nil {
+		return denied(fmt.Errorf("%w: workflow identity: %w", ErrInvalidInput, err))
+	}
+	if err := remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(&rar.Spec, workflow, args.WorkflowOverride.Parameters); err != nil {
+		return denied(fmt.Errorf("%w: parameter override: %w", ErrInvalidInput, err))
+	}
+	return nil
+}
+
+func applyApprovalDecision(rar *remediationv1.RemediationApprovalRequest, args ApproveArgs, username string) {
 	// Status().Update carries the fetched metadata.resourceVersion. The API
 	// server therefore makes the first concurrent business decision win.
 	rar.Status.Decision = remediationv1.ApprovalDecision(args.Decision)
@@ -756,7 +810,9 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 	if args.WorkflowOverride != nil {
 		rar.Status.WorkflowOverride = args.WorkflowOverride.DeepCopy()
 	}
+}
 
+func persistApprovalDecision(ctx context.Context, client crclient.Client, args ApproveArgs, username string, rar remediationv1.RemediationApprovalRequest) (ApproveResult, error) {
 	if err := client.Status().Update(ctx, &rar); err != nil {
 		// The apiserver may retry admission after another decision commits. In
 		// that case the webhook denies the stale decision as terminal, rather
@@ -769,7 +825,6 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 		}
 		return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
 	}
-
 	return ApproveResult{
 		Status:  args.Decision,
 		Message: fmt.Sprintf("Remediation approval %s by %s", args.Decision, username),
@@ -788,27 +843,36 @@ func approvalAuditContext(rar *remediationv1.RemediationApprovalRequest, overrid
 		info.WorkflowID = rar.Spec.Workflow.WorkflowID
 	}
 	if rar.Spec.Parameters != nil {
-		info.OriginalParameters = make(map[string]string, len(rar.Spec.Parameters))
-		info.EffectiveParameters = make(map[string]string, len(rar.Spec.Parameters))
-		for name, value := range rar.Spec.Parameters {
-			info.OriginalParameters[name] = value
-			info.EffectiveParameters[name] = value
-		}
+		info.OriginalParameters = rar.Spec.Parameters.DeepCopy()
+		info.EffectiveParameters = rar.Spec.Parameters.DeepCopy()
 	}
-	if override != nil {
-		rationale := override.Rationale
-		info.OverrideRationale = &rationale
-		if override.Parameters != nil {
-			info.OverrideParameters = make(map[string]string, len(override.Parameters))
-			for name, value := range override.Parameters {
-				info.OverrideParameters[name] = value
-				if info.EffectiveParameters != nil {
-					info.EffectiveParameters[name] = value
-				}
-			}
-		}
-	}
+	info.ParameterEvidence = rar.Spec.ParameterEvidence
+	applyApprovalAuditOverride(info, override)
 	return info
+}
+
+func applyApprovalAuditOverride(info *ApprovalAuditContext, override *remediationv1.WorkflowOverride) {
+	if override == nil {
+		return
+	}
+	rationale := override.Rationale
+	info.OverrideRationale = &rationale
+	if override.Parameters != nil {
+		info.OverrideParameters = override.Parameters.DeepCopy()
+		mergeApprovalAuditParameters(info, override.Parameters)
+	}
+	if override.ParameterEvidence != "" {
+		info.ParameterEvidence = override.ParameterEvidence
+	}
+}
+
+func mergeApprovalAuditParameters(info *ApprovalAuditContext, parameters sharedtypes.TypedParameterMap) {
+	if info.EffectiveParameters == nil {
+		info.EffectiveParameters = make(sharedtypes.TypedParameterMap, len(parameters))
+	}
+	for name, value := range parameters {
+		info.EffectiveParameters[name] = value
+	}
 }
 
 func validateApproveArgs(args ApproveArgs) error {
@@ -918,16 +982,16 @@ func NewApproveTool(client crclient.Client, controllerNS string) (tool.Tool, err
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request. The decision field accepts exactly 'Approved' or 'Rejected'.",
-		InputSchema: approveInputSchema(),
+		InputSchema: ApproveInputSchema(),
 	}, func(ctx agent.Context, args ApproveArgs) (ApproveResult, error) {
 		args.Namespace = controllerNS
 		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
 }
 
-// approveInputSchema returns a JSON schema with an enum constraint on the
+// ApproveInputSchema returns a JSON schema with an enum constraint on the
 // decision field, so the LLM sees the valid values directly in the tool definition.
-func approveInputSchema() *jsonschema.Schema {
+func ApproveInputSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
@@ -948,8 +1012,16 @@ func approveInputSchema() *jsonschema.Schema {
 				Type:        "object",
 				Description: "Optional changes to existing workflow parameter values; workflow selection cannot be changed",
 				Properties: map[string]*jsonschema.Schema{
-					"parameters": {Type: "object", AdditionalProperties: &jsonschema.Schema{Type: "string"}},
-					"rationale":  {Type: "string"},
+					"parameters": {
+						Type: "object",
+						AdditionalProperties: &jsonschema.Schema{OneOf: []*jsonschema.Schema{
+							{Type: "string"},
+							{Type: "number"},
+							{Type: "boolean"},
+							{Type: "array", Items: &jsonschema.Schema{Types: []string{"string", "number", "boolean"}}},
+						}},
+					},
+					"rationale": {Type: "string"},
 				},
 			},
 		},

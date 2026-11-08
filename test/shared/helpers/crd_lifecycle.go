@@ -32,7 +32,6 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -173,12 +172,10 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 				Version:                "1.0.0",
 				ExecutionBundle:        "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 				ExecutionEngine:        "job",
-				DeclaredParameterNames: map[string]bool{},
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-			Confidence:      confidence,
-			Parameters:      map[string]string{},
-			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+			Confidence: confidence,
+			Parameters: sharedtypes.TypedParameterMap{},
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Root cause identified",

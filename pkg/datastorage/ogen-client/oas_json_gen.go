@@ -17355,6 +17355,12 @@ func (s *ApifrontendToolExecutedPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParameterEvidence.Set {
+			e.FieldStart("parameter_evidence")
+			s.ParameterEvidence.Encode(e)
+		}
+	}
+	{
 		if s.OriginalParameters.Set {
 			e.FieldStart("original_parameters")
 			s.OriginalParameters.Encode(e)
@@ -17380,7 +17386,7 @@ func (s *ApifrontendToolExecutedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApifrontendToolExecutedPayload = [16]string{
+var jsonFieldsNameOfApifrontendToolExecutedPayload = [17]string{
 	0:  "event_type",
 	1:  "session_id",
 	2:  "tool_name",
@@ -17393,10 +17399,11 @@ var jsonFieldsNameOfApifrontendToolExecutedPayload = [16]string{
 	9:  "workflow_id",
 	10: "approval_request",
 	11: "approval_decision",
-	12: "original_parameters",
-	13: "override_parameters",
-	14: "effective_parameters",
-	15: "override_rationale",
+	12: "parameter_evidence",
+	13: "original_parameters",
+	14: "override_parameters",
+	15: "effective_parameters",
+	16: "override_rationale",
 }
 
 // Decode decodes ApifrontendToolExecutedPayload from json.
@@ -17404,7 +17411,7 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode ApifrontendToolExecutedPayload to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -17534,6 +17541,16 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"approval_decision\"")
 			}
+		case "parameter_evidence":
+			if err := func() error {
+				s.ParameterEvidence.Reset()
+				if err := s.ParameterEvidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameter_evidence\"")
+			}
 		case "original_parameters":
 			if err := func() error {
 				s.OriginalParameters.Reset()
@@ -17583,8 +17600,9 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b00011111,
+		0b00000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -17643,7 +17661,7 @@ func (s ApifrontendToolExecutedPayloadEffectiveParameters) encodeFields(e *jx.En
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -17654,11 +17672,9 @@ func (s *ApifrontendToolExecutedPayloadEffectiveParameters) Decode(d *jx.Decoder
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -17737,7 +17753,7 @@ func (s ApifrontendToolExecutedPayloadOriginalParameters) encodeFields(e *jx.Enc
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -17748,11 +17764,9 @@ func (s *ApifrontendToolExecutedPayloadOriginalParameters) Decode(d *jx.Decoder)
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -17793,7 +17807,7 @@ func (s ApifrontendToolExecutedPayloadOverrideParameters) encodeFields(e *jx.Enc
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -17804,11 +17818,9 @@ func (s *ApifrontendToolExecutedPayloadOverrideParameters) Decode(d *jx.Decoder)
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -19848,6 +19860,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
+				}
+			}
+			{
 				if s.OriginalParameters.Set {
 					e.FieldStart("original_parameters")
 					s.OriginalParameters.Encode(e)
@@ -20505,6 +20523,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
+				}
+			}
+			{
 				if s.RetryCount.Set {
 					e.FieldStart("retry_count")
 					s.RetryCount.Encode(e)
@@ -20652,6 +20676,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowID.Set {
 					e.FieldStart("workflow_id")
 					s.WorkflowID.Encode(e)
+				}
+			}
+			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
 				}
 			}
 			{
@@ -23345,6 +23375,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
+				}
+			}
+			{
 				if s.OriginalParameters.Set {
 					e.FieldStart("original_parameters")
 					s.OriginalParameters.Encode(e)
@@ -26008,6 +26044,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
+				}
+			}
+			{
 				if s.OriginalParameters.Set {
 					e.FieldStart("original_parameters")
 					s.OriginalParameters.Encode(e)
@@ -26665,6 +26707,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
+				}
+			}
+			{
 				if s.RetryCount.Set {
 					e.FieldStart("retry_count")
 					s.RetryCount.Encode(e)
@@ -26812,6 +26860,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowID.Set {
 					e.FieldStart("workflow_id")
 					s.WorkflowID.Encode(e)
+				}
+			}
+			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
 				}
 			}
 			{
@@ -29502,6 +29556,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.ApprovalDecision.Set {
 					e.FieldStart("approval_decision")
 					s.ApprovalDecision.Encode(e)
+				}
+			}
+			{
+				if s.ParameterEvidence.Set {
+					e.FieldStart("parameter_evidence")
+					s.ParameterEvidence.Encode(e)
 				}
 			}
 			{
@@ -49824,6 +49884,12 @@ func (s *RemediationApprovalAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParameterEvidence.Set {
+			e.FieldStart("parameter_evidence")
+			s.ParameterEvidence.Encode(e)
+		}
+	}
+	{
 		if s.OriginalParameters.Set {
 			e.FieldStart("original_parameters")
 			s.OriginalParameters.Encode(e)
@@ -49867,7 +49933,7 @@ func (s *RemediationApprovalAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationApprovalAuditPayload = [14]string{
+var jsonFieldsNameOfRemediationApprovalAuditPayload = [15]string{
 	0:  "event_type",
 	1:  "request_name",
 	2:  "decision",
@@ -49875,13 +49941,14 @@ var jsonFieldsNameOfRemediationApprovalAuditPayload = [14]string{
 	4:  "decision_message",
 	5:  "ai_analysis_ref",
 	6:  "workflow_id",
-	7:  "original_parameters",
-	8:  "override_parameters",
-	9:  "effective_parameters",
-	10: "override_rationale",
-	11: "delegated_user",
-	12: "delegated_via",
-	13: "policy_hash",
+	7:  "parameter_evidence",
+	8:  "original_parameters",
+	9:  "override_parameters",
+	10: "effective_parameters",
+	11: "override_rationale",
+	12: "delegated_user",
+	13: "delegated_via",
+	14: "policy_hash",
 }
 
 // Decode decodes RemediationApprovalAuditPayload from json.
@@ -49971,6 +50038,16 @@ func (s *RemediationApprovalAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_id\"")
+			}
+		case "parameter_evidence":
+			if err := func() error {
+				s.ParameterEvidence.Reset()
+				if err := s.ParameterEvidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameter_evidence\"")
 			}
 		case "original_parameters":
 			if err := func() error {
@@ -50151,7 +50228,7 @@ func (s RemediationApprovalAuditPayloadEffectiveParameters) encodeFields(e *jx.E
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -50162,11 +50239,9 @@ func (s *RemediationApprovalAuditPayloadEffectiveParameters) Decode(d *jx.Decode
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -50245,7 +50320,7 @@ func (s RemediationApprovalAuditPayloadOriginalParameters) encodeFields(e *jx.En
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -50256,11 +50331,9 @@ func (s *RemediationApprovalAuditPayloadOriginalParameters) Decode(d *jx.Decoder
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -50301,7 +50374,7 @@ func (s RemediationApprovalAuditPayloadOverrideParameters) encodeFields(e *jx.En
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -50312,11 +50385,9 @@ func (s *RemediationApprovalAuditPayloadOverrideParameters) Decode(d *jx.Decoder
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -52629,6 +52700,12 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParameterEvidence.Set {
+			e.FieldStart("parameter_evidence")
+			s.ParameterEvidence.Encode(e)
+		}
+	}
+	{
 		if s.OriginalParameters.Set {
 			e.FieldStart("original_parameters")
 			s.OriginalParameters.Encode(e)
@@ -52828,7 +52905,7 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [44]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [45]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -52840,39 +52917,40 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [44]string{
 	8:  "from_phase",
 	9:  "to_phase",
 	10: "transition_reason",
-	11: "original_parameters",
-	12: "override_parameters",
-	13: "effective_parameters",
-	14: "override_rationale",
-	15: "rar_name",
-	16: "required_by",
-	17: "workflow_id",
-	18: "workflow_name",
-	19: "workflow_selection_confidence",
-	20: "confidence_str",
-	21: "decision",
-	22: "approved_by",
-	23: "rejected_by",
-	24: "rejection_reason",
-	25: "message",
-	26: "reason",
-	27: "sub_reason",
-	28: "notification_name",
-	29: "timeout_config",
-	30: "pre_remediation_spec_hash",
-	31: "target_resource",
-	32: "workflow_version",
-	33: "action_type",
-	34: "signal_type",
-	35: "signal_fingerprint",
-	36: "crd_outcome",
-	37: "ea_name",
-	38: "hash_compute_delay",
-	39: "alert_check_delay",
-	40: "gitops_sync_delay",
-	41: "operator_reconcile_delay",
-	42: "is_gitops_managed",
-	43: "is_crd",
+	11: "parameter_evidence",
+	12: "original_parameters",
+	13: "override_parameters",
+	14: "effective_parameters",
+	15: "override_rationale",
+	16: "rar_name",
+	17: "required_by",
+	18: "workflow_id",
+	19: "workflow_name",
+	20: "workflow_selection_confidence",
+	21: "confidence_str",
+	22: "decision",
+	23: "approved_by",
+	24: "rejected_by",
+	25: "rejection_reason",
+	26: "message",
+	27: "reason",
+	28: "sub_reason",
+	29: "notification_name",
+	30: "timeout_config",
+	31: "pre_remediation_spec_hash",
+	32: "target_resource",
+	33: "workflow_version",
+	34: "action_type",
+	35: "signal_type",
+	36: "signal_fingerprint",
+	37: "crd_outcome",
+	38: "ea_name",
+	39: "hash_compute_delay",
+	40: "alert_check_delay",
+	41: "gitops_sync_delay",
+	42: "operator_reconcile_delay",
+	43: "is_gitops_managed",
+	44: "is_crd",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -52997,6 +53075,16 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"transition_reason\"")
+			}
+		case "parameter_evidence":
+			if err := func() error {
+				s.ParameterEvidence.Reset()
+				if err := s.ParameterEvidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameter_evidence\"")
 			}
 		case "original_parameters":
 			if err := func() error {
@@ -53443,7 +53531,7 @@ func (s RemediationOrchestratorAuditPayloadEffectiveParameters) encodeFields(e *
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -53454,11 +53542,9 @@ func (s *RemediationOrchestratorAuditPayloadEffectiveParameters) Decode(d *jx.De
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -53655,7 +53741,7 @@ func (s RemediationOrchestratorAuditPayloadOriginalParameters) encodeFields(e *j
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -53666,11 +53752,9 @@ func (s *RemediationOrchestratorAuditPayloadOriginalParameters) Decode(d *jx.Dec
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -53753,7 +53837,7 @@ func (s RemediationOrchestratorAuditPayloadOverrideParameters) encodeFields(e *j
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -53764,11 +53848,9 @@ func (s *RemediationOrchestratorAuditPayloadOverrideParameters) Decode(d *jx.Dec
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -61659,6 +61741,12 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParameterEvidence.Set {
+			e.FieldStart("parameter_evidence")
+			s.ParameterEvidence.Encode(e)
+		}
+	}
+	{
 		if s.RetryCount.Set {
 			e.FieldStart("retry_count")
 			s.RetryCount.Encode(e)
@@ -61666,7 +61754,7 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowExecutionAuditPayload = [24]string{
+var jsonFieldsNameOfWorkflowExecutionAuditPayload = [25]string{
 	0:  "event_type",
 	1:  "workflow_id",
 	2:  "workflow_version",
@@ -61690,7 +61778,8 @@ var jsonFieldsNameOfWorkflowExecutionAuditPayload = [24]string{
 	20: "error_details",
 	21: "pipelinerun_name",
 	22: "parameters",
-	23: "retry_count",
+	23: "parameter_evidence",
+	24: "retry_count",
 }
 
 // Decode decodes WorkflowExecutionAuditPayload from json.
@@ -61698,7 +61787,7 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkflowExecutionAuditPayload to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -61942,6 +62031,16 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"parameters\"")
 			}
+		case "parameter_evidence":
+			if err := func() error {
+				s.ParameterEvidence.Reset()
+				if err := s.ParameterEvidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameter_evidence\"")
+			}
 		case "retry_count":
 			if err := func() error {
 				s.RetryCount.Reset()
@@ -61961,9 +62060,10 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b11100111,
 		0b00000001,
+		0b00000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -62124,7 +62224,7 @@ func (s WorkflowExecutionAuditPayloadParameters) encodeFields(e *jx.Encoder) {
 	for k, elem := range s {
 		e.FieldStart(k)
 
-		e.Str(elem)
+		elem.Encode(e)
 	}
 }
 
@@ -62135,11 +62235,9 @@ func (s *WorkflowExecutionAuditPayloadParameters) Decode(d *jx.Decoder) error {
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
+		var elem WorkflowParameterValue
 		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
+			if err := elem.Decode(d); err != nil {
 				return err
 			}
 			return nil
@@ -62829,6 +62927,1054 @@ func (s WorkflowExecutionWebhookAuditPayloadPreviousState) MarshalJSON() ([]byte
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowExecutionWebhookAuditPayloadPreviousState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowParameterArray) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowParameterArray) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		e.FieldStart("arrayValue")
+		e.ArrStart()
+		for _, elem := range s.ArrayValue {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfWorkflowParameterArray = [2]string{
+	0: "kind",
+	1: "arrayValue",
+}
+
+// Decode decodes WorkflowParameterArray from json.
+func (s *WorkflowParameterArray) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterArray to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "arrayValue":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				s.ArrayValue = make([]WorkflowParameterPrimitive, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem WorkflowParameterPrimitive
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.ArrayValue = append(s.ArrayValue, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"arrayValue\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowParameterArray")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowParameterArray) {
+					name = jsonFieldsNameOfWorkflowParameterArray[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowParameterArray) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterArray) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterArrayKind as json.
+func (s WorkflowParameterArrayKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowParameterArrayKind from json.
+func (s *WorkflowParameterArrayKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterArrayKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowParameterArrayKind(v) {
+	case WorkflowParameterArrayKindArray:
+		*s = WorkflowParameterArrayKindArray
+	default:
+		*s = WorkflowParameterArrayKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterArrayKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterArrayKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowParameterBoolean) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowParameterBoolean) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		e.FieldStart("booleanValue")
+		e.Bool(s.BooleanValue)
+	}
+}
+
+var jsonFieldsNameOfWorkflowParameterBoolean = [2]string{
+	0: "kind",
+	1: "booleanValue",
+}
+
+// Decode decodes WorkflowParameterBoolean from json.
+func (s *WorkflowParameterBoolean) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterBoolean to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "booleanValue":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Bool()
+				s.BooleanValue = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"booleanValue\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowParameterBoolean")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowParameterBoolean) {
+					name = jsonFieldsNameOfWorkflowParameterBoolean[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowParameterBoolean) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterBoolean) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterBooleanKind as json.
+func (s WorkflowParameterBooleanKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowParameterBooleanKind from json.
+func (s *WorkflowParameterBooleanKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterBooleanKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowParameterBooleanKind(v) {
+	case WorkflowParameterBooleanKindBoolean:
+		*s = WorkflowParameterBooleanKindBoolean
+	default:
+		*s = WorkflowParameterBooleanKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterBooleanKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterBooleanKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowParameterFloat) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowParameterFloat) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		e.FieldStart("floatValue")
+		e.Float64(s.FloatValue)
+	}
+}
+
+var jsonFieldsNameOfWorkflowParameterFloat = [2]string{
+	0: "kind",
+	1: "floatValue",
+}
+
+// Decode decodes WorkflowParameterFloat from json.
+func (s *WorkflowParameterFloat) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterFloat to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "floatValue":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Float64()
+				s.FloatValue = float64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"floatValue\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowParameterFloat")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowParameterFloat) {
+					name = jsonFieldsNameOfWorkflowParameterFloat[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowParameterFloat) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterFloat) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterFloatKind as json.
+func (s WorkflowParameterFloatKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowParameterFloatKind from json.
+func (s *WorkflowParameterFloatKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterFloatKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowParameterFloatKind(v) {
+	case WorkflowParameterFloatKindFloat:
+		*s = WorkflowParameterFloatKindFloat
+	default:
+		*s = WorkflowParameterFloatKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterFloatKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterFloatKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowParameterInteger) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowParameterInteger) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		e.FieldStart("integerValue")
+		e.Int64(s.IntegerValue)
+	}
+}
+
+var jsonFieldsNameOfWorkflowParameterInteger = [2]string{
+	0: "kind",
+	1: "integerValue",
+}
+
+// Decode decodes WorkflowParameterInteger from json.
+func (s *WorkflowParameterInteger) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterInteger to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "integerValue":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int64()
+				s.IntegerValue = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"integerValue\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowParameterInteger")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowParameterInteger) {
+					name = jsonFieldsNameOfWorkflowParameterInteger[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowParameterInteger) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterInteger) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterIntegerKind as json.
+func (s WorkflowParameterIntegerKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowParameterIntegerKind from json.
+func (s *WorkflowParameterIntegerKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterIntegerKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowParameterIntegerKind(v) {
+	case WorkflowParameterIntegerKindInteger:
+		*s = WorkflowParameterIntegerKindInteger
+	default:
+		*s = WorkflowParameterIntegerKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterIntegerKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterIntegerKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterPrimitive as json.
+func (s WorkflowParameterPrimitive) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+func (s WorkflowParameterPrimitive) encodeFields(e *jx.Encoder) {
+	switch s.Type {
+	case WorkflowParameterStringWorkflowParameterPrimitive:
+		e.FieldStart("kind")
+		e.Str("string")
+		{
+			s := s.WorkflowParameterString
+			{
+				e.FieldStart("stringValue")
+				e.Str(s.StringValue)
+			}
+		}
+	case WorkflowParameterIntegerWorkflowParameterPrimitive:
+		e.FieldStart("kind")
+		e.Str("integer")
+		{
+			s := s.WorkflowParameterInteger
+			{
+				e.FieldStart("integerValue")
+				e.Int64(s.IntegerValue)
+			}
+		}
+	case WorkflowParameterFloatWorkflowParameterPrimitive:
+		e.FieldStart("kind")
+		e.Str("float")
+		{
+			s := s.WorkflowParameterFloat
+			{
+				e.FieldStart("floatValue")
+				e.Float64(s.FloatValue)
+			}
+		}
+	case WorkflowParameterBooleanWorkflowParameterPrimitive:
+		e.FieldStart("kind")
+		e.Str("boolean")
+		{
+			s := s.WorkflowParameterBoolean
+			{
+				e.FieldStart("booleanValue")
+				e.Bool(s.BooleanValue)
+			}
+		}
+	}
+}
+
+// Decode decodes WorkflowParameterPrimitive from json.
+func (s *WorkflowParameterPrimitive) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterPrimitive to nil")
+	}
+	// Sum type discriminator.
+	if typ := d.Next(); typ != jx.Object {
+		return errors.Errorf("unexpected json type %q", typ)
+	}
+
+	var found bool
+	if err := d.Capture(func(d *jx.Decoder) error {
+		return d.ObjBytes(func(d *jx.Decoder, key []byte) error {
+			if found {
+				return d.Skip()
+			}
+			switch string(key) {
+			case "kind":
+				typ, err := d.Str()
+				if err != nil {
+					return err
+				}
+				switch typ {
+				case "string":
+					s.Type = WorkflowParameterStringWorkflowParameterPrimitive
+					found = true
+				case "integer":
+					s.Type = WorkflowParameterIntegerWorkflowParameterPrimitive
+					found = true
+				case "float":
+					s.Type = WorkflowParameterFloatWorkflowParameterPrimitive
+					found = true
+				case "boolean":
+					s.Type = WorkflowParameterBooleanWorkflowParameterPrimitive
+					found = true
+				default:
+					return errors.Errorf("unknown type %s", typ)
+				}
+				return nil
+			}
+			return d.Skip()
+		})
+	}); err != nil {
+		return errors.Wrap(err, "capture")
+	}
+	if !found {
+		return errors.New("unable to detect sum type variant")
+	}
+	switch s.Type {
+	case WorkflowParameterStringWorkflowParameterPrimitive:
+		if err := s.WorkflowParameterString.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterIntegerWorkflowParameterPrimitive:
+		if err := s.WorkflowParameterInteger.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterFloatWorkflowParameterPrimitive:
+		if err := s.WorkflowParameterFloat.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterBooleanWorkflowParameterPrimitive:
+		if err := s.WorkflowParameterBoolean.Decode(d); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("inferred invalid type: %s", s.Type)
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterPrimitive) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterPrimitive) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowParameterString) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowParameterString) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		e.FieldStart("stringValue")
+		e.Str(s.StringValue)
+	}
+}
+
+var jsonFieldsNameOfWorkflowParameterString = [2]string{
+	0: "kind",
+	1: "stringValue",
+}
+
+// Decode decodes WorkflowParameterString from json.
+func (s *WorkflowParameterString) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterString to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "stringValue":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.StringValue = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"stringValue\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowParameterString")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowParameterString) {
+					name = jsonFieldsNameOfWorkflowParameterString[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowParameterString) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterString) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterStringKind as json.
+func (s WorkflowParameterStringKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowParameterStringKind from json.
+func (s *WorkflowParameterStringKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterStringKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowParameterStringKind(v) {
+	case WorkflowParameterStringKindString:
+		*s = WorkflowParameterStringKindString
+	default:
+		*s = WorkflowParameterStringKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterStringKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterStringKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowParameterValue as json.
+func (s WorkflowParameterValue) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+func (s WorkflowParameterValue) encodeFields(e *jx.Encoder) {
+	switch s.Type {
+	case WorkflowParameterStringWorkflowParameterValue:
+		e.FieldStart("kind")
+		e.Str("string")
+		{
+			s := s.WorkflowParameterString
+			{
+				e.FieldStart("stringValue")
+				e.Str(s.StringValue)
+			}
+		}
+	case WorkflowParameterIntegerWorkflowParameterValue:
+		e.FieldStart("kind")
+		e.Str("integer")
+		{
+			s := s.WorkflowParameterInteger
+			{
+				e.FieldStart("integerValue")
+				e.Int64(s.IntegerValue)
+			}
+		}
+	case WorkflowParameterFloatWorkflowParameterValue:
+		e.FieldStart("kind")
+		e.Str("float")
+		{
+			s := s.WorkflowParameterFloat
+			{
+				e.FieldStart("floatValue")
+				e.Float64(s.FloatValue)
+			}
+		}
+	case WorkflowParameterBooleanWorkflowParameterValue:
+		e.FieldStart("kind")
+		e.Str("boolean")
+		{
+			s := s.WorkflowParameterBoolean
+			{
+				e.FieldStart("booleanValue")
+				e.Bool(s.BooleanValue)
+			}
+		}
+	case WorkflowParameterArrayWorkflowParameterValue:
+		e.FieldStart("kind")
+		e.Str("array")
+		{
+			s := s.WorkflowParameterArray
+			{
+				e.FieldStart("arrayValue")
+				e.ArrStart()
+				for _, elem := range s.ArrayValue {
+					elem.Encode(e)
+				}
+				e.ArrEnd()
+			}
+		}
+	}
+}
+
+// Decode decodes WorkflowParameterValue from json.
+func (s *WorkflowParameterValue) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowParameterValue to nil")
+	}
+	// Sum type discriminator.
+	if typ := d.Next(); typ != jx.Object {
+		return errors.Errorf("unexpected json type %q", typ)
+	}
+
+	var found bool
+	if err := d.Capture(func(d *jx.Decoder) error {
+		return d.ObjBytes(func(d *jx.Decoder, key []byte) error {
+			if found {
+				return d.Skip()
+			}
+			switch string(key) {
+			case "kind":
+				typ, err := d.Str()
+				if err != nil {
+					return err
+				}
+				switch typ {
+				case "string":
+					s.Type = WorkflowParameterStringWorkflowParameterValue
+					found = true
+				case "integer":
+					s.Type = WorkflowParameterIntegerWorkflowParameterValue
+					found = true
+				case "float":
+					s.Type = WorkflowParameterFloatWorkflowParameterValue
+					found = true
+				case "boolean":
+					s.Type = WorkflowParameterBooleanWorkflowParameterValue
+					found = true
+				case "array":
+					s.Type = WorkflowParameterArrayWorkflowParameterValue
+					found = true
+				default:
+					return errors.Errorf("unknown type %s", typ)
+				}
+				return nil
+			}
+			return d.Skip()
+		})
+	}); err != nil {
+		return errors.Wrap(err, "capture")
+	}
+	if !found {
+		return errors.New("unable to detect sum type variant")
+	}
+	switch s.Type {
+	case WorkflowParameterStringWorkflowParameterValue:
+		if err := s.WorkflowParameterString.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterIntegerWorkflowParameterValue:
+		if err := s.WorkflowParameterInteger.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterFloatWorkflowParameterValue:
+		if err := s.WorkflowParameterFloat.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterBooleanWorkflowParameterValue:
+		if err := s.WorkflowParameterBoolean.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowParameterArrayWorkflowParameterValue:
+		if err := s.WorkflowParameterArray.Decode(d); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("inferred invalid type: %s", s.Type)
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowParameterValue) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowParameterValue) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

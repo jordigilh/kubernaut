@@ -213,7 +213,7 @@ func selectedHistoryRO2496(rr *remediationv1.RemediationRequest, confidence floa
 			ExecutionEngine: "job", ExecutionBundle: "ghcr.io/kubernaut/restart:1.0.0", ExecutionClusterID: "execution-" + rr.Name,
 		},
 		Confidence: confidence, WorkflowSelectionConfidence: &confidence, Rationale: "Current event and prior assessment considered",
-		Parameters:                  map[string]string{"TARGET_NAMESPACE": rr.Spec.TargetResource.Namespace, "PRIVATE": "private-ro-2496"},
+		Parameters:                  typedStringParameters(map[string]string{"TARGET_NAMESPACE": rr.Spec.TargetResource.Namespace, "PRIVATE": "private-ro-2496"}),
 		RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "Current memory observation", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Restart workload"},
 		RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted",
 		HandoffDigest: "sha256:" + strings.Repeat("a", 64), PriorRemediationUIDs: []string{"trusted-prior-2496"},

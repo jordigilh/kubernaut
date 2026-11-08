@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	authwebhookpkg "github.com/jordigilh/kubernaut/pkg/authwebhook"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
@@ -82,8 +81,8 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
 				},
-				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{}},
-				Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				Workflow:      &sharedtypes.WorkflowSnapshot{WorkflowID: "restart-pod-v1"},
+				Parameters:    typedStringParameters(map[string]string{}),
 				TargetContext: &remediationv1.ApprovalTargetContext{},
 				RequiredBy:    metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes
 			},

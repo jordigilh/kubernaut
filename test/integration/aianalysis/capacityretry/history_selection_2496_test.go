@@ -69,7 +69,7 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		Expect(kube.Delete(ctx, ns)).To(Succeed())
 	})
 
-	It("IT-AA-2570-027: BR-ORCH-025 persists exact parameters and schema from AgentSession through AA", func() {
+	It("IT-AA-2570-027: BR-ORCH-025 persists exact typed parameters without a schema copy", func() {
 		analysis := newCapacityRetryAnalysis(ns.Name, "selection-precision", 0, 5*time.Second)
 		result := historySelectionResult2496(0.92)
 		result.Parameters = map[string]interface{}{"P": json.Number("9007199254740993")}
@@ -83,10 +83,15 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		Expect(kube.Get(ctx, client.ObjectKeyFromObject(analysis), persisted)).To(Succeed())
 		selected := persisted.Status.GetRCAResult().SelectedWorkflow
 		Expect(selected).NotTo(BeNil())
-		Expect(selected.Parameters).To(HaveKeyWithValue("P", "9007199254740993"))
-		Expect(selected.ParameterSchema).To(HaveLen(1))
-		Expect(selected.ParameterSchema[0].Name).To(Equal("P"))
-		Expect(*selected.ParameterSchema[0].Minimum).To(Equal(float64(1)))
+		Expect(selected.Parameters).To(HaveKey("P"))
+		Expect(selected.Parameters["P"].Kind).To(Equal("integer"))
+		Expect(*selected.Parameters["P"].IntegerValue).To(Equal(int64(9007199254740993)))
+		encoded, err := json.Marshal(selected)
+		Expect(err).NotTo(HaveOccurred())
+		var stored map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &stored)).To(Succeed())
+		Expect(stored).NotTo(HaveKey("parameterSchema"))
+		Expect(stored).NotTo(HaveKey("declaredParameterNames"))
 	})
 
 	DescribeTable("IT-AA-2496-001: KA mapping survives admitted AgentSession -> real AA reconciliation",
