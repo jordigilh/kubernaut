@@ -10,7 +10,9 @@ package auditconfidence
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,8 +71,12 @@ var _ = Describe("BR-AUDIT-005 confidence audit", func() {
 			return port
 		}
 		postgresPort, redisPort := freePort(), freePort()
-		postgresContainer := fmt.Sprintf("audit-confidence-postgres-%d", os.Getpid())
-		redisContainer := fmt.Sprintf("audit-confidence-redis-%d", os.Getpid())
+		suffixBytes := make([]byte, 8)
+		_, err := rand.Read(suffixBytes)
+		Expect(err).NotTo(HaveOccurred())
+		suffix := hex.EncodeToString(suffixBytes)
+		postgresContainer := fmt.Sprintf("audit-confidence-postgres-%s", suffix)
+		redisContainer := fmt.Sprintf("audit-confidence-redis-%s", suffix)
 		removeContainer := func(name string) {
 			if cleanupErr := exec.Command("podman", "rm", "-f", name).Run(); cleanupErr != nil {
 				GinkgoWriter.Printf("cleanup of %s returned %v\n", name, cleanupErr)
