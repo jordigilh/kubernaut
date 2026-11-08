@@ -107,7 +107,7 @@ func mergeParameterChanges(original, changes sharedtypes.TypedParameterMap) (sha
 }
 
 func buildValidationSchemaFromWorkflow(workflow *remediationworkflowv1.RemediationWorkflow, effective sharedtypes.TypedParameterMap) []models.WorkflowParameter {
-	schema := make([]models.WorkflowParameter, 0, len(workflow.Spec.Parameters)+len(effective))
+	schema := make([]models.WorkflowParameter, 0, len(workflow.Spec.Parameters))
 	for _, parameter := range workflow.Spec.Parameters {
 		schema = append(schema, models.WorkflowParameter{
 			Name:        parameter.Name,
