@@ -191,11 +191,11 @@ var _ = Describe("FullPipeline event exporter resilience", func() {
 
 var _ = Describe("kube-mcp-server E2E configuration", func() {
 	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
-		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:c289505b06079d7f265a6fef977ce1abbfbbb4271772db17db5b58edbf44c255"))
 	})
 
 	It("UT-INFRA-FLEET-032: gives preloaded MCP images a deterministic local tag", func() {
-		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-c289505b06079d7f265a6fef977ce1abbfbbb4271772db17db5b58edbf44c255"))
 	})
 
 	It("UT-INFRA-FLEET-033: uses the preloaded reference only when supplied", func() {

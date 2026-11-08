@@ -87,13 +87,13 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure due to accumulated container logs",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Turn 2: gate retry — LLM re-confirms the same target but the tool
 				// call arguments omit confidence entirely (the observed #2119 failure mode).
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed: Node itself is the correct target, log accumulation is host-level",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"},
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"},
 					"due_diligence":{"target_accuracy":"host-level log rotation misconfiguration confirmed via kubectl describe node"}
 				}`}},
 				// Phase 3 (workflow selection) also omits confidence here -- a
@@ -134,14 +134,14 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Gate retry: LLM re-evaluates and returns a deliberately lower,
 				// genuinely-recomputed confidence for the same target.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Re-confirmed Node as target, but evidence is less conclusive than initially assessed",
 					"confidence":0.55,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 			}
@@ -168,12 +168,12 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Gate retry also omits confidence.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed Node as target",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 			}
@@ -201,12 +201,12 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed Node as target",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs","confidence":0.9}`),
 			}

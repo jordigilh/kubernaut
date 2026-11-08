@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -50,6 +51,24 @@ func newITAmbiguousMapper() *meta.DefaultRESTMapper {
 	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
 	mapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
 	return mapper
+}
+
+func newITTargetScopedDiscoveryRegistry() *registry.Registry {
+	reg := registry.New()
+	reg.Register(&fakeTool{
+		name: "api_resources_list",
+		result: `{"resources":[` +
+			`{"apiVersion":"apps/v1","kind":"Deployment"},` +
+			`{"apiVersion":"v1","kind":"Pod"},` +
+			`{"apiVersion":"operators.coreos.com/v1alpha1","kind":"Subscription"},` +
+			`{"apiVersion":"messaging.knative.dev/v1","kind":"Subscription"}` +
+			`]}`,
+	})
+	reg.Register(&fakeTool{
+		name:   "resources_list",
+		result: `{"apiVersion":"apps/v1","kind":"DeploymentList","items":[]}`,
+	})
+	return reg
 }
 
 var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investigate() Pipeline", func() {
@@ -110,6 +129,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-operator"})}},
 			})
 
@@ -152,6 +172,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)
@@ -180,7 +201,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment api-server needs more replicas",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}
+					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}
 				}`}},
 				wfToolResp(`{"workflow_id":"scale-up","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
@@ -189,6 +210,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"scale-up"})}},
 			})
 
@@ -245,6 +267,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-sub"})}},
 			})
 
@@ -291,6 +314,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)

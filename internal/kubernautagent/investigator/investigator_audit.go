@@ -383,11 +383,21 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	applyCollectionFields(m, r)
 
 	if r.RemediationTarget.Kind != "" {
-		m["remediation_target"] = map[string]interface{}{
-			"kind":      r.RemediationTarget.Kind,
-			"name":      r.RemediationTarget.Name,
-			"namespace": r.RemediationTarget.Namespace,
+		target := map[string]interface{}{
+			"kind":                  r.RemediationTarget.Kind,
+			"name":                  r.RemediationTarget.Name,
+			"namespace":             r.RemediationTarget.Namespace,
+			"api_version":           r.RemediationTarget.APIVersion,
+			"api_version_validated": r.RemediationTarget.APIVersionValidated,
 		}
+		if r.APIVersionValidation != nil {
+			target["api_version_validation"] = map[string]interface{}{
+				"cluster_id":  r.APIVersionValidation.ClusterID,
+				"api_version": r.APIVersionValidation.APIVersion,
+				"source":      r.APIVersionValidation.Source,
+			}
+		}
+		m["remediation_target"] = target
 	}
 	if len(r.AlternativeWorkflows) > 0 {
 		m["alternative_workflows"] = alternativeWorkflowsToAuditJSON(r.AlternativeWorkflows)

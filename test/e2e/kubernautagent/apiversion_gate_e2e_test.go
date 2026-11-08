@@ -66,11 +66,11 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage client")
 		})
 
-		It("E2E-KA-1044-001: Pod signal with RCA targeting ambiguous TestWidget triggers human review", func() {
+		It("E2E-KA-2609-002 / E2E-KA-1044-001: target-scoped ambiguous GVK fails closed", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-KA-1044-001
+			// Scenario IDs: E2E-KA-2609-002, E2E-KA-1044-001
 			// Business Outcome: When the LLM targets an ambiguous Kind (TestWidget)
 			//   without api_version and exhausts retries, the gate escalates to
 			//   human review, preventing incorrect RBAC grants.

@@ -293,6 +293,7 @@ var _ = Describe("IT-KA-1578-002: Phase 1 reasoning survives Phase 3 workflow-re
 			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
 			Enricher: enricher, AuditStore: store, Logger: logger,
 			MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			Registry: newGateDiscoveryRegistry(),
 		})
 
 		reasoningText := "Sustained memory climb over 6h rules out a transient spike."
@@ -300,7 +301,7 @@ var _ = Describe("IT-KA-1578-002: Phase 1 reasoning survives Phase 3 workflow-re
 			RCASummary: "OOM due to memory leak",
 			Reasoning:  &katypes.ReasoningSummary{Text: reasoningText},
 			RemediationTarget: katypes.RemediationTarget{
-				Kind: "Pod", Name: "web-pod", Namespace: "default",
+				Kind: "Pod", Name: "web-pod", Namespace: "default", APIVersion: "v1",
 			},
 		}
 		signal := katypes.SignalContext{Name: "sig", Namespace: "default", ResourceKind: "Pod", ResourceName: "web-pod"}

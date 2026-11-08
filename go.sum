@@ -121,6 +121,8 @@ github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/containers/kubernetes-mcp-server v0.1.1 h1:p+iUc/myT2BWU3YcmJ2GvSKs6GRzzwmcpioNL5y9LkY=
 github.com/containers/kubernetes-mcp-server v0.1.1/go.mod h1:WwkFAoSvVyw8OZJopRYGeJurem8EroWdkPLDX062UIM=
+github.com/containers/kubernetes-mcp-server v0.1.2 h1:bcV6icaPJ/AlZM4YvFnOAaeeizNNjra8yKqrqbgDayk=
+github.com/containers/kubernetes-mcp-server v0.1.2/go.mod h1:SZGUJOcRx6kHzyzryta3mweUlNsPtx0Lk/UbPwX0Nt8=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -209,8 +211,12 @@ github.com/go-logr/zapr v1.3.0 h1:XGdV8XW8zdwFiwOA2Dryh1gj2KRQyOOoNmBy4EplIcQ=
 github.com/go-logr/zapr v1.3.0/go.mod h1:YKepepNBd1u/oyhd/yQmtjVXmm9uML4IXUgMOwR8/Gg=
 github.com/go-openapi/jsonpointer v1.0.1 h1:2KxywRmNwJkT/FMBa3iRNHEaAxSJvjqoufQZy3au1Mg=
 github.com/go-openapi/jsonpointer v1.0.1/go.mod h1:wI7ZYsFmbIi9nBXOZqgDaS/bqOchRGZjqxFli7FBYxY=
+github.com/go-openapi/jsonpointer v1.0.2 h1:NbW7xT2b+l7x+JefiPGDsZWsrLk1ogrz4AHK1TTzMt8=
+github.com/go-openapi/jsonpointer v1.0.2/go.mod h1:N0rI4MbNKD7xAFTiHtB+5Nhrg2j/wwYg7m7Fmb4/jk8=
 github.com/go-openapi/jsonreference v1.0.2 h1:oS4et8FOf3p3UQxEo4Xt0esijmBUM+F259Xl72OSZsc=
 github.com/go-openapi/jsonreference v1.0.2/go.mod h1:TbUNSOo+fcorZjFaNoiSDSoaNnnZtqJtLGR1PuvE/Cs=
+github.com/go-openapi/jsonreference v1.0.3 h1:5rDbq+JsjCv6/nUDDJt83nLZoADI4w03uvHXer+4aYQ=
+github.com/go-openapi/jsonreference v1.0.3/go.mod h1:OJSlMXHysgH272D9z2tiy2MGe5A9vQLHaCPb6KbYdE4=
 github.com/go-openapi/swag v0.29.2 h1:9n8frkcsuQRA0INU31VbxNxt1zBaHxrHYGEf5BUjFi4=
 github.com/go-openapi/swag v0.29.2/go.mod h1:RkCiX1gCVXWgLOavDXE3ALJrQ/VO2ziiIzOUs3z10xo=
 github.com/go-openapi/swag/cmdutils v0.29.2 h1:cXEzX/nWCODon251f+1HgL75/R4XXML5IZxgLCWMoro=
@@ -241,6 +247,7 @@ github.com/go-openapi/testify/enable/yaml/v2 v2.7.0 h1:wPW6YRgx3+SID1yUy/Xwa17L8
 github.com/go-openapi/testify/enable/yaml/v2 v2.7.0/go.mod h1:mI1M88etYbc3PhgHsWQK2kwvNwW5aGFqMPbmib+SGIs=
 github.com/go-openapi/testify/v2 v2.7.0 h1:bycOreEj6wfBvijg3YFogZ/sFjTCDmQnwSodSzHa3X8=
 github.com/go-openapi/testify/v2 v2.7.0/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
+github.com/go-openapi/testify/v2 v2.8.0 h1:19QDx5b57p8KjO2E4sgs/woL4Akp+FGLRlVm2xn0Rho=
 github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
 github.com/go-playground/assert/v2 v2.2.0/go.mod h1:VDjEfimB/XKnb+ZQfWdccd7VUvScMdVu0Titje2rxJ4=
 github.com/go-playground/locales v0.14.2 h1:d8UmcrM6Nip0hfGZKLGpAvZH37XB4TS0xzK9B56YNCY=
@@ -437,6 +444,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
+github.com/pandatix/go-abnf v0.5.3 h1:LA9AaxAqwzdxfDe7+HIGUB6tzx2N6wYVEAChmfsoPgo=
+github.com/pandatix/go-abnf v0.5.3/go.mod h1:AE0KD3/VNoCjGzc1gqetRKshbI4SYErXQ/8kPenR5mc=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=
 github.com/pb33f/ordered-map/v2 v2.3.1/go.mod h1:qxFQgd0PkVUtOMCkTapqotNgzRhMPL7VvaHKbd1HnmQ=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=
@@ -461,6 +470,8 @@ github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPT
 github.com/prometheus/client_model v0.6.3/go.mod h1:gpN5P9S7Rr6Yr92PiQ+Ixvhf6JZEkF1dnxsYL2aPBEM=
 github.com/prometheus/common v0.72.1 h1:ZAiQed/nk8IIcsdzb2TlJu23NEUDyDLQ9TXTN2WRK6Y=
 github.com/prometheus/common v0.72.1/go.mod h1:1IoBY4IRaJnhs2ESjNzjilP1cJ/P8pimGoomq7zRXrA=
+github.com/prometheus/common v0.73.1 h1:SZWh/j4AvhCdhX8jvYSnxvPxhWlC9QZkjJ+tOrEr7kU=
+github.com/prometheus/common v0.73.1/go.mod h1:I9aA/Ukz9s1olOobh8KtCkU7B1mQPQsB9UvQPsUQ1Dk=
 github.com/prometheus/otlptranslator v1.0.0 h1:s0LJW/iN9dkIH+EnhiD3BlkkP5QVIUVEoIwkU+A6qos=
 github.com/prometheus/otlptranslator v1.0.0/go.mod h1:vRYWnXvI6aWGpsdY/mOT/cbeVRBlPWtBNDb7kGR3uKM=
 github.com/prometheus/procfs v0.22.0 h1:6q9+/JL9IKAPbCmBrv9n5O5Ty3NKnciV5X7YGw0oics=

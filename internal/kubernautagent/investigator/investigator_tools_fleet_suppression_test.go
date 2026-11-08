@@ -44,6 +44,8 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 		reg.Register(&fleetOverlayFakeTool{name: "kubectl_logs"})
 		reg.Register(&fleetOverlayFakeTool{name: "kubectl_top_pods"})
 		reg.Register(&fleetOverlayFakeTool{name: "get_namespaced_resource_context"})
+		reg.Register(&fleetOverlayFakeTool{name: "api_resources_list"})
+		reg.Register(&fleetOverlayFakeTool{name: "resources_list"})
 		return New(Config{
 			Logger:     logr.Discard(),
 			PhaseTools: DefaultPhaseToolMap(),
@@ -104,6 +106,19 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 					"fleet overlay itself supplies a same-named override -- suppression must never hide "+
 					"a name the overlay explicitly re-exposes")
 		})
+	})
+
+	It("UT-KA-FLEET-036: correction schemas do not fall back to hub discovery when the target overlay omits it", func() {
+		ctx := WithFleetOverlay(context.Background(), map[string]tools.Tool{
+			"resources_list": &fleetOverlayFakeTool{name: "resources_list"},
+		})
+
+		defs := inv.targetScopedCorrectionTools(ctx)
+		names := toolNames(defs)
+		Expect(names).To(ContainElement("resources_list"))
+		Expect(names).NotTo(ContainElement("api_resources_list"),
+			"UT-KA-FLEET-036: an absent target-overlay tool must not be replaced by the hub-local registry tool")
+		Expect(names).To(ContainElement(SubmitResultToolName))
 	})
 
 	Describe("UT-KA-FLEET-030 [zero regression]: hub-local investigations are unaffected by the suppression set", func() {

@@ -82,12 +82,18 @@ type InvestigationResult struct {
 	EvidenceStatus *EvidenceStatus `json:"evidence_status,omitempty"`
 
 	// Core RCA output
-	RCASummary        string                 `json:"rca_summary"`
-	Severity          string                 `json:"severity,omitempty"`
-	WorkflowID        string                 `json:"workflow_id,omitempty"`
-	RemediationTarget RemediationTarget      `json:"remediation_target,omitempty"`
-	Parameters        map[string]interface{} `json:"parameters,omitempty"`
-	Confidence        float64                `json:"confidence"`
+	RCASummary        string            `json:"rca_summary"`
+	Severity          string            `json:"severity,omitempty"`
+	WorkflowID        string            `json:"workflow_id,omitempty"`
+	RemediationTarget RemediationTarget `json:"remediation_target,omitempty"`
+	// APIVersionValidation is server-owned, in-process provenance for the
+	// exact target GVK verification. It is never serialized to the API or
+	// accepted as model output; the complete target identity and cluster bind
+	// prevent a continuation or interactive handoff from reusing validation
+	// for a different target.
+	APIVersionValidation *APIVersionValidation  `json:"-"`
+	Parameters           map[string]interface{} `json:"parameters,omitempty"`
+	Confidence           float64                `json:"confidence"`
 	// ConfidenceSet distinguishes an explicit zero from an omitted confidence
 	// during server-assisted RCA continuation merging. It is internal
 	// bookkeeping and never crosses the API boundary.
@@ -364,10 +370,22 @@ type RemediationTarget struct {
 	// Format: "group/version" (e.g. "route.openshift.io/v1") or "version" for core (e.g. "v1").
 	// Issue #1040.
 	APIVersion string `json:"api_version,omitempty"`
-	// APIVersionValidated is internal provenance for API versions resolved by
-	// the REST mapper or the API-version validation gate. It must never cross
-	// the API boundary or be inferred for model-supplied values.
+	// APIVersionValidated is internal provenance for an exact GVK independently
+	// verified against the target cluster. It must never cross the API boundary
+	// or be inferred for model-supplied values.
 	APIVersionValidated bool `json:"-"`
+}
+
+// APIVersionValidation binds exact-GVK verification to the complete target
+// identity and cluster that supplied the evidence. It is process-local
+// provenance and must not cross the API boundary.
+type APIVersionValidation struct {
+	ClusterID  string
+	Kind       string
+	Name       string
+	Namespace  string
+	APIVersion string
+	Source     string
 }
 
 // DefaultClusterNameSentinel is the display-only placeholder

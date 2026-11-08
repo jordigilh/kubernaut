@@ -212,7 +212,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			rcaResult := &katypes.InvestigationResult{
 				RCASummary: "cache pod is the real root cause",
 				RemediationTarget: katypes.RemediationTarget{
-					Kind: "Pod", Name: "cache-pod", Namespace: "default",
+					Kind: "Pod", Name: "cache-pod", Namespace: "default", APIVersion: "v1",
 				},
 			}
 
@@ -231,8 +231,8 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 		})
 	})
 
-	Describe("UT-KA-WAVE4-003: apiVersion auto-resolved for a non-ambiguous kind (Issue #1051 parity)", func() {
-		It("should validate the target api_version from the REST mapper without an extra LLM turn", func() {
+	Describe("UT-KA-WAVE4-003: exact apiVersion is verified for a non-ambiguous kind", func() {
+		It("should preserve the supplied target api_version without an extra LLM turn", func() {
 			mapper := newAmbiguousSubscriptionMapper() // has exactly one Deployment GVK registered
 			resolver := investigator.NewMapperScopeResolver(mapper)
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
@@ -252,7 +252,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 				RCASummary: "needs more replicas",
 				RemediationTarget: katypes.RemediationTarget{
 					Kind: "Deployment", Name: "api-server", Namespace: "production",
-					APIVersion: "wrong.example/v1",
+					APIVersion: "apps/v1",
 				},
 			}
 
@@ -261,7 +261,9 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"UT-KA-WAVE4-003: REST mapper must replace an untrusted model apiVersion")
+				"UT-KA-WAVE4-003: target-scoped verification must preserve the exact supplied apiVersion")
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"UT-KA-WAVE4-003: the target must carry independent verification provenance")
 			Expect(client.calls).To(HaveLen(1),
 				"UT-KA-WAVE4-003: auto-resolve must not consume an extra LLM turn")
 		})

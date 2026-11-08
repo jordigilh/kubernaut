@@ -13,7 +13,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.84.0
 	github.com/cloudwego/eino v0.9.22
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5
-	github.com/containers/kubernetes-mcp-server v0.1.1
+	github.com/containers/kubernetes-mcp-server v0.1.2
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.152.0
@@ -112,8 +112,8 @@ require (
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/jsonpointer v1.0.1 // indirect
-	github.com/go-openapi/jsonreference v1.0.2 // indirect
+	github.com/go-openapi/jsonpointer v1.0.2 // indirect
+	github.com/go-openapi/jsonreference v1.0.3 // indirect
 	github.com/go-openapi/swag v0.29.2 // indirect
 	github.com/go-openapi/swag/cmdutils v0.29.2 // indirect
 	github.com/go-openapi/swag/conv v0.29.2 // indirect
@@ -173,10 +173,11 @@ require (
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/common v0.72.1 // indirect
+	github.com/prometheus/common v0.73.1 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect

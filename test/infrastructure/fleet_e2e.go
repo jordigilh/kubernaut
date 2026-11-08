@@ -63,7 +63,8 @@ const (
 // Pin this external image by digest: the mutable latest tag changed its
 // token-exchange configuration schema without a Kubernaut source change,
 // breaking all fleet E2E suites.
-const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"
+// KubeMCPServerImage pins kubernetes-mcp-server v0.1.2, which includes api_resources_list.
+const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server@sha256:c289505b06079d7f265a6fef977ce1abbfbbb4271772db17db5b58edbf44c255"
 
 // FleetGatewayVersionOverrides contains optional operator-supplied versions
 // for the Envoy AI Gateway demo stack. Empty fields use the validated Agent

@@ -515,6 +515,7 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	if parseErr != nil {
 		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
 	}
+	clearParserDerivedRCAReview(result)
 	// #2387: this single submit-only extraction call is one LLM turn with no
 	// real tool dispatches. Recorded into the per-RR scope (the single source
 	// of truth — results never pre-carry counts), so later legs accumulate on
@@ -523,6 +524,21 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	inv.metricsFor(correlationID).IncLLMTurns()
 	inv.recordTokenUsage(correlationID, resp.Usage)
 	return result, nil
+}
+
+// clearParserDerivedRCAReview removes the parser's provisional review marker
+// when RCA extraction has not yet reached workflow discovery. The parser uses
+// investigation_inconclusive as a safe default for an RCA-only payload with no
+// workflow; an explicit LLM inconclusive outcome remains authoritative and is
+// not cleared.
+func clearParserDerivedRCAReview(result *katypes.InvestigationResult) {
+	if result == nil || !result.HumanReviewNeeded ||
+		result.HumanReviewReason != humanReviewReasonInvestigationInconclusive ||
+		result.InvestigationOutcome == "inconclusive" {
+		return
+	}
+	result.HumanReviewNeeded = false
+	result.HumanReviewReason = ""
 }
 
 // Investigate runs the two-invocation investigation and returns the result.
@@ -614,10 +630,12 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 func mergeRCAContinuationTarget(previous, merged *katypes.InvestigationResult) {
 	if merged.RemediationTarget.Kind == "" && merged.RemediationTarget.Name == "" {
 		merged.RemediationTarget = previous.RemediationTarget
+		merged.APIVersionValidation = cloneAPIVersionValidation(previous.APIVersionValidation)
 		return
 	}
 	if merged.RemediationTarget.Kind != previous.RemediationTarget.Kind ||
 		merged.RemediationTarget.Name != previous.RemediationTarget.Name {
+		clearTargetAPIVersionValidation(merged)
 		return
 	}
 	if merged.RemediationTarget.Namespace == "" {
@@ -625,12 +643,19 @@ func mergeRCAContinuationTarget(previous, merged *katypes.InvestigationResult) {
 	}
 	if merged.RemediationTarget.APIVersion == "" {
 		merged.RemediationTarget.APIVersion = previous.RemediationTarget.APIVersion
-		merged.RemediationTarget.APIVersionValidated = previous.RemediationTarget.APIVersionValidated
-	} else if merged.RemediationTarget.APIVersion == previous.RemediationTarget.APIVersion &&
-		previous.RemediationTarget.APIVersionValidated {
+	}
+	if merged.RemediationTarget.APIVersion == previous.RemediationTarget.APIVersion &&
+		completeAPIVersionValidation(previous) &&
+		merged.RemediationTarget.Namespace == previous.RemediationTarget.Namespace {
 		// Preserve trusted provenance when a continuation repeats the same
-		// target version without carrying the internal marker itself.
+		// complete target identity without carrying the internal marker itself.
 		merged.RemediationTarget.APIVersionValidated = true
+		merged.APIVersionValidation = cloneAPIVersionValidation(previous.APIVersionValidation)
+	} else {
+		// A changed namespace, version, or incomplete source marker invalidates
+		// the prior cluster-scoped verification. The API-version gate must
+		// independently verify the new target before workflow selection.
+		clearTargetAPIVersionValidation(merged)
 	}
 }
 
@@ -644,6 +669,7 @@ func mergeRCAContinuationResult(previous, updated *katypes.InvestigationResult) 
 	merged := *updated
 	preserveRCAContinuationEvidence(previous, &merged)
 	mergeRCAContinuationTarget(previous, &merged)
+	merged.APIVersionValidation = cloneAPIVersionValidation(merged.APIVersionValidation)
 	return &merged
 }
 
@@ -1288,6 +1314,9 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	attachDetectedLabels(workflowResult, enrichData)
 	injectFinalizedRemediationTarget(workflowResult, workflowSignal, rcaResult, enrichData)
 	InjectTargetResourceParameters(workflowResult)
+	if rcaResult.RemediationTarget.Kind != "" {
+		inv.enforceVerifiedWorkflowTarget(ctx, workflowResult)
+	}
 	// #2387 (BR-KA-OBSERVABILITY-001): see finalizeAndEmitRCAOnlyResult —
 	// the full-path result gets the same server-side injection.
 	inv.applyMetricsFromScope(workflowResult, correlationID)

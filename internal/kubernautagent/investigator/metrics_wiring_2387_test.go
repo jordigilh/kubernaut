@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	toolregistry "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -66,8 +67,26 @@ func (m *m2387MockClient) StreamChat(ctx context.Context, req llm.ChatRequest, _
 	return m.Chat(ctx, req)
 }
 
+type m2387DiscoveryTool struct{ name string }
+
+func (m m2387DiscoveryTool) Name() string      { return m.name }
+func (m2387DiscoveryTool) Description() string { return "target-cluster discovery fixture" }
+func (m2387DiscoveryTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+
+func (m m2387DiscoveryTool) Execute(context.Context, json.RawMessage) (string, error) {
+	if m.name != "api_resources_list" {
+		return `{"status":"success"}`, nil
+	}
+	return `{"resources":[{"apiVersion":"apps/v1","kind":"Deployment"}]}`, nil
+}
+
 func newM2387Investigator(client llm.Client) *Investigator {
 	builder, _ := prompt.NewBuilder()
+	registry := toolregistry.New()
+	registry.Register(m2387DiscoveryTool{name: "api_resources_list"})
+	registry.Register(m2387DiscoveryTool{name: "kubectl_describe"})
 	return New(Config{
 		Client:       client,
 		Builder:      builder,
@@ -76,13 +95,14 @@ func newM2387Investigator(client llm.Client) *Investigator {
 		Logger:       logr.Discard(),
 		MaxTurns:     5,
 		PhaseTools:   DefaultPhaseToolMap(),
+		Registry:     registry,
 	})
 }
 
 // m2387RCAJSON mirrors the live-cluster case in #2387: rich RCA content
 // (causal narrative for Deployment/worker) that deliberately carries NO
 // total_* fields — the LLM is never told to supply them (#2073/#2074).
-const m2387RCAJSON = `{"root_cause_analysis":{"summary":"OOMKill caused by memory leak in worker","severity":"critical","signal_name":"CrashLoopBackOff","contributing_factors":["memory leak in data-processor"],"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-checkout","api_version":"apps/v1"}},"confidence":0.98}`
+const m2387RCAJSON = `{"root_cause_analysis":{"summary":"OOMKill caused by memory leak in worker","severity":"critical","signal_name":"CrashLoopBackOff","contributing_factors":["memory leak in data-processor"],"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-checkout","api_version":"apps/v1"}},"confidence":0.98,"actionable":true,"investigation_outcome":"actionable"}`
 
 func m2387Signal(rrID string) katypes.SignalContext {
 	return katypes.SignalContext{
@@ -96,10 +116,11 @@ func m2387Signal(rrID string) katypes.SignalContext {
 	}
 }
 
-// m2387Script programs 3 LLM turns / 1 real tool call: RCA turn 1 dispatches
-// kubectl_describe (cross-kind RCA: Pod signal -> Deployment target, so the
-// same-kind gate stays out of the way), RCA turn 2 submits the RCA, and the
-// workflow-selection turn explicitly declines via submit_result_no_workflow.
+// m2387Script programs 3 LLM turns / 1 model-dispatched tool call: RCA turn 1
+// dispatches kubectl_describe (cross-kind RCA: Pod signal -> Deployment target,
+// so the same-kind gate stays out of the way), RCA turn 2 submits the RCA, and
+// the workflow-selection turn explicitly declines via submit_result_no_workflow.
+// Exact target-GVK verification adds one server-owned discovery call.
 // Every turn carries token usage so token-reporting specs can assert
 // cumulative TokenUsage (10/5/15 per turn).
 func m2387Script() []llm.ChatResponse {
@@ -139,8 +160,8 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.TotalLLMTurns).To(Equal(3),
 				"UT-KA-2387-001: 2 RCA turns + 1 workflow-selection turn must be counted (BR-KA-OBSERVABILITY-001)")
-			Expect(result.TotalToolCalls).To(Equal(1),
-				"UT-KA-2387-001: only the kubectl_describe dispatch counts — submit_result/submit_result_no_workflow sentinels are consumed, never executed")
+			Expect(result.TotalToolCalls).To(Equal(2),
+				"UT-KA-2387-001: kubectl_describe and server-owned exact-GVK verification count; submit_result/submit_result_no_workflow sentinels are consumed, never executed")
 		})
 	})
 
@@ -157,7 +178,7 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.TotalLLMTurns).To(Equal(3),
 				"UT-KA-2387-002: totals must be injected server-side before MarshalRCASubset, not parsed from LLM output")
-			Expect(result.TotalToolCalls).To(Equal(1))
+			Expect(result.TotalToolCalls).To(Equal(2))
 		})
 	})
 
@@ -170,18 +191,19 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			second, err := inv.Investigate(context.Background(), m2387Signal("rr-2387-005b"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(first.TotalLLMTurns).To(Equal(3))
-			Expect(first.TotalToolCalls).To(Equal(1))
+			Expect(first.TotalToolCalls).To(Equal(2))
 			Expect(second.TotalLLMTurns).To(Equal(3),
 				"UT-KA-2387-005: the second investigation must start from zero, not accumulate the first (per-correlationID scope, cf. #1892)")
-			Expect(second.TotalToolCalls).To(Equal(1))
+			Expect(second.TotalToolCalls).To(Equal(2))
 		})
 	})
 
 	Describe("UT-KA-2387-006: cumulative per-RR totals across legs (message + extraction + discovery)", func() {
 		It("accumulates every leg without reset or double-count", func() {
 			// One mock, one Investigator, one rrID, three legs in order:
-			// 2 interactive turns (1 real tool) + 1 extraction turn + 1
-			// discovery turn = 4 turns / 1 tool call, all under rr-2387-006.
+			// 2 interactive turns (1 model-dispatched tool) + 1 extraction turn +
+			// 1 discovery turn = 4 turns / 2 total tool calls (including the
+			// server-owned exact-GVK verification), all under rr-2387-006.
 			script := []llm.ChatResponse{
 				{
 					Message: llm.Message{Role: "assistant", Content: "Investigating..."},
@@ -227,7 +249,7 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.TotalLLMTurns).To(Equal(4),
 				"UT-KA-2387-006: 2 interactive + 1 extraction + 1 discovery turns accumulate per-RR (no reset, no double-count)")
-			Expect(result.TotalToolCalls).To(Equal(1))
+			Expect(result.TotalToolCalls).To(Equal(2))
 		})
 	})
 
@@ -277,7 +299,7 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			Expect(json.Unmarshal(data, &parsed)).To(Succeed())
 			Expect(parsed).To(HaveKeyWithValue("total_llm_turns", BeNumerically("==", 3)),
 				"IT-KA-2387-010: AF phase_guard canonicalGroundedRCA can only rename what KA actually emits")
-			Expect(parsed).To(HaveKeyWithValue("total_tool_calls", BeNumerically("==", 1)))
+			Expect(parsed).To(HaveKeyWithValue("total_tool_calls", BeNumerically("==", 2)))
 		})
 	})
 })

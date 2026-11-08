@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -241,16 +242,52 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 	InjectTargetResourceParameters(result)
 }
 
+// enforceVerifiedWorkflowTarget prevents a workflow selected before final
+// target enrichment from remaining executable when finalization changes or
+// invalidates the target identity (BR-KA-212, SI-10).
+func (inv *Investigator) enforceVerifiedWorkflowTarget(ctx context.Context, result *katypes.InvestigationResult) {
+	if result == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" {
+		return
+	}
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	correlationID, _ := audit.CorrelationIDFromContext(ctx)
+	if TargetAPIVersionValidationMatches(result, clusterID) {
+		return
+	}
+	clearWorkflowSelectionFields(result)
+	result.HumanReviewNeeded = true
+	if result.HumanReviewReason == "" {
+		result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+	}
+	result.Warnings = append(result.Warnings,
+		"workflow selection cleared because the finalized remediation target lacks valid target-cluster GVK verification")
+	inv.logger.Info("workflow selection cleared after target provenance validation failed",
+		"correlation_id", correlationID,
+		"cluster_id", clusterID,
+		"target_kind", result.RemediationTarget.Kind,
+		"target_api_version", result.RemediationTarget.APIVersion)
+}
+
 // injectFinalizedRemediationTarget carries a validated RCA API version into
 // the finalization boundary without treating an arbitrary model value as
 // authoritative. Signal API versions are already server-owned; owner-chain
 // versions still take precedence inside InjectRemediationTarget.
 func injectFinalizedRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
-	if rcaResult != nil && rcaResult.RemediationTarget.APIVersionValidated &&
-		rcaResult.RemediationTarget.APIVersion != "" {
+	validation := (*katypes.APIVersionValidation)(nil)
+	if rcaResult != nil && completeAPIVersionValidation(rcaResult) {
+		validation = cloneAPIVersionValidation(rcaResult.APIVersionValidation)
 		signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 	}
 	InjectRemediationTarget(result, signal, enrichData)
+	clearTargetAPIVersionValidation(result)
+	if validation == nil {
+		return
+	}
+	result.RemediationTarget.APIVersionValidated = true
+	result.APIVersionValidation = validation
+	if !TargetAPIVersionValidationMatches(result, validation.ClusterID) {
+		clearTargetAPIVersionValidation(result)
+	}
 }
 
 // ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
