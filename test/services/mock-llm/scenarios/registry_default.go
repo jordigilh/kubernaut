@@ -318,6 +318,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
 
+	// Issue #2586: interactive RCA extraction must retain the correction turn's
+	// reasoning and independent confidence through the real MCP discovery path.
+	r.Register(interactiveRCARetry2586ScenarioFactory())
+
 	// Issue #1332: AF A2A tests need the mock LLM to call kubernaut_remediate
 	// when the user message contains "create a remediation request" (priority 0.9).
 	r.Register(afCreateRRScenario())
