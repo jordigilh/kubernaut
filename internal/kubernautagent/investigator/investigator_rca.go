@@ -81,7 +81,7 @@ func (inv *Investigator) runRCAWithMessages(ctx context.Context, signal katypes.
 	}
 	result, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
-		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, llmCtx); retried != nil {
+		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, reasoning, loopResultToolCalls(loopRes), messages, llmCtx); retried != nil {
 			result = retried
 			reasoning = retriedReasoning
 			parseErr = nil
@@ -183,7 +183,7 @@ const maxRCAParseRetries = 1
 // garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
 // The returned reasoning (nil unless a reasoning-capable model responded)
 // belongs to the retry turn that produced result, not the original turn.
-func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, reasoning *llm.ReasoningBlock) {
+func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, lastReasoning *llm.ReasoningBlock, lastToolCalls []llm.ToolCall, history []llm.Message, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, reasoning *llm.ReasoningBlock) {
 	tokens, correlationID, client, modelName, runtimeParams :=
 		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	submitOnlyTools := submitOnlyRCATools()
@@ -197,9 +197,14 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 
 	retryMessages := make([]llm.Message, len(history))
 	copy(retryMessages, history)
+	assistantMessage := llm.Message{Role: "assistant", Content: lastContent, Reasoning: lastReasoning}
+	if len(lastToolCalls) > 0 {
+		assistantMessage.ToolCalls = append([]llm.ToolCall(nil), lastToolCalls...)
+	}
 	retryMessages = append(retryMessages,
-		llm.Message{Role: "assistant", Content: lastContent},
+		assistantMessage,
 	)
+	retryMessages = appendUnexecutedToolResults(retryMessages, lastToolCalls)
 
 	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
 		if ctx.Err() != nil {
@@ -228,6 +233,25 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryMessages = updated
 	}
 	return nil, nil
+}
+
+// appendUnexecutedToolResults closes the provider conversation turn for tool
+// calls that were returned in the same batch as the RCA sentinel. Sentinel
+// detection intentionally skips execution, but replaying an assistant
+// tool-call message without matching tool results creates orphaned calls that
+// providers may reject (for example, Anthropic returns HTTP 400). The
+// synthetic results preserve the original call IDs while making the bounded
+// correction turn explicit to every provider.
+func appendUnexecutedToolResults(messages []llm.Message, toolCalls []llm.ToolCall) []llm.Message {
+	for _, tc := range toolCalls {
+		messages = append(messages, llm.Message{
+			Role:       "tool",
+			Content:    fmt.Sprintf("tool %q was not executed because the submit_result sentinel ended the previous turn", tc.Name),
+			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
+		})
+	}
+	return messages
 }
 
 // rcaSubmitRetryParams groups the fields needed by attemptRCASubmitRetry.

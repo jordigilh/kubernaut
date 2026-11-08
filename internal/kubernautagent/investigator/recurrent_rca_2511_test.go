@@ -105,7 +105,7 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
 		client := &gateMockLLMClient{responses: []llm.ChatResponse{
-			{ToolCalls: []llm.ToolCall{{ID: "rca-initial", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"initial symptom","contributing_factors":["prior certificate drift"],"causal_chain":["TLS failure","certificate drift"],"remediation_target":{"kind":"Deployment","name":"api-a","namespace":"prod","api_version":"apps/v1"}},"confidence":0.8}`}}},
+			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "initial evidence"}}, ToolCalls: []llm.ToolCall{{ID: "rca-initial", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"initial symptom","contributing_factors":["prior certificate drift"],"causal_chain":["TLS failure","certificate drift"],"remediation_target":{"kind":"Deployment","name":"api-a","namespace":"prod","api_version":"apps/v1"}},"confidence":0.8}`}}},
 			{ToolCalls: []llm.ToolCall{{ID: "rca-target-change", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"different owning resource","remediation_target":{"kind":"Deployment","name":"api-b","namespace":"prod","api_version":"apps/v1"},"causal_mechanism_status":"probable"},"confidence":0.75,"actionable":false,"investigation_outcome":"inconclusive"}`}}},
 			{ToolCalls: []llm.ToolCall{{ID: "rca-final", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"validated alternate target","remediation_target":{"kind":"Deployment","name":"api-b","namespace":"prod","api_version":"apps/v1"},"causal_mechanism_status":"unknown"},"confidence":0.7,"actionable":false,"investigation_outcome":"inconclusive"}`}}},
 		}}
@@ -128,6 +128,8 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 		Expect(result.RemediationTarget.Name).To(Equal("api-b"))
 		Expect(result.CausalMechanismStatus).To(Equal("unknown"))
 		Expect(result.ContributingFactors).To(ContainElement("prior certificate drift"))
+		Expect(result.Reasoning).NotTo(BeNil())
+		Expect(result.Reasoning.Text).To(Equal("initial evidence"))
 		Expect(result.CausalChain).To(ContainElements("TLS failure", "certificate drift"))
 		Expect(client.calls).To(HaveLen(3))
 		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("PROVISIONAL RCA"))))

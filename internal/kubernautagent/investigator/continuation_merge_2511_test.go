@@ -62,4 +62,13 @@ var _ = Describe("RCA continuation merge semantics", func() {
 		merged := mergeRCAContinuationResult(&katypes.InvestigationResult{}, &katypes.InvestigationResult{Confidence: .95, ConfidenceSet: true})
 		Expect(merged.RCAConfidence).To(BeNil())
 	})
+
+	It("UT-KA-2586-039: continuation reasoning supersedes earlier reasoning when supplied (BR-AI-086, AU-3)", func() {
+		previous := &katypes.InvestigationResult{Reasoning: &katypes.ReasoningSummary{Text: "earlier evidence"}}
+		updated := &katypes.InvestigationResult{Reasoning: &katypes.ReasoningSummary{Redacted: true}}
+		merged := mergeRCAContinuationResult(previous, updated)
+		Expect(merged.Reasoning).NotTo(BeNil())
+		Expect(merged.Reasoning.Redacted).To(BeTrue())
+		Expect(merged.Reasoning.Text).To(BeEmpty())
+	})
 })

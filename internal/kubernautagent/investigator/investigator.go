@@ -96,12 +96,14 @@ type rcaLoopBudget struct {
 
 // SubmitResult is returned when the LLM calls the generic submit_result tool
 // in the RCA phase. Messages carries the paired conversation turns accumulated
-// before the sentinel call; the sentinel itself is intentionally not replayed.
+// before the sentinel call; ToolCalls preserves the provider response state
+// needed when a malformed RCA is corrected on the next turn.
 
 type SubmitResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
 	Messages  []llm.Message
+	ToolCalls []llm.ToolCall
 }
 
 func (*SubmitResult) loopResult() {}
@@ -181,20 +183,31 @@ func loopResultMessages(r LoopResult) []llm.Message {
 	}
 }
 
+// loopResultToolCalls extracts the provider tool-call batch associated with an
+// RCA submit sentinel. The general conversation history deliberately excludes
+// the unexecuted sentinel, but provider-specific reasoning state (for example
+// Gemini thought signatures) must replay alongside the original tool call on a
+// bounded parse correction retry.
+func loopResultToolCalls(r LoopResult) []llm.ToolCall {
+	if submitted, ok := r.(*SubmitResult); ok {
+		return submitted.ToolCalls
+	}
+	return nil
+}
+
 // sentinelResult maps a sentinel tool call to its LoopResult type, attaching
 // the reasoning block (if any) from the turn whose response produced tc, so
 // reasoning captured at the LLM-client layer (BR-AI-086 AC1-3) reaches the
 // InvestigationResult that gets built from the sentinel's Content. messages
 // is the history accumulated so far — i.e. every PRIOR, fully-paired
 // assistant(tool_use)/tool(tool_result) turn, NOT including the sentinel
-// call itself (tc). Deliberately excluding the sentinel call avoids ever
-// replaying a dangling, unpaired tool_use block to the LLM on a later
-// retry — the sentinel is consumed here, never executed as a real tool, so
-// it has no matching tool_result (#1935/#1936 root cause #2).
-func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
+// call itself (tc). The full tool-call batch is retained only on SubmitResult
+// so a provider-specific correction retry can replay required protocol state
+// without adding the unexecuted sentinel to general history.
+func sentinelResult(tc llm.ToolCall, toolCalls []llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
+		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages, ToolCalls: append([]llm.ToolCall(nil), toolCalls...)}
 	case SubmitResultWithWorkflowToolName:
 		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	case SubmitResultNoWorkflowToolName:
@@ -520,7 +533,7 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	}
 	if parseErr != nil {
 		var retriedReasoning *llm.ReasoningBlock
-		result, retriedReasoning = inv.retryRCASubmit(ctx, content, messages, LLMInvocationContext{
+		result, retriedReasoning = inv.retryRCASubmit(ctx, content, resp.Message.Reasoning, resp.ToolCalls, messages, LLMInvocationContext{
 			CorrelationID: correlationID, Client: client, ModelName: modelName, RuntimeParams: runtimeParams,
 		})
 		if result == nil {
@@ -600,6 +613,9 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 	}
 	if merged.DueDiligence == nil {
 		merged.DueDiligence = previous.DueDiligence
+	}
+	if merged.Reasoning == nil {
+		merged.Reasoning = previous.Reasoning
 	}
 	if merged.RCAConfidence == nil {
 		merged.RCAConfidence = previous.RCAConfidence
@@ -697,7 +713,7 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 	}
 	updated, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
-		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, p.LLMContext); retried != nil {
+		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, reasoning, loopResultToolCalls(loopRes), messages, p.LLMContext); retried != nil {
 			updated = retried
 			reasoning = retriedReasoning
 			parseErr = nil
@@ -715,8 +731,8 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 		return result, messages, true, nil
 	}
 
-	updated = mergeRCAContinuationResult(result, updated)
 	updated.Reasoning = toReasoningSummary(reasoning)
+	updated = mergeRCAContinuationResult(result, updated)
 	applySignalSeverity(updated, p.Signal)
 	accepted := updated
 	updated = inv.sameKindValidationGate(ctx, updated, p.Signal, messages, p.LLMContext)

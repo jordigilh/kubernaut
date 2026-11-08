@@ -108,7 +108,7 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
 		client := &extractionRetryClient2586{responses: []llm.ChatResponse{
-			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "rejected reasoning"}}, ToolCalls: []llm.ToolCall{{ID: "invalid", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"invalid","confidence":1.1}`}}},
+			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "rejected reasoning", Signature: "replay-signature"}}, ToolCalls: []llm.ToolCall{{ID: "invalid", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"invalid","confidence":1.1}`}}},
 			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "accepted correction evidence", Signature: "provider-secret"}}, ToolCalls: []llm.ToolCall{{ID: "corrected", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"corrected"` + corrected + `}`}}},
 			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default"}}`}}},
 		}}
@@ -140,6 +140,8 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		Expect(client.requests).To(HaveLen(3))
 		Expect(sess.RCAResult.TotalLLMTurns).To(Equal(3), "extraction, correction, and discovery are counted once each")
 		Expect(client.requests[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("between 0 and 1"))))
+		Expect(client.requests[1].Messages).To(ContainElement(And(HaveField("Role", "assistant"), HaveField("Reasoning", HaveValue(HaveField("Signature", "replay-signature"))))))
+		Expect(client.requests[1].Messages).To(ContainElement(And(HaveField("Role", "assistant"), HaveField("ToolCalls", ContainElement(And(HaveField("Name", Equal(investigator.SubmitResultToolName)), HaveField("Arguments", ContainSubstring(`"confidence":1.1`))))))))
 	}, Entry("zero", `,"confidence":0`, func() *float64 { v := 0.0; return &v }()), Entry("missing", "", (*float64)(nil)), Entry("nonzero", `,"confidence":0.65`, func() *float64 { v := 0.65; return &v }()))
 	It("IT-KA-2439-002: relays deltas through handleDiscoverWorkflows into the session sink", func() {
 		builder, err := prompt.NewBuilder()
