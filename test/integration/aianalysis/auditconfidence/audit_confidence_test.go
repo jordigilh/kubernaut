@@ -45,6 +45,7 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -60,34 +61,43 @@ var _ = Describe("BR-AUDIT-005 confidence audit", func() {
 	It("preserves absent and explicit zero RCA separately from workflow confidence", func() {
 		ctx := context.Background()
 		dir := GinkgoT().TempDir()
-		data := filepath.Join(dir, "pg")
-		out, err := exec.Command("initdb", "-D", data, "-A", "trust", "--no-locale").CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), string(out))
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		Expect(err).NotTo(HaveOccurred())
-		port := listener.Addr().(*net.TCPAddr).Port
-		Expect(listener.Close()).To(Succeed())
-		out, err = exec.Command("pg_ctl", "-D", data, "-l", filepath.Join(dir, "pg.log"), "-o", fmt.Sprintf("-h 127.0.0.1 -p %d", port), "-w", "start").CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), string(out))
-		DeferCleanup(func() {
-			output, stopErr := exec.Command("pg_ctl", "-D", data, "-m", "fast", "-w", "stop").CombinedOutput()
-			Expect(stopErr).NotTo(HaveOccurred(), string(output))
-		})
-		db, err := sql.Open("pgx", fmt.Sprintf("postgres://127.0.0.1:%d/postgres?sslmode=disable", port))
+		freePort := func() int {
+			listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+			Expect(listenErr).NotTo(HaveOccurred())
+			port := listener.Addr().(*net.TCPAddr).Port
+			Expect(listener.Close()).To(Succeed())
+			return port
+		}
+		postgresPort, redisPort := freePort(), freePort()
+		postgresContainer := fmt.Sprintf("audit-confidence-postgres-%d", os.Getpid())
+		redisContainer := fmt.Sprintf("audit-confidence-redis-%d", os.Getpid())
+		removeContainer := func(name string) {
+			if cleanupErr := exec.Command("podman", "rm", "-f", name).Run(); cleanupErr != nil {
+				GinkgoWriter.Printf("cleanup of %s returned %v\n", name, cleanupErr)
+			}
+		}
+		removeContainer(postgresContainer)
+		removeContainer(redisContainer)
+		Expect(infrastructure.StartPostgreSQL(ctx, infrastructure.PostgreSQLConfig{
+			ContainerName: postgresContainer,
+			Port:          postgresPort,
+			DBName:        "postgres",
+			DBUser:        "postgres",
+			DBPassword:    "test_password",
+		}, GinkgoWriter)).To(Succeed())
+		DeferCleanup(func() { removeContainer(postgresContainer) })
+		Expect(infrastructure.WaitForPostgreSQLReady(ctx, postgresContainer, "postgres", "postgres", GinkgoWriter)).To(Succeed())
+		Expect(infrastructure.StartRedis(ctx, infrastructure.RedisConfig{
+			ContainerName: redisContainer,
+			Port:          redisPort,
+		}, GinkgoWriter)).To(Succeed())
+		DeferCleanup(func() { removeContainer(redisContainer) })
+		Expect(infrastructure.WaitForRedisReady(ctx, redisContainer, GinkgoWriter)).To(Succeed())
+		db, err := sql.Open("pgx", fmt.Sprintf("postgres://postgres:test_password@127.0.0.1:%d/postgres?sslmode=disable", postgresPort))
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(db.Close()).To(Succeed()) })
 		Expect(goose.SetDialect("postgres")).To(Succeed())
 		Expect(goose.Up(db, filepath.Join("..", "..", "..", "..", "migrations"))).To(Succeed())
-		redisListener, err := net.Listen("tcp", "127.0.0.1:0")
-		Expect(err).NotTo(HaveOccurred())
-		redisPort := redisListener.Addr().(*net.TCPAddr).Port
-		Expect(redisListener.Close()).To(Succeed())
-		redis := exec.Command("redis-server", "--bind", "127.0.0.1", "--port", fmt.Sprint(redisPort), "--save", "", "--appendonly", "no")
-		Expect(redis.Start()).To(Succeed())
-		DeferCleanup(func() {
-			Expect(redis.Process.Kill()).To(Succeed())
-			_ = redis.Wait()
-		})
 		Eventually(func() error {
 			conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", redisPort), time.Second)
 			if dialErr == nil {
@@ -101,7 +111,7 @@ var _ = Describe("BR-AUDIT-005 confidence audit", func() {
 		Expect(os.WriteFile(filepath.Join(dir, "tls.key"), pair.KeyPEM, 0600)).To(Succeed())
 		identity := "system:serviceaccount:datastorage-test:confidence-test"
 		ds, err := server.NewServer(server.ServerDeps{
-			DBConnStr: fmt.Sprintf("postgres://127.0.0.1:%d/postgres?sslmode=disable", port),
+			DBConnStr: fmt.Sprintf("postgres://postgres:test_password@127.0.0.1:%d/postgres?sslmode=disable", postgresPort),
 			RedisAddr: fmt.Sprintf("127.0.0.1:%d", redisPort), Logger: logr.Discard(), DLQMaxLen: 1000,
 			AppConfig:     &dsconfig.Config{Server: dsconfig.ServerConfig{SignerCertDir: dir}, Database: dsconfig.DatabaseConfig{MaxOpenConns: 25, MaxIdleConns: 5, ConnMaxLifetime: "5m", ConnMaxIdleTime: "10m"}},
 			ServerConfig:  &server.Config{Port: 18090, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, TLS: sharedtls.TLSConfig{CertDir: dir}},
