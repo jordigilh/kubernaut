@@ -170,6 +170,16 @@ var _ = Describe("Phase 1 → Phase 3 forensic field propagation — #847", func
 			Expect(result.Confidence).To(Equal(0.95))
 		})
 
+		It("UT-KA-2586-044: preserves existing RCA confidence when Phase 1 omits it (BR-AI-012, SI-10)", func() {
+			existing := 0.85
+			result := &katypes.InvestigationResult{RCAConfidence: &existing}
+
+			investigator.MergePhase1Fallbacks(result, &prompt.Phase1Data{})
+
+			Expect(result.RCAConfidence).To(HaveValue(Equal(0.85)),
+				"Phase 1 fallback must not erase an RCA confidence already present in the result")
+		})
+
 		It("UT-KA-2586-032: legacy confidence does not create Phase 1 RCA confidence (BR-AI-012, SI-10)", func() {
 			phase1 := investigator.BuildPhase1Context(&katypes.InvestigationResult{Confidence: .95, ConfidenceSet: true})
 			Expect(phase1.RCAConfidence).To(BeNil())
