@@ -200,6 +200,7 @@ type ApprovalRequestSummary struct {
 	Decision           string  `json:"decision"`
 	RemediationRequest string  `json:"remediation_request"`
 	// Confidence is retained as a legacy alias for compatibility with existing clients.
+
 	// Deprecated: use WorkflowConfidence.
 	Confidence      float64 `json:"confidence"`
 	ConfidenceLevel string  `json:"confidence_level"`
@@ -316,6 +317,7 @@ type GetApprovalRequestResult struct {
 	RemediationRequest string  `json:"remediation_request"`
 	AIAnalysis         string  `json:"ai_analysis"`
 	// Confidence is retained as a legacy alias for compatibility with existing clients.
+
 	// Deprecated: use WorkflowConfidence.
 	Confidence             float64                                              `json:"confidence"`
 	ConfidenceLevel        string                                               `json:"confidence_level"`
