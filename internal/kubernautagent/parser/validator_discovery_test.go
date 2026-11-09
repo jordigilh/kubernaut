@@ -36,6 +36,12 @@ var _ = Describe("Workflow selection discovery membership", func() {
 		_, err = p.ParseRCA(`{"root_cause_analysis":{"summary":"RCA"},"confidence":null}`)
 		Expect(err).To(MatchError(ContainSubstring("confidence")))
 	})
+
+	It("UT-KA-2586-030: RCA parser rejects explicit null confidence with case-insensitive keys (BR-AI-012, SI-10)", func() {
+		_, err := parser.NewResultParser().ParseRCA(`{"root_cause_analysis":{"summary":"RCA"},"Confidence":null}`)
+		Expect(err).To(MatchError(ContainSubstring("confidence")))
+	})
+
 	DescribeTable("UT-KA-2586-007: invalid investigation confidence is rejected rather than converted to a score (BR-AI-012, SI-10)",
 		func(confidence float64) {
 			validator := parser.NewValidator(nil)

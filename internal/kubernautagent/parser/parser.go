@@ -101,7 +101,12 @@ func hasNullRCAConfidence(content, jsonStr string) bool {
 	if json.Unmarshal([]byte(jsonStr), &fields) != nil {
 		return false
 	}
-	return bytes.Equal(bytes.TrimSpace(fields["confidence"]), []byte(jsonNull))
+	for key, value := range fields {
+		if strings.EqualFold(key, "confidence") && bytes.Equal(bytes.TrimSpace(value), []byte(jsonNull)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Flat intake owns its provenance clearing/coercion. Nested and section-header

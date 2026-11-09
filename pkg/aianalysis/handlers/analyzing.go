@@ -49,6 +49,8 @@ type AnalyzingHandler struct {
 	confidenceThreshold *float64                      // #225: Operator-configurable confidence threshold
 }
 
+const autoApprovalFallbackReason = "Auto-approved by policy evaluation"
+
 // NewAnalyzingHandler creates a new AnalyzingHandler.
 func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger, m *metrics.Metrics, auditClient AnalyzingAuditClientInterface) *AnalyzingHandler {
 	if m == nil {
@@ -267,6 +269,10 @@ func (h *AnalyzingHandler) recordApprovalDecision(ctx context.Context, analysis 
 		outcome = aianalysis.OutcomeRequiresApproval
 	} else {
 		// Set ApprovalRequired=False condition (auto-approved)
+		if reason == "" {
+			reason = autoApprovalFallbackReason
+		}
+		analysis.Status.EnsureApproval().ApprovalReason = reason
 		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", reason)
 	}
 

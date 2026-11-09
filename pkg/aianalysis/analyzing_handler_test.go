@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -58,6 +59,25 @@ func (n *noopAnalyzingAuditClient) RecordAnalysisComplete(ctx context.Context, a
 func (n *noopAnalyzingAuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
 	// No-op: Unit tests don't need audit recording
 	return nil
+}
+
+type staticPolicyEvaluator struct {
+	result *rego.PolicyResult
+}
+
+func (s *staticPolicyEvaluator) Evaluate(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, error) {
+	return s.result, nil
+}
+
+type recordingAnalyzingAuditClient struct {
+	noopAnalyzingAuditClient
+	approvalDecision string
+	approvalReason   string
+}
+
+func (c *recordingAnalyzingAuditClient) RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision, reason string) {
+	c.approvalDecision = decision
+	c.approvalReason = reason
 }
 
 // BR-AI-012: AnalyzingHandler tests
@@ -356,6 +376,28 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
 				Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse(), "Non-production should auto-approve")
 				Expect(analysis.Status.GetApproval().ApprovalContext).To(BeNil(), "No approval context for auto-approved analysis")
+			})
+
+			It("UT-AI-2586-003: should provide a reason when policy auto-approves without one (BR-AI-012, BR-AUDIT-005)", func() {
+				auditClient := &recordingAnalyzingAuditClient{}
+				handler = handlers.NewAnalyzingHandler(
+					&staticPolicyEvaluator{result: &rego.PolicyResult{}},
+					ctrl.Log.WithName("test"),
+					metrics.NewMetrics(),
+					auditClient,
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				approval := analysis.Status.GetApproval()
+				Expect(approval.ApprovalReason).To(Equal("Auto-approved by policy evaluation"))
+				condition := aianalysis.GetCondition(analysis, aianalysis.ConditionApprovalRequired)
+				Expect(condition).NotTo(BeNil())
+				Expect(condition.Message).To(Equal("Auto-approved by policy evaluation"))
+				Expect(auditClient.approvalDecision).To(Equal(aianalysis.OutcomeAutoApproved))
+				Expect(auditClient.approvalReason).To(Equal("Auto-approved by policy evaluation"))
 			})
 		})
 
