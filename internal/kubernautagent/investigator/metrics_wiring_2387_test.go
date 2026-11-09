@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -67,7 +68,10 @@ func (m *m2387MockClient) StreamChat(ctx context.Context, req llm.ChatRequest, _
 	return m.Chat(ctx, req)
 }
 
-type m2387DiscoveryTool struct{ name string }
+type m2387DiscoveryTool struct {
+	name string
+	err  error
+}
 
 func (m m2387DiscoveryTool) Name() string      { return m.name }
 func (m2387DiscoveryTool) Description() string { return "target-cluster discovery fixture" }
@@ -76,6 +80,9 @@ func (m2387DiscoveryTool) Parameters() json.RawMessage {
 }
 
 func (m m2387DiscoveryTool) Execute(context.Context, json.RawMessage) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
 	if m.name != "api_resources_list" {
 		return `{"status":"success"}`, nil
 	}
@@ -87,6 +94,10 @@ func newM2387Investigator(client llm.Client) *Investigator {
 	registry := toolregistry.New()
 	registry.Register(m2387DiscoveryTool{name: "api_resources_list"})
 	registry.Register(m2387DiscoveryTool{name: "kubectl_describe"})
+	return newM2387InvestigatorWithRegistry(client, builder, registry)
+}
+
+func newM2387InvestigatorWithRegistry(client llm.Client, builder *prompt.Builder, registry *toolregistry.Registry) *Investigator {
 	return New(Config{
 		Client:       client,
 		Builder:      builder,
@@ -284,6 +295,62 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			Expect(result.TokenUsage.PromptTokens).To(Equal(30))
 			Expect(result.TokenUsage.CompletionTokens).To(Equal(15))
 			Expect(result.TokenUsage.TotalTokens).To(Equal(45))
+		})
+	})
+
+	Describe("UT-KA-2387-009: early discovery returns preserve cumulative totals (BR-KA-OBSERVABILITY-001)", func() {
+		It("stamps scoped totals on pre-existing review and gate-failure returns", func() {
+			seedTotals := func(inv *Investigator, correlationID string) {
+				inv.metricsFor(correlationID).IncLLMTurns()
+				inv.metricsFor(correlationID).AddToolCalls(2)
+				inv.recordTokenUsage(correlationID, llm.TokenUsage{PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18})
+			}
+
+			preExistingReviewID := "rr-2387-009-review"
+			preExistingInv := newM2387Investigator(&m2387MockClient{})
+			seedTotals(preExistingInv, preExistingReviewID)
+			preExisting, err := preExistingInv.RunWorkflowDiscoveryFromRCA(
+				context.Background(), m2387Signal(preExistingReviewID),
+				&katypes.InvestigationResult{
+					HumanReviewNeeded: true,
+					TotalLLMTurns:     99,
+					TotalToolCalls:    99,
+				}, nil, preExistingReviewID,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(preExisting.TotalLLMTurns).To(Equal(1))
+			Expect(preExisting.TotalToolCalls).To(Equal(2))
+			Expect(preExisting.TokenUsage).To(Equal(&katypes.TokenUsageSummary{
+				PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18,
+			}))
+
+			gateFailureID := "rr-2387-009-gate"
+			failedRegistry := toolregistry.New()
+			failedRegistry.Register(m2387DiscoveryTool{
+				name: "api_resources_list",
+				err:  errors.New("target discovery unavailable"),
+			})
+			builder, _ := prompt.NewBuilder()
+			gateFailureInv := newM2387InvestigatorWithRegistry(&m2387MockClient{}, builder, failedRegistry)
+			seedTotals(gateFailureInv, gateFailureID)
+			gateFailure, err := gateFailureInv.RunWorkflowDiscoveryFromRCA(
+				context.Background(), m2387Signal(gateFailureID),
+				&katypes.InvestigationResult{
+					RemediationTarget: katypes.RemediationTarget{
+						Kind: "Deployment", Name: "worker", Namespace: "demo-checkout", APIVersion: "apps/v1",
+					},
+					TotalLLMTurns:  99,
+					TotalToolCalls: 99,
+				}, nil, gateFailureID,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gateFailure.HumanReviewNeeded).To(BeTrue())
+			Expect(gateFailure.TotalLLMTurns).To(Equal(1))
+			Expect(gateFailure.TotalToolCalls).To(Equal(3),
+				"the failed exact-GVK discovery call must remain in cumulative totals")
+			Expect(gateFailure.TokenUsage).To(Equal(&katypes.TokenUsageSummary{
+				PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18,
+			}))
 		})
 	})
 

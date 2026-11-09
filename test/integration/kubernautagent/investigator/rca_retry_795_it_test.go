@@ -59,6 +59,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -118,6 +119,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -178,6 +180,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -189,7 +192,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 					// RCA retry: LLM now submits correct JSON with summary
 					{
 						Message:   llm.Message{Role: "assistant", Content: ""},
-						ToolCalls: []llm.ToolCall{{ID: "tc_rca2", Name: "submit_result", Arguments: `{"root_cause_analysis":{"summary":"CrashLoopBackOff caused by invalid ConfigMap directive","severity":"critical","remediation_target":{"kind":"Deployment","name":"web-frontend","namespace":"demo-gitops"}},"confidence":0.95}`}},
+						ToolCalls: []llm.ToolCall{{ID: "tc_rca2", Name: "submit_result", Arguments: `{"root_cause_analysis":{"summary":"CrashLoopBackOff caused by invalid ConfigMap directive","severity":"critical","remediation_target":{"kind":"Deployment","name":"web-frontend","namespace":"demo-gitops","api_version":"apps/v1"}},"confidence":0.95}`}},
 					},
 					// Workflow phase: list_available_actions then submit
 					{

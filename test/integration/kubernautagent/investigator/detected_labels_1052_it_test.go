@@ -74,6 +74,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -151,6 +152,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -231,6 +233,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, tool := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(tool)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 			mapper := newItTestMapper()
 			mapper.(*meta.DefaultRESTMapper).Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
 			configmaps := suiteDynamicClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default")
@@ -268,6 +271,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)

@@ -24,9 +24,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // fakeTool implements tools.Tool for testing phase scoping.
@@ -34,7 +34,7 @@ type fakeTool struct {
 	name string
 }
 
-func (t *fakeTool) Name() string               { return t.name }
+func (t *fakeTool) Name() string                { return t.name }
 func (t *fakeTool) Description() string         { return "fake tool for testing" }
 func (t *fakeTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
 func (t *fakeTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
@@ -46,8 +46,8 @@ var _ tools.Tool = (*fakeTool)(nil)
 var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func() {
 
 	var (
-		reg      *registry.Registry
-		ptm      katypes.PhaseToolMap
+		reg *registry.Registry
+		ptm katypes.PhaseToolMap
 	)
 
 	BeforeEach(func() {
@@ -128,9 +128,9 @@ var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func()
 			}
 		})
 
-		It("should enforce that RCA has 38 tools, WorkflowDiscovery has 4, Validation has 1", func() {
+		It("should enforce that RCA has 40 tools, WorkflowDiscovery has 4, Validation has 1", func() {
 			rcaTools := reg.ToolsForPhase(katypes.PhaseRCA, ptm)
-			Expect(rcaTools).To(HaveLen(38), "RCA should have 20 K8s + 2 metrics + 2 node proxy + 1 fetch_pod_logs + 8 Prometheus + 2 Alertmanager + 2 resource context + 1 TodoWrite = 38 tools")
+			Expect(rcaTools).To(HaveLen(40), "RCA should have 22 K8s + 2 metrics + 2 node proxy + 1 fetch_pod_logs + 8 Prometheus + 2 Alertmanager + 2 resource context + 1 TodoWrite = 40 tools")
 
 			wdTools := reg.ToolsForPhase(katypes.PhaseWorkflowDiscovery, ptm)
 			Expect(wdTools).To(HaveLen(4), "WorkflowDiscovery should have 3 workflow + 1 TodoWrite = 4 tools")

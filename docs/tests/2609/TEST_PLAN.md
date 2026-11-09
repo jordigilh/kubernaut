@@ -132,22 +132,22 @@ This plan, [implementation plan](IMPLEMENTATION_PLAN.md), approved design/DD if 
 
 Implementation and local verification are complete. Evidence recorded on 2026-11-08:
 
-- `go test ./internal/kubernautagent/investigator ./internal/kubernautagent/mcp/tools ./pkg/kubernautagent/tools/k8s -count=1 -timeout=5m` — PASS; investigator 490/490, MCP tools 275/275, and K8s tools 132/132.
+- `go test ./internal/kubernautagent/investigator ./internal/kubernautagent/mcp/tools ./pkg/kubernautagent/tools/k8s -count=1 -timeout=5m` — PASS; investigator 491/491, MCP tools 275/275, and K8s tools 132/132.
 - Focused `UT-KA-(2588|2609)` investigator regression set — PASS, 14/14 specs; broader `TP-1044|RunWorkflowDiscoveryFromRCA` regression set — PASS, 42/42 specs.
 - `go test -race ./internal/kubernautagent/investigator ./internal/kubernautagent/mcp/tools ./pkg/kubernautagent/tools/k8s -count=1 -timeout=5m` — PASS.
 - `go test ./pkg/kubernautagent/tools/registry -count=1 -timeout=5m` — PASS after updating the production registry expectations to 22 baseline K8s tools and 39 total tools.
 - `go build ./...`, `go test ./... -run=^$ -timeout=30s`, `golangci-lint run --timeout=5m`, and `git diff --check` — PASS.
 
-Exact #2609 evidence is now **5/5 IT, 2/2 E2E**. Remote evidence was collected on `helios08` in `/root/kubernaut-2609` without transferring the repository:
+Exact #2609 focused investigator-entry evidence is **5/5 IT**. The planned #2609 E2E journeys remain unclaimed because the current E2E specs do not yet cover the required fleet, denied/partial-discovery, registered-but-missing-object and stale/no-action combinations. Remote evidence was collected on `helios08` in `/root/kubernaut-2609` without transferring the repository:
 
-- `IT-KA-2609-001` through `IT-KA-2609-005` and `E2E-KA-2609-001`/`002` are executable specs in this checkout.
+- `IT-KA-2609-001` through `IT-KA-2609-005` are executable focused investigator-entry specs in this checkout. `E2E-KA-2609-001`/`002` are reserved for the planned full journeys and are not assigned to the current E2E specs.
 - Local proxy integration attempt: `make test-integration-kubernautagent GINKGO_FOCUS='IT-KA-1044-00[1-5]' TEST_PROCS=1 RACE_FLAG= TEST_TIMEOUT_INTEGRATION=20m` — blocked in `SynchronizedBeforeSuite` while building DataStorage; Podman reported `no space left on device`; **0/175** specs ran.
 - Local proxy E2E attempt: `make test-e2e-kubernautagent GINKGO_FOCUS='E2E-KA-1044-001|E2E-KA-1044-002|E2E-KA-DISC-005' KA_E2E_PROCS=1` — blocked while building the KA image with the same Podman storage error; **0/110** specs ran. Teardown confirmed no Kind cluster remained.
 
 After moving to `helios08` and cleaning the authorized disposable Kind clusters, the exact runs completed:
 
 - Exact focused IT: **5/5 passed** (`IT-KA-2609-001` through `005`) in the investigator integration suite with target-scoped registry/overlay dispatch and controlled external dependencies. These runs prove the investigator entry points and safety behavior, not the full bootstrap/gateway wiring rows in §14.
-- Exact E2E: **2/2 passed** (`E2E-KA-2609-001` and `E2E-KA-2609-002`). The disposable `kubernaut-agent-e2e` Kind cluster was created and deleted successfully.
+- Existing remote E2E paths passed, but they are not counted as #2609 evidence: the ambiguous-GVK path remains `E2E-KA-1044-001`, and the interactive handoff remains `E2E-KA-DISC-005`. The disposable `kubernaut-agent-e2e` Kind cluster was created and deleted successfully.
 - Legacy integration compatibility rerun after fixture adaptation: **5/5 passed** (`IT-KA-1044-001` through `005`).
 
 No production/shared cluster was mutated. Three authorized disposable `helios08` Kind clusters were deleted per user instruction, and the disposable E2E cluster was deleted by teardown.
@@ -180,4 +180,5 @@ Use the five-row [wiring manifest](IMPLEMENTATION_PLAN.md#wiring-manifest-and-ch
 | 1.5 | 2026-11-08 | Added executable #2609 IT/E2E coverage; `helios08` passed 5/5 IT and 2/2 E2E. Legacy compatibility rerun remains pending after SSH interruption. |
 | 1.6 | 2026-11-08 | Confirmed adapted legacy API-gate compatibility at 5/5; removed the temporary remote worktree and verified no Kind clusters remain. |
 | 1.7 | 2026-11-08 | Reconciled remote evidence wording: 5/5 focused investigator-entry IT passed, while full bootstrap/gateway wiring remains unproven; retained the 2/2 E2E and 5/5 legacy compatibility results. |
-| 1.8 | 2026-11-08 | Replaced stale local totals with reproducible current counts (490/490 investigator, 14/14 focused, 42/42 broader regression, 275/275 MCP, 132/132 K8s), recorded registry expectations, and documented the transient aggregate OPA timeout plus successful final rerun. |
+| 1.8 | 2026-11-08 | Replaced stale local totals with reproducible current counts (491/491 investigator, 14/14 focused, 42/42 broader regression, 275/275 MCP, 132/132 K8s), recorded registry expectations, and documented the transient aggregate OPA timeout plus successful final rerun. |
+| 1.9 | 2026-11-08 | Reconciled review evidence: removed overclaimed `E2E-KA-2609-001`/`002` labels from legacy paths and retained the planned #2609 E2E journeys as unclaimed until their required fleet, partial-discovery, missing-object and stale/no-action coverage is implemented. |

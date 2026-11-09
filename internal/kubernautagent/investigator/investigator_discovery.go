@@ -69,6 +69,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		// A pre-existing review decision is authoritative. Interactive
 		// workflow discovery must not clear it merely because a caller asks
 		// for a catalog lookup.
+		ApplyTotals(rcaResult, inv.InvestigationTotals(correlationID))
 		return rcaResult, nil
 	}
 	rcaClient, _, rcaRuntimeParams := inv.resolveForPhase(katypes.PhaseRCA)
@@ -78,6 +79,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
 	if rcaResult.HumanReviewNeeded ||
 		(rcaResult.RemediationTarget.Kind != "" && !TargetAPIVersionValidationMatches(rcaResult, clusterID)) {
+		ApplyTotals(rcaResult, inv.InvestigationTotals(correlationID))
 		return rcaResult, nil
 	}
 

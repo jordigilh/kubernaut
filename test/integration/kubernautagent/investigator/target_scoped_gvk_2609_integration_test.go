@@ -54,10 +54,14 @@ func (t *it2609DiscoveryTool) Execute(context.Context, json.RawMessage) (string,
 }
 
 type it2609OverlayResolver struct {
-	tool tools.Tool
+	targetClusterID string
+	tool            tools.Tool
 }
 
-func (r *it2609OverlayResolver) Overlay(context.Context, string) (map[string]tools.Tool, error) {
+func (r *it2609OverlayResolver) Overlay(_ context.Context, clusterID string) (map[string]tools.Tool, error) {
+	if clusterID != r.targetClusterID {
+		return nil, nil
+	}
 	return map[string]tools.Tool{r.tool.Name(): r.tool}, nil
 }
 
@@ -88,35 +92,37 @@ func newIT2609Enricher(logger logr.Logger, store audit.AuditStore) *enrichment.E
 	return enrichment.NewEnricher(&k8sFixtureClient{ownerChain: nil, err: nil}, suiteDSAdapter, store, logger)
 }
 
-func newIT2609Investigator(
-	client llm.Client,
-	builder *prompt.Builder,
-	resultParser *parser.ResultParser,
-	enricher *enrichment.Enricher,
-	store audit.AuditStore,
-	logger logr.Logger,
-	registry *toolregistry.Registry,
-	fleetResolver investigator.FleetOverlayResolver,
-	workflowIDs []string,
-) *investigator.Investigator {
-	validator := parser.NewValidator(workflowIDs)
+type it2609InvestigatorConfig struct {
+	client        llm.Client
+	builder       *prompt.Builder
+	resultParser  *parser.ResultParser
+	enricher      *enrichment.Enricher
+	store         audit.AuditStore
+	logger        logr.Logger
+	registry      *toolregistry.Registry
+	fleetResolver investigator.FleetOverlayResolver
+	workflowIDs   []string
+}
+
+func newIT2609Investigator(config it2609InvestigatorConfig) *investigator.Investigator {
+	validator := parser.NewValidator(config.workflowIDs)
 	return investigator.New(investigator.Config{
-		Client:               client,
-		Builder:              builder,
-		ResultParser:         resultParser,
-		Enricher:             enricher,
-		AuditStore:           store,
-		Logger:               logger,
+		Client:               config.client,
+		Builder:              config.builder,
+		ResultParser:         config.resultParser,
+		Enricher:             config.enricher,
+		AuditStore:           config.store,
+		Logger:               config.logger,
 		MaxTurns:             15,
 		PhaseTools:           investigator.DefaultPhaseToolMap(),
-		Registry:             registry,
-		FleetOverlayResolver: fleetResolver,
+		Registry:             config.registry,
+		FleetOverlayResolver: config.fleetResolver,
 		ScopeResolver:        investigator.NewMapperScopeResolver(newITAmbiguousMapper()),
 		Pipeline:             investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}},
 	})
 }
 
-var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("integration", "kubernautagent", "target-scoped-gvk"), func() {
+var _ = Describe("Target-scoped RCA GVK investigator-entry integration — #2609", Label("integration", "kubernautagent", "target-scoped-gvk"), func() {
 	var (
 		logger       logr.Logger
 		store        *capturingAuditStore
@@ -136,8 +142,11 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 			{Message: llm.Message{Role: "assistant", Content: it2609RCA(it2609Target("apps/v1"))}},
 			wfToolResp(`{"workflow_id":"scale-up","confidence":0.9}`),
 		}}
-		inv := newIT2609Investigator(mock, builder, resultParser, newIT2609Enricher(logger, store), store, logger,
-			newITTargetScopedDiscoveryRegistry(), nil, []string{"scale-up"})
+		inv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: mock, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: newITTargetScopedDiscoveryRegistry(), workflowIDs: []string{"scale-up"},
+		})
 
 		result, err := inv.Investigate(context.Background(), it2609Signal(""))
 		Expect(err).NotTo(HaveOccurred())
@@ -161,8 +170,12 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 			{Message: llm.Message{Role: "assistant", Content: it2609RCA(it2609Target("remote.example/v1"))}},
 			wfToolResp(`{"workflow_id":"scale-up","confidence":0.9}`),
 		}}
-		inv := newIT2609Investigator(mock, builder, resultParser, newIT2609Enricher(logger, store), store, logger,
-			localRegistry, &it2609OverlayResolver{tool: remote}, []string{"scale-up"})
+		resolver := &it2609OverlayResolver{targetClusterID: "spoke-it-2609", tool: remote}
+		inv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: mock, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: localRegistry, fleetResolver: resolver, workflowIDs: []string{"scale-up"},
+		})
 
 		result, err := inv.Investigate(context.Background(), it2609Signal("spoke-it-2609"))
 		Expect(err).NotTo(HaveOccurred())
@@ -170,6 +183,17 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 		Expect(local.calls).To(Equal(0), "fleet target must not fall back to hub discovery")
 		Expect(result.RemediationTarget.APIVersion).To(Equal("remote.example/v1"))
 		Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue())
+
+		remoteCalls := remote.calls
+		wrongClusterInv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: &mockLLMClient{}, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: localRegistry, fleetResolver: resolver, workflowIDs: []string{"scale-up"},
+		})
+		_, err = wrongClusterInv.Investigate(context.Background(), it2609Signal("different-spoke"))
+		Expect(err).To(HaveOccurred(), "unknown spoke must fail closed without an overlay")
+		Expect(remote.calls).To(Equal(remoteCalls), "wrong spoke must not invoke the configured remote tool")
+		Expect(local.calls).To(Equal(0), "wrong spoke must not fall back to hub discovery")
 	})
 
 	It("IT-KA-2609-003: autonomous selection preserves the verified target parameters", func() {
@@ -177,8 +201,11 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 			{Message: llm.Message{Role: "assistant", Content: it2609RCA(it2609Target("apps/v1"))}},
 			wfToolResp(`{"workflow_id":"scale-up","confidence":0.9}`),
 		}}
-		inv := newIT2609Investigator(mock, builder, resultParser, newIT2609Enricher(logger, store), store, logger,
-			newITTargetScopedDiscoveryRegistry(), nil, []string{"scale-up"})
+		inv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: mock, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: newITTargetScopedDiscoveryRegistry(), workflowIDs: []string{"scale-up"},
+		})
 
 		result, err := inv.Investigate(context.Background(), it2609Signal(""))
 		Expect(err).NotTo(HaveOccurred())
@@ -192,8 +219,11 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 		mock := &mockLLMClient{responses: []llm.ChatResponse{
 			wfToolResp(`{"workflow_id":"scale-up","confidence":0.9}`),
 		}}
-		inv := newIT2609Investigator(mock, builder, resultParser, newIT2609Enricher(logger, store), store, logger,
-			newITTargetScopedDiscoveryRegistry(), nil, []string{"scale-up"})
+		inv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: mock, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: newITTargetScopedDiscoveryRegistry(), workflowIDs: []string{"scale-up"},
+		})
 		rcaResult := &katypes.InvestigationResult{
 			RCASummary:        "Deployment is the owning remediation target",
 			RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
@@ -211,8 +241,11 @@ var _ = Describe("Target-scoped RCA GVK production wiring — #2609", Label("int
 		mock := &mockLLMClient{responses: []llm.ChatResponse{
 			{Message: llm.Message{Role: "assistant", Content: it2609RCA(it2609Target("apps/v1"))}},
 		}}
-		inv := newIT2609Investigator(mock, builder, resultParser, newIT2609Enricher(logger, store), store, logger,
-			failed, nil, []string{"scale-up"})
+		inv := newIT2609Investigator(it2609InvestigatorConfig{
+			client: mock, builder: builder, resultParser: resultParser,
+			enricher: newIT2609Enricher(logger, store), store: store, logger: logger,
+			registry: failed, workflowIDs: []string{"scale-up"},
+		})
 
 		result, err := inv.Investigate(context.Background(), it2609Signal(""))
 		Expect(err).NotTo(HaveOccurred())

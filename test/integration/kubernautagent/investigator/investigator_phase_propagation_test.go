@@ -67,7 +67,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 					"root_cause_analysis": {
 						"summary": "OOMKilled due to memory limit exceeded on api-server container",
 						"contributing_factors": ["memory leak in api-server container", "no HPA configured"],
-						"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production"}
+					"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production", "api_version": "apps/v1"}
 					},
 					"confidence": 0.85
 				}`}},
@@ -80,7 +80,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{

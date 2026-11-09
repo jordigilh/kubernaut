@@ -437,7 +437,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{ToolCalls: []llm.ToolCall{{ID: "rca-review-2511", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"Deployment memory pressure remains actionable","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}},"confidence":0.85,"actionable":true,"investigation_outcome":"actionable"}`}}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry()})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:               "api-server-abc",
 				Namespace:          "production",
@@ -575,10 +575,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			}))
 			DeferCleanup(provider.Close)
 			fixtureEnricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			reg := registry.New()
+			registerITTargetScopedDiscoveryTools(reg)
 			inv := investigator.New(investigator.Config{
 				Client: kaopenai.New("test-model", provider.URL, "test-key"), Builder: builder, ResultParser: rp,
 				Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 5,
-				PhaseTools: phaseTools, Registry: registry.New(),
+				PhaseTools: phaseTools, Registry: reg,
 			})
 			result, err := inv.Investigate(testCtx, katypes.SignalContext{
 				Name: "OOMKilled", Namespace: "production", ResourceKind: "Pod", ResourceName: resourceName,
@@ -673,10 +675,11 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	Describe("IT-KA-686-001: submit_result tool call returns structured investigation result", func() {
 		It("should capture submit_result arguments as investigation result instead of executing a tool", func() {
-			submitArgs := `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded","severity":"critical","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}},"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95,"rationale":"increase memory limit","parameters":{"MEMORY_LIMIT":"512Mi"}},"confidence":0.95,"severity":"critical"}`
+			submitArgs := `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded","severity":"critical","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}},"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95,"rationale":"increase memory limit","parameters":{"MEMORY_LIMIT":"512Mi"}},"confidence":0.95,"severity":"critical"}`
 
 			reg := registry.New()
 			reg.Register(&fakeTool{name: "kubectl_describe", result: `{"kind":"Pod","metadata":{"name":"api-server"},"status":{"phase":"Running"}}`})
+			registerITTargetScopedDiscoveryTools(reg)
 
 			mockClient.responses = []llm.ChatResponse{
 				{
@@ -829,14 +832,14 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop","api_version":"apps/v1"}}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`),
 			}
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -879,7 +882,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -1128,7 +1131,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			signal := katypes.SignalContext{
@@ -1175,7 +1178,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: nil, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			signal := katypes.SignalContext{
@@ -1191,7 +1194,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 				RCASummary: "CrashLoop detected",
 				Confidence: 0.7,
 				RemediationTarget: katypes.RemediationTarget{
-					Kind: "Deployment", Name: "api-server", Namespace: "default",
+					Kind: "Deployment", Name: "api-server", Namespace: "default", APIVersion: "apps/v1",
 				},
 			}
 
@@ -1224,7 +1227,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			signal := katypes.SignalContext{

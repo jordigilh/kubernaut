@@ -823,6 +823,7 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 		MaxTurns:      15,
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
+		Registry:      mcpTargetScopedRegistry(),
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
@@ -922,6 +923,7 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 		MaxTurns:      15,
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
+		Registry:      mcpTargetScopedRegistry(),
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 

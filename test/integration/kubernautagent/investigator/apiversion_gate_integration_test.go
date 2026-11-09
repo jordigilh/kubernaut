@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -53,13 +54,24 @@ func newITAmbiguousMapper() *meta.DefaultRESTMapper {
 	return mapper
 }
 
-func newITTargetScopedDiscoveryRegistry() *registry.Registry {
-	reg := registry.New()
+func registerITTargetScopedDiscoveryTools(reg *registry.Registry) {
 	reg.Register(&fakeTool{
 		name: "api_resources_list",
 		result: `{"resources":[` +
 			`{"apiVersion":"apps/v1","kind":"Deployment"},` +
+			`{"apiVersion":"apps/v1","kind":"ReplicaSet"},` +
+			`{"apiVersion":"apps/v1","kind":"StatefulSet"},` +
 			`{"apiVersion":"v1","kind":"Pod"},` +
+			`{"apiVersion":"v1","kind":"ConfigMap"},` +
+			`{"apiVersion":"v1","kind":"Namespace"},` +
+			`{"apiVersion":"v1","kind":"PersistentVolumeClaim"},` +
+			`{"apiVersion":"v1","kind":"ResourceQuota"},` +
+			`{"apiVersion":"v1","kind":"StorageClass"},` +
+			`{"apiVersion":"autoscaling/v2","kind":"HorizontalPodAutoscaler"},` +
+			`{"apiVersion":"policy/v1","kind":"PodDisruptionBudget"},` +
+			`{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy"},` +
+			`{"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine"},` +
+			`{"apiVersion":"security.istio.io/v1","kind":"AuthorizationPolicy"},` +
 			`{"apiVersion":"operators.coreos.com/v1alpha1","kind":"Subscription"},` +
 			`{"apiVersion":"messaging.knative.dev/v1","kind":"Subscription"}` +
 			`]}`,
@@ -68,7 +80,25 @@ func newITTargetScopedDiscoveryRegistry() *registry.Registry {
 		name:   "resources_list",
 		result: `{"apiVersion":"apps/v1","kind":"DeploymentList","items":[]}`,
 	})
+}
+
+func newITTargetScopedDiscoveryRegistry() *registry.Registry {
+	reg := registry.New()
+	registerITTargetScopedDiscoveryTools(reg)
 	return reg
+}
+
+func newITTargetScopedDiscoveryOverlay(apiVersion, kind string) map[string]tools.Tool {
+	return map[string]tools.Tool{
+		"api_resources_list": &fakeTool{
+			name:   "api_resources_list",
+			result: `{"resources":[{"apiVersion":"` + apiVersion + `","kind":"` + kind + `"}]}`,
+		},
+		"resources_list": &fakeTool{
+			name:   "resources_list",
+			result: `{"apiVersion":"` + apiVersion + `","kind":"` + kind + `List","items":[]}`,
+		},
+	}
 }
 
 var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investigate() Pipeline", func() {
