@@ -810,6 +810,7 @@ func seedAIAnalysisWorkflows(ctx context.Context, namespace, kubeconfigPath stri
 	genericRestartParams := []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 		{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
+		{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Optional target replica count for alternative selection tests"},
 	}
 	testSignalParams := []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},

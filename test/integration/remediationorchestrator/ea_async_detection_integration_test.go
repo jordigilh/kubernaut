@@ -78,8 +78,8 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
@@ -256,8 +256,8 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-proactive-fix",
-				WorkflowName:    "wf-proactive-fix",
+				WorkflowID:      trustedProactiveWorkflowID,
+				WorkflowName:    trustedProactiveWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",

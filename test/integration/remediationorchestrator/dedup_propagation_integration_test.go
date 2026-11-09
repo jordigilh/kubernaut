@@ -82,8 +82,8 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 	ai.Status.Phase = aianalysisv1.PhaseCompleted
 	ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:      "wf-restart-pods",
-			WorkflowName:    "wf-restart-pods",
+			WorkflowID:      trustedRestartWorkflowID,
+			WorkflowName:    trustedRestartWorkflowName,
 			ActionType:      "RestartPod",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
@@ -138,8 +138,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},
@@ -209,8 +209,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},
@@ -305,8 +305,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},

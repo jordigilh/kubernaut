@@ -261,8 +261,8 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.EnsureApproval().ApprovalRequired = false
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "kubernaut/workflows:latest",
@@ -360,8 +360,8 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.EnsureApproval().ApprovalRequired = false
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "kubernaut/workflows:latest",

@@ -391,6 +391,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// kubernaut-system. Creating RR/SP/AI/WE in testNamespace would pass locally but fail in CI
 	// when production-like behavior is expected (e.g. cache only has controller namespace).
 	_ = os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", ROControllerNamespace)
+	By("Seeding content-derived trusted workflow fixtures")
+	seedTrustedWorkflowFixtures()
 
 	By("Setting up the controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{

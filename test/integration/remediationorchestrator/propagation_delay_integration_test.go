@@ -80,8 +80,8 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",

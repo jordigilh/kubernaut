@@ -165,8 +165,8 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	defaultAIWorkflow := func() *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:            "wf-ai-original",
-				WorkflowName:          "wf-ai-original",
+				WorkflowID:            trustedAIOriginalWorkflowID,
+				WorkflowName:          trustedAIOriginalWorkflowName,
 				ActionType:            "RestartPod",
 				Version:               "1.0.0",
 				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
@@ -264,7 +264,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
-		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
+		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
 		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
 		Expect(we.Spec.TargetResource).To(Equal(fmt.Sprintf("%s/Deployment/test-app", namespace)))
 	})
@@ -583,7 +583,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 
-			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
+			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
 			Expect(we.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
 			Expect(we.Spec.WorkflowRef.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
 		})
@@ -619,7 +619,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 
-			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
+			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
 			Expect(we.Spec.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
 			Expect(we.Spec.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
 		})

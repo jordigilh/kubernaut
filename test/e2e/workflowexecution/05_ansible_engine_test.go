@@ -345,7 +345,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "dep-secret-test",
 						"target_namespace": "default",
@@ -425,7 +425,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "dep-configmap-test",
 						"target_namespace": "default",
@@ -505,7 +505,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "cred-merge-test",
 						"target_namespace": "default",
@@ -585,7 +585,7 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: typedStringParameters(map[string]string{
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
 				"target_kind":      "Deployment",
 				"target_name":      "ansible-target",
 				"target_namespace": "default",

@@ -444,7 +444,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 // trustedWorkflowFixture registers a content-addressed catalog entry for one spec.
 func trustedWorkflowFixture(description, engine string) string {
-	return trustedWorkflowFixtureWithParameters(description, engine, []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Description: "fixture"}})
+	return trustedWorkflowFixtureWithParameters(description, engine, []remediationworkflowv1.RemediationWorkflowParameter{{Name: "MESSAGE", Type: "string", Description: "fixture message"}})
 }
 
 func trustedWorkflowFixtureWithParameters(description, engine string, parameters []remediationworkflowv1.RemediationWorkflowParameter) string {
@@ -530,6 +530,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				},
 			},
 			TargetResource: targetResource,
+			Parameters:     make(sharedtypes.TypedParameterMap),
 		},
 	}
 }

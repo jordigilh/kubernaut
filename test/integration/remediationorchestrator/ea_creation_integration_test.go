@@ -86,8 +86,8 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
@@ -279,8 +279,8 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
@@ -465,8 +465,8 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
@@ -676,8 +676,8 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",

@@ -73,7 +73,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		It("should preserve spec fields after creation", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-spec-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("spec", targetResource)
-			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"KEY": `"value"`})
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"MESSAGE": `"value"`})
 			wfe.Spec.Confidence = 0.95
 
 			defer func() {
@@ -87,7 +87,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal(targetResource))
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
-			Expect(created.Spec.Parameters).To(HaveKeyWithValue("KEY", "value"))
+			Expect(created.Spec.Parameters).To(HaveKeyWithValue("MESSAGE", "value"))
 			Expect(created.Spec.Confidence).To(Equal(0.95))
 
 			GinkgoWriter.Println("✅ Spec fields preserved")

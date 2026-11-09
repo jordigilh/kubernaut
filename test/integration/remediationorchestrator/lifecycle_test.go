@@ -487,8 +487,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
@@ -522,7 +522,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 			By("Verifying RAR spec")
 			Expect(rar.Spec.Confidence).To(BeNumerically("==", 0.72))
-			Expect(rar.Spec.RecommendedWorkflow.WorkflowID).To(Equal("wf-restart-pods"))
+			Expect(rar.Spec.RecommendedWorkflow.WorkflowID).To(Equal(trustedRestartWorkflowID))
 			Expect(rar.OwnerReferences).To(HaveLen(1))
 			Expect(rar.OwnerReferences[0].Name).To(Equal(rrName))
 
@@ -555,8 +555,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
@@ -633,8 +633,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",

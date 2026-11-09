@@ -87,7 +87,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					TargetResource: "default/deployment/test-app",
 					Parameters: typedParametersFromStrings(map[string]string{
-						"test": "value",
+						"MESSAGE": "value",
 					}),
 				},
 			}

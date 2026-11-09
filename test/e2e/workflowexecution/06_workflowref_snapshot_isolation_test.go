@@ -145,7 +145,8 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 				},
 				TargetResource: targetResource,
 				Parameters: typedStringParameters(map[string]string{
-					"MESSAGE": "E2E snapshot-isolation test message",
+					"TARGET_RESOURCE": targetResource,
+					"MESSAGE":         "E2E snapshot-isolation test message",
 				}),
 			},
 		}

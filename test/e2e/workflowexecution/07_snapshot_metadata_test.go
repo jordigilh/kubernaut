@@ -19,6 +19,7 @@ package workflowexecution
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -191,6 +192,16 @@ type snapshotWFEOptions struct {
 
 func newSnapshotWFE(options snapshotWFEOptions) *workflowexecutionv1alpha1.WorkflowExecution {
 	Expect(options.workflowID).ToNot(BeEmpty(), "registered workflow UUID must be available")
+	targetResource := "default/deployment/e2e-2390-" + options.name
+	parameters := map[string]string{}
+	if options.engine == "ansible" {
+		parameters["target_kind"] = "Deployment"
+		parameters["target_name"] = strings.TrimPrefix(targetResource, "default/deployment/")
+		parameters["target_namespace"] = "default"
+	} else {
+		parameters["TARGET_RESOURCE"] = targetResource
+		parameters["MESSAGE"] = "E2E-FP-2390 snapshot metadata"
+	}
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{Name: options.name, Namespace: controllerNamespace},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -205,8 +216,8 @@ func newSnapshotWFE(options snapshotWFEOptions) *workflowexecutionv1alpha1.Workf
 				WorkflowID: options.workflowID, WorkflowName: options.workflowName, ActionType: "RestartPod", Version: "1.0.0",
 				ExecutionBundle: options.bundle, ExecutionEngine: options.engine, Dependencies: options.dependencies, Resources: options.resources, EngineConfig: options.engineConfig,
 			}},
-			TargetResource: "default/deployment/e2e-2390-" + options.name,
-			Parameters:     typedStringParameters(map[string]string{"MESSAGE": "E2E-FP-2390 snapshot metadata"}),
+			TargetResource: targetResource,
+			Parameters:     typedParametersForTarget(targetResource, parameters),
 		},
 	}
 }

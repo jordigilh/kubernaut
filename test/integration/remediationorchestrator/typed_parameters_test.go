@@ -14,8 +14,35 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
+const (
+	trustedRestartWorkflowName    = "wf-restart-pods"
+	trustedAIOriginalWorkflowName = "wf-ai-original"
+	trustedProactiveWorkflowName  = "wf-proactive-fix"
+)
+
+var (
+	trustedRestartWorkflowID    string
+	trustedAIOriginalWorkflowID string
+	trustedProactiveWorkflowID  string
+)
+
 func registerTestWorkflow(name string, parameters []rwv1.RemediationWorkflowParameter) *rwv1.RemediationWorkflow {
-	w := &rwv1.RemediationWorkflow{
+	w := newTestWorkflow(name, parameters)
+	Expect(k8sClient.Create(ctx, w)).To(Succeed())
+	DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(context.Background(), w))).To(Succeed()) })
+	setTestWorkflowIdentity(w)
+	return w
+}
+
+func registerTrustedWorkflow(name string) string {
+	w := newTestWorkflow(name, trustedWorkflowParameters())
+	Expect(k8sClient.Create(ctx, w)).To(Succeed())
+	setTestWorkflowIdentity(w)
+	return w.Status.WorkflowID
+}
+
+func newTestWorkflow(name string, parameters []rwv1.RemediationWorkflowParameter) *rwv1.RemediationWorkflow {
+	return &rwv1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ROControllerNamespace},
 		Spec: rwv1.RemediationWorkflowSpec{
 			Version: "1.0.0", ActionType: "RestartPod",
@@ -25,14 +52,27 @@ func registerTestWorkflow(name string, parameters []rwv1.RemediationWorkflowPara
 			Parameters:  parameters,
 		},
 	}
-	Expect(k8sClient.Create(ctx, w)).To(Succeed())
-	DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(context.Background(), w))).To(Succeed()) })
+}
+
+func setTestWorkflowIdentity(w *rwv1.RemediationWorkflow) {
 	content, err := contenthash.MarshalCleanCRDContent(w)
 	Expect(err).NotTo(HaveOccurred())
 	w.Status.ContentHash = contenthash.ComputeContentHash(string(content))
 	w.Status.WorkflowID = contenthash.DeterministicUUID(w.Status.ContentHash)
 	Expect(k8sClient.Status().Update(ctx, w)).To(Succeed())
-	return w
+}
+
+func trustedWorkflowParameters() []rwv1.RemediationWorkflowParameter {
+	return []rwv1.RemediationWorkflowParameter{
+		{Name: "NAMESPACE", Type: "string", Description: "target namespace"},
+		{Name: "POD_NAME", Type: "string", Description: "target pod"},
+	}
+}
+
+func seedTrustedWorkflowFixtures() {
+	trustedRestartWorkflowID = registerTrustedWorkflow(trustedRestartWorkflowName)
+	trustedAIOriginalWorkflowID = registerTrustedWorkflow(trustedAIOriginalWorkflowName)
+	trustedProactiveWorkflowID = registerTrustedWorkflow(trustedProactiveWorkflowName)
 }
 
 func typedStringParameters(values map[string]string) sharedtypes.TypedParameterMap {

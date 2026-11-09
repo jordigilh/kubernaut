@@ -401,8 +401,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						"FAILURE_MODE":    "exit",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E metrics failure test",
 					}),
 				},
@@ -607,9 +607,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						// Per test/fixtures/tekton/failing-pipeline.yaml
-						"FAILURE_MODE":    "exit",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E audit failure validation",
 					}),
 				},

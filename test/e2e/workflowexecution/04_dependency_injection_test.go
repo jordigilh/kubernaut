@@ -100,8 +100,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource1,
-					Parameters: typedStringParameters(map[string]string{
-						"MESSAGE": "DD-WE-006 E2E dependency injection test",
+					Parameters: typedParametersForTarget(targetResource1, map[string]string{
+						"TARGET_RESOURCE": targetResource1,
+						"MESSAGE":         "DD-WE-006 E2E dependency injection test",
 					}),
 				},
 			}
@@ -280,8 +281,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						"MESSAGE": "E2E no-deps test",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
+						"MESSAGE":         "E2E no-deps test",
 					}),
 				},
 			}
@@ -365,8 +367,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						"MESSAGE": "DD-WE-006 Tekton dependency injection test",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
+						"MESSAGE":         "DD-WE-006 Tekton dependency injection test",
 					}),
 				},
 			}
@@ -464,8 +467,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						"MESSAGE": "DD-WE-006 E2E ConfigMap dependency injection test",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
+						"MESSAGE":         "DD-WE-006 E2E ConfigMap dependency injection test",
 					}),
 				},
 			}
@@ -554,8 +558,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: typedStringParameters(map[string]string{
-						"MESSAGE": "DD-WE-006 Tekton ConfigMap dependency injection test",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
+						"MESSAGE":         "DD-WE-006 Tekton ConfigMap dependency injection test",
 					}),
 				},
 			}

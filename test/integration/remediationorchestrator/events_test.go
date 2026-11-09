@@ -128,8 +128,8 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai.Status.EnsureApproval().ApprovalRequired = false
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
@@ -247,8 +247,8 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",

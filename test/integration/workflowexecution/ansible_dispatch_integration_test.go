@@ -90,7 +90,7 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 						},
 					},
 					Parameters: typedParametersFromStrings(map[string]string{
-						"NAMESPACE": "default",
+						"MESSAGE": "default",
 					}),
 				},
 			}

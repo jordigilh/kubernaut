@@ -467,8 +467,9 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: typedStringParameters(map[string]string{
-				"MESSAGE": "E2E test message",
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"MESSAGE":         "E2E test message",
 			}),
 		},
 	}
