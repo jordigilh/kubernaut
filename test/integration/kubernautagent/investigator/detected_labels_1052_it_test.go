@@ -189,7 +189,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			// RCA returns a different remediation target to trigger re-enrichment
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
-					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Root cause is worker-pod OOM","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"production"}}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Root cause is worker-pod OOM","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"production","api_version":"v1"}}`}},
 					{
 						Message:   llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "list_available_actions", Arguments: `{}`}},

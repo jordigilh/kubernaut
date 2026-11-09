@@ -221,7 +221,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 		It("should proceed normally for Deployment without gate intervention (BR-AI-1044 AC4)", func() {
 			k8s := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
-					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
 				},
 			}
 			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)

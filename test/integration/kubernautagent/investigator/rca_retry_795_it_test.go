@@ -83,8 +83,8 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			}
 
 			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "ReplicaSet", Name: "api-rs-abc", Namespace: "production"},
-				{Kind: "Deployment", Name: "api", Namespace: "production"},
+				{Kind: "ReplicaSet", Name: "api-rs-abc", Namespace: "production", APIVersion: "apps/v1"},
+				{Kind: "Deployment", Name: "api", Namespace: "production", APIVersion: "apps/v1"},
 			}}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
@@ -137,7 +137,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			}
 
 			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "Deployment", Name: "api", Namespace: "production"},
+				{Kind: "Deployment", Name: "api", Namespace: "production", APIVersion: "apps/v1"},
 			}}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
@@ -204,8 +204,8 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			}
 
 			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "ReplicaSet", Name: "web-frontend-rs", Namespace: "demo-gitops"},
-				{Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops"},
+				{Kind: "ReplicaSet", Name: "web-frontend-rs", Namespace: "demo-gitops", APIVersion: "apps/v1"},
+				{Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops", APIVersion: "apps/v1"},
 			}}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
@@ -268,7 +268,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			}
 
 			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "Deployment", Name: "api", Namespace: "production"},
+				{Kind: "Deployment", Name: "api", Namespace: "production", APIVersion: "apps/v1"},
 			}}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 

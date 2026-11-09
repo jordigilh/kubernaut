@@ -52,13 +52,14 @@ type discoverySignalResolver struct{}
 
 func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
 	return &katypes.SignalContext{
-		Name:         "OOMKilled",
-		Severity:     "critical",
-		Environment:  "Production",
-		Priority:     "P0",
-		ResourceKind: "Deployment",
-		Namespace:    "production",
-		ResourceName: "api-server",
+		Name:               "OOMKilled",
+		Severity:           "critical",
+		Environment:        "Production",
+		Priority:           "P0",
+		ResourceKind:       "Deployment",
+		Namespace:          "production",
+		ResourceName:       "api-server",
+		ResourceAPIVersion: "apps/v1",
 	}, nil
 }
 
@@ -778,13 +779,14 @@ type crossResourceSignalResolver struct{}
 
 func (d *crossResourceSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
 	return &katypes.SignalContext{
-		Name:         "OOMKilled",
-		Severity:     "critical",
-		Environment:  "Production",
-		Priority:     "P0",
-		ResourceKind: "Pod",
-		Namespace:    "production",
-		ResourceName: "api-server-pod-xyz",
+		Name:               "OOMKilled",
+		Severity:           "critical",
+		Environment:        "Production",
+		Priority:           "P0",
+		ResourceKind:       "Pod",
+		Namespace:          "production",
+		ResourceName:       "api-server-pod-xyz",
+		ResourceAPIVersion: "v1",
 	}, nil
 }
 
