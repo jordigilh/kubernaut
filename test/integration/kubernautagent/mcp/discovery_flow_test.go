@@ -201,7 +201,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(alts).To(HaveLen(1), "one alternative must be present in discovery response")
 			alt0, _ := alts[0].(map[string]interface{})
 			alt0Params, _ := alt0["parameters"].(map[string]interface{})
-			Expect(alt0Params).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
+			Expect(alt0Params).To(HaveKeyWithValue("REPLICA_COUNT", BeNumerically("==", 3)),
 				"alternative workflow must surface LLM-provided parameters (#1169)")
 
 			By("selecting the recommended workflow")
@@ -594,7 +594,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			cr := completer.getCompletedResult()
 			Expect(cr.WorkflowID).To(Equal(alternativeWfID()),
 				"the selected alternative workflow ID must be on the completed result")
-			Expect(cr.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
+			Expect(cr.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", BeNumerically("==", 3)),
 				"alternative workflow parameters must flow through to the completer (#1169)")
 			Expect(cr.Parameters).NotTo(HaveKey("MEMORY_LIMIT_NEW"),
 				"recommended parameters must not leak when an alternative is selected (#1169)")
