@@ -108,8 +108,10 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		rar := &remediationv1.RemediationApprovalRequest{}
 		Expect(kube.Get(ctx, client.ObjectKey{Name: name, Namespace: ns.Name}, rar)).To(Succeed())
 		DeferCleanup(func() {
-			controllerutil.RemoveFinalizer(rar, rocreator.ApprovalRequestFinalizerName)
-			Expect(kube.Update(ctx, rar)).To(Succeed())
+			current := &remediationv1.RemediationApprovalRequest{}
+			Expect(kube.Get(ctx, client.ObjectKey{Name: name, Namespace: ns.Name}, current)).To(Succeed())
+			controllerutil.RemoveFinalizer(current, rocreator.ApprovalRequestFinalizerName)
+			Expect(kube.Update(ctx, current)).To(Succeed())
 		})
 		Expect(rar.Spec.RCAConfidence).To(HaveValue(Equal(0.0)))
 		Expect(rar.Spec.Confidence).To(Equal(.95))

@@ -192,16 +192,19 @@ type ListApprovalRequestsResult struct {
 
 // ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
 type ApprovalRequestSummary struct {
-	RCAConfidence      *float64 `json:"rca_confidence,omitempty"`
-	WorkflowConfidence float64  `json:"workflow_confidence"`
-	Name               string   `json:"name"`
-	Namespace          string   `json:"namespace"`
-	Decision           string   `json:"decision"`
-	RemediationRequest string   `json:"remediation_request"`
-	Confidence         float64  `json:"confidence"`
-	ConfidenceLevel    string   `json:"confidence_level"`
-	TimeRemaining      string   `json:"time_remaining,omitempty"`
-	RequiredBy         string   `json:"required_by,omitempty"`
+	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
+	// WorkflowConfidence is the canonical workflow-selection confidence.
+	WorkflowConfidence float64 `json:"workflow_confidence"`
+	Name               string  `json:"name"`
+	Namespace          string  `json:"namespace"`
+	Decision           string  `json:"decision"`
+	RemediationRequest string  `json:"remediation_request"`
+	// Confidence is retained as a legacy alias for compatibility with existing clients.
+	// Deprecated: use WorkflowConfidence.
+	Confidence      float64 `json:"confidence"`
+	ConfidenceLevel string  `json:"confidence_level"`
+	TimeRemaining   string  `json:"time_remaining,omitempty"`
+	RequiredBy      string  `json:"required_by,omitempty"`
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
@@ -305,12 +308,15 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
-	RCAConfidence          *float64                                             `json:"rca_confidence,omitempty"`
-	WorkflowConfidence     float64                                              `json:"workflow_confidence"`
-	Name                   string                                               `json:"name"`
-	Namespace              string                                               `json:"namespace"`
-	RemediationRequest     string                                               `json:"remediation_request"`
-	AIAnalysis             string                                               `json:"ai_analysis"`
+	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
+	// WorkflowConfidence is the canonical workflow-selection confidence.
+	WorkflowConfidence float64 `json:"workflow_confidence"`
+	Name               string  `json:"name"`
+	Namespace          string  `json:"namespace"`
+	RemediationRequest string  `json:"remediation_request"`
+	AIAnalysis         string  `json:"ai_analysis"`
+	// Confidence is retained as a legacy alias for compatibility with existing clients.
+	// Deprecated: use WorkflowConfidence.
 	Confidence             float64                                              `json:"confidence"`
 	ConfidenceLevel        string                                               `json:"confidence_level"`
 	Reason                 string                                               `json:"reason"`

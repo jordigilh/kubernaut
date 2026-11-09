@@ -227,7 +227,7 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 		return
 	}
 	if rcaResult != nil {
-		result.RCAConfidence = BuildPhase1Context(rcaResult).RCAConfidence
+		result.RCAConfidence = rcaResult.RCAConfidence
 	}
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)

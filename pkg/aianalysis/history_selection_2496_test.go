@@ -118,10 +118,12 @@ require_approval := true`
 			Expect(err).NotTo(HaveOccurred())
 			Expect(analysis.Status.GetApproval().ApprovalRequired).To(Equal(requireApproval))
 		},
-		Entry("interactive missing allowed", true, nil, false),
-		Entry("interactive low allowed", true, ptr(.2), false),
-		Entry("autonomous missing allowed", false, nil, false),
-		Entry("autonomous missing requires review", false, nil, true),
+		// These inline policies intentionally ignore rca_confidence; the case names
+		// describe the policy-owned outcome rather than implying score-based routing.
+		Entry("interactive policy allows execution with missing RCA input", true, nil, false),
+		Entry("interactive policy allows execution with low RCA input", true, ptr(.2), false),
+		Entry("autonomous policy allows execution with missing RCA input", false, nil, false),
+		Entry("autonomous policy requires review", false, nil, true),
 	)
 	It("IT-AA-2586-001: KA handoff reaches the user policy with independent RCA confidence (BR-AI-012, AU-3, SI-10)", func() {
 		r := selectionResult2496(.95, false)

@@ -265,7 +265,6 @@ func (h *AnalyzingHandler) recordApprovalDecision(ctx context.Context, analysis 
 		h.populateApprovalContext(analysis, result)
 		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
 		outcome = aianalysis.OutcomeRequiresApproval
-		reason = result.Reason
 	} else {
 		// Set ApprovalRequired=False condition (auto-approved)
 		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", reason)
