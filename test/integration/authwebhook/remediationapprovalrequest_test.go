@@ -54,6 +54,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 
 	// Helper to create RAR with a unique name per test scenario
 	createRAR := func(testSuffix string) *remediationv1.RemediationApprovalRequest {
+		workflow := createTrustedWorkflow(ctx, "test-rw-rar-"+randomSuffix(), nil)
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-rar-" + strings.ToLower(testSuffix) + "-" + randomSuffix(),
@@ -73,15 +74,21 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				InvestigationSummary: "Memory leak detected in payment service",
 				WhyApprovalRequired:  "Medium confidence requires human validation",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:      "restart-pod-v1",
-					Version:         "1.0.0",
-					ExecutionBundle: "kubernaut/restart-pod:v1",
+					WorkflowID:      workflow.Status.WorkflowID,
+					Version:         workflow.Spec.Version,
+					ExecutionBundle: workflow.Spec.Execution.Bundle,
 					Rationale:       "Standard pod restart for memory leak",
 				},
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
 				},
-				Workflow:      &sharedtypes.WorkflowSnapshot{WorkflowID: "restart-pod-v1"},
+				Workflow: &sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflow.Status.WorkflowID,
+					WorkflowName:    workflow.Name,
+					ActionType:      workflow.Spec.ActionType,
+					Version:         workflow.Spec.Version,
+					ExecutionBundle: workflow.Spec.Execution.Bundle,
+				},
 				Parameters:    typedStringParameters(map[string]string{}),
 				TargetContext: &remediationv1.ApprovalTargetContext{},
 				RequiredBy:    metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes

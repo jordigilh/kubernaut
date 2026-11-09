@@ -37,18 +37,83 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 func typedStringParameters(values map[string]string) sharedtypes.TypedParameterMap {
 	result := make(sharedtypes.TypedParameterMap, len(values))
 	for name, value := range values {
-		valueCopy := value
-		result[name] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &valueCopy}
+		result[name] = typedStringParameter(value)
 	}
 	return result
+}
+
+func typedStringParameter(value string) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "string", StringValue: &value}
+}
+
+func typedFloatParameters(values map[string]float64) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		result[name] = typedFloatParameter(value)
+	}
+	return result
+}
+
+func typedFloatParameter(value float64) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "float", FloatValue: &value}
+}
+
+func typedIntegerParameters(values map[string]int64) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		result[name] = typedIntegerParameter(value)
+	}
+	return result
+}
+
+func typedIntegerParameter(value int64) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "integer", IntegerValue: &value}
+}
+
+// createTrustedWorkflow creates the live catalog object required by approval
+// admission and stamps the same content-derived identity as AuthWebhook.
+func createTrustedWorkflow(ctx context.Context, name string, parameters []remediationworkflowv1.RemediationWorkflowParameter) *remediationworkflowv1.RemediationWorkflow {
+	rw := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Version:    "1.0.0",
+			ActionType: "RestartPod",
+			Description: remediationworkflowv1.RemediationWorkflowDescription{
+				What:      "AuthWebhook integration fixture",
+				WhenToUse: "For AuthWebhook approval testing",
+			},
+			Labels: remediationworkflowv1.RemediationWorkflowLabels{
+				Severity:    []string{"critical"},
+				Environment: []string{"production"},
+				Component:   []string{"v1/Pod"},
+				Priority:    "P1",
+			},
+			Execution:  remediationworkflowv1.RemediationWorkflowExecution{Engine: "job", Bundle: "example.test/workflow:v1"},
+			Parameters: parameters,
+		},
+	}
+	Expect(k8sClient.Create(ctx, rw)).To(Succeed(), "trusted workflow fixture should be created")
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(context.Background(), rw))).To(Succeed())
+	})
+
+	content, err := contenthash.MarshalCleanCRDContent(rw)
+	Expect(err).NotTo(HaveOccurred())
+	rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+	rw.Status.WorkflowID = contenthash.DeterministicUUID(rw.Status.ContentHash)
+	rw.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+	Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed(), "trusted workflow identity should be persisted")
+	return rw
 }
 
 // uniqueActionType generates a unique action type name that satisfies the
