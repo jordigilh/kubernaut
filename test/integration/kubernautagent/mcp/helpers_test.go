@@ -141,6 +141,7 @@ type cacheBackedCatalogFetcher struct {
 	catalog *workflowcatalog.Catalog
 }
 
+// FetchValidator builds a fail-closed workflow validator from the shared test catalog.
 func (f *cacheBackedCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
 	workflows, _, err := f.catalog.List(ctx, nil, -1, 0)
 	if err != nil {
@@ -168,6 +169,7 @@ func (f *cacheBackedCatalogFetcher) FetchValidator(ctx context.Context) (*parser
 	return validator, nil
 }
 
+// mcpCatalogFetcher returns the catalog-backed validator used by real MCP stacks.
 func mcpCatalogFetcher() investigator.CatalogFetcher {
 	return &cacheBackedCatalogFetcher{catalog: sharedWfCatalog}
 }
