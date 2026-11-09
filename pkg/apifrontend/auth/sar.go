@@ -22,6 +22,24 @@ type ToolAuthorizer interface {
 	Check(ctx context.Context, user string, groups []string, toolName string) (bool, error)
 }
 
+// TargetAccess describes the exact Kubernetes resource scope requested by a
+// Console projection. Group/version/resource may contain the Kubernetes
+// wildcard for a bounded list authorization; exact reads always provide all
+// identity fields.
+type TargetAccess struct {
+	Verb      string
+	Group     string
+	Version   string
+	Resource  string
+	Namespace string
+	Name      string
+}
+
+// TargetAuthorizer performs resource-attribute SARs for Console reads.
+type TargetAuthorizer interface {
+	CheckTarget(ctx context.Context, user string, groups []string, target TargetAccess) (bool, error)
+}
+
 // ConsoleAuthorizer checks whether a user is authorized to access the
 // kubernaut console/chat UI at all -- a coarse-grained gate independent of
 // (and enforced in addition to) any per-tool ToolAuthorizer.Check result
@@ -101,6 +119,28 @@ func (s *SARChecker) Check(ctx context.Context, user string, groups []string, to
 	return s.checkSAR(ctx, user, groups, "tools", toolName)
 }
 
+// CheckTarget verifies a Console user's permission for one Kubernetes target
+// scope using ResourceAttributes rather than the kubernaut.ai/tools resource.
+func (s *SARChecker) CheckTarget(ctx context.Context, user string, groups []string, target TargetAccess) (bool, error) {
+	if target.Verb == "" {
+		return false, fmt.Errorf("target verb must not be empty")
+	}
+	if target.Resource == "" {
+		return false, fmt.Errorf("target resource must not be empty")
+	}
+	if user == "" {
+		return false, fmt.Errorf("user must not be empty")
+	}
+	return s.checkSARAttributes(ctx, user, groups, targetCacheKey(user, groups, target), &authorizationv1.ResourceAttributes{
+		Verb:      target.Verb,
+		Group:     target.Group,
+		Version:   target.Version,
+		Resource:  target.Resource,
+		Namespace: target.Namespace,
+		Name:      target.Name,
+	})
+}
+
 // CheckConsoleAccess verifies whether the given user (with groups) holds the
 // coarse-grained, unnamed "console" grant (#1919, AC-3/AC-6) -- a separate,
 // independently-auditable authorization step from any per-tool grant. It
@@ -120,8 +160,15 @@ func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string,
 	if user == "" {
 		return false, fmt.Errorf("user must not be empty")
 	}
+	return s.checkSARAttributes(ctx, user, groups, cacheKey(user, groups, resource, name), &authorizationv1.ResourceAttributes{
+		Verb:     "use",
+		Group:    "kubernaut.ai",
+		Resource: resource,
+		Name:     name,
+	})
+}
 
-	key := cacheKey(user, groups, resource, name)
+func (s *SARChecker) checkSARAttributes(ctx context.Context, user string, groups []string, key string, attributes *authorizationv1.ResourceAttributes) (bool, error) {
 
 	s.mu.RLock()
 	if entry, ok := s.cache[key]; ok && time.Now().Before(entry.expiresAt) {
@@ -132,20 +179,15 @@ func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string,
 
 	sar := &authorizationv1.SubjectAccessReview{
 		Spec: authorizationv1.SubjectAccessReviewSpec{
-			User:   user,
-			Groups: groups,
-			ResourceAttributes: &authorizationv1.ResourceAttributes{
-				Verb:     "use",
-				Group:    "kubernaut.ai",
-				Resource: resource,
-				Name:     name,
-			},
+			User:               user,
+			Groups:             groups,
+			ResourceAttributes: attributes,
 		},
 	}
 
 	result, err := s.client.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
 	if err != nil {
-		s.logger.Error(err, "SAR API call failed", "user", user, "resource", resource, "name", name)
+		s.logger.Error(err, "SAR API call failed", "user", user, "resource", attributes.Resource, "name", attributes.Name)
 		return false, fmt.Errorf("SAR authorization check failed: %w", err)
 	}
 
@@ -159,7 +201,7 @@ func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string,
 	s.mu.Unlock()
 
 	if !allowed {
-		s.logger.V(1).Info("SAR denied access", "user", user, "resource", resource, "name", name, "groups", groups)
+		s.logger.V(1).Info("SAR denied access", "user", user, "resource", attributes.Resource, "name", attributes.Name, "groups", groups)
 	}
 
 	return allowed, nil
@@ -204,14 +246,19 @@ func (g *ConsoleAccessAuthorizationCheckGate) CheckConsoleAccess(_ context.Conte
 var _ ToolAuthorizer = (*ConsoleAccessAuthorizationCheckGate)(nil)
 var _ ConsoleAuthorizer = (*ConsoleAccessAuthorizationCheckGate)(nil)
 
-func cacheKey(user string, groups []string, resource, name string) string {
+func cacheKey(user string, groups []string, parts ...string) string {
 	sorted := make([]string, len(groups))
 	copy(sorted, groups)
 	sort.Strings(sorted)
-	raw := user + "\x00" + strings.Join(sorted, "\x00") + "\x00" + resource + "\x00" + name
+	raw := user + "\x00" + strings.Join(sorted, "\x00") + "\x00" + strings.Join(parts, "\x00")
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
 }
 
 var _ ToolAuthorizer = (*SARChecker)(nil)
+var _ TargetAuthorizer = (*SARChecker)(nil)
 var _ ConsoleAuthorizer = (*SARChecker)(nil)
+
+func targetCacheKey(user string, groups []string, target TargetAccess) string {
+	return cacheKey(user, groups, target.Verb, target.Group, target.Version, target.Resource, target.Namespace, target.Name)
+}

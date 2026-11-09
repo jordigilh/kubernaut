@@ -36,6 +36,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -69,7 +70,9 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		TransitionToFailed: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
 			return ctrl.Result{}, nil
 		},
-		ExpireRAR:              func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
+		ExpireRAR: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
+			return prodcontroller.ExpiredConfirmed, nil
+		},
 		UpdateRARTimeRemaining: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
@@ -106,14 +109,29 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	}
 
 	makeRAR := func(rrName string, decision remediationv1.ApprovalDecision) *remediationv1.RemediationApprovalRequest {
+		now := metav1.Now()
+		requiredBy := metav1.NewTime(now.Add(1 * time.Hour))
+		decidedBy := "admin@example.com"
+		expired := false
+		if decision == remediationv1.ApprovalDecisionExpired {
+			requiredBy = metav1.NewTime(now.Add(-1 * time.Hour))
+			decidedBy = "system"
+			expired = true
+		}
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rar-%s", rrName), Namespace: defaultFixture},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
-				RequiredBy: metav1.NewTime(time.Now().Add(1 * time.Hour)),
+				RequiredBy:      requiredBy,
+				Workflow:        &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-restart", DeclaredParameterNames: map[string]bool{}},
+				Parameters:      map[string]string{},
+				ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				TargetContext:   &remediationv1.ApprovalTargetContext{RemediationTarget: &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "my-app", Namespace: defaultFixture}},
 			},
 			Status: remediationv1.RemediationApprovalRequestStatus{
 				Decision:  decision,
-				DecidedBy: "admin@example.com",
+				DecidedBy: decidedBy,
+				DecidedAt: &now,
+				Expired:   expired,
 			},
 		}
 	}
@@ -161,15 +179,73 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	// RAR lookup
 	// ========================================
 	Describe("RAR lookup", func() {
-		It("UT-APR-H-003: RAR Get NotFound → requeue", func() {
+		It("UT-RO-2570-131: BR-ORCH-025 does not fail on a stale cache miss", func() {
+			rr := awaitingRR("apr-stale")
+			cached := fake.NewClientBuilder().WithScheme(scheme).Build()
+			live := fake.NewClientBuilder().WithScheme(scheme).WithObjects(makeRAR(rr.Name, remediationv1.ApprovalDecisionPending)).Build()
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				Fail("a cache miss must not fail a present approval")
+				return ctrl.Result{}, nil
+			}
+			h := newHandler(cached, cbs)
+			h.SetAPIReader(live)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(intent.Type).To(Equal(phase.TransitionNone))
+			Expect(intent.RequeueAfter).To(BeNumerically(">", 0))
+		})
+
+		It("UT-RO-2570-132: BR-ORCH-025 propagates an authoritative read error", func() {
+			rr := awaitingRR("apr-live-error")
+			cached := fake.NewClientBuilder().WithScheme(scheme).Build()
+			live := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(fakeGetInterceptor("rar-" + rr.Name)).Build()
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				Fail("an API error must not be treated as missing")
+				return ctrl.Result{}, nil
+			}
+			h := newHandler(cached, cbs)
+			h.SetAPIReader(live)
+			_, err := h.Handle(ctx, rr)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("UT-RO-2570-130: BR-ORCH-025 fails approval when the RAR is absent", func() {
 			rr := awaitingRR("apr-nf")
 			c := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-			h := newHandler(c, noopAwaitingCallbacks())
-			intent, err := h.Handle(ctx, rr)
+			cbs := noopAwaitingCallbacks()
+			failed := false
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, p remediationv1.FailurePhase, reason error) (ctrl.Result, error) {
+				failed = true
+				Expect(p).To(Equal(remediationv1.FailurePhaseApproval))
+				Expect(reason.Error()).To(ContainSubstring("missing"))
+				return ctrl.Result{}, nil
+			}
+			h := newHandler(c, cbs)
+			_, err := h.Handle(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(intent.Type).To(Equal(phase.TransitionNone))
-			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+			Expect(failed).To(BeTrue())
+		})
+
+		It("UT-RO-2570-133: BR-ORCH-025 does not emit failure before the transition commits", func() {
+			for _, transitionErr := range []error{nil, fmt.Errorf("status update failed")} {
+				rr := awaitingRR("apr-event")
+				c := fake.NewClientBuilder().WithScheme(scheme).Build()
+				cbs := noopAwaitingCallbacks()
+				var emitted []string
+				cbs.RecordEvent = func(_ *remediationv1.RemediationRequest, _, reason, _ string) { emitted = append(emitted, reason) }
+				cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+					return ctrl.Result{}, transitionErr
+				}
+				_, err := newHandler(c, cbs).Handle(ctx, rr)
+				if transitionErr != nil {
+					Expect(err).To(MatchError(transitionErr))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+				Expect(emitted).NotTo(ContainElement("RemediationFailed"))
+			}
 		})
 
 		It("UT-APR-H-004: RAR Get error → propagates error", func() {
@@ -188,6 +264,113 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	// Approved path
 	// ========================================
 	Describe("RAR Approved", func() {
+		It("UT-RO-2570-108: BR-ORCH-025 creates execution without reading live AIAnalysis", func() {
+			rr := awaitingRR("apr-snapshot-only")
+			rr.Status.EnsurePhaseProgress().AIAnalysisRef = nil
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
+			rar.Spec.Parameters = map[string]string{"MODE": "reviewed"}
+			rar.Spec.Workflow.DeclaredParameterNames = map[string]bool{"MODE": true}
+			rar.Spec.TargetContext.SignalTarget = remediationv1.ResourceIdentifier{Kind: "Pod", Name: "original-pod", Namespace: defaultFixture}
+			rar.Spec.TargetContext.SignalClusterID = "reviewed-cluster"
+			rar.Spec.TargetContext.RemediationTarget = &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "reviewed-app", Namespace: defaultFixture}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr, rar).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}, &remediationv1.RemediationApprovalRequest{}).Build()
+			cbs := noopAwaitingCallbacks()
+			cbs.ResolveWorkflow = func(_ context.Context, _ *remediationv1.WorkflowOverride, sw *aianalysisv1.SelectedWorkflow, _ string) (*aianalysisv1.SelectedWorkflow, bool, error) {
+				return sw, false, nil
+			}
+			cbs.ResolveDualTargets = func(inputRR *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
+				Expect(inputRR.Spec.TargetResource.Name).To(Equal("original-pod"))
+				Expect(inputRR.Spec.ClusterID).To(Equal("reviewed-cluster"))
+				Expect(ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name).To(Equal("reviewed-app"))
+				return prodcontroller.DualTargetResult{Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "reviewed-app", Namespace: defaultFixture}}
+			}
+			hashed := false
+			cbs.CapturePreRemediationHash = func(_ context.Context, kind, name, namespace, cluster string) (string, string, error) {
+				hashed = true
+				Expect([]string{kind, name, namespace, cluster}).To(Equal([]string{"Deployment", "reviewed-app", defaultFixture, "reviewed-cluster"}))
+				return "", "", nil
+			}
+			created := false
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, inputRR *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error) {
+				created = true
+				Expect(ai.Status.RCAResult.SelectedWorkflow.WorkflowID).To(Equal("wf-restart"))
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).To(Equal(map[string]string{"MODE": "reviewed"}))
+				Expect(ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name).To(Equal("reviewed-app"))
+				Expect(inputRR.Spec.TargetResource.Name).To(Equal("original-pod"))
+				Expect(inputRR.Spec.ClusterID).To(Equal("reviewed-cluster"))
+				return "wfe-approved", true, nil
+			}
+			_, err := newHandler(c, cbs).Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created).To(BeTrue())
+			Expect(hashed).To(BeTrue())
+		})
+
+		DescribeTable("UT-RO-2570-107: BR-ORCH-025 rejects unsafe approved RARs before execution", func(mutate func(*remediationv1.RemediationApprovalRequest)) {
+			rr := awaitingRR("apr-incomplete")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
+			mutate(rar)
+			ai := makeAI("ai-" + rr.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rr, rar, ai).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}, &remediationv1.RemediationApprovalRequest{}).
+				Build()
+			cbs := noopAwaitingCallbacks()
+			created := false
+			failed := false
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				created = true
+				return "we-unexpected", true, nil
+			}
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				Expect(failurePhase).To(Equal(remediationv1.FailurePhaseApproval))
+				failed = true
+				return ctrl.Result{}, nil
+			}
+			_, err := newHandler(c, cbs).Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created).To(BeFalse())
+			Expect(failed).To(BeTrue())
+		},
+			Entry("missing original parameters", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Parameters = nil }),
+			Entry("missing parameter schema", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.ParameterSchema = nil }),
+			Entry("missing declarations", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Workflow.DeclaredParameterNames = nil }),
+			Entry("missing target context", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.TargetContext = nil }),
+			Entry("missing workflow identity", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Workflow.WorkflowID = "" }),
+			Entry("UT-RO-2570-042: approved legacy workflow switch", func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{WorkflowName: "unreviewed-workflow"}
+			}),
+		)
+
+		It("UT-RO-2570-106: BR-ORCH-025 fails closed when an approved RAR lacks its snapshot", func() {
+			rr := awaitingRR("apr-missing-snapshot")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
+			rar.Spec.Workflow = nil
+			ai := makeAI("ai-" + rr.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rr, rar, ai).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}, &remediationv1.RemediationApprovalRequest{}).
+				Build()
+			cbs := noopAwaitingCallbacks()
+			created := false
+			failed := false
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				created = true
+				return "we-unexpected", true, nil
+			}
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				Expect(failurePhase).To(Equal(remediationv1.FailurePhaseApproval))
+				failed = true
+				return ctrl.Result{}, nil
+			}
+			h := newHandler(c, cbs)
+			_, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created).To(BeFalse())
+			Expect(failed).To(BeTrue())
+		})
+
 		It("UT-APR-H-005: Approved → WFE created + Advance to Executing (BR-ORCH-095)", func() {
 			rr := awaitingRR("apr-ok")
 			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
@@ -360,6 +543,53 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(err).ToNot(HaveOccurred())
 			Expect(failedCalled).To(BeTrue())
 		})
+
+		It("UT-RO-2564-012: invalid terminal timestamps requeue without changing the parent", func() {
+			rr := awaitingRR("apr-invalid-terminal")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
+			tar := rar.Spec.RequiredBy
+			rar.Status.DecidedAt = &tar
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+		})
+
+		It("UT-RO-2564-012: missing actor on Rejected requeues without failing the parent", func() {
+			rr := awaitingRR("apr-invalid-rejected")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionRejected)
+			rar.Status.DecidedBy = ""
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+		})
 	})
 
 	// ========================================
@@ -380,9 +610,9 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			expireCalled := false
 			failedCalled := false
 			cbs := noopAwaitingCallbacks()
-			cbs.ExpireRAR = func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error {
+			cbs.ExpireRAR = func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
 				expireCalled = true
-				return nil
+				return prodcontroller.ExpiredConfirmed, nil
 			}
 			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
 				failedCalled = true
@@ -420,6 +650,37 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(timeUpdated).To(BeTrue(), "should update RAR time remaining")
 			Expect(intent.Type).To(Equal(phase.TransitionNone))
 			Expect(intent.RequeueAfter).To(Equal(config.RequeueResourceBusy))
+		})
+
+		It("UT-RO-2564-012: expiry race with invalid winning decision requeues safely", func() {
+			rr := awaitingRR("apr-invalid-race")
+			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionPending)
+			tar := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+			rar.Spec.RequiredBy = tar
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rar).
+				Build()
+
+			failedCalled := false
+			cbs := noopAwaitingCallbacks()
+			cbs.ExpireRAR = func(_ context.Context, current *remediationv1.RemediationApprovalRequest) (prodcontroller.ExpiryOutcome, error) {
+				current.Status.Decision = remediationv1.ApprovalDecisionApproved
+				current.Status.DecidedBy = "system"
+				decidedAt := metav1.Now()
+				current.Status.DecidedAt = &decidedAt
+				return prodcontroller.DecisionWon, nil
+			}
+			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+				failedCalled = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedCalled).To(BeFalse())
+			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
 		})
 	})
 })

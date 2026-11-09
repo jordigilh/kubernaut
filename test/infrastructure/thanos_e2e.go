@@ -257,7 +257,7 @@ spec:
 }
 
 func thanosQuerierHTTPConfigArg() string {
-	return "--http.config=/etc/monitoring-tls/web-config.yml"
+	return "--http.config=/etc/monitoring-web-config/web-config.yml"
 }
 
 // DeployThanosQuerier deploys a Thanos Querier into the hub cluster,
@@ -284,6 +284,8 @@ metadata:
   namespace: %[1]s
   labels:
     app: thanos-querier
+  annotations:
+    secret.reloader.stakater.com/reload: "monitoring-tls"
 spec:
   replicas: 1
   selector:
@@ -317,6 +319,9 @@ spec:
         - name: monitoring-tls
           mountPath: /etc/monitoring-tls
           readOnly: true
+        - name: monitoring-web-config
+          mountPath: /etc/monitoring-web-config
+          readOnly: true
         resources:
           requests:
             memory: "64Mi"
@@ -328,6 +333,9 @@ spec:
       - name: monitoring-tls
         secret:
           secretName: monitoring-tls
+      - name: monitoring-web-config
+        secret:
+          secretName: monitoring-web-config
 ---
 apiVersion: v1
 kind: Service

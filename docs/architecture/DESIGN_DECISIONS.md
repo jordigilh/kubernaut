@@ -132,6 +132,7 @@
 | DD-PLATFORM-009 | Bootstrap Health Server for Slow Dependency Wiring (FMC + Gateway, `sharedhealth.NewBootstrapServer`) | ✅ Approved & Implemented | 2026-07-28 | [DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md](decisions/DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md) |
 | DD-TEST-015 | Fleet E2E "Deploy Correctly the First Time" (chart-native `global.fleet.*` on the first `helm install`, FMC chart migration, `FleetProvisioner` callback) | ✅ Approved & Implemented | 2026-07-28 | [DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md](decisions/DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md) |
 | DD-PLATFORM-011 | Helm Policy ConfigMap Ownership Boundary (reserved chart identities, distinct external names) | ✅ Approved | 2026-09-28 | [DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md](decisions/DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md) |
+| DD-PLATFORM-012 | Long-lived Demo Certificate Lifecycle (cert-manager leaves, stable monitoring CA, DataStorage restart-on-renewal) | ✅ Approved | 2026-11-04 | [DD-PLATFORM-012-long-lived-demo-certificate-lifecycle.md](decisions/DD-PLATFORM-012-long-lived-demo-certificate-lifecycle.md) |
 | DD-TLS-001 | No-Write Ambient CA Trust Injection (`SSL_CERT_DIR`, read-only CA directory) | ✅ Approved for implementation | 2026-10-23 | [DD-TLS-001-no-write-ambient-ca-trust-injection.md](decisions/DD-TLS-001-no-write-ambient-ca-trust-injection.md) |
 | DD-FLEET-006 | AF's LLM-Facing `list_clusters`/`cluster_id` Is Not an Asymmetry with DD-FLEET-005 (documentation-only, no code change) | ✅ Accepted | 2026-07-29 | [DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md](decisions/DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md) |
 | DD-FLEET-007 | Ansible/AAP Engine Not Supported for Fleet (Remote) WorkflowExecution (fails closed instead) | ✅ Approved | 2026-07-30 | [DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md](decisions/DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md) |
@@ -145,6 +146,7 @@
 | DD-TEST-020 | Fleet Demo MCP Dedicated Namespace (production-parity hub/remote MCP placement) | ✅ Approved & Implemented | 2026-09-30 | [DD-TEST-020-fleet-mcp-dedicated-namespace.md](decisions/DD-TEST-020-fleet-mcp-dedicated-namespace.md) |
 | DD-AF-015 | Session-Scoped In-Process Event Router | ✅ Approved | 2026-09-13 | [DD-AF-015-session-scoped-event-router.md](decisions/DD-AF-015-session-scoped-event-router.md) |
 | DD-AF-017 | Standalone RAR Parameter Override Contract | 📋 Proposed | 2026-10-29 | [DD-AF-017-standalone-rar-parameter-override-contract.md](decisions/DD-AF-017-standalone-rar-parameter-override-contract.md) |
+| DD-AF-018 | Authenticated Console Policy and Managed-Resource Read Projection | ✅ Accepted — implementation pending | 2026-11-01 | [DD-AF-018-console-policy-scope-read-projection.md](decisions/DD-AF-018-console-policy-scope-read-projection.md) |
 | ADR-075 | Multi-Pillar Data Contract Extensibility | 📋 Proposed | 2026-09-14 | [ADR-075-multi-pillar-data-contract-extensibility.md](decisions/ADR-075-multi-pillar-data-contract-extensibility.md) |
 | ADR-076 | RAR Approval Snapshot and Terminal Decision Contract | 📋 Proposed | 2026-10-29 | [ADR-076-rar-approval-snapshot-and-terminal-decision-contract.md](decisions/ADR-076-rar-approval-snapshot-and-terminal-decision-contract.md) |
 | DD-CONTRACT-003 | Pillar Extension Envelope | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-003-pillar-extension-envelope.md](decisions/DD-CONTRACT-003-pillar-extension-envelope.md) |
@@ -192,5 +194,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: October 29, 2026
+**Last Updated**: November 5, 2026
 **Maintained By**: Kubernaut Architecture Team

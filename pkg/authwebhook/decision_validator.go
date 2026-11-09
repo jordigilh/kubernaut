@@ -29,13 +29,14 @@ import (
 // Returns an error if the decision is invalid.
 func ValidateApprovalDecision(decision remediationv1.ApprovalDecision) error {
 	validDecisions := map[remediationv1.ApprovalDecision]bool{
-		remediationv1.ApprovalDecisionApproved: true,
-		remediationv1.ApprovalDecisionRejected: true,
-		remediationv1.ApprovalDecisionExpired:  true,
+		remediationv1.ApprovalDecisionApproved:  true,
+		remediationv1.ApprovalDecisionRejected:  true,
+		remediationv1.ApprovalDecisionExpired:   true,
+		remediationv1.ApprovalDecisionCancelled: true,
 	}
 
 	if !validDecisions[decision] {
-		return fmt.Errorf("invalid decision: %s (must be Approved, Rejected, or Expired)", decision)
+		return fmt.Errorf("invalid decision: %s (must be Approved, Rejected, Expired, or Cancelled)", decision)
 	}
 
 	return nil

@@ -75,14 +75,15 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 		Expect(opts.RetainFailedExecutions).To(BeTrue())
 	})
 
-	It("UT-WE-1661-006: builds nil CreateOptions.Dependencies when WorkflowRef.Dependencies is nil (no filtering, backward compatible)", func() {
+	It("UT-WE-1661-006: permits absent dependencies with an explicit empty declaration map", func() {
 		wfe.Spec.WorkflowRef.Dependencies = nil
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 
 		_, opts, err := r.resolveSchemaMetadata(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(opts.Dependencies).To(BeNil())
-		Expect(opts.DeclaredParameterNames).To(BeNil())
+		Expect(opts.DeclaredParameterNames).NotTo(BeNil())
+		Expect(opts.DeclaredParameterNames).To(BeEmpty())
 	})
 })

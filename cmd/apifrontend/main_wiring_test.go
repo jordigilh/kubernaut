@@ -1948,6 +1948,25 @@ func TestBuildRouterConfig_ConsoleAccessHandler_WiredWhenAuthorizerSupportsIt(t 
 	}
 }
 
+func TestBuildRouterConfig_ConsolePolicyReadHandler_Wired(t *testing.T) {
+	t.Parallel()
+
+	routerCfg, router, err := buildRouterConfig(testRouterBuildParams(&allowAllToolAuthorizer{}))
+	if err != nil {
+		t.Fatalf("IT-AF-2584-001: unexpected error: %v", err)
+	}
+	if routerCfg.ConsolePolicyReadHandler == nil {
+		t.Fatal("IT-AF-2584-001: ConsolePolicyReadHandler must be wired")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code == http.StatusNotFound {
+		t.Fatal("IT-AF-2584-001: Console inventory route was not registered")
+	}
+}
+
 func TestBuildRouterConfig_ConsoleAccessHandler_NilWhenAuthorizerDoesNotSupportIt(t *testing.T) {
 	t.Parallel()
 

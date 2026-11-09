@@ -59,6 +59,7 @@ type CatalogWorkflow struct {
 	Dependencies           *models.WorkflowDependencies `json:"dependencies,omitempty"`
 	Resources              *corev1.ResourceRequirements `json:"resources,omitempty"`
 	DeclaredParameterNames map[string]bool              `json:"declared_parameter_names,omitempty"`
+	ParameterSchema        []models.WorkflowParameter   `json:"parameter_schema,omitzero"`
 }
 
 // PreSelectionContext accumulates results from pre-selection pipeline hooks
@@ -654,6 +655,11 @@ func applySelectedWorkflow(result *katypes.InvestigationResult, workflow *Catalo
 	result.Dependencies = workflow.Dependencies
 	result.Resources = workflow.Resources
 	result.DeclaredParameterNames = workflow.DeclaredParameterNames
+	if workflow.ParameterSchema != nil {
+		result.ParameterSchema = append([]models.WorkflowParameter{}, workflow.ParameterSchema...)
+	} else {
+		result.ParameterSchema = nil
+	}
 	result.WorkflowVersion = workflow.Version
 	result.WorkflowRationale = "User-selected via interactive mode"
 	// Issue #1661 Change 12: catalog-authoritative, mirroring the

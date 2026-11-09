@@ -46,8 +46,9 @@ const (
 	// ConditionApprovalExpired indicates the approval request timed out
 	ConditionApprovalExpired = "ApprovalExpired"
 
-	// ConditionAuditRecorded indicates audit event was written to DataStorage
-	// Per BR-AUDIT-006: Track audit emission for idempotency
+	// ConditionAuditRecorded indicates audit event enqueue acceptance.
+	// Per BR-AUDIT-006: Track audit emission for idempotency without claiming
+	// downstream durable delivery.
 	// Pattern: WorkflowExecution AuditRecorded condition
 	ConditionAuditRecorded = "AuditRecorded"
 )
@@ -164,14 +165,14 @@ func SetApprovalExpired(rar *remediationv1.RemediationApprovalRequest, expired b
 
 // SetAuditRecorded sets the AuditRecorded condition
 //
-// Per BR-AUDIT-006: Track audit event emission for idempotency
+// Per BR-AUDIT-006: Track audit event enqueue acceptance for idempotency
 // Pattern: WorkflowExecution SetAuditRecorded (pkg/workflowexecution/conditions.go)
 //
 // Usage:
 //
-//	// Audit succeeded
+//	// Audit enqueue accepted
 //	SetAuditRecorded(rar, true, ReasonAuditSucceeded,
-//	    "Approval audit event recorded to DataStorage")
+//	    "Approval audit event accepted by audit buffer")
 //
 //	// Audit failed
 //	SetAuditRecorded(rar, false, ReasonAuditFailed,

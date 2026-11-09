@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
@@ -54,6 +55,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -71,6 +73,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme))
 	// Issue #868: Registering Tekton types with the scheme is safe even when
 	// Tekton CRDs are absent — it only teaches the serializer about Go types.
 	// Actual CRD availability is checked at startup via tektonCRDsAvailable.
@@ -119,6 +122,10 @@ func setupWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLe
 	controllerNS, err := scope.GetControllerNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to determine controller namespace")
+		os.Exit(1)
+	}
+	if err := workflowidentity.ValidateNamespace(controllerNS); err != nil {
+		setupLog.Error(err, "invalid trusted workflow catalog namespace")
 		os.Exit(1)
 	}
 
@@ -278,6 +285,7 @@ func run() int {
 	// execution snapshot instead of a DataStorage round-trip.
 	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
 		ExecutionNamespace:       cfg.Execution.Namespace,
+		CatalogNamespace:         controllerNS,
 		CooldownPeriod:           cfg.Execution.CooldownPeriod,
 		RetainFailedExecutions:   cfg.Execution.RetainFailedExecutions,
 		FailedExecutionRetention: cfg.Execution.FailedExecutionRetention(),

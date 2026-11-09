@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
@@ -777,6 +778,32 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 		consoleAccessHandler = handler.NewConsoleAccessHandler(ca, p.HDeps.Auditor, logger)
 	}
 
+	var projectionDeps policyread.Dependencies
+	if p.HDeps.Backends != nil {
+		projectionDeps = policyread.Dependencies{
+			LocalInventory:  p.HDeps.Backends.LocalInventory,
+			RemoteInventory: p.HDeps.Backends.RemoteInventory,
+			Policies:        p.HDeps.Backends.PolicySource,
+			CurrentPolicies: p.HDeps.Backends.CurrentPolicySource,
+			History:         p.HDeps.Backends.HistorySource,
+			ScopeChecker:    p.HDeps.Backends.ScopeChecker,
+			ReadGuard:       p.HDeps.Backends.ReadGuard,
+			Auditor:         p.HDeps.Auditor,
+			Logger:          logger,
+		}
+		if readAuthorizer, ok := p.HDeps.Authorizer.(policyread.Authorizer); ok {
+			projectionDeps.Authorizer = readAuthorizer
+		}
+	}
+	projectionService, err := policyread.NewService(policyread.Config{
+		Namespace: cfg.Session.Namespace,
+		BasePath:  "/api/v1/console",
+	}, projectionDeps)
+	if err != nil {
+		return handler.RouterConfig{}, nil, fmt.Errorf("create Console policy-read service: %w", err)
+	}
+	consolePolicyReadHandler := handler.NewConsolePolicyReadHandler(projectionService, logger)
+
 	routerCfg := handler.RouterConfig{
 		MetricsRegistry: metricsReg,
 		Logger:          logger,
@@ -786,14 +813,15 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 			AgentCardHandler: p.AgentCardHandler,
 			BackendContract:  handler.BackendContractConfig{Incarnation: p.BackendIncarnation},
 		},
-		AuthMiddleware:       p.AuthMiddleware,
-		PreAuthMiddleware:    p.PreAuthMW,
-		PostAuthMiddleware:   p.PostAuthMW,
-		ReadyChecker:         handler.AllReady(func() bool { return !p.Draining.Load() }, p.DepsReady, p.AuthReady, sessInfra.Healthy.Load),
-		SSETracker:           buildSSETracker(cfg, metricsReg),
-		StatusHandler:        statusHandler,
-		ConsoleAccessHandler: consoleAccessHandler,
-		Draining:             p.Draining,
+		AuthMiddleware:           p.AuthMiddleware,
+		PreAuthMiddleware:        p.PreAuthMW,
+		PostAuthMiddleware:       p.PostAuthMW,
+		ReadyChecker:             handler.AllReady(func() bool { return !p.Draining.Load() }, p.DepsReady, p.AuthReady, sessInfra.Healthy.Load),
+		SSETracker:               buildSSETracker(cfg, metricsReg),
+		StatusHandler:            statusHandler,
+		ConsoleAccessHandler:     consoleAccessHandler,
+		ConsolePolicyReadHandler: consolePolicyReadHandler,
+		Draining:                 p.Draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
 	if err != nil {

@@ -235,12 +235,12 @@ func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigP
 }
 
 const (
-	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
-	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.7.1"
+	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.8.0"
+	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.8.0"
 	valkeyImage              = "docker.io/valkey/valkey:8.1"
 	gatewayAPICRDsURL        = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
-	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
-	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
+	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
+	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
 	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
 	istioHelmVersion         = "1.30.2"
 	// traefikHelmRepoURL: ingress controller for manual setup-e2e-fleet-infra
@@ -823,6 +823,9 @@ func printFleetCoreDemoHeader(gatewayLabel string, writer io.Writer) {
 }
 
 func prepareFleetCoreDemoMonitoring(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, namespace string, writer io.Writer) error {
+	// DD-PLATFORM-012: the long-lived operator demo owns a stable monitoring
+	// trust root and independent cert-manager leaves in hub and spoke. Keep this
+	// in the demo-only path; the shared FMC/Ginkgo setup remains one-shot.
 	// Fleet-wide monitoring (Prometheus+Thanos-sidecar per cluster + hub
 	// Thanos Querier + AlertManager): deliberately NOT added to
 	// provisionFleetCoreInfra (shared with the "fleet"/"fullpipeline"
@@ -858,14 +861,14 @@ func prepareFleetCoreDemoMonitoring(ctx context.Context, kubeconfigPath, remoteK
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create hub monitoring namespace: %w", err)
 	}
-	if err := EnsureMonitoringTLS(ctx, kubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
-		return fmt.Errorf("failed to prepare hub monitoring TLS: %w", err)
-	}
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
-	if err := ReplicateMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, monitoringNamespace, writer); err != nil {
-		return fmt.Errorf("failed to replicate spoke monitoring TLS: %w", err)
+	if err := ensureDemoMonitoringCertificateDependencies(ctx, kubeconfigPath, remoteKubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to prepare demo certificate dependencies: %w", err)
+	}
+	if err := EnsureDemoMonitoringTLS(ctx, kubeconfigPath, remoteKubeconfigPath, namespace, monitoringNamespace, writer); err != nil {
+		return fmt.Errorf("failed to provision demo monitoring TLS lifecycle: %w", err)
 	}
 	// The fleet AlertManager is hub-only and lives in monitoring. OIDC setup
 	// creates the shared CA in kubernaut-system; replicate it into the hub's
@@ -916,7 +919,7 @@ func installFleetCoreDemoAlertManager(ctx context.Context, kubeconfigPath, names
 		return fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "\n📊 Installing fleet-wide monitoring (Prometheus+Thanos per cluster, hub AlertManager)...")
-	if err := DeployAlertManagerTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
+	if err := DeployAlertManagerDemoTLS(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
 		return fmt.Errorf("alertmanager install failed: %w", err)
 	}
 	return nil
@@ -1873,7 +1876,7 @@ spec:
 // broker/router when its targeted Gateway listener uses a private CA. The
 // inter-service-ca ConfigMap is already replicated into mcpGatewayNamespace by
 // prepareMCPGatewayNamespace; this patch makes the controller-created broker
-// trust the HTTPS Gateway hairpin documented by Kuadrant v0.7.1.
+// trust the HTTPS Gateway hairpin documented by Kuadrant v0.8.0.
 func kuadrantBrokerGatewayCAPatch() string {
 	return `[{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"gateway-ca","configMap":{"name":"inter-service-ca"}}},{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"gateway-ca","mountPath":"/certs/gateway-ca.crt","subPath":"ca.crt","readOnly":true}},{"op":"add","path":"/spec/template/spec/containers/0/command/-","value":"--gateway-ca-cert=/certs/gateway-ca.crt"}]`
 }
@@ -1913,7 +1916,7 @@ func installKuadrantIstioControlPlane(ctx context.Context, kubeconfigPath string
 }
 
 // applyKuadrantOverlay renders the pinned upstream overlay before applying it
-// so the test harness can preserve its namespace configurability. The v0.7.1
+// so the test harness can preserve its namespace configurability. The v0.8.0
 // overlay intentionally hard-codes mcp-system in its namespace transformer,
 // ClusterRoleBinding subject, and namespace resource; replacing the exact
 // namespace literal in rendered YAML keeps those references aligned without
@@ -2878,7 +2881,7 @@ spec:
 	hubRegistrationManifest := ""
 	if hubClusterName != "" {
 		hubRegistrationManifest = fmt.Sprintf(`---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %s
@@ -2911,7 +2914,7 @@ spec:
 	}
 
 	routeManifest := strings.TrimSpace(fmt.Sprintf(`%[2]s%[5]s%[8]s%[11]s---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %[9]s
@@ -2929,7 +2932,7 @@ spec:
     name: %[6]s
     namespace: %[1]s
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: %[12]s
@@ -2944,7 +2947,7 @@ spec:
     name: %[4]s
     namespace: %[1]s
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: prod-west

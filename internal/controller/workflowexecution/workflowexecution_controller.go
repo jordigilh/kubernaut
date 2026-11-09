@@ -111,6 +111,9 @@ type WorkflowExecutionReconciler struct {
 	// - Ensures ExecutionRef is fresh for external deletion detection
 	APIReader client.Reader
 
+	// CatalogNamespace is the trusted controller namespace for workflow-ID lookups.
+	CatalogNamespace string
+
 	// ========================================
 	// V1.0 MATURITY REQUIREMENTS (SERVICE_MATURITY_REQUIREMENTS.md)
 	// ========================================
@@ -190,6 +193,7 @@ type WorkflowExecutionReconciler struct {
 // APIReader, Scheme, Recorder) are populated automatically by NewReconciler.
 type ReconcilerOptions struct {
 	ExecutionNamespace       string
+	CatalogNamespace         string
 	CooldownPeriod           time.Duration
 	RetainFailedExecutions   bool
 	FailedExecutionRetention time.Duration
@@ -218,6 +222,7 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		Metrics:                  opts.Metrics,
 		StatusManager:            opts.StatusManager,
 		ExecutionNamespace:       opts.ExecutionNamespace,
+		CatalogNamespace:         opts.CatalogNamespace,
 		CooldownPeriod:           opts.CooldownPeriod,
 		retainFailedExecutions:   opts.RetainFailedExecutions,
 		failedExecutionRetention: opts.FailedExecutionRetention,

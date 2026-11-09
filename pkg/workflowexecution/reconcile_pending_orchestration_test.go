@@ -38,6 +38,7 @@ package workflowexecution_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -48,18 +49,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -78,6 +85,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		rpoCtx = context.Background()
 		rpoScheme = runtime.NewScheme()
 		Expect(workflowexecutionv1alpha1.AddToScheme(rpoScheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(rpoScheme)).To(Succeed())
 		Expect(tektonv1.AddToScheme(rpoScheme)).To(Succeed())
 		Expect(corev1.AddToScheme(rpoScheme)).To(Succeed())
 		rpoRecorder = record.NewFakeRecorder(20)
@@ -85,6 +93,17 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 
 	targetResourceIndexer := func(obj client.Object) []string {
 		return []string{obj.(*workflowexecutionv1alpha1.WorkflowExecution).Spec.TargetResource}
+	}
+	workflowIDIndexer := func(obj client.Object) []string {
+		return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+	}
+	buildCatalogWorkflow := func(wfe *workflowexecutionv1alpha1.WorkflowExecution) *remediationworkflowv1.RemediationWorkflow {
+		rw := &remediationworkflowv1.RemediationWorkflow{ObjectMeta: metav1.ObjectMeta{Name: "rw-" + wfe.Name, Namespace: "default"}}
+		content, err := contenthash.MarshalCleanCRDContent(rw)
+		Expect(err).NotTo(HaveOccurred())
+		rw.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+		wfe.Spec.WorkflowRef.WorkflowID = rw.Status.WorkflowID
+		return rw
 	}
 
 	buildPendingWFE := func(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
@@ -105,7 +124,8 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 						// Issue #1661 Change 11e: engine is read directly from
 						// WorkflowRef, not resolved via a DataStorage round-trip
 						// at runtime.
-						ExecutionEngine: "tekton",
+						ExecutionEngine:        "tekton",
+						DeclaredParameterNames: map[string]bool{},
 					},
 				},
 			},
@@ -124,6 +144,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			Scheme:             rpoScheme,
 			Recorder:           rpoRecorder,
 			ExecutionNamespace: "kubernaut-workflows",
+			CatalogNamespace:   "default",
 			CooldownPeriod:     5 * time.Minute,
 			AuditStore:         mockStore,
 			Metrics:            tm,
@@ -133,6 +154,147 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			ExecutorRegistry:   registry,
 		}
 	}
+
+	It("UT-WE-2570-060: BR-ORCH-025 fails closed when workflow identity cannot be verified", func() {
+		wfe := buildPendingWFE("wfe-no-trusted-catalog", "default/deployment/no-catalog")
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(wfe).
+			WithStatusSubresource(wfe).
+			WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
+			WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).Build()
+		registry := weexecutor.NewRegistry()
+		tektonExec := weexecutor.NewTektonExecutor(fakeClient)
+		registry.Register(tektonExec.Engine(), tektonExec)
+		reconciler := buildReconciler(fakeClient, registry, &mockAuditStore{})
+		_, err := reconciler.Reconcile(rpoCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(wfe)})
+		Expect(err).NotTo(HaveOccurred())
+		persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Expect(fakeClient.Get(rpoCtx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
+		Expect(persisted.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		var pipelines tektonv1.PipelineRunList
+		Expect(fakeClient.List(rpoCtx, &pipelines)).To(Succeed())
+		Expect(pipelines.Items).To(BeEmpty())
+	})
+
+	It("UT-WE-2570-041: BR-ORCH-025 rejects absent declarations before executor dispatch", func() {
+		wfe := buildPendingWFE("wfe-no-declarations", "default/deployment/no-declarations")
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
+		wfe.Spec.Parameters = map[string]string{"UNDECLARED": "must-not-run"}
+		rw := buildCatalogWorkflow(wfe)
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(wfe, rw).WithStatusSubresource(wfe).
+			WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
+			WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).Build()
+		registry := weexecutor.NewRegistry()
+		tektonExec := weexecutor.NewTektonExecutor(fakeClient)
+		registry.Register(tektonExec.Engine(), tektonExec)
+		reconciler := buildReconciler(fakeClient, registry, &mockAuditStore{})
+		_, err := reconciler.Reconcile(rpoCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(wfe)})
+		Expect(err).NotTo(HaveOccurred())
+		persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Expect(fakeClient.Get(rpoCtx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
+		Expect(persisted.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		var pipelines tektonv1.PipelineRunList
+		Expect(fakeClient.List(rpoCtx, &pipelines)).To(Succeed())
+		Expect(pipelines.Items).To(BeEmpty())
+	})
+
+	It("UT-WE-2570-061: BR-ORCH-025 verifies identity when the catalog CRD lacks a selectable workflow ID field", func() {
+		wfe := buildPendingWFE("wfe-legacy-catalog-crd", "default/deployment/legacy-catalog")
+		rw := buildCatalogWorkflow(wfe)
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(rw).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				calls++
+				if calls == 1 {
+					return apierrors.NewBadRequest("field label not supported: status.workflowId")
+				}
+				return c.List(ctx, list, opts...)
+			}}).Build()
+
+		Expect(workflowidentity.Verify(rpoCtx, fakeClient, "default", wfe.Spec.WorkflowRef.WorkflowID)).To(Succeed())
+		Expect(calls).To(Equal(2))
+	})
+
+	It("UT-WE-2570-125: BR-ORCH-025 does not retry an authoritative no-match", func() {
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				calls++
+				return c.List(ctx, list, opts...)
+			}}).Build()
+		Expect(workflowidentity.Verify(rpoCtx, fakeClient, "default", "absent")).NotTo(Succeed())
+		Expect(calls).To(Equal(1))
+	})
+
+	It("UT-WE-2570-129: BR-ORCH-025 fails closed after transient identity lookup exhaustion without dispatching", func() {
+		wfe := buildPendingWFE("wfe-transient-catalog", "default/deployment/transient-catalog")
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithObjects(wfe).
+			WithStatusSubresource(wfe).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*remediationworkflowv1.RemediationWorkflowList); ok {
+					calls++
+					return apierrors.NewServiceUnavailable("temporary")
+				}
+				return c.List(ctx, list, opts...)
+			}}).Build()
+		registry := weexecutor.NewRegistry()
+		tektonExec := weexecutor.NewTektonExecutor(fakeClient)
+		registry.Register(tektonExec.Engine(), tektonExec)
+		reconciler := buildReconciler(fakeClient, registry, &mockAuditStore{})
+
+		result, err := reconciler.Reconcile(rpoCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(wfe)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(calls).To(Equal(3))
+		Expect(result).To(Equal(reconcile.Result{}))
+
+		persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Expect(fakeClient.Get(rpoCtx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
+		Expect(persisted.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		var pipelines tektonv1.PipelineRunList
+		Expect(fakeClient.List(rpoCtx, &pipelines)).To(Succeed())
+		Expect(pipelines.Items).To(BeEmpty())
+	})
+
+	It("UT-WE-2570-128: BR-ORCH-025 does not retry a forbidden catalog lookup", func() {
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+				calls++
+				return apierrors.NewForbidden(schema.GroupResource{Group: "kubernaut.ai", Resource: "remediationworkflows"}, "", errors.New("access denied"))
+			}}).Build()
+		err := workflowidentity.Verify(rpoCtx, fakeClient, "default", "wf-test")
+		Expect(apierrors.IsForbidden(err)).To(BeTrue())
+		Expect(calls).To(Equal(1))
+	})
+
+	It("UT-WE-2570-126: BR-ORCH-025 bounds transient identity lookup attempts", func() {
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+				calls++
+				return apierrors.NewServiceUnavailable("temporary")
+			}}).Build()
+		err := workflowidentity.Verify(rpoCtx, fakeClient, "default", "wf-test")
+		Expect(err).NotTo(Succeed())
+		Expect(workflowidentity.IsTransient(err)).To(BeFalse())
+		Expect(calls).To(Equal(3))
+	})
+
+	It("UT-WE-2570-127: BR-ORCH-025 cancels identity lookup without retrying", func() {
+		ctx, cancel := context.WithCancel(rpoCtx)
+		defer cancel()
+		calls := 0
+		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
+			WithInterceptorFuncs(interceptor.Funcs{List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+				calls++
+				cancel()
+				return apierrors.NewServiceUnavailable("temporary")
+			}}).Build()
+		Expect(workflowidentity.Verify(ctx, fakeClient, "default", "wf-test")).To(MatchError(context.Canceled))
+		Expect(calls).To(Equal(1))
+	})
 
 	// BR-WE-009: Cooldown Gating
 	// FedRAMP SC-5 (DoS Protection): blocking re-execution against a target
@@ -149,12 +311,14 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			priorWFE.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-1 * time.Minute)}
 
 			wfe := buildPendingWFE("wfe-cooldown-current", targetResource)
-			wfe.Spec.WorkflowRef.WorkflowID = priorWFE.Spec.WorkflowRef.WorkflowID
+			rw := buildCatalogWorkflow(wfe)
+			priorWFE.Spec.WorkflowRef.WorkflowID = wfe.Spec.WorkflowRef.WorkflowID
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(priorWFE, wfe).
+				WithObjects(priorWFE, wfe, rw).
 				WithStatusSubresource(wfe, priorWFE).
+				WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
 
@@ -205,6 +369,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		It("should not re-emit workflow.selection.completed when the execution PipelineRun already exists", func() {
 			targetResource := "default/deployment/idempotent-target"
 			wfe := buildPendingWFE("wfe-audit-idempotent", targetResource)
+			rw := buildCatalogWorkflow(wfe)
 
 			// Pre-create the execution resource this WFE would create, at the
 			// exact deterministic name reconcilePending computes, simulating a
@@ -227,8 +392,9 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(wfe, existingPR).
+				WithObjects(wfe, existingPR, rw).
 				WithStatusSubresource(wfe).
+				WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
 
@@ -267,11 +433,13 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		It("should emit workflow.selection.completed exactly once when the execution resource does not yet exist", func() {
 			targetResource := "default/deployment/first-creation-target"
 			wfe := buildPendingWFE("wfe-audit-first", targetResource)
+			rw := buildCatalogWorkflow(wfe)
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, rw).
 				WithStatusSubresource(wfe).
+				WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", workflowIDIndexer).
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
 

@@ -78,11 +78,19 @@ func containsReason(reasons []string, reason string) bool {
 }
 
 var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE-095)", Label("integration", "events"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Event observability fixture", "job") })
+	eventJobWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueJobWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 
 	Context("IT-WE-095-01: Job happy path", func() {
 		It("should emit WorkflowValidated, ExecutionCreated, PhaseTransition (Pending→Running), WorkflowCompleted", func() {
 			targetResource := fmt.Sprintf("default/deployment/job-events-happy-%d", time.Now().UnixNano())
-			wfe := createUniqueJobWFE("events-happy", targetResource)
+			wfe := eventJobWFE("events-happy", targetResource)
 
 			defer func() {
 				cleanupJobWFE(wfe)
@@ -137,6 +145,8 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 		It("should emit WorkflowValidationFailed when spec is invalid", func() {
 			// Create WFE with empty ContainerImage (ValidateSpec rejects this)
 			wfe := createUniqueWFE("events-invalid", "default/deployment/test-pod")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			wfe.Spec.WorkflowRef.ExecutionBundle = ""
 
 			defer func() {
@@ -173,7 +183,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			targetResource := fmt.Sprintf("default/deployment/job-events-cooldown-%d", time.Now().UnixNano())
 
 			By("Creating first WFE and completing it to activate cooldown")
-			wfe1 := createUniqueJobWFE("events-cooldown-1", targetResource)
+			wfe1 := eventJobWFE("events-cooldown-1", targetResource)
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 			Eventually(func() string {
@@ -197,7 +207,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Creating second WFE for SAME target (within cooldown)")
-			wfe2 := createUniqueJobWFE("events-cooldown-2", targetResource)
+			wfe2 := eventJobWFE("events-cooldown-2", targetResource)
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 			defer func() {
@@ -221,7 +231,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 	Context("IT-WE-095-04: Job failure", func() {
 		It("should emit WorkflowValidated, ExecutionCreated, WorkflowFailed", func() {
 			targetResource := fmt.Sprintf("default/deployment/job-events-fail-%d", time.Now().UnixNano())
-			wfe := createUniqueJobWFE("events-fail", targetResource)
+			wfe := eventJobWFE("events-fail", targetResource)
 
 			defer func() {
 				cleanupJobWFE(wfe)

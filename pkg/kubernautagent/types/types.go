@@ -149,6 +149,8 @@ type InvestigationResult struct {
 	Dependencies           *models.WorkflowDependencies `json:"dependencies,omitempty"`
 	Resources              *corev1.ResourceRequirements `json:"resources,omitempty"`
 	DeclaredParameterNames map[string]bool              `json:"declared_parameter_names,omitempty"`
+	// ParameterSchema carries catalog constraints; nil means metadata was unavailable.
+	ParameterSchema []models.WorkflowParameter `json:"parameter_schema,omitzero"`
 
 	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
 	HumanReviewNeeded bool   `json:"human_review_needed"`
@@ -362,6 +364,10 @@ type RemediationTarget struct {
 	// Format: "group/version" (e.g. "route.openshift.io/v1") or "version" for core (e.g. "v1").
 	// Issue #1040.
 	APIVersion string `json:"api_version,omitempty"`
+	// APIVersionValidated is internal provenance for API versions resolved by
+	// the REST mapper or the API-version validation gate. It must never cross
+	// the API boundary or be inferred for model-supplied values.
+	APIVersionValidated bool `json:"-"`
 }
 
 // DefaultClusterNameSentinel is the display-only placeholder

@@ -29,6 +29,9 @@ func NewClusterLookupAdapter(registry ClusterRegistry) *ClusterLookupAdapter {
 
 // IsKnownCluster returns true if the cluster is known to the registry.
 func (a *ClusterLookupAdapter) IsKnownCluster(clusterID string) bool {
+	if a.registry == nil || !a.registry.Ready() {
+		return false
+	}
 	_, found := a.registry.Get(clusterID)
 	return found
 }

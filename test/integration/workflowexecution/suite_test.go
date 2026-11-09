@@ -48,15 +48,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"     // Shared infrastructure (PostgreSQL + Redis + DS)
 	"github.com/jordigilh/kubernaut/test/shared/integration" // DD-AUTH-014: Authenticated DataStorage clients
+	"github.com/jordigilh/kubernaut/test/testutil"
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
 )
@@ -227,6 +230,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Registering CRD schemes")
 	err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = remediationworkflowv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	err = tektonv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -343,6 +348,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Scheme:             k8sManager.GetScheme(),
 		Recorder:           k8sManager.GetEventRecorderFor("workflowexecution-controller"),
 		ExecutionNamespace: WorkflowExecutionNS,
+		CatalogNamespace:   DefaultNamespace,
 		CooldownPeriod:     10 * time.Second, // Short cooldown for integration tests (default 5min too long)
 		AuditStore:         auditStore,       // REAL audit store for integration tests
 		Metrics:            testMetrics,      // Test-isolated metrics (DD-METRICS-001)
@@ -434,6 +440,27 @@ var _ = SynchronizedAfterSuite(func() {
 // ========================================
 // Test Helpers - Parallel-Safe (4 procs)
 // ========================================
+
+// trustedWorkflowFixture registers a content-addressed catalog entry for one spec.
+func trustedWorkflowFixture(description, engine string) string {
+	rw := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("it-catalog-%d", time.Now().UnixNano()), Namespace: DefaultNamespace},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Version: "1.0.0", ActionType: "RestartPod",
+			Description: remediationworkflowv1.RemediationWorkflowDescription{What: description, WhenToUse: "For integration tests"},
+			Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
+			Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef},
+			Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Description: "fixture"}},
+		},
+	}
+	Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+	DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, rw))).To(Succeed()) })
+	content, err := contenthash.MarshalCleanCRDContent(rw)
+	Expect(err).NotTo(HaveOccurred())
+	rw.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+	Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
+	return rw.Status.WorkflowID
+}
 
 // createUniqueWFE creates a WorkflowExecution with unique name for parallel test isolation
 // Defaults to ExecutionEngine: "tekton" for backward compat with existing Tekton tests.

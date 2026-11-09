@@ -41,7 +41,8 @@ var _ = Describe("JWT Delegation to KA (G7)", Label("e2e", "phase4", "g7"), func
 		Expect(err).NotTo(HaveOccurred(), "MCP initialize")
 		Expect(sid).NotTo(BeEmpty())
 
-		callBody := buildJSONRPC(fmt.Sprintf("g7-jwt-01-%d", time.Now().UnixNano()), "tools/call",
+		rpcID := fmt.Sprintf("g7-jwt-01-%d", time.Now().UnixNano())
+		callBody := buildJSONRPC(rpcID, "tools/call",
 			map[string]interface{}{
 				"name": "kubernaut_select_workflow",
 				"arguments": map[string]interface{}{
@@ -58,7 +59,7 @@ var _ = Describe("JWT Delegation to KA (G7)", Label("e2e", "phase4", "g7"), func
 		// "no active interactive session" are acceptable — they prove JWT auth
 		// succeeded at KA and only the workflow preconditions failed.
 		payload := unwrapSSEDataLine(raw)
-		text, _, perr := parseMCPToolPayload(payload)
+		text, _, perr := parseMCPToolPayload(payload, rpcID)
 		Expect(perr).NotTo(HaveOccurred(), "failed to parse MCP response payload")
 
 		lower := strings.ToLower(text + string(raw))
@@ -78,7 +79,8 @@ var _ = Describe("JWT Delegation to KA (G7)", Label("e2e", "phase4", "g7"), func
 			return
 		}
 
-		callBody := buildJSONRPC(fmt.Sprintf("g7-jwt-02-%d", time.Now().UnixNano()), "tools/call",
+		rpcID := fmt.Sprintf("g7-jwt-02-%d", time.Now().UnixNano())
+		callBody := buildJSONRPC(rpcID, "tools/call",
 			map[string]interface{}{
 				"name": "kubernaut_select_workflow",
 				"arguments": map[string]interface{}{
@@ -103,7 +105,7 @@ var _ = Describe("JWT Delegation to KA (G7)", Label("e2e", "phase4", "g7"), func
 			return
 		}
 
-		text, toolErr, perr := parseMCPToolPayload(payload)
+		text, toolErr, perr := parseMCPToolPayload(payload, rpcID)
 		Expect(perr).NotTo(HaveOccurred())
 		if toolErr {
 			expectAuthError(code, []byte(text), text)

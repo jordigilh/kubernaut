@@ -25,8 +25,8 @@ limitations under the License.
 //
 // Responsibilities:
 // - Watch RemediationApprovalRequest for status.Decision changes
-// - Emit approval audit events (orchestrator.approval.approved/rejected)
-// - Fire-and-forget pattern (don't block on audit failures)
+// - Enqueue approval audit events (orchestrator.approval.approved/rejected)
+// - Fire-and-forget pattern (don't block on audit delivery failures)
 package controller
 
 import (
@@ -152,7 +152,7 @@ func (r *RARReconciler) shouldSkipRARAudit(ctx context.Context, req ctrl.Request
 
 // buildAndStoreApprovalAudit records the approval-decision business metric,
 // builds the approval audit event (DD-AUDIT-003 v2.2: ClusterID from RAR
-// spec), and stores it fire-and-forget (audit failures never fail
+// spec), and enqueues it fire-and-forget (audit failures never fail
 // reconciliation). Returns the built event (nil if build failed) and the
 // store error (nil on success) for the caller to persist onto
 // AuditRecorded. Extracted from Reconcile (Wave 6 6e-i GREEN: funlen
@@ -174,14 +174,23 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 		"correlationID", parentRRName,
 		"namespace", rar.Namespace)
 
+	eventContext := roaudit.ApprovalEventContext{
+		CorrelationID:      parentRRName, // correlation_id = parent RR name
+		Namespace:          rar.Namespace,
+		RRName:             parentRRName,
+		ClusterID:          rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
+		RARName:            rar.Name,
+		OriginalParameters: rar.Spec.Parameters,
+	}
+	if rar.Status.WorkflowOverride != nil {
+		eventContext.OverrideParameters = rar.Status.WorkflowOverride.Parameters
+		eventContext.OverrideRationale = &rar.Status.WorkflowOverride.Rationale
+	}
+	if rar.Spec.Workflow != nil {
+		eventContext.WorkflowID = rar.Spec.Workflow.WorkflowID
+	}
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
-		roaudit.ApprovalEventContext{
-			CorrelationID: parentRRName, // correlation_id = parent RR name
-			Namespace:     rar.Namespace,
-			RRName:        parentRRName,
-			ClusterID:     rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
-			RARName:       rar.Name,
-		},
+		eventContext,
 		decision,                   // decision (Approved/Rejected/Expired)
 		decidedBy,                  // decided_by (from AuthWebhook)
 		rar.Status.DecisionMessage, // decision_message
@@ -203,7 +212,7 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 			"decision", decision,
 			"namespace", rar.Namespace)
 	} else {
-		logger.Info("Successfully emitted approval audit event",
+		logger.Info("Approval audit event accepted by audit buffer",
 			"rar", rar.Name,
 			"category", "orchestration",
 			"eventType", event.EventType,
@@ -241,7 +250,7 @@ func (r *RARReconciler) persistAuditRecordedCondition(ctx context.Context, req c
 		} else {
 			rarconditions.SetAuditRecorded(rar, true,
 				rarconditions.ReasonAuditSucceeded,
-				fmt.Sprintf("Approval audit event %s recorded to DataStorage", event.EventType),
+				fmt.Sprintf("Approval audit event %s accepted by audit buffer", event.EventType),
 				r.metrics)
 		}
 		return r.client.Status().Update(ctx, rar)

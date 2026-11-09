@@ -36,7 +36,7 @@ KA resolves the authoritative remediation target from K8s-verified data, then re
 3. **Signal identity** — fallback when no enrichment data is available at all
 
 LLM-target reconciliation:
-- If the LLM's proposed `Kind` is empty or matches the resolved root's `Kind` → the K8s-verified root identity **overrides** the LLM's target (the LLM's `apiVersion` is preserved when the kind matches, since same kind implies same API group, #1040)
+- If the LLM's proposed `Kind` is empty or matches the resolved root's `Kind` → the K8s-verified root identity and authoritative `apiVersion` **override** the LLM's target. An empty authoritative version clears any model-supplied version rather than preserving an unverified value (#1040, #2570)
 - If the LLM's proposed `Kind` is a **descendant** in the owner chain (e.g., it names the Pod when the resolved root is the Deployment) → KA resolves **upward** to the K8s-verified root owner
 - Only when the LLM's `Kind` is genuinely **cross-type** — not the signal's kind and not present anywhere in the owner chain (e.g., `Node` when the root is `Deployment`) — is the LLM's proposed target preserved as-is
 
@@ -258,7 +258,7 @@ metadata:
 - Pass through to KA for RCA
 
 **KA Handling** (BR-KA-212):
-- Accept `apiVersion` from the LLM if provided (no validation required — KA's own owner-chain resolution is authoritative regardless)
+- Treat an LLM-provided `apiVersion` as a proposal only. For same-kind or owner-chain targets, KA finalization accepts only signal, owner-chain, REST-mapper, or API-version-gate authority; an unresolved authoritative version clears the model value.
 - If missing: No error — RO will use static mapping
 - No self-correction loop needed for `apiVersion`
 
@@ -385,12 +385,14 @@ Plumb `apiVersion` through to `RemediationTargetInput` if policy authors need to
 |---------|------|---------|
 | 1.1–1.6 | 2026-01-20 to 2026-03-25 | Historical evolution under the Python-era implementation: introduced `apiVersion`, three-layer defense-in-depth, LLM-provided-then-KA-resolved hybrid model, and the three-phase RCA flow. Superseded by v2.0 below; see git history for the original entries if archaeology is needed. |
 | 2.0 | 2026-08-01 | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). Field renamed `affectedResource` → `remediationTarget` throughout (KA wire contract, AIAnalysis CRD, Rego `PolicyInput`). Corrected the canonical-parameter-injection model: `TARGET_RESOURCE_*` are unconditionally injected and unconditionally preserved (`kaManagedParams`), not conditional on workflow schema declaration. Corrected root-resolution priority to match `InjectRemediationTarget` (owner chain → enrichment source identity → signal identity). Corrected Layer 3 file/function to `pkg/remediationorchestrator/handler/aianalysis.go` (`HandleRemediationTargetMissing`). Documented the RemediationRequest-level `Status.RemediationTarget` propagation step. Flagged the OpenAPI spec and Rego `apiVersion` gaps rather than asserting false completeness. |
+| 2.1 | 2026-11-05 | Clarified that owner-chain or signal API-version authority overrides model values, and an empty authoritative version clears an unverified model value. |
+| 2.2 | 2026-11-05 | Documented provenance-gated handoff for REST-mapper/API-version-gate results so validated versions survive finalization without restoring arbitrary model values. |
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-08-01 (v2.0 — Go rewrite)
-- **Version**: 2.0
+- **Last Updated**: 2026-11-05 (v2.2 — provenance-gated target API-version authority)
+- **Version**: 2.2
 - **Status**: ✅ Approved
 - **Next Review**: When the OpenAPI spec gap or Rego `apiVersion` gap is closed

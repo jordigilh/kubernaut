@@ -246,9 +246,12 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 				ExecutionBundle: "test-image:latest",
 				// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
 				// required field on validateSelectedWorkflow.
-				ExecutionEngine: "job",
+				ExecutionEngine:        "job",
+				DeclaredParameterNames: map[string]bool{},
 			},
-			Confidence: confidence,
+			Confidence:      confidence,
+			Parameters:      map[string]string{},
+			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 		},
 		RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
 			Summary:  "Test root cause",
@@ -387,8 +390,13 @@ func newRemediationApprovalRequestApproved(name, rrName, decidedBy string) *reme
 				Name: "ai-" + rrName,
 			},
 			Confidence:           0.4,
+			Workflow:             &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "test-image:latest", ExecutionEngine: "job", DeclaredParameterNames: map[string]bool{}},
+			Parameters:           map[string]string{},
+			ParameterSchema:      []remediationworkflowv1.RemediationWorkflowParameter{},
+			TargetContext:        &remediationv1.ApprovalTargetContext{RemediationTarget: &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "test-deployment", Namespace: namespace}},
 			ConfidenceLevel:      "low",
 			Reason:               "Low confidence score requires approval",
+			RequiredBy:           metav1.NewTime(now.Add(time.Hour)),
 			RecommendedWorkflow:  remediationv1.RecommendedWorkflowSummary{},
 			InvestigationSummary: "Test investigation summary",
 		},
@@ -434,6 +442,7 @@ func newRemediationApprovalRequestRejected(name, rrName, decidedBy, reason strin
 			Confidence:           0.4,
 			ConfidenceLevel:      "low",
 			Reason:               "Low confidence score requires approval",
+			RequiredBy:           metav1.NewTime(now.Add(time.Hour)),
 			RecommendedWorkflow:  remediationv1.RecommendedWorkflowSummary{},
 			InvestigationSummary: "Test investigation summary",
 		},
@@ -582,7 +591,10 @@ func newRemediationApprovalRequestExpired(name, namespace, rrName string) *remed
 			InvestigationSummary: "Test investigation summary",
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{
-			Decision: remediationv1.ApprovalDecisionExpired,
+			Decision:  remediationv1.ApprovalDecisionExpired,
+			DecidedBy: "system",
+			DecidedAt: &pastTime,
+			Expired:   true,
 		},
 	}
 }

@@ -18,6 +18,7 @@ package creator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
@@ -39,6 +41,59 @@ import (
 // Per ADR-040: 15 minutes default, within RR global timeout of 30 minutes.
 const DefaultApprovalTimeout = 15 * time.Minute
 
+// ApprovalRequestFinalizerName protects the RAR cleanup decision until the
+// orchestrator has confirmed the safe parent outcome.
+const ApprovalRequestFinalizerName = "remediationapprovalrequest.kubernaut.ai/cleanup"
+
+// ApprovalCreationOutcome describes the persistence boundary reached by RAR
+// creation. It is deliberately separate from the underlying API error so the
+// parent controller can choose a safe terminal outcome without replaying a
+// business create.
+type ApprovalCreationOutcome string
+
+const (
+	ApprovalCreationCreated                 ApprovalCreationOutcome = "Created"
+	ApprovalCreationCollision               ApprovalCreationOutcome = "Collision"
+	ApprovalCreationStatusPersistenceFailed ApprovalCreationOutcome = "StatusPersistenceFailed"
+	ApprovalCreationPersistenceUnknown      ApprovalCreationOutcome = "PersistenceUnknown"
+)
+
+const (
+	ApprovalCreationReasonCollision          = "RAR_CREATE_COLLISION"
+	ApprovalCreationReasonStatusFailed       = "RAR_STATUS_PERSISTENCE_FAILED"
+	ApprovalCreationReasonPersistenceUnknown = "RAR_CREATE_PERSISTENCE_UNKNOWN"
+	ApprovalRequestDeletionReason            = "RAR_DELETED_BEFORE_DECISION"
+)
+
+// ApprovalCreationError is returned when creation reaches a safety-relevant
+// persistence boundary. Error() exposes the stable machine-readable reason so
+// parent status and audit records do not depend on API-server wording.
+type ApprovalCreationError struct {
+	Outcome    ApprovalCreationOutcome
+	ReasonCode string
+	Err        error
+}
+
+func (e *ApprovalCreationError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.ReasonCode != "" {
+		return e.ReasonCode
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return string(e.Outcome)
+}
+
+func (e *ApprovalCreationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // ApprovalCreator creates RemediationApprovalRequest CRDs.
 // Reference: ADR-040, BR-ORCH-026
 type ApprovalCreator struct {
@@ -46,6 +101,7 @@ type ApprovalCreator struct {
 	scheme          *runtime.Scheme
 	metrics         *metrics.Metrics // DD-METRICS-001: Dependency-injected metrics
 	approvalTimeout time.Duration    // ADR-040: Configurable approval deadline
+	clock           sharedclock.Clock
 }
 
 // NewApprovalCreator creates a new ApprovalCreator.
@@ -59,6 +115,15 @@ func NewApprovalCreator(c client.Client, s *runtime.Scheme, m *metrics.Metrics, 
 		scheme:          s,
 		metrics:         m,
 		approvalTimeout: approvalTimeout,
+		clock:           sharedclock.RealClock{},
+	}
+}
+
+// SetClock replaces the time source used for creation timestamps and
+// approval deadlines. It is intended for deterministic boundary tests.
+func (c *ApprovalCreator) SetClock(value sharedclock.Clock) {
+	if value != nil {
+		c.clock = value
 	}
 }
 
@@ -74,6 +139,15 @@ func validateApprovalPreconditions(ai *aianalysisv1.AIAnalysis) error {
 	}
 	if sw.WorkflowID == "" {
 		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
+	}
+	if sw.Parameters == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing original parameters", ai.Namespace, ai.Name)
+	}
+	if sw.DeclaredParameterNames == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter declarations", ai.Namespace, ai.Name)
+	}
+	if sw.ParameterSchema == nil {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter schema", ai.Namespace, ai.Name)
 	}
 	return nil
 }
@@ -94,20 +168,94 @@ func (c *ApprovalCreator) initApprovalConditions(rar *remediationv1.RemediationA
 // subresource. The status must be saved and restored around Create() because the API
 // server strips status from the response for CRDs with +kubebuilder:subresource:status.
 func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
-	now := metav1.Now()
+	now := metav1.NewTime(c.clock.Now())
 	rar.Status.CreatedAt = &now
 	c.initApprovalConditions(rar)
 
 	savedStatus := rar.Status
 	if err := c.client.Create(ctx, rar); err != nil {
-		return fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
+		if apierrors.IsAlreadyExists(err) {
+			return &ApprovalCreationError{
+				Outcome:    ApprovalCreationCollision,
+				ReasonCode: ApprovalCreationReasonCollision,
+				Err:        err,
+			}
+		}
+
+		// Create may have reached the API server before the transport failed.
+		// Probe exactly once and never replay the business create.
+		persisted := &remediationv1.RemediationApprovalRequest{}
+		probeErr := c.client.Get(ctx, client.ObjectKeyFromObject(rar), persisted)
+		if probeErr == nil {
+			return &ApprovalCreationError{
+				Outcome:    ApprovalCreationPersistenceUnknown,
+				ReasonCode: ApprovalCreationReasonPersistenceUnknown,
+				Err:        fmt.Errorf("create returned an ambiguous error and the object is present: %w", err),
+			}
+		}
+		return &ApprovalCreationError{
+			Outcome:    ApprovalCreationPersistenceUnknown,
+			ReasonCode: ApprovalCreationReasonPersistenceUnknown,
+			Err:        fmt.Errorf("create persistence could not be established: %w", err),
+		}
 	}
 
 	rar.Status = savedStatus
 	if err := c.client.Status().Update(ctx, rar); err != nil {
-		return fmt.Errorf("failed to update RemediationApprovalRequest status: %w", err)
+		return c.recoverApprovalStatus(ctx, rar, savedStatus, err)
 	}
 	return nil
+}
+
+// recoverApprovalStatus performs the single status-only recovery allowed after
+// an ambiguous initial status write. It never replays the business Create.
+func (c *ApprovalCreator) recoverApprovalStatus(ctx context.Context, rar *remediationv1.RemediationApprovalRequest, savedStatus remediationv1.RemediationApprovalRequestStatus, statusErr error) error {
+	recovery := &remediationv1.RemediationApprovalRequest{}
+	if readErr := c.client.Get(ctx, client.ObjectKeyFromObject(rar), recovery); readErr != nil {
+		return statusPersistenceFailure(statusErr)
+	}
+	if recovery.UID != rar.UID {
+		return statusPersistenceFailure(statusErr)
+	}
+
+	// A decision may have won while the initial status write was ambiguous.
+	// Never restore the saved pending status over a terminal business decision.
+	if approvalStatusIsTerminal(recovery.Status) {
+		return &ApprovalCreationError{
+			Outcome:    ApprovalCreationStatusPersistenceFailed,
+			ReasonCode: ApprovalCreationReasonStatusFailed,
+			Err:        fmt.Errorf("status recovery observed a concurrent terminal decision"),
+		}
+	}
+	if recovery.Status.CreatedAt == nil {
+		recovery.Status.CreatedAt = savedStatus.CreatedAt
+	}
+	if len(recovery.Status.Conditions) == 0 {
+		recovery.Status.Conditions = savedStatus.Conditions
+	}
+	if recoveryErr := c.client.Status().Update(ctx, recovery); recoveryErr != nil {
+		return statusPersistenceFailure(statusErr)
+	}
+	rar.Status = recovery.Status
+	rar.ResourceVersion = recovery.ResourceVersion
+	return nil
+}
+
+func approvalStatusIsTerminal(status remediationv1.RemediationApprovalRequestStatus) bool {
+	return status.Decision != remediationv1.ApprovalDecisionPending ||
+		status.DecidedBy != "" ||
+		status.DecidedAt != nil ||
+		status.DecisionMessage != "" ||
+		status.WorkflowOverride != nil ||
+		status.Expired
+}
+
+func statusPersistenceFailure(err error) error {
+	return &ApprovalCreationError{
+		Outcome:    ApprovalCreationStatusPersistenceFailed,
+		ReasonCode: ApprovalCreationReasonStatusFailed,
+		Err:        err,
+	}
 }
 
 // Create creates a RemediationApprovalRequest CRD for the given RemediationRequest and AIAnalysis.
@@ -118,6 +266,9 @@ func (c *ApprovalCreator) Create(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (string, error) {
+	if rr == nil {
+		return "", fmt.Errorf("RemediationRequest is nil")
+	}
 	if err := validateApprovalPreconditions(ai); err != nil {
 		return "", err
 	}
@@ -131,18 +282,6 @@ func (c *ApprovalCreator) Create(
 	// Generate deterministic name
 	name := fmt.Sprintf("rar-%s", rr.Name)
 
-	// Check if already exists (idempotency)
-	existing := &remediationv1.RemediationApprovalRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("RemediationApprovalRequest already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing RemediationApprovalRequest")
-		return "", fmt.Errorf("failed to check existing RemediationApprovalRequest: %w", err)
-	}
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
@@ -151,6 +290,7 @@ func (c *ApprovalCreator) Create(
 	}
 
 	rar := c.buildApprovalRequest(rr, ai, name)
+	controllerutil.AddFinalizer(rar, ApprovalRequestFinalizerName)
 
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, rar, c.scheme); err != nil {
@@ -160,7 +300,7 @@ func (c *ApprovalCreator) Create(
 
 	if err := c.persistApprovalRequest(ctx, rar); err != nil {
 		logger.Error(err, "Failed to persist RemediationApprovalRequest")
-		return "", err
+		return name, err
 	}
 
 	logger.Info("Created RemediationApprovalRequest",
@@ -170,6 +310,20 @@ func (c *ApprovalCreator) Create(
 	)
 
 	return name, nil
+}
+
+// CreateWithResult is the explicit typed creation contract used by callers
+// that need to distinguish a confirmed create from a safety-relevant failure.
+func (c *ApprovalCreator) CreateWithResult(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, ApprovalCreationOutcome, error) {
+	name, err := c.Create(ctx, rr, ai)
+	if err == nil {
+		return name, ApprovalCreationCreated, nil
+	}
+	var creationErr *ApprovalCreationError
+	if errors.As(err, &creationErr) {
+		return name, creationErr.Outcome, err
+	}
+	return name, ApprovalCreationPersistenceUnknown, err
 }
 
 // confidenceLevelFor buckets a numeric confidence into the "low"/"medium"/"high" tiers
@@ -234,7 +388,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 	ai *aianalysisv1.AIAnalysis,
 	name string,
 ) *remediationv1.RemediationApprovalRequest {
-	requiredBy := metav1.NewTime(time.Now().Add(c.approvalTimeout))
+	requiredBy := metav1.NewTime(c.clock.Now().Add(c.approvalTimeout))
 
 	confidence := float64(0)
 	var recommendedWorkflow remediationv1.RecommendedWorkflowSummary
@@ -287,6 +441,22 @@ func (c *ApprovalCreator) buildApprovalRequest(
 	}
 
 	applyApprovalContext(rar, ai.Status.GetApproval().ApprovalContext)
+	rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{
+		SignalTarget:    rr.Spec.TargetResource,
+		SignalClusterID: rr.Spec.ClusterID,
+	}
+	if rca := ai.Status.GetRCAResult().RootCauseAnalysis; rca != nil && rca.RemediationTarget != nil {
+		target := rca.RemediationTarget
+		rar.Spec.TargetContext.RemediationTarget = &remediationv1.ResourceIdentifier{
+			APIVersion: target.APIVersion, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name,
+		}
+	}
+	if selected := ai.Status.GetRCAResult().SelectedWorkflow; selected != nil {
+		frozen := selected.DeepCopy()
+		rar.Spec.Workflow = &frozen.WorkflowSnapshot
+		rar.Spec.Parameters = frozen.Parameters
+		rar.Spec.ParameterSchema = frozen.ParameterSchema
+	}
 
 	return rar
 }

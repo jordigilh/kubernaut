@@ -58,6 +58,8 @@ import (
 // - DD-API-001: OpenAPI client mandatory for REST API communication
 
 var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit", "flow"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Audit flow fixture", "tekton") })
 	// Data Storage service URL from WE integration infrastructure (DD-TEST-002)
 	// Port 18097 per DD-TEST-001 v1.9 (unique port, parallel with KA)
 	// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
@@ -130,12 +132,13 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
-							WorkflowName:    "test-workflow",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{},
+							WorkflowName:           "test-workflow",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: targetResource,
@@ -250,12 +253,13 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
-							WorkflowName:    "test-workflow",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-							ExecutionEngine: "tekton",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{},
+							WorkflowName:           "test-workflow",
+							ActionType:             "RestartPod",
+							Version:                "v1.0.0",
+							ExecutionBundle:        "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+							ExecutionEngine:        "tekton",
 						},
 					},
 					TargetResource: targetResource,

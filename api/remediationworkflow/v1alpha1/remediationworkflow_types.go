@@ -272,6 +272,7 @@ type RemediationWorkflowStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=rw
+// +kubebuilder:selectablefield:JSONPath=.status.workflowId
 // +kubebuilder:printcolumn:name="Action",type=string,JSONPath=`.spec.actionType`
 // +kubebuilder:printcolumn:name="UUID",type=string,JSONPath=`.status.workflowId`
 // +kubebuilder:printcolumn:name="Engine",type=string,JSONPath=`.spec.execution.engine`

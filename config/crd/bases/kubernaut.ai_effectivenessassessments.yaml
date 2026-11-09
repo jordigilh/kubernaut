@@ -367,6 +367,7 @@ spec:
                 - Assessing
                 - Completed
                 - Failed
+                - Cancelled
                 type: string
               prometheusCheckAfter:
                 description: |-

@@ -32,6 +32,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
@@ -147,6 +148,19 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 					Version:         "v1",
 					ExecutionBundle: "test/image:latest",
 					Rationale:       "Test remediation plan for E2E validation",
+				},
+				Workflow: &sharedtypes.WorkflowSnapshot{
+					WorkflowID:             "test-workflow",
+					WorkflowName:           "test-workflow",
+					ActionType:             "RestartPod",
+					Version:                "v1",
+					ExecutionBundle:        "test/image:latest",
+					DeclaredParameterNames: map[string]bool{},
+				},
+				Parameters:      map[string]string{},
+				ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				TargetContext: &remediationv1.ApprovalTargetContext{
+					SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "test-pod", Namespace: "default"},
 				},
 				// REQUIRED FIELDS (CRD validation)
 				InvestigationSummary: "E2E test investigation: Simulating approval request flow for SOC2 attribution verification",

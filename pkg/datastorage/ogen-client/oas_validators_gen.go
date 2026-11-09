@@ -3854,6 +3854,461 @@ func (s ApifrontendConfigReloadedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ClusterID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     1,
+					MinLengthSet:  true,
+					MaxLength:     253,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cluster_id",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResultState.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "result_state",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     1,
+			MinLengthSet:  true,
+			MaxLength:     128,
+			MaxLengthSet:  true,
+			Email:         false,
+			Hostname:      false,
+			Regex:         nil,
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.ResourceFingerprint)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "resource_fingerprint",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RequestID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     255,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "request_id",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendConsoleManagedResourceGetReadPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.console.managed_resource_get_read":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendConsoleManagedResourceGetReadPayloadResultState) Validate() error {
+	switch s {
+	case "success":
+		return nil
+	case "empty":
+		return nil
+	case "partial":
+		return nil
+	case "stale":
+		return nil
+	case "unavailable":
+		return nil
+	case "forbidden":
+		return nil
+	case "not_found":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendConsoleManagedResourceListReadPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ClusterID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     1,
+					MinLengthSet:  true,
+					MaxLength:     253,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cluster_id",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResultState.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "result_state",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.FilterFingerprint.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     128,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "filter_fingerprint",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RequestID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     255,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "request_id",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendConsoleManagedResourceListReadPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.console.managed_resource_list_read":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendConsoleManagedResourceListReadPayloadResultState) Validate() error {
+	switch s {
+	case "success":
+		return nil
+	case "empty":
+		return nil
+	case "partial":
+		return nil
+	case "stale":
+		return nil
+	case "unavailable":
+		return nil
+	case "forbidden":
+		return nil
+	case "not_found":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendConsolePolicyScopeReadPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ClusterID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     1,
+					MinLengthSet:  true,
+					MaxLength:     253,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cluster_id",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResultState.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "result_state",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.FilterFingerprint.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     128,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "filter_fingerprint",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RequestID.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     255,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         nil,
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "request_id",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendConsolePolicyScopeReadPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.console.policy_scope_read":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendConsolePolicyScopeReadPayloadResultState) Validate() error {
+	switch s {
+	case "success":
+		return nil
+	case "empty":
+		return nil
+	case "partial":
+		return nil
+	case "stale":
+		return nil
+	case "unavailable":
+		return nil
+	case "forbidden":
+		return nil
+	case "not_found":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendImpersonationCreatedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -5522,6 +5977,21 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsolePolicyScopeReadPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsoleManagedResourceListReadPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData:
+		if err := s.ApifrontendConsoleManagedResourceGetReadPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
 		if err := s.DatastorageRatelimitDeniedPayload.Validate(); err != nil {
 			return err
@@ -6304,6 +6774,21 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendInteractiveSignalFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsolePolicyScopeReadPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsoleManagedResourceListReadPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConsoleManagedResourceGetReadPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -9692,6 +10177,10 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 	case "Approved":
 		return nil
 	case "Rejected":
+		return nil
+	case "Expired":
+		return nil
+	case "Cancelled":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

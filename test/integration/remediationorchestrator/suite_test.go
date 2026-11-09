@@ -45,6 +45,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -179,7 +180,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
 
 	sharedTestEnv := &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "..", "config", "crd", "tekton"),
+		},
 		ErrorIfCRDPathMissing: true,
 		ControlPlane: envtest.ControlPlane{
 			APIServer: &envtest.APIServer{
@@ -328,6 +332,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// WorkflowExecution (RO creates these)
 	err = workflowexecutionv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = tektonv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// NotificationRequest (RO creates these)
@@ -518,6 +524,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	By("Setting up the RemediationApprovalRequest audit controller")
+	rarAuditReconciler := controller.NewRARReconciler(
+		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(),
+		k8sManager.GetScheme(),
+		auditStore,
+		roMetrics,
+	)
+	Expect(rarAuditReconciler.SetupWithManager(k8sManager)).To(Succeed())
+
 	By("Configuring child CRD test strategy")
 
 	// ========================================
@@ -547,7 +563,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// 3. WorkflowExecution Controller - NOT STARTED
 	// Tests manually create and update WorkflowExecution CRDs
 	// Real WE controller testing: test/integration/workflowexecution/ and E2E Segment 4
-	// Note: WE controller requires Tekton PipelineRun CRDs (not available in envtest)
+	// Selected cross-service cases invoke the real WE reconciler explicitly.
 	GinkgoWriter.Println("ℹ️  WorkflowExecution controller NOT started (Phase 1: manual control)")
 
 	// 4. NotificationRequest Controller - NOT STARTED
@@ -763,6 +779,13 @@ func approveRAR(rarName string, mutate func(rar *remediationv1.RemediationApprov
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 // Phase is always set to Completed; tests needing other phases should update
 // sp.Status.Phase directly (no caller currently needs a non-Completed phase).
+// supplyEmptyApprovalSnapshot marks a selected workflow as explicitly having no parameters.
+func supplyEmptyApprovalSnapshot(selected *aianalysisv1.SelectedWorkflow) {
+	selected.Parameters = map[string]string{}
+	selected.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
+	selected.DeclaredParameterNames = map[string]bool{}
+}
+
 func updateSPStatus(name string, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
 	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: ROControllerNamespace}, sp); err != nil {

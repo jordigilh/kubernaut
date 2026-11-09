@@ -131,7 +131,7 @@ Validate that the `api_version` field is correctly parsed from LLM responses, pr
 | UT-KA-1040-002 | LLM JSON without api_version preserves empty APIVersion (backwards compat) | Pending |
 | UT-KA-1040-003 | ResolveGVKWithAPIVersion("Route", "route.openshift.io/v1") returns correct GVK | Pending |
 | UT-KA-1040-004 | ResolveGVKWithAPIVersion("Deployment", "") falls back to static table | Pending |
-| UT-KA-1040-005 | InjectRemediationTarget preserves LLM apiVersion when kind matches root | Pending |
+| UT-KA-1040-005 | InjectRemediationTarget uses authoritative apiVersion when kind matches root and clears an unverified model value | Pending |
 | UT-KA-1040-006 | InjectRemediationTarget preserves LLM apiVersion for cross-type target | Pending |
 | UT-KA-1040-007 | InjectRemediationTarget with empty apiVersion works (backwards compat) | Pending |
 | UT-KA-1040-008 | ResolveGVKWithAPIVersion rejects malformed apiVersion gracefully | Pending |
@@ -165,15 +165,15 @@ Validate that the `api_version` field is correctly parsed from LLM responses, pr
 2. **When**: `ResolveGVKWithAPIVersion(mapper, "Route", "route.openshift.io/v1")`
 3. **Then**: Returns GVK `{Group: "route.openshift.io", Version: "v1", Kind: "Route"}`
 
-### UT-KA-1040-005: InjectRemediationTarget preserves apiVersion (same kind)
+### UT-KA-1040-005: InjectRemediationTarget uses authoritative apiVersion (same kind)
 
 **Priority**: P0
 **File**: `test/unit/kubernautagent/investigator/investigator_phases_apiversion_test.go`
 
 **Test Steps**:
-1. **Given**: LLM result with `RemediationTarget{Kind: "Route", Name: "storefront", Namespace: "demo-route", APIVersion: "route.openshift.io/v1"}`; enrichment with empty owner chain but `ResourceKind: "Route"`
+1. **Given**: LLM result with `RemediationTarget{Kind: "Route", Name: "storefront", Namespace: "demo-route", APIVersion: "route.openshift.io/v1"}`; enrichment with empty owner chain but `ResourceKind: "Route"` and no authoritative API version
 2. **When**: `InjectRemediationTarget(result, signal, enrichData)`
-3. **Then**: `result.RemediationTarget.APIVersion` equals `"route.openshift.io/v1"` (preserved because kind matches)
+3. **Then**: `result.RemediationTarget.APIVersion` is empty; an unverified model value is not preserved when the authoritative version is unresolved
 
 ---
 

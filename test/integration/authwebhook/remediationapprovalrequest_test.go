@@ -25,8 +25,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	authwebhookpkg "github.com/jordigilh/kubernaut/pkg/authwebhook"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ApprovalDecisionScenario defines test data for business outcome validation
@@ -38,6 +44,8 @@ type ApprovalDecisionScenario struct {
 	decision          remediationv1.ApprovalDecision
 	decisionMessage   string
 }
+
+const systemDecisionActor = "system"
 
 var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution", func() {
 	var (
@@ -79,7 +87,10 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
 				},
-				RequiredBy: metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes
+				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{}},
+				Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				TargetContext: &remediationv1.ApprovalTargetContext{},
+				RequiredBy:    metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)), // 15 minutes
 			},
 		}
 	}
@@ -263,6 +274,8 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// AUDITOR NEED: Separate audit trail for authentication step
 
 			rar := createRAR("audit")
+			// Isolate the audit query from other specs that share the default parent.
+			rar.Spec.RemediationRequestRef.Name = rar.Name
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves via webhook")
@@ -283,8 +296,9 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// Correlation ID is PARENT RR name (per DD-AUDIT-CORRELATION-002)
 			// This ensures webhook + orchestration events share the same correlation_id
 			parentRRName := rar.Spec.RemediationRequestRef.Name
+			webhookEventType := authwebhookpkg.EventTypeRARDecided
 			Eventually(func() int {
-				events, err := queryAuditEvents(dsClient, parentRRName, nil)
+				events, err := queryAuditEvents(dsClient, parentRRName, &webhookEventType)
 				if err != nil {
 					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
 					return 0
@@ -294,7 +308,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				"COMPLIANCE FAILURE: No webhook audit event (DD-WEBHOOK-003)")
 
 			// BUSINESS VALIDATION: Query for webhook category events
-			events, err := queryAuditEvents(dsClient, parentRRName, nil)
+			events, err := queryAuditEvents(dsClient, parentRRName, &webhookEventType)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Filter for approval events
@@ -390,5 +404,61 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			GinkgoWriter.Printf("   • Next: RO controller will emit approval audit event\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
+	})
+
+	Context("IT-RAR-AUDIT-AW-2615-001: System terminal audit persistence", func() {
+		DescribeTable("persists trusted RO terminal decision audit events by correlation ID",
+			func(decision remediationv1.ApprovalDecision, expectedDecision string) {
+				rar := createRAR(strings.ToLower(string(decision)))
+				// Keep the audit query isolated from every other integration spec.
+				rar.Spec.RemediationRequestRef.Name = rar.Name
+				createAndWaitForCRD(ctx, k8sClient, rar)
+
+				// Use the API server's impersonation boundary so the admission request
+				// carries the same trusted RO identity as production.
+				roConfig := rest.CopyConfig(cfg)
+				roConfig.Impersonate.UserName = authwebhookpkg.BuildTrustedROSA(namespace)
+				roConfig.Impersonate.Groups = []string{"system:masters"}
+				roClient, err := ctrlclient.New(roConfig, ctrlclient.Options{Scheme: k8sClient.Scheme()})
+				Expect(err).NotTo(HaveOccurred())
+
+				updateStatusAndWaitForWebhook(ctx, roClient, rar,
+					func() {
+						rar.Status.Decision = decision
+						rar.Status.DecidedBy = systemDecisionActor
+						rar.Status.DecisionMessage = "system terminal decision"
+					},
+					func() bool {
+						return rar.Status.DecidedBy == systemDecisionActor && rar.Status.DecidedAt != nil
+					},
+				)
+
+				correlationID := rar.Spec.RemediationRequestRef.Name
+				webhookEventType := authwebhookpkg.EventTypeRARDecided
+				var events []ogenclient.AuditEvent
+				Eventually(func(g Gomega) {
+					var queryErr error
+					events, queryErr = queryAuditEvents(dsClient, correlationID, &webhookEventType)
+					g.Expect(queryErr).NotTo(HaveOccurred())
+					g.Expect(events).To(HaveLen(1),
+						"one AuthWebhook event must be persisted for the unique correlation ID")
+				}, 60*time.Second, 2*time.Second).Should(Succeed())
+
+				event := events[0]
+				Expect(event.CorrelationID).To(Equal(correlationID))
+				Expect(event.EventType).To(Equal(webhookEventType))
+				Expect(string(event.EventCategory)).To(Equal("approval"))
+				Expect(event.EventAction).To(Equal("approval_decided"))
+				actorID, hasActorID := event.ActorID.Get()
+				Expect(hasActorID).To(BeTrue())
+				Expect(actorID).To(Equal(authwebhookpkg.BuildTrustedROSA(namespace)))
+
+				payload, ok := event.EventData.GetRemediationApprovalAuditPayload()
+				Expect(ok).To(BeTrue(), "persisted event must have the structured RAR payload")
+				Expect(string(payload.Decision)).To(Equal(expectedDecision))
+			},
+			Entry("Expired", remediationv1.ApprovalDecisionExpired, "Expired"),
+			Entry("Cancelled", remediationv1.ApprovalDecisionCancelled, "Cancelled"),
+		)
 	})
 })

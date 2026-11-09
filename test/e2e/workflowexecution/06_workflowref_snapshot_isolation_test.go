@@ -100,6 +100,7 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 						Required:    true,
 						Description: "Target resource identifier",
 					},
+					{Name: "MESSAGE", Type: "string", Description: "Message passed to the pipeline"},
 				},
 			},
 		}
@@ -148,12 +149,18 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWFEFromCatalog(wfe)).To(Succeed())
 		defer func() {
 			_ = deleteWFE(wfe)
 		}()
 
-		By("Immediately deleting the source RemediationWorkflow CRD, before WE can complete")
+		By("Waiting until dispatch has passed trusted workflow verification")
+		Eventually(func() bool {
+			updated, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			return err == nil && updated != nil && updated.Status.ExecutionRef != nil && updated.Status.Phase != workflowexecutionv1alpha1.PhaseFailed
+		}, 60*time.Second, 1*time.Second).Should(BeTrue(), "execution must be dispatched before deleting its source workflow")
+
+		By("Deleting the source RemediationWorkflow CRD after dispatch")
 		Expect(rwClient.Delete(ctx, rw)).To(Succeed())
 		Eventually(func() bool {
 			check := &rwv1alpha1.RemediationWorkflow{}
@@ -162,7 +169,7 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "source RemediationWorkflow should be fully deleted")
 		GinkgoWriter.Printf("✅ Source RemediationWorkflow %s deleted\n", rwName)
 
-		By("Verifying the WorkflowExecution still reaches PhaseCompleted purely from its embedded WorkflowRef snapshot")
+		By("Verifying the dispatched WorkflowExecution reaches PhaseCompleted after source deletion")
 		Eventually(func() string {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
 			if updated != nil {
@@ -170,7 +177,7 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 			}
 			return ""
 		}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
-			"WFE must complete from its own snapshot -- it never re-reads the (now-deleted) source RemediationWorkflow")
+			"a dispatched WFE must complete after its source RemediationWorkflow is deleted")
 
 		GinkgoWriter.Println("✅ E2E-WE-1661-SNAPSHOT-001: WorkflowExecution completed with zero dependency on the deleted source RemediationWorkflow")
 	})

@@ -21,6 +21,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ========================================
@@ -33,11 +36,16 @@ import (
 // ========================================
 
 var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func() {
+	var workflowID string
+	BeforeEach(func() {
+		workflowID = trustedWorkflowFixture("Parameter filtering fixture", "job")
+	})
 
 	Context("Job executor with DeclaredParameterNames", func() {
 
 		It("IT-WE-243-001: should strip undeclared params from Job env vars", func() {
 			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
 				"NAMESPACE": true,
 				"REPLICAS":  true,
@@ -66,8 +74,9 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(envMap).NotTo(HaveKey("INJECTED"), "Undeclared param should be stripped")
 		})
 
-		It("IT-WE-243-002: should pass all params through when ParamNames is nil (no schema, backward compat)", func() {
+		It("IT-WE-243-002: BR-ORCH-025 rejects missing Job parameter declarations", func() {
 			wfe := createUniqueJobWFE("pf-job-nil", "default/deployment/pf-job-nil-app")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.Parameters = map[string]string{
 				"NAMESPACE": "default",
 				"CUSTOM":    "value",
@@ -75,20 +84,18 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
-			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "Job should be created")
-
-			envMap := make(map[string]string)
-			for _, env := range job.Spec.Template.Spec.Containers[0].Env {
-				envMap[env.Name] = env.Value
-			}
-
-			Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
-			Expect(envMap).To(HaveKeyWithValue("CUSTOM", "value"), "All params should pass through when no schema")
+			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failed.Status.FailureDetails).NotTo(BeNil())
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow parameter declarations are missing"))
+			var jobs batchv1.JobList
+			Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+			Expect(jobs.Items).To(BeEmpty())
 		})
 
 		It("IT-WE-243-003: should strip all user params when DeclaredParameterNames is empty map", func() {
 			wfe := createUniqueJobWFE("pf-job-empty", "default/deployment/pf-job-empty-app")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			wfe.Spec.Parameters = map[string]string{
 				"NAMESPACE": "default",
@@ -120,6 +127,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 					"REPLICAS":     "3",
 					"HALLUCINATED": "should-be-stripped",
 				})
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
 				"NAMESPACE": true,
 				"REPLICAS":  true,
@@ -141,25 +149,23 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(paramMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param should be stripped")
 		})
 
-		It("IT-WE-243-011: should pass all params through when ParamNames is nil (backward compat)", func() {
+		It("IT-WE-243-011: BR-ORCH-025 rejects missing Tekton parameter declarations", func() {
 			wfe := createUniqueWFEWithParams("pf-tekton-nil", "default/deployment/pf-tekton-nil-app",
 				map[string]string{
 					"NAMESPACE": "default",
 					"CUSTOM":    "value",
 				})
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
-			pr, err := waitForPipelineRunCreation(wfe.Name, 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
-
-			paramMap := make(map[string]string)
-			for _, p := range pr.Spec.Params {
-				paramMap[p.Name] = p.Value.StringVal
-			}
-
-			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
-			Expect(paramMap).To(HaveKeyWithValue("CUSTOM", "value"), "All params should pass through when no schema")
+			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failed.Status.FailureDetails).NotTo(BeNil())
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow parameter declarations are missing"))
+			var runs tektonv1.PipelineRunList
+			Expect(k8sClient.List(ctx, &runs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+			Expect(runs.Items).To(BeEmpty())
 		})
 	})
 })

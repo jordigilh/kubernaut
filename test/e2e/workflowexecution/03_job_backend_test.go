@@ -69,7 +69,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WorkflowExecution with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for transition to Running (Job created)")
 			Eventually(func() string {
@@ -186,7 +186,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job WFE to fail")
 			Eventually(func() string {
@@ -279,7 +279,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for the WFE to transition to Running (Job created)")
 			Eventually(func() string {
@@ -402,7 +402,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for the WFE to reach Failed")
 			Eventually(func() string {
@@ -437,7 +437,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Verifying WFE tracks execution reference after Running")
 			Eventually(func() bool {
@@ -492,7 +492,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job creation (Running phase)")
 			Eventually(func() string {
@@ -586,7 +586,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with a known targetResource")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job creation (Running phase)")
 			Eventually(func() string {
@@ -643,7 +643,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Running phase (Job created)")
 			Eventually(func() string {

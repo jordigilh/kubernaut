@@ -29,6 +29,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,6 +45,46 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 
 	BeforeEach(func() {
 		ctx = context.Background()
+	})
+
+	It("UT-AUD-2570-039: BR-AUDIT-005 records original, changed and effective approval values without rewriting", func() {
+		now := metav1.Now()
+		rar := &remediationv1.RemediationApprovalRequest{
+			Spec: remediationv1.RemediationApprovalRequestSpec{Workflow: &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed"}, Parameters: map[string]string{"P": "2", "UNCHANGED": "keep"}},
+			Status: remediationv1.RemediationApprovalRequestStatus{Decision: remediationv1.ApprovalDecisionApproved, DecidedAt: &now,
+				WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "1.0"}, Rationale: "reviewed"}},
+		}
+		built := authwebhook.BuildRARApprovalAuditPayload(rar)
+		built.DelegatedUser = ogenclient.NewOptString("operator")
+		built.DelegatedVia = ogenclient.NewOptString("apifrontend")
+		built.PolicyHash = ogenclient.NewOptString("policy")
+		data, err := json.Marshal(built)
+		Expect(err).NotTo(HaveOccurred())
+		var payload map[string]json.RawMessage
+		Expect(json.Unmarshal(data, &payload)).To(Succeed())
+		Expect(string(payload["original_parameters"])).To(MatchJSON(`{"P":"2","UNCHANGED":"keep"}`))
+		Expect(string(payload["override_parameters"])).To(MatchJSON(`{"P":"1.0"}`))
+		Expect(string(payload["effective_parameters"])).To(MatchJSON(`{"P":"1.0","UNCHANGED":"keep"}`))
+		Expect(string(payload["override_rationale"])).To(MatchJSON(`"reviewed"`))
+		Expect(string(payload["workflow_id"])).To(MatchJSON(`"wf-reviewed"`))
+	})
+
+	It("UT-AUD-2570-033: BR-AUDIT-005 distinguishes an empty override from no override", func() {
+		now := metav1.Now()
+		rar := &remediationv1.RemediationApprovalRequest{Spec: remediationv1.RemediationApprovalRequestSpec{Parameters: map[string]string{}}, Status: remediationv1.RemediationApprovalRequestStatus{Decision: remediationv1.ApprovalDecisionApproved, DecidedAt: &now}}
+		without := authwebhook.BuildRARApprovalAuditPayload(rar)
+		_, present := without.OverrideParameters.Get()
+		Expect(present).To(BeFalse())
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{}}
+		with := authwebhook.BuildRARApprovalAuditPayload(rar)
+		changes, present := with.OverrideParameters.Get()
+		Expect(present).To(BeTrue())
+		Expect(changes).To(BeEmpty())
+		data, err := with.MarshalJSON()
+		Expect(err).NotTo(HaveOccurred())
+		var fields map[string]json.RawMessage
+		Expect(json.Unmarshal(data, &fields)).To(Succeed())
+		Expect(string(fields["override_parameters"])).To(MatchJSON(`{}`))
 	})
 
 	Describe("BR-AUDIT-006: notification audit ogen enum converters (delete paths)", func() {

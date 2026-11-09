@@ -34,11 +34,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -515,6 +517,14 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 						Version:         "1.0.0",
 						ExecutionBundle: "kubernaut/restart-pod:v1",
 						Rationale:       "Standard pod restart",
+					},
+					Workflow: &sharedtypes.WorkflowSnapshot{
+						WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{},
+					},
+					Parameters:      map[string]string{},
+					ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+					TargetContext: &remediationv1.ApprovalTargetContext{
+						SignalTarget: testRR.Spec.TargetResource,
 					},
 					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 						{Action: "Restart pod", Rationale: "Clear memory leak"},

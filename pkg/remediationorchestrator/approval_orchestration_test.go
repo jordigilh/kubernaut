@@ -3,12 +3,15 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -17,6 +20,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 )
 
@@ -79,14 +83,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RCAResult: &aianalysisv1.RCAResult{
 							SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-									WorkflowID:      "wf-restart-pods",
-									WorkflowName:    "wf-restart-pods",
-									ActionType:      "RestartPod",
-									Version:         "v1.0.0",
-									ExecutionBundle: "kubernaut/workflows:latest",
+									WorkflowID:             "wf-restart-pods",
+									WorkflowName:           "wf-restart-pods",
+									ActionType:             "RestartPod",
+									Version:                "v1.0.0",
+									ExecutionBundle:        "kubernaut/workflows:latest",
+									DeclaredParameterNames: map[string]bool{},
 								},
-								Confidence: 0.75,
-								Rationale:  "Pod restart recommended based on OOM patterns",
+								Confidence:      0.75,
+								Rationale:       "Pod restart recommended based on OOM patterns",
+								Parameters:      map[string]string{},
+								ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 							},
 							RootCause: "Memory leak causing OOM kills",
 						},
@@ -96,6 +103,179 @@ var _ = Describe("ApprovalOrchestration", func() {
 					},
 				}
 				Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+			})
+
+			It("UT-AA-2570-067: BR-ORCH-025 rejects approval creation when original parameter data is missing", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = nil
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).To(BeNil())
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("parameter"))
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(apierrors.IsNotFound(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: rr.Namespace}, rar))).To(BeTrue())
+			})
+
+			It("UT-RO-2570-101: BR-ORCH-025 rejects approval creation when declaration metadata is missing", func() {
+				ai.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = nil
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).NotTo(BeNil())
+				Expect(ai.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames).To(BeNil())
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("declar"))
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(apierrors.IsNotFound(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: rr.Namespace}, rar))).To(BeTrue())
+			})
+
+			It("UT-RO-2570-114: BR-ORCH-025 rejects approval creation when parameter schema is missing", func() {
+				ai.Status.RCAResult.SelectedWorkflow.ParameterSchema = nil
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("schema"))
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(apierrors.IsNotFound(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: rr.Namespace}, rar))).To(BeTrue())
+			})
+
+			It("UT-RO-2570-115: BR-ORCH-025 preserves an explicitly empty parameter schema", func() {
+				ai.Status.RCAResult.SelectedWorkflow.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				encoded, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec map[string]json.RawMessage
+				Expect(json.Unmarshal(encoded, &spec)).To(Succeed())
+				Expect(spec).To(HaveKey("parameterSchema"))
+				Expect(string(spec["parameterSchema"])).To(MatchJSON(`[]`))
+			})
+
+			It("UT-RO-2570-102: BR-ORCH-025 permits explicitly empty declarations after serialization", func() {
+				selected := ai.Status.RCAResult.SelectedWorkflow
+				encoded, err := json.Marshal(selected)
+				Expect(err).NotTo(HaveOccurred())
+				var restored aianalysisv1.SelectedWorkflow
+				Expect(json.Unmarshal(encoded, &restored)).To(Succeed())
+				Expect(restored.DeclaredParameterNames).NotTo(BeNil())
+				Expect(restored.DeclaredParameterNames).To(BeEmpty())
+				ai.Status.RCAResult.SelectedWorkflow = &restored
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("UT-AA-2570-068: BR-ORCH-025 preserves an explicitly empty original parameter map on the wire", func() {
+				selected := ai.Status.RCAResult.SelectedWorkflow
+				selected.Parameters = map[string]string{}
+				encoded, err := json.Marshal(selected)
+				Expect(err).NotTo(HaveOccurred())
+				var restored aianalysisv1.SelectedWorkflow
+				Expect(json.Unmarshal(encoded, &restored)).To(Succeed())
+				Expect(restored.Parameters).NotTo(BeNil())
+				Expect(restored.Parameters).To(BeEmpty())
+			})
+
+			It("UT-AA-2570-068: BR-ORCH-025 permits an explicitly empty original parameter map at creation", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = map[string]string{}
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("UT-RO-2570-076: BR-ORCH-025 freezes workflow identity and original parameter values in the RAR", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = map[string]string{"REPLICAS": "3", "MODE": "safe"}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				ai.Status.RCAResult.SelectedWorkflow.WorkflowID = "changed-after-creation"
+				ai.Status.RCAResult.SelectedWorkflow.Parameters["REPLICAS"] = "9"
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec map[string]json.RawMessage
+				Expect(json.Unmarshal(raw, &spec)).To(Succeed())
+				Expect(spec).To(HaveKey("workflow"))
+				Expect(spec).To(HaveKey("parameters"))
+				var workflow struct {
+					WorkflowID string `json:"workflowId"`
+				}
+				var params map[string]string
+				Expect(json.Unmarshal(spec["workflow"], &workflow)).To(Succeed())
+				Expect(json.Unmarshal(spec["parameters"], &params)).To(Succeed())
+				Expect(workflow.WorkflowID).To(Equal("wf-restart-pods"))
+				Expect(params).To(Equal(map[string]string{"REPLICAS": "3", "MODE": "safe"}))
+			})
+
+			It("UT-RO-2570-109: BR-ORCH-025 freezes full parameter schema from the selected workflow", func() {
+				selectedJSON, err := json.Marshal(ai.Status.RCAResult.SelectedWorkflow)
+				Expect(err).NotTo(HaveOccurred())
+				var selected map[string]json.RawMessage
+				Expect(json.Unmarshal(selectedJSON, &selected)).To(Succeed())
+				selected["parameterSchema"] = json.RawMessage(`[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1,"maximum":9,"default":3,"dependsOn":["MODE"]}]`)
+				selectedJSON, err = json.Marshal(selected)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(json.Unmarshal(selectedJSON, ai.Status.RCAResult.SelectedWorkflow)).To(Succeed())
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				*ai.Status.RCAResult.SelectedWorkflow.ParameterSchema[0].Minimum = 7
+				ai.Status.RCAResult.SelectedWorkflow.ParameterSchema[0].DependsOn[0] = "CHANGED"
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec map[string]json.RawMessage
+				Expect(json.Unmarshal(raw, &spec)).To(Succeed())
+				Expect(spec).To(HaveKey("parameterSchema"))
+				Expect(string(spec["parameterSchema"])).To(MatchJSON(string(selected["parameterSchema"])))
+			})
+
+			It("UT-RO-2570-028: BR-ORCH-026 freezes remediation and signal target context", func() {
+				rr.Spec.ClusterID = "cluster-a"
+				rr.Spec.TargetResource = remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Namespace: "ns", Name: "pod-a"}
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					RemediationTarget: &aianalysisv1.RemediationTarget{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "ns", Name: "app-a"},
+				}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name = "changed"
+				rr.Spec.TargetResource.Name = "changed"
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec struct {
+					TargetContext struct {
+						RemediationTarget *remediationv1.ResourceIdentifier `json:"remediationTarget"`
+						SignalTarget      remediationv1.ResourceIdentifier  `json:"signalTarget"`
+						SignalClusterID   string                            `json:"signalClusterId"`
+					} `json:"targetContext"`
+				}
+				Expect(json.Unmarshal(raw, &spec)).To(Succeed())
+				Expect(spec.TargetContext.RemediationTarget).NotTo(BeNil())
+				Expect(spec.TargetContext.RemediationTarget.Name).To(Equal("app-a"))
+				Expect(spec.TargetContext.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+				Expect(spec.TargetContext.SignalTarget.Name).To(Equal("pod-a"))
+				Expect(spec.TargetContext.SignalClusterID).To(Equal("cluster-a"))
+			})
+
+			It("UT-RO-2570-099: BR-ORCH-026 preserves an absent remediation target for later fallback", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				Expect(rar.Spec.TargetContext).NotTo(BeNil())
+				Expect(rar.Spec.TargetContext.RemediationTarget).To(BeNil())
+				Expect(rar.Spec.TargetContext.SignalTarget).To(Equal(rr.Spec.TargetResource))
+			})
+
+			It("UT-RO-2570-100: BR-ORCH-026 preserves an invalid supplied target rather than inferring a replacement", func() {
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					RemediationTarget: &aianalysisv1.RemediationTarget{Kind: "Deployment", Name: "", Namespace: "ns"},
+				}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				Expect(rar.Spec.TargetContext.RemediationTarget).NotTo(BeNil())
+				Expect(rar.Spec.TargetContext.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rar.Spec.TargetContext.RemediationTarget.Name).To(BeEmpty())
 			})
 
 			It("should generate deterministic name rar-{rr.Name}", func() {
@@ -127,17 +307,45 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(rar.OwnerReferences).To(HaveLen(1))
 				Expect(rar.OwnerReferences[0].Name).To(Equal("test-rr"))
 				Expect(rar.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+				Expect(rar.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName),
+					"UT-RO-2564-001: the RAR finalizer must be present before the create is persisted")
 			})
 
-			It("should be idempotent - return existing name without error", func() {
+			It("UT-RO-2564-001: fails closed on any deterministic RAR collision", func() {
 				// First creation
 				name1, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Second creation - should return same name
+				// A retry after a successful create must not reuse the existing review.
 				name2, err := ac.Create(ctx, rr, ai)
-				Expect(err).ToNot(HaveOccurred())
 				Expect(name2).To(Equal(name1))
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
+
+				existing := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name1, Namespace: rr.Namespace}, existing)).To(Succeed())
+				Expect(existing.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
+				Expect(existing.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName))
+			})
+
+			It("UT-RO-2564-001: fails closed when an existing RAR has a mismatched parent UID", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+
+				foreign := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, foreign)).To(Succeed())
+				foreign.Spec.RemediationRequestRef.UID = types.UID("foreign-parent-uid")
+				Expect(fakeClient.Update(ctx, foreign)).To(Succeed())
+
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
 			})
 
 			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {
@@ -407,14 +615,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.85,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.85,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -446,14 +657,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.90,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.90,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -486,14 +700,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-scale-hpa",
-								WorkflowName:    "wf-scale-hpa",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-scale-hpa",
+								WorkflowName:           "wf-scale-hpa",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.65,
-							Rationale:  "HPA max replicas reached",
+							Confidence:      0.65,
+							Rationale:       "HPA max replicas reached",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -557,14 +774,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.72,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.72,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -603,14 +823,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.72,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.72,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -656,14 +879,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.85,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.85,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -708,14 +934,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.85,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.85,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -756,14 +985,17 @@ var _ = Describe("ApprovalOrchestration", func() {
 					RCAResult: &aianalysisv1.RCAResult{
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+								WorkflowID:             "wf-restart-pods",
+								WorkflowName:           "wf-restart-pods",
+								ActionType:             "RestartPod",
+								Version:                "v1.0.0",
+								ExecutionBundle:        "kubernaut/workflows:latest",
+								DeclaredParameterNames: map[string]bool{},
 							},
-							Confidence: 0.72,
-							Rationale:  "Pod restart recommended",
+							Confidence:      0.72,
+							Rationale:       "Pod restart recommended",
+							Parameters:      map[string]string{},
+							ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{

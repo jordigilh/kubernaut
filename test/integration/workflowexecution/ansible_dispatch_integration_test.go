@@ -51,6 +51,7 @@ import (
 var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 	Context("controller dispatch without ansible executor registered", func() {
 		It("IT-WE-2390-003: should preserve engineConfig before failing WFE with UnsupportedEngine when ansible executor is not registered", func() {
+			workflowID := trustedWorkflowFixture("Ansible dispatch fixture", "ansible")
 			targetResource := fmt.Sprintf("default/deployment/ansible-dispatch-%d", time.Now().UnixNano())
 			wfeName := fmt.Sprintf("ansible-it-%d", time.Now().UnixNano())
 
@@ -77,12 +78,13 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "ansible-restart",
-							WorkflowName:    "ansible-restart",
-							ActionType:      "RestartPod",
-							Version:         "1.0.0",
-							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-							ExecutionEngine: "ansible",
+							WorkflowID:             workflowID,
+							DeclaredParameterNames: map[string]bool{"NAMESPACE": true},
+							WorkflowName:           "ansible-restart",
+							ActionType:             "RestartPod",
+							Version:                "1.0.0",
+							ExecutionBundle:        "https://github.com/kubernaut/playbooks.git",
+							ExecutionEngine:        "ansible",
 							EngineConfig: &apiextensionsv1.JSON{
 								Raw: engineConfig,
 							},

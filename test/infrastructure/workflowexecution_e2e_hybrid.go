@@ -1159,6 +1159,32 @@ subjects:
   name: workflowexecution-controller
   namespace: %[1]s
 ---
+# BR-ORCH-025: pre-dispatch identity verification reads the trusted catalog
+# through the uncached API reader. Match the operator's namespace-scoped grant.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-workflow-catalog
+  namespace: %[1]s
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows"]
+  verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-workflow-catalog
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-workflow-catalog
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

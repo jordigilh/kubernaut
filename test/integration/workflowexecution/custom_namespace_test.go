@@ -56,6 +56,10 @@ import (
 // respects that configuration.
 
 var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), func() {
+	var workflowID string
+	BeforeEach(func() {
+		workflowID = trustedWorkflowFixture("Namespace fixture", "tekton")
+	})
 
 	Context("BR-WE-009: PipelineRuns Created in Configured Namespace", func() {
 		It("should create PipelineRuns in ExecutionNamespace, not WFE namespace", func() {
@@ -69,6 +73,8 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 
 			By("Creating WorkflowExecution in default namespace")
 			wfe := createUniqueWFE("custom-ns", "default/deployment/test-app")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			// WFE is in "default" namespace, but PipelineRun should be in "kubernaut-workflows"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, wfe) }()
@@ -163,6 +169,10 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			By("Creating multiple WorkflowExecutions in different namespaces")
 			wfe1 := createUniqueWFE("multi-ns-1", "default/deployment/app1")
 			wfe2 := createUniqueWFE("multi-ns-2", "default/deployment/app2")
+			wfe1.Spec.WorkflowRef.WorkflowID = workflowID
+			wfe2.Spec.WorkflowRef.WorkflowID = workflowID
+			wfe1.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+			wfe2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
@@ -245,6 +255,8 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 
 			By("Creating WorkflowExecution")
 			wfe := createUniqueWFE("isolation", "default/deployment/isolated-app")
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 

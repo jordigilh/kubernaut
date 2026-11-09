@@ -561,9 +561,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:    remediationv1.PhaseExecuting,
 			expectedResult:   ctrl.Result{RequeueAfter: 5 * time.Second},
 			expectedChildren: map[string]bool{"WE": true},
-			// UT-RR-387-003: RemediationTarget populated from AIAnalysis AffectedResource (post-approval path)
+			// UT-RR-387-003: the approved snapshot carries the remediation target.
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from the approved snapshot")
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Kind).To(Equal("Deployment"))
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Name).To(Equal("test-deployment"))
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Namespace).To(Equal(defaultFixture))
@@ -606,19 +606,25 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			},
 		}),
 
-		Entry("5.4: AwaitingApproval - RAR Not Found (Error Handling)", ReconcileScenario{
+		Entry("5.4: BR-ORCH-026 missing RAR requires manual review", ReconcileScenario{
 			name:        "awaiting_approval_rar_not_found",
-			description: "When RAR doesn't exist, should requeue gracefully",
-			businessReq: "BR-ORCH-001 (error recovery)",
+			description: "When the RAR is authoritatively absent, fail safely for manual review",
+			businessReq: "BR-ORCH-026 (approval safety)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
 				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-				// RAR not created yet
+				// The previously created RAR is absent.
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
-			expectedPhase:  remediationv1.PhaseAwaitingApproval,        // Stay in same phase
-			expectedResult: ctrl.Result{RequeueAfter: 5 * time.Second}, // RequeueGenericError
+			expectedPhase:  remediationv1.PhaseFailed,
+			expectedResult: ctrl.Result{},
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				completion := rr.Status.GetCompletionStatus()
+				Expect(completion.RequiresManualReview).To(BeTrue())
+				Expect(completion.Outcome).To(Equal(remediationv1.OutcomeManualReviewRequired))
+				Expect(completion.FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseApproval)))
+			},
 		}),
 
 		Entry("5.5: AwaitingApproval - RAR Pending (Still Waiting)", ReconcileScenario{

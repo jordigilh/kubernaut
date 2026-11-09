@@ -35,6 +35,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 )
 
 // ============================================================================
@@ -497,6 +498,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Pod restart recommended based on OOM patterns",
 			}
+			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
 			ai.Status.RCAResult.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -564,6 +566,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
+			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -596,10 +599,10 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
 		})
 
-		It("should detect RAR missing and handle gracefully", func() {
+		It("should fail closed when RAR is deleted before a decision", func() {
 			// Scenario: RAR deleted after creation (simulates accidental deletion or external cleanup)
-			// Business Outcome: Controller detects missing RAR and handles gracefully (requeues, recreates)
-			// Confidence: 95% - Uses real approval flow, validates resilience to RAR deletion
+			// Business Outcome: Controller fails the parent before approval can continue.
+			// Confidence: 95% - Uses real approval flow, validates fail-closed RAR deletion handling
 			// Multi-Controller Pattern: Safe for parallel execution (uses natural controller flow)
 
 			ctx := context.Background()
@@ -641,6 +644,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
+			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -670,28 +674,24 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				return errors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue(), "RAR should be deleted")
 
-			By("Verifying RR remains in AwaitingApproval (graceful degradation)")
-			// Controller should detect missing RAR, log it, and requeue without crashing
-			// Logs should show: "RemediationApprovalRequest not found, will be created by approval handler"
-			Consistently(func() remediationv1.RemediationPhase {
+			By("Verifying RR fails closed after RAR deletion")
+			Eventually(func() remediationv1.RemediationPhase {
 				rr := &remediationv1.RemediationRequest{}
 				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
 					return ""
 				}
 				return rr.Status.OverallPhase
-			}, "10s", "500ms").Should(Equal(remediationv1.PhaseAwaitingApproval),
-				"RR should remain in AwaitingApproval when RAR deleted (graceful degradation)")
+			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed),
+				"RR should fail closed when RAR is deleted before a decision")
 
-			By("Verifying RR doesn't crash or error out")
-			// Final check: RR should still be healthy after RAR deletion
+			By("Verifying RR records the approval deletion as a terminal failure")
 			rr := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval))
-			// Message should indicate waiting for approval (not an error state)
-			Expect(rr.Status.Message).ToNot(ContainSubstring("error"))
-			Expect(rr.Status.Message).ToNot(ContainSubstring("failed"))
+			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+			Expect(rr.Status.GetCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseApproval)))
+			Expect(rr.Status.GetCompletionStatus().FailureReason).To(HaveValue(Equal(creator.ApprovalRequestDeletionReason)))
 
-			GinkgoWriter.Printf("✅ BR-ORCH-026: RR handles missing RAR gracefully (stays stable, no crash, proper logging)\n")
+			GinkgoWriter.Printf("✅ BR-ORCH-026: RR fails closed when RAR is deleted before a decision\n")
 		})
 	})
 })

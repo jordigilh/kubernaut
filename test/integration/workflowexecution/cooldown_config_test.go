@@ -52,6 +52,14 @@ import (
 // ✅ Much faster execution (seconds vs minutes)
 
 var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Cooldown fixture", "tekton") })
+	cooldownWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
+		return wfe
+	}
 
 	Context("BR-WE-009: Custom Cooldown Period Configuration", func() {
 		It("should honor configured cooldown period for consecutive executions on same resource", func() {
@@ -59,7 +67,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 
 			By("Creating first WorkflowExecution for target resource")
 			// Use shared helper function from suite_test.go (consolidated per compliance triage)
-			wfe1 := createUniqueWFE("cooldown-test-1", "default/deployment/cooldown-app-1")
+			wfe1 := cooldownWFE("cooldown-test-1", "default/deployment/cooldown-app-1")
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for controller to complete initial reconciliation")
@@ -97,7 +105,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			Expect(updated1.Status.CompletionTime).ToNot(BeNil(), "CompletionTime must be set for cooldown to work")
 
 			By("Creating second WorkflowExecution immediately for SAME resource (within cooldown)")
-			wfe2 := createUniqueWFE("cooldown-test-2", "default/deployment/cooldown-app-1") // Same resource!
+			wfe2 := cooldownWFE("cooldown-test-2", "default/deployment/cooldown-app-1") // Same resource!
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 			By("Waiting for second WorkflowExecution to reach Pending phase")
@@ -138,7 +146,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			ctx := context.Background()
 
 			By("Creating first WorkflowExecution for resource A")
-			wfe1 := createUniqueWFE("cooldown-resource-a", "default/deployment/app-a")
+			wfe1 := cooldownWFE("cooldown-resource-a", "default/deployment/app-a")
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for controller to complete initial reconciliation")
@@ -168,7 +176,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			}, 3*time.Second, 100*time.Millisecond).Should(Succeed())
 
 			By("Creating second WorkflowExecution for resource B (DIFFERENT resource)")
-			wfe2 := createUniqueWFE("cooldown-resource-b", "default/deployment/app-b") // Different resource!
+			wfe2 := cooldownWFE("cooldown-resource-b", "default/deployment/app-b") // Different resource!
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 			By("Verifying second WorkflowExecution is NOT blocked (different resource)")

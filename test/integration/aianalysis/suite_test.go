@@ -406,20 +406,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// above the removed shared-KA RBAC block for why.
 
 	// AA IT shared-envtest fix (DD-TEST-010 amendment): create the static
-	// "kubernaut-system" namespace and the K8s enrichment fixtures ONCE
-	// here (process 1 only), rather than once per process in Phase 2.
-	// Both are process-agnostic, environment-wide test data (not scoped to
-	// any individual test/process's namespace) -- creating them N times on
-	// what is now a single shared envtest would either be pure redundant
-	// work (namespace) or an outright failure (enrichment fixtures use
-	// fixed object names with no AlreadyExists tolerance; see
-	// createITAAEnrichmentFixtures). "kubernaut-system" itself is kept only
-	// as a home for the RemediationWorkflow/ActionType fixtures Phase 1
-	// already seeds above into "default" -- KA's workflowcatalog informer
-	// cache watches cluster-wide (internal/kubernautagent/workflowcatalog/
-	// cache.go's NewInformerCache), so a per-process re-seed into a
-	// per-process namespace (as Phase 2 previously did) is unnecessary now
-	// that Phase 1 and Phase 2 share the exact same cluster.
+	// "kubernaut-system" namespace and K8s enrichment fixtures ONCE here
+	// (process 1 only), rather than once per process in Phase 2. These are
+	// process-agnostic, environment-wide fixtures; creating them N times on
+	// one shared envtest would be redundant or fail because enrichment
+	// fixtures use fixed object names with no AlreadyExists tolerance (see
+	// createITAAEnrichmentFixtures). The Phase 1 workflow seed remains in
+	// "default" for the shared DataStorage/Mock LLM setup. Phase 2 also seeds
+	// the catalog into each KA controller namespace because KA's informer is
+	// intentionally namespace-scoped.
 	By("Creating static kubernaut-system namespace for shared fixtures")
 	kubernautSystemNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -578,6 +573,18 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = k8sClient.Create(ctx, processNs)
 	Expect(err).NotTo(HaveOccurred())
 
+	By(fmt.Sprintf("[Process %d] Seeding workflow catalog fixtures in %s", processNum, processNamespace))
+	// KA's workflow catalog cache is scoped to KUBERNAUT_AGENT_NAMESPACE.
+	// Keep the Phase 1 seed in "default" for the shared DataStorage/Mock LLM
+	// setup, and mirror the catalog into this process's controller namespace
+	// so the production KA discovery path sees the same fixtures without
+	// requiring cluster-wide RBAC.
+	err = infrastructure.SeedActionTypesViaCRD(specCtx, phase1Data.KubeconfigPath, processNamespace, GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "ActionType fixtures must be seeded in the KA controller namespace")
+	processWorkflowIDs, err := SeedTestWorkflowsViaDirectCRDCreation(specCtx, k8sClient, processNamespace, GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "RemediationWorkflow fixtures must be seeded in the KA controller namespace")
+	Expect(processWorkflowIDs).To(Equal(workflowUUIDs), "mock LLM IDs must match the per-process catalog")
+
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller manager", processNum))
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
@@ -592,9 +599,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		// process's reconciler see (and race to reconcile) every other
 		// process's AIAnalysis/AgentSession/InvestigationSession objects.
 		// AA's StatusManager bypasses this cache entirely via
-		// GetAPIReader() (DD-PERF-001), and RemediationWorkflow/ActionType
-		// lookups go through KA's own separate, cluster-wide-scoped
-		// workflowcatalog informer cache -- neither is affected.
+		// GetAPIReader() (DD-PERF-001). KA's separate workflow catalog
+		// informer is also namespace-scoped and is populated by the fixtures
+		// seeded above.
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
 				processNamespace: {},
@@ -646,17 +653,13 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Create audit client for handlers
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
-	// AA IT shared-envtest fix (DD-TEST-010 amendment): the enrichment
-	// fixtures and the RemediationWorkflow/ActionType workflow catalog seed
-	// both moved to Phase 1 (process 1 only, see the note there) now that
-	// every process's KA container watches the SAME shared envtest Phase 1
-	// already seeded -- KA's workflowcatalog informer cache is cluster-wide
-	// (internal/kubernautagent/workflowcatalog/cache.go's
-	// NewInformerCache), so Phase 1's single seed is visible to every
-	// process's KA instance without a per-process re-seed. This replaces
-	// the DD-AA-KA-001 comment previously here, which explained why a
-	// per-process re-seed was required back when each process had its own
-	// separate envtest.
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): enrichment fixtures
+	// remain shared and are created in Phase 1, while the workflow catalog
+	// fixtures are seeded into this process's namespace above. The latter is
+	// required because KUBERNAUT_AGENT_NAMESPACE scopes KA's informer on the
+	// shared apiserver. This replaces the DD-AA-KA-001 comment previously
+	// here, which explained why a per-process re-seed was required when each
+	// process had its own separate envtest.
 
 	By(fmt.Sprintf("[Process %d] Starting per-process Kubernaut Agent HTTP service", processNum))
 	// #2190: this suite no longer constructs a direct-HTTP client against
@@ -876,9 +879,9 @@ var _ = SynchronizedAfterSuite(func() {
 // per test previously enabled parallel execution across processes sharing
 // one envtest. DD-AA-KA-001 replaced that per-test-namespace model with one
 // fixed namespace per PROCESS ("kubernaut-system"), because the per-process
-// Kubernaut Agent container's AgentSession dispatcher watches exactly one
-// namespace (detectNamespace() in cmd/kubernautagent/health.go) and a fresh
-// per-test namespace would be invisible to it. The shared-envtest fix keeps
+// Kubernaut Agent container's AgentSession and workflow-catalog watchers watch
+// exactly one namespace (detectNamespace() in cmd/kubernautagent/health.go),
+// and a fresh per-test namespace would be invisible to them. The shared-envtest fix keeps
 // that one-namespace-per-process model (tests still get isolation via their
 // own timestamp/uuid-suffixed object names, not a per-test namespace) but
 // that namespace is now per-process-UNIQUE (processNamespace, computed once

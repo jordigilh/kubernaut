@@ -7383,6 +7383,540 @@ func (s *ApifrontendConfigReloadedPayloadEventType) UnmarshalText(data []byte) e
 	}
 }
 
+// Authenticated Console managed-resource exact read result (BR-AUDIT-005, AU-2/AU-3, Issue.
+// Ref: #/components/schemas/ApifrontendConsoleManagedResourceGetReadPayload
+type ApifrontendConsoleManagedResourceGetReadPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendConsoleManagedResourceGetReadPayloadEventType `json:"event_type"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
+	// Bounded Console result state; loading is client-only.
+	ResultState ApifrontendConsoleManagedResourceGetReadPayloadResultState `json:"result_state"`
+	// Opaque exact-resource fingerprint, never a returned object or raw target.
+	ResourceFingerprint string `json:"resource_fingerprint"`
+	// Bounded request identifier when supplied by AF middleware.
+	RequestID OptString `json:"request_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetEventType() ApifrontendConsoleManagedResourceGetReadPayloadEventType {
+	return s.EventType
+}
+
+// GetClusterID returns the value of ClusterID.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetClusterID() NilString {
+	return s.ClusterID
+}
+
+// GetResultState returns the value of ResultState.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetResultState() ApifrontendConsoleManagedResourceGetReadPayloadResultState {
+	return s.ResultState
+}
+
+// GetResourceFingerprint returns the value of ResourceFingerprint.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetResourceFingerprint() string {
+	return s.ResourceFingerprint
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) GetRequestID() OptString {
+	return s.RequestID
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetEventType(val ApifrontendConsoleManagedResourceGetReadPayloadEventType) {
+	s.EventType = val
+}
+
+// SetClusterID sets the value of ClusterID.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetClusterID(val NilString) {
+	s.ClusterID = val
+}
+
+// SetResultState sets the value of ResultState.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetResultState(val ApifrontendConsoleManagedResourceGetReadPayloadResultState) {
+	s.ResultState = val
+}
+
+// SetResourceFingerprint sets the value of ResourceFingerprint.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetResourceFingerprint(val string) {
+	s.ResourceFingerprint = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *ApifrontendConsoleManagedResourceGetReadPayload) SetRequestID(val OptString) {
+	s.RequestID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendConsoleManagedResourceGetReadPayloadEventType string
+
+const (
+	ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead ApifrontendConsoleManagedResourceGetReadPayloadEventType = "apifrontend.console.managed_resource_get_read"
+)
+
+// AllValues returns all ApifrontendConsoleManagedResourceGetReadPayloadEventType values.
+func (ApifrontendConsoleManagedResourceGetReadPayloadEventType) AllValues() []ApifrontendConsoleManagedResourceGetReadPayloadEventType {
+	return []ApifrontendConsoleManagedResourceGetReadPayloadEventType{
+		ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendConsoleManagedResourceGetReadPayloadEventType(data) {
+	case ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadEventTypeApifrontendConsoleManagedResourceGetRead
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded Console result state; loading is client-only.
+type ApifrontendConsoleManagedResourceGetReadPayloadResultState string
+
+const (
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess     ApifrontendConsoleManagedResourceGetReadPayloadResultState = "success"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty       ApifrontendConsoleManagedResourceGetReadPayloadResultState = "empty"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial     ApifrontendConsoleManagedResourceGetReadPayloadResultState = "partial"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale       ApifrontendConsoleManagedResourceGetReadPayloadResultState = "stale"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable ApifrontendConsoleManagedResourceGetReadPayloadResultState = "unavailable"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden   ApifrontendConsoleManagedResourceGetReadPayloadResultState = "forbidden"
+	ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound    ApifrontendConsoleManagedResourceGetReadPayloadResultState = "not_found"
+)
+
+// AllValues returns all ApifrontendConsoleManagedResourceGetReadPayloadResultState values.
+func (ApifrontendConsoleManagedResourceGetReadPayloadResultState) AllValues() []ApifrontendConsoleManagedResourceGetReadPayloadResultState {
+	return []ApifrontendConsoleManagedResourceGetReadPayloadResultState{
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden,
+		ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsoleManagedResourceGetReadPayloadResultState) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsoleManagedResourceGetReadPayloadResultState) UnmarshalText(data []byte) error {
+	switch ApifrontendConsoleManagedResourceGetReadPayloadResultState(data) {
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateSuccess
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateEmpty
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStatePartial
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateStale
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateUnavailable
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateForbidden
+		return nil
+	case ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound:
+		*s = ApifrontendConsoleManagedResourceGetReadPayloadResultStateNotFound
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Authenticated Console managed-resource list result (BR-AUDIT-005, AU-2/AU-3, Issue.
+// Ref: #/components/schemas/ApifrontendConsoleManagedResourceListReadPayload
+type ApifrontendConsoleManagedResourceListReadPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendConsoleManagedResourceListReadPayloadEventType `json:"event_type"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
+	// Bounded Console result state; loading is client-only.
+	ResultState ApifrontendConsoleManagedResourceListReadPayloadResultState `json:"result_state"`
+	// Opaque normalized filter fingerprint, never raw query values.
+	FilterFingerprint OptString `json:"filter_fingerprint"`
+	// Bounded request identifier when supplied by AF middleware.
+	RequestID OptString `json:"request_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetEventType() ApifrontendConsoleManagedResourceListReadPayloadEventType {
+	return s.EventType
+}
+
+// GetClusterID returns the value of ClusterID.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetClusterID() NilString {
+	return s.ClusterID
+}
+
+// GetResultState returns the value of ResultState.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetResultState() ApifrontendConsoleManagedResourceListReadPayloadResultState {
+	return s.ResultState
+}
+
+// GetFilterFingerprint returns the value of FilterFingerprint.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetFilterFingerprint() OptString {
+	return s.FilterFingerprint
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) GetRequestID() OptString {
+	return s.RequestID
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetEventType(val ApifrontendConsoleManagedResourceListReadPayloadEventType) {
+	s.EventType = val
+}
+
+// SetClusterID sets the value of ClusterID.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetClusterID(val NilString) {
+	s.ClusterID = val
+}
+
+// SetResultState sets the value of ResultState.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetResultState(val ApifrontendConsoleManagedResourceListReadPayloadResultState) {
+	s.ResultState = val
+}
+
+// SetFilterFingerprint sets the value of FilterFingerprint.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetFilterFingerprint(val OptString) {
+	s.FilterFingerprint = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *ApifrontendConsoleManagedResourceListReadPayload) SetRequestID(val OptString) {
+	s.RequestID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendConsoleManagedResourceListReadPayloadEventType string
+
+const (
+	ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead ApifrontendConsoleManagedResourceListReadPayloadEventType = "apifrontend.console.managed_resource_list_read"
+)
+
+// AllValues returns all ApifrontendConsoleManagedResourceListReadPayloadEventType values.
+func (ApifrontendConsoleManagedResourceListReadPayloadEventType) AllValues() []ApifrontendConsoleManagedResourceListReadPayloadEventType {
+	return []ApifrontendConsoleManagedResourceListReadPayloadEventType{
+		ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsoleManagedResourceListReadPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendConsoleManagedResourceListReadPayloadEventType(data) {
+	case ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadEventTypeApifrontendConsoleManagedResourceListRead
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded Console result state; loading is client-only.
+type ApifrontendConsoleManagedResourceListReadPayloadResultState string
+
+const (
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess     ApifrontendConsoleManagedResourceListReadPayloadResultState = "success"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty       ApifrontendConsoleManagedResourceListReadPayloadResultState = "empty"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial     ApifrontendConsoleManagedResourceListReadPayloadResultState = "partial"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateStale       ApifrontendConsoleManagedResourceListReadPayloadResultState = "stale"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable ApifrontendConsoleManagedResourceListReadPayloadResultState = "unavailable"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden   ApifrontendConsoleManagedResourceListReadPayloadResultState = "forbidden"
+	ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound    ApifrontendConsoleManagedResourceListReadPayloadResultState = "not_found"
+)
+
+// AllValues returns all ApifrontendConsoleManagedResourceListReadPayloadResultState values.
+func (ApifrontendConsoleManagedResourceListReadPayloadResultState) AllValues() []ApifrontendConsoleManagedResourceListReadPayloadResultState {
+	return []ApifrontendConsoleManagedResourceListReadPayloadResultState{
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateStale,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden,
+		ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsoleManagedResourceListReadPayloadResultState) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateStale:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden:
+		return []byte(s), nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsoleManagedResourceListReadPayloadResultState) UnmarshalText(data []byte) error {
+	switch ApifrontendConsoleManagedResourceListReadPayloadResultState(data) {
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateSuccess
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateEmpty
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStatePartial
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateStale:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateStale
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateUnavailable
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateForbidden
+		return nil
+	case ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound:
+		*s = ApifrontendConsoleManagedResourceListReadPayloadResultStateNotFound
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Authenticated Console policy/scope read result (BR-AUDIT-005, AU-2/AU-3, Issue.
+// Ref: #/components/schemas/ApifrontendConsolePolicyScopeReadPayload
+type ApifrontendConsolePolicyScopeReadPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendConsolePolicyScopeReadPayloadEventType `json:"event_type"`
+	// Explicit cluster identity used for the read; null when the authenticated request was rejected
+	// before a cluster identity could be validated.
+	ClusterID NilString `json:"cluster_id"`
+	// Bounded Console result state; loading is client-only.
+	ResultState ApifrontendConsolePolicyScopeReadPayloadResultState `json:"result_state"`
+	// Opaque normalized filter fingerprint, never raw query values.
+	FilterFingerprint OptString `json:"filter_fingerprint"`
+	// Bounded request identifier when supplied by AF middleware.
+	RequestID OptString `json:"request_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetEventType() ApifrontendConsolePolicyScopeReadPayloadEventType {
+	return s.EventType
+}
+
+// GetClusterID returns the value of ClusterID.
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetClusterID() NilString {
+	return s.ClusterID
+}
+
+// GetResultState returns the value of ResultState.
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetResultState() ApifrontendConsolePolicyScopeReadPayloadResultState {
+	return s.ResultState
+}
+
+// GetFilterFingerprint returns the value of FilterFingerprint.
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetFilterFingerprint() OptString {
+	return s.FilterFingerprint
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *ApifrontendConsolePolicyScopeReadPayload) GetRequestID() OptString {
+	return s.RequestID
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetEventType(val ApifrontendConsolePolicyScopeReadPayloadEventType) {
+	s.EventType = val
+}
+
+// SetClusterID sets the value of ClusterID.
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetClusterID(val NilString) {
+	s.ClusterID = val
+}
+
+// SetResultState sets the value of ResultState.
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetResultState(val ApifrontendConsolePolicyScopeReadPayloadResultState) {
+	s.ResultState = val
+}
+
+// SetFilterFingerprint sets the value of FilterFingerprint.
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetFilterFingerprint(val OptString) {
+	s.FilterFingerprint = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *ApifrontendConsolePolicyScopeReadPayload) SetRequestID(val OptString) {
+	s.RequestID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendConsolePolicyScopeReadPayloadEventType string
+
+const (
+	ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead ApifrontendConsolePolicyScopeReadPayloadEventType = "apifrontend.console.policy_scope_read"
+)
+
+// AllValues returns all ApifrontendConsolePolicyScopeReadPayloadEventType values.
+func (ApifrontendConsolePolicyScopeReadPayloadEventType) AllValues() []ApifrontendConsolePolicyScopeReadPayloadEventType {
+	return []ApifrontendConsolePolicyScopeReadPayloadEventType{
+		ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsolePolicyScopeReadPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendConsolePolicyScopeReadPayloadEventType(data) {
+	case ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead:
+		*s = ApifrontendConsolePolicyScopeReadPayloadEventTypeApifrontendConsolePolicyScopeRead
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded Console result state; loading is client-only.
+type ApifrontendConsolePolicyScopeReadPayloadResultState string
+
+const (
+	ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess     ApifrontendConsolePolicyScopeReadPayloadResultState = "success"
+	ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty       ApifrontendConsolePolicyScopeReadPayloadResultState = "empty"
+	ApifrontendConsolePolicyScopeReadPayloadResultStatePartial     ApifrontendConsolePolicyScopeReadPayloadResultState = "partial"
+	ApifrontendConsolePolicyScopeReadPayloadResultStateStale       ApifrontendConsolePolicyScopeReadPayloadResultState = "stale"
+	ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable ApifrontendConsolePolicyScopeReadPayloadResultState = "unavailable"
+	ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden   ApifrontendConsolePolicyScopeReadPayloadResultState = "forbidden"
+	ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound    ApifrontendConsolePolicyScopeReadPayloadResultState = "not_found"
+)
+
+// AllValues returns all ApifrontendConsolePolicyScopeReadPayloadResultState values.
+func (ApifrontendConsolePolicyScopeReadPayloadResultState) AllValues() []ApifrontendConsolePolicyScopeReadPayloadResultState {
+	return []ApifrontendConsolePolicyScopeReadPayloadResultState{
+		ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess,
+		ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty,
+		ApifrontendConsolePolicyScopeReadPayloadResultStatePartial,
+		ApifrontendConsolePolicyScopeReadPayloadResultStateStale,
+		ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable,
+		ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden,
+		ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConsolePolicyScopeReadPayloadResultState) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStatePartial:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateStale:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden:
+		return []byte(s), nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConsolePolicyScopeReadPayloadResultState) UnmarshalText(data []byte) error {
+	switch ApifrontendConsolePolicyScopeReadPayloadResultState(data) {
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateSuccess
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateEmpty
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStatePartial:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStatePartial
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateStale:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateStale
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateUnavailable
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateForbidden
+		return nil
+	case ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound:
+		*s = ApifrontendConsolePolicyScopeReadPayloadResultStateNotFound
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // K8s impersonation created event payload (apifrontend.impersonation.created) — impersonated
 // client created for user (SOC2 CC6.1, Issue.
 // Ref: #/components/schemas/ApifrontendImpersonationCreatedPayload
@@ -9411,6 +9945,20 @@ type ApifrontendToolExecutedPayload struct {
 	TargetNamespace OptString `json:"target_namespace"`
 	// Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on.
 	TargetKind OptString `json:"target_kind"`
+	// Reviewed workflow identifier for an approval decision.
+	WorkflowID OptString `json:"workflow_id"`
+	// Name of the reviewed RemediationApprovalRequest.
+	ApprovalRequest OptString `json:"approval_request"`
+	// Approval decision submitted by the reviewer.
+	ApprovalDecision OptString `json:"approval_decision"`
+	// Original parameter values in the reviewed approval snapshot.
+	OriginalParameters OptApifrontendToolExecutedPayloadOriginalParameters `json:"original_parameters"`
+	// Exact parameter changes submitted by the reviewer.
+	OverrideParameters OptApifrontendToolExecutedPayloadOverrideParameters `json:"override_parameters"`
+	// Effective parameter values after the submitted partial override.
+	EffectiveParameters OptApifrontendToolExecutedPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the submitted changes.
+	OverrideRationale OptString `json:"override_rationale"`
 }
 
 // GetEventType returns the value of EventType.
@@ -9458,6 +10006,41 @@ func (s *ApifrontendToolExecutedPayload) GetTargetKind() OptString {
 	return s.TargetKind
 }
 
+// GetWorkflowID returns the value of WorkflowID.
+func (s *ApifrontendToolExecutedPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetApprovalRequest returns the value of ApprovalRequest.
+func (s *ApifrontendToolExecutedPayload) GetApprovalRequest() OptString {
+	return s.ApprovalRequest
+}
+
+// GetApprovalDecision returns the value of ApprovalDecision.
+func (s *ApifrontendToolExecutedPayload) GetApprovalDecision() OptString {
+	return s.ApprovalDecision
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *ApifrontendToolExecutedPayload) GetOriginalParameters() OptApifrontendToolExecutedPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *ApifrontendToolExecutedPayload) GetOverrideParameters() OptApifrontendToolExecutedPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *ApifrontendToolExecutedPayload) GetEffectiveParameters() OptApifrontendToolExecutedPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *ApifrontendToolExecutedPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
+}
+
 // SetEventType sets the value of EventType.
 func (s *ApifrontendToolExecutedPayload) SetEventType(val ApifrontendToolExecutedPayloadEventType) {
 	s.EventType = val
@@ -9503,6 +10086,53 @@ func (s *ApifrontendToolExecutedPayload) SetTargetKind(val OptString) {
 	s.TargetKind = val
 }
 
+// SetWorkflowID sets the value of WorkflowID.
+func (s *ApifrontendToolExecutedPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetApprovalRequest sets the value of ApprovalRequest.
+func (s *ApifrontendToolExecutedPayload) SetApprovalRequest(val OptString) {
+	s.ApprovalRequest = val
+}
+
+// SetApprovalDecision sets the value of ApprovalDecision.
+func (s *ApifrontendToolExecutedPayload) SetApprovalDecision(val OptString) {
+	s.ApprovalDecision = val
+}
+
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *ApifrontendToolExecutedPayload) SetOriginalParameters(val OptApifrontendToolExecutedPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *ApifrontendToolExecutedPayload) SetOverrideParameters(val OptApifrontendToolExecutedPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *ApifrontendToolExecutedPayload) SetEffectiveParameters(val OptApifrontendToolExecutedPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *ApifrontendToolExecutedPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
+}
+
+// Effective parameter values after the submitted partial override.
+type ApifrontendToolExecutedPayloadEffectiveParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadEffectiveParameters) init() ApifrontendToolExecutedPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Event type for discriminator (matches parent event_type).
 type ApifrontendToolExecutedPayloadEventType string
 
@@ -9536,6 +10166,30 @@ func (s *ApifrontendToolExecutedPayloadEventType) UnmarshalText(data []byte) err
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Original parameter values in the reviewed approval snapshot.
+type ApifrontendToolExecutedPayloadOriginalParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadOriginalParameters) init() ApifrontendToolExecutedPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Exact parameter changes submitted by the reviewer.
+type ApifrontendToolExecutedPayloadOverrideParameters map[string]string
+
+func (s *ApifrontendToolExecutedPayloadOverrideParameters) init() ApifrontendToolExecutedPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Outcome of tool execution.
@@ -10772,125 +11426,128 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventEventData represents sum type.
 type AuditEventEventData struct {
-	Type                                         AuditEventEventDataType // switch on this field
-	GatewayAuditPayload                          GatewayAuditPayload
-	RemediationOrchestratorAuditPayload          RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload                 SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                       AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload                WorkflowExecutionAuditPayload
-	NotificationAuditPayload                     NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload         WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload              RemediationApprovalAuditPayload
-	WorkflowActionsListedAuditPayload            WorkflowActionsListedAuditPayload
-	WorkflowCandidatesListedAuditPayload         WorkflowCandidatesListedAuditPayload
-	WorkflowDiscoveryAuditPayload                WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload                WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload                WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload             AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload                 AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload            AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload              AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                       AIAnalysisErrorPayload
-	NotificationMessageSentPayload               NotificationMessageSentPayload
-	NotificationMessageFailedPayload             NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload       NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                       AIAgentResponsePayload
-	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
-	AIAgentInvestigationDecisionPayload          AIAgentInvestigationDecisionPayload
-	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                            LLMRequestPayload
-	LLMResponsePayload                           LLMResponsePayload
-	LLMToolCallPayload                           LLMToolCallPayload
-	WorkflowValidationPayload                    WorkflowValidationPayload
-	AIAgentSessionStartedPayload                 AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload               AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload                  AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload               AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload               AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload                 AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
-	AIAgentSecretAccessedPayload                 AIAgentSecretAccessedPayload
-	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
-	AIAgentFleetOverlayFailedPayload             AIAgentFleetOverlayFailedPayload
-	AIAgentFleetOverlayUnavailablePayload        AIAgentFleetOverlayUnavailablePayload
-	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
-	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
-	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
-	AIAgentAuthFailurePayload                    AIAgentAuthFailurePayload
-	AIAgentAuthDeniedPayload                     AIAgentAuthDeniedPayload
-	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
-	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
-	EffectivenessAssessmentAuditPayload          EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload              ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload              ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload             ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
-	AgentSessionWebhookAuditPayload              AgentSessionWebhookAuditPayload
-	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload             ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload             ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload           ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload                ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload           ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
-	ApifrontendWorkflowDiscoveryPayload          ApifrontendWorkflowDiscoveryPayload
-	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
-	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
-	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
-	ApifrontendCircuitbreakerTripPayload         ApifrontendCircuitbreakerTripPayload
-	ApifrontendImpersonationCreatedPayload       ApifrontendImpersonationCreatedPayload
-	ApifrontendJWTDelegationPayload              ApifrontendJWTDelegationPayload
-	ApifrontendSessionPhaseChangedPayload        ApifrontendSessionPhaseChangedPayload
-	ApifrontendSessionDeletedPayload             ApifrontendSessionDeletedPayload
-	ApifrontendSessionAutoCancelledPayload       ApifrontendSessionAutoCancelledPayload
-	ApifrontendSessionRetentionDeletedPayload    ApifrontendSessionRetentionDeletedPayload
-	ApifrontendA2ATaskStartedPayload             ApifrontendA2ATaskStartedPayload
-	ApifrontendA2ATaskCompletedPayload           ApifrontendA2ATaskCompletedPayload
-	ApifrontendA2ATaskFailedPayload              ApifrontendA2ATaskFailedPayload
-	ApifrontendMCPToolFailedPayload              ApifrontendMCPToolFailedPayload
-	ApifrontendMCPSessionInitPayload             ApifrontendMCPSessionInitPayload
-	ApifrontendSeverityTriageCompletedPayload    ApifrontendSeverityTriageCompletedPayload
-	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
-	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
-	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
-	ApifrontendInteractiveSignalFailedPayload    ApifrontendInteractiveSignalFailedPayload
-	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
-	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
-	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
-	AIAnalysisConfigReloadedPayload              AIAnalysisConfigReloadedPayload
-	AIAnalysisConfigRejectedPayload              AIAnalysisConfigRejectedPayload
-	EffectivenessConfigReloadedPayload           EffectivenessConfigReloadedPayload
-	EffectivenessConfigRejectedPayload           EffectivenessConfigRejectedPayload
-	NotificationConfigReloadedPayload            NotificationConfigReloadedPayload
-	NotificationConfigRejectedPayload            NotificationConfigRejectedPayload
-	RemediationOrchestratorConfigReloadedPayload RemediationOrchestratorConfigReloadedPayload
-	RemediationOrchestratorConfigRejectedPayload RemediationOrchestratorConfigRejectedPayload
-	SignalProcessingConfigReloadedPayload        SignalProcessingConfigReloadedPayload
-	SignalProcessingConfigRejectedPayload        SignalProcessingConfigRejectedPayload
-	WorkflowExecutionConfigReloadedPayload       WorkflowExecutionConfigReloadedPayload
-	WorkflowExecutionConfigRejectedPayload       WorkflowExecutionConfigRejectedPayload
-	AuthwebhookConfigReloadedPayload             AuthwebhookConfigReloadedPayload
-	AuthwebhookConfigRejectedPayload             AuthwebhookConfigRejectedPayload
-	AIAgentConfigReloadedPayload                 AIAgentConfigReloadedPayload
-	AIAgentConfigRejectedPayload                 AIAgentConfigRejectedPayload
-	DatastorageConfigReloadedPayload             DatastorageConfigReloadedPayload
-	DatastorageConfigRejectedPayload             DatastorageConfigRejectedPayload
+	Type                                             AuditEventEventDataType // switch on this field
+	GatewayAuditPayload                              GatewayAuditPayload
+	RemediationOrchestratorAuditPayload              RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload                     SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                           AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload                    WorkflowExecutionAuditPayload
+	NotificationAuditPayload                         NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload             WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload                  RemediationApprovalAuditPayload
+	WorkflowActionsListedAuditPayload                WorkflowActionsListedAuditPayload
+	WorkflowCandidatesListedAuditPayload             WorkflowCandidatesListedAuditPayload
+	WorkflowDiscoveryAuditPayload                    WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload                    WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload                    WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload                 AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload                     AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload                AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload                  AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                           AIAnalysisErrorPayload
+	NotificationMessageSentPayload                   NotificationMessageSentPayload
+	NotificationMessageFailedPayload                 NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload           NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload              NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                           AIAgentResponsePayload
+	AIAgentRCACompletePayload                        AIAgentRCACompletePayload
+	AIAgentInvestigationDecisionPayload              AIAgentInvestigationDecisionPayload
+	AIAgentResponseFailedPayload                     AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload                AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload                   AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                                LLMRequestPayload
+	LLMResponsePayload                               LLMResponsePayload
+	LLMToolCallPayload                               LLMToolCallPayload
+	WorkflowValidationPayload                        WorkflowValidationPayload
+	AIAgentSessionStartedPayload                     AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload                   AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload                      AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload                   AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload                   AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload                     AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload                 AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload               AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload                 AIAgentInteractiveK8sCallPayload
+	AIAgentSecretAccessedPayload                     AIAgentSecretAccessedPayload
+	AIAgentSessionObservedPayload                    AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload                AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload             AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload                      AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload                   AIAgentAlignmentVerdictPayload
+	AIAgentFleetOverlayFailedPayload                 AIAgentFleetOverlayFailedPayload
+	AIAgentFleetOverlayUnavailablePayload            AIAgentFleetOverlayUnavailablePayload
+	ShadowLLMRequestPayload                          ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                         ShadowLLMResponsePayload
+	AIAgentRatelimitDeniedPayload                    AIAgentRatelimitDeniedPayload
+	AIAgentAuthFailurePayload                        AIAgentAuthFailurePayload
+	AIAgentAuthDeniedPayload                         AIAgentAuthDeniedPayload
+	RemediationRequestWebhookAuditPayload            RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload           RemediationWorkflowWebhookAuditPayload
+	AuthwebhookWorkflowRegistrationFailedPayload     AuthwebhookWorkflowRegistrationFailedPayload
+	EffectivenessAssessmentAuditPayload              EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload                  ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload                  ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload                 ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload                ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload            ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload                    ActionTypeWebhookAuditPayload
+	AgentSessionWebhookAuditPayload                  AgentSessionWebhookAuditPayload
+	ApifrontendTriageStartedPayload                  ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload                ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload                      ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload                 ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload                 ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload               ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload                    ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload               ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload                   ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload               ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload                   ApifrontendToolExecutedPayload
+	ApifrontendWorkflowDiscoveryPayload              ApifrontendWorkflowDiscoveryPayload
+	ApifrontendAuthSuccessPayload                    ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload                    ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload                ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload             ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload           ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload                  ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload            ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload                 ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload           ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload        ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload                 ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload               ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload                  ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload                  ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload                 ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload        ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload           ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload                 ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload                 ApifrontendConfigRejectedPayload
+	ApifrontendInteractiveSignalFailedPayload        ApifrontendInteractiveSignalFailedPayload
+	ApifrontendConsolePolicyScopeReadPayload         ApifrontendConsolePolicyScopeReadPayload
+	ApifrontendConsoleManagedResourceListReadPayload ApifrontendConsoleManagedResourceListReadPayload
+	ApifrontendConsoleManagedResourceGetReadPayload  ApifrontendConsoleManagedResourceGetReadPayload
+	DatastorageRatelimitDeniedPayload                DatastorageRatelimitDeniedPayload
+	GatewayConfigReloadedPayload                     GatewayConfigReloadedPayload
+	GatewayConfigRejectedPayload                     GatewayConfigRejectedPayload
+	AIAnalysisConfigReloadedPayload                  AIAnalysisConfigReloadedPayload
+	AIAnalysisConfigRejectedPayload                  AIAnalysisConfigRejectedPayload
+	EffectivenessConfigReloadedPayload               EffectivenessConfigReloadedPayload
+	EffectivenessConfigRejectedPayload               EffectivenessConfigRejectedPayload
+	NotificationConfigReloadedPayload                NotificationConfigReloadedPayload
+	NotificationConfigRejectedPayload                NotificationConfigRejectedPayload
+	RemediationOrchestratorConfigReloadedPayload     RemediationOrchestratorConfigReloadedPayload
+	RemediationOrchestratorConfigRejectedPayload     RemediationOrchestratorConfigRejectedPayload
+	SignalProcessingConfigReloadedPayload            SignalProcessingConfigReloadedPayload
+	SignalProcessingConfigRejectedPayload            SignalProcessingConfigRejectedPayload
+	WorkflowExecutionConfigReloadedPayload           WorkflowExecutionConfigReloadedPayload
+	WorkflowExecutionConfigRejectedPayload           WorkflowExecutionConfigRejectedPayload
+	AuthwebhookConfigReloadedPayload                 AuthwebhookConfigReloadedPayload
+	AuthwebhookConfigRejectedPayload                 AuthwebhookConfigRejectedPayload
+	AIAgentConfigReloadedPayload                     AIAgentConfigReloadedPayload
+	AIAgentConfigRejectedPayload                     AIAgentConfigRejectedPayload
+	DatastorageConfigReloadedPayload                 DatastorageConfigReloadedPayload
+	DatastorageConfigRejectedPayload                 DatastorageConfigRejectedPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -11041,6 +11698,9 @@ const (
 	ApifrontendConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.rejected"
 	ApifrontendInteractiveSignalFailedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.interactive_signal.failed"
+	ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData                      AuditEventEventDataType = "apifrontend.console.policy_scope_read"
+	ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData              AuditEventEventDataType = "apifrontend.console.managed_resource_list_read"
+	ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData               AuditEventEventDataType = "apifrontend.console.managed_resource_get_read"
 	DatastorageRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.rejected"
@@ -11607,6 +12267,21 @@ func (s AuditEventEventData) IsApifrontendConfigRejectedPayload() bool {
 // IsApifrontendInteractiveSignalFailedPayload reports whether AuditEventEventData is ApifrontendInteractiveSignalFailedPayload.
 func (s AuditEventEventData) IsApifrontendInteractiveSignalFailedPayload() bool {
 	return s.Type == ApifrontendInteractiveSignalFailedPayloadAuditEventEventData
+}
+
+// IsApifrontendConsolePolicyScopeReadPayload reports whether AuditEventEventData is ApifrontendConsolePolicyScopeReadPayload.
+func (s AuditEventEventData) IsApifrontendConsolePolicyScopeReadPayload() bool {
+	return s.Type == ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData
+}
+
+// IsApifrontendConsoleManagedResourceListReadPayload reports whether AuditEventEventData is ApifrontendConsoleManagedResourceListReadPayload.
+func (s AuditEventEventData) IsApifrontendConsoleManagedResourceListReadPayload() bool {
+	return s.Type == ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData
+}
+
+// IsApifrontendConsoleManagedResourceGetReadPayload reports whether AuditEventEventData is ApifrontendConsoleManagedResourceGetReadPayload.
+func (s AuditEventEventData) IsApifrontendConsoleManagedResourceGetReadPayload() bool {
+	return s.Type == ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData
 }
 
 // IsDatastorageRatelimitDeniedPayload reports whether AuditEventEventData is DatastorageRatelimitDeniedPayload.
@@ -14121,6 +14796,69 @@ func NewApifrontendInteractiveSignalFailedPayloadAuditEventEventData(v Apifronte
 	return s
 }
 
+// SetApifrontendConsolePolicyScopeReadPayload sets AuditEventEventData to ApifrontendConsolePolicyScopeReadPayload.
+func (s *AuditEventEventData) SetApifrontendConsolePolicyScopeReadPayload(v ApifrontendConsolePolicyScopeReadPayload) {
+	s.Type = ApifrontendConsolePolicyScopeReadPayloadAuditEventEventData
+	s.ApifrontendConsolePolicyScopeReadPayload = v
+}
+
+// GetApifrontendConsolePolicyScopeReadPayload returns ApifrontendConsolePolicyScopeReadPayload and true boolean if AuditEventEventData is ApifrontendConsolePolicyScopeReadPayload.
+func (s AuditEventEventData) GetApifrontendConsolePolicyScopeReadPayload() (v ApifrontendConsolePolicyScopeReadPayload, ok bool) {
+	if !s.IsApifrontendConsolePolicyScopeReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsolePolicyScopeReadPayload, true
+}
+
+// NewApifrontendConsolePolicyScopeReadPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendConsolePolicyScopeReadPayload.
+func NewApifrontendConsolePolicyScopeReadPayloadAuditEventEventData(v ApifrontendConsolePolicyScopeReadPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendConsolePolicyScopeReadPayload(v)
+	return s
+}
+
+// SetApifrontendConsoleManagedResourceListReadPayload sets AuditEventEventData to ApifrontendConsoleManagedResourceListReadPayload.
+func (s *AuditEventEventData) SetApifrontendConsoleManagedResourceListReadPayload(v ApifrontendConsoleManagedResourceListReadPayload) {
+	s.Type = ApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData
+	s.ApifrontendConsoleManagedResourceListReadPayload = v
+}
+
+// GetApifrontendConsoleManagedResourceListReadPayload returns ApifrontendConsoleManagedResourceListReadPayload and true boolean if AuditEventEventData is ApifrontendConsoleManagedResourceListReadPayload.
+func (s AuditEventEventData) GetApifrontendConsoleManagedResourceListReadPayload() (v ApifrontendConsoleManagedResourceListReadPayload, ok bool) {
+	if !s.IsApifrontendConsoleManagedResourceListReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsoleManagedResourceListReadPayload, true
+}
+
+// NewApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendConsoleManagedResourceListReadPayload.
+func NewApifrontendConsoleManagedResourceListReadPayloadAuditEventEventData(v ApifrontendConsoleManagedResourceListReadPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendConsoleManagedResourceListReadPayload(v)
+	return s
+}
+
+// SetApifrontendConsoleManagedResourceGetReadPayload sets AuditEventEventData to ApifrontendConsoleManagedResourceGetReadPayload.
+func (s *AuditEventEventData) SetApifrontendConsoleManagedResourceGetReadPayload(v ApifrontendConsoleManagedResourceGetReadPayload) {
+	s.Type = ApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData
+	s.ApifrontendConsoleManagedResourceGetReadPayload = v
+}
+
+// GetApifrontendConsoleManagedResourceGetReadPayload returns ApifrontendConsoleManagedResourceGetReadPayload and true boolean if AuditEventEventData is ApifrontendConsoleManagedResourceGetReadPayload.
+func (s AuditEventEventData) GetApifrontendConsoleManagedResourceGetReadPayload() (v ApifrontendConsoleManagedResourceGetReadPayload, ok bool) {
+	if !s.IsApifrontendConsoleManagedResourceGetReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsoleManagedResourceGetReadPayload, true
+}
+
+// NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendConsoleManagedResourceGetReadPayload.
+func NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventEventData(v ApifrontendConsoleManagedResourceGetReadPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendConsoleManagedResourceGetReadPayload(v)
+	return s
+}
+
 // SetDatastorageRatelimitDeniedPayload sets AuditEventEventData to DatastorageRatelimitDeniedPayload.
 func (s *AuditEventEventData) SetDatastorageRatelimitDeniedPayload(v DatastorageRatelimitDeniedPayload) {
 	s.Type = DatastorageRatelimitDeniedPayloadAuditEventEventData
@@ -15069,125 +15807,128 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventRequestEventData represents sum type.
 type AuditEventRequestEventData struct {
-	Type                                         AuditEventRequestEventDataType // switch on this field
-	GatewayAuditPayload                          GatewayAuditPayload
-	RemediationOrchestratorAuditPayload          RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload                 SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                       AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload                WorkflowExecutionAuditPayload
-	NotificationAuditPayload                     NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload         WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload              RemediationApprovalAuditPayload
-	WorkflowActionsListedAuditPayload            WorkflowActionsListedAuditPayload
-	WorkflowCandidatesListedAuditPayload         WorkflowCandidatesListedAuditPayload
-	WorkflowDiscoveryAuditPayload                WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload                WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload                WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload             AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload                 AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload            AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload              AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                       AIAnalysisErrorPayload
-	NotificationMessageSentPayload               NotificationMessageSentPayload
-	NotificationMessageFailedPayload             NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload       NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                       AIAgentResponsePayload
-	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
-	AIAgentInvestigationDecisionPayload          AIAgentInvestigationDecisionPayload
-	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                            LLMRequestPayload
-	LLMResponsePayload                           LLMResponsePayload
-	LLMToolCallPayload                           LLMToolCallPayload
-	WorkflowValidationPayload                    WorkflowValidationPayload
-	AIAgentSessionStartedPayload                 AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload               AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload                  AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload               AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload               AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload                 AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
-	AIAgentSecretAccessedPayload                 AIAgentSecretAccessedPayload
-	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
-	AIAgentFleetOverlayFailedPayload             AIAgentFleetOverlayFailedPayload
-	AIAgentFleetOverlayUnavailablePayload        AIAgentFleetOverlayUnavailablePayload
-	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
-	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
-	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
-	AIAgentAuthFailurePayload                    AIAgentAuthFailurePayload
-	AIAgentAuthDeniedPayload                     AIAgentAuthDeniedPayload
-	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
-	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
-	EffectivenessAssessmentAuditPayload          EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload              ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload              ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload             ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
-	AgentSessionWebhookAuditPayload              AgentSessionWebhookAuditPayload
-	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload             ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload             ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload           ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload                ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload           ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
-	ApifrontendWorkflowDiscoveryPayload          ApifrontendWorkflowDiscoveryPayload
-	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
-	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
-	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
-	ApifrontendCircuitbreakerTripPayload         ApifrontendCircuitbreakerTripPayload
-	ApifrontendImpersonationCreatedPayload       ApifrontendImpersonationCreatedPayload
-	ApifrontendJWTDelegationPayload              ApifrontendJWTDelegationPayload
-	ApifrontendSessionPhaseChangedPayload        ApifrontendSessionPhaseChangedPayload
-	ApifrontendSessionDeletedPayload             ApifrontendSessionDeletedPayload
-	ApifrontendSessionAutoCancelledPayload       ApifrontendSessionAutoCancelledPayload
-	ApifrontendSessionRetentionDeletedPayload    ApifrontendSessionRetentionDeletedPayload
-	ApifrontendA2ATaskStartedPayload             ApifrontendA2ATaskStartedPayload
-	ApifrontendA2ATaskCompletedPayload           ApifrontendA2ATaskCompletedPayload
-	ApifrontendA2ATaskFailedPayload              ApifrontendA2ATaskFailedPayload
-	ApifrontendMCPToolFailedPayload              ApifrontendMCPToolFailedPayload
-	ApifrontendMCPSessionInitPayload             ApifrontendMCPSessionInitPayload
-	ApifrontendSeverityTriageCompletedPayload    ApifrontendSeverityTriageCompletedPayload
-	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
-	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
-	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
-	ApifrontendInteractiveSignalFailedPayload    ApifrontendInteractiveSignalFailedPayload
-	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
-	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
-	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
-	AIAnalysisConfigReloadedPayload              AIAnalysisConfigReloadedPayload
-	AIAnalysisConfigRejectedPayload              AIAnalysisConfigRejectedPayload
-	EffectivenessConfigReloadedPayload           EffectivenessConfigReloadedPayload
-	EffectivenessConfigRejectedPayload           EffectivenessConfigRejectedPayload
-	NotificationConfigReloadedPayload            NotificationConfigReloadedPayload
-	NotificationConfigRejectedPayload            NotificationConfigRejectedPayload
-	RemediationOrchestratorConfigReloadedPayload RemediationOrchestratorConfigReloadedPayload
-	RemediationOrchestratorConfigRejectedPayload RemediationOrchestratorConfigRejectedPayload
-	SignalProcessingConfigReloadedPayload        SignalProcessingConfigReloadedPayload
-	SignalProcessingConfigRejectedPayload        SignalProcessingConfigRejectedPayload
-	WorkflowExecutionConfigReloadedPayload       WorkflowExecutionConfigReloadedPayload
-	WorkflowExecutionConfigRejectedPayload       WorkflowExecutionConfigRejectedPayload
-	AuthwebhookConfigReloadedPayload             AuthwebhookConfigReloadedPayload
-	AuthwebhookConfigRejectedPayload             AuthwebhookConfigRejectedPayload
-	AIAgentConfigReloadedPayload                 AIAgentConfigReloadedPayload
-	AIAgentConfigRejectedPayload                 AIAgentConfigRejectedPayload
-	DatastorageConfigReloadedPayload             DatastorageConfigReloadedPayload
-	DatastorageConfigRejectedPayload             DatastorageConfigRejectedPayload
+	Type                                             AuditEventRequestEventDataType // switch on this field
+	GatewayAuditPayload                              GatewayAuditPayload
+	RemediationOrchestratorAuditPayload              RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload                     SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                           AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload                    WorkflowExecutionAuditPayload
+	NotificationAuditPayload                         NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload             WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload                  RemediationApprovalAuditPayload
+	WorkflowActionsListedAuditPayload                WorkflowActionsListedAuditPayload
+	WorkflowCandidatesListedAuditPayload             WorkflowCandidatesListedAuditPayload
+	WorkflowDiscoveryAuditPayload                    WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload                    WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload                    WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload                 AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload                     AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload                AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload                  AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                           AIAnalysisErrorPayload
+	NotificationMessageSentPayload                   NotificationMessageSentPayload
+	NotificationMessageFailedPayload                 NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload           NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload              NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                           AIAgentResponsePayload
+	AIAgentRCACompletePayload                        AIAgentRCACompletePayload
+	AIAgentInvestigationDecisionPayload              AIAgentInvestigationDecisionPayload
+	AIAgentResponseFailedPayload                     AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload                AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload                   AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                                LLMRequestPayload
+	LLMResponsePayload                               LLMResponsePayload
+	LLMToolCallPayload                               LLMToolCallPayload
+	WorkflowValidationPayload                        WorkflowValidationPayload
+	AIAgentSessionStartedPayload                     AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload                   AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload                      AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload                   AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload                   AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload                     AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload                 AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload               AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload                 AIAgentInteractiveK8sCallPayload
+	AIAgentSecretAccessedPayload                     AIAgentSecretAccessedPayload
+	AIAgentSessionObservedPayload                    AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload                AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload             AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload                      AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload                   AIAgentAlignmentVerdictPayload
+	AIAgentFleetOverlayFailedPayload                 AIAgentFleetOverlayFailedPayload
+	AIAgentFleetOverlayUnavailablePayload            AIAgentFleetOverlayUnavailablePayload
+	ShadowLLMRequestPayload                          ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                         ShadowLLMResponsePayload
+	AIAgentRatelimitDeniedPayload                    AIAgentRatelimitDeniedPayload
+	AIAgentAuthFailurePayload                        AIAgentAuthFailurePayload
+	AIAgentAuthDeniedPayload                         AIAgentAuthDeniedPayload
+	RemediationRequestWebhookAuditPayload            RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload           RemediationWorkflowWebhookAuditPayload
+	AuthwebhookWorkflowRegistrationFailedPayload     AuthwebhookWorkflowRegistrationFailedPayload
+	EffectivenessAssessmentAuditPayload              EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload                  ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload                  ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload                 ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload                ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload            ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload                    ActionTypeWebhookAuditPayload
+	AgentSessionWebhookAuditPayload                  AgentSessionWebhookAuditPayload
+	ApifrontendTriageStartedPayload                  ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload                ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload                      ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload                 ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload                 ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload               ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload                    ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload               ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload                   ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload               ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload                   ApifrontendToolExecutedPayload
+	ApifrontendWorkflowDiscoveryPayload              ApifrontendWorkflowDiscoveryPayload
+	ApifrontendAuthSuccessPayload                    ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload                    ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload                ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload             ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload           ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload                  ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload            ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload                 ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload           ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload        ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload                 ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload               ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload                  ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload                  ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload                 ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload        ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload           ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload                 ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload                 ApifrontendConfigRejectedPayload
+	ApifrontendInteractiveSignalFailedPayload        ApifrontendInteractiveSignalFailedPayload
+	ApifrontendConsolePolicyScopeReadPayload         ApifrontendConsolePolicyScopeReadPayload
+	ApifrontendConsoleManagedResourceListReadPayload ApifrontendConsoleManagedResourceListReadPayload
+	ApifrontendConsoleManagedResourceGetReadPayload  ApifrontendConsoleManagedResourceGetReadPayload
+	DatastorageRatelimitDeniedPayload                DatastorageRatelimitDeniedPayload
+	GatewayConfigReloadedPayload                     GatewayConfigReloadedPayload
+	GatewayConfigRejectedPayload                     GatewayConfigRejectedPayload
+	AIAnalysisConfigReloadedPayload                  AIAnalysisConfigReloadedPayload
+	AIAnalysisConfigRejectedPayload                  AIAnalysisConfigRejectedPayload
+	EffectivenessConfigReloadedPayload               EffectivenessConfigReloadedPayload
+	EffectivenessConfigRejectedPayload               EffectivenessConfigRejectedPayload
+	NotificationConfigReloadedPayload                NotificationConfigReloadedPayload
+	NotificationConfigRejectedPayload                NotificationConfigRejectedPayload
+	RemediationOrchestratorConfigReloadedPayload     RemediationOrchestratorConfigReloadedPayload
+	RemediationOrchestratorConfigRejectedPayload     RemediationOrchestratorConfigRejectedPayload
+	SignalProcessingConfigReloadedPayload            SignalProcessingConfigReloadedPayload
+	SignalProcessingConfigRejectedPayload            SignalProcessingConfigRejectedPayload
+	WorkflowExecutionConfigReloadedPayload           WorkflowExecutionConfigReloadedPayload
+	WorkflowExecutionConfigRejectedPayload           WorkflowExecutionConfigRejectedPayload
+	AuthwebhookConfigReloadedPayload                 AuthwebhookConfigReloadedPayload
+	AuthwebhookConfigRejectedPayload                 AuthwebhookConfigRejectedPayload
+	AIAgentConfigReloadedPayload                     AIAgentConfigReloadedPayload
+	AIAgentConfigRejectedPayload                     AIAgentConfigRejectedPayload
+	DatastorageConfigReloadedPayload                 DatastorageConfigReloadedPayload
+	DatastorageConfigRejectedPayload                 DatastorageConfigRejectedPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -15338,6 +16079,9 @@ const (
 	ApifrontendConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.rejected"
 	ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.interactive_signal.failed"
+	ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData                             AuditEventRequestEventDataType = "apifrontend.console.policy_scope_read"
+	ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData                     AuditEventRequestEventDataType = "apifrontend.console.managed_resource_list_read"
+	ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData                      AuditEventRequestEventDataType = "apifrontend.console.managed_resource_get_read"
 	DatastorageRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.rejected"
@@ -15904,6 +16648,21 @@ func (s AuditEventRequestEventData) IsApifrontendConfigRejectedPayload() bool {
 // IsApifrontendInteractiveSignalFailedPayload reports whether AuditEventRequestEventData is ApifrontendInteractiveSignalFailedPayload.
 func (s AuditEventRequestEventData) IsApifrontendInteractiveSignalFailedPayload() bool {
 	return s.Type == ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendConsolePolicyScopeReadPayload reports whether AuditEventRequestEventData is ApifrontendConsolePolicyScopeReadPayload.
+func (s AuditEventRequestEventData) IsApifrontendConsolePolicyScopeReadPayload() bool {
+	return s.Type == ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendConsoleManagedResourceListReadPayload reports whether AuditEventRequestEventData is ApifrontendConsoleManagedResourceListReadPayload.
+func (s AuditEventRequestEventData) IsApifrontendConsoleManagedResourceListReadPayload() bool {
+	return s.Type == ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendConsoleManagedResourceGetReadPayload reports whether AuditEventRequestEventData is ApifrontendConsoleManagedResourceGetReadPayload.
+func (s AuditEventRequestEventData) IsApifrontendConsoleManagedResourceGetReadPayload() bool {
+	return s.Type == ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData
 }
 
 // IsDatastorageRatelimitDeniedPayload reports whether AuditEventRequestEventData is DatastorageRatelimitDeniedPayload.
@@ -18415,6 +19174,69 @@ func (s AuditEventRequestEventData) GetApifrontendInteractiveSignalFailedPayload
 func NewApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData(v ApifrontendInteractiveSignalFailedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetApifrontendInteractiveSignalFailedPayload(v)
+	return s
+}
+
+// SetApifrontendConsolePolicyScopeReadPayload sets AuditEventRequestEventData to ApifrontendConsolePolicyScopeReadPayload.
+func (s *AuditEventRequestEventData) SetApifrontendConsolePolicyScopeReadPayload(v ApifrontendConsolePolicyScopeReadPayload) {
+	s.Type = ApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData
+	s.ApifrontendConsolePolicyScopeReadPayload = v
+}
+
+// GetApifrontendConsolePolicyScopeReadPayload returns ApifrontendConsolePolicyScopeReadPayload and true boolean if AuditEventRequestEventData is ApifrontendConsolePolicyScopeReadPayload.
+func (s AuditEventRequestEventData) GetApifrontendConsolePolicyScopeReadPayload() (v ApifrontendConsolePolicyScopeReadPayload, ok bool) {
+	if !s.IsApifrontendConsolePolicyScopeReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsolePolicyScopeReadPayload, true
+}
+
+// NewApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendConsolePolicyScopeReadPayload.
+func NewApifrontendConsolePolicyScopeReadPayloadAuditEventRequestEventData(v ApifrontendConsolePolicyScopeReadPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendConsolePolicyScopeReadPayload(v)
+	return s
+}
+
+// SetApifrontendConsoleManagedResourceListReadPayload sets AuditEventRequestEventData to ApifrontendConsoleManagedResourceListReadPayload.
+func (s *AuditEventRequestEventData) SetApifrontendConsoleManagedResourceListReadPayload(v ApifrontendConsoleManagedResourceListReadPayload) {
+	s.Type = ApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData
+	s.ApifrontendConsoleManagedResourceListReadPayload = v
+}
+
+// GetApifrontendConsoleManagedResourceListReadPayload returns ApifrontendConsoleManagedResourceListReadPayload and true boolean if AuditEventRequestEventData is ApifrontendConsoleManagedResourceListReadPayload.
+func (s AuditEventRequestEventData) GetApifrontendConsoleManagedResourceListReadPayload() (v ApifrontendConsoleManagedResourceListReadPayload, ok bool) {
+	if !s.IsApifrontendConsoleManagedResourceListReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsoleManagedResourceListReadPayload, true
+}
+
+// NewApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendConsoleManagedResourceListReadPayload.
+func NewApifrontendConsoleManagedResourceListReadPayloadAuditEventRequestEventData(v ApifrontendConsoleManagedResourceListReadPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendConsoleManagedResourceListReadPayload(v)
+	return s
+}
+
+// SetApifrontendConsoleManagedResourceGetReadPayload sets AuditEventRequestEventData to ApifrontendConsoleManagedResourceGetReadPayload.
+func (s *AuditEventRequestEventData) SetApifrontendConsoleManagedResourceGetReadPayload(v ApifrontendConsoleManagedResourceGetReadPayload) {
+	s.Type = ApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData
+	s.ApifrontendConsoleManagedResourceGetReadPayload = v
+}
+
+// GetApifrontendConsoleManagedResourceGetReadPayload returns ApifrontendConsoleManagedResourceGetReadPayload and true boolean if AuditEventRequestEventData is ApifrontendConsoleManagedResourceGetReadPayload.
+func (s AuditEventRequestEventData) GetApifrontendConsoleManagedResourceGetReadPayload() (v ApifrontendConsoleManagedResourceGetReadPayload, ok bool) {
+	if !s.IsApifrontendConsoleManagedResourceGetReadPayload() {
+		return v, false
+	}
+	return s.ApifrontendConsoleManagedResourceGetReadPayload, true
+}
+
+// NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendConsoleManagedResourceGetReadPayload.
+func NewApifrontendConsoleManagedResourceGetReadPayloadAuditEventRequestEventData(v ApifrontendConsoleManagedResourceGetReadPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendConsoleManagedResourceGetReadPayload(v)
 	return s
 }
 
@@ -24583,6 +25405,51 @@ func (s *ListLegalHoldsOKHoldsItem) SetReason(val OptString) {
 	s.Reason = val
 }
 
+// NewNilString returns new NilString with value set to v.
+func NewNilString(v string) NilString {
+	return NilString{
+		Value: v,
+	}
+}
+
+// NilString is nullable string.
+type NilString struct {
+	Value string
+	Null  bool
+}
+
+// SetTo sets value to v.
+func (o *NilString) SetTo(v string) {
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o NilString) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *NilString) SetToNull() {
+	o.Null = true
+	var v string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o NilString) Get() (v string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o NilString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Notification audit record for tracking delivery attempts.
 // Maps to `notification_audit` PostgreSQL table.
 // Ref: #/components/schemas/NotificationAudit
@@ -26646,6 +27513,144 @@ func (o OptApifrontendSessionCompletedPayloadUserDecision) Get() (v ApifrontendS
 
 // Or returns value if set, or given parameter if does not.
 func (o OptApifrontendSessionCompletedPayloadUserDecision) Or(d ApifrontendSessionCompletedPayloadUserDecision) ApifrontendSessionCompletedPayloadUserDecision {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptApifrontendToolExecutedPayloadEffectiveParameters returns new OptApifrontendToolExecutedPayloadEffectiveParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadEffectiveParameters(v ApifrontendToolExecutedPayloadEffectiveParameters) OptApifrontendToolExecutedPayloadEffectiveParameters {
+	return OptApifrontendToolExecutedPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadEffectiveParameters is optional ApifrontendToolExecutedPayloadEffectiveParameters.
+type OptApifrontendToolExecutedPayloadEffectiveParameters struct {
+	Value ApifrontendToolExecutedPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadEffectiveParameters was set.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadEffectiveParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadEffectiveParameters) SetTo(v ApifrontendToolExecutedPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) Get() (v ApifrontendToolExecutedPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadEffectiveParameters) Or(d ApifrontendToolExecutedPayloadEffectiveParameters) ApifrontendToolExecutedPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptApifrontendToolExecutedPayloadOriginalParameters returns new OptApifrontendToolExecutedPayloadOriginalParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadOriginalParameters(v ApifrontendToolExecutedPayloadOriginalParameters) OptApifrontendToolExecutedPayloadOriginalParameters {
+	return OptApifrontendToolExecutedPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadOriginalParameters is optional ApifrontendToolExecutedPayloadOriginalParameters.
+type OptApifrontendToolExecutedPayloadOriginalParameters struct {
+	Value ApifrontendToolExecutedPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadOriginalParameters was set.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadOriginalParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadOriginalParameters) SetTo(v ApifrontendToolExecutedPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) Get() (v ApifrontendToolExecutedPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadOriginalParameters) Or(d ApifrontendToolExecutedPayloadOriginalParameters) ApifrontendToolExecutedPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptApifrontendToolExecutedPayloadOverrideParameters returns new OptApifrontendToolExecutedPayloadOverrideParameters with value set to v.
+func NewOptApifrontendToolExecutedPayloadOverrideParameters(v ApifrontendToolExecutedPayloadOverrideParameters) OptApifrontendToolExecutedPayloadOverrideParameters {
+	return OptApifrontendToolExecutedPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApifrontendToolExecutedPayloadOverrideParameters is optional ApifrontendToolExecutedPayloadOverrideParameters.
+type OptApifrontendToolExecutedPayloadOverrideParameters struct {
+	Value ApifrontendToolExecutedPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptApifrontendToolExecutedPayloadOverrideParameters was set.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApifrontendToolExecutedPayloadOverrideParameters) Reset() {
+	var v ApifrontendToolExecutedPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApifrontendToolExecutedPayloadOverrideParameters) SetTo(v ApifrontendToolExecutedPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) Get() (v ApifrontendToolExecutedPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApifrontendToolExecutedPayloadOverrideParameters) Or(d ApifrontendToolExecutedPayloadOverrideParameters) ApifrontendToolExecutedPayloadOverrideParameters {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -29444,6 +30449,144 @@ func (o OptRFC7807ProblemFieldErrors) Or(d RFC7807ProblemFieldErrors) RFC7807Pro
 	return d
 }
 
+// NewOptRemediationApprovalAuditPayloadEffectiveParameters returns new OptRemediationApprovalAuditPayloadEffectiveParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadEffectiveParameters(v RemediationApprovalAuditPayloadEffectiveParameters) OptRemediationApprovalAuditPayloadEffectiveParameters {
+	return OptRemediationApprovalAuditPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadEffectiveParameters is optional RemediationApprovalAuditPayloadEffectiveParameters.
+type OptRemediationApprovalAuditPayloadEffectiveParameters struct {
+	Value RemediationApprovalAuditPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadEffectiveParameters was set.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadEffectiveParameters) Reset() {
+	var v RemediationApprovalAuditPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadEffectiveParameters) SetTo(v RemediationApprovalAuditPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) Get() (v RemediationApprovalAuditPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadEffectiveParameters) Or(d RemediationApprovalAuditPayloadEffectiveParameters) RemediationApprovalAuditPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationApprovalAuditPayloadOriginalParameters returns new OptRemediationApprovalAuditPayloadOriginalParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadOriginalParameters(v RemediationApprovalAuditPayloadOriginalParameters) OptRemediationApprovalAuditPayloadOriginalParameters {
+	return OptRemediationApprovalAuditPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadOriginalParameters is optional RemediationApprovalAuditPayloadOriginalParameters.
+type OptRemediationApprovalAuditPayloadOriginalParameters struct {
+	Value RemediationApprovalAuditPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadOriginalParameters was set.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadOriginalParameters) Reset() {
+	var v RemediationApprovalAuditPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadOriginalParameters) SetTo(v RemediationApprovalAuditPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) Get() (v RemediationApprovalAuditPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadOriginalParameters) Or(d RemediationApprovalAuditPayloadOriginalParameters) RemediationApprovalAuditPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationApprovalAuditPayloadOverrideParameters returns new OptRemediationApprovalAuditPayloadOverrideParameters with value set to v.
+func NewOptRemediationApprovalAuditPayloadOverrideParameters(v RemediationApprovalAuditPayloadOverrideParameters) OptRemediationApprovalAuditPayloadOverrideParameters {
+	return OptRemediationApprovalAuditPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationApprovalAuditPayloadOverrideParameters is optional RemediationApprovalAuditPayloadOverrideParameters.
+type OptRemediationApprovalAuditPayloadOverrideParameters struct {
+	Value RemediationApprovalAuditPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationApprovalAuditPayloadOverrideParameters was set.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationApprovalAuditPayloadOverrideParameters) Reset() {
+	var v RemediationApprovalAuditPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationApprovalAuditPayloadOverrideParameters) SetTo(v RemediationApprovalAuditPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) Get() (v RemediationApprovalAuditPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationApprovalAuditPayloadOverrideParameters) Or(d RemediationApprovalAuditPayloadOverrideParameters) RemediationApprovalAuditPayloadOverrideParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationHealthChecks returns new OptRemediationHealthChecks with value set to v.
 func NewOptRemediationHealthChecks(v RemediationHealthChecks) OptRemediationHealthChecks {
 	return OptRemediationHealthChecks{
@@ -29858,6 +31001,52 @@ func (o OptRemediationOrchestratorAuditPayloadDecision) Or(d RemediationOrchestr
 	return d
 }
 
+// NewOptRemediationOrchestratorAuditPayloadEffectiveParameters returns new OptRemediationOrchestratorAuditPayloadEffectiveParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadEffectiveParameters(v RemediationOrchestratorAuditPayloadEffectiveParameters) OptRemediationOrchestratorAuditPayloadEffectiveParameters {
+	return OptRemediationOrchestratorAuditPayloadEffectiveParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadEffectiveParameters is optional RemediationOrchestratorAuditPayloadEffectiveParameters.
+type OptRemediationOrchestratorAuditPayloadEffectiveParameters struct {
+	Value RemediationOrchestratorAuditPayloadEffectiveParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadEffectiveParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadEffectiveParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadEffectiveParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadEffectiveParameters) SetTo(v RemediationOrchestratorAuditPayloadEffectiveParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) Get() (v RemediationOrchestratorAuditPayloadEffectiveParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadEffectiveParameters) Or(d RemediationOrchestratorAuditPayloadEffectiveParameters) RemediationOrchestratorAuditPayloadEffectiveParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationOrchestratorAuditPayloadFailurePhase returns new OptRemediationOrchestratorAuditPayloadFailurePhase with value set to v.
 func NewOptRemediationOrchestratorAuditPayloadFailurePhase(v RemediationOrchestratorAuditPayloadFailurePhase) OptRemediationOrchestratorAuditPayloadFailurePhase {
 	return OptRemediationOrchestratorAuditPayloadFailurePhase{
@@ -29950,6 +31139,52 @@ func (o OptRemediationOrchestratorAuditPayloadFailureReason) Or(d RemediationOrc
 	return d
 }
 
+// NewOptRemediationOrchestratorAuditPayloadOriginalParameters returns new OptRemediationOrchestratorAuditPayloadOriginalParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadOriginalParameters(v RemediationOrchestratorAuditPayloadOriginalParameters) OptRemediationOrchestratorAuditPayloadOriginalParameters {
+	return OptRemediationOrchestratorAuditPayloadOriginalParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadOriginalParameters is optional RemediationOrchestratorAuditPayloadOriginalParameters.
+type OptRemediationOrchestratorAuditPayloadOriginalParameters struct {
+	Value RemediationOrchestratorAuditPayloadOriginalParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadOriginalParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadOriginalParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadOriginalParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadOriginalParameters) SetTo(v RemediationOrchestratorAuditPayloadOriginalParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) Get() (v RemediationOrchestratorAuditPayloadOriginalParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadOriginalParameters) Or(d RemediationOrchestratorAuditPayloadOriginalParameters) RemediationOrchestratorAuditPayloadOriginalParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationOrchestratorAuditPayloadOutcome returns new OptRemediationOrchestratorAuditPayloadOutcome with value set to v.
 func NewOptRemediationOrchestratorAuditPayloadOutcome(v RemediationOrchestratorAuditPayloadOutcome) OptRemediationOrchestratorAuditPayloadOutcome {
 	return OptRemediationOrchestratorAuditPayloadOutcome{
@@ -29990,6 +31225,52 @@ func (o OptRemediationOrchestratorAuditPayloadOutcome) Get() (v RemediationOrche
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRemediationOrchestratorAuditPayloadOutcome) Or(d RemediationOrchestratorAuditPayloadOutcome) RemediationOrchestratorAuditPayloadOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationOrchestratorAuditPayloadOverrideParameters returns new OptRemediationOrchestratorAuditPayloadOverrideParameters with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadOverrideParameters(v RemediationOrchestratorAuditPayloadOverrideParameters) OptRemediationOrchestratorAuditPayloadOverrideParameters {
+	return OptRemediationOrchestratorAuditPayloadOverrideParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadOverrideParameters is optional RemediationOrchestratorAuditPayloadOverrideParameters.
+type OptRemediationOrchestratorAuditPayloadOverrideParameters struct {
+	Value RemediationOrchestratorAuditPayloadOverrideParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadOverrideParameters was set.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadOverrideParameters) Reset() {
+	var v RemediationOrchestratorAuditPayloadOverrideParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadOverrideParameters) SetTo(v RemediationOrchestratorAuditPayloadOverrideParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) Get() (v RemediationOrchestratorAuditPayloadOverrideParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadOverrideParameters) Or(d RemediationOrchestratorAuditPayloadOverrideParameters) RemediationOrchestratorAuditPayloadOverrideParameters {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -31809,6 +33090,16 @@ type RemediationApprovalAuditPayload struct {
 	DecisionMessage string `json:"decision_message"`
 	// Name of the referenced AIAnalysis.
 	AiAnalysisRef string `json:"ai_analysis_ref"`
+	// Content-derived identifier of the reviewed workflow selection.
+	WorkflowID OptString `json:"workflow_id"`
+	// Original reviewed parameter values, unchanged from the approval snapshot.
+	OriginalParameters OptRemediationApprovalAuditPayloadOriginalParameters `json:"original_parameters"`
+	// Exact parameter changes submitted by the reviewer.
+	OverrideParameters OptRemediationApprovalAuditPayloadOverrideParameters `json:"override_parameters"`
+	// Effective values after applying the partial override.
+	EffectiveParameters OptRemediationApprovalAuditPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the parameter changes.
+	OverrideRationale OptString `json:"override_rationale"`
 	// Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001
 	// v3.0 trusted intermediary pattern.
 	DelegatedUser OptString `json:"delegated_user"`
@@ -31851,6 +33142,31 @@ func (s *RemediationApprovalAuditPayload) GetDecisionMessage() string {
 // GetAiAnalysisRef returns the value of AiAnalysisRef.
 func (s *RemediationApprovalAuditPayload) GetAiAnalysisRef() string {
 	return s.AiAnalysisRef
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationApprovalAuditPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *RemediationApprovalAuditPayload) GetOriginalParameters() OptRemediationApprovalAuditPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *RemediationApprovalAuditPayload) GetOverrideParameters() OptRemediationApprovalAuditPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *RemediationApprovalAuditPayload) GetEffectiveParameters() OptRemediationApprovalAuditPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *RemediationApprovalAuditPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
 }
 
 // GetDelegatedUser returns the value of DelegatedUser.
@@ -31898,6 +33214,31 @@ func (s *RemediationApprovalAuditPayload) SetAiAnalysisRef(val string) {
 	s.AiAnalysisRef = val
 }
 
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationApprovalAuditPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *RemediationApprovalAuditPayload) SetOriginalParameters(val OptRemediationApprovalAuditPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *RemediationApprovalAuditPayload) SetOverrideParameters(val OptRemediationApprovalAuditPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *RemediationApprovalAuditPayload) SetEffectiveParameters(val OptRemediationApprovalAuditPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *RemediationApprovalAuditPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
+}
+
 // SetDelegatedUser sets the value of DelegatedUser.
 func (s *RemediationApprovalAuditPayload) SetDelegatedUser(val OptString) {
 	s.DelegatedUser = val
@@ -31917,8 +33258,10 @@ func (s *RemediationApprovalAuditPayload) SetPolicyHash(val OptString) {
 type RemediationApprovalAuditPayloadDecision string
 
 const (
-	RemediationApprovalAuditPayloadDecisionApproved RemediationApprovalAuditPayloadDecision = "Approved"
-	RemediationApprovalAuditPayloadDecisionRejected RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionApproved  RemediationApprovalAuditPayloadDecision = "Approved"
+	RemediationApprovalAuditPayloadDecisionRejected  RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionExpired   RemediationApprovalAuditPayloadDecision = "Expired"
+	RemediationApprovalAuditPayloadDecisionCancelled RemediationApprovalAuditPayloadDecision = "Cancelled"
 )
 
 // AllValues returns all RemediationApprovalAuditPayloadDecision values.
@@ -31926,6 +33269,8 @@ func (RemediationApprovalAuditPayloadDecision) AllValues() []RemediationApproval
 	return []RemediationApprovalAuditPayloadDecision{
 		RemediationApprovalAuditPayloadDecisionApproved,
 		RemediationApprovalAuditPayloadDecisionRejected,
+		RemediationApprovalAuditPayloadDecisionExpired,
+		RemediationApprovalAuditPayloadDecisionCancelled,
 	}
 }
 
@@ -31935,6 +33280,10 @@ func (s RemediationApprovalAuditPayloadDecision) MarshalText() ([]byte, error) {
 	case RemediationApprovalAuditPayloadDecisionApproved:
 		return []byte(s), nil
 	case RemediationApprovalAuditPayloadDecisionRejected:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -31950,9 +33299,27 @@ func (s *RemediationApprovalAuditPayloadDecision) UnmarshalText(data []byte) err
 	case RemediationApprovalAuditPayloadDecisionRejected:
 		*s = RemediationApprovalAuditPayloadDecisionRejected
 		return nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		*s = RemediationApprovalAuditPayloadDecisionExpired
+		return nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
+		*s = RemediationApprovalAuditPayloadDecisionCancelled
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Effective values after applying the partial override.
+type RemediationApprovalAuditPayloadEffectiveParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadEffectiveParameters) init() RemediationApprovalAuditPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -31988,6 +33355,30 @@ func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) er
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Original reviewed parameter values, unchanged from the approval snapshot.
+type RemediationApprovalAuditPayloadOriginalParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadOriginalParameters) init() RemediationApprovalAuditPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Exact parameter changes submitted by the reviewer.
+type RemediationApprovalAuditPayloadOverrideParameters map[string]string
+
+func (s *RemediationApprovalAuditPayloadOverrideParameters) init() RemediationApprovalAuditPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Post-remediation health check results from EM assessment.
@@ -33527,6 +34918,14 @@ type RemediationOrchestratorAuditPayload struct {
 	ToPhase OptString `json:"to_phase"`
 	// Reason for the transition.
 	TransitionReason OptString `json:"transition_reason"`
+	// Original values in the reviewed approval snapshot.
+	OriginalParameters OptRemediationOrchestratorAuditPayloadOriginalParameters `json:"original_parameters"`
+	// Exact changes committed with the approval decision.
+	OverrideParameters OptRemediationOrchestratorAuditPayloadOverrideParameters `json:"override_parameters"`
+	// Effective parameter values after the committed partial override.
+	EffectiveParameters OptRemediationOrchestratorAuditPayloadEffectiveParameters `json:"effective_parameters"`
+	// Reviewer's rationale for the committed changes.
+	OverrideRationale OptString `json:"override_rationale"`
 	// Name of the RemediationApprovalRequest.
 	RarName OptString `json:"rar_name"`
 	// Approval deadline (RFC3339).
@@ -33664,6 +35063,26 @@ func (s *RemediationOrchestratorAuditPayload) GetToPhase() OptString {
 // GetTransitionReason returns the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) GetTransitionReason() OptString {
 	return s.TransitionReason
+}
+
+// GetOriginalParameters returns the value of OriginalParameters.
+func (s *RemediationOrchestratorAuditPayload) GetOriginalParameters() OptRemediationOrchestratorAuditPayloadOriginalParameters {
+	return s.OriginalParameters
+}
+
+// GetOverrideParameters returns the value of OverrideParameters.
+func (s *RemediationOrchestratorAuditPayload) GetOverrideParameters() OptRemediationOrchestratorAuditPayloadOverrideParameters {
+	return s.OverrideParameters
+}
+
+// GetEffectiveParameters returns the value of EffectiveParameters.
+func (s *RemediationOrchestratorAuditPayload) GetEffectiveParameters() OptRemediationOrchestratorAuditPayloadEffectiveParameters {
+	return s.EffectiveParameters
+}
+
+// GetOverrideRationale returns the value of OverrideRationale.
+func (s *RemediationOrchestratorAuditPayload) GetOverrideRationale() OptString {
+	return s.OverrideRationale
 }
 
 // GetRarName returns the value of RarName.
@@ -33866,6 +35285,26 @@ func (s *RemediationOrchestratorAuditPayload) SetTransitionReason(val OptString)
 	s.TransitionReason = val
 }
 
+// SetOriginalParameters sets the value of OriginalParameters.
+func (s *RemediationOrchestratorAuditPayload) SetOriginalParameters(val OptRemediationOrchestratorAuditPayloadOriginalParameters) {
+	s.OriginalParameters = val
+}
+
+// SetOverrideParameters sets the value of OverrideParameters.
+func (s *RemediationOrchestratorAuditPayload) SetOverrideParameters(val OptRemediationOrchestratorAuditPayloadOverrideParameters) {
+	s.OverrideParameters = val
+}
+
+// SetEffectiveParameters sets the value of EffectiveParameters.
+func (s *RemediationOrchestratorAuditPayload) SetEffectiveParameters(val OptRemediationOrchestratorAuditPayloadEffectiveParameters) {
+	s.EffectiveParameters = val
+}
+
+// SetOverrideRationale sets the value of OverrideRationale.
+func (s *RemediationOrchestratorAuditPayload) SetOverrideRationale(val OptString) {
+	s.OverrideRationale = val
+}
+
 // SetRarName sets the value of RarName.
 func (s *RemediationOrchestratorAuditPayload) SetRarName(val OptString) {
 	s.RarName = val
@@ -34058,6 +35497,18 @@ func (s *RemediationOrchestratorAuditPayloadDecision) UnmarshalText(data []byte)
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Effective parameter values after the committed partial override.
+type RemediationOrchestratorAuditPayloadEffectiveParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadEffectiveParameters) init() RemediationOrchestratorAuditPayloadEffectiveParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -34312,6 +35763,18 @@ func (s *RemediationOrchestratorAuditPayloadFailureReason) UnmarshalText(data []
 	}
 }
 
+// Original values in the reviewed approval snapshot.
+type RemediationOrchestratorAuditPayloadOriginalParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadOriginalParameters) init() RemediationOrchestratorAuditPayloadOriginalParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Final outcome of the orchestration.
 type RemediationOrchestratorAuditPayloadOutcome string
 
@@ -34359,6 +35822,18 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalText(data []byte) 
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Exact changes committed with the approval decision.
+type RemediationOrchestratorAuditPayloadOverrideParameters map[string]string
+
+func (s *RemediationOrchestratorAuditPayloadOverrideParameters) init() RemediationOrchestratorAuditPayloadOverrideParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // RemediationOrchestrator config rejected event payload (orchestrator.config.rejected) —

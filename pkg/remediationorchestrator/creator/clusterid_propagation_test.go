@@ -35,6 +35,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -231,14 +232,17 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 				RCAResult: &aianalysisv1.RCAResult{
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "restart-pod",
-							WorkflowName:    "restart-pod",
-							ActionType:      "RestartPod",
-							Version:         "1.0.0",
-							ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+							WorkflowID:             "restart-pod",
+							WorkflowName:           "restart-pod",
+							ActionType:             "RestartPod",
+							Version:                "1.0.0",
+							ExecutionBundle:        "oci://registry/workflows/restart-pod:v1.0.0",
+							DeclaredParameterNames: map[string]bool{},
 						},
-						Confidence: 0.85,
-						Rationale:  "Pod restart recommended for high latency",
+						Confidence:      0.85,
+						Rationale:       "Pod restart recommended for high latency",
+						Parameters:      map[string]string{},
+						ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
 					},
 					RootCause: "Memory leak detected",
 				},

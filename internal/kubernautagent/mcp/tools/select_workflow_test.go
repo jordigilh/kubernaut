@@ -47,12 +47,16 @@ import (
 // mockHTTPCompleter implements mcptools.HTTPSessionCompleter for unit tests.
 // Fields written by goroutines are guarded by mu.
 type mockHTTPCompleter struct {
-	mu              sync.Mutex
-	completedID     string
-	completedResult *katypes.InvestigationResult
-	completeErr     error
-	foundID         string
-	found           bool
+	mu               sync.Mutex
+	completedID      string
+	completedResult  *katypes.InvestigationResult
+	completeErr      error
+	foundID          string
+	found            bool
+	runningID        string
+	runningAfter     int
+	runningLookups   int
+	forceCompletions int
 }
 
 func (m *mockHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
@@ -69,9 +73,20 @@ func (m *mockHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bo
 	return m.foundID, m.found
 }
 
+func (m *mockHTTPCompleter) FindByRemediationID(_ string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runningLookups++
+	if m.runningAfter > 0 && m.runningLookups < m.runningAfter {
+		return "", false
+	}
+	return m.runningID, m.runningID != ""
+}
+
 func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.forceCompletions++
 	m.completedResult = result
 	return m.completeErr
 }
@@ -893,6 +908,14 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 
 	Describe("UT-KA-SW-BUILDFINAL-001: buildFinalResult merges RCA + workflow fields", func() {
+		It("UT-KA-2570-113: BR-KA-191 retains catalog constraints for an interactive selection", func() {
+			workflow := &mcptools.CatalogWorkflow{}
+			Expect(json.Unmarshal([]byte(`{"workflow_id":"wf-schema","declared_parameter_names":{"REPLICAS":true},"parameter_schema":[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1}]}`), workflow)).To(Succeed())
+			result := mcptools.BuildFinalResult(&katypes.InvestigationResult{}, workflow, nil)
+			Expect(result.ParameterSchema).To(HaveLen(1))
+			Expect(result.ParameterSchema[0].Name).To(Equal("REPLICAS"))
+			Expect(*result.ParameterSchema[0].Minimum).To(Equal(float64(1)))
+		})
 		It("should copy all RCA fields and overlay workflow fields", func() {
 			rca := &katypes.InvestigationResult{
 				RCASummary: "Pod OOM due to memory leak",

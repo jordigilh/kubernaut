@@ -183,7 +183,7 @@ type EnrichmentConfig struct {
 // SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
 // BR-SP-051: Phase State Machine
 // BR-COMMON-001: Capitalized phase values per Kubernetes API conventions
-// +kubebuilder:validation:Enum=Pending;Enriching;Classifying;Categorizing;Completed;Failed
+// +kubebuilder:validation:Enum=Pending;Enriching;Classifying;Categorizing;Completed;Failed;Cancelled
 type SignalProcessingPhase string
 
 const (
@@ -199,6 +199,8 @@ const (
 	PhaseCompleted SignalProcessingPhase = "Completed"
 	// PhaseFailed is the terminal error state.
 	PhaseFailed SignalProcessingPhase = "Failed"
+	// PhaseCancelled indicates that the parent RemediationRequest failed or was cancelled.
+	PhaseCancelled SignalProcessingPhase = "Cancelled"
 )
 
 // SignalProcessingStatus defines the observed state of SignalProcessing.

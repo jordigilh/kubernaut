@@ -57,7 +57,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			}()
 
 			// Create WorkflowExecution
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Should transition to Running
 			Eventually(func() string {
@@ -205,7 +205,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Should transition to Failed
 			Eventually(func() string {
@@ -256,7 +256,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 					_ = deleteWFE(wfe)
 				}()
 
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 				// Wait for workflow to start
 				Eventually(func() bool {

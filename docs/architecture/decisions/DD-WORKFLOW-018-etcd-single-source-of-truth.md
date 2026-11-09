@@ -1,5 +1,25 @@
 # DD-WORKFLOW-018: Etcd as Single Source of Truth for Workflow/ActionType Catalog
 
+> **Proposed #2570 amendment — pending approval:** WE must check that the same
+> workflow ID exists in the trusted-namespace etcd catalog before dispatch.
+> For every WE dispatch, recompute the returned workflow's content-derived ID
+> and compare it to the frozen WE workflow ID; fail closed on missing, ambiguous
+> or mismatched identity. Human-approved WE receives its frozen selection from
+> the RAR; live catalog values do not replace that selection. This runtime check
+> also applies to non-approval execution; existing non-approval RO routing and
+> selection pass-through remain unchanged.
+> A successful no-match fails immediately without retry; transient API/network
+> failures use bounded, cancellable retries and fail closed if unresolved.
+> The trusted namespace is the validated deployment-configured or pod
+> service-account namespace; bootstrap fails closed when it is unavailable,
+> without default or cluster-wide fallback. See the #2577 namespace contract
+> and IT-2570-020 in `docs/tests/2570/`.
+> If adopted, this supersedes the no-live-lookup and deletion-continuation
+> assertions in sections 7–8 below. Execution inputs still come from the frozen
+> WE snapshot, not the live catalog. The check is point-in-time, not an atomic
+> guarantee against deletion after the read. This notice does not itself change
+> the approved decision; ADR-076 and the amendment require review and approval.
+
 **Date**: July 14, 2026
 **Status**: Approved — Phased Rollout In Progress (tracked in [Issue #1661](https://github.com/jordigilh/kubernaut/issues/1661))
 **Decision Maker**: Kubernaut Architecture Team
@@ -269,7 +289,7 @@ other.
 |---|---|---|
 | **AuthWebhook** | Calls DS synchronously (`CreateWorkflowInline`/`DisableWorkflow`) for every CRD admission; relays DS's response into `.status` | Computes content hash/workflow ID locally; validates ActionType existence and content-integrity against its own etcd-backed client; patches `.status` directly; zero DS calls |
 | **Data Storage** | Owns `remediation_workflow_catalog`/`action_type_taxonomy` as mutable PostgreSQL tables; exposes mutation REST endpoints | Read-only informer cache over etcd CRDs; mutation REST endpoints removed; discovery/scoring reimplemented as in-memory Go; success-rate metrics computed on demand from `audit_events` |
-| **Workflow Execution** | Resolves `executionEngine`/`serviceAccountName`/dependencies/parameter schema via a live `WorkflowQuerier` call to DS at *execution* time | Reads the full execution snapshot from its own `Spec.WorkflowRef`, populated once at WFE-creation time; zero live calls to DS, audit, or etcd |
+| **Workflow Execution** | Resolves `executionEngine`/`serviceAccountName`/dependencies/parameter schema via a live `WorkflowQuerier` call to DS at *execution* time | Reads execution inputs from its own frozen `Spec.WorkflowRef`; the proposed #2570 amendment adds an identity-only, point-in-time trusted-namespace etcd lookup before every dispatch without replacing the frozen inputs. Until that amendment is approved and implemented, the current design makes no live catalog lookup. |
 | **AIAnalysis** | `Status.SelectedWorkflow` carries `WorkflowID`/parameters only | `Status.SelectedWorkflow` also carries `Dependencies`/`Resources`/`DeclaredParameterNames`, write-once immutable via CEL |
 | **Remediation Orchestrator** | Creates WFE without `ExecutionEngine`/`ServiceAccountName` (Issues #518/#650) | Copies the full snapshot from `AIAnalysis.Status.SelectedWorkflow` into `WorkflowExecution.Spec.WorkflowRef`; fails closed if `ExecutionEngine` is missing |
 | **KubernautAgent (KA)** | Validates parameters against its own fetched schema, discards `Dependencies`/`Resources`/declared-names after validation | Surfaces those already-computed fields into its response so AA can persist them; remains sole parameter-validation authority ([DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md)) |
@@ -281,9 +301,11 @@ other.
 Deleting a `RemediationWorkflow` CRD is a **true deletion** from etcd — there is no soft-delete/disabled state
 retained at the CRD or cache level. This is a deliberate decision, not an oversight:
 
-- Any remediation that already selected the deleted workflow retains full execution capability, because its
-  `WorkflowExecution.Spec.WorkflowRef` already carries the complete execution snapshot (Change 8) — it never needs
-  to re-resolve the now-deleted CRD.
+- **Current approved design (Change 8):** A remediation that already selected the deleted workflow retains its
+  execution snapshot in `WorkflowExecution.Spec.WorkflowRef` without re-resolving the deleted CRD.
+  **Proposed #2570 amendment:** the frozen snapshot remains the execution-input source, but a missing workflow
+  at the trusted-namespace check before dispatch fails closed. Deletion after a successful point-in-time check
+  is not atomically prevented. This proposal does not change the current approved design until approved.
 - Full auditability (SOC2 CC8.1/CC7.2) is preserved because the `remediationworkflow.admitted.create`/`.update`
   audit events already captured the complete `workflow_content` at every point the workflow was ever admitted
   (Change 11) — "what did workflow X look like when remediation Y used it?" is answered from `audit_events`, not
