@@ -246,6 +246,7 @@ func historySelectionResult2496(confidence float64) *katypes.InvestigationResult
 	return &katypes.InvestigationResult{
 		RCASummary: "Memory pressure", RCAConfidence: &rcaConfidence, Confidence: confidence,
 		WorkflowID: "catalog-id-2496", WorkflowName: "increase-memory", WorkflowVersion: "1.0.0", ActionType: "IncreaseMemory",
+		Parameters:        map[string]interface{}{},
 		ExecutionBundle:   "ghcr.io/kubernaut/increase-memory@sha256:" + strings.Repeat("a", 64),
 		WorkflowRationale: "Current memory pressure warrants selection", WorkflowSelectionConfidence: &confidence,
 		RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: "New memory limit observed",

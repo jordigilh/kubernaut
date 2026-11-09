@@ -243,14 +243,14 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		Expect(readResponse.Body.String()).NotTo(ContainSubstring(`"isError":true`))
 		Expect(readResponse.Body.String()).To(ContainSubstring("threshold"))
 		Expect(readResponse.Body.String()).To(ContainSubstring("keep"))
-		response := post(session, fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":1.0},"rationale":"reviewed"}}}}`, rar.Name))
+		response := post(session, fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":1.5},"rationale":"reviewed"}}}}`, rar.Name))
 		Expect(response.Code).To(Equal(http.StatusOK))
 		Expect(response.Body.String()).NotTo(ContainSubstring(`"isError":true`))
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), persisted)).To(Succeed())
 		Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
 		Expect(persisted.Status.DecidedBy).To(Equal("operator@example.com"))
-		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedFloatParameters(map[string]float64{"P": 1})))
+		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedFloatParameters(map[string]float64{"P": 1.5})))
 		Expect(persisted.Spec.Parameters).To(Equal(sharedtypes.TypedParameterMap{
 			"P": typedFloatParameter(2),
 			"Q": typedStringParameter("keep"),
@@ -274,8 +274,8 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				effectiveQ, effectiveQOk := effective["Q"].GetWorkflowParameterString()
 				g.Expect(originalPOk && changesPOk && effectivePOk && effectiveQOk).To(BeTrue())
 				g.Expect(originalP.FloatValue).To(Equal(float64(2)))
-				g.Expect(changesP.FloatValue).To(Equal(float64(1)))
-				g.Expect(effectiveP.FloatValue).To(Equal(float64(1)))
+				g.Expect(changesP.FloatValue).To(Equal(float64(1.5)))
+				g.Expect(effectiveP.FloatValue).To(Equal(float64(1.5)))
 				g.Expect(effectiveQ.StringValue).To(Equal("keep"))
 				g.Expect(payload.WorkflowID.Value).To(Equal(rw.Status.WorkflowID))
 				g.Expect(payload.OverrideRationale.Value).To(Equal("reviewed"))
