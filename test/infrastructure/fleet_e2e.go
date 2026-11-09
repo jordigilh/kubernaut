@@ -466,15 +466,23 @@ type FMCOAuth2Config struct {
 // tomlString renders a TOML config for kube-mcp-server per the configured
 // auth mode. See KubeMCPServerAuthConfig for field semantics.
 func (c KubeMCPServerAuthConfig) tomlString() string {
+	var b strings.Builder
+	_, _ = fmt.Fprintln(&b, `port = "8080"`)
+	_, _ = fmt.Fprintln(&b, `cluster_provider_strategy = "in-cluster"`)
+	_, _ = fmt.Fprintln(&b, `toolsets = ["core"]`)
+	_, _ = fmt.Fprintln(&b, "stateless = true")
+	_, _ = fmt.Fprintln(&b, `list_output = "yaml"`)
+	_, _ = fmt.Fprintln(&b, "log_level = 6")
+
 	if c.Mode != KubeMCPServerAuthModePassthrough {
 		// Issue #54 RCA (see historical comment at the kube-mcp-server-config
 		// ConfigMap call site): cluster_auth_mode=kubeconfig makes
 		// kube-mcp-server always use its own ServiceAccount and ignore any
 		// caller-forwarded Authorization header, matching ADR-068 Decision #9.
-		return `cluster_auth_mode = "kubeconfig"`
+		_, _ = fmt.Fprintln(&b, `cluster_auth_mode = "kubeconfig"`)
+		return b.String()
 	}
 
-	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "require_oauth = %t\n", c.RequireOAuth)
 	_, _ = fmt.Fprintf(&b, "authorization_url = %q\n", c.AuthorizationURL)
 	_, _ = fmt.Fprintf(&b, "oauth_audience = %q\n", c.OAuthAudience)
@@ -2690,16 +2698,8 @@ spec:
       - name: kube-mcp-server
         image: %[2]s
         args:
-        - "--port=8080"
-        - "--cluster-provider=in-cluster"
-        - "--toolsets=core"
-        - "--stateless"
-        - "--list-output=yaml"
+        # kubernetes-mcp-server v0.1.2 moved runtime flags into TOML.
         - "--config=/etc/kubernetes-mcp-server/config.toml"
-        # --log-level=6 surfaces client-go's REST request/response detail in
-        # must-gather captures, which was instrumental in diagnosing the
-        # passthrough-401 root cause above (Issue #54 RCA).
-        - "--log-level=6"
         ports:
         - name: http
           containerPort: 8080
