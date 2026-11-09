@@ -321,6 +321,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

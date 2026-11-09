@@ -140,6 +140,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/running-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -208,6 +209,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/complete-success-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -296,6 +298,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/audit-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -355,6 +358,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

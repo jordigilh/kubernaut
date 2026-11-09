@@ -84,18 +84,18 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 		Expect(jobs.Items).To(BeEmpty())
 	})
-	It("IT-WE-2570-042: BR-ORCH-025 an empty live schema dispatches without undeclared inputs", func() {
-		wfe := trustedJobWFE("empty-declarations", fmt.Sprintf("default/deployment/empty-declarations-%d", time.Now().UnixNano()))
-		wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithParameters("Empty job lifecycle fixture", "job", nil)
+	It("IT-WE-2570-042: BR-ORCH-025 rejects inputs not declared by the live schema", func() {
+		wfe := trustedJobWFE("undeclared-input", fmt.Sprintf("default/deployment/undeclared-input-%d", time.Now().UnixNano()))
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
-		for _, env := range job.Spec.Template.Spec.Containers[0].Env {
-			Expect(env.Name).NotTo(Equal("UNDECLARED"))
-		}
+		Expect(failed.Status.FailureDetails).NotTo(BeNil())
+		Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("not declared"))
+		var jobs batchv1.JobList
+		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty())
 	})
 	DescribeTable("IT-WE-2570-030: BR-ORCH-025 verifies trusted content before dispatch", func(foreign, stale, shouldRun bool) {
 		namespace := DefaultNamespace

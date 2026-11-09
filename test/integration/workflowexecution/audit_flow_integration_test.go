@@ -141,6 +141,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						},
 					},
 					TargetResource: targetResource,
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -261,6 +262,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						},
 					},
 					TargetResource: targetResource,
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

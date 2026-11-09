@@ -87,7 +87,11 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal(targetResource))
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
-			Expect(created.Spec.Parameters).To(HaveKeyWithValue("MESSAGE", "value"))
+			message, ok := created.Spec.Parameters["MESSAGE"]
+			Expect(ok).To(BeTrue())
+			Expect(message.Kind).To(Equal("string"))
+			Expect(message.StringValue).ToNot(BeNil())
+			Expect(*message.StringValue).To(Equal("value"))
 			Expect(created.Spec.Confidence).To(Equal(0.95))
 
 			GinkgoWriter.Println("✅ Spec fields preserved")

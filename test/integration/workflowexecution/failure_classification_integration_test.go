@@ -226,6 +226,7 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				},
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
+			Parameters:     sharedtypes.TypedParameterMap{},
 		},
 	}
 }

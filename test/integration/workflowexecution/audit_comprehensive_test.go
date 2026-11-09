@@ -144,6 +144,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -198,6 +199,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -298,6 +300,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -354,6 +357,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						},
 					},
 					TargetResource: "default/deployment/ordering-test",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 

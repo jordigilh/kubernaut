@@ -448,14 +448,19 @@ func trustedWorkflowFixture(description, engine string) string {
 }
 
 func trustedWorkflowFixtureWithParameters(description, engine string, parameters []remediationworkflowv1.RemediationWorkflowParameter) string {
+	return trustedWorkflowFixtureWithDependencies(description, engine, parameters, nil)
+}
+
+func trustedWorkflowFixtureWithDependencies(description, engine string, parameters []remediationworkflowv1.RemediationWorkflowParameter, dependencies *remediationworkflowv1.RemediationWorkflowDependencies) string {
 	rw := &remediationworkflowv1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("it-catalog-%d", time.Now().UnixNano()), Namespace: DefaultNamespace},
 		Spec: remediationworkflowv1.RemediationWorkflowSpec{
 			Version: "1.0.0", ActionType: "RestartPod",
-			Description: remediationworkflowv1.RemediationWorkflowDescription{What: description, WhenToUse: "For integration tests"},
-			Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
-			Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef},
-			Parameters:  parameters,
+			Description:  remediationworkflowv1.RemediationWorkflowDescription{What: description, WhenToUse: "For integration tests"},
+			Labels:       remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
+			Execution:    remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef},
+			Dependencies: dependencies,
+			Parameters:   parameters,
 		},
 	}
 	Expect(k8sClient.Create(ctx, rw)).To(Succeed())

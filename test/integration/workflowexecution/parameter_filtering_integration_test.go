@@ -48,7 +48,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 
 	Context("Job executor with live workflow parameter declarations", func() {
 
-		It("IT-WE-243-001: should strip undeclared params from Job env vars", func() {
+		It("IT-WE-243-001: should reject undeclared params before creating a Job", func() {
 			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
@@ -60,19 +60,13 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
-			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "Job should be created")
-
-			envMap := make(map[string]string)
-			for _, env := range job.Spec.Template.Spec.Containers[0].Env {
-				envMap[env.Name] = env.Value
-			}
-
-			Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
-			Expect(envMap).To(HaveKeyWithValue("REPLICAS", "3"))
-			Expect(envMap).To(HaveKey("TARGET_RESOURCE"), "System-injected TARGET_RESOURCE should always be present")
-			Expect(envMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param should be stripped")
-			Expect(envMap).NotTo(HaveKey("INJECTED"), "Undeclared param should be stripped")
+			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failed.Status.FailureDetails).NotTo(BeNil())
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("not declared"))
+			var jobs batchv1.JobList
+			Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+			Expect(jobs.Items).To(BeEmpty())
 		})
 
 		It("IT-WE-243-002: BR-ORCH-025 fails closed for an unverifiable Job workflow", func() {
@@ -94,9 +88,9 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(jobs.Items).To(BeEmpty())
 		})
 
-		It("IT-WE-243-003: should strip all user params when the live workflow declares none", func() {
+		It("IT-WE-243-003: should dispatch params declared by the live workflow", func() {
 			wfe := createUniqueJobWFE("pf-job-empty", "default/deployment/pf-job-empty-app")
-			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithParameters("Empty parameter filtering fixture", "job", nil)
+			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE": "default",
 				"REPLICAS":  "3",
@@ -112,15 +106,15 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 				envMap[env.Name] = env.Value
 			}
 
+			Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(envMap).To(HaveKeyWithValue("REPLICAS", "3"))
 			Expect(envMap).To(HaveKey("TARGET_RESOURCE"), "System-injected TARGET_RESOURCE should always be present")
-			Expect(envMap).NotTo(HaveKey("NAMESPACE"), "All user params should be stripped with empty live schema")
-			Expect(envMap).NotTo(HaveKey("REPLICAS"), "All user params should be stripped with empty live schema")
 		})
 	})
 
 	Context("Tekton executor with live workflow parameter declarations", func() {
 
-		It("IT-WE-243-010: should strip undeclared params from PipelineRun params", func() {
+		It("IT-WE-243-010: should reject undeclared params before creating a PipelineRun", func() {
 			wfe := createUniqueWFEWithTypedParams("pf-tekton-strip", "default/deployment/pf-tekton-strip-app",
 				typedParametersFromStrings(map[string]string{
 					"NAMESPACE":    "default",
@@ -131,18 +125,13 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
-			pr, err := waitForPipelineRunCreation(wfe.Name, 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
-
-			paramMap := make(map[string]string)
-			for _, p := range pr.Spec.Params {
-				paramMap[p.Name] = p.Value.StringVal
-			}
-
-			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
-			Expect(paramMap).To(HaveKeyWithValue("REPLICAS", "3"))
-			Expect(paramMap).To(HaveKey("TARGET_RESOURCE"), "System-injected TARGET_RESOURCE should always be present")
-			Expect(paramMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param should be stripped")
+			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failed.Status.FailureDetails).NotTo(BeNil())
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("not declared"))
+			var runs tektonv1.PipelineRunList
+			Expect(k8sClient.List(ctx, &runs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+			Expect(runs.Items).To(BeEmpty())
 		})
 
 		It("IT-WE-243-011: BR-ORCH-025 fails closed for an unverifiable Tekton workflow", func() {
