@@ -912,6 +912,9 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
 		Registry:      mcpTargetScopedRegistry(),
+		Pipeline: investigator.Pipeline{
+			CatalogFetcher: mcpCatalogFetcher(),
+		},
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
@@ -1012,6 +1015,9 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
 		Registry:      mcpTargetScopedRegistry(),
+		Pipeline: investigator.Pipeline{
+			CatalogFetcher: mcpCatalogFetcher(),
+		},
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 

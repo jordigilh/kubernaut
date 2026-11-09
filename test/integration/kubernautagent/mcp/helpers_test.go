@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
@@ -132,6 +133,45 @@ func itScopeResolver() investigator.ScopeResolver {
 	return investigator.NewMapperScopeResolver(m)
 }
 
+// cacheBackedCatalogFetcher mirrors the production workflowCatalogFetcher for
+// the real MCP stack. The stack already uses sharedWfCatalog for MCP catalog
+// lookups; the investigator must receive the same catalog for fail-closed
+// workflow validation as well.
+type cacheBackedCatalogFetcher struct {
+	catalog *workflowcatalog.Catalog
+}
+
+func (f *cacheBackedCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+	workflows, _, err := f.catalog.List(ctx, nil, -1, 0)
+	if err != nil {
+		return nil, fmt.Errorf("workflow catalog list failed: %w", err)
+	}
+
+	ids := make([]string, 0, len(workflows))
+	for i := range workflows {
+		if workflows[i].WorkflowID != "" {
+			ids = append(ids, workflows[i].WorkflowID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("workflow catalog returned 0 workflows")
+	}
+
+	validator := parser.NewValidator(ids)
+	for i := range workflows {
+		if workflows[i].WorkflowID == "" {
+			continue
+		}
+		validator.SetWorkflowMeta(workflows[i].WorkflowID,
+			workflowcatalog.BuildWorkflowMeta(&workflows[i], logr.FromContextOrDiscard(ctx)))
+	}
+	return validator, nil
+}
+
+func mcpCatalogFetcher() investigator.CatalogFetcher {
+	return &cacheBackedCatalogFetcher{catalog: sharedWfCatalog}
+}
+
 // mcpTargetScopedRegistry builds the same target-cluster Kubernetes discovery
 // tools used by production, backed by this suite's real envtest API server.
 // The investigator must not reach the GVK gate with a nil registry: that would
@@ -192,6 +232,9 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 			ModelName:     "test-model",
 			ScopeResolver: itScopeResolver(),
 			Registry:      mcpTargetScopedRegistry(),
+			Pipeline: investigator.Pipeline{
+				CatalogFetcher: mcpCatalogFetcher(),
+			},
 		})
 		runner = adapters.NewInvestigatorRunnerAdapter(inv)
 	}
