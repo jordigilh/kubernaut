@@ -57,6 +57,19 @@ var _ = Describe("E2E-KA-2586: interactive RCA correction audit projection", Lab
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
+		By("Sending a real interactive message to seed the conversation")
+		messageCtx, messageCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer messageCancel()
+		result, err = infrastructure.CallInvestigate(messageCtx, setup.Session, map[string]any{
+			"rr_id":   rrName,
+			"action":  "message",
+			"message": "Please summarize the current root cause evidence before workflow discovery.",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "interactive message should succeed")
+		Expect(infrastructure.ExtractToolResultText(result)).NotTo(BeEmpty(),
+			"interactive message must leave a successful conversation turn for RCA extraction")
+
 		By("Calling discover_workflows through production MCP wiring")
 		var discoveryText string
 		Eventually(func(g Gomega) {
