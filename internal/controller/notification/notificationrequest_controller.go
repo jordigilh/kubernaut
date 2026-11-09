@@ -305,12 +305,12 @@ func (r *NotificationRequestReconciler) reconcile(ctx context.Context, req ctrl.
 
 	// BR-NOT-053: Re-read before delivery (twice) to prevent duplicate delivery
 	// from a concurrent reconcile completing the notification in the meantime.
-	skip, err := r.refreshAndGuardBeforeDelivery(ctx, req, notification, log)
+	refreshResult, skip, err := r.refreshAndGuardBeforeDelivery(ctx, req, notification, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if skip {
-		return ctrl.Result{}, nil
+		return refreshResult, nil
 	}
 
 	// Phase 4: Process delivery loop
@@ -379,15 +379,17 @@ func (r *NotificationRequestReconciler) checkRetryBackoff(notification *notifica
 // refreshAndGuardBeforeDelivery implements BR-NOT-053's double re-read guard
 // against duplicate delivery: refreshes notification via the cached client
 // (outside the Pending check) and then again via the cache-bypassed
-// APIReader (DD-STATUS-001) right before the delivery loop, returning
-// skip=true if a concurrent reconcile already drove the notification to a
-// terminal phase in the interim. Extracted from Reconcile (Wave 6 6b GREEN:
-// funlen remediation) — pure code motion, no behavior change.
-func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx context.Context, req ctrl.Request, notification *notificationv1alpha1.NotificationRequest, log logr.Logger) (bool, error) {
+// APIReader (DD-STATUS-001) right before the delivery loop. The fresh read
+// also re-applies retry backoff because the cached read can still show the
+// pre-status-update Sending phase. Returns the result to requeue when the
+// fresh state is still within its retry backoff. The cache/API refresh was
+// extracted from Reconcile during Wave 6 6b; the fresh-state backoff check
+// closes the stale-cache retry gap.
+func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx context.Context, req ctrl.Request, notification *notificationv1alpha1.NotificationRequest, log logr.Logger) (ctrl.Result, bool, error) {
 	// CRITICAL: Prevents duplicate delivery - must be OUTSIDE the Pending check
 	if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
 		log.Error(err, "Failed to refresh notification before delivery")
-		return false, err
+		return ctrl.Result{}, false, err
 	}
 
 	// Check if another reconcile completed while we were updating phase
@@ -395,7 +397,7 @@ func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx contex
 	if notificationphase.IsTerminal(notification.Status.Phase) {
 		log.Info("NotificationRequest completed by concurrent reconcile, skipping duplicate delivery",
 			"phase", notification.Status.Phase)
-		return true, nil
+		return ctrl.Result{}, true, nil
 	}
 
 	// BR-NOT-053: CRITICAL - Re-read notification RIGHT BEFORE delivery loop
@@ -403,7 +405,7 @@ func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx contex
 	// during rapid reconciles from stale cached status reads
 	if err := r.APIReader.Get(ctx, req.NamespacedName, notification); err != nil {
 		log.Error(err, "Failed to refresh notification before channel delivery loop")
-		return false, err
+		return ctrl.Result{}, false, err
 	}
 
 	// Double-check phase after re-read
@@ -411,10 +413,18 @@ func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx contex
 	if notificationphase.IsTerminal(notification.Status.Phase) {
 		log.Info("NotificationRequest just completed, skipping duplicate delivery after re-read",
 			"phase", notification.Status.Phase)
-		return true, nil
+		return ctrl.Result{}, true, nil
 	}
 
-	return false, nil
+	// The cached read above can observe the Sending phase from before the
+	// previous delivery's atomic status update. Re-check the backoff against
+	// the fresh API-server state so status-triggered reconciles cannot bypass
+	// the retry delay and deliver an extra attempt.
+	if requeue, requeueAfter := r.checkRetryBackoff(notification, log); requeue {
+		return ctrl.Result{RequeueAfter: requeueAfter}, true, nil
+	}
+
+	return ctrl.Result{}, false, nil
 }
 
 // handleNotFound handles Category A: NotificationRequest Not Found
