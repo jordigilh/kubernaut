@@ -37,8 +37,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
@@ -218,6 +221,43 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 				"DetectedLabels must be set from ORIGINAL enrichment when re-enrichment labels all fail")
 			Expect(dl.GitOpsManaged).To(BeTrue(),
 				"Original signal-target ArgoCD labels must be preserved")
+		})
+	})
+
+	Describe("IT-KA-1052-004: RCA-driven discovery detects ArgoCD on the resolved ConfigMap root (BR-AI-056)", func() {
+		It("forwards the root's GitOps labels to discovery", func() {
+			capturingDS := &paramCapturingDS{}
+			reg := registry.New()
+			for _, tool := range custom.NewAllTools(capturingDS, nil, invLogger) {
+				reg.Register(tool)
+			}
+			mapper := newItTestMapper()
+			mapper.(*meta.DefaultRESTMapper).Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
+			configmaps := suiteDynamicClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default")
+			root, err := configmaps.Create(context.Background(), &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1", "kind": "ConfigMap",
+				"metadata": map[string]interface{}{"generateName": "it-ka-1052-", "namespace": "default", "annotations": map[string]interface{}{"argocd.argoproj.io/instance": "app"}},
+			}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				Expect(configmaps.Delete(context.Background(), root.GetName(), metav1.DeleteOptions{})).To(Succeed())
+			})
+			ld := enrichment.NewLabelDetector(suiteDynamicClient, mapper, invLogger)
+			enricher := enrichment.NewEnricher(suiteK8sAdapter, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant"}, ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "list_available_actions", Arguments: `{}`}}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
+			}}
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			_, err = inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "api-server", Namespace: "default", Severity: "critical", ResourceKind: "Deployment", ResourceName: "api-server", Environment: "production", Priority: "P0",
+			}, &katypes.InvestigationResult{RCASummary: "worker configuration", RemediationTarget: katypes.RemediationTarget{Kind: "ConfigMap", Name: root.GetName(), Namespace: "default", APIVersion: "v1"}}, nil, "corr-1052-004")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturingDS.actionsCalled).To(BeTrue())
+			labels := capturingDS.listActionsFilters.DetectedLabels
+			Expect(labels).NotTo(BeNil())
+			Expect(labels.GitOpsManaged).To(BeTrue())
+			Expect(labels.GitOpsTool).To(Equal("argocd"))
 		})
 	})
 
