@@ -120,6 +120,8 @@ func callTool(sess *mcpsdk.ClientSession, toolName string, args map[string]any) 
 // select_workflow boundary retains the server-owned target provenance. The
 // selection guard must evaluate this exact in-memory snapshot, not the
 // serialized discovery response.
+const nilValidationValue = "<nil>"
+
 func expectStoredGVKHandoff(stack *realMCPTestStack, rrID string) {
 	driver, err := stack.SessionMgr.GetDriver(rrID)
 	Expect(err).NotTo(HaveOccurred(), "interactive driver must remain available after discovery")
@@ -152,42 +154,42 @@ func expectStoredGVKHandoff(stack *realMCPTestStack, rrID string) {
 
 func validationClusterID(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.ClusterID
 }
 
 func validationKind(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.Kind
 }
 
 func validationName(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.Name
 }
 
 func validationNamespace(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.Namespace
 }
 
 func validationAPIVersion(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.APIVersion
 }
 
 func validationSource(validation *katypes.APIVersionValidation) string {
 	if validation == nil {
-		return "<nil>"
+		return nilValidationValue
 	}
 	return validation.Source
 }
