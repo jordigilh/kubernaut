@@ -3495,7 +3495,7 @@ components:
           example: "approve-payment-api-2025-12-17-abc123"
         decision:
           type: string
-          enum: [Approved, Rejected]
+          enum: [Approved, Rejected, Expired, Cancelled]
           description: Approval decision
         decided_at:
           type: string
