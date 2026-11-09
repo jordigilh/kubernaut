@@ -199,13 +199,9 @@ type ApprovalRequestSummary struct {
 	Namespace          string  `json:"namespace"`
 	Decision           string  `json:"decision"`
 	RemediationRequest string  `json:"remediation_request"`
-	// Confidence is retained as a legacy alias for compatibility with existing clients.
-
-	// Deprecated: use WorkflowConfidence.
-	Confidence      float64 `json:"confidence"`
-	ConfidenceLevel string  `json:"confidence_level"`
-	TimeRemaining   string  `json:"time_remaining,omitempty"`
-	RequiredBy      string  `json:"required_by,omitempty"`
+	ConfidenceLevel    string  `json:"confidence_level"`
+	TimeRemaining      string  `json:"time_remaining,omitempty"`
+	RequiredBy         string  `json:"required_by,omitempty"`
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
@@ -242,7 +238,6 @@ func HandleListApprovalRequests(ctx context.Context, client crclient.Client, arg
 			Namespace:          item.Namespace,
 			Decision:           displayDecision,
 			RemediationRequest: item.Spec.RemediationRequestRef.Name,
-			Confidence:         item.Spec.Confidence,
 			ConfidenceLevel:    item.Spec.ConfidenceLevel,
 			TimeRemaining:      item.Status.TimeRemaining,
 			RequiredBy:         item.Spec.RequiredBy.Format(time.RFC3339),
@@ -311,15 +306,11 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 type GetApprovalRequestResult struct {
 	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
 	// WorkflowConfidence is the canonical workflow-selection confidence.
-	WorkflowConfidence float64 `json:"workflow_confidence"`
-	Name               string  `json:"name"`
-	Namespace          string  `json:"namespace"`
-	RemediationRequest string  `json:"remediation_request"`
-	AIAnalysis         string  `json:"ai_analysis"`
-	// Confidence is retained as a legacy alias for compatibility with existing clients.
-
-	// Deprecated: use WorkflowConfidence.
-	Confidence             float64                                              `json:"confidence"`
+	WorkflowConfidence     float64                                              `json:"workflow_confidence"`
+	Name                   string                                               `json:"name"`
+	Namespace              string                                               `json:"namespace"`
+	RemediationRequest     string                                               `json:"remediation_request"`
+	AIAnalysis             string                                               `json:"ai_analysis"`
 	ConfidenceLevel        string                                               `json:"confidence_level"`
 	Reason                 string                                               `json:"reason"`
 	InvestigationSummary   string                                               `json:"investigation_summary"`
@@ -464,7 +455,6 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		Namespace:              rar.Namespace,
 		RemediationRequest:     rar.Spec.RemediationRequestRef.Name,
 		AIAnalysis:             rar.Spec.AIAnalysisRef.Name,
-		Confidence:             rar.Spec.Confidence,
 		ConfidenceLevel:        rar.Spec.ConfidenceLevel,
 		Reason:                 rar.Spec.Reason,
 		InvestigationSummary:   rar.Spec.InvestigationSummary,

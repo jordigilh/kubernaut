@@ -58,6 +58,7 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal([]byte(payload), &parsed)).To(Succeed())
 			Expect(parsed).To(HaveKeyWithValue("workflowConfidence", .72))
+			Expect(parsed).NotTo(HaveKey("confidence"))
 			if score == nil {
 				Expect(parsed).NotTo(HaveKey("rcaConfidence"))
 			} else {
@@ -81,7 +82,7 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 
 		Expect(parsed.Name).To(Equal("rar-rr-oom-1"))
 		Expect(parsed.Namespace).To(Equal("kubernaut-system"))
-		Expect(parsed.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(parsed.WorkflowConfidence).To(BeNumerically("~", 0.72, 0.001))
 		Expect(parsed.ConfidenceLevel).To(Equal("medium"))
 		Expect(parsed.Reason).To(Equal("Confidence below auto-approve threshold"))
 		Expect(parsed.WhyApprovalRequired).To(Equal("Confidence 0.72 below auto-approve threshold of 0.80"))
@@ -221,7 +222,7 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 		Expect(parsed.PolicyEvaluation).To(BeNil())
 		Expect(parsed.EvidenceCollected).To(BeEmpty())
 		Expect(parsed.AlternativesConsidered).To(BeEmpty())
-		Expect(parsed.Confidence).To(BeNumerically("~", 0.55, 0.001))
+		Expect(parsed.WorkflowConfidence).To(BeNumerically("~", 0.55, 0.001))
 	})
 
 	It("UT-AF-1398-009: RAR with existing decision includes decision in request payload context", func() {

@@ -30,7 +30,6 @@ type ApprovalRequestEventPayload struct {
 	Name                   string                       `json:"name"`
 	Namespace              string                       `json:"namespace"`
 	RemediationRequestName string                       `json:"remediationRequestName"`
-	Confidence             float64                      `json:"confidence"`
 	RCAConfidence          *float64                     `json:"rcaConfidence,omitempty"`
 	WorkflowConfidence     float64                      `json:"workflowConfidence"`
 	ConfidenceLevel        string                       `json:"confidenceLevel"`
@@ -103,7 +102,6 @@ func MarshalApprovalRequestPayload(rar *remediationv1.RemediationApprovalRequest
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
 		RemediationRequestName: rar.Spec.RemediationRequestRef.Name,
-		Confidence:             rar.Spec.Confidence,
 		RCAConfidence:          rar.Spec.RCAConfidence,
 		WorkflowConfidence:     rar.Spec.Confidence,
 		ConfidenceLevel:        rar.Spec.ConfidenceLevel,

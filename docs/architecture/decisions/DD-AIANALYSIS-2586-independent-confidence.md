@@ -6,9 +6,11 @@ For BR-AI-012 and BR-AI-028, preserve RCA confidence independently from workflow
 
 Approval review and audit records distinguish the scores and preserve presence. The policy evaluation audit describes the evaluator result, including degraded evaluation, and the approval decision audit describes the resulting decision. Console presentation is tracked by kubernaut-console #180.
 
-KA's durable `aiagent.rca.complete` and `aiagent.response.complete` events carry optional `response_data.rca_confidence` independently of workflow selection confidence. The legacy required `confidence` is retained for compatibility and must not be used to infer RCA presence. These events support AU-3 and SOC2 CC7.2 reconstruction (DD-AUDIT-003, DD-AUDIT-005).
+KA's durable `aiagent.rca.complete` and `aiagent.response.complete` events carry optional `response_data.rca_confidence` independently of workflow selection confidence. These events support AU-3 and SOC2 CC7.2 reconstruction (DD-AUDIT-003, DD-AUDIT-005).
 
-The Rego input includes numeric `workflow_confidence`, optional numeric `rca_confidence`, and optional `confidence_threshold`. An absent RCA key means unknown; a value of zero is present. The threshold comes from the existing `rego.confidenceThreshold` operator configuration when set. The legacy `confidence` key also denotes workflow confidence. User policy is responsible for deciding whether and how these inputs affect approval, including when a score or threshold is absent.
+The Rego input includes numeric `workflow_confidence`, optional numeric `rca_confidence`, and optional `confidence_threshold`. An absent RCA key means unknown; a value of zero is present. The threshold comes from the existing `rego.confidenceThreshold` operator configuration when set. User policy is responsible for deciding whether and how these inputs affect approval, including when a score or threshold is absent.
+
+Console-facing approval responses expose the two scores explicitly: `workflow_confidence` and optional `rca_confidence` in approval-request tool results, and `workflowConfidence` and optional `rcaConfidence` in approval-request events. The legacy ambiguous `confidence` response fields are not emitted; backward compatibility is not required for this contract.
 
 ## Alternatives
 
