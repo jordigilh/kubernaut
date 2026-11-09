@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -145,7 +146,10 @@ func mcpTargetScopedRegistry() *registry.Registry {
 	kindIndex, err := k8s.BuildKindIndex(discoveryClient)
 	Expect(err).ToNot(HaveOccurred(), "target API kind index should build")
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
-	resolver := k8s.NewDynamicResolver(dynamicClient, mapper, kindIndex, logr.Discard())
+	metadataClient, err := metadata.NewForConfig(sharedK8sConfig)
+	Expect(err).ToNot(HaveOccurred(), "target metadata client should build")
+	resolver := k8s.NewDynamicResolver(dynamicClient, mapper, kindIndex, logr.Discard(),
+		k8s.WithMetadataClient(metadataClient))
 
 	reg := registry.New()
 	for _, tool := range k8s.NewAllTools(typedClient, resolver) {
