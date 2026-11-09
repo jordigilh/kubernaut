@@ -10178,6 +10178,10 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 		return nil
 	case "Rejected":
 		return nil
+	case "Expired":
+		return nil
+	case "Cancelled":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

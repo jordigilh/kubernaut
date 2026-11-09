@@ -50119,6 +50119,10 @@ func (s *RemediationApprovalAuditPayloadDecision) Decode(d *jx.Decoder) error {
 		*s = RemediationApprovalAuditPayloadDecisionApproved
 	case RemediationApprovalAuditPayloadDecisionRejected:
 		*s = RemediationApprovalAuditPayloadDecisionRejected
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		*s = RemediationApprovalAuditPayloadDecisionExpired
+	case RemediationApprovalAuditPayloadDecisionCancelled:
+		*s = RemediationApprovalAuditPayloadDecisionCancelled
 	default:
 		*s = RemediationApprovalAuditPayloadDecision(v)
 	}
