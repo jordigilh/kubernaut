@@ -32,6 +32,14 @@ import (
 // createTrustedWorkflow creates the live catalog object required by approval
 // admission and stamps the same content-derived identity as AuthWebhook.
 func createTrustedWorkflow(ctx context.Context, name string, parameters []remediationworkflowv1.RemediationWorkflowParameter) *remediationworkflowv1.RemediationWorkflow {
+	if parameters == nil {
+		// The live RemediationWorkflow CRD requires at least one declared
+		// parameter. Keep the approval fixture's effective value map empty by
+		// declaring one optional parameter that no test supplies.
+		parameters = []remediationworkflowv1.RemediationWorkflowParameter{{
+			Name: "OPTIONAL_FIXTURE_PARAMETER", Type: "string", Description: "optional integration fixture parameter",
+		}}
+	}
 	rw := &remediationworkflowv1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 		Spec: remediationworkflowv1.RemediationWorkflowSpec{
