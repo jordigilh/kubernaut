@@ -75,6 +75,8 @@ func DiscoverToolPrefix(ctx context.Context, session *mcp.ClientSession, cluster
 // DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
 func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 	normalized := strings.ReplaceAll(clusterID, "-", "_")
+	bestSuffixLength := 0
+	bestPrefix := ""
 
 	for _, name := range names {
 		normalizedName := strings.ReplaceAll(name, "-", "_")
@@ -82,11 +84,15 @@ func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 			continue
 		}
 		for _, suffix := range knownToolSuffixes {
-			if strings.HasSuffix(normalizedName, suffix) {
-				prefix := name[:len(name)-len(suffix)]
-				return prefix, nil
+			if len(suffix) <= bestSuffixLength || !strings.HasSuffix(normalizedName, suffix) {
+				continue
 			}
+			bestSuffixLength = len(suffix)
+			bestPrefix = name[:len(name)-len(suffix)]
 		}
+	}
+	if bestSuffixLength > 0 {
+		return bestPrefix, nil
 	}
 
 	return "", fmt.Errorf("no tools found for cluster %q among %d discovered tool names", clusterID, len(names))
@@ -96,6 +102,7 @@ func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 // PrefixFromToolNames (and, transitively, DiscoverToolPrefix) uses as anchors
 // to extract the cluster prefix from gateway-prefixed tool names.
 var knownToolSuffixes = []string{
+	"api_resources_list",
 	ToolGet,
 	ToolList,
 	ToolCreateOrUpdate,

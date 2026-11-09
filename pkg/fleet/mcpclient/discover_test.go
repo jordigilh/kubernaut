@@ -173,6 +173,11 @@ var _ = Describe("PrefixFromToolNames (BR-INTEGRATION-054, BR-INTEGRATION-1489, 
 			[]string{"prod_west_resources_get", "prod_east_resources_list"},
 			"prod_east_",
 		),
+		Entry("UT-MCP-TN-107 [AC-4]: API discovery suffix wins when it appears before resources_list",
+			"cluster-a",
+			[]string{"cluster-a__api_resources_list", "cluster-a__resources_list"},
+			"cluster-a__",
+		),
 	)
 
 	It("UT-MCP-TN-105 [AC-4]: returns an error (never a wrong-cluster guess) when no name matches the cluster ID", func() {

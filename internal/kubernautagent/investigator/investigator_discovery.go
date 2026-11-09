@@ -79,6 +79,12 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
 	if rcaResult.HumanReviewNeeded ||
 		(rcaResult.RemediationTarget.Kind != "" && !TargetAPIVersionValidationMatches(rcaResult, clusterID)) {
+		// Target verification failure invalidates any stale typed outcome from
+		// the preceding RCA leg. Cancellation is authoritative and must remain
+		// the terminal outcome for the interactive request.
+		if !rcaResult.Cancelled {
+			markRCAIncomplete(rcaResult)
+		}
 		ApplyTotals(rcaResult, inv.InvestigationTotals(correlationID))
 		return rcaResult, nil
 	}

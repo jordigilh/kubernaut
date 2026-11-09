@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	toolregistry "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // White-box (package investigator, not investigator_test) because RED-phase
@@ -336,6 +337,9 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			gateFailure, err := gateFailureInv.RunWorkflowDiscoveryFromRCA(
 				context.Background(), m2387Signal(gateFailureID),
 				&katypes.InvestigationResult{
+					InvestigationOutcome:    katypes.InvestigationOutcomeProblemResolved,
+					TerminalOutcome:         sharedtypes.TerminalOutcomeProblemResolved,
+					WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch,
 					RemediationTarget: katypes.RemediationTarget{
 						Kind: "Deployment", Name: "worker", Namespace: "demo-checkout", APIVersion: "apps/v1",
 					},
@@ -345,6 +349,10 @@ var _ = Describe("InvestigationMetrics wiring — #2387", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(gateFailure.HumanReviewNeeded).To(BeTrue())
+			Expect(gateFailure.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeRCAIncomplete),
+				"target verification failure must replace a stale problem_resolved outcome")
+			Expect(gateFailure.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusNotStarted),
+				"target verification failure must not claim workflow discovery completed")
 			Expect(gateFailure.TotalLLMTurns).To(Equal(1))
 			Expect(gateFailure.TotalToolCalls).To(Equal(3),
 				"the failed exact-GVK discovery call must remain in cumulative totals")
