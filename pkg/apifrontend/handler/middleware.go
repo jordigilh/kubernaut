@@ -47,9 +47,18 @@ func normalizePath(p string) string {
 		return "/mcp"
 	case p == "/.well-known/agent-card.json":
 		return "/.well-known/agent-card.json"
+	case p == backendContractPath:
+		return backendContractPath
 	default:
 		return "unknown"
 	}
+}
+
+func backendIncarnationMiddleware(incarnation string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(backendIncarnationHeader, incarnation)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func metricsMiddleware(reg *metrics.Registry, next http.Handler) http.Handler {

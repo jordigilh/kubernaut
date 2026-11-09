@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
@@ -648,16 +649,44 @@ func gracefulShutdown(d shutdownDeps) {
 // the three HTTP servers (API/health/metrics). Extracted per AGENTS.md's
 // 8+-param Options-pattern rule (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4g).
 type routerBuildParams struct {
-	HDeps            *handlerDeps
-	MCPHandler       http.Handler
-	DepsReady        func() bool
-	AgentCardHandler http.Handler
-	A2AHandler       http.Handler
-	AuthMiddleware   func(http.Handler) http.Handler
-	AuthReady        func() bool
-	PreAuthMW        func(http.Handler) http.Handler
-	PostAuthMW       func(http.Handler) http.Handler
-	Draining         *atomic.Bool
+	HDeps                       *handlerDeps
+	MCPHandler                  http.Handler
+	DepsReady                   func() bool
+	AgentCardHandler            http.Handler
+	A2AHandler                  http.Handler
+	AuthMiddleware              func(http.Handler) http.Handler
+	AuthReady                   func() bool
+	PreAuthMW                   func(http.Handler) http.Handler
+	PostAuthMW                  func(http.Handler) http.Handler
+	Draining                    *atomic.Bool
+	BackendIncarnationGenerator BackendIncarnationGenerator
+	BackendIncarnation          string
+}
+
+// BackendIncarnationGenerator supplies the process-scoped AF identity. A nil
+// value selects the production UUIDv4 generator.
+type BackendIncarnationGenerator func() (string, error)
+
+func newBackendIncarnation() (string, error) {
+	value, err := uuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	return value.String(), nil
+}
+
+func resolveBackendIncarnation(generator BackendIncarnationGenerator) (string, error) {
+	if generator == nil {
+		generator = newBackendIncarnation
+	}
+	value, err := generator()
+	if err != nil {
+		return "", fmt.Errorf("backend incarnation generator failed: %w", err)
+	}
+	if err := handler.ValidateBackendIncarnation(value); err != nil {
+		return "", fmt.Errorf("invalid backend incarnation: %w", err)
+	}
+	return value, nil
 }
 
 // routerAndServers groups the router config and the three HTTP servers
@@ -686,6 +715,14 @@ type routerAndServers struct {
 func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAndServers, func(), error) {
 	cfg := p.HDeps.Cfg
 	logger := p.HDeps.Logger
+
+	incarnation, err := resolveBackendIncarnation(p.BackendIncarnationGenerator)
+	if err != nil {
+		wrappedErr := fmt.Errorf("failed to resolve backend incarnation: %w", err)
+		logger.Error(wrappedErr, "failed to resolve backend incarnation")
+		return nil, nil, wrappedErr
+	}
+	p.BackendIncarnation = incarnation
 
 	routerCfg, router, err := buildRouterConfig(p)
 	if err != nil {
@@ -741,11 +778,14 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 	}
 
 	routerCfg := handler.RouterConfig{
-		MetricsRegistry:      metricsReg,
-		Logger:               logger,
-		A2AHandler:           p.A2AHandler,
-		MCPHandler:           p.MCPHandler,
-		AgentCardHandler:     p.AgentCardHandler,
+		MetricsRegistry: metricsReg,
+		Logger:          logger,
+		A2AHandler:      p.A2AHandler,
+		MCPHandler:      p.MCPHandler,
+		PublicRoutes: handler.PublicRouteConfig{
+			AgentCardHandler: p.AgentCardHandler,
+			BackendContract:  handler.BackendContractConfig{Incarnation: p.BackendIncarnation},
+		},
 		AuthMiddleware:       p.AuthMiddleware,
 		PreAuthMiddleware:    p.PreAuthMW,
 		PostAuthMiddleware:   p.PostAuthMW,
