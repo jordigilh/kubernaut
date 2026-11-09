@@ -33282,8 +33282,10 @@ func (s *RemediationApprovalAuditPayload) SetPolicyHash(val OptString) {
 type RemediationApprovalAuditPayloadDecision string
 
 const (
-	RemediationApprovalAuditPayloadDecisionApproved RemediationApprovalAuditPayloadDecision = "Approved"
-	RemediationApprovalAuditPayloadDecisionRejected RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionApproved  RemediationApprovalAuditPayloadDecision = "Approved"
+	RemediationApprovalAuditPayloadDecisionRejected  RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionExpired   RemediationApprovalAuditPayloadDecision = "Expired"
+	RemediationApprovalAuditPayloadDecisionCancelled RemediationApprovalAuditPayloadDecision = "Cancelled"
 )
 
 // AllValues returns all RemediationApprovalAuditPayloadDecision values.
@@ -33291,6 +33293,8 @@ func (RemediationApprovalAuditPayloadDecision) AllValues() []RemediationApproval
 	return []RemediationApprovalAuditPayloadDecision{
 		RemediationApprovalAuditPayloadDecisionApproved,
 		RemediationApprovalAuditPayloadDecisionRejected,
+		RemediationApprovalAuditPayloadDecisionExpired,
+		RemediationApprovalAuditPayloadDecisionCancelled,
 	}
 }
 
@@ -33300,6 +33304,10 @@ func (s RemediationApprovalAuditPayloadDecision) MarshalText() ([]byte, error) {
 	case RemediationApprovalAuditPayloadDecisionApproved:
 		return []byte(s), nil
 	case RemediationApprovalAuditPayloadDecisionRejected:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -33314,6 +33322,12 @@ func (s *RemediationApprovalAuditPayloadDecision) UnmarshalText(data []byte) err
 		return nil
 	case RemediationApprovalAuditPayloadDecisionRejected:
 		*s = RemediationApprovalAuditPayloadDecisionRejected
+		return nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		*s = RemediationApprovalAuditPayloadDecisionExpired
+		return nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
+		*s = RemediationApprovalAuditPayloadDecisionCancelled
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

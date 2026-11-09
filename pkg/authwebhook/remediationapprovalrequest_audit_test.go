@@ -21,11 +21,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -69,6 +71,18 @@ func (m *MockAuditStore) Flush(ctx context.Context) error {
 }
 
 func (m *MockAuditStore) Close() error {
+	return nil
+}
+
+// recordingDataStorageClient is the external DataStorage boundary for the
+// OpenAPI-validation regression. The production BufferedAuditStore remains
+// real; only the network client is replaced.
+type recordingDataStorageClient struct {
+	StoredEvents []*ogenclient.AuditEventRequest
+}
+
+func (c *recordingDataStorageClient) StoreBatch(_ context.Context, events []*ogenclient.AuditEventRequest) error {
+	c.StoredEvents = append(c.StoredEvents, events...)
 	return nil
 }
 
@@ -433,6 +447,58 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 				}
 			}
 		})
+	})
+
+	// ========================================
+	// BUSINESS OUTCOME: System Decision Audit OpenAPI Contract
+	// BR-AUDIT-006 / Issue #2615
+	// ========================================
+
+	Describe("System Decision Audit OpenAPI Contract", func() {
+		DescribeTable("trusted RO terminal decisions pass real audit validation",
+			func(decision remediationv1.ApprovalDecision, expectedDecision string) {
+				dataStorageClient := &recordingDataStorageClient{}
+				validatedStore, err := audit.NewBufferedStore(
+					dataStorageClient,
+					audit.DefaultConfig(),
+					"authwebhook-test",
+					logr.Discard(),
+				)
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() {
+					Expect(validatedStore.Close()).To(Succeed())
+				})
+
+				validatedHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(
+					validatedStore,
+					nil,
+					"kubernaut-system",
+				)
+				scheme := runtime.NewScheme()
+				Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+				Expect(validatedHandler.InjectDecoder(admission.NewDecoder(scheme))).To(Succeed())
+
+				rar := safetyRAR(decision, "system", time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC))
+				resp := handleSafetyAdmission(
+					ctx,
+					validatedHandler,
+					rar,
+					safetyPendingRAR(rar),
+					authwebhook.BuildTrustedROSA("kubernaut-system"),
+				)
+
+				Expect(resp.Allowed).To(BeTrue(), "trusted RO system decision must be admitted")
+				Expect(validatedStore.Flush(ctx)).To(Succeed())
+				Expect(dataStorageClient.StoredEvents).To(HaveLen(1),
+					"system decision audit event must pass OpenAPI validation and reach DataStorage")
+
+				payload, ok := dataStorageClient.StoredEvents[0].EventData.GetRemediationApprovalAuditPayload()
+				Expect(ok).To(BeTrue(), "system decision must use the structured RAR audit payload")
+				Expect(string(payload.Decision)).To(Equal(expectedDecision))
+			},
+			Entry("UT-RAR-AUDIT-AW-008: Expired decision", remediationv1.ApprovalDecisionExpired, "Expired"),
+			Entry("UT-RAR-AUDIT-AW-008: Cancelled decision", remediationv1.ApprovalDecisionCancelled, "Cancelled"),
+		)
 	})
 
 	// ========================================
