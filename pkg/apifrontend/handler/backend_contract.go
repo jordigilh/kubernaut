@@ -35,6 +35,7 @@ func ValidateBackendIncarnation(value string) error {
 	return validateBackendIncarnation(value)
 }
 
+// writeBackendContract writes the public, non-cacheable incarnation document.
 func writeBackendContract(w http.ResponseWriter, incarnation string) {
 	w.Header().Set("Content-Type", backendContractContentType)
 	w.Header().Set("Cache-Control", backendContractCacheControl)

@@ -51,6 +51,7 @@ type BackendContractConfig struct {
 	Incarnation string
 }
 
+// validate checks required dependencies and the public backend contract value.
 func (c *RouterConfig) validate() error {
 	if c.MetricsRegistry == nil {
 		return fmt.Errorf("MetricsRegistry is required")

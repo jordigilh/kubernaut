@@ -668,6 +668,7 @@ type routerBuildParams struct {
 // value selects the production UUIDv4 generator.
 type BackendIncarnationGenerator func() (string, error)
 
+// newBackendIncarnation generates the process-scoped canonical UUIDv4.
 func newBackendIncarnation() (string, error) {
 	value, err := uuid.NewRandom()
 	if err != nil {
@@ -676,6 +677,7 @@ func newBackendIncarnation() (string, error) {
 	return value.String(), nil
 }
 
+// resolveBackendIncarnation invokes the configured generator and validates its wire value.
 func resolveBackendIncarnation(generator BackendIncarnationGenerator) (string, error) {
 	if generator == nil {
 		generator = newBackendIncarnation
