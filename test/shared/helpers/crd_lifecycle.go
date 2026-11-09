@@ -124,12 +124,19 @@ func WaitForAICreation(ctx context.Context, k8sClient client.Client, namespace, 
 
 // AICompletionOpts configures how the AI status should be simulated.
 type AICompletionOpts struct {
-	ApprovalRequired bool
-	ApprovalReason   string
-	Confidence       float64
-	TargetKind       string
-	TargetName       string
-	TargetNamespace  string
+	ApprovalRequired   bool
+	ApprovalReason     string
+	Confidence         float64
+	TargetKind         string
+	TargetName         string
+	TargetNamespace    string
+	WorkflowID         string
+	WorkflowName       string
+	WorkflowActionType string
+	WorkflowVersion    string
+	ExecutionBundle    string
+	ExecutionEngine    string
+	Parameters         sharedtypes.TypedParameterMap
 }
 
 // SimulateAICompletedWithWorkflow updates AI status as completed with a workflow
@@ -149,6 +156,34 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 	if targetName == "" {
 		targetName = "test-app"
 	}
+	workflowID := opts.WorkflowID
+	if workflowID == "" {
+		workflowID = "restart-pod-v1"
+	}
+	workflowName := opts.WorkflowName
+	if workflowName == "" {
+		workflowName = "restart-pod-v1"
+	}
+	workflowActionType := opts.WorkflowActionType
+	if workflowActionType == "" {
+		workflowActionType = "RestartPod"
+	}
+	workflowVersion := opts.WorkflowVersion
+	if workflowVersion == "" {
+		workflowVersion = "1.0.0"
+	}
+	executionBundle := opts.ExecutionBundle
+	if executionBundle == "" {
+		executionBundle = "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0"
+	}
+	executionEngine := opts.ExecutionEngine
+	if executionEngine == "" {
+		executionEngine = "job"
+	}
+	parameters := opts.Parameters
+	if parameters == nil {
+		parameters = sharedtypes.TypedParameterMap{}
+	}
 
 	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
@@ -164,18 +199,18 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 		}
 		ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID: "restart-pod-v1",
+				WorkflowID: workflowID,
 				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
 				// these required fields on validateSelectedWorkflow.
-				WorkflowName:           "restart-pod-v1",
-				ActionType:             "RestartPod",
-				Version:                "1.0.0",
-				ExecutionBundle:        "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-				ExecutionEngine:        "job",
+				WorkflowName:    workflowName,
+				ActionType:      workflowActionType,
+				Version:         workflowVersion,
+				ExecutionBundle: executionBundle,
+				ExecutionEngine: executionEngine,
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: confidence,
-			Parameters: sharedtypes.TypedParameterMap{},
+			Parameters: parameters,
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Root cause identified",
