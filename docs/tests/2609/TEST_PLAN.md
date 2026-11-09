@@ -1,7 +1,7 @@
 # Test Plan: Target-scoped RCA API type validation
 
 **Test Plan Identifier**: TP-2609-v1 | **Feature**: target-cluster GVK discovery and safe workflow selection
-**Version**: 1.8 | **Created**: 2026-11-06 | **Author**: Kubernaut contributors
+**Version**: 1.9 | **Created**: 2026-11-06 | **Author**: Kubernaut contributors
 **Status**: Implementation and local/remote verification complete; final aggregate repository gate passes | **Branch**: `triage/v16-rr-cancellation`
 
 ## 1. Introduction
@@ -10,7 +10,7 @@
 Prove that local and fleet investigations use target-scoped discovery, that the LLM chooses a type using evidence and the harness independently verifies it, and that no unverifiable target can select an unsafe workflow. Registered type and named-object existence are distinct.
 
 ### 1.2 Objectives and 1.3 success metrics
-All 16 scoped UT scenarios are tracked. The focused #2588/#2609 investigator regression set passes **14/14**, the broader `TP-1044|RunWorkflowDiscoveryFromRCA` regression set passes **42/42**, and the complete investigator suite passes **490/490**; the MCP tools suite passes **275/275** and the K8s tools suite **132/132**. The five focused investigator-entry integration specs, two E2E specs, and adapted legacy API-gate integration specs pass remotely. `-race`, `go build ./...`, compile-only validation, and lint also pass. The focused IT specs use controlled external dependencies and target-scoped registry/overlay fixtures; they do not by themselves prove full service bootstrap or gateway deployment wiring. >=80% merged-tier structural coverage is the separate CI metric, not a substitute for scenario proof. No individual tier line-percentage gate is imposed by this plan; AGENTS.md supersedes the older template's line-based policy.
+All 16 scoped UT scenarios are tracked. The focused #2588/#2609 investigator regression set passes **14/14**, the broader `TP-1044|RunWorkflowDiscoveryFromRCA` regression set passes **42/42**, and the complete investigator suite passes **491/491**; the MCP tools suite passes **275/275** and the K8s tools suite **132/132**. The five focused investigator-entry integration specs, two E2E specs, and adapted legacy API-gate integration specs pass remotely. `-race`, `go build ./...`, compile-only validation, and lint also pass. The focused IT specs use controlled external dependencies and target-scoped registry/overlay fixtures; they do not by themselves prove full service bootstrap or gateway deployment wiring. >=80% merged-tier structural coverage is the separate CI metric, not a substitute for scenario proof. No individual tier line-percentage gate is imposed by this plan; AGENTS.md supersedes the older template's line-based policy.
 
 ## 2. References
 
