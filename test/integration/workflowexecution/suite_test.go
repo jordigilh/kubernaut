@@ -584,6 +584,21 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 	return wfe, err
 }
 
+// expectWFEIdentityRejectedBeforeMutation verifies the fail-closed boundary
+// for a newly created WFE whose workflow identity cannot be verified. The
+// controller must not add its finalizer or write terminal status before the
+// trusted catalog identity is proven.
+func expectWFEIdentityRejectedBeforeMutation(name, namespace string) {
+	Consistently(func() bool {
+		wfe, err := getWFE(name, namespace)
+		return err == nil &&
+			wfe.Status.Phase == "" &&
+			wfe.Status.ExecutionRef == nil &&
+			wfe.Status.FailureDetails == nil &&
+			len(wfe.Finalizers) == 0
+	}, 3*time.Second, 200*time.Millisecond).Should(BeTrue())
+}
+
 // waitForPipelineRunCreation waits for a PipelineRun to be created for a WFE
 func waitForPipelineRunCreation(wfeName string, timeout time.Duration) (*tektonv1.PipelineRun, error) {
 	var pr *tektonv1.PipelineRun

@@ -73,13 +73,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-		Eventually(func() string {
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
+		expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 		var jobs batchv1.JobList
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 		Expect(jobs.Items).To(BeEmpty())
@@ -127,17 +121,17 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-		wantPhase := string(workflowexecutionv1alpha1.PhaseFailed)
 		if shouldRun {
-			wantPhase = string(workflowexecutionv1alpha1.PhaseRunning)
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 30*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+		} else {
+			expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 		}
-		Eventually(func() string {
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 30*time.Second, 200*time.Millisecond).Should(Equal(wantPhase))
 		var jobs batchv1.JobList
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 		if shouldRun {
@@ -157,13 +151,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe.Spec.WorkflowRef.WorkflowID = fmt.Sprintf("missing-%d", time.Now().UnixNano())
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-		Eventually(func() string {
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 30*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
+		expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 		var jobs batchv1.JobList
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 		Expect(jobs.Items).To(BeEmpty())

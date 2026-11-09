@@ -79,10 +79,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
-			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failed.Status.FailureDetails).NotTo(BeNil())
-			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow"))
+			expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 			var jobs batchv1.JobList
 			Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 			Expect(jobs.Items).To(BeEmpty())
@@ -144,10 +141,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
-			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failed.Status.FailureDetails).NotTo(BeNil())
-			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("workflow"))
+			expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 			var runs tektonv1.PipelineRunList
 			Expect(k8sClient.List(ctx, &runs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
 			Expect(runs.Items).To(BeEmpty())
