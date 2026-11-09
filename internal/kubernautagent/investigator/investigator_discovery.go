@@ -137,6 +137,10 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// never pre-carry counts.
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
+	// #2586: interactive discovery has no per-call TokenAccumulator, but must
+	// still persist the finalized RCA reasoning and confidence in the durable
+	// response projection before returning to the MCP session.
+	inv.emitResponseComplete(ctx, workflowResult, &TokenAccumulator{}, correlationID, modelName)
 	return workflowResult, nil
 }
 
