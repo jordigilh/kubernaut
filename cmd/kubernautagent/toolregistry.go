@@ -184,8 +184,9 @@ func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckCo
 // the "{clusterID}__" EAIGW convention) is untouched inside the wrapped
 // BridgeTool — only the LLM-facing identity changes.
 type gatewayOverlayResolver struct {
-	discoverer fleetclient.GatewayDiscoverer
-	session    fleetclient.Session
+	discoverer  fleetclient.GatewayDiscoverer
+	session     fleetclient.Session
+	gatewayType fleetregistry.MCPGatewayType
 
 	// bindingResolver owns gateway-specific logical-to-wire resolution and
 	// session-scoped selection leases. It is set by production wiring; static
@@ -262,7 +263,15 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 		// rather than assuming either convention, so both gateway types
 		// resolve correctly without KA needing to know which one it's
 		// talking to.
-		prefix, prefixErr := fleetclient.PrefixFromToolNames(clusterID, names)
+		var prefix string
+		var prefixErr error
+		if r.gatewayType != "" {
+			prefix, prefixErr = fleetclient.PrefixFromToolNamesForGateway(r.gatewayType, clusterID, names)
+		} else {
+			// Static test doubles from before gateway-aware resolution may omit
+			// the type; retain the safe boundary-checked fallback for them.
+			prefix, prefixErr = fleetclient.PrefixFromToolNames(clusterID, names)
+		}
 		if prefixErr != nil {
 			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, prefixErr)
 		}
@@ -447,6 +456,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 		"endpoint", endpoint, "gatewayType", gatewayType)
 	return resilientClient, &gatewayOverlayResolver{
 		discoverer:      discoverer,
+		gatewayType:     fleetregistry.MCPGatewayType(gatewayType),
 		sessionProvider: resilientClient.SessionProvider(),
 		handleProvider:  resilientClient.SessionHandleProvider(),
 		reconnect:       resilientClient.Reconnect,

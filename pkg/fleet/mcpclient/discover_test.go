@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -178,6 +179,11 @@ var _ = Describe("PrefixFromToolNames (BR-INTEGRATION-054, BR-INTEGRATION-1489, 
 			[]string{"cluster-a__api_resources_list", "cluster-a__resources_list"},
 			"cluster-a__",
 		),
+		Entry("UT-MCP-TN-108 [AC-4]: neighboring cluster names do not satisfy the target boundary",
+			"cluster-a",
+			[]string{"cluster-a2__api_resources_list", "cluster-a__resources_list"},
+			"cluster-a__",
+		),
 	)
 
 	It("UT-MCP-TN-105 [AC-4]: returns an error (never a wrong-cluster guess) when no name matches the cluster ID", func() {
@@ -189,5 +195,33 @@ var _ = Describe("PrefixFromToolNames (BR-INTEGRATION-054, BR-INTEGRATION-1489, 
 	It("UT-MCP-TN-106 [AC-4]: returns an error for an empty name list", func() {
 		_, err := mcpclient.PrefixFromToolNames("cluster-a", nil)
 		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = Describe("PrefixFromToolNamesForGateway (BR-INTEGRATION-054, ADR-068 #10) [AC-4]", func() {
+	DescribeTable("uses the configured gateway's prefix contract",
+		func(gatewayType registry.MCPGatewayType, clusterID string, names []string, expectedPrefix string) {
+			prefix, err := mcpclient.PrefixFromToolNamesForGateway(gatewayType, clusterID, names)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(prefix).To(Equal(expectedPrefix))
+		},
+
+		Entry("UT-MCP-TN-109 [AC-4]: EAIGW requires the exact cluster boundary before suffix selection",
+			registry.GatewayEAIGW,
+			"cluster-a",
+			[]string{"cluster-a2__api_resources_list", "cluster-a__resources_list"},
+			"cluster-a__",
+		),
+		Entry("UT-MCP-TN-110 [AC-4]: Kuadrant accepts an admin prefix unrelated to the cluster ID",
+			registry.GatewayKuadrant,
+			"cluster-a",
+			[]string{"admin-prod_resources_get"},
+			"admin-prod_",
+		),
+	)
+
+	It("UT-MCP-TN-111 [AC-4]: rejects an unsupported gateway type", func() {
+		_, err := mcpclient.PrefixFromToolNamesForGateway("unsupported", "cluster-a", []string{"cluster-a__resources_get"})
+		Expect(err).To(MatchError(ContainSubstring("unsupported MCP gateway type")))
 	})
 })
