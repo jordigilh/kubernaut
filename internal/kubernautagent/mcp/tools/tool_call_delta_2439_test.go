@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -143,6 +144,47 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		Expect(client.requests[1].Messages).To(ContainElement(And(HaveField("Role", "assistant"), HaveField("Reasoning", HaveValue(HaveField("Signature", "replay-signature"))))))
 		Expect(client.requests[1].Messages).To(ContainElement(And(HaveField("Role", "assistant"), HaveField("ToolCalls", ContainElement(And(HaveField("Name", Equal(investigator.SubmitResultToolName)), HaveField("Arguments", ContainSubstring(`"confidence":1.1`))))))))
 	}, Entry("zero", `,"confidence":0`, func() *float64 { v := 0.0; return &v }()), Entry("missing", "", (*float64)(nil)), Entry("nonzero", `,"confidence":0.65`, func() *float64 { v := 0.65; return &v }()))
+
+	It("IT-KA-2586-043: re-extracts corrected RCA after takeover leaves a cancelled partial result", func() {
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		client := &extractionRetryClient2586{responses: []llm.ChatResponse{
+			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "rejected reasoning", Signature: "replay-signature"}}, ToolCalls: []llm.ToolCall{{ID: "invalid", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"invalid","confidence":1.1` + `}`}}},
+			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "accepted correction evidence", Signature: "provider-secret"}}, ToolCalls: []llm.ToolCall{{ID: "corrected", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"corrected","confidence":0.65}`}}},
+			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default"}}`}}},
+		}}
+		inv := investigator.New(investigator.Config{Client: client, Builder: builder, ResultParser: parser.NewResultParser(), AuditStore: audit.NopAuditStore{}, Logger: logr.Discard(), MaxTurns: 5, PhaseTools: investigator.DefaultPhaseToolMap(), Pipeline: investigator.Pipeline{CatalogFetcher: discoveryCatalogFetcher2439{}}})
+
+		const rrID = "rr-interactive-partial-2586"
+		store := session.NewStore(1 * time.Hour)
+		autoMgr := session.NewManager(store, logr.Discard(), nil, nil)
+		storedSessionID, err := store.Create()
+		Expect(err).NotTo(HaveOccurred())
+		store.SetMetadata(storedSessionID, map[string]string{"remediation_id": rrID})
+		partial := &katypes.InvestigationResult{Cancelled: true, CancelledPhase: string(katypes.PhaseRCA)}
+		Expect(store.Update(storedSessionID, session.StatusUserDriving, partial, nil)).To(Succeed())
+
+		storedResult, found := autoMgr.GetLatestRCAResultByRemediationID(rrID)
+		Expect(found).To(BeFalse(), "cancelled partial RCA must not win discovery eligibility")
+		Expect(storedResult).To(BeNil())
+
+		sess := &mcpinternal.InteractiveSession{SessionID: "session-partial-2586", CorrelationID: rrID, ActingUser: mcpinternal.UserInfo{Username: "alice"}}
+		sessions := &mockSessionManager{isActive: true, getDriverResult: sess}
+		recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{{Role: "user", Content: "investigate the crash"}}}
+		signal := katypes.SignalContext{Name: "OOMKilled", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod", Severity: "critical", RemediationID: rrID}
+		tool := mcptools.NewInvestigateTool(sessions, adapters.NewInvestigatorRunnerAdapter(inv), recon, autoMgr, mcptools.WithWorkflowCatalog(workflowCatalog2439{}), mcptools.WithSignalContextResolver(signalResolver2439{signal: signal}))
+
+		output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{RRID: rrID, Action: mcptools.ActionDiscoverWorkflows}, mcpinternal.UserInfo{Username: "alice"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(output.Status).To(Equal("workflows_discovered"))
+		Expect(sess.RCAResult).NotTo(BeNil())
+		Expect(sess.RCAResult.RCASummary).To(Equal("corrected"))
+		Expect(sess.RCAResult.RCAConfidence).To(HaveValue(Equal(0.65)))
+		Expect(sess.RCAResult.Reasoning).NotTo(BeNil())
+		Expect(sess.RCAResult.Reasoning.Text).To(Equal("accepted correction evidence"))
+		Expect(client.requests).To(HaveLen(3), "RCA extraction, correction, and workflow discovery must all run")
+	})
+
 	It("IT-KA-2439-002: relays deltas through handleDiscoverWorkflows into the session sink", func() {
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
