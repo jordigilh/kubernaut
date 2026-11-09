@@ -64,8 +64,8 @@ func setTestWorkflowIdentity(w *rwv1.RemediationWorkflow) {
 
 func trustedWorkflowParameters() []rwv1.RemediationWorkflowParameter {
 	return []rwv1.RemediationWorkflowParameter{
-		{Name: "NAMESPACE", Type: "string", Description: "target namespace"},
-		{Name: "POD_NAME", Type: "string", Description: "target pod"},
+		{Name: "NAMESPACE", Type: "string", Required: true, Description: "target namespace"},
+		{Name: "POD_NAME", Type: "string", Required: true, Description: "target pod"},
 	}
 }
 
@@ -82,6 +82,13 @@ func typedStringParameters(values map[string]string) sharedtypes.TypedParameterM
 		result[key] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &v}
 	}
 	return result
+}
+
+func trustedTargetParameters(namespace, podName string) sharedtypes.TypedParameterMap {
+	return typedStringParameters(map[string]string{
+		"NAMESPACE": namespace,
+		"POD_NAME":  podName,
+	})
 }
 
 func typedStringParameter(value string) sharedtypes.TypedParameterValue {

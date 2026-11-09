@@ -209,11 +209,11 @@ func selectedHistoryRO2496(rr *remediationv1.RemediationRequest, confidence floa
 	required, matched := true, true
 	return &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID: uuid.NewString(), WorkflowName: "restart-workload", ActionType: "RestartPod", Version: "1.0.0",
+			WorkflowID: trustedRestartWorkflowID, WorkflowName: "restart-workload", ActionType: "RestartPod", Version: "1.0.0",
 			ExecutionEngine: "job", ExecutionBundle: "ghcr.io/kubernaut/restart:1.0.0", ExecutionClusterID: "execution-" + rr.Name,
 		},
 		Confidence: confidence, WorkflowSelectionConfidence: &confidence, Rationale: "Current event and prior assessment considered",
-		Parameters:                  typedStringParameters(map[string]string{"TARGET_NAMESPACE": rr.Spec.TargetResource.Namespace, "PRIVATE": "private-ro-2496"}),
+		Parameters:                  trustedTargetParameters(rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Name),
 		RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "Current memory observation", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Restart workload"},
 		RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted",
 		HandoffDigest: "sha256:" + strings.Repeat("a", 64), PriorRemediationUIDs: []string{"trusted-prior-2496"},

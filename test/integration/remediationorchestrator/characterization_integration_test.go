@@ -269,6 +269,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				ExecutionEngine: "job",
 			},
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(namespace, "test-app"),
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale: "High confidence auto-approve (characterization test)",
 		}
@@ -368,6 +369,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				ExecutionEngine: "job",
 			},
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(namespace, "test-app"),
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale: "High confidence auto-approve",
 		}

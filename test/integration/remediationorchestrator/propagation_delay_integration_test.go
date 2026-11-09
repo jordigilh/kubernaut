@@ -89,6 +89,7 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Operator CRD drift detected",

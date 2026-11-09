@@ -95,6 +95,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -287,6 +288,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			},
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -474,6 +476,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
@@ -568,8 +571,8 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-scale-hpa",
-				WorkflowName:    "wf-scale-hpa",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
@@ -577,6 +580,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.90,
+			Parameters: trustedTargetParameters(ns, "api-frontend-hpa"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "HPA maxed out, scaling target pod autoscaler",
@@ -685,6 +689,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.85,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Generic OOM detected",

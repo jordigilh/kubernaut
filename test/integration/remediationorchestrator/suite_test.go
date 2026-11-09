@@ -83,7 +83,6 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
@@ -783,9 +782,10 @@ func approveRAR(rarName string, mutate func(rar *remediationv1.RemediationApprov
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 // Phase is always set to Completed; tests needing other phases should update
 // sp.Status.Phase directly (no caller currently needs a non-Completed phase).
-// supplyEmptyApprovalSnapshot marks a selected workflow as explicitly having no parameters.
-func supplyEmptyApprovalSnapshot(selected *aianalysisv1.SelectedWorkflow) {
-	selected.Parameters = sharedtypes.TypedParameterMap{}
+// supplyApprovalSnapshotParameters records the typed target values required by
+// the trusted workflow used by approval-path fixtures.
+func supplyApprovalSnapshotParameters(selected *aianalysisv1.SelectedWorkflow, namespace, podName string) {
+	selected.Parameters = trustedTargetParameters(namespace, podName)
 }
 
 func updateSPStatus(name string, severity ...string) error {

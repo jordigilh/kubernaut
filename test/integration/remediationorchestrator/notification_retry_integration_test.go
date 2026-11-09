@@ -99,6 +99,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 			},
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak in container",

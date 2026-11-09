@@ -91,6 +91,7 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 		},
 		// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 		Confidence: 0.95,
+		Parameters: trustedTargetParameters(ns, "test-app"),
 	}
 	ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:    "Dedup test RCA",

@@ -410,6 +410,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 				ExecutionBundle: "test-image:latest",
 			},
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
