@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -555,5 +556,43 @@ var _ = Describe("workflowCatalogFetcher.FetchValidator", func() {
 		Expect(meta.WorkflowName).To(Equal("test-workflow"))
 		Expect(meta.Parameters).To(HaveLen(1))
 		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
+	})
+
+	It("UT-KA-2612-001: builds an allowlist from the MCP discovery fixtures", func() {
+		scheme, err := workflowcatalog.NewScheme()
+		Expect(err).NotTo(HaveOccurred())
+		c := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+			Build()
+
+		fixturePaths := []string{
+			"../../test/fixtures/workflows/oomkill-increase-memory/workflow-schema.yaml",
+			"../../test/fixtures/workflows/generic-restart/workflow-schema.yaml",
+		}
+		for _, fixturePath := range fixturePaths {
+			content, readErr := os.ReadFile(fixturePath)
+			Expect(readErr).NotTo(HaveOccurred(), "fixture %s must be readable", fixturePath)
+			Expect(seedFakeWorkflow(GinkgoTB(), c, string(content))).NotTo(BeEmpty(),
+				"fixture %s must receive a workflow ID", fixturePath)
+		}
+
+		catalog := workflowcatalog.NewCatalog(workflowcatalog.NewCacheFromReader(c), logr.Discard())
+		workflows, total, err := catalog.List(context.Background(), nil, -1, 0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(total).To(Equal(2))
+		Expect(workflows).To(HaveLen(2))
+
+		validator := &workflowCatalogFetcher{catalog: workflowcatalog.NewLazyCatalogReady(
+			workflowcatalog.NewCacheFromReader(c), logr.Discard(),
+		), logger: logr.Discard()}
+		got, err := validator.FetchValidator(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).NotTo(BeNil())
+		for _, workflow := range workflows {
+			meta, ok := got.GetWorkflowMeta(workflow.WorkflowID)
+			Expect(ok).To(BeTrue(), "fixture workflow %q must be validator-allowlisted", workflow.WorkflowID)
+			Expect(meta.WorkflowName).To(Equal(workflow.WorkflowName))
+		}
 	})
 })

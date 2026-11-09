@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	customtools "github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
@@ -195,6 +196,12 @@ func mcpTargetScopedRegistry() *registry.Registry {
 
 	reg := registry.New()
 	for _, tool := range k8s.NewAllTools(typedClient, resolver) {
+		reg.Register(tool)
+	}
+	// Production registers the catalog-backed discovery tools alongside the
+	// target-cluster tools. Keep the real MCP investigator registry equivalent
+	// so Phase 3 can execute the same fail-closed discovery protocol.
+	for _, tool := range customtools.NewAllTools(sharedWfCatalog, audit.NopAuditStore{}, logr.Discard()) {
 		reg.Register(tool)
 	}
 	return reg
