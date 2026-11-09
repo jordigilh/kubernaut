@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -330,6 +331,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			g.Expect(we.Spec.RemediationRequestRef.Name).To(Equal(rrName))
 			g.Expect(we.Status.ExecutionRef).To(BeNil())
 		}, timeout, interval).Should(Succeed())
+		// The real WE controller adds this metadata before dispatch. This suite
+		// runs RO-only, so add the finalizer explicitly to exercise WE's
+		// terminal failure path after the trusted catalog entry disappears.
+		controllerutil.AddFinalizer(&we, wecontroller.FinalizerName)
+		Expect(k8sClient.Update(ctx, &we)).To(Succeed())
 
 		// No WE reconciler is registered with this RO manager: deletion is a
 		// deterministic barrier before the production WE reconciler is invoked.
@@ -401,12 +407,26 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		key := types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, we) }, timeout, interval).Should(Succeed())
+		executionKey := key
 		if injectUndeclared {
 			// RO has already validated the selected values and approved override
-			// against the live workflow. Inject the malformed stored value after that
-			// boundary to prove WE's independent allowlist strips it.
-			we.Spec.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
-			Expect(k8sClient.Update(ctx, we)).To(Succeed())
+			// against the live workflow. Create a malformed persisted WFE after that
+			// boundary to prove WE's independent allowlist strips the value. WFE
+			// specs are immutable after creation, so an update cannot model this
+			// deliberately malformed stored snapshot.
+			malformed := we.DeepCopy()
+			malformed.Name += "-malformed"
+			malformed.ResourceVersion = ""
+			malformed.UID = ""
+			malformed.CreationTimestamp = metav1.Time{}
+			malformed.Generation = 0
+			malformed.ManagedFields = nil
+			malformed.Finalizers = nil
+			malformed.Status = workflowexecutionv1.WorkflowExecutionStatus{}
+			malformed.Spec.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
+			Expect(k8sClient.Create(ctx, malformed)).To(Succeed())
+			DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, malformed))).To(Succeed()) })
+			executionKey = types.NamespacedName{Name: malformed.Name, Namespace: malformed.Namespace}
 		}
 
 		registry := weexecutor.NewRegistry()
@@ -467,13 +487,13 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}
 		})
 		Eventually(func(g Gomega) {
-			_, reconcileErr := weReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			_, reconcileErr := weReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: executionKey})
 			g.Expect(reconcileErr).NotTo(HaveOccurred())
 			values := make(map[string]string)
 			switch engine {
 			case "job":
 				var jobs batchv1.JobList
-				g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": key.Name})).To(Succeed())
+				g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 				g.Expect(jobs.Items).To(HaveLen(1))
 				jobName = jobs.Items[0].Name
 				g.Expect(jobs.Items[0].Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -482,7 +502,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				}
 			case "tekton":
 				var runs tektonv1.PipelineRunList
-				g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": key.Name})).To(Succeed())
+				g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 				g.Expect(runs.Items).To(HaveLen(1))
 				pipelineName = runs.Items[0].Name
 				for _, param := range runs.Items[0].Spec.Params {
