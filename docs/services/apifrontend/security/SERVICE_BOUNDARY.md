@@ -83,8 +83,8 @@ All ingress enters through a single HTTPS listener on the configured port (defau
 | WriteTimeout | 0 (disabled) | Required for SSE/streaming; per-request deadlines via `SetWriteDeadline()` |
 | MaxBodySize | 1 MB (`http.MaxBytesReader`) | Prevents memory exhaustion; A2A/root retain the a2a-go JSON-RPC body-limit baseline, status returns HTTP 400 `invalid_request`, and other handlers retain handler-specific behavior |
 
-The backend-incarnation lifecycle header is emitted only after successful
-authentication on `POST /a2a/invoke`, `POST /`, `POST /mcp`, and
+The `X-Kubernaut-Backend-Incarnation` backend-incarnation lifecycle header is
+emitted only after successful authentication on `POST /a2a/invoke`, `POST /`, `POST /mcp`, and
 `POST /a2a/status`. It is absent on the public contract, health/readiness,
 metrics, agent-card, and `/a2a/access` routes, as well as on missing/invalid
 authentication and pre-authentication IP-limit responses. A post-authentication
