@@ -287,11 +287,9 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	})
 
 	It("IT-RO-WE-2570-003: BR-ORCH-025 fails closed when the approved catalog identity disappears before WE dispatch", func() {
-		catalogNS := createTestNamespace(ctx, "ro-we-2570-catalog")
-		DeferCleanup(func() { deleteTestNamespace(catalogNS) })
 		selected := defaultAIWorkflow()
 		rw := &remediationworkflowv1.RemediationWorkflow{
-			ObjectMeta: metav1.ObjectMeta{Name: "missing-2570-" + uuid.NewString()[:8], Namespace: catalogNS},
+			ObjectMeta: metav1.ObjectMeta{Name: "missing-2570-" + uuid.NewString()[:8], Namespace: ROControllerNamespace},
 			Spec: remediationworkflowv1.RemediationWorkflowSpec{
 				Version: "1.0.0", ActionType: "RestartPod",
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Isolated approval fixture", WhenToUse: "Integration test"},
@@ -313,7 +311,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		selected.ExecutionBundle = testutil.ValidBundleRef
 		selected.ExecutionBundleDigest = ""
 		var matches remediationworkflowv1.RemediationWorkflowList
-		Expect(k8sManager.GetAPIReader().List(ctx, &matches, client.InNamespace(catalogNS), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
+		Expect(k8sManager.GetAPIReader().List(ctx, &matches, client.InNamespace(ROControllerNamespace), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
 		Expect(matches.Items).To(HaveLen(1))
 		Expect(matches.Items[0].UID).To(Equal(rw.UID))
 
@@ -338,14 +336,14 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		Expect(k8sClient.Delete(ctx, rw, client.Preconditions{UID: &rw.UID})).To(Succeed())
 		Eventually(func(g Gomega) {
 			var found remediationworkflowv1.RemediationWorkflowList
-			g.Expect(k8sManager.GetAPIReader().List(ctx, &found, client.InNamespace(catalogNS), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
+			g.Expect(k8sManager.GetAPIReader().List(ctx, &found, client.InNamespace(ROControllerNamespace), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
 			g.Expect(found.Items).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 
 		registry := weexecutor.NewRegistry()
 		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
 		reconciler := wecontroller.NewReconciler(k8sManager, wecontroller.ReconcilerOptions{
-			ExecutionNamespace: namespace, CatalogNamespace: catalogNS, CooldownPeriod: time.Second,
+			ExecutionNamespace: namespace, CatalogNamespace: ROControllerNamespace, CooldownPeriod: time.Second,
 			Metrics: wemetrics.NewMetricsWithRegistry(prometheus.NewRegistry()), StatusManager: westatus.NewManager(k8sManager.GetClient()),
 			AuditStore: auditStore, PhaseManager: wephase.NewManager(), AuditManager: weaudit.NewManager(auditStore, ctrl.Log.WithName("missing-workflow-2570")), ExecutorRegistry: registry,
 		})
@@ -366,11 +364,6 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 	DescribeTable("IT-RO-2570-043: BR-ORCH-025 carries approved values through the WE reconciler into execution inputs", func(engine string, injectUndeclared bool) {
 		selected := defaultAIWorkflow()
-		if injectUndeclared {
-			// This suite has no admission webhook. Deliberately model a malformed
-			// stored snapshot to prove WE's independent allowlist strips the value.
-			selected.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
-		}
 		var engineConfig *apiextensionsv1.JSON
 		if engine == ansibleEngine {
 			engineConfig = &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"playbooks/restart.yml","jobTemplateName":"restart-pod"}`)}
@@ -406,7 +399,15 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"})}
 		})).To(Succeed())
 		key := types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}
-		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, &workflowexecutionv1.WorkflowExecution{}) }, timeout, interval).Should(Succeed())
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, we) }, timeout, interval).Should(Succeed())
+		if injectUndeclared {
+			// RO has already validated the selected values and approved override
+			// against the live workflow. Inject the malformed stored value after that
+			// boundary to prove WE's independent allowlist strips it.
+			we.Spec.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
+			Expect(k8sClient.Update(ctx, we)).To(Succeed())
+		}
 
 		registry := weexecutor.NewRegistry()
 		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
@@ -620,8 +621,10 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}, timeout, interval).Should(Succeed())
 
 			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
-			Expect(we.Spec.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
-			Expect(we.Spec.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{
+				"NAMESPACE": "default",
+				"POD_NAME":  "reviewed-pod",
+			})))
 		})
 	})
 
