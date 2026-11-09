@@ -237,67 +237,64 @@ func (r *gatewayOverlayResolver) resolveSession() (fleetclient.Session, error) {
 	return session, nil
 }
 
+func (r *gatewayOverlayResolver) overlayForCluster(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
+	if r.bindingInitErr != nil {
+		return nil, fmt.Errorf("initialize Fleet binding resolver: %w", r.bindingInitErr)
+	}
+	defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+	}
+	session, sessErr := r.resolveSession()
+	if sessErr != nil {
+		return nil, fmt.Errorf("resolve session for cluster %q: %w", clusterID, sessErr)
+	}
+	prefix, prefixErr := r.resolveToolPrefix(clusterID, defs)
+	if prefixErr != nil {
+		return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, prefixErr)
+	}
+	overlay := make(map[string]tools.Tool, len(defs))
+	for _, def := range defs {
+		genericName := strings.TrimPrefix(def.Name, prefix)
+		var bridge *fleetclient.BridgeTool
+		if r.bindingResolver != nil {
+			bridge = fleetclient.NewBridgeToolWithBindingResolverAndObserver(
+				fleetclient.ToolDefinition{
+					Name:        genericName,
+					Description: def.Description,
+					InputSchema: def.InputSchema,
+				},
+				clusterID,
+				r.bindingResolver,
+				r.handleProvider,
+				r.reconnect,
+				r.retryObserver,
+			)
+		} else {
+			bridge = fleetclient.NewBridgeTool(def, clusterID, session)
+		}
+		overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
+	}
+	return overlay, nil
+}
+
+func (r *gatewayOverlayResolver) resolveToolPrefix(clusterID string, defs []fleetclient.ToolDefinition) (string, error) {
+	names := make([]string, len(defs))
+	for i, def := range defs {
+		names[i] = def.Name
+	}
+	if r.gatewayType != "" {
+		return fleetclient.PrefixFromToolNamesForGateway(r.gatewayType, clusterID, names)
+	}
+	// Static test doubles from before gateway-aware resolution may omit the
+	// type; retain the safe boundary-checked fallback for them.
+	return fleetclient.PrefixFromToolNames(clusterID, names)
+}
+
 // Overlay implements investigator.FleetOverlayResolver.
 func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
 	v, err, _ := r.sf.Do(clusterID, func() (any, error) {
-		if r.bindingInitErr != nil {
-			return nil, fmt.Errorf("initialize Fleet binding resolver: %w", r.bindingInitErr)
-		}
-		defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
-		if err != nil {
-			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
-		}
-		session, sessErr := r.resolveSession()
-		if sessErr != nil {
-			return nil, fmt.Errorf("resolve session for cluster %q: %w", clusterID, sessErr)
-		}
-		names := make([]string, len(defs))
-		for i, def := range defs {
-			names[i] = def.Name
-		}
-		// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
-		// carry whatever admin-set MCPServerRegistration.spec.prefix the
-		// cluster was registered with, which is NOT guaranteed to follow the
-		// "{clusterID}__" shape (Issue #1756). PrefixFromToolNames matches
-		// gateway-agnostically against the discovered names themselves
-		// rather than assuming either convention, so both gateway types
-		// resolve correctly without KA needing to know which one it's
-		// talking to.
-		var prefix string
-		var prefixErr error
-		if r.gatewayType != "" {
-			prefix, prefixErr = fleetclient.PrefixFromToolNamesForGateway(r.gatewayType, clusterID, names)
-		} else {
-			// Static test doubles from before gateway-aware resolution may omit
-			// the type; retain the safe boundary-checked fallback for them.
-			prefix, prefixErr = fleetclient.PrefixFromToolNames(clusterID, names)
-		}
-		if prefixErr != nil {
-			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, prefixErr)
-		}
-		overlay := make(map[string]tools.Tool, len(defs))
-		for _, def := range defs {
-			genericName := strings.TrimPrefix(def.Name, prefix)
-			var bridge *fleetclient.BridgeTool
-			if r.bindingResolver != nil {
-				bridge = fleetclient.NewBridgeToolWithBindingResolverAndObserver(
-					fleetclient.ToolDefinition{
-						Name:        genericName,
-						Description: def.Description,
-						InputSchema: def.InputSchema,
-					},
-					clusterID,
-					r.bindingResolver,
-					r.handleProvider,
-					r.reconnect,
-					r.retryObserver,
-				)
-			} else {
-				bridge = fleetclient.NewBridgeTool(def, clusterID, session)
-			}
-			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
-		}
-		return overlay, nil
+		return r.overlayForCluster(ctx, clusterID)
 	})
 	if err != nil {
 		return nil, err

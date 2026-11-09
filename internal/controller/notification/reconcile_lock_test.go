@@ -66,12 +66,12 @@ var _ = Describe("Notification reconcile lock manager (DD-NOT-008)", func() {
 			}
 			return 0
 		}).Should(Equal(2))
-		Expect(len(entered)).To(Equal(1), "same-key critical sections must be serialized")
+		Expect(entered).To(HaveLen(1), "same-key critical sections must be serialized")
 		Expect(sameKeyOverlap.Load()).To(BeFalse())
 
 		close(release)
 		wg.Wait()
-		Expect(len(manager.locks)).To(Equal(0), "all idle lock entries must be removed")
+		Expect(manager.locks).To(BeEmpty(), "all idle lock entries must be removed")
 	})
 
 	It("UT-NOT-008-002: allows different-key reconciles to run concurrently", func() {
@@ -100,6 +100,6 @@ var _ = Describe("Notification reconcile lock manager (DD-NOT-008)", func() {
 
 		close(release)
 		wg.Wait()
-		Expect(len(manager.locks)).To(Equal(0), "all idle lock entries must be removed")
+		Expect(manager.locks).To(BeEmpty(), "all idle lock entries must be removed")
 	})
 })
