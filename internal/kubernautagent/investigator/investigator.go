@@ -1103,7 +1103,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	// counts, never costs) so completed investigations report tokens exactly
 	// like cancelled ones already do via TokenUsage.
 	inv.setTokenUsageFromScope(rcaResult, correlationID)
-	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName, investigationCompletionAutonomousTurnID)
 	return rcaResult
 }
 
@@ -1317,7 +1317,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	// the full-path result gets the same server-side injection.
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
-	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName)
+	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName, investigationCompletionAutonomousTurnID)
 	return workflowResult
 }
 
