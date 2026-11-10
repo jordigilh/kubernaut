@@ -60,6 +60,7 @@ import (
 const (
 	completed           = "Completed"
 	operatorKubernautAi = "operator@kubernaut.ai"
+	jobEngine           = "job"
 	ansibleEngine       = "ansible"
 )
 
@@ -143,7 +144,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 					Priority:    "P1",
 				},
 				Execution: remediationworkflowv1.RemediationWorkflowExecution{
-					Engine:             "job",
+					Engine:             jobEngine,
 					Bundle:             "override-bundle:v2.0@sha256:override123",
 					BundleDigest:       "sha256:override123",
 					EngineConfig:       &apiextensionsv1.JSON{Raw: []byte(`{"image":"drain:v2"}`)},
@@ -295,7 +296,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				Version: "1.0.0", ActionType: "RestartPod",
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Isolated approval fixture", WhenToUse: "Integration test"},
 				Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
-				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: "job", Bundle: testutil.ValidBundleRef},
+				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: jobEngine, Bundle: testutil.ValidBundleRef},
 				Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"}, {Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"}},
 			},
 		}
@@ -308,7 +309,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		workflowID := rw.Status.WorkflowID
 		selected.WorkflowID = workflowID
 		selected.WorkflowName = rw.Name
-		selected.ExecutionEngine = "job"
+		selected.ExecutionEngine = jobEngine
 		selected.ExecutionBundle = testutil.ValidBundleRef
 		selected.ExecutionBundleDigest = ""
 		var matches remediationworkflowv1.RemediationWorkflowList
@@ -347,7 +348,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		}, timeout, interval).Should(Succeed())
 
 		registry := weexecutor.NewRegistry()
-		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
+		registry.Register(jobEngine, weexecutor.NewJobExecutor(k8sManager.GetClient()))
 		reconciler := wecontroller.NewReconciler(k8sManager, wecontroller.ReconcilerOptions{
 			ExecutionNamespace: namespace, CatalogNamespace: ROControllerNamespace, CooldownPeriod: time.Second,
 			Metrics: wemetrics.NewMetricsWithRegistry(prometheus.NewRegistry()), StatusManager: westatus.NewManager(k8sManager.GetClient()),
@@ -430,7 +431,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		}
 
 		registry := weexecutor.NewRegistry()
-		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
+		registry.Register(jobEngine, weexecutor.NewJobExecutor(k8sManager.GetClient()))
 		registry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient()))
 		launches := make(chan map[string]interface{}, 1)
 		if engine == ansibleEngine {
@@ -497,7 +498,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				g.Expect(we.Status.FailureDetails.Message).To(ContainSubstring(`parameter "UNDECLARED" is not declared`))
 				g.Expect(we.Status.ExecutionRef).To(BeNil())
 				switch engine {
-				case "job":
+				case jobEngine:
 					var jobs batchv1.JobList
 					g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 					g.Expect(jobs.Items).To(BeEmpty())
@@ -512,7 +513,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}
 			values := make(map[string]string)
 			switch engine {
-			case "job":
+			case jobEngine:
 				var jobs batchv1.JobList
 				g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 				g.Expect(jobs.Items).To(HaveLen(1))
@@ -551,12 +552,12 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}
 		}, timeout, 250*time.Millisecond).Should(Succeed())
 	},
-		Entry("Job", "job", false),
+		Entry("Job", jobEngine, false),
 		Entry("Tekton", "tekton", false),
 		Entry("Ansible", ansibleEngine, false),
-		Entry("Job strips undeclared input", "job", true),
-		Entry("Tekton strips undeclared input", "tekton", true),
-		Entry("Ansible strips undeclared input", ansibleEngine, true),
+		Entry("Job rejects undeclared input before dispatch", jobEngine, true),
+		Entry("Tekton rejects undeclared input before dispatch", "tekton", true),
+		Entry("Ansible rejects undeclared input before dispatch", ansibleEngine, true),
 	)
 
 	Context("IT-RO-2570-042: approved legacy workflow switching", func() {
