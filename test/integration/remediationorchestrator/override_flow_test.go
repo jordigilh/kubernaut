@@ -411,9 +411,9 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		if injectUndeclared {
 			// RO has already validated the selected values and approved override
 			// against the live workflow. Create a malformed persisted WFE after that
-			// boundary to prove WE's independent allowlist strips the value. WFE
-			// specs are immutable after creation, so an update cannot model this
-			// deliberately malformed stored snapshot.
+			// boundary to prove WE's independent live-schema validation rejects the
+			// value before dispatch. WFE specs are immutable after creation, so an
+			// update cannot model this deliberately malformed stored snapshot.
 			malformed := we.DeepCopy()
 			malformed.Name += "-malformed"
 			malformed.ResourceVersion = ""
@@ -489,6 +489,27 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		Eventually(func(g Gomega) {
 			_, reconcileErr := weReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: executionKey})
 			g.Expect(reconcileErr).NotTo(HaveOccurred())
+			if injectUndeclared {
+				g.Expect(k8sManager.GetAPIReader().Get(ctx, executionKey, we)).To(Succeed())
+				g.Expect(we.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed))
+				g.Expect(we.Status.FailureDetails).NotTo(BeNil())
+				g.Expect(we.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1.FailureReasonConfigurationError))
+				g.Expect(we.Status.FailureDetails.Message).To(ContainSubstring(`parameter "UNDECLARED" is not declared`))
+				g.Expect(we.Status.ExecutionRef).To(BeNil())
+				switch engine {
+				case "job":
+					var jobs batchv1.JobList
+					g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
+					g.Expect(jobs.Items).To(BeEmpty())
+				case "tekton":
+					var runs tektonv1.PipelineRunList
+					g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
+					g.Expect(runs.Items).To(BeEmpty())
+				case ansibleEngine:
+					g.Expect(ansibleValues).To(BeNil())
+				}
+				return
+			}
 			values := make(map[string]string)
 			switch engine {
 			case "job":
