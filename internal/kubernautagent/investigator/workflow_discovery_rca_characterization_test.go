@@ -319,6 +319,45 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 		})
 	})
 
+	Describe("UT-KA-212-002: autonomous final owner target retains GVK provenance [BR-KA-212]", func() {
+		It("should revalidate the enriched owner target before preserving workflow selection", func() {
+			enricher := enrichment.NewEnricher(&ownerChainRCAK8sClient{}, &rcaDSClient{}, store, logger)
+			client.responses = []llm.ChatResponse{
+				{ToolCalls: []llm.ToolCall{{
+					ID: "tc_rca", Name: investigator.SubmitResultToolName,
+					Arguments: `{"root_cause_analysis":{"summary":"worker pod is unhealthy","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"default","api_version":"v1"}},"confidence":0.9}`,
+				}}},
+				{ToolCalls: []llm.ToolCall{{
+					ID: "tc_rca_same_kind", Name: investigator.SubmitResultToolName,
+					Arguments: `{"root_cause_analysis":{"summary":"worker pod is unhealthy","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"default","api_version":"v1"}},"confidence":0.9}`,
+				}}},
+				gateWfToolResp(`{"workflow_id":"restart-cache","confidence":0.9}`),
+			}
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: store, Logger: logger,
+				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "default",
+				ResourceKind: "Pod", ResourceName: "worker-pod", ResourceAPIVersion: "v1",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("restart-cache"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"the autonomous finalized owner target must carry fresh target-cluster GVK provenance")
+			Expect(result.APIVersionValidation).NotTo(BeNil())
+			Expect(result.APIVersionValidation.Kind).To(Equal("Deployment"))
+			Expect(result.APIVersionValidation.APIVersion).To(Equal("apps/v1"))
+			Expect(result.HumanReviewNeeded).To(BeFalse())
+		})
+	})
+
 	Describe("IT-KA-2459-001: workflow discovery audit captures label handoffs", func() {
 		It("should record enrichment, signal, and rendered-prompt label presence on the workflow LLM request", func() {
 			client.responses = []llm.ChatResponse{

@@ -1018,7 +1018,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
 		WorkflowResult: workflowResult, RCAResult: p.RCAResult, Signal: p.Signal, WorkflowSignal: workflowSignal,
 		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: p.Tokens, CorrelationID: p.CorrelationID,
-		ModelName: wfModelName,
+		ModelName: wfModelName, Client: wfClient, RuntimeParams: wfRuntimeParams,
 	}), nil
 }
 
@@ -1270,6 +1270,8 @@ type mergeAndFinalizeWorkflowResultParams struct {
 	Tokens                    *TokenAccumulator
 	CorrelationID             string
 	ModelName                 string
+	Client                    llm.Client
+	RuntimeParams             llm.RuntimeParams
 }
 
 // mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
@@ -1315,6 +1317,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	injectFinalizedRemediationTarget(workflowResult, workflowSignal, rcaResult, enrichData)
 	InjectTargetResourceParameters(workflowResult)
 	if rcaResult.RemediationTarget.Kind != "" {
+		workflowResult = inv.revalidateFinalizedWorkflowTarget(ctx, workflowResult, rcaResult, p.Client, p.RuntimeParams, correlationID)
 		inv.enforceVerifiedWorkflowTarget(ctx, workflowResult)
 	}
 	// #2387 (BR-KA-OBSERVABILITY-001): see finalizeAndEmitRCAOnlyResult —
