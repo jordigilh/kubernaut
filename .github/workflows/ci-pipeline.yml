@@ -83,7 +83,7 @@ on:
         default: ubuntu-26.04
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner_label || 'default' }}
   cancel-in-progress: true
 
 # Least-privilege default for every job. No job in this workflow needs
