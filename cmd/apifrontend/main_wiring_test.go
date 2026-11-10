@@ -1917,13 +1917,14 @@ func testRouterBuildParams(authorizer auth.ToolAuthorizer) routerBuildParams {
 			Auditor:    &noopAuditor{},
 			Logger:     logr.Discard(),
 		},
-		MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		DepsReady:        func() bool { return true },
-		AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-		AuthReady:        func() bool { return true },
-		Draining:         draining,
+		MCPHandler:         http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		DepsReady:          func() bool { return true },
+		AgentCardHandler:   http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		A2AHandler:         http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		AuthMiddleware:     func(next http.Handler) http.Handler { return next },
+		AuthReady:          func() bool { return true },
+		Draining:           draining,
+		BackendIncarnation: "01234567-89ab-4cde-8123-456789abcdef",
 	}
 }
 

@@ -608,6 +608,22 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP)
 
 `GET /.well-known/agent-card.json` — Returns A2A AgentCard with capabilities, skills, and authentication requirements.
 
+### Console backend incarnation contract (#2614)
+
+`GET /.well-known/kubernaut-console-contract.json` is a public same-origin
+endpoint. It returns only an opaque, canonical lowercase UUIDv4 in the JSON
+property `backend_incarnation` and sends `Cache-Control: no-store`. The value is
+generated once by each API Frontend process and is never a metric label or a
+credential.
+
+Authenticated `POST /a2a/invoke`, `POST /`, `POST /mcp`, and `POST /a2a/status`
+responses carry the matching `X-Kubernaut-Backend-Incarnation` header. The
+header is deliberately inside the authentication boundary: missing or invalid
+authentication and pre-authentication rate-limit responses do not receive it;
+authenticated handler errors, post-authentication rate-limit responses, and
+streaming responses do. Console #168 uses the signal for stale-work fencing and
+revalidation; this service does not implement replay or browser lifecycle logic.
+
 ### Health and Metrics
 
 | Endpoint | Port | Purpose |
@@ -615,6 +631,7 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP)
 | `/healthz` | 8443 | Liveness probe (process alive) |
 | `/readyz` | 8443 | Readiness probe (dependencies reachable) |
 | `/metrics` | 8443 | Prometheus metrics scrape (unauthenticated, same port) |
+| `/a2a/status` | 8443 | Authenticated A2A status subscription/SSE |
 
 ---
 
@@ -778,6 +795,12 @@ AF ServiceAccount permissions:
 | InvestigationSession CRD | Operator |
 | ValidatingAdmissionPolicy | Operator |
 | SCC binding (restricted-v2) | Operator (default on OCP) |
+
+The two-replica deployment architecture above is not qualification evidence for
+the process-local incarnation contract. Console #168 v1 qualification requires
+one AF replica plus external OAuth2 Proxy authentication evidence. Multi-replica
+epochs, failover, stream recovery, and ownership fencing remain the separate
+scope of kubernaut#2606.
 
 ### Development (Helm chart)
 

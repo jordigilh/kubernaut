@@ -53,12 +53,15 @@ var _ = Describe("BR-API-001 / BR-SCOPE-001: production AF router local projecti
 		Expect(err).NotTo(HaveOccurred())
 
 		router, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  metrics.NewRegistry(),
-			A2AHandler:       http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler:       http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			AgentCardHandler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-			ReadyChecker:     func() bool { return true },
+			MetricsRegistry: metrics.NewRegistry(),
+			A2AHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+				BackendContract:  handler.BackendContractConfig{Incarnation: testBackendIncarnation},
+			},
+			AuthMiddleware: func(next http.Handler) http.Handler { return next },
+			ReadyChecker:   func() bool { return true },
 			ConsolePolicyReadHandler: handler.NewConsolePolicyReadHandler(
 				service, logr.Discard(),
 			),
