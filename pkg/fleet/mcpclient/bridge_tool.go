@@ -399,5 +399,18 @@ func bridgeToolResult(name, clusterID string, result *mcp.CallToolResult) (strin
 		return "", fmt.Errorf("remote tool %q (cluster %q) returned error: %s", name, clusterID, ExtractText(result))
 	}
 
+	if isResourcesListTool(name) && result.StructuredContent != nil {
+		structured, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			return "", fmt.Errorf("remote tool %q (cluster %q) returned malformed structured content: %w", name, clusterID, err)
+		}
+		return string(structured), nil
+	}
+
 	return ExtractText(result), nil
+}
+
+func isResourcesListTool(name string) bool {
+	return name == ToolList ||
+		(strings.HasSuffix(name, "_"+ToolList) && !strings.HasSuffix(name, "api_"+ToolList))
 }

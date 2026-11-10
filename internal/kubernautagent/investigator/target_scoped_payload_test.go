@@ -181,4 +181,25 @@ var _ = Describe("Target-scoped resources_list payload verification", func() {
 		Expect(hasExactResourceListEvidenceForSource("[]", target, false)).To(BeTrue(),
 			"a successful empty remote sequence remains exact endpoint evidence")
 	})
+
+	It("UT-KA-2609-025 [SI-10]: projects structured table rows without weakening target GVK checks", func() {
+		projected, err := projectResourcesListOutput(
+			`{"items":[{"Namespace":"prod","Name":"api-server","UID":"uid-1","ResourceVersion":"9"}],"continue":"next-page","remainingItemCount":2}`,
+			[]byte(`{"apiVersion":"apps/v1","kind":"Deployment"}`),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(projected).To(ContainSubstring(`"kind":"DeploymentList"`))
+		Expect(projected).To(ContainSubstring(`"name":"api-server"`))
+		Expect(projected).To(ContainSubstring(`"namespace":"prod"`))
+		Expect(projected).To(ContainSubstring(`"truncated":true`))
+		Expect(projected).To(ContainSubstring(`"total_count":3`))
+	})
+
+	It("UT-KA-2609-026 [SI-10]: rejects structured table rows with the wrong target GVK", func() {
+		_, err := projectResourcesListOutput(
+			`{"items":[{"apiVersion":"apps/v1","kind":"Pod","Namespace":"prod","Name":"api-server"}]}`,
+			[]byte(`{"apiVersion":"apps/v1","kind":"Deployment"}`),
+		)
+		Expect(err).To(HaveOccurred())
+	})
 })

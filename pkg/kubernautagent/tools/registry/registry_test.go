@@ -218,10 +218,10 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 	})
 
 	Describe("UT-KA-433-630: Full tool registry count matches production wiring", func() {
-		It("should register exactly 39 tools matching main.go wiring", func() {
-			expectedTotal := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 8 + 5 + 1 + 1
-			Expect(expectedTotal).To(Equal(39),
-				"K8s baseline (22) + K8s metrics (2) + Prometheus (8) + Custom (5) + TodoWrite (1) + FetchPodLogs (1)")
+		It("should register exactly 41 tools matching main.go wiring", func() {
+			expectedTotal := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + len(k8s.NodeProxyToolNames) + 8 + 5 + 1 + 1
+			Expect(expectedTotal).To(Equal(41),
+				"K8s baseline (22) + K8s metrics (2) + node proxy (2) + Prometheus (8) + Custom (5) + TodoWrite (1) + FetchPodLogs (1)")
 		})
 	})
 })

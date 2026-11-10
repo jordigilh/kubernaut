@@ -116,5 +116,28 @@ var _ = Describe("BridgeTool (BR-INTEGRATION-065)", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unmarshal"))
 		})
+
+		It("UT-FLEET-BT-008 [SI-10]: preserves structured resources_list table rows", func() {
+			bt = mcpclient.NewBridgeTool(mcpclient.ToolDefinition{
+				Name:        "prod-east__resources_list",
+				Description: "List resources in prod-east cluster",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			}, "prod-east", session)
+			session.callResult = &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "NAMESPACE APIVERSION KIND NAME"}},
+				StructuredContent: map[string]any{
+					"items": []any{
+						map[string]any{
+							"Namespace": "prod",
+							"Name":      "api-server",
+						},
+					},
+				},
+			}
+
+			result, err := bt.Execute(context.Background(), json.RawMessage(`{"apiVersion":"apps/v1","kind":"Deployment"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(MatchJSON(`{"items":[{"Namespace":"prod","Name":"api-server"}]}`))
+		})
 	})
 })

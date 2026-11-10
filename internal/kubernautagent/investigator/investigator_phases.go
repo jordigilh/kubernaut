@@ -261,7 +261,7 @@ func (inv *Investigator) enforceVerifiedWorkflowTarget(ctx context.Context, resu
 	if TargetAPIVersionValidationMatches(result, clusterID) {
 		return
 	}
-	clearWorkflowSelectionFields(result)
+	ClearWorkflowSelectionFields(result)
 	result.HumanReviewNeeded = true
 	if result.HumanReviewReason == "" {
 		result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete

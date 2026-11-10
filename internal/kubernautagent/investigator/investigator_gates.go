@@ -789,8 +789,9 @@ func validateResourceListEnvelope(apiVersion, kind, targetAPIVersion, targetKind
 
 // projectResourcesListOutput removes resource bodies before a target-scoped
 // list reaches alignment, the LLM, or audit persistence. kube-mcp-server's
-// YAML mode returns a bare sequence, while the local resolver returns a
-// metadata-list object; both are reduced to GVK plus bounded metadata.
+// YAML mode returns a bare sequence and table mode returns structured rows,
+// while the local resolver returns a metadata-list object; all are reduced to
+// GVK plus bounded metadata.
 func projectResourcesListOutput(result string, args json.RawMessage) (string, error) {
 	target, err := parseResourceListTarget(args)
 	if err != nil {
@@ -820,10 +821,152 @@ func projectResourcesListOutput(result string, args json.RawMessage) (string, er
 	case '[':
 		return projectResourceListSequence(trimmed, target, pageMetadata)
 	case '{':
+		if isStructuredResourceListTable(trimmed) {
+			return projectResourceListTable(trimmed, target, pageMetadata)
+		}
 		return projectResourceListEnvelope(trimmed, target, pageMetadata)
 	default:
 		return "", fmt.Errorf("resources_list response is neither a list nor an object")
 	}
+}
+
+func isStructuredResourceListTable(trimmed []byte) bool {
+	var envelope struct {
+		APIVersion string          `json:"apiVersion"`
+		Kind       string          `json:"kind"`
+		Items      json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
+		return false
+	}
+	return envelope.APIVersion == "" && envelope.Kind == "" && len(envelope.Items) > 0
+}
+
+func projectResourceListTable(trimmed []byte, target katypes.RemediationTarget, pageMetadata resourceListWireMetadata) (string, error) {
+	var envelope struct {
+		Items      json.RawMessage `json:"items"`
+		ItemCount  json.RawMessage `json:"item_count"`
+		TotalCount json.RawMessage `json:"total_count"`
+		Truncated  json.RawMessage `json:"truncated"`
+		Continue   json.RawMessage `json:"continue"`
+		Remaining  json.RawMessage `json:"remainingItemCount"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil || len(envelope.Items) == 0 {
+		return "", fmt.Errorf("resources_list table response is malformed")
+	}
+	pageMetadata = mergeResourceListWireMetadata(pageMetadata, resourceListWireMetadata{
+		itemCount: envelope.ItemCount, totalCount: envelope.TotalCount,
+		truncated: envelope.Truncated, continueToken: envelope.Continue,
+		remainingItemCount: envelope.Remaining,
+	})
+
+	var rows []json.RawMessage
+	if err := json.Unmarshal(envelope.Items, &rows); err != nil || rows == nil {
+		return "", fmt.Errorf("resources_list table response items are malformed")
+	}
+	safeItems, err := projectResourceListTableItems(rows, target)
+	if err != nil {
+		return "", err
+	}
+	completeness, err := parseResourceListCompleteness(len(safeItems), pageMetadata)
+	if err != nil {
+		return "", err
+	}
+	return marshalProjectedResourceList(target.APIVersion, target.Kind+"List", safeItems, completeness)
+}
+
+func projectResourceListTableItems(rows []json.RawMessage, target katypes.RemediationTarget) ([]map[string]interface{}, error) {
+	safeItems := make([]map[string]interface{}, 0, len(rows))
+	for _, rawRow := range rows {
+		row, err := projectResourceListTableItem(rawRow, target)
+		if err != nil {
+			return nil, err
+		}
+		safeItems = append(safeItems, row)
+	}
+	return safeItems, nil
+}
+
+func projectResourceListTableItem(rawRow json.RawMessage, target katypes.RemediationTarget) (map[string]interface{}, error) {
+	var row map[string]json.RawMessage
+	if err := json.Unmarshal(rawRow, &row); err != nil || row == nil {
+		return nil, fmt.Errorf("resources_list table row is malformed")
+	}
+
+	if err := validateResourceListTableRowGVK(row, target); err != nil {
+		return nil, err
+	}
+	safe := map[string]interface{}{
+		"apiVersion": target.APIVersion,
+		"kind":       target.Kind,
+	}
+	metadata, err := projectResourceListTableMetadata(row)
+	if err != nil {
+		return nil, err
+	}
+	if len(metadata) > 0 {
+		safe["metadata"] = metadata
+	}
+	return safe, nil
+}
+
+func validateResourceListTableRowGVK(row map[string]json.RawMessage, target katypes.RemediationTarget) error {
+	apiVersionRaw, hasAPIVersion := row["apiVersion"]
+	kindRaw, hasKind := row["kind"]
+	if hasAPIVersion != hasKind {
+		return fmt.Errorf("resources_list table row is missing its GVK")
+	}
+	if !hasAPIVersion {
+		return nil
+	}
+
+	var apiVersion, kind string
+	if json.Unmarshal(apiVersionRaw, &apiVersion) != nil || json.Unmarshal(kindRaw, &kind) != nil ||
+		apiVersion != target.APIVersion || !strings.EqualFold(kind, target.Kind) {
+		return fmt.Errorf("resources_list table row does not match the requested GVK")
+	}
+	return nil
+}
+
+func projectResourceListTableMetadata(row map[string]json.RawMessage) (map[string]interface{}, error) {
+	metadata := make(map[string]interface{}, 4)
+	for _, field := range []struct {
+		rowKey      string
+		metadataKey string
+	}{
+		{rowKey: "Name", metadataKey: "name"},
+		{rowKey: "Namespace", metadataKey: "namespace"},
+		{rowKey: "UID", metadataKey: "uid"},
+		{rowKey: "ResourceVersion", metadataKey: "resourceVersion"},
+	} {
+		rawValue, exists := row[field.rowKey]
+		if !exists {
+			continue
+		}
+		value, err := resourceListTableString(rawValue, field.rowKey)
+		if err != nil {
+			return nil, err
+		}
+		metadata[field.metadataKey] = value
+	}
+	if rawMetadata, exists := row["metadata"]; exists {
+		safeMetadata, err := projectResourceMetadata(rawMetadata)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range safeMetadata {
+			metadata[key] = value
+		}
+	}
+	return metadata, nil
+}
+
+func resourceListTableString(rawValue json.RawMessage, field string) (string, error) {
+	var value string
+	if bytes.Equal(bytes.TrimSpace(rawValue), []byte("null")) || json.Unmarshal(rawValue, &value) != nil {
+		return "", fmt.Errorf("resources_list table row %s is not a string", field)
+	}
+	return value, nil
 }
 
 func parseResourceListTarget(args json.RawMessage) (katypes.RemediationTarget, error) {
@@ -1474,7 +1617,7 @@ func recordAPIVersionVerification(event *audit.AuditEvent, target katypes.Remedi
 func markAPIVersionValidationCancelled(result *katypes.InvestigationResult, history []llm.Message, budget *rcaLoopBudget) *katypes.InvestigationResult {
 	result = markRCAContinuationCancelled(result, history, budget)
 	clearTargetAPIVersionValidation(result)
-	clearWorkflowSelectionFields(result)
+	ClearWorkflowSelectionFields(result)
 	return result
 }
 
@@ -1691,7 +1834,7 @@ func (inv *Investigator) apiVersionGateExhaustion(
 	// kind without api_version, so it may target the wrong API group and lead
 	// to incorrect RBAC grants. Leaving it populated would cause the API
 	// response to include selected_workflow despite human review escalation.
-	clearWorkflowSelectionFields(result)
+	ClearWorkflowSelectionFields(result)
 	result.Confidence = 0
 
 	result.Warnings = append(result.Warnings,
@@ -1703,7 +1846,9 @@ func (inv *Investigator) apiVersionGateExhaustion(
 	return result
 }
 
-func clearWorkflowSelectionFields(result *katypes.InvestigationResult) {
+// ClearWorkflowSelectionFields removes all executable workflow-selection data
+// from a result while preserving unrelated investigation fields.
+func ClearWorkflowSelectionFields(result *katypes.InvestigationResult) {
 	if result == nil {
 		return
 	}
