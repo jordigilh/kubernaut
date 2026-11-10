@@ -193,6 +193,10 @@ func (inv *Investigator) executeWorkflowSelectionFromRCA(ctx context.Context, p 
 	// never pre-carry counts.
 	inv.applyMetricsFromScope(workflowResult, p.correlationID)
 	inv.setTokenUsageFromScope(workflowResult, p.correlationID)
+	// #2586: interactive discovery has no per-call TokenAccumulator, but must
+	// still persist the finalized RCA reasoning and confidence in the durable
+	// response projection before returning to the MCP session.
+	inv.emitResponseComplete(ctx, workflowResult, &TokenAccumulator{}, p.correlationID, p.modelName, investigationCompletionInteractiveTurnID)
 	return workflowResult, nil
 }
 
@@ -300,7 +304,7 @@ func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context
 	InjectTargetResourceParameters(result)
 	inv.applyMetricsFromScope(result, correlationID)
 	inv.setTokenUsageFromScope(result, correlationID)
-	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID, firstNonEmpty(modelName, inv.modelName))
+	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID, firstNonEmpty(modelName, inv.modelName), investigationCompletionInteractiveTurnID)
 	return result
 }
 

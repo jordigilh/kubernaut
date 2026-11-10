@@ -361,7 +361,7 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 		return result
 	}
 
-	retryResult, parseErr := inv.resultParser.Parse(retryContent)
+	retryResult, parseErr := inv.parseRCA(retryContent)
 	if parseErr != nil {
 		inv.logger.Error(parseErr, "same-kind validation gate: retry parse failed, keeping original",
 			"correlation_id", correlationID)
@@ -384,12 +384,11 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	// retry's other content (e.g. an updated due_diligence.target_accuracy
 	// narrative) is genuinely new and worth keeping. Only the regressed
 	// field itself is backfilled from the pre-retry result.
-	if !retryResult.ConfidenceSet && retryResult.Confidence <= 0 && result.Confidence > 0 {
+	if !retryResult.ConfidenceSet && result.ConfidenceSet {
 		inv.logger.Info("same-kind validation gate: retry lost confidence, keeping original",
 			"original_confidence", result.Confidence,
 			"correlation_id", correlationID)
-		retryResult.Confidence = result.Confidence
-		retryResult.ConfidenceSet = result.ConfidenceSet
+		preserveGateConfidence(result, retryResult)
 	}
 
 	// The retry is a fresh submission on its own turn: its own Reasoning
@@ -1597,7 +1596,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, failOutcome)
 	}
 
-	retryResult, parseErr := inv.resultParser.Parse(retryContent)
+	retryResult, parseErr := inv.parseRCA(retryContent)
 	if parseErr != nil {
 		if ctx.Err() != nil {
 			return markAPIVersionRetryCancelled(result, p.History, p.RCABudget, gateEvent)
@@ -1630,6 +1629,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 	}
 	markExactTargetAPIVersionValidated(ctx, retryResult, verification.source)
 	recordAPIVersionVerification(gateEvent, retryResult.RemediationTarget, verification, true)
+	preserveGateConfidence(result, retryResult)
 
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	if usedReminder {
@@ -1659,6 +1659,15 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 		"api_version", retryResult.RemediationTarget.APIVersion,
 		"correlation_id", correlationID)
 	return retryResult
+}
+
+// preserveGateConfidence retains the earlier RCA score only when the retry omits it.
+func preserveGateConfidence(previous, retry *katypes.InvestigationResult) {
+	if !retry.ConfidenceSet && previous.ConfidenceSet {
+		retry.Confidence = previous.Confidence
+		retry.ConfidenceSet = true
+		retry.RCAConfidence = previous.RCAConfidence
+	}
 }
 
 func (inv *Investigator) apiVersionGateExhaustion(

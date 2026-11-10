@@ -322,6 +322,61 @@ var _ = Describe("IT-KA-1578-002: Phase 1 reasoning survives Phase 3 workflow-re
 	})
 })
 
+// IT-KA-2586-042 proves the normal interactive workflow-discovery completion
+// path emits the finalized RCA forensic fields in the durable response audit
+// projection (BR-AI-086, BR-AUDIT-005).
+var _ = Describe("IT-KA-2586-042: interactive discovery response audit projection", func() {
+	It("should persist corrected RCA reasoning and independent RCA confidence", func() {
+		logger := logr.Discard()
+		store := &gateRecordingAuditStore{}
+		client := &gateMockLLMClient{
+			responses: []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"restart-pod","confidence":0.9}`),
+			},
+		}
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
+
+		inv := investigator.New(investigator.Config{
+			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
+			Enricher: enricher, AuditStore: store, Logger: logger,
+			MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(), Registry: newGateDiscoveryRegistry(),
+		})
+
+		rcaConfidence := 0.65
+		reasoningText := "accepted correction evidence"
+		rcaResult := &katypes.InvestigationResult{
+			RCASummary:    "OOM due to memory leak",
+			Reasoning:     &katypes.ReasoningSummary{Text: reasoningText},
+			RCAConfidence: &rcaConfidence,
+			RemediationTarget: katypes.RemediationTarget{
+				Kind: "Pod", Name: "web-pod", Namespace: "default", APIVersion: "v1",
+			},
+		}
+		signal := katypes.SignalContext{Name: "sig", Namespace: "default", ResourceKind: "Pod", ResourceName: "web-pod", ResourceAPIVersion: "v1"}
+
+		result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), signal, rcaResult, nil, "corr-2586-042")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.Reasoning).To(HaveValue(HaveField("Text", reasoningText)))
+		Expect(result.RCAConfidence).To(HaveValue(BeNumerically("~", 0.65, 0.001)))
+
+		responseEvents := store.eventsByAction(audit.ActionResponseSent)
+		Expect(responseEvents).To(HaveLen(1), "normal interactive discovery must emit one aiagent.response.complete event")
+		responseData, ok := responseEvents[0].Data["response_data"].(string)
+		Expect(ok).To(BeTrue())
+		var payload map[string]interface{}
+		Expect(json.Unmarshal([]byte(responseData), &payload)).To(Succeed())
+
+		reasoning, ok := payload["reasoning"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(reasoning["text"]).To(Equal(reasoningText))
+		Expect(payload["rca_confidence"]).To(BeNumerically("~", 0.65, 0.001))
+	})
+})
+
 // UT-KA-AUDIT-004: messagesToAuditFormat (feeding InvestigationResult's
 // AccumulatedMessages forensic JSON blob, BR-AUDIT-070) includes each
 // assistant message's reasoning text/redacted flag, not just role/content/

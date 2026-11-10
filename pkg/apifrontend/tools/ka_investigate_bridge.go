@@ -270,16 +270,20 @@ func emitEarlyRCA(ctx context.Context, rca *InvestigateRCA) {
 	if rca == nil {
 		return
 	}
-	payload := fmt.Sprintf(
-		`{"severity":"%s","confidence":%.2f,"target":"%s","rca_summary":"%s"}`,
-		rca.Severity, rca.Confidence, rca.Target, rca.RCASummary,
-	)
+	fields := map[string]any{"severity": rca.Severity, "target": rca.Target, "rca_summary": rca.RCASummary}
+	if rca.Confidence != nil {
+		fields["confidence"] = *rca.Confidence
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		return
+	}
 	meta := map[string]any{
 		"type":           launcher.MetaTypeDecision,
 		"schema":         "early_rca",
 		"schema_version": "1.0",
 	}
-	_ = launcher.EmitStructuredMetaSafe(ctx, payload, meta)
+	_ = launcher.EmitStructuredMetaSafe(ctx, string(payload), meta)
 }
 
 // emitInvestigationSummaryArtifact emits the investigation_summary artifact
@@ -298,17 +302,19 @@ func emitInvestigationSummaryArtifact(ctx context.Context, rca *InvestigateRCA, 
 	if len(causalChain) == 0 {
 		causalChain = []string{missingCausalChainStatus}
 	}
+	rcaData := map[string]any{
+		"explanation": rca.RCASummary, "severity": rca.Severity, "causal_chain": causalChain,
+		"tool_calls_count": rca.TotalToolCalls, "llm_turns": rca.TotalLLMTurns,
+	}
+	summary := fmt.Sprintf("Severity: %s\n%s", rca.Severity, rca.RCASummary)
+	if rca.Confidence != nil {
+		rcaData["confidence"] = *rca.Confidence
+		summary = fmt.Sprintf("Severity: %s (confidence %.0f%%)\n%s", rca.Severity, *rca.Confidence*100, rca.RCASummary)
+	}
 	data := map[string]any{
 		"session_id": rrID,
 		"summary":    rca.RCASummary,
-		"rca": map[string]any{
-			"explanation":      rca.RCASummary,
-			"severity":         rca.Severity,
-			"confidence":       rca.Confidence,
-			"causal_chain":     causalChain,
-			"tool_calls_count": rca.TotalToolCalls,
-			"llm_turns":        rca.TotalLLMTurns,
-		},
+		"rca":        rcaData,
 	}
 	if rca.SelectedWorkflow != nil {
 		data["selected_workflow"] = rca.SelectedWorkflow
@@ -321,7 +327,7 @@ func emitInvestigationSummaryArtifact(ctx context.Context, rca *InvestigateRCA, 
 		"schema":         "investigation_summary",
 		"schema_version": "1.0",
 	}
-	_ = launcher.EmitArtifactSafe(ctx, data, fmt.Sprintf("Severity: %s (confidence %.0f%%)\n%s", rca.Severity, rca.Confidence*100, rca.RCASummary), meta)
+	_ = launcher.EmitArtifactSafe(ctx, data, summary, meta)
 }
 
 // FormatEventForUser converts an investigation event into user-readable text.

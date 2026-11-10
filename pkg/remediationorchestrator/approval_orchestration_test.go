@@ -605,6 +605,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 		})
 
 		It("UT-RAR-206-001: WhyApprovalRequired should use actual Rego reason, not hardcoded 'below threshold'", func() {
+			zero := 0.0
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ai-test-rr-206-001",
@@ -613,6 +614,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					RCAResult: &aianalysisv1.RCAResult{
+						RCAConfidence: &zero,
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:             "wf-restart-pods",
@@ -643,6 +645,8 @@ var _ = Describe("ApprovalOrchestration", func() {
 			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
 
 			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Missing remediation target"))
+			Expect(rar.Spec.RCAConfidence).To(HaveValue(Equal(0.0)))
+			Expect(rar.Spec.Confidence).To(Equal(.85))
 			Expect(rar.Spec.WhyApprovalRequired).ToNot(ContainSubstring("is below"))
 		})
 
