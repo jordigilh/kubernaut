@@ -38,7 +38,6 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	aaconfig "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
@@ -104,8 +103,8 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		ai := &aianalysisv1.AIAnalysis{ObjectMeta: metav1.ObjectMeta{Name: "ai-2586", Namespace: ns.Name}, Status: aianalysisv1.AIAnalysisStatus{
 			Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "user policy requires review"},
 			RCAResult: &aianalysisv1.RCAResult{RootCause: "memory pressure", RCAConfidence: &zero, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-review", WorkflowName: "wf-review", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflow:v1", DeclaredParameterNames: map[string]bool{}},
-				Confidence:       .95, Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-review", WorkflowName: "wf-review", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflow:v1"},
+				Confidence:       .95, Parameters: sharedtypes.TypedParameterMap{},
 			}},
 		}}
 		name, err := rocreator.NewApprovalCreator(kube, kube.Scheme(), nil, 15*time.Minute).Create(ctx, rr, ai)
