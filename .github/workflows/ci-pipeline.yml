@@ -1192,7 +1192,7 @@ jobs:
     name: E2E (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
