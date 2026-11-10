@@ -126,19 +126,72 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// Verify all attempts recorded
-		updated := &notificationv1alpha1.NotificationRequest{}
-		err := fakeClient.Get(ctx, types.NamespacedName{
-			Name:      "retry-test",
-			Namespace: "kubernaut-notifications",
-		}, updated)
-		Expect(err).ToNot(HaveOccurred())
+			// Verify all attempts recorded
+			updated := &notificationv1alpha1.NotificationRequest{}
+			err := fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "retry-test",
+				Namespace: "kubernaut-notifications",
+			}, updated)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(updated.Status.DeliveryAttempts).To(HaveLen(3))
-		Expect(updated.Status.TotalAttempts).To(Equal(3))
-		// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
-		// DD-E2E-003: 3 attempts for same channel = 1 failed channel
-		Expect(updated.Status.FailedDeliveries).To(Equal(1))
+			Expect(updated.Status.DeliveryAttempts).To(HaveLen(3))
+			Expect(updated.Status.TotalAttempts).To(Equal(3))
+			// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+			// DD-E2E-003: 3 attempts for same channel = 1 failed channel
+			Expect(updated.Status.FailedDeliveries).To(Equal(1))
+		})
+
+		It("UT-NOT-054-003: should retain distinct retries with the same error within one second", func() {
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rapid-retry-test",
+					Namespace: "kubernaut-notifications",
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{
+					Phase: notificationv1alpha1.NotificationPhaseSending,
+				},
+			}
+			Expect(fakeClient.Create(ctx, notification)).To(Succeed())
+
+			firstTimestamp := metav1.Now()
+			secondTimestamp := metav1.NewTime(firstTimestamp.Add(500 * time.Millisecond))
+			failedAttempt := func(attemptNumber int, timestamp metav1.Time) notificationv1alpha1.DeliveryAttempt {
+				return notificationv1alpha1.DeliveryAttempt{
+					Channel:   notificationv1alpha1.DeliveryChannelName("file"),
+					Attempt:   attemptNumber,
+					Timestamp: timestamp,
+					Status:    notificationv1alpha1.DeliveryAttemptStatusFailed,
+					Error:     "simulated file write failure",
+				}
+			}
+
+			Expect(statusManager.AtomicStatusUpdate(
+				ctx,
+				notification,
+				notificationv1alpha1.NotificationPhaseRetrying,
+				"Retrying",
+				"retrying failed delivery",
+				[]notificationv1alpha1.DeliveryAttempt{failedAttempt(1, firstTimestamp)},
+				nil,
+			)).To(Succeed())
+
+			Expect(statusManager.AtomicStatusUpdate(
+				ctx,
+				notification,
+				notificationv1alpha1.NotificationPhaseRetrying,
+				"Retrying",
+				"retrying failed delivery",
+				[]notificationv1alpha1.DeliveryAttempt{failedAttempt(2, secondTimestamp)},
+				nil,
+			)).To(Succeed())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "rapid-retry-test",
+				Namespace: "kubernaut-notifications",
+			}, updated)).To(Succeed())
+			Expect(updated.Status.DeliveryAttempts).To(HaveLen(2))
+			Expect(updated.Status.TotalAttempts).To(Equal(2))
 		})
 	})
 
