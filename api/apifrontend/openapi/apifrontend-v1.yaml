@@ -91,6 +91,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentCard"
 
+  /.well-known/kubernaut-console-contract.json:
+    get:
+      operationId: getConsoleBackendContract
+      summary: API Frontend backend-incarnation contract
+      description: |
+        Returns the opaque backend incarnation used by Console #168 to fence
+        stale work after an API Frontend process replacement. This endpoint is
+        public through the same-origin API path, contains no credentials or
+        user identity, and is never cached.
+      tags: [console]
+      security: []
+      responses:
+        "200":
+          description: Current process incarnation
+          headers:
+            Cache-Control:
+              description: The contract must not be cached.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackendIncarnationContract"
+
   /a2a/invoke:
     post:
       operationId: postA2AInvoke
@@ -109,7 +134,10 @@ paths:
               $ref: "#/components/schemas/JsonRpcRequest"
       responses:
         "200":
-          description: JSON-RPC 2.0 response
+          description: JSON-RPC 2.0 response. Authenticated responses include the backend-incarnation lifecycle header.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
           content:
             application/json:
               schema:
@@ -121,13 +149,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "429":
-          description: Rate limit exceeded
+          description: Rate limit exceeded. The lifecycle header is absent when the pre-authentication IP limiter rejects the request and present when authenticated post-authentication rate limiting rejects it.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnationConditional429"
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "413":
-          description: Request body exceeds 1 MiB limit
 
   /:
     post:
@@ -148,7 +177,10 @@ paths:
               $ref: "#/components/schemas/JsonRpcRequest"
       responses:
         "200":
-          description: JSON-RPC 2.0 response
+          description: JSON-RPC 2.0 response. Authenticated responses include the backend-incarnation lifecycle header.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
           content:
             application/json:
               schema:
@@ -160,13 +192,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "429":
-          description: Rate limit exceeded
+          description: Rate limit exceeded. The lifecycle header is absent when the pre-authentication IP limiter rejects the request and present when authenticated post-authentication rate limiting rejects it.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnationConditional429"
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "413":
-          description: Request body exceeds 1 MiB limit
 
   /mcp:
     post:
@@ -188,7 +221,10 @@ paths:
               $ref: "#/components/schemas/JsonRpcRequest"
       responses:
         "200":
-          description: JSON-RPC response (plain JSON or SSE stream)
+          description: JSON-RPC response (plain JSON or SSE stream). Authenticated responses include the backend-incarnation lifecycle header.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
           content:
             application/json:
               schema:
@@ -204,13 +240,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "429":
-          description: Rate limit exceeded
+          description: Rate limit exceeded. The lifecycle header is absent when the pre-authentication IP limiter rejects the request and present when authenticated post-authentication rate limiting rejects it.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnationConditional429"
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "501":
           description: MCP not enabled
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+        "503":
+          description: SSE connection cap reached after authentication
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /a2a/status:
+    post:
+      operationId: postA2AStatus
+      summary: A2A status subscription
+      description: |
+        Authenticated status subscription endpoint. Successful subscriptions
+        stream Server-Sent Events. Parse and body-limit failures remain HTTP
+        400 JSON-RPC invalid_request responses; authenticated responses include
+        the backend-incarnation lifecycle header.
+      tags: [a2a]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+      responses:
+        "200":
+          description: Status Server-Sent Events stream
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid JSON-RPC request, including the status body-limit response; message is invalid_request.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+        "401":
+          description: Missing or invalid Bearer token; no lifecycle header is returned.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limit exceeded. The lifecycle header is absent for pre-authentication IP rejection and present for authenticated post-authentication rejection.
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnationConditional429"
+        "503":
+          description: SSE connection cap reached after authentication
+          headers:
+            X-Kubernaut-Backend-Incarnation:
+              $ref: "#/components/headers/BackendIncarnation"
           content:
             application/problem+json:
               schema:
@@ -389,6 +499,22 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  headers:
+    BackendIncarnation:
+      description: Opaque canonical lowercase UUIDv4 identifying the current API Frontend process. Returned only after authentication on lifecycle routes.
+      schema:
+        type: string
+        minLength: 36
+        maxLength: 36
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    BackendIncarnationConditional429:
+      description: Present only when the authenticated post-authentication limiter rejects the request; absent when the pre-authentication IP limiter rejects it.
+      schema:
+        type: string
+        minLength: 36
+        maxLength: 36
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
   parameters:
     ConsoleClusterID:
       name: cluster_id
@@ -526,6 +652,18 @@ components:
           type: string
         description:
           type: string
+
+    BackendIncarnationContract:
+      type: object
+      additionalProperties: false
+      required: [backend_incarnation]
+      properties:
+        backend_incarnation:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          description: Opaque canonical lowercase UUIDv4 stable for one API Frontend process.
 
     JsonRpcRequest:
       type: object

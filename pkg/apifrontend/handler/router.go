@@ -20,7 +20,7 @@ type RouterConfig struct {
 	Logger             logr.Logger
 	A2AHandler         http.Handler
 	MCPHandler         http.Handler
-	AgentCardHandler   http.Handler
+	PublicRoutes       PublicRouteConfig
 	AuthMiddleware     func(http.Handler) http.Handler
 	PreAuthMiddleware  func(http.Handler) http.Handler
 	PostAuthMiddleware func(http.Handler) http.Handler
@@ -38,6 +38,20 @@ type RouterConfig struct {
 	Draining                 *atomic.Bool
 }
 
+// PublicRouteConfig groups the unauthenticated agent card and Console
+// backend-incarnation contract configuration.
+type PublicRouteConfig struct {
+	AgentCardHandler http.Handler
+	BackendContract  BackendContractConfig
+}
+
+// BackendContractConfig contains the process-scoped value exposed to the
+// Console and authenticated lifecycle responses.
+type BackendContractConfig struct {
+	Incarnation string
+}
+
+// validate checks required dependencies and the public backend contract value.
 func (c *RouterConfig) validate() error {
 	if c.MetricsRegistry == nil {
 		return fmt.Errorf("MetricsRegistry is required")
@@ -48,8 +62,11 @@ func (c *RouterConfig) validate() error {
 	if c.MCPHandler == nil {
 		return fmt.Errorf("MCPHandler is required")
 	}
-	if c.AgentCardHandler == nil {
-		return fmt.Errorf("AgentCardHandler is required")
+	if c.PublicRoutes.AgentCardHandler == nil {
+		return fmt.Errorf("agent card handler is required")
+	}
+	if err := validateBackendIncarnation(c.PublicRoutes.BackendContract.Incarnation); err != nil {
+		return fmt.Errorf("backend contract incarnation is invalid: %w", err)
 	}
 	if c.AuthMiddleware == nil {
 		return fmt.Errorf("AuthMiddleware is required")
@@ -73,8 +90,8 @@ var registerDebugEndpoints = func(_ *http.ServeMux, _ *streaming.ConnectionTrack
 
 // NewRouter creates an HTTP handler with all routes registered.
 // Routes are organized into two tiers:
-//   - Public (no auth): /healthz, /readyz, /metrics, /.well-known/agent-card.json
-//   - Authenticated: /a2a/invoke, /mcp
+//   - Public (no auth): /healthz, /readyz, /metrics, agent card, Console contract
+//   - Authenticated: /a2a/invoke, /mcp, /a2a/status
 func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hugeParam: called once at startup
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid router config: %w", err)
@@ -90,10 +107,14 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.HandleFunc("GET /healthz", handleHealthz)
 	mux.HandleFunc("GET /readyz", ReadyzHandlerFunc(cfg.ReadyChecker, cfg.Draining))
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
-	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
+	mux.Handle("GET /.well-known/agent-card.json", cfg.PublicRoutes.AgentCardHandler)
+	mux.Handle("GET "+backendContractPath, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeBackendContract(w, cfg.PublicRoutes.BackendContract.Incarnation)
+	}))
 
 	registerDebugEndpoints(mux, cfg.SSETracker)
 
+	incarnation := cfg.PublicRoutes.BackendContract.Incarnation
 	innerA2A := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.A2AHandler)))
 	innerMCP := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.MCPHandler)))
 
@@ -101,6 +122,8 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 		innerA2A = cfg.PostAuthMiddleware(innerA2A)
 		innerMCP = cfg.PostAuthMiddleware(innerMCP)
 	}
+	innerA2A = backendIncarnationMiddleware(incarnation, innerA2A)
+	innerMCP = backendIncarnationMiddleware(incarnation, innerMCP)
 
 	a2aChain := cfg.AuthMiddleware(innerA2A)
 	mcpChain := cfg.AuthMiddleware(innerMCP)
@@ -119,6 +142,7 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 		if cfg.PostAuthMiddleware != nil {
 			innerStatus = cfg.PostAuthMiddleware(innerStatus)
 		}
+		innerStatus = backendIncarnationMiddleware(incarnation, innerStatus)
 		statusChain := cfg.AuthMiddleware(innerStatus)
 		if cfg.PreAuthMiddleware != nil {
 			statusChain = cfg.PreAuthMiddleware(statusChain)
