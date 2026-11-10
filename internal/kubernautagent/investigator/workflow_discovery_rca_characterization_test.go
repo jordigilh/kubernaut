@@ -58,6 +58,21 @@ func (f *rcaK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string
 	return "hash", nil
 }
 
+// ownerChainRCAK8sClient models the RCA target being a Pod whose authoritative
+// remediation target is its owning Deployment. The final target must be
+// independently GVK-verified before an interactive workflow can be selected.
+type ownerChainRCAK8sClient struct{}
+
+func (*ownerChainRCAK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+	return []enrichment.OwnerChainEntry{{
+		Kind: "Deployment", Name: "worker", Namespace: "default", APIVersion: "apps/v1",
+	}}, nil
+}
+
+func (*ownerChainRCAK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
+	return "hash", nil
+}
+
 type rcaDSClient struct {
 	historyErr error
 }
@@ -266,6 +281,41 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 				"UT-KA-WAVE4-003: the target must carry independent verification provenance")
 			Expect(client.calls).To(HaveLen(1),
 				"UT-KA-WAVE4-003: auto-resolve must not consume an extra LLM turn")
+		})
+	})
+
+	Describe("UT-KA-212-001: final owner target retains GVK provenance [BR-KA-212]", func() {
+		It("should verify the owner target before preserving workflow selection", func() {
+			enricher := enrichment.NewEnricher(&ownerChainRCAK8sClient{}, &rcaDSClient{}, store, logger)
+			client.responses = []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"restart-cache","confidence":0.9}`),
+			}
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: store, Logger: logger,
+				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			})
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "default",
+				ResourceKind: "Pod", ResourceName: "worker-pod", ResourceAPIVersion: "v1",
+			}, &katypes.InvestigationResult{
+				RCASummary: "worker pod is unhealthy",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Pod", Name: "worker-pod", Namespace: "default", APIVersion: "v1",
+				},
+			}, nil, "corr-2612-owner-target")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("restart-cache"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"the finalized owner target must carry fresh target-cluster GVK provenance")
+			Expect(result.APIVersionValidation).NotTo(BeNil())
+			Expect(result.APIVersionValidation.Kind).To(Equal("Deployment"))
+			Expect(result.APIVersionValidation.APIVersion).To(Equal("apps/v1"))
 		})
 	})
 

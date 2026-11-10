@@ -186,6 +186,7 @@ func (inv *Investigator) executeWorkflowSelectionFromRCA(ctx context.Context, p 
 	}
 	applyWorkflowDiscoveryTypedStatus(workflowResult, p.rcaResult, p.rawEnrichData)
 	FinalizeWorkflowResult(workflowResult, p.signal, p.rcaResult, p.rawEnrichData)
+	workflowResult = inv.revalidateFinalizedWorkflowTarget(ctx, workflowResult, p.rcaResult, p.client, p.runtimeParams, p.correlationID)
 	// #2387: cumulative per-RR totals straight from the scope (message +
 	// extraction + Phase 3 legs, plus any prior autonomous legs in takeover
 	// flows). No rcaResult summation: under scope-source-of-truth results
@@ -193,6 +194,36 @@ func (inv *Investigator) executeWorkflowSelectionFromRCA(ctx context.Context, p 
 	inv.applyMetricsFromScope(workflowResult, p.correlationID)
 	inv.setTokenUsageFromScope(workflowResult, p.correlationID)
 	return workflowResult, nil
+}
+
+// revalidateFinalizedWorkflowTarget closes the handoff gap between RCA target
+// verification and authoritative enrichment. Enrichment may resolve a model
+// identified child (for example, Pod) to its owning remediation target (for
+// example, Deployment), which invalidates RCA provenance for the new target.
+// The Phase 3 proposal is not executable until this final target has fresh
+// target-cluster GVK verification; an unverifiable target is cleared by
+// enforceVerifiedWorkflowTarget and requires human review.
+func (inv *Investigator) revalidateFinalizedWorkflowTarget(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	rcaResult *katypes.InvestigationResult,
+	client llm.Client,
+	runtimeParams llm.RuntimeParams,
+	correlationID string,
+) *katypes.InvestigationResult {
+	if result == nil || rcaResult == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" || !completeAPIVersionValidation(rcaResult) {
+		return result
+	}
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	if TargetAPIVersionValidationMatches(result, clusterID) {
+		return result
+	}
+
+	result = inv.apiVersionValidationGate(ctx, result, nil, LLMInvocationContext{
+		Client: client, RuntimeParams: runtimeParams, CorrelationID: correlationID,
+	})
+	inv.enforceVerifiedWorkflowTarget(ctx, result)
+	return result
 }
 
 func syncSignalFromRCAForWorkflowDiscovery(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
