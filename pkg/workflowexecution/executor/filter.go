@@ -23,6 +23,11 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// targetResourceParameterName is reserved for the execution target emitted
+// from WorkflowExecution.Spec.TargetResource. A same-named typed parameter may
+// be stale after a future RemediationApprovalRequest target override.
+const targetResourceParameterName = "TARGET_RESOURCE"
+
 // FilterDeclaredParameters strips undeclared parameters from the given map.
 // #243: Defense-in-depth — even if KA-side validation is bypassed,
 // undeclared parameters (including hallucinated credentials) are blocked.

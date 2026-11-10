@@ -195,10 +195,13 @@ func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexec
 		logger.Error(err, "Failed to convert typed workflow parameters for Tekton")
 		filteredParams = map[string]string{}
 	}
+	// TARGET_RESOURCE is reserved for the immutable execution identity below.
+	// Do not allow a stale typed parameter to produce a duplicate or override it.
+	delete(filteredParams, targetResourceParameterName)
 	params := ConvertParameters(filteredParams)
 
 	params = append(params, tektonv1.Param{
-		Name:  "TARGET_RESOURCE",
+		Name:  targetResourceParameterName,
 		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
 	})
 

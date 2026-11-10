@@ -1055,6 +1055,9 @@ func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvV
 	})
 
 	for key, value := range params {
+		if key == targetResourceParameterName {
+			continue
+		}
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  key,
 			Value: value,
