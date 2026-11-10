@@ -1192,7 +1192,7 @@ jobs:
     name: E2E (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
@@ -1291,6 +1291,50 @@ jobs:
         with:
           submodules: true
 
+      - name: Capture runner resource baseline
+        shell: bash
+        run: |
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "kernel:"
+            uname -a
+            echo "os-release:"
+            cat /etc/os-release
+            echo "inotify:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "file handles:"
+            cat /proc/sys/fs/file-nr
+            echo "process limits:"
+            cat /proc/sys/kernel/pid_max
+            cat /proc/sys/kernel/threads-max
+            echo "cgroup PID limits:"
+            for file in /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.current; do
+              if [[ -r "${file}" ]]; then
+                printf '%s=' "${file}"
+                cat "${file}"
+              fi
+            done
+            echo "ulimits:"
+            printf 'nofile soft: '
+            ulimit -Sn
+            printf 'nofile hard: '
+            ulimit -Hn
+            printf 'nproc soft: '
+            ulimit -Su
+            printf 'nproc hard: '
+            ulimit -Hu
+            echo "process/thread count:"
+            ps -eLf --no-headers | wc -l
+            echo "memory:"
+            free -h
+            echo "disk:"
+            df -h /
+            echo "container runtime versions:"
+            command -v podman >/dev/null && podman --version || echo "podman: unavailable"
+            command -v crun >/dev/null && crun --version | head -1 || echo "crun: unavailable"
+          } | tee /tmp/e2e-runner-resources-before.txt
+
       - name: Free disk space (E2E jobs need headroom for Kind + images)
         if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'apifrontend-fleet'
         run: |
@@ -1328,6 +1372,58 @@ jobs:
         run: make generate
       - name: Install Podman
         uses: ./.github/actions/install-podman
+
+      - name: Configure E2E runner resource limits
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set_sysctl_floor() {
+            local key="$1"
+            local target="$2"
+            local current
+            current="$(sysctl -n "${key}")"
+            if (( current < target )); then
+              sudo sysctl -w "${key}=${target}"
+            else
+              echo "${key} already ${current}; keeping it"
+            fi
+          }
+
+          # These are ceilings, not allocations. Keep ubuntu-24.04 as the
+          # active E2E baseline; the ubuntu-26.04 comparison is evaluated
+          # separately so runner-image effects remain isolated.
+          set_sysctl_floor fs.inotify.max_user_watches 1048576
+          set_sysctl_floor fs.inotify.max_user_instances 8192
+          set_sysctl_floor fs.inotify.max_queued_events 32768
+
+          # Kind's Podman node contains the Kubernetes control plane and all
+          # test workloads. Raise its process and descriptor ceilings without
+          # changing application resource requests or test timing.
+          mkdir -p "${HOME}/.config/containers/containers.conf.d"
+          cat > "${HOME}/.config/containers/containers.conf.d/99-kubernaut-e2e-resources.conf" <<'EOF'
+          [containers]
+          pids_limit = 8192
+          default_ulimits = [
+            "nofile=1048576:1048576",
+            "nproc=65536:65536",
+          ]
+          EOF
+
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "effective inotify limits:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "Podman defaults:"
+            cat "${HOME}/.config/containers/containers.conf.d/99-kubernaut-e2e-resources.conf"
+            echo "Podman version:"
+            podman --version
+            echo "crun version:"
+            crun --version | head -1
+            echo "Podman host info:"
+            podman info --debug 2>&1 || true
+          } | tee /tmp/e2e-runner-resources-after.txt
+
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
       - name: Download exact-SHA operator artifact for FP/Fleet
@@ -1396,7 +1492,108 @@ jobs:
         env:
           GINKGO_LABEL: ${{ matrix.ginkgo_label }}
           AF_E2E_LANE: ${{ matrix.af_e2e_lane }}
-        run: make test-e2e-${{ matrix.service }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          raise_process_limit() {
+            local resource="$1"
+            local value="$2"
+            if ! sudo prlimit --pid "$$" "--${resource}=${value}:${value}"; then
+              echo "warning: unable to raise ${resource} limit to ${value}" >&2
+            fi
+          }
+
+          # prlimit targets this shell so the limits are inherited by make,
+          # Kind, Podman, and the Kubernetes node container it creates.
+          raise_process_limit nofile 1048576
+          raise_process_limit nproc 65536
+          ulimit -n 1048576 2>/dev/null || true
+          ulimit -u 65536 2>/dev/null || true
+
+          echo "effective E2E process limits:"
+          printf 'nofile soft: '
+          ulimit -Sn
+          printf 'nofile hard: '
+          ulimit -Hn
+          printf 'nproc soft: '
+          ulimit -Su
+          printf 'nproc hard: '
+          ulimit -Hu
+
+          make test-e2e-${{ matrix.service }}
+
+      - name: Capture failure cluster resource diagnostics
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          set +e
+          output_dir="/tmp/e2e-cluster-resource-diagnostics"
+          mkdir -p "${output_dir}"
+
+          {
+            echo "Runner process state"
+            date -u
+            ps -eLf
+            echo "inotify:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "file handles:"
+            cat /proc/sys/fs/file-nr
+            echo "process limits:"
+            cat /proc/sys/kernel/pid_max
+            cat /proc/sys/kernel/threads-max
+            echo "ulimits:"
+            printf 'nofile soft: '
+            ulimit -Sn
+            printf 'nofile hard: '
+            ulimit -Hn
+            printf 'nproc soft: '
+            ulimit -Su
+            printf 'nproc hard: '
+            ulimit -Hu
+            for file in /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.current; do
+              if [[ -r "${file}" ]]; then
+                printf '%s=' "${file}"
+                cat "${file}"
+              fi
+            done
+            echo "memory:"
+            free -h
+            echo "disk:"
+            df -h /
+          } > "${output_dir}/runner.txt"
+
+          if command -v podman >/dev/null; then
+            podman ps -a --no-trunc > "${output_dir}/podman-ps.txt" 2>&1
+            podman stats --no-stream > "${output_dir}/podman-stats.txt" 2>&1
+            podman info --debug > "${output_dir}/podman-info.txt" 2>&1
+          fi
+
+          if command -v kind >/dev/null && command -v kubectl >/dev/null; then
+            clusters="$(kind get clusters 2>/dev/null || true)"
+            while IFS= read -r cluster; do
+              [[ -z "${cluster}" ]] && continue
+              kubeconfig="${output_dir}/${cluster}.kubeconfig"
+              kind get kubeconfig --name "${cluster}" > "${kubeconfig}" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get nodes -o wide > "${output_dir}/${cluster}-nodes.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" describe nodes > "${output_dir}/${cluster}-node-describe.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get pods --all-namespaces -o wide > "${output_dir}/${cluster}-pods.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get events --all-namespaces --sort-by=.lastTimestamp > "${output_dir}/${cluster}-events.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get pods --all-namespaces --no-headers | wc -l > "${output_dir}/${cluster}-pod-count.txt" 2>&1
+            done <<< "${clusters}"
+          fi
+
+      - name: Upload E2E runner diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: e2e-runner-diagnostics-${{ matrix.service }}-${{ github.run_id }}
+          path: |
+            /tmp/e2e-runner-resources-before.txt
+            /tmp/e2e-runner-resources-after.txt
+            /tmp/e2e-cluster-resource-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
       
       - name: Calculate and save E2E coverage
         if: always()

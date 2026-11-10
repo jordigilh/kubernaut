@@ -34,7 +34,7 @@ env:
 jobs:
   e2e:
     name: e2e (${{ inputs.service }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.timeout }}
     # Skip E2E for draft PRs if enabled
     if: |
@@ -132,9 +132,9 @@ jobs:
             fi
           }
 
-          # These are ceilings, not allocations. Keep ubuntu-24.04 defaults
-          # unchanged when they are already higher, while preventing the
-          # ubuntu-26.04 runner transition from starving Kind workloads.
+          # These are ceilings, not allocations. Keep ubuntu-24.04 as the
+          # active E2E baseline; the ubuntu-26.04 comparison is evaluated
+          # separately so runner-image effects remain isolated.
           set_sysctl_floor fs.inotify.max_user_watches 1048576
           set_sysctl_floor fs.inotify.max_user_instances 8192
           set_sysctl_floor fs.inotify.max_queued_events 32768
@@ -207,7 +207,7 @@ jobs:
           make test-e2e-${{ inputs.service }}
 
       - name: Capture failure cluster resource diagnostics
-        if: failure()
+        if: failure() || cancelled()
         shell: bash
         run: |
           set +e
