@@ -425,9 +425,9 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			By("Using k8sFixtureClient so enrichment succeeds with controlled data")
 			fixtureK8s := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
-					{Kind: "Pod", Name: "api-server-abc", Namespace: "production"},
-					{Kind: "ReplicaSet", Name: "api-server-rs", Namespace: "production"},
-					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+					{Kind: "Pod", Name: "api-server-abc", Namespace: "production", APIVersion: "v1"},
+					{Kind: "ReplicaSet", Name: "api-server-rs", Namespace: "production", APIVersion: "apps/v1"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
 				},
 			}
 			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)

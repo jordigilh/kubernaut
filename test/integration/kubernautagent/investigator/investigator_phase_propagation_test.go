@@ -52,8 +52,8 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 		rp = parser.NewResultParser()
 		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
-				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
+				{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
+				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production", APIVersion: "apps/v1"},
 			},
 		}
 		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)

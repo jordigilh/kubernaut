@@ -204,13 +204,20 @@ func NewOverlayLabelDetector(getTool tools.Tool, listTool tools.Tool, mapper met
 // resourceContextTools callers only ever read chain[len(chain)-1] (the root
 // entry), never intermediate hops, so ownerchain.K8sOwnerResolver's
 // "top owner only" contract is a precise fit here, not a lossy simplification.
+// The resolver's API-version result is preserved because final target
+// validation treats the owner GVK as provenance, not display metadata.
 func (c *overlayK8sClient) GetOwnerChain(ctx context.Context, kind, name, namespace, _ string) ([]enrichment.OwnerChainEntry, error) {
 	resolver := ownerchain.NewK8sOwnerResolver(c.reader, c.logger)
-	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, kind, name)
+	owner, err := resolver.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
 	if err != nil {
 		return nil, err
 	}
-	return []enrichment.OwnerChainEntry{{Kind: ownerKind, Name: ownerName, Namespace: namespace}}, nil
+	return []enrichment.OwnerChainEntry{{
+		Kind:       owner.Kind,
+		Name:       owner.Name,
+		Namespace:  namespace,
+		APIVersion: owner.APIVersion,
+	}}, nil
 }
 
 // GetSpecHash resolves apiVersion for kind via the moved ownerchain.KindToGroup

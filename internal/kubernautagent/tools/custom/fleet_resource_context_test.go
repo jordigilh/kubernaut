@@ -233,6 +233,8 @@ var _ = Describe("UT-KA-FLEET-032: overlayK8sClient (BR-INTEGRATION-1489)", func
 			Expect(chain).To(HaveLen(1))
 			Expect(chain[0].Kind).To(Equal("Deployment"))
 			Expect(chain[0].Name).To(Equal("api-server"))
+			Expect(chain[0].APIVersion).To(Equal("apps/v1"),
+				"UT-KA-FLEET-032: owner-chain entries must preserve the verified owner GVK")
 		})
 
 		It("returns the resource itself when it has no controller owner", func() {
@@ -246,6 +248,8 @@ var _ = Describe("UT-KA-FLEET-032: overlayK8sClient (BR-INTEGRATION-1489)", func
 			Expect(chain).To(HaveLen(1))
 			Expect(chain[0].Kind).To(Equal("Pod"))
 			Expect(chain[0].Name).To(Equal("standalone-pod"))
+			Expect(chain[0].APIVersion).To(Equal("v1"),
+				"UT-KA-FLEET-032: standalone entries must preserve the verified resource GVK")
 		})
 	})
 
