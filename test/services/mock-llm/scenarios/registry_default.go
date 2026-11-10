@@ -166,6 +166,7 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ScenarioName:      ks.Name,
 				WorkflowID:        ks.WorkflowID,
 				ActionType:        ks.ActionType,
+				Parameters:        ks.Parameters,
 				ToolCallName:      ks.ToolCall.Name,
 				ToolCallArgs:      ks.ToolCall.Arguments,
 				FallbackArguments: ks.ToolCall.FallbackArguments,
