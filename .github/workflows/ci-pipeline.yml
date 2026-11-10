@@ -73,6 +73,15 @@ on:
         type: string
         default: ''
 
+      runner_label:
+        description: Runner label for controlled Ubuntu comparison
+        required: false
+        type: choice
+        options:
+          - ubuntu-26.04
+          - ubuntu-24.04
+        default: ubuntu-26.04
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -99,7 +108,7 @@ jobs:
 
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
@@ -141,7 +150,7 @@ jobs:
     name: Lint (Go Services)
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -226,7 +235,7 @@ jobs:
     name: License Scan
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -276,7 +285,7 @@ jobs:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -403,7 +412,7 @@ jobs:
     name: "Build (${{ matrix.service }}/${{ matrix.arch }})"
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -569,7 +578,7 @@ jobs:
     name: Build Infra (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -691,7 +700,7 @@ jobs:
     name: Resolve operator source
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 10
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
@@ -753,7 +762,7 @@ jobs:
     name: Build operator (${{ matrix.arch }})
     needs: [resolve-operator]
     if: needs.resolve-operator.result == 'success'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -816,7 +825,7 @@ jobs:
     name: Package operator qualification artifact
     needs: [resolve-operator, build-operator-arch]
     if: needs.resolve-operator.result == 'success' && needs.build-operator-arch.result == 'success'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 15
     outputs:
       operator_sha: ${{ needs.resolve-operator.outputs.operator_sha }}
@@ -908,7 +917,7 @@ jobs:
     name: Integration (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1018,6 +1027,50 @@ jobs:
         run: make generate
       - name: Install Podman
         uses: ./.github/actions/install-podman
+      - name: Capture Ubuntu runner baseline diagnostics
+        if: always() && (matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw')
+        shell: bash
+        run: |
+          set +e
+          mkdir -p runner-diagnostics
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "requested_runner_label: ${{ inputs.runner_label || 'ubuntu-26.04' }}"
+            echo '--- uname ---'
+            uname -a
+            echo '--- os-release ---'
+            cat /etc/os-release
+            echo '--- limits ---'
+            ulimit -a
+            echo "ulimit_n=$(ulimit -n)"
+            echo '--- file and inotify limits ---'
+            cat /proc/sys/fs/file-nr
+            cat /proc/sys/fs/file-max
+            for f in /proc/sys/fs/inotify/max_user_instances /proc/sys/fs/inotify/max_user_watches /proc/sys/fs/inotify/max_queued_events; do
+              echo "$f=$(cat "$f" 2>/dev/null)"
+            done
+            echo '--- memory/cpu/disk ---'
+            free -h
+            nproc
+            df -h /
+            echo '--- cgroup ---'
+            findmnt -T /sys/fs/cgroup
+            for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.events /sys/fs/cgroup/cpu.max /sys/fs/cgroup/pids.max; do
+              if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi
+            done
+            echo '--- top process FD counts ---'
+            for proc in /proc/[0-9]*; do
+              [ -d "$proc/fd" ] || continue
+              count=$(find "$proc/fd" -maxdepth 1 -type l 2>/dev/null | wc -l)
+              comm=$(cat "$proc/comm" 2>/dev/null)
+              printf '%s\t%s\t%s\n' "$count" "${proc##*/}" "$comm"
+            done | sort -nr | head -20
+            echo '--- runtime ---'
+            command -v podman && podman version && podman info --debug
+            command -v docker && docker version
+          } > runner-diagnostics/baseline.txt 2>&1
+          cat runner-diagnostics/baseline.txt
+
       - name: Setup envtest (K8s test binaries)
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
@@ -1120,7 +1173,7 @@ jobs:
     name: CEL Immutability Regression (K8s v1.31.0, #2284)
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 15
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1192,7 +1245,7 @@ jobs:
     name: E2E (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
@@ -1398,6 +1451,49 @@ jobs:
           AF_E2E_LANE: ${{ matrix.af_e2e_lane }}
         run: make test-e2e-${{ matrix.service }}
       
+      - name: Capture Ubuntu runtime and Kubernetes diagnostics
+        if: always() && (matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw')
+        shell: bash
+        run: |
+          set +e
+          mkdir -p runner-diagnostics
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '--- limits and FD/inotify state ---'
+            ulimit -a
+            echo "ulimit_n=$(ulimit -n)"
+            cat /proc/sys/fs/file-nr
+            cat /proc/sys/fs/file-max
+            for f in /proc/sys/fs/inotify/max_user_instances /proc/sys/fs/inotify/max_user_watches /proc/sys/fs/inotify/max_queued_events; do
+              echo "$f=$(cat "$f" 2>/dev/null)"
+            done
+            echo '--- memory/cpu/cgroup ---'
+            free -h
+            nproc
+            for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.events /sys/fs/cgroup/cpu.max /sys/fs/cgroup/pids.max; do
+              if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi
+            done
+            echo '--- runtime containers ---'
+            podman ps -a
+            podman system df
+            podman info --debug
+            echo '--- kernel/runtime logs ---'
+            sudo -n journalctl -k --no-pager -n 300
+            sudo -n journalctl -u containerd --no-pager -n 300
+            sudo -n dmesg --color=never | tail -300
+            echo '--- Kubernetes state ---'
+            kubectl cluster-info
+            kubectl get --raw='/readyz?verbose'
+            kubectl get nodes -o wide
+            kubectl describe nodes
+            kubectl get pods -A -o wide
+            kubectl describe pods -A
+            kubectl get events -A --sort-by=.lastTimestamp
+            echo '--- Kind clusters ---'
+            kind get clusters
+          } > runner-diagnostics/post-e2e.txt 2>&1
+          cat runner-diagnostics/post-e2e.txt
+
       - name: Calculate and save E2E coverage
         if: always()
         run: |
@@ -1499,6 +1595,15 @@ jobs:
           path: must-gather-e2e-*.tar.gz
           retention-days: 14
           if-no-files-found: warn
+      - name: Upload Ubuntu runner diagnostics
+        if: always() && (matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ubuntu-runner-diagnostics-${{ matrix.service }}-${{ github.run_id }}
+          path: runner-diagnostics
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Cleanup Kind cluster
         if: always()
         run: |
@@ -1533,7 +1638,7 @@ jobs:
     name: Must-Gather contract checks (no application chart)
     needs: [detect-changes, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -1551,7 +1656,7 @@ jobs:
     name: Test Suite Summary
     needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     permissions:
       contents: read
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
@@ -1860,7 +1965,7 @@ jobs:
     needs: [detect-changes, summary]
     if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.summary.result == 'failure'
     continue-on-error: true
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     container: quay.io/jordigilh/engram:latest
     permissions:
       actions: read
@@ -1930,7 +2035,7 @@ jobs:
             build-infra-images, build-operator,
             integration-tests, cel-immutability-regression, e2e-tests,
             must-gather-e2e-test, summary]
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
     steps:
       - name: Evaluate CI results
         run: |
