@@ -206,11 +206,17 @@ func NewOverlayLabelDetector(getTool tools.Tool, listTool tools.Tool, mapper met
 // "top owner only" contract is a precise fit here, not a lossy simplification.
 // The resolver's API-version result is preserved because final target
 // validation treats the owner GVK as provenance, not display metadata.
-func (c *overlayK8sClient) GetOwnerChain(ctx context.Context, kind, name, namespace, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (c *overlayK8sClient) GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]enrichment.OwnerChainEntry, error) {
 	resolver := ownerchain.NewK8sOwnerResolver(c.reader, c.logger)
 	owner, err := resolver.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
 	if err != nil {
 		return nil, err
+	}
+	// The shared resolver intentionally stops before fetching unknown CRD kinds.
+	// For a standalone target, retain the already target-cluster-verified GVK
+	// supplied by enrichment instead of erasing its API version at this boundary.
+	if owner.APIVersion == "" && owner.Kind == kind && owner.Name == name {
+		owner.APIVersion = apiVersion
 	}
 	return []enrichment.OwnerChainEntry{{
 		Kind:       owner.Kind,

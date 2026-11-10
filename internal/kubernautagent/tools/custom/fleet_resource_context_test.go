@@ -251,6 +251,21 @@ var _ = Describe("UT-KA-FLEET-032: overlayK8sClient (BR-INTEGRATION-1489)", func
 			Expect(chain[0].APIVersion).To(Equal("v1"),
 				"UT-KA-FLEET-032: standalone entries must preserve the verified resource GVK")
 		})
+
+		It("preserves the supplied API version for an unmapped standalone CRD", func() {
+			getTool := &fakeGetTool{
+				responseJSON: `{"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine","metadata":{"name":"vm-1","namespace":"default"}}`,
+			}
+			c := custom.NewOverlayK8sClient(getTool, logr.Discard())
+
+			chain, err := c.GetOwnerChain(context.Background(), "VirtualMachine", "vm-1", "default", "kubevirt.io/v1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(chain).To(HaveLen(1))
+			Expect(chain[0].Kind).To(Equal("VirtualMachine"))
+			Expect(chain[0].Name).To(Equal("vm-1"))
+			Expect(chain[0].APIVersion).To(Equal("kubevirt.io/v1"),
+				"UT-KA-FLEET-032: verified CRD target GVK must survive owner resolution")
+		})
 	})
 
 	Describe("GetSpecHash", func() {
