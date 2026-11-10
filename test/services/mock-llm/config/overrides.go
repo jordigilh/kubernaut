@@ -89,6 +89,7 @@ type ScenarioSelectorOverride struct {
 	Phase          string            `yaml:"phase,omitempty"`
 	WorkflowID     string            `yaml:"workflow_id,omitempty"`
 	ActionType     string            `yaml:"action_type,omitempty"`
+	Parameters     map[string]string `yaml:"parameters,omitempty"`
 	ToolCall       ToolCallOverride  `yaml:"tool_call"`
 	MatchLastOnly  bool              `yaml:"match_last_only,omitempty"`
 	RepeatToolCall bool              `yaml:"repeat_tool_call,omitempty"`

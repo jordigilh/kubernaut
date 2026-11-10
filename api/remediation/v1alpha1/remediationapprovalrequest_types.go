@@ -74,6 +74,11 @@ type ApprovalTargetContext struct {
 //
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-040)"
 type RemediationApprovalRequestSpec struct {
+	// RCAConfidence is nil when the RCA score is unknown.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// ========================================
 	// PARENT REFERENCES
 	// ========================================

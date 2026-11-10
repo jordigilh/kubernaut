@@ -145,6 +145,8 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// #388: All processed alerts are actionable by default; only the
 	// NotActionable handler overrides this to "NotActionable".
 	analysis.Status.EnsureRCAResult().Actionability = aianalysis.ActionabilityActionable
+	// DD-AIANALYSIS-2586: preserve absence separately from explicit zero.
+	analysis.Status.EnsureRCAResult().RCAConfidence = res.RCAConfidence
 
 	// BR-AI-601: Map alignment verdict from KA to CRD status for ALL response paths.
 	p.mapAlignmentVerdict(analysis, res)

@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 )
@@ -109,7 +110,7 @@ var _ = Describe("kubernautagent/llm/openai.Client — #1581", func() {
 		_, err := client.Chat(context.Background(), llm.ChatRequest{
 			Messages: []llm.Message{{Role: "user", Content: "respond"}},
 			Options: llm.ChatOptions{
-				JSONMode: true,
+				JSONMode:     true,
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"severity":{"type":"string"}},"required":["severity"]}`),
 			},
 		})
@@ -129,6 +130,23 @@ var _ = Describe("kubernautagent/llm/openai.Client — #1581", func() {
 			"required": []interface{}{"severity"},
 		}))
 	})
+
+	DescribeTable("UT-KA-2586-026: OpenAI RCA schema preserves score presence (BR-AI-012, SI-10)", func(content string, present bool) {
+		encoded, err := json.Marshal(content)
+		Expect(err).NotTo(HaveOccurred())
+		client := newTestClient("gpt-4o", `{"choices":[{"index":0,"message":{"role":"assistant","content":`+string(encoded)+`},"finish_reason":"stop"}]}`)
+		resp, err := client.Chat(context.Background(), llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: "investigate"}}, Options: llm.ChatOptions{OutputSchema: parser.RCAResultSchema()}})
+		Expect(err).NotTo(HaveOccurred())
+		schema := receivedBody["response_format"].(map[string]interface{})["json_schema"].(map[string]interface{})["schema"].(map[string]interface{})
+		Expect(schema["required"]).NotTo(ContainElement("confidence"))
+		result, err := parser.NewResultParser().ParseRCA(resp.Message.Content)
+		Expect(err).NotTo(HaveOccurred())
+		if present {
+			Expect(result.ParsedTopLevelConfidence).To(HaveValue(Equal(0.0)))
+		} else {
+			Expect(result.ParsedTopLevelConfidence).To(BeNil())
+		}
+	}, Entry("missing", `{"rca_summary":"Node pressure"}`, false), Entry("zero", `{"rca_summary":"Node pressure","confidence":0}`, true))
 
 	Describe("reasoning capture and replay — BR-AI-086 AC3, model-aware auto-detection", func() {
 		It("UT-KA-1581-205: captures reasoning_content from a deepseek-reasoner response into Message.Reasoning", func() {

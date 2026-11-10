@@ -193,11 +193,13 @@ type ListApprovalRequestsResult struct {
 
 // ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
 type ApprovalRequestSummary struct {
+	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
+	// WorkflowConfidence is the canonical workflow-selection confidence.
+	WorkflowConfidence float64 `json:"workflow_confidence"`
 	Name               string  `json:"name"`
 	Namespace          string  `json:"namespace"`
 	Decision           string  `json:"decision"`
 	RemediationRequest string  `json:"remediation_request"`
-	Confidence         float64 `json:"confidence"`
 	ConfidenceLevel    string  `json:"confidence_level"`
 	TimeRemaining      string  `json:"time_remaining,omitempty"`
 	RequiredBy         string  `json:"required_by,omitempty"`
@@ -231,11 +233,12 @@ func HandleListApprovalRequests(ctx context.Context, client crclient.Client, arg
 		}
 
 		result = append(result, ApprovalRequestSummary{
+			RCAConfidence:      item.Spec.RCAConfidence,
+			WorkflowConfidence: item.Spec.Confidence,
 			Name:               item.Name,
 			Namespace:          item.Namespace,
 			Decision:           displayDecision,
 			RemediationRequest: item.Spec.RemediationRequestRef.Name,
-			Confidence:         item.Spec.Confidence,
 			ConfidenceLevel:    item.Spec.ConfidenceLevel,
 			TimeRemaining:      item.Status.TimeRemaining,
 			RequiredBy:         item.Spec.RequiredBy.Format(time.RFC3339),
@@ -302,11 +305,13 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
+	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
+	// WorkflowConfidence is the canonical workflow-selection confidence.
+	WorkflowConfidence     float64                                              `json:"workflow_confidence"`
 	Name                   string                                               `json:"name"`
 	Namespace              string                                               `json:"namespace"`
 	RemediationRequest     string                                               `json:"remediation_request"`
 	AIAnalysis             string                                               `json:"ai_analysis"`
-	Confidence             float64                                              `json:"confidence"`
 	ConfidenceLevel        string                                               `json:"confidence_level"`
 	Reason                 string                                               `json:"reason"`
 	InvestigationSummary   string                                               `json:"investigation_summary"`
@@ -398,24 +403,26 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 	if err != nil {
 		return GetApprovalRequestResult{}, err
 	}
-	display := buildApprovalRequestDisplay(rar)
+	snapshot := rar.DeepCopy()
+	display := buildApprovalRequestDisplay(snapshot)
 
-	parameters, err := sharedtypes.TypedParameterMapToJSONValues(rar.Spec.Parameters)
+	parameters, err := sharedtypes.TypedParameterMapToJSONValues(snapshot.Spec.Parameters)
 	if err != nil {
 		return GetApprovalRequestResult{}, fmt.Errorf("convert approval parameters for tool output: %w", err)
 	}
 	result := GetApprovalRequestResult{
-		Name:                   rar.Name,
-		Namespace:              rar.Namespace,
-		RemediationRequest:     rar.Spec.RemediationRequestRef.Name,
-		AIAnalysis:             rar.Spec.AIAnalysisRef.Name,
-		Confidence:             rar.Spec.Confidence,
-		ConfidenceLevel:        rar.Spec.ConfidenceLevel,
-		Reason:                 rar.Spec.Reason,
-		InvestigationSummary:   rar.Spec.InvestigationSummary,
-		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
-		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: rar.Spec.RecommendedWorkflow.WorkflowID, Version: rar.Spec.RecommendedWorkflow.Version},
-		Workflow:               rar.Spec.Workflow,
+		RCAConfidence:          snapshot.Spec.RCAConfidence,
+		WorkflowConfidence:     snapshot.Spec.Confidence,
+		Name:                   snapshot.Name,
+		Namespace:              snapshot.Namespace,
+		RemediationRequest:     snapshot.Spec.RemediationRequestRef.Name,
+		AIAnalysis:             snapshot.Spec.AIAnalysisRef.Name,
+		ConfidenceLevel:        snapshot.Spec.ConfidenceLevel,
+		Reason:                 snapshot.Spec.Reason,
+		InvestigationSummary:   snapshot.Spec.InvestigationSummary,
+		WhyApprovalRequired:    snapshot.Spec.WhyApprovalRequired,
+		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: snapshot.Spec.RecommendedWorkflow.WorkflowID, Version: snapshot.Spec.RecommendedWorkflow.Version},
+		Workflow:               snapshot.Spec.Workflow,
 		Parameters:             parameters,
 		ParameterSchema:        liveWorkflowParameters(liveWorkflow),
 		RecommendedActions:     display.actions,
@@ -423,13 +430,13 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		AlternativesConsidered: display.alternatives,
 		RequiredBy:             display.requiredBy,
 		Decision:               display.decision,
-		DecidedBy:              rar.Status.DecidedBy,
+		DecidedBy:              snapshot.Status.DecidedBy,
 		DecidedAt:              display.decidedAt,
-		TimeRemaining:          rar.Status.TimeRemaining,
-		Expired:                rar.Status.Expired,
+		TimeRemaining:          snapshot.Status.TimeRemaining,
+		Expired:                snapshot.Status.Expired,
 	}
 	if args.IncludeParentEvidence {
-		result.ParentEvidence = resolveParentEvidence(ctx, client, rar)
+		result.ParentEvidence = resolveParentEvidence(ctx, client, snapshot)
 	}
 	return result, nil
 }

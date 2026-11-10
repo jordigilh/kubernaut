@@ -176,6 +176,7 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 		IncidentID:              incidentID,
 		Analysis:                r.RCASummary,
 		Confidence:              r.Confidence,
+		RCAConfidence:           r.RCAConfidence,
 		Timestamp:               time.Now().UTC().Format(time.RFC3339),
 		RootCauseAnalysis:       marshalJSON(buildRootCauseAnalysisMap(r)),
 		NeedsHumanReview:        r.HumanReviewNeeded,

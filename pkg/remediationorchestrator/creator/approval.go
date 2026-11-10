@@ -412,6 +412,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			Namespace: rr.Namespace,
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
+			RCAConfidence: ai.Status.GetRCAResult().RCAConfidence,
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: remediationv1.GroupVersion.String(),
 				Kind:       "RemediationRequest",

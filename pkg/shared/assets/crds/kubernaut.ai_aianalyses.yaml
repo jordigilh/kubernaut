@@ -513,6 +513,11 @@ spec:
                         - decision
                         - policyName
                         type: object
+                      rcaConfidence:
+                        description: RCAConfidence is nil when the RCA score is unknown.
+                        maximum: 1
+                        minimum: 0
+                        type: number
                       reason:
                         description: Reason why approval is required
                         type: string
@@ -1240,6 +1245,12 @@ spec:
                     - schema_error
                     - not_requested
                     type: string
+                  rcaConfidence:
+                    description: RCAConfidence is the RCA score, independently of
+                      workflow selection.
+                    maximum: 1
+                    minimum: 0
+                    type: number
                   rootCause:
                     description: |-
                       ========================================

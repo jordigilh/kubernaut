@@ -744,6 +744,12 @@ spec:
                       NeedsHumanReview is true when KA could not produce a reliable result.
                       When true, AA must NOT create a WorkflowExecution.
                     type: boolean
+                  rcaConfidence:
+                    description: RCAConfidence is the independent RCA score; nil means
+                      unknown.
+                    maximum: 1
+                    minimum: 0
+                    type: number
                   rootCauseAnalysis:
                     description: |-
                       RootCauseAnalysis is the structured RCA (summary, severity,

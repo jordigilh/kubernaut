@@ -3292,6 +3292,12 @@ components:
         warnings_count:
           type: integer
           description: Number of warnings encountered
+        rca_confidence:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+          description: RCA confidence, omitted when unknown and independent from workflow selection confidence (BR-AUDIT-005, AU-3).
         confidence:
           type: number
           format: float
@@ -4748,6 +4754,16 @@ components:
       required: [approval_required, approval_reason, auto_approved, decision, reason, environment]
       description: Approval decision event payload (aianalysis.approval.decision)
       properties:
+        rca_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        workflow_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
         approval_required:
           type: boolean
           description: Whether manual approval is required
@@ -4787,6 +4803,16 @@ components:
       required: [outcome, degraded, duration_ms, reason]
       description: Rego policy evaluation event payload (aianalysis.rego.evaluation)
       properties:
+        rca_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        workflow_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
         outcome:
           type: string
           description: Evaluation outcome
@@ -5517,6 +5543,12 @@ components:
           additionalProperties: false
         selection_assessment:
           $ref: '#/components/schemas/SelectionAssessment'
+        rca_confidence:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+          description: RCA confidence; absent when unknown and distinct from workflow selection confidence (BR-AUDIT-005, AU-3).
         confidence:
           type: number
           format: float

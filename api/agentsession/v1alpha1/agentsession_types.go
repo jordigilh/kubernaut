@@ -340,6 +340,11 @@ type AgentSessionResult struct {
 	SelectionAssessment *apiextensionsv1.JSON `json:"selectionAssessment,omitempty"`
 	// Confidence is KA's overall confidence in the analysis (0.0-1.0).
 	Confidence float64 `json:"confidence,omitempty"`
+	// RCAConfidence is the independent RCA score; nil means unknown.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// Timestamp is the ISO timestamp of analysis completion.
 	Timestamp string `json:"timestamp,omitempty"`
 	// NeedsHumanReview is true when KA could not produce a reliable result.

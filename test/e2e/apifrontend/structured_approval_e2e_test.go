@@ -212,7 +212,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 			Name                   string  `json:"name"`
 			Namespace              string  `json:"namespace"`
 			RemediationRequestName string  `json:"remediationRequestName"`
-			Confidence             float64 `json:"confidence"`
+			WorkflowConfidence     float64 `json:"workflowConfidence"`
 			ConfidenceLevel        string  `json:"confidenceLevel"`
 			Reason                 string  `json:"reason"`
 			InvestigationSummary   string  `json:"investigationSummary"`
@@ -229,7 +229,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		Expect(payload.Namespace).To(Equal(rrNamespace))
 		Expect(payload.RemediationRequestName).To(Equal(rrName),
 			"AC-6: remediationRequestName provides breadcrumb context")
-		Expect(payload.Confidence).To(BeNumerically(">", 0))
+		Expect(payload.WorkflowConfidence).To(BeNumerically(">", 0))
 		Expect(payload.ConfidenceLevel).NotTo(BeEmpty())
 		Expect(payload.Reason).NotTo(BeEmpty())
 		Expect(payload.InvestigationSummary).NotTo(BeEmpty())

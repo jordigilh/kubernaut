@@ -940,6 +940,15 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 })
 
 var _ = Describe("kubernaut_select_workflow — helper functions", func() {
+	DescribeTable("UT-KA-2586-040: characterize interactive RCA review state after manual selection (BR-KA-200, BR-AI-028)", func(outcome string) {
+		rca, err := parser.NewResultParser().ParseRCA(`{"rca_summary":"evidence gathered","confidence":0.65` + outcome + `}`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rca.HumanReviewNeeded).To(BeTrue())
+		result := mcptools.BuildFinalResult(rca, &mcptools.CatalogWorkflow{WorkflowID: "wf-1", WorkflowName: "restart"}, discoveryWithWorkflow("wf-1"))
+		Expect(result.WorkflowID).To(Equal("wf-1"))
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+	}, Entry("outcome omitted", ""), Entry("explicit inconclusive", `,"investigation_outcome":"inconclusive"`))
 
 	Describe("UT-KA-SW-BUILDFINAL-001: buildFinalResult merges RCA + workflow fields", func() {
 		It("UT-KA-2570-113: BR-KA-191 retains catalog constraints for an interactive selection", func() {

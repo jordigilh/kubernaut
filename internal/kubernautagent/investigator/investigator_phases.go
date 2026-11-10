@@ -90,9 +90,10 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 // DD-KA-2496: RCA and selection confidence remain separate. Neither an
 // explicit selected zero nor a missing selected score may borrow RCA's.
 func mergePhase1Confidence(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
-	rcaConfidence := p1.Confidence
-	result.RCAConfidence = &rcaConfidence
-	if result.WorkflowID == "" && result.ProposedWorkflowID == "" && result.WorkflowSelectionConfidence == nil && result.Confidence == 0 && p1.Confidence > 0 {
+	if result.RCAConfidence == nil {
+		result.RCAConfidence = p1.RCAConfidence
+	}
+	if result.WorkflowID == "" && result.ProposedWorkflowID == "" && result.WorkflowSelectionConfidence == nil && !result.ConfidenceSet && result.Confidence == 0 && p1.Confidence > 0 {
 		result.Confidence = p1.Confidence
 	}
 }
@@ -226,8 +227,7 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 		return
 	}
 	if rcaResult != nil {
-		rcaConfidence := rcaResult.Confidence
-		result.RCAConfidence = &rcaConfidence
+		result.RCAConfidence = rcaResult.RCAConfidence
 	}
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)

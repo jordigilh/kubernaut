@@ -96,12 +96,14 @@ type rcaLoopBudget struct {
 
 // SubmitResult is returned when the LLM calls the generic submit_result tool
 // in the RCA phase. Messages carries the paired conversation turns accumulated
-// before the sentinel call; the sentinel itself is intentionally not replayed.
+// before the sentinel call; ToolCalls preserves the provider response state
+// needed when a malformed RCA is corrected on the next turn.
 
 type SubmitResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
 	Messages  []llm.Message
+	ToolCalls []llm.ToolCall
 }
 
 func (*SubmitResult) loopResult() {}
@@ -181,20 +183,31 @@ func loopResultMessages(r LoopResult) []llm.Message {
 	}
 }
 
+// loopResultToolCalls extracts the provider tool-call batch associated with an
+// RCA submit sentinel. The general conversation history deliberately excludes
+// the unexecuted sentinel, but provider-specific reasoning state (for example
+// Gemini thought signatures) must replay alongside the original tool call on a
+// bounded parse correction retry.
+func loopResultToolCalls(r LoopResult) []llm.ToolCall {
+	if submitted, ok := r.(*SubmitResult); ok {
+		return submitted.ToolCalls
+	}
+	return nil
+}
+
 // sentinelResult maps a sentinel tool call to its LoopResult type, attaching
 // the reasoning block (if any) from the turn whose response produced tc, so
 // reasoning captured at the LLM-client layer (BR-AI-086 AC1-3) reaches the
 // InvestigationResult that gets built from the sentinel's Content. messages
 // is the history accumulated so far — i.e. every PRIOR, fully-paired
 // assistant(tool_use)/tool(tool_result) turn, NOT including the sentinel
-// call itself (tc). Deliberately excluding the sentinel call avoids ever
-// replaying a dangling, unpaired tool_use block to the LLM on a later
-// retry — the sentinel is consumed here, never executed as a real tool, so
-// it has no matching tool_result (#1935/#1936 root cause #2).
-func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
+// call itself (tc). The full tool-call batch is retained only on SubmitResult
+// so a provider-specific correction retry can replay required protocol state
+// without adding the unexecuted sentinel to general history.
+func sentinelResult(tc llm.ToolCall, toolCalls []llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
+		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages, ToolCalls: append([]llm.ToolCall(nil), toolCalls...)}
 	case SubmitResultWithWorkflowToolName:
 		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	case SubmitResultNoWorkflowToolName:
@@ -468,11 +481,11 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 }
 
 // RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
-// conversation and runs a single LLM call with only submit_result as the
-// available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
+// conversation and extracts RCA with submit_result, retrying malformed output
+// once via the standard RCA correction path. Returns RCA only, no workflow.
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
-	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
 		{
@@ -503,6 +516,9 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	if err != nil {
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
 	}
+	// Account for the initial call even if it needs correction.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 
 	var content string
 	if len(resp.ToolCalls) > 0 && resp.ToolCalls[0].Name == SubmitResultToolName {
@@ -511,17 +527,23 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 		content = resp.Message.Content
 	}
 
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
+	result, parseErr := inv.parseRCA(content)
+	if parseErr == nil {
+		result.Reasoning = toReasoningSummary(resp.Message.Reasoning)
 	}
-	// #2387: this single submit-only extraction call is one LLM turn with no
-	// real tool dispatches. Recorded into the per-RR scope (the single source
-	// of truth — results never pre-carry counts), so later legs accumulate on
-	// top without double-counting. Token usage likewise joins the cumulative
-	// per-RR scope; this leg carries no TokenAccumulator of its own.
-	inv.metricsFor(correlationID).IncLLMTurns()
-	inv.recordTokenUsage(correlationID, resp.Usage)
+	if parseErr != nil {
+		var retriedReasoning *llm.ReasoningBlock
+		result, retriedReasoning = inv.retryRCASubmit(ctx, content, resp.Message.Reasoning, resp.ToolCalls, messages, LLMInvocationContext{
+			CorrelationID: correlationID, Client: client, ModelName: modelName, RuntimeParams: runtimeParams,
+		})
+		if result == nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("RCA extraction correction: %w", ctx.Err())
+			}
+			return nil, fmt.Errorf("RCA extraction parse after correction: %w", parseErr)
+		}
+		result.Reasoning = toReasoningSummary(retriedReasoning)
+	}
 	return result, nil
 }
 
@@ -591,6 +613,9 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 	}
 	if merged.DueDiligence == nil {
 		merged.DueDiligence = previous.DueDiligence
+	}
+	if merged.Reasoning == nil {
+		merged.Reasoning = previous.Reasoning
 	}
 	if merged.RCAConfidence == nil {
 		merged.RCAConfidence = previous.RCAConfidence
@@ -686,9 +711,9 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 	if done {
 		return mergeRCAContinuationResult(result, finalized), messages, true, nil
 	}
-	updated, parseErr := inv.resultParser.Parse(content)
+	updated, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
-		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, p.LLMContext); retried != nil {
+		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, reasoning, loopResultToolCalls(loopRes), messages, p.LLMContext); retried != nil {
 			updated = retried
 			reasoning = retriedReasoning
 			parseErr = nil
@@ -706,8 +731,8 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 		return result, messages, true, nil
 	}
 
-	updated = mergeRCAContinuationResult(result, updated)
 	updated.Reasoning = toReasoningSummary(reasoning)
+	updated = mergeRCAContinuationResult(result, updated)
 	applySignalSeverity(updated, p.Signal)
 	accepted := updated
 	updated = inv.sameKindValidationGate(ctx, updated, p.Signal, messages, p.LLMContext)
@@ -1078,7 +1103,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	// counts, never costs) so completed investigations report tokens exactly
 	// like cancelled ones already do via TokenUsage.
 	inv.setTokenUsageFromScope(rcaResult, correlationID)
-	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName, investigationCompletionAutonomousTurnID)
 	return rcaResult
 }
 
@@ -1292,7 +1317,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	// the full-path result gets the same server-side injection.
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
-	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName)
+	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName, investigationCompletionAutonomousTurnID)
 	return workflowResult
 }
 

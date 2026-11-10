@@ -78,7 +78,7 @@ var _ = Describe("present_decision", func() {
 
 	It("UT-AF-2467-001: AU-3 RCAData serializes narrative and bookkeeping fields without SP severity", func() {
 		rca := tools.RCAData{
-			Confidence:     0.92,
+			Confidence:     func() *float64 { v := 0.92; return &v }(),
 			CausalChain:    []string{"Memory leak in data-processor", "Container hit 512Mi limit", "OOMKill signal"},
 			Target:         "Deployment/data-processor in production",
 			ToolCallsCount: 19,
@@ -95,7 +95,7 @@ var _ = Describe("present_decision", func() {
 
 		var decoded tools.RCAData
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded.Confidence).To(BeNumerically("~", 0.92, 0.001))
+		Expect(decoded.Confidence).To(HaveValue(BeNumerically("~", 0.92, 0.001)))
 		Expect(decoded.CausalChain).To(HaveLen(3))
 		Expect(decoded.ToolCallsCount).To(Equal(19))
 		Expect(decoded.LLMTurns).To(Equal(17))
@@ -118,14 +118,14 @@ var _ = Describe("present_decision", func() {
 	})
 
 	It("UT-AF-2074-002: AU-3 RCAData omits zero-value tool_calls_count/llm_turns from JSON but still round-trips genuine values", func() {
-		rca := tools.RCAData{Confidence: 0.9}
+		rca := tools.RCAData{Confidence: func() *float64 { v := 0.9; return &v }()}
 		data, err := json.Marshal(rca)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data)).NotTo(ContainSubstring("tool_calls_count"),
 			"an unset count must not appear in the payload the LLM is never told to populate (#2073/#2074)")
 		Expect(string(data)).NotTo(ContainSubstring("llm_turns"))
 
-		rcaWithCounts := tools.RCAData{Confidence: 0.9, ToolCallsCount: 5, LLMTurns: 2}
+		rcaWithCounts := tools.RCAData{Confidence: func() *float64 { v := 0.9; return &v }(), ToolCallsCount: 5, LLMTurns: 2}
 		data2, err := json.Marshal(rcaWithCounts)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data2)).To(ContainSubstring(`"tool_calls_count":5`),

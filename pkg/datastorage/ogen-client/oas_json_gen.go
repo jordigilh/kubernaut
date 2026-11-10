@@ -7384,6 +7384,18 @@ func (s *AIAnalysisApprovalDecisionPayload) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *AIAnalysisApprovalDecisionPayload) encodeFields(e *jx.Encoder) {
 	{
+		if s.RcaConfidence.Set {
+			e.FieldStart("rca_confidence")
+			s.RcaConfidence.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowConfidence.Set {
+			e.FieldStart("workflow_confidence")
+			s.WorkflowConfidence.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("approval_required")
 		e.Bool(s.ApprovalRequired)
 	}
@@ -7421,15 +7433,17 @@ func (s *AIAnalysisApprovalDecisionPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAnalysisApprovalDecisionPayload = [8]string{
-	0: "approval_required",
-	1: "approval_reason",
-	2: "auto_approved",
-	3: "decision",
-	4: "reason",
-	5: "environment",
-	6: "confidence",
-	7: "workflow_id",
+var jsonFieldsNameOfAIAnalysisApprovalDecisionPayload = [10]string{
+	0: "rca_confidence",
+	1: "workflow_confidence",
+	2: "approval_required",
+	3: "approval_reason",
+	4: "auto_approved",
+	5: "decision",
+	6: "reason",
+	7: "environment",
+	8: "confidence",
+	9: "workflow_id",
 }
 
 // Decode decodes AIAnalysisApprovalDecisionPayload from json.
@@ -7437,12 +7451,32 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AIAnalysisApprovalDecisionPayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "rca_confidence":
+			if err := func() error {
+				s.RcaConfidence.Reset()
+				if err := s.RcaConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_confidence\"")
+			}
+		case "workflow_confidence":
+			if err := func() error {
+				s.WorkflowConfidence.Reset()
+				if err := s.WorkflowConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_confidence\"")
+			}
 		case "approval_required":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.ApprovalRequired = bool(v)
@@ -7454,7 +7488,7 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"approval_required\"")
 			}
 		case "approval_reason":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ApprovalReason = string(v)
@@ -7466,7 +7500,7 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"approval_reason\"")
 			}
 		case "auto_approved":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.AutoApproved = bool(v)
@@ -7478,7 +7512,7 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"auto_approved\"")
 			}
 		case "decision":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Decision = string(v)
@@ -7490,7 +7524,7 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"decision\"")
 			}
 		case "reason":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Reason = string(v)
@@ -7502,7 +7536,7 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		case "environment":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Environment = string(v)
@@ -7542,8 +7576,9 @@ func (s *AIAnalysisApprovalDecisionPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00111111,
+	for i, mask := range [2]uint8{
+		0b11111100,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7631,6 +7666,12 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 	{
 		e.FieldStart("warnings_count")
 		e.Int(s.WarningsCount)
+	}
+	{
+		if s.RcaConfidence.Set {
+			e.FieldStart("rca_confidence")
+			s.RcaConfidence.Encode(e)
+		}
 	}
 	{
 		if s.Confidence.Set {
@@ -7734,7 +7775,7 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAnalysisAuditPayload = [24]string{
+var jsonFieldsNameOfAIAnalysisAuditPayload = [25]string{
 	0:  "event_type",
 	1:  "analysis_name",
 	2:  "namespace",
@@ -7743,22 +7784,23 @@ var jsonFieldsNameOfAIAnalysisAuditPayload = [24]string{
 	5:  "approval_reason",
 	6:  "degraded_mode",
 	7:  "warnings_count",
-	8:  "confidence",
-	9:  "workflow_id",
-	10: "workflow_name",
-	11: "workflow_rationale",
-	12: "workflow_selection_confidence",
-	13: "repeat_justification",
-	14: "repeat_justification_required",
-	15: "prior_workflow_match",
-	16: "repeat_validation_outcome",
-	17: "handoff_digest",
-	18: "prior_remediation_uids",
-	19: "selection_assessment",
-	20: "reason",
-	21: "sub_reason",
-	22: "provider_response_summary",
-	23: "error_details",
+	8:  "rca_confidence",
+	9:  "confidence",
+	10: "workflow_id",
+	11: "workflow_name",
+	12: "workflow_rationale",
+	13: "workflow_selection_confidence",
+	14: "repeat_justification",
+	15: "repeat_justification_required",
+	16: "prior_workflow_match",
+	17: "repeat_validation_outcome",
+	18: "handoff_digest",
+	19: "prior_remediation_uids",
+	20: "selection_assessment",
+	21: "reason",
+	22: "sub_reason",
+	23: "provider_response_summary",
+	24: "error_details",
 }
 
 // Decode decodes AIAnalysisAuditPayload from json.
@@ -7766,7 +7808,7 @@ func (s *AIAnalysisAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AIAnalysisAuditPayload to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -7859,6 +7901,16 @@ func (s *AIAnalysisAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"warnings_count\"")
+			}
+		case "rca_confidence":
+			if err := func() error {
+				s.RcaConfidence.Reset()
+				if err := s.RcaConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_confidence\"")
 			}
 		case "confidence":
 			if err := func() error {
@@ -8038,8 +8090,9 @@ func (s *AIAnalysisAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b11011111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 	} {
@@ -8783,6 +8836,18 @@ func (s *AIAnalysisRegoEvaluationPayload) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *AIAnalysisRegoEvaluationPayload) encodeFields(e *jx.Encoder) {
 	{
+		if s.RcaConfidence.Set {
+			e.FieldStart("rca_confidence")
+			s.RcaConfidence.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowConfidence.Set {
+			e.FieldStart("workflow_confidence")
+			s.WorkflowConfidence.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("outcome")
 		e.Str(s.Outcome)
 	}
@@ -8806,12 +8871,14 @@ func (s *AIAnalysisRegoEvaluationPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAnalysisRegoEvaluationPayload = [5]string{
-	0: "outcome",
-	1: "degraded",
-	2: "duration_ms",
-	3: "reason",
-	4: "policy_hash",
+var jsonFieldsNameOfAIAnalysisRegoEvaluationPayload = [7]string{
+	0: "rca_confidence",
+	1: "workflow_confidence",
+	2: "outcome",
+	3: "degraded",
+	4: "duration_ms",
+	5: "reason",
+	6: "policy_hash",
 }
 
 // Decode decodes AIAnalysisRegoEvaluationPayload from json.
@@ -8823,8 +8890,28 @@ func (s *AIAnalysisRegoEvaluationPayload) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "rca_confidence":
+			if err := func() error {
+				s.RcaConfidence.Reset()
+				if err := s.RcaConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_confidence\"")
+			}
+		case "workflow_confidence":
+			if err := func() error {
+				s.WorkflowConfidence.Reset()
+				if err := s.WorkflowConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_confidence\"")
+			}
 		case "outcome":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Outcome = string(v)
@@ -8836,7 +8923,7 @@ func (s *AIAnalysisRegoEvaluationPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"outcome\"")
 			}
 		case "degraded":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -8848,7 +8935,7 @@ func (s *AIAnalysisRegoEvaluationPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
 		case "duration_ms":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int32()
 				s.DurationMs = int32(v)
@@ -8860,7 +8947,7 @@ func (s *AIAnalysisRegoEvaluationPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"duration_ms\"")
 			}
 		case "reason":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Reason = string(v)
@@ -8891,7 +8978,7 @@ func (s *AIAnalysisRegoEvaluationPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001111,
+		0b00111100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -20282,6 +20369,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Int(s.WarningsCount)
 			}
 			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
 				if s.Confidence.Set {
 					e.FieldStart("confidence")
 					s.Confidence.Encode(e)
@@ -20906,6 +20999,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		{
 			s := s.AIAnalysisApprovalDecisionPayload
 			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowConfidence.Set {
+					e.FieldStart("workflow_confidence")
+					s.WorkflowConfidence.Encode(e)
+				}
+			}
+			{
 				e.FieldStart("approval_required")
 				e.Bool(s.ApprovalRequired)
 			}
@@ -20947,6 +21052,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		e.Str("aianalysis.rego.evaluation")
 		{
 			s := s.AIAnalysisRegoEvaluationPayload
+			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowConfidence.Set {
+					e.FieldStart("workflow_confidence")
+					s.WorkflowConfidence.Encode(e)
+				}
+			}
 			{
 				e.FieldStart("outcome")
 				e.Str(s.Outcome)
@@ -26466,6 +26583,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Int(s.WarningsCount)
 			}
 			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
 				if s.Confidence.Set {
 					e.FieldStart("confidence")
 					s.Confidence.Encode(e)
@@ -27090,6 +27213,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		{
 			s := s.AIAnalysisApprovalDecisionPayload
 			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowConfidence.Set {
+					e.FieldStart("workflow_confidence")
+					s.WorkflowConfidence.Encode(e)
+				}
+			}
+			{
 				e.FieldStart("approval_required")
 				e.Bool(s.ApprovalRequired)
 			}
@@ -27131,6 +27266,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		e.Str("aianalysis.rego.evaluation")
 		{
 			s := s.AIAnalysisRegoEvaluationPayload
+			{
+				if s.RcaConfidence.Set {
+					e.FieldStart("rca_confidence")
+					s.RcaConfidence.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowConfidence.Set {
+					e.FieldStart("workflow_confidence")
+					s.WorkflowConfidence.Encode(e)
+				}
+			}
 			{
 				e.FieldStart("outcome")
 				e.Str(s.Outcome)
@@ -38821,6 +38968,12 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.RcaConfidence.Set {
+			e.FieldStart("rca_confidence")
+			s.RcaConfidence.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("confidence")
 		e.Float32(s.Confidence)
 	}
@@ -38880,21 +39033,22 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseData = [14]string{
+var jsonFieldsNameOfIncidentResponseData = [15]string{
 	0:  "incidentId",
 	1:  "analysis",
 	2:  "rootCauseAnalysis",
 	3:  "selectedWorkflow",
 	4:  "selection_assessment",
-	5:  "confidence",
-	6:  "timestamp",
-	7:  "isActionable",
-	8:  "needsHumanReview",
-	9:  "terminalOutcome",
-	10: "workflowDiscoveryStatus",
-	11: "humanReviewReason",
-	12: "warnings",
-	13: "alternativeWorkflows",
+	5:  "rca_confidence",
+	6:  "confidence",
+	7:  "timestamp",
+	8:  "isActionable",
+	9:  "needsHumanReview",
+	10: "terminalOutcome",
+	11: "workflowDiscoveryStatus",
+	12: "humanReviewReason",
+	13: "warnings",
+	14: "alternativeWorkflows",
 }
 
 // Decode decodes IncidentResponseData from json.
@@ -38961,8 +39115,18 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"selection_assessment\"")
 			}
+		case "rca_confidence":
+			if err := func() error {
+				s.RcaConfidence.Reset()
+				if err := s.RcaConfidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_confidence\"")
+			}
 		case "confidence":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Float32()
 				s.Confidence = float32(v)
@@ -38974,7 +39138,7 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"confidence\"")
 			}
 		case "timestamp":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.Timestamp = v
@@ -39081,7 +39245,7 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b01100111,
+		0b11000111,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

@@ -4529,6 +4529,8 @@ func (s *AIAnalysisAIAgentCallPayload) SetDurationMs(val int32) {
 // Approval decision event payload (aianalysis.approval.decision).
 // Ref: #/components/schemas/AIAnalysisApprovalDecisionPayload
 type AIAnalysisApprovalDecisionPayload struct {
+	RcaConfidence      OptFloat64 `json:"rca_confidence"`
+	WorkflowConfidence OptFloat64 `json:"workflow_confidence"`
 	// Whether manual approval is required.
 	ApprovalRequired bool `json:"approval_required"`
 	// Reason for approval requirement.
@@ -4545,6 +4547,16 @@ type AIAnalysisApprovalDecisionPayload struct {
 	Confidence OptFloat64 `json:"confidence"`
 	// Selected workflow identifier (optional).
 	WorkflowID OptString `json:"workflow_id"`
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
+}
+
+// GetWorkflowConfidence returns the value of WorkflowConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) GetWorkflowConfidence() OptFloat64 {
+	return s.WorkflowConfidence
 }
 
 // GetApprovalRequired returns the value of ApprovalRequired.
@@ -4585,6 +4597,16 @@ func (s *AIAnalysisApprovalDecisionPayload) GetConfidence() OptFloat64 {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *AIAnalysisApprovalDecisionPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
+}
+
+// SetWorkflowConfidence sets the value of WorkflowConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) SetWorkflowConfidence(val OptFloat64) {
+	s.WorkflowConfidence = val
 }
 
 // SetApprovalRequired sets the value of ApprovalRequired.
@@ -4646,6 +4668,9 @@ type AIAnalysisAuditPayload struct {
 	DegradedMode bool `json:"degraded_mode"`
 	// Number of warnings encountered.
 	WarningsCount int `json:"warnings_count"`
+	// RCA confidence, omitted when unknown and independent from workflow selection confidence
+	// (BR-AUDIT-005, AU-3).
+	RcaConfidence OptFloat64 `json:"rca_confidence"`
 	// Workflow selection confidence (0.0-1.0).
 	Confidence OptFloat32 `json:"confidence"`
 	// Selected workflow identifier.
@@ -4711,6 +4736,11 @@ func (s *AIAnalysisAuditPayload) GetDegradedMode() bool {
 // GetWarningsCount returns the value of WarningsCount.
 func (s *AIAnalysisAuditPayload) GetWarningsCount() int {
 	return s.WarningsCount
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisAuditPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
 }
 
 // GetConfidence returns the value of Confidence.
@@ -4831,6 +4861,11 @@ func (s *AIAnalysisAuditPayload) SetDegradedMode(val bool) {
 // SetWarningsCount sets the value of WarningsCount.
 func (s *AIAnalysisAuditPayload) SetWarningsCount(val int) {
 	s.WarningsCount = val
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisAuditPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -5281,6 +5316,8 @@ func (s *AIAnalysisPhaseTransitionPayload) SetNewPhase(val string) {
 // Rego policy evaluation event payload (aianalysis.rego.evaluation).
 // Ref: #/components/schemas/AIAnalysisRegoEvaluationPayload
 type AIAnalysisRegoEvaluationPayload struct {
+	RcaConfidence      OptFloat64 `json:"rca_confidence"`
+	WorkflowConfidence OptFloat64 `json:"workflow_confidence"`
 	// Evaluation outcome.
 	Outcome string `json:"outcome"`
 	// Whether evaluation ran in degraded mode.
@@ -5294,6 +5331,16 @@ type AIAnalysisRegoEvaluationPayload struct {
 	// policy bundle revision (BR-AI-030). Empty if no policy was loaded
 	// (degraded mode) or evaluation failed before a policy was resolved.
 	PolicyHash OptString `json:"policy_hash"`
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
+}
+
+// GetWorkflowConfidence returns the value of WorkflowConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) GetWorkflowConfidence() OptFloat64 {
+	return s.WorkflowConfidence
 }
 
 // GetOutcome returns the value of Outcome.
@@ -5319,6 +5366,16 @@ func (s *AIAnalysisRegoEvaluationPayload) GetReason() string {
 // GetPolicyHash returns the value of PolicyHash.
 func (s *AIAnalysisRegoEvaluationPayload) GetPolicyHash() OptString {
 	return s.PolicyHash
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
+}
+
+// SetWorkflowConfidence sets the value of WorkflowConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) SetWorkflowConfidence(val OptFloat64) {
+	s.WorkflowConfidence = val
 }
 
 // SetOutcome sets the value of Outcome.
@@ -23725,6 +23782,9 @@ type IncidentResponseData struct {
 	// Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
 	SelectedWorkflow    OptIncidentResponseDataSelectedWorkflow `json:"selectedWorkflow"`
 	SelectionAssessment OptSelectionAssessment                  `json:"selection_assessment"`
+	// RCA confidence; absent when unknown and distinct from workflow selection confidence (BR-AUDIT-005,
+	// AU-3).
+	RcaConfidence OptFloat64 `json:"rca_confidence"`
 	// Overall confidence in analysis.
 	Confidence float32 `json:"confidence"`
 	// ISO timestamp of analysis completion.
@@ -23775,6 +23835,11 @@ func (s *IncidentResponseData) GetSelectedWorkflow() OptIncidentResponseDataSele
 // GetSelectionAssessment returns the value of SelectionAssessment.
 func (s *IncidentResponseData) GetSelectionAssessment() OptSelectionAssessment {
 	return s.SelectionAssessment
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *IncidentResponseData) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
 }
 
 // GetConfidence returns the value of Confidence.
@@ -23845,6 +23910,11 @@ func (s *IncidentResponseData) SetSelectedWorkflow(val OptIncidentResponseDataSe
 // SetSelectionAssessment sets the value of SelectionAssessment.
 func (s *IncidentResponseData) SetSelectionAssessment(val OptSelectionAssessment) {
 	s.SelectionAssessment = val
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *IncidentResponseData) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
 }
 
 // SetConfidence sets the value of Confidence.

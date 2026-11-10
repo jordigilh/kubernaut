@@ -134,7 +134,7 @@ const rcaResultSchemaJSON = `{
     "actionable": { "type": "boolean" },
     "detected_labels": { "type": "object" }
   },
-  "required": ["root_cause_analysis", "confidence"]
+  "required": ["root_cause_analysis"]
 }`
 
 const investigationResultSchemaJSON = `{

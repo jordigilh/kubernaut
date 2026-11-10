@@ -92,6 +92,9 @@ type InvestigationResult struct {
 	// during server-assisted RCA continuation merging. It is internal
 	// bookkeeping and never crosses the API boundary.
 	ConfidenceSet bool `json:"-"`
+	// ParsedTopLevelConfidence preserves the model's confidence before workflow
+	// selection or outcome routing can replace the legacy Confidence field.
+	ParsedTopLevelConfidence *float64 `json:"-"`
 
 	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
 	ExecutionBundle       string                `json:"execution_bundle,omitempty"`
