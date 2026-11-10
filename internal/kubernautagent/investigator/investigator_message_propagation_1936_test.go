@@ -58,7 +58,7 @@ var _ = Describe("#1936: sentinelResult and loopResultMessages must propagate ac
 				reasoning := &llm.ReasoningBlock{Text: "thinking..."}
 				tc := llm.ToolCall{ID: "tc_final", Name: toolName, Arguments: `{"confidence":0.9}`}
 
-				result := sentinelResult(tc, reasoning, accumulated)
+				result := sentinelResult(tc, []llm.ToolCall{tc}, reasoning, accumulated)
 				Expect(result).NotTo(BeNil())
 
 				got := assertType(result)
@@ -83,6 +83,14 @@ var _ = Describe("#1936: sentinelResult and loopResultMessages must propagate ac
 				return sr.Messages
 			}),
 		)
+
+		It("UT-KA-2586-041: retains the complete submit tool-call batch for RCA correction replay (BR-AI-087)", func() {
+			sentinel := llm.ToolCall{ID: "tc_final", Name: SubmitResultToolName, Arguments: `{"confidence":1.1}`}
+			other := llm.ToolCall{ID: "tc_other", Name: "get_pod", Arguments: `{}`}
+			result := sentinelResult(sentinel, []llm.ToolCall{other, sentinel}, nil, accumulated)
+
+			Expect(loopResultToolCalls(result)).To(Equal([]llm.ToolCall{other, sentinel}))
+		})
 	})
 
 	Describe("UT-KA-1936-003: loopResultMessages covers all four message-carrying LoopResult types", func() {

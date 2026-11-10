@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -122,9 +123,15 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 		Expect(summary.Name).To(Equal("rar-1"))
 		Expect(summary.Namespace).To(Equal("payments"))
 		Expect(summary.RemediationRequest).To(Equal("rr-1"))
-		Expect(summary.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(summary.WorkflowConfidence).To(BeNumerically("~", 0.72, 0.001))
 		Expect(summary.ConfidenceLevel).To(Equal("medium"))
 		Expect(summary.Decision).To(Equal("Pending"))
 		Expect(summary.TimeRemaining).To(Equal("4m30s"))
+		encoded, err := json.Marshal(summary)
+		Expect(err).NotTo(HaveOccurred())
+		var fields map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &fields)).To(Succeed())
+		Expect(fields).To(HaveKey("workflow_confidence"))
+		Expect(fields).NotTo(HaveKey("confidence"))
 	})
 })

@@ -153,6 +153,48 @@ var _ = Describe("Phase 1 → Phase 3 forensic field propagation — #847", func
 			Expect(result.Confidence).To(Equal(0.75))
 		})
 
+		It("UT-KA-2586-037: no-workflow explicit zero does not borrow Phase 1 confidence (BR-AI-012, SI-10)", func() {
+			result := &katypes.InvestigationResult{Confidence: 0, ConfidenceSet: true}
+			investigator.MergePhase1Fallbacks(result, &prompt.Phase1Data{Confidence: 0.75})
+			Expect(result.Confidence).To(Equal(0.0))
+			Expect(result.ConfidenceSet).To(BeTrue())
+		})
+
+		It("UT-KA-2586-001: preserves missing and explicit zero RCA confidence (BR-AI-012, SI-10)", func() {
+			result := &katypes.InvestigationResult{WorkflowID: "workflow", Confidence: 0.95}
+			investigator.MergePhase1Fallbacks(result, &prompt.Phase1Data{})
+			Expect(result.RCAConfidence).To(BeNil())
+			zero := 0.0
+			investigator.MergePhase1Fallbacks(result, &prompt.Phase1Data{RCAConfidence: &zero})
+			Expect(result.RCAConfidence).To(HaveValue(Equal(0.0)))
+			Expect(result.Confidence).To(Equal(0.95))
+		})
+
+		It("UT-KA-2586-044: preserves existing RCA confidence when Phase 1 omits it (BR-AI-012, SI-10)", func() {
+			existing := 0.85
+			result := &katypes.InvestigationResult{RCAConfidence: &existing}
+
+			investigator.MergePhase1Fallbacks(result, &prompt.Phase1Data{})
+
+			Expect(result.RCAConfidence).To(HaveValue(Equal(0.85)),
+				"Phase 1 fallback must not erase an RCA confidence already present in the result")
+		})
+
+		It("UT-KA-2586-032: legacy confidence does not create Phase 1 RCA confidence (BR-AI-012, SI-10)", func() {
+			phase1 := investigator.BuildPhase1Context(&katypes.InvestigationResult{Confidence: .95, ConfidenceSet: true})
+			Expect(phase1.RCAConfidence).To(BeNil())
+		})
+
+		It("UT-KA-2586-005: interactive finalization preserves missing and zero RCA provenance (BR-AI-012, SI-10)", func() {
+			result := &katypes.InvestigationResult{WorkflowID: "workflow", Confidence: .95}
+			investigator.FinalizeWorkflowResult(result, katypes.SignalContext{}, &katypes.InvestigationResult{}, nil)
+			Expect(result.RCAConfidence).To(BeNil())
+			zero := 0.0
+			investigator.FinalizeWorkflowResult(result, katypes.SignalContext{}, &katypes.InvestigationResult{ConfidenceSet: true, RCAConfidence: &zero}, nil)
+			Expect(result.RCAConfidence).To(HaveValue(Equal(0.0)))
+			Expect(result.Confidence).To(Equal(.95))
+		})
+
 		It("should NOT overwrite a non-zero Phase 3 Confidence", func() {
 			p1 := &prompt.Phase1Data{Confidence: 0.75}
 			result := &katypes.InvestigationResult{Confidence: 0.9}

@@ -60,6 +60,46 @@ var _ = Describe("RegoEvaluator", func() {
 
 	// BR-AI-011: Policy evaluation
 	Describe("Evaluate", func() {
+		It("UT-AA-2586-007: an unconfigured threshold stays absent for user policy (BR-AI-012, SI-10)", func() {
+			e := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			Expect(e.LoadPolicy(`package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { not input.confidence_threshold }`)).To(Succeed())
+			result, err := e.Evaluate(ctx, &rego.PolicyInput{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Degraded).To(BeFalse())
+			Expect(result.ApprovalRequired).To(BeTrue())
+		})
+		DescribeTable("UT-AA-2586-003: user policy controls missing and present RCA confidence (BR-AI-028, SI-10)",
+			func(score *float64, policy string, expected bool) {
+				e := rego.NewEvaluator(rego.Config{}, logr.Discard())
+				Expect(e.LoadPolicy(policy)).To(Succeed())
+				result, err := e.Evaluate(ctx, &rego.PolicyInput{KAResponse: rego.KAResponseInput{Confidence: .95, RCAConfidence: score}, ConfidenceThreshold: ptr(.8)})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.Degraded).To(BeFalse())
+				Expect(result.ApprovalRequired).To(Equal(expected))
+			},
+			Entry("low RCA requires review", ptr(.65), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold; input.workflow_confidence == 0.95 }`, true),
+			Entry("high RCA permits execution", ptr(.95), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold }`, false),
+			Entry("missing requires review when policy says so", nil, `package aianalysis.approval
+import rego.v1
+default require_approval := true
+require_approval := false if { input.rca_confidence >= input.confidence_threshold }`, true),
+			Entry("missing allowed by permissive policy", nil, `package aianalysis.approval
+import rego.v1
+require_approval := false`, false),
+			Entry("explicit zero is present", ptr(0), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence == 0 }`, true),
+		)
 		Context("with valid policy and input", func() {
 			BeforeEach(func() {
 				evaluator = rego.NewEvaluator(rego.Config{
@@ -305,7 +345,7 @@ var _ = Describe("RegoEvaluator", func() {
 
 		// #225: Configurable confidence threshold via input.confidence_threshold
 		// The Rego policy should read confidence_threshold from input when provided,
-		// falling back to its built-in default (0.8) when not provided.
+		// falling back to the default defined by the test policy (0.8) when not provided.
 		DescribeTable("configurable confidence threshold (#225)",
 			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
 				input := &rego.PolicyInput{
@@ -335,12 +375,12 @@ var _ = Describe("RegoEvaluator", func() {
 			Entry("UT-AIA-THR-003: threshold 0.8 (explicit), confidence 0.8 → auto-approve",
 				0.8, ptr(0.8), false,
 				"0.8 >= 0.8 explicit threshold → auto-approve (same as default)"),
-			Entry("UT-AIA-THR-004: no threshold (nil), confidence 0.85 → auto-approve (Rego default 0.8)",
+			Entry("UT-AIA-THR-004: no threshold (nil), confidence 0.85 → auto-approve (test policy default 0.8)",
 				0.85, (*float64)(nil), false,
-				"nil threshold → Rego default 0.8 → 0.85 >= 0.8 → auto-approve"),
-			Entry("UT-AIA-THR-005: no threshold (nil), confidence 0.79 → require approval (Rego default 0.8)",
+				"nil threshold → test policy default 0.8 → 0.85 >= 0.8 → auto-approve"),
+			Entry("UT-AIA-THR-005: no threshold (nil), confidence 0.79 → require approval (test policy default 0.8)",
 				0.79, (*float64)(nil), true,
-				"nil threshold → Rego default 0.8 → 0.79 < 0.8 → require approval"),
+				"nil threshold → test policy default 0.8 → 0.79 < 0.8 → require approval"),
 			Entry("UT-AIA-THR-006: threshold 0.95, confidence 0.92 → require approval",
 				0.92, ptr(0.95), true,
 				"0.92 < 0.95 threshold → stricter policy → require approval"),

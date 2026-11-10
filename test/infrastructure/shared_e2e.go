@@ -861,6 +861,8 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         signal_patterns: ["FullPipelineA2ASeverityGrounding_fp_int_"]
         workflow_id: "%s"
         action_type: "IncreaseMemoryLimits"
+        parameters:
+          MEMORY_LIMIT_NEW: "512Mi"
         tool_call:
           name: "list_available_actions"
 `, afGitOpsWorkflowID)

@@ -44,6 +44,33 @@ func (*aiAuditStoreSpy) Flush(context.Context) error { return nil }
 func (*aiAuditStoreSpy) Close() error                { return nil }
 
 var _ = Describe("BR-AUDIT-005: AIAnalysis fleet audit attribution", func() {
+	It("UT-AA-2586-004: policy and decision audit preserve distinct scores including zero (AU-3, CC7.2)", func() {
+		store := &aiAuditStoreSpy{}
+		client := aiaudit.NewAuditClient(store, logr.Discard())
+		zero := 0.0
+		analysis := &aianalysisv1.AIAnalysis{
+			Spec:   aianalysisv1.AIAnalysisSpec{RemediationRequestRef: corev1.ObjectReference{Name: "rr-2586"}},
+			Status: aianalysisv1.AIAnalysisStatus{RCAResult: &aianalysisv1.RCAResult{RCAConfidence: &zero, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{Confidence: .95}}},
+		}
+		client.RecordRegoEvaluation(context.Background(), analysis, "requires_approval", false, 1, "policy", "hash")
+		client.RecordApprovalDecision(context.Background(), analysis, "requires_approval", "policy")
+		Expect(store.events).To(HaveLen(2))
+		regoEvent := store.events[0].EventData.AIAnalysisRegoEvaluationPayload
+		decisionEvent := store.events[1].EventData.AIAnalysisApprovalDecisionPayload
+		Expect(regoEvent.RcaConfidence.Value).To(Equal(0.0))
+		Expect(regoEvent.RcaConfidence.IsSet()).To(BeTrue())
+		Expect(regoEvent.WorkflowConfidence.Value).To(Equal(.95))
+		Expect(decisionEvent.RcaConfidence.IsSet()).To(BeTrue())
+		Expect(decisionEvent.RcaConfidence.Value).To(Equal(0.0))
+		Expect(decisionEvent.WorkflowConfidence.Value).To(Equal(.95))
+		Expect(store.events[0].CorrelationID).To(Equal("rr-2586"))
+		analysis.Status.RCAResult.RCAConfidence = nil
+		client.RecordRegoEvaluation(context.Background(), analysis, "auto_approved", false, 1, "permissive policy", "hash")
+		client.RecordApprovalDecision(context.Background(), analysis, "auto_approved", "permissive policy")
+		Expect(store.events[2].EventData.AIAnalysisRegoEvaluationPayload.RcaConfidence.IsSet()).To(BeFalse())
+		Expect(store.events[3].EventData.AIAnalysisApprovalDecisionPayload.RcaConfidence.IsSet()).To(BeFalse())
+		Expect(store.events[3].EventData.AIAnalysisApprovalDecisionPayload.Reason).To(Equal("permissive policy"))
+	})
 	It("sets authoritative Spec.ClusterID on every target-associated audit event", func() {
 		store := &aiAuditStoreSpy{}
 		client := aiaudit.NewAuditClient(store, logr.Discard())

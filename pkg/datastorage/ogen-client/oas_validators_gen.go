@@ -2719,6 +2719,62 @@ func (s *AIAnalysisApprovalDecisionPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.RcaConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rca_confidence",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.WorkflowConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflow_confidence",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Confidence.Get(); ok {
 			if err := func() error {
 				if err := (validate.Float{}).Validate(float64(value)); err != nil {
@@ -2767,6 +2823,34 @@ func (s *AIAnalysisAuditPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "phase",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RcaConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rca_confidence",
 			Error: err,
 		})
 	}
@@ -3057,6 +3141,74 @@ func (s AIAnalysisConfigReloadedPayloadEventType) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *AIAnalysisRegoEvaluationPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.RcaConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rca_confidence",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.WorkflowConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflow_confidence",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
 }
 
 func (s *ActionTypeCatalogCreatedPayload) Validate() error {
@@ -5591,7 +5743,10 @@ func (s AuditEventEventData) Validate() error {
 		}
 		return nil
 	case AIAnalysisRegoEvaluationPayloadAuditEventEventData:
-		return nil // no validation needed
+		if err := s.AIAnalysisRegoEvaluationPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AIAnalysisErrorPayloadAuditEventEventData:
 		return nil // no validation needed
 	case NotificationMessageSentPayloadAuditEventEventData:
@@ -6391,7 +6546,10 @@ func (s AuditEventRequestEventData) Validate() error {
 		}
 		return nil
 	case AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData:
-		return nil // no validation needed
+		if err := s.AIAnalysisRegoEvaluationPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AIAnalysisErrorPayloadAuditEventRequestEventData:
 		return nil // no validation needed
 	case NotificationMessageSentPayloadAuditEventRequestEventData:
@@ -8571,6 +8729,34 @@ func (s *IncidentResponseData) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "selection_assessment",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RcaConfidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rca_confidence",
 			Error: err,
 		})
 	}

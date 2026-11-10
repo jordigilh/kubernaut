@@ -254,6 +254,11 @@ type BusinessClassification = sharedtypes.BusinessClassification
 
 // ApprovalContext contains rich context for approval notifications
 type ApprovalContext struct {
+	// RCAConfidence is nil when the RCA score is unknown.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// Reason why approval is required
 	Reason string `json:"reason"`
 	// ConfidenceScore from AI analysis (0.0-1.0)
@@ -456,6 +461,11 @@ type AIAnalysisStatus struct {
 // analysis and workflow selection (God-struct decomposition, #2189 follow-up:
 // AIAnalysisStatus previously carried these as 5 separate top-level fields).
 type RCAResult struct {
+	// RCAConfidence is the RCA score, independently of workflow selection.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// ========================================
 	// ROOT CAUSE ANALYSIS RESULTS
 	// ========================================

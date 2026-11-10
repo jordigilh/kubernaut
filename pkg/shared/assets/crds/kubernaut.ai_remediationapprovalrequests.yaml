@@ -225,6 +225,11 @@ spec:
                 - decision
                 - policyName
                 type: object
+              rcaConfidence:
+                description: RCAConfidence is nil when the RCA score is unknown.
+                maximum: 1
+                minimum: 0
+                type: number
               reason:
                 description: Reason why approval is required
                 minLength: 1
