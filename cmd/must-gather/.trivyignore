@@ -75,3 +75,13 @@ CVE-2026-56851 exp:2027-04-17
 # Go versions 1.26.10/1.27.3. User-approved six-month risk acceptance on
 # 2026-10-21; tracked with Issue #1662 and expires 2027-04-21.
 CVE-2026-111943 exp:2027-04-21
+
+# kubectl v1.36.2 embeds x/net v0.49.0; CVE-2026-78661 is fixed in x/net
+# v0.62.0. The latest supported stable kubectl releases inspected (v1.36.6
+# and v1.37.2) embed x/net v0.56.0 and v0.57.0 respectively. A v1.38.0-beta.0
+# artifact embeds v0.62.0 but is not a supported stable release and increases
+# the documented server-version skew risk for this image. User-approved
+# six-month risk acceptance on 2026-11-08; tracked with Issue #1662. This is
+# not vulnerability remediation; remove early when a compatible stable build
+# is available, and require fresh approval before renewal.
+CVE-2026-78661 exp:2027-05-08
