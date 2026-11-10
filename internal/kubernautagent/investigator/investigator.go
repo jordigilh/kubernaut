@@ -1006,6 +1006,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	applyWorkflowDiscoveryTypedStatus(workflowResult, p.RCAResult, enrichData)
 
 	if workflowResult.Cancelled {
+		mergeCancelledWorkflowTarget(workflowResult, p.RCAResult)
 		applySignalSeverity(workflowResult, p.Signal)
 		workflowResult.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
 		// #2387: see the RCA-cancelled path above — partial counts apply here too.
@@ -1326,6 +1327,22 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName)
 	return workflowResult
+}
+
+// mergeCancelledWorkflowTarget preserves the complete, server-validated
+// Phase-1 target when Phase 3 is cancelled before it can produce a result of
+// its own. Incomplete or mismatched provenance is deliberately not copied so
+// cancellation cannot weaken the fail-closed GVK gate at an interactive
+// handoff boundary.
+func mergeCancelledWorkflowTarget(workflowResult, rcaResult *katypes.InvestigationResult) {
+	if workflowResult == nil || rcaResult == nil || workflowResult.RemediationTarget.Kind != "" {
+		return
+	}
+	if !completeAPIVersionValidation(rcaResult) {
+		return
+	}
+	workflowResult.RemediationTarget = rcaResult.RemediationTarget
+	workflowResult.APIVersionValidation = cloneAPIVersionValidation(rcaResult.APIVersionValidation)
 }
 
 func deletedResourceWarning(kind, name, ns string) string {
