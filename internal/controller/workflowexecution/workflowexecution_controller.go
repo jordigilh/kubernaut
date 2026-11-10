@@ -306,10 +306,14 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.ReconcileDelete(ctx, &wfe)
 	}
 
-	// Pending with an existing finalizer handles verification failure by marking
-	// the execution failed. Every other path must verify before any mutation.
+	// Catalog identity is verified during Pending reconciliation before dispatch.
+	// Once a WFE has progressed past Pending, its immutable WorkflowRef snapshot
+	// is authoritative and the source catalog object may be deleted safely
+	// (DD-WORKFLOW-018, BR-WE-014). Only verify an unfinalized Pending object
+	// before adding the finalizer; reconcilePending performs the full verified
+	// lookup for every subsequent Pending attempt.
 	pending := wfe.Status.Phase == "" || wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending
-	if !pending || !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
+	if pending && !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
 		if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
 			logger.Error(err, "Workflow identity verification failed before reconciliation")
 			return ctrl.Result{}, fmt.Errorf("verify workflow before reconciliation: %w", err)

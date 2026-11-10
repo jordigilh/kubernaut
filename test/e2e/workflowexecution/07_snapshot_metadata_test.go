@@ -84,8 +84,8 @@ var _ = Describe("E2E-WE-2390: cross-engine workflow snapshot metadata", Label("
 	It("E2E-WE-2390-003: preserves the common snapshot and Tekton dispatch fields", func() {
 		wfe := newSnapshotWFE(snapshotWFEOptions{
 			name:         "e2e-2390-tekton",
-			workflowID:   infrastructure.RegisteredWorkflowUUIDs["test-hello-world"],
-			workflowName: "test-hello-world",
+			workflowID:   infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-tekton"],
+			workflowName: "test-dep-secret-tekton",
 			engine:       "tekton",
 			bundle:       "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 			dependencies: &sharedtypes.WorkflowDependencies{Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-tekton"}}},

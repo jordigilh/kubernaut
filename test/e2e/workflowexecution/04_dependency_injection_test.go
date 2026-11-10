@@ -58,6 +58,7 @@ import (
 // - Secret "e2e-dep-secret-tekton" in kubernaut-workflows namespace (Tekton tests)
 // - Workflow "test-dep-secret-job" registered in DS (declares e2e-dep-secret)
 // - Workflow "test-dep-secret-tekton" registered in DS (declares e2e-dep-secret-tekton)
+// - Workflow "test-dep-secret-configmap-tekton" registered in DS (declares both Tekton dependencies)
 // ========================================
 
 var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
@@ -208,6 +209,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						},
 					},
 					TargetResource: targetResource2,
+					Parameters: typedParametersForTarget(targetResource2, map[string]string{
+						"TARGET_RESOURCE": targetResource2,
+						"MESSAGE":         "DD-WE-006 E2E dependency injection drift test",
+					}),
 					// BR-WORKFLOW-008: Issue #1481 removed the pre-flight dependency
 					// check, so a missing Secret is now only discovered when the
 					// real kubelet fails to mount the volume. A short explicit
@@ -332,9 +337,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 	Context("E2E-WE-2390-005: Tekton PipelineRun with Secret + ConfigMap workspace bindings", func() {
 		It("E2E-WE-2390-005: should create one PipelineRun with both dependency workspace bindings", func() {
-			depSecretTektonUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-tekton"]
+			depSecretTektonUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-configmap-tekton"]
 			Expect(depSecretTektonUUID).ToNot(BeEmpty(),
-				"test-dep-secret-tekton UUID should have been captured during workflow registration")
+				"test-dep-secret-configmap-tekton UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-004-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/dep-inj-tekton-%s", uuid.New().String()[:8])
@@ -376,7 +381,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 			defer func() { _ = deleteWFE(wfe) }()
 
-			By("Creating a Tekton WFE referencing a workflow with declared secret dependency")
+			By("Creating a Tekton WFE referencing a workflow with declared Secret and ConfigMap dependencies")
 			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Running phase (PipelineRun created)")

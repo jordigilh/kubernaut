@@ -127,6 +127,7 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 	bundles["test-intentional-failure"] = failingRef
 	bundles["test-dep-secret-job"] = depSecretJobRef
 	bundles["test-dep-secret-tekton"] = depSecretTektonRef
+	bundles["test-dep-secret-configmap-tekton"] = helloWorldRef
 
 	_, _ = fmt.Fprintf(output, "  ✅ Using bundles from %s\n", TestWorkflowBundleRegistry)
 
@@ -146,6 +147,7 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 		{"test-intentional-failure", "failing"},
 		{"test-dep-secret-job", "dep-secret-job"},
 		{"test-dep-secret-tekton", "dep-secret-tekton"},
+		{"test-dep-secret-configmap-tekton", "dep-secret-configmap-tekton"},
 		{"test-dep-configmap-job", "dep-configmap-job"},
 		{"test-dep-configmap-tekton", "dep-configmap-tekton"},
 		{"test-job-hello-world", "job-hello-world"},
