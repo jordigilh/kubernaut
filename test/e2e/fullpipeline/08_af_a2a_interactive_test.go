@@ -115,6 +115,49 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 		fpCreateTargetPod(ctx, dep)
 
+		By("Creating the GitOps repository credential dependency")
+		gitOpsSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: infrastructure.ExecutionNamespace},
+			StringData: map[string]string{"username": "kubernaut", "password": "test-password"},
+		}
+		if err := k8sClient.Create(ctx, gitOpsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsSecret) })
+
+		By("Creating the GitOps repository configuration dependency")
+		gitOpsConfig := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-config", Namespace: infrastructure.ExecutionNamespace},
+			Data:       map[string]string{"repository": "http://gitea.test/gitops/remediation.git"},
+		}
+		if err := k8sClient.Create(ctx, gitOpsConfig); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsConfig) })
+
+		By("Turn 1: investigate the remediation (kubernaut_investigate — creates an interactive RR)")
+		turn1ContextID := "ctx-fp-int-1"
+		body := fpA2ATasksSend("fp-int-1",
+			"investigate GitOps remediation for deployment memory-eater")
+		// kubernaut_investigate blocks until RCA completes. Keep the request in
+		// flight so the signal is injected after the fresh interactive RR exists
+		// but before backend processing can finish (#2586).
+		turn1Result := make(chan struct {
+			response *http.Response
+			err      error
+		}, 1)
+		go func() {
+			turn1Response, turn1Err := fpA2AInvokeWithTimeout(body, 60*time.Second)
+			turn1Result <- struct {
+				response *http.Response
+				err      error
+			}{response: turn1Response, err: turn1Err}
+		}()
+
+		By("Waiting for the fresh interactive RR before injecting the synthetic signal")
+		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
+		Expect(rrName).NotTo(BeEmpty())
+
 		By("Grounding the interactive investigation with a synthetic GitOps signal event")
 		Expect(k8sClient.Create(ctx, &corev1.Event{
 			ObjectMeta: metav1.ObjectMeta{
@@ -150,48 +193,9 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			}
 			return false
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"E2E-FP-2390-001: synthetic GitOps signal event must be observable before RR creation")
-
-		By("Creating the GitOps repository credential dependency")
-		gitOpsSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: infrastructure.ExecutionNamespace},
-			StringData: map[string]string{"username": "kubernaut", "password": "test-password"},
-		}
-		if err := k8sClient.Create(ctx, gitOpsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-			Expect(err).NotTo(HaveOccurred())
-		}
-		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsSecret) })
-
-		By("Creating the GitOps repository configuration dependency")
-		gitOpsConfig := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-config", Namespace: infrastructure.ExecutionNamespace},
-			Data:       map[string]string{"repository": "http://gitea.test/gitops/remediation.git"},
-		}
-		if err := k8sClient.Create(ctx, gitOpsConfig); err != nil && !apierrors.IsAlreadyExists(err) {
-			Expect(err).NotTo(HaveOccurred())
-		}
-		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsConfig) })
-
-		By("Turn 1: investigate the remediation (kubernaut_investigate — creates an interactive RR)")
-		turn1ContextID := "ctx-fp-int-1"
-		body := fpA2ATasksSend("fp-int-1",
-			"investigate GitOps remediation for deployment memory-eater")
-		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		rpc, parseErr := fpParseRPC(resp)
-		Expect(parseErr).NotTo(HaveOccurred())
-		Expect(rpc.Error).To(BeNil(), "Turn 1 should not return JSON-RPC error")
-		task, taskErr := fpExtractTask(rpc.Result)
-		Expect(taskErr).NotTo(HaveOccurred())
-		taskID := task.ID
-		Expect(taskID).NotTo(BeEmpty())
-		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
+			"E2E-FP-2390-001: synthetic GitOps signal event must be observable after the interactive RR exists")
 
 		By("Verifying SignalProcessing classifies the severity-grounding alert before workflow discovery")
-		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
-		Expect(rrName).NotTo(BeEmpty())
 		Eventually(func() string {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
@@ -206,6 +210,21 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			return ""
 		}, 60*time.Second, 2*time.Second).Should(Equal(signalprocessingv1.SeverityWarning),
 			"E2E-FP-2390-001: the SP-derived severity must match the GitOps workflow's warning label")
+
+		turn1 := <-turn1Result
+		resp, err = turn1.response, turn1.err
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp).NotTo(BeNil())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		rpc, parseErr := fpParseRPC(resp)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpc.Error).To(BeNil(), "Turn 1 should not return JSON-RPC error")
+		task, taskErr := fpExtractTask(rpc.Result)
+		Expect(taskErr).NotTo(HaveOccurred())
+		taskID := task.ID
+		Expect(taskID).NotTo(BeEmpty())
+		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
 		By("Turn 2: discover available workflows")
 		body = fpA2ATasksSendWithContext("fp-int-2", turn1ContextID, taskID,

@@ -52,6 +52,7 @@ import (
 
 	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // Plain (non-Synchronized) BeforeSuite/AfterSuite: Ginkgo runs these once per
@@ -73,6 +74,7 @@ var _ = BeforeSuite(func() {
 
 	Expect(aianalysisv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 	Expect(agentsessionv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+	Expect(remediationv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "..", "config", "crd", "bases")},

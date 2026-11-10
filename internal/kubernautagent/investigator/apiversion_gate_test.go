@@ -214,6 +214,38 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		Message:      "RBAC denial on wrong API group",
 	}
 
+	It("UT-KA-2586-018: invalid API-version gate retry fails closed (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription requires restart","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":1.1,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"operators.coreos.com/v1alpha1"}}`}},
+		}
+		inv := newTestInvestigator(investigator.Config{
+			Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+			AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+			ScopeResolver: investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper()),
+		})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal("rca_incomplete"))
+		Expect(result.RCASummary).To(Equal("Subscription requires restart"))
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(mockClient.calls).To(HaveLen(2))
+	})
+
+	It("UT-KA-2586-021: API-version gate preserves RCA score when retry omits it (BR-AI-012, AU-3)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription requires restart","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"operators.coreos.com/v1alpha1"}}`}},
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.85)))
+		Expect(mockClient.calls).To(HaveLen(2))
+	})
+
 	Describe("UT-KA-1044-001: Ambiguous kind, gate fires, retry provides api_version", func() {
 		It("should accept the retry result with api_version populated (BR-AI-1044 AC2)", func() {
 			mockClient.responses = []llm.ChatResponse{

@@ -39,4 +39,36 @@ var _ = Describe("RCA continuation merge semantics", func() {
 		Expect(merged.Confidence).To(BeZero())
 		Expect(merged.ConfidenceSet).To(BeTrue())
 	})
+
+	It("UT-KA-2586-008: a continuation's explicit zero supersedes the prior RCA score (BR-AI-012, AU-3)", func() {
+		prior := .8
+		zero := 0.0
+		previous := &katypes.InvestigationResult{Confidence: prior, ConfidenceSet: true, RCAConfidence: &prior}
+		updated := &katypes.InvestigationResult{Confidence: 0, ConfidenceSet: true, RCAConfidence: &zero}
+		merged := mergeRCAContinuationResult(previous, updated)
+		phase1 := BuildPhase1Context(merged)
+		Expect(phase1.RCAConfidence).To(HaveValue(Equal(0.0)))
+	})
+
+	It("UT-KA-2586-009: a continuation omitting confidence retains prior presence, including unknown (BR-AI-012, SI-10)", func() {
+		zero := 0.0
+		merged := mergeRCAContinuationResult(&katypes.InvestigationResult{RCAConfidence: &zero}, &katypes.InvestigationResult{})
+		Expect(merged.RCAConfidence).To(HaveValue(Equal(0.0)))
+		merged = mergeRCAContinuationResult(&katypes.InvestigationResult{}, &katypes.InvestigationResult{})
+		Expect(merged.RCAConfidence).To(BeNil())
+	})
+
+	It("UT-KA-2586-033: legacy continuation confidence does not create RCA confidence (BR-AI-012, SI-10)", func() {
+		merged := mergeRCAContinuationResult(&katypes.InvestigationResult{}, &katypes.InvestigationResult{Confidence: .95, ConfidenceSet: true})
+		Expect(merged.RCAConfidence).To(BeNil())
+	})
+
+	It("UT-KA-2586-039: continuation reasoning supersedes earlier reasoning when supplied (BR-AI-086, AU-3)", func() {
+		previous := &katypes.InvestigationResult{Reasoning: &katypes.ReasoningSummary{Text: "earlier evidence"}}
+		updated := &katypes.InvestigationResult{Reasoning: &katypes.ReasoningSummary{Redacted: true}}
+		merged := mergeRCAContinuationResult(previous, updated)
+		Expect(merged.Reasoning).NotTo(BeNil())
+		Expect(merged.Reasoning.Redacted).To(BeTrue())
+		Expect(merged.Reasoning.Text).To(BeEmpty())
+	})
 })

@@ -291,6 +291,14 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 		Entry("rejected proposal", rejectedMode2496, ptr.To(.84), ptr.To(true)),
 	)
 
+	It("UT-KA-2586-002: carries an explicit zero RCA score to AgentSession (BR-AI-012, AU-3)", func() {
+		zero := 0.0
+		mapped := agentsession.MapInvestigationResultToAgentSessionResult(logger, &katypes.InvestigationResult{RCAConfidence: &zero}, "rr-2586")
+		data, err := json.Marshal(mapped)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring(`"rcaConfidence":0`))
+	})
+
 	DescribeTable("UT-KA-2496-009: rejected AgentSession reasoning omits invalid parts instead of truncating them (BR-KA-016, SI-10)",
 		func(part string, retain bool) {
 			result := &katypes.InvestigationResult{

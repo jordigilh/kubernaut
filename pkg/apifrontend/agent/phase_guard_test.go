@@ -121,6 +121,28 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		before, after = NewPhaseGuardForTest()
 	})
 
+	It("IT-AF-2586-005: ungrounded decision emits no fabricated RCA confidence (BR-AI-012, AU-3)", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		DeferCleanup(cancel)
+		queues := eventqueue.NewInMemoryManager()
+		queue, err := queues.GetOrCreate(ctx, "task-ungrounded-2586")
+		Expect(err).NotTo(HaveOccurred())
+		reader, err := queues.GetOrCreate(ctx, "task-ungrounded-2586")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { Expect(queues.Destroy(context.Background(), "task-ungrounded-2586")).To(Succeed()) })
+		ctx = launcher.WithEventBridge(ctx, queue, "task-ungrounded-2586", "context-2586", nil)
+		guardCtx := statefulToolContext{fakeToolContext: fakeToolContext{Context: ctx}, state: newMapState()}
+		args := map[string]any{"session_id": "session-2586", "summary": "invented", "rca": map[string]any{"confidence": 0.9}, "options": []any{}}
+		enforceGroundingGuard(guardCtx, args)
+		Expect(launcher.EmitArtifactSafe(ctx, args, "No findings", map[string]any{"type": launcher.MetaTypeDecision, "schema": "investigation_summary", "schema_version": "1.0"})).To(Succeed())
+		event, _, err := reader.Read(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		artifact := event.(*a2a.TaskArtifactUpdateEvent)
+		part := artifact.Artifact.Parts[0].(a2a.DataPart)
+		Expect(part.Data["rca"]).NotTo(HaveKey("confidence"))
+		Expect(part.Data["summary"]).To(Equal(noGroundedContentSummary))
+	})
+
 	DescribeTable("IT-AF-2496-002: interactive decision restores only trusted KA selection context (BR-KA-016, AU-3, SI-10)",
 		func(outcome string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

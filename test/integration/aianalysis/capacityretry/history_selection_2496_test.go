@@ -37,13 +37,17 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	aaconfig "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	rocreator "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -88,6 +92,107 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		Expect(selected.ParameterSchema[0].Name).To(Equal("P"))
 		Expect(*selected.ParameterSchema[0].Minimum).To(Equal(float64(1)))
 	})
+
+	It("IT-RO-2586-007: admitted approval snapshot reaches the Console event with distinct scores (BR-ORCH-026, AU-3)", func() {
+		zero := 0.0
+		rr := &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "rr-2586-review", Namespace: ns.Name, UID: "fbcf18d2-14e7-4e15-a505-e30bb685ac1d"}}
+		ai := &aianalysisv1.AIAnalysis{ObjectMeta: metav1.ObjectMeta{Name: "ai-2586", Namespace: ns.Name}, Status: aianalysisv1.AIAnalysisStatus{
+			Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "user policy requires review"},
+			RCAResult: &aianalysisv1.RCAResult{RootCause: "memory pressure", RCAConfidence: &zero, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-review", WorkflowName: "wf-review", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflow:v1", DeclaredParameterNames: map[string]bool{}},
+				Confidence:       .95, Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+			}},
+		}}
+		name, err := rocreator.NewApprovalCreator(kube, kube.Scheme(), nil, 15*time.Minute).Create(ctx, rr, ai)
+		Expect(err).NotTo(HaveOccurred())
+		rar := &remediationv1.RemediationApprovalRequest{}
+		Expect(kube.Get(ctx, client.ObjectKey{Name: name, Namespace: ns.Name}, rar)).To(Succeed())
+		DeferCleanup(func() {
+			current := &remediationv1.RemediationApprovalRequest{}
+			Expect(kube.Get(ctx, client.ObjectKey{Name: name, Namespace: ns.Name}, current)).To(Succeed())
+			controllerutil.RemoveFinalizer(current, rocreator.ApprovalRequestFinalizerName)
+			Expect(kube.Update(ctx, current)).To(Succeed())
+		})
+		Expect(rar.Spec.RCAConfidence).To(HaveValue(Equal(0.0)))
+		Expect(rar.Spec.Confidence).To(Equal(.95))
+		payload, err := tools.MarshalApprovalRequestPayload(rar)
+		Expect(err).NotTo(HaveOccurred())
+		var event map[string]interface{}
+		Expect(json.Unmarshal([]byte(payload), &event)).To(Succeed())
+		Expect(event).To(HaveKeyWithValue("rcaConfidence", 0.0))
+		Expect(event).To(HaveKeyWithValue("workflowConfidence", .95))
+		Expect(event).To(HaveKeyWithValue("reason", "user policy requires review"))
+	})
+
+	DescribeTable("IT-AA-2586-002: admitted AgentSession preserves RCA presence through AA reconciliation (BR-AI-012, AU-3, SI-10)",
+		func(score *float64) {
+			analysis := newCapacityRetryAnalysis(ns.Name, "rca-presence", 0, 5*time.Second)
+			result := historySelectionResult2496(.95)
+			result.RCAConfidence = score
+			seedHistorySelection2496(ctx, kube, analysis, result)
+			_, err := newCapacityRetryReconciler(kube).Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(analysis)})
+			Expect(err).NotTo(HaveOccurred())
+			persisted := &aianalysisv1.AIAnalysis{}
+			Expect(kube.Get(ctx, client.ObjectKeyFromObject(analysis), persisted)).To(Succeed())
+			if score == nil {
+				Expect(persisted.Status.GetRCAResult().RCAConfidence).To(BeNil())
+			} else {
+				Expect(persisted.Status.GetRCAResult().RCAConfidence).To(HaveValue(Equal(*score)))
+			}
+		},
+		Entry("unknown", nil),
+		Entry("explicit zero", func() *float64 { v := 0.0; return &v }()),
+		Entry("nonzero", func() *float64 { v := .65; return &v }()),
+	)
+
+	DescribeTable("IT-AA-2586-006: CRD rejects RCA confidence outside the unit interval (BR-AI-012, SI-10)",
+		func(invalid float64) {
+			analysis := newCapacityRetryAnalysis(ns.Name, "invalid-rca", 0, 5*time.Second)
+			seedHistorySelection2496(ctx, kube, analysis, historySelectionResult2496(.95))
+			as := &agentsessionv1.AgentSession{}
+			Expect(kube.Get(ctx, client.ObjectKey{Namespace: ns.Name, Name: "as-" + analysis.Spec.RemediationRequestRef.Name}, as)).To(Succeed())
+			as.Status.Result.RCAConfidence = &invalid
+			Expect(kube.Status().Update(ctx, as)).NotTo(Succeed())
+		},
+		Entry("below zero", -.01),
+		Entry("above one", 1.01),
+	)
+
+	DescribeTable("IT-AA-2586-004: persisted policy evaluation controls autonomous and interactive approval (BR-AI-028, SI-10)",
+		func(interactive bool, score *float64, policy string, approval bool) {
+			analysis := newCapacityRetryAnalysis(ns.Name, "rca-policy", 0, 5*time.Second)
+			result := historySelectionResult2496(.95)
+			result.RCAConfidence = score
+			seedHistorySelection2496(ctx, kube, analysis, result)
+			if interactive {
+				as := &agentsessionv1.AgentSession{}
+				Expect(kube.Get(ctx, client.ObjectKey{Namespace: ns.Name, Name: "as-" + analysis.Spec.RemediationRequestRef.Name}, as)).To(Succeed())
+				as.Status.Interactive, as.Status.ActingUser = true, "operator"
+				Expect(kube.Status().Update(ctx, as)).To(Succeed())
+			}
+			r := newCapacityRetryReconciler(kube)
+			evaluator := rego.NewEvaluator(rego.Config{}, r.Log)
+			Expect(evaluator.LoadPolicy(policy)).To(Succeed())
+			threshold := .8
+			r.AnalyzingHandler = handlers.NewAnalyzingHandler(evaluator, r.Log, r.Metrics, r.AuditClient).WithConfidenceThreshold(&threshold)
+			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(analysis)}
+			_, err := r.Reconcile(ctx, request)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, request)
+			Expect(err).NotTo(HaveOccurred())
+			persisted := &aianalysisv1.AIAnalysis{}
+			Expect(kube.Get(ctx, request.NamespacedName, persisted)).To(Succeed())
+			Expect(persisted.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted))
+			Expect(persisted.Status.GetApproval().ApprovalRequired).To(Equal(approval))
+		},
+		Entry("interactive low score review", true, func() *float64 { v := .65; return &v }(), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.identity.user == "operator"; input.rca_confidence < input.confidence_threshold }`, true),
+		Entry("autonomous missing score permitted", false, nil, `package aianalysis.approval
+import rego.v1
+require_approval := false`, false),
+	)
 
 	DescribeTable("IT-AA-2496-001: KA mapping survives admitted AgentSession -> real AA reconciliation",
 		func(confidence float64, review, rejected bool, phase string) {

@@ -352,7 +352,11 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	// Conditional fields (type-safe pointers)
 	if sw := analysis.Status.GetRCAResult().SelectedWorkflow; sw != nil {
 		payload.Confidence.SetTo(sw.Confidence)
+		payload.WorkflowConfidence.SetTo(sw.Confidence)
 		payload.WorkflowID.SetTo(sw.WorkflowID)
+	}
+	if score := analysis.Status.GetRCAResult().RCAConfidence; score != nil {
+		payload.RcaConfidence.SetTo(*score)
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -389,6 +393,14 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 		Degraded:   degraded,
 		DurationMs: int32(durationMs),
 		Reason:     reason,
+	}
+	if rca := analysis.Status.RCAResult; rca != nil {
+		if rca.RCAConfidence != nil {
+			payload.RcaConfidence.SetTo(*rca.RCAConfidence)
+		}
+		if rca.SelectedWorkflow != nil {
+			payload.WorkflowConfidence.SetTo(rca.SelectedWorkflow.Confidence)
+		}
 	}
 	if policyHash != "" {
 		payload.PolicyHash.SetTo(policyHash)
@@ -734,6 +746,9 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 // optional rejected reasoning in both complete/failed payloads (DD-KA-2496).
 // Trusted prior-attempt links belong to audit, never the shared live projection.
 func applySelectionAuditFields(payload *ogenclient.AIAnalysisAuditPayload, rca *aianalysisv1.RCAResult) {
+	if rca.RCAConfidence != nil {
+		payload.RcaConfidence.SetTo(*rca.RCAConfidence)
+	}
 	if selected := rca.SelectedWorkflow; selected != nil {
 		safe := (katypes.LiveSelectionContext{SelectedWorkflow: &katypes.LiveSelectedWorkflow{
 			WorkflowID: selected.WorkflowID, WorkflowName: selected.WorkflowName,

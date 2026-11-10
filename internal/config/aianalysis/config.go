@@ -89,9 +89,9 @@ type RegoConfig struct {
 	PolicyPath string `yaml:"policyPath"`
 
 	// ConfidenceThreshold is the operator-configurable auto-approval confidence threshold (#225).
-	// When set, passed as input.confidence_threshold to the Rego policy, overriding the
-	// policy's built-in default (0.8). Must be in range (0.0, 1.0].
-	// nil means "use the Rego policy's built-in default".
+	// When set, passed as input.confidence_threshold to the user policy.
+	// Must be in range (0.0, 1.0]. Nil means the input key is omitted;
+	// any default or missing-value decision belongs to the user policy.
 	// Stepping stone toward BR-AI-088 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `yaml:"confidenceThreshold,omitempty"`
 

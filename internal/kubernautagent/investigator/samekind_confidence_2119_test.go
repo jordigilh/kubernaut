@@ -80,6 +80,225 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 		Message:      "Node DiskPressure",
 	}
 
+	It("UT-KA-2586-004: same-kind retry preserves an explicit zero RCA score (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node under pressure","confidence":0,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.0)))
+	})
+
+	DescribeTable("UT-KA-2586-010: invalid RCA confidence cannot become a trusted score (BR-AI-012, SI-10)",
+		func(score string) {
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+			}
+			inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			result, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+			Expect(result.RCAConfidence).To(BeNil())
+			Expect(result.WorkflowID).To(BeEmpty())
+			Expect(mockClient.calls).To(HaveLen(2), "the bounded RCA correction retry must run")
+		},
+		Entry("negative", "-0.1"),
+		Entry("above one", "1.1"),
+	)
+
+	It("UT-KA-2586-011: a corrected valid RCA score is preserved after retry (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Corrected","confidence":0.65,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(.65)))
+		Expect(mockClient.calls).To(HaveLen(4))
+	})
+
+	It("UT-KA-2586-012: invalid gate retry retains the original valid RCA (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.8)))
+		Expect(result.RCASummary).To(Equal("Original"))
+	})
+
+	DescribeTable("UT-KA-2586-013: nested workflow confidence cannot mask invalid RCA confidence (BR-AI-012, SI-10)", func(score string) {
+		invalid := `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: invalid}},
+			{Message: llm.Message{Role: "assistant", Content: invalid}},
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+		Expect(result.RCAConfidence).To(BeNil())
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(mockClient.calls).To(HaveLen(2))
+	}, Entry("negative", "-0.1"), Entry("above one", "1.1"))
+
+	DescribeTable("UT-KA-2586-036: interactive extraction accepts missing and zero without retry (BR-AI-012, SI-10)", func(field string, expected *float64) {
+		mockClient.responses = []llm.ChatResponse{{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"RCA"` + field + `}`}}}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.RunRCAExtractionFromConversation(context.Background(), []llm.Message{{Role: "user", Content: "investigate"}}, "rr-interactive-2586")
+		Expect(err).NotTo(HaveOccurred())
+		if expected == nil {
+			Expect(result.RCAConfidence).To(BeNil())
+		} else {
+			Expect(result.RCAConfidence).To(HaveValue(Equal(*expected)))
+		}
+		Expect(mockClient.calls).To(HaveLen(1))
+	}, Entry("missing", "", (*float64)(nil)), Entry("zero", `,"confidence":0`, func() *float64 { v := 0.0; return &v }()))
+
+	DescribeTable("UT-KA-2586-038: initial interactive RCA retains accepted reasoning (BR-AI-086, AU-3)", func(reasoning *llm.ReasoningBlock, text string, redacted bool) {
+		mockClient.responses = []llm.ChatResponse{{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"RCA","confidence":0}`, Reasoning: reasoning}}}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.RunRCAExtractionFromConversation(context.Background(), []llm.Message{{Role: "user", Content: "investigate"}}, "rr-interactive-2586")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Reasoning).NotTo(BeNil())
+		Expect(result.Reasoning.Text).To(Equal(text))
+		Expect(result.Reasoning.Redacted).To(Equal(redacted))
+		Expect(mockClient.calls).To(HaveLen(1))
+	}, Entry("visible", &llm.ReasoningBlock{Text: "accepted evidence", Signature: "opaque"}, "accepted evidence", false),
+		Entry("redacted", &llm.ReasoningBlock{Redacted: true, Signature: "opaque"}, "", true))
+
+	DescribeTable("UT-KA-2586-014: nested workflow score does not replace the RCA score (BR-AI-012, SI-10)", func(rcaField string, expected *float64) {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},` + rcaField + `"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		if expected == nil {
+			Expect(result.RCAConfidence).To(BeNil())
+		} else {
+			Expect(result.RCAConfidence).To(HaveValue(Equal(*expected)))
+		}
+	}, Entry("missing", "", (*float64)(nil)), Entry("explicit zero", `"confidence":0,`, func() *float64 { v := 0.0; return &v }()), Entry("valid", `"confidence":0.4,`, func() *float64 { v := 0.4; return &v }()))
+
+	It("UT-KA-2586-015: nested invalid RCA is corrected without borrowing workflow confidence (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Invalid","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":1.1,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Corrected","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":0.4,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.4)))
+		Expect(mockClient.calls).To(HaveLen(4))
+	})
+
+	DescribeTable("UT-KA-2586-016: interactive extraction rejects invalid RCA confidence (BR-AI-012, SI-10)", func(score string) {
+		invalid := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}}
+		mockClient.responses = []llm.ChatResponse{invalid, invalid}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.RunRCAExtractionFromConversation(context.Background(), []llm.Message{{Role: "user", Content: "investigate Node pressure"}}, "rr-interactive-2586")
+		Expect(err).To(MatchError(ContainSubstring("rca confidence must be between 0 and 1")))
+		Expect(result).To(BeNil())
+		Expect(mockClient.calls).To(HaveLen(2))
+	}, Entry("negative", "-0.1"), Entry("above one", "1.1"))
+
+	DescribeTable("UT-KA-2586-019: malformed RCA confidence triggers bounded correction (BR-AI-012, SI-10)", func(score string) {
+		invalid := `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`
+		mockClient.responses = []llm.ChatResponse{{Message: llm.Message{Role: "assistant", Content: invalid}}, {Message: llm.Message{Role: "assistant", Content: invalid}}}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+		Expect(result.RCAConfidence).To(BeNil())
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(mockClient.calls).To(HaveLen(2))
+	}, Entry("text", `"high"`), Entry("boolean", `true`), Entry("object", `{}`), Entry("array", `[]`), Entry("null", `null`))
+
+	It("UT-KA-2586-028: null gate retry cannot be treated as omitted confidence (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":null,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCASummary).To(Equal("Original"))
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.8)))
+	})
+
+	DescribeTable("UT-KA-2586-024: malformed section-format RCA confidence triggers correction (BR-AI-012, SI-10)", func(score string) {
+		invalid := "# root_cause_analysis\n{\"summary\":\"Node pressure\",\"remediation_target\":{\"kind\":\"Node\",\"name\":\"ip-10-0-1-23\"}}\n# confidence\n" + score
+		mockClient.responses = []llm.ChatResponse{{Message: llm.Message{Role: "assistant", Content: invalid}}, {Message: llm.Message{Role: "assistant", Content: invalid}}}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+		Expect(result.RCAConfidence).To(BeNil())
+		Expect(mockClient.calls).To(HaveLen(2))
+	}, Entry("text", "high"), Entry("null", "null"))
+
+	It("UT-KA-2586-020: same-kind RCA-only result retains prior score when retry omits it (BR-AI-012, AU-3)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.8)))
+		Expect(mockClient.calls).To(HaveLen(2))
+	})
+
+	DescribeTable("UT-KA-2586-022: same-kind retry respects confidence presence (BR-AI-012, AU-3)", func(initial, retry string, expected *float64) {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial",` + initial + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved",` + retry + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		if expected == nil {
+			Expect(result.RCAConfidence).To(BeNil())
+		} else {
+			Expect(result.RCAConfidence).To(HaveValue(Equal(*expected)))
+		}
+		Expect(mockClient.calls).To(HaveLen(2))
+	}, Entry("preserve zero", `"confidence":0,`, "", func() *float64 { v := 0.0; return &v }()),
+		Entry("new zero supersedes prior", `"confidence":0.8,`, `"confidence":0,`, func() *float64 { v := 0.0; return &v }()),
+		Entry("both omitted", "", "", (*float64)(nil)))
+
+	It("UT-KA-2586-023: numeric string confidence remains accepted (BR-AI-012, SI-10)", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial","confidence":"0.65","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+		}
+		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCAConfidence).To(HaveValue(Equal(0.65)))
+		Expect(mockClient.calls).To(HaveLen(2))
+	})
+
 	Describe("UT-KA-2119-001 (regression): retry confirms the same target but omits confidence", func() {
 		It("must backfill the pre-retry confidence instead of silently zeroing it out (BR-AI-2119 AC1)", func() {
 			mockClient.responses = []llm.ChatResponse{
@@ -187,9 +406,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.RCAConfidence).To(HaveValue(BeNumerically("==", 0)),
-				"UT-KA-2119-003: backfill must only trigger when the pre-retry confidence was a real (>0) value -- "+
-					"it must not fabricate a non-zero confidence out of another zero value")
+			Expect(result.RCAConfidence).To(BeNil(),
+				"UT-KA-2119-003: missing confidence remains unknown, not explicit zero")
 			Expect(result.WorkflowSelectionConfidence).To(BeNil())
 			Expect(result.Confidence).To(BeZero())
 		})
