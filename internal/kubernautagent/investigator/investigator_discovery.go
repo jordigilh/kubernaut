@@ -196,11 +196,12 @@ func (inv *Investigator) executeWorkflowSelectionFromRCA(ctx context.Context, p 
 	return workflowResult, nil
 }
 
-// revalidateFinalizedWorkflowTarget closes the handoff gap between RCA target
-// verification and authoritative enrichment. Enrichment may resolve a model
+// revalidateFinalizedWorkflowTarget closes the handoff gap between target
+// verification and authoritative finalization. Enrichment may resolve a model
 // identified child (for example, Pod) to its owning remediation target (for
-// example, Deployment), which invalidates RCA provenance for the new target.
-// The Phase 3 proposal is not executable until this final target has fresh
+// example, Deployment), and RCA may not identify a target separately from the
+// signal. Either case can leave the finalized target without provenance. The
+// Phase 3 proposal is not executable until this final target has fresh
 // target-cluster GVK verification; an unverifiable target is cleared by
 // enforceVerifiedWorkflowTarget and requires human review.
 func (inv *Investigator) revalidateFinalizedWorkflowTarget(
@@ -211,7 +212,7 @@ func (inv *Investigator) revalidateFinalizedWorkflowTarget(
 	runtimeParams llm.RuntimeParams,
 	correlationID string,
 ) *katypes.InvestigationResult {
-	if result == nil || rcaResult == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" || !completeAPIVersionValidation(rcaResult) {
+	if result == nil || rcaResult == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" {
 		return result
 	}
 	clusterID, _ := audit.ClusterIDFromContext(ctx)

@@ -358,6 +358,40 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 		})
 	})
 
+	Describe("UT-KA-212-003: signal target retains GVK provenance [BR-KA-212]", func() {
+		It("should verify the signal target when RCA does not identify a separate target", func() {
+			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
+			client.responses = []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"restart-cache","confidence":0.9}`),
+			}
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: store, Logger: logger,
+				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			})
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "default",
+				ResourceKind: "Pod", ResourceName: "worker-pod", ResourceAPIVersion: "v1",
+			}, &katypes.InvestigationResult{
+				RCASummary: "worker pod is unhealthy",
+			}, nil, "corr-2612-signal-target")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("restart-cache"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Pod"))
+			Expect(result.RemediationTarget.APIVersion).To(Equal("v1"))
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"the signal-derived target must carry target-cluster GVK provenance")
+			Expect(result.APIVersionValidation).NotTo(BeNil())
+			Expect(result.APIVersionValidation.Kind).To(Equal("Pod"))
+			Expect(result.APIVersionValidation.APIVersion).To(Equal("v1"))
+			Expect(investigator.TargetAPIVersionValidationMatches(result, "")).To(BeTrue(),
+				"signal-derived target provenance must bind to the local target cluster")
+		})
+	})
+
 	Describe("IT-KA-2459-001: workflow discovery audit captures label handoffs", func() {
 		It("should record enrichment, signal, and rendered-prompt label presence on the workflow LLM request", func() {
 			client.responses = []llm.ChatResponse{
@@ -478,6 +512,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 				Client: client, Builder: builder, ResultParser: rp,
 				AuditStore: store, Logger: logger, MaxTurns: 15,
 				PhaseTools: investigator.DefaultPhaseToolMap(),
+				Registry:   newGateDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &stubCatalogFetcher{
 					validator: validator, discoveredWorkflowIDs: []string{"managed-dependent"},
 				}},
@@ -485,6 +520,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 
 			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
 				Name: "OOMKilled", Namespace: "production", ResourceKind: "Pod", ResourceName: "api-server",
+				ResourceAPIVersion: "v1",
 			}, &katypes.InvestigationResult{RCASummary: "pod memory limit exceeded"}, nil, "corr-ka-2570-001")
 
 			Expect(err).NotTo(HaveOccurred())
