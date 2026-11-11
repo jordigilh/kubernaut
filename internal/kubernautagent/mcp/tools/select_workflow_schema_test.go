@@ -30,6 +30,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("kubernaut_select_workflow MCP output schema", func() {
@@ -51,6 +52,7 @@ var _ = Describe("kubernaut_select_workflow MCP output schema", func() {
 				SessionID:       "sess-schema-2390",
 				CorrelationID:   "rr-schema-2390",
 				ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:       &katypes.InvestigationResult{},
 				DiscoveryResult: discoveryWithWorkflow(workflowID),
 			},
 		}

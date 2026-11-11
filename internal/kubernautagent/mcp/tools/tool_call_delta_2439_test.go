@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	toolregistry "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -104,6 +105,28 @@ func (c *extractionRetryClient2586) StreamChat(ctx context.Context, req llm.Chat
 
 func (*extractionRetryClient2586) Close() error { return nil }
 
+type targetGVKDiscoveryTool2586 struct{}
+
+func (targetGVKDiscoveryTool2586) Name() string { return "api_resources_list" }
+
+func (targetGVKDiscoveryTool2586) Description() string {
+	return "target-cluster GVK discovery fixture"
+}
+
+func (targetGVKDiscoveryTool2586) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+
+func (targetGVKDiscoveryTool2586) Execute(context.Context, json.RawMessage) (string, error) {
+	return `{"resources":[{"apiVersion":"v1","kind":"Pod","name":"pods","namespaced":true}]}`, nil
+}
+
+func targetGVKRegistry2586() *toolregistry.Registry {
+	registry := toolregistry.New()
+	registry.Register(targetGVKDiscoveryTool2586{})
+	return registry
+}
+
 var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func() {
 	DescribeTable("IT-KA-2586-035: interactive discover_workflows retries invalid extraction and preserves corrected presence (BR-AI-012, BR-INTERACTIVE-010, SI-10)", func(corrected string, expected *float64) {
 		builder, err := prompt.NewBuilder()
@@ -111,14 +134,14 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		client := &extractionRetryClient2586{responses: []llm.ChatResponse{
 			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "rejected reasoning", Signature: "replay-signature"}}, ToolCalls: []llm.ToolCall{{ID: "invalid", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"invalid","confidence":1.1}`}}},
 			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "accepted correction evidence", Signature: "provider-secret"}}, ToolCalls: []llm.ToolCall{{ID: "corrected", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"corrected"` + corrected + `}`}}},
-			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default"}}`}}},
+			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default","api_version":"v1"}}`}}},
 		}}
-		inv := investigator.New(investigator.Config{Client: client, Builder: builder, ResultParser: parser.NewResultParser(), AuditStore: audit.NopAuditStore{}, Logger: logr.Discard(), MaxTurns: 5, PhaseTools: investigator.DefaultPhaseToolMap(), Pipeline: investigator.Pipeline{CatalogFetcher: discoveryCatalogFetcher2439{}}})
+		inv := investigator.New(investigator.Config{Client: client, Builder: builder, ResultParser: parser.NewResultParser(), AuditStore: audit.NopAuditStore{}, Logger: logr.Discard(), MaxTurns: 5, PhaseTools: investigator.DefaultPhaseToolMap(), Registry: targetGVKRegistry2586(), Pipeline: investigator.Pipeline{CatalogFetcher: discoveryCatalogFetcher2439{}}})
 		const rrID = "rr-interactive-2586"
 		sess := &mcpinternal.InteractiveSession{SessionID: "session-2586", CorrelationID: rrID, ActingUser: mcpinternal.UserInfo{Username: "alice"}}
 		sessions := &mockSessionManager{isActive: true, getDriverResult: sess}
 		recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{{Role: "user", Content: "investigate the crash"}}}
-		signal := katypes.SignalContext{Name: "OOMKilled", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod", Severity: "critical", RemediationID: rrID}
+		signal := katypes.SignalContext{Name: "OOMKilled", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod", ResourceAPIVersion: "v1", Severity: "critical", RemediationID: rrID}
 		tool := mcptools.NewInvestigateTool(sessions, adapters.NewInvestigatorRunnerAdapter(inv), recon, &discoveryAutoMgr2439{}, mcptools.WithWorkflowCatalog(workflowCatalog2439{}), mcptools.WithSignalContextResolver(signalResolver2439{signal: signal}))
 		output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{RRID: rrID, Action: mcptools.ActionDiscoverWorkflows}, mcpinternal.UserInfo{Username: "alice"})
 		Expect(err).NotTo(HaveOccurred())
@@ -151,9 +174,9 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		client := &extractionRetryClient2586{responses: []llm.ChatResponse{
 			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "rejected reasoning", Signature: "replay-signature"}}, ToolCalls: []llm.ToolCall{{ID: "invalid", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"invalid","confidence":1.1` + `}`}}},
 			{Message: llm.Message{Reasoning: &llm.ReasoningBlock{Text: "accepted correction evidence", Signature: "provider-secret"}}, ToolCalls: []llm.ToolCall{{ID: "corrected", Name: investigator.SubmitResultToolName, Arguments: `{"rca_summary":"corrected","confidence":0.65}`}}},
-			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default"}}`}}},
+			{ToolCalls: []llm.ToolCall{{ID: "workflow", Name: investigator.SubmitResultWithWorkflowToolName, Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default","api_version":"v1"}}`}}},
 		}}
-		inv := investigator.New(investigator.Config{Client: client, Builder: builder, ResultParser: parser.NewResultParser(), AuditStore: audit.NopAuditStore{}, Logger: logr.Discard(), MaxTurns: 5, PhaseTools: investigator.DefaultPhaseToolMap(), Pipeline: investigator.Pipeline{CatalogFetcher: discoveryCatalogFetcher2439{}}})
+		inv := investigator.New(investigator.Config{Client: client, Builder: builder, ResultParser: parser.NewResultParser(), AuditStore: audit.NopAuditStore{}, Logger: logr.Discard(), MaxTurns: 5, PhaseTools: investigator.DefaultPhaseToolMap(), Registry: targetGVKRegistry2586(), Pipeline: investigator.Pipeline{CatalogFetcher: discoveryCatalogFetcher2439{}}})
 
 		const rrID = "rr-interactive-partial-2586"
 		store := session.NewStore(1 * time.Hour)
@@ -171,7 +194,7 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 		sess := &mcpinternal.InteractiveSession{SessionID: "session-partial-2586", CorrelationID: rrID, ActingUser: mcpinternal.UserInfo{Username: "alice"}}
 		sessions := &mockSessionManager{isActive: true, getDriverResult: sess}
 		recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{{Role: "user", Content: "investigate the crash"}}}
-		signal := katypes.SignalContext{Name: "OOMKilled", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod", Severity: "critical", RemediationID: rrID}
+		signal := katypes.SignalContext{Name: "OOMKilled", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod", ResourceAPIVersion: "v1", Severity: "critical", RemediationID: rrID}
 		tool := mcptools.NewInvestigateTool(sessions, adapters.NewInvestigatorRunnerAdapter(inv), recon, autoMgr, mcptools.WithWorkflowCatalog(workflowCatalog2439{}), mcptools.WithSignalContextResolver(signalResolver2439{signal: signal}))
 
 		output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{RRID: rrID, Action: mcptools.ActionDiscoverWorkflows}, mcpinternal.UserInfo{Username: "alice"})
@@ -199,7 +222,7 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 				ToolCalls: []llm.ToolCall{{
 					ID:        "call-2439",
 					Name:      investigator.SubmitResultWithWorkflowToolName,
-					Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default"}}`,
+					Arguments: `{"workflow_id":"wf-2439","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default","api_version":"v1"}}`,
 				}},
 			},
 		}

@@ -18,6 +18,7 @@ package investigator_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -34,6 +35,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	toolregistry "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -51,6 +54,9 @@ import (
 // to a permissive stub that accepts every fixture ID used, keeping the
 // behavior actually under test isolated from this unrelated safety gate.
 func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
+	if cfg.Registry == nil {
+		cfg.Registry = newGateDiscoveryRegistry()
+	}
 	if cfg.Pipeline.CatalogFetcher == nil {
 		ids := []string{
 			"restart-sub", "scale-up", "generic-fix", "restart-pod", // apiversion_gate_test.go
@@ -69,6 +75,53 @@ func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
 		}
 	}
 	return investigator.New(cfg)
+}
+
+type gateDiscoveryTool struct {
+	name string
+}
+
+const gateAPIResourcesListToolName = "api_resources_list"
+
+func (t *gateDiscoveryTool) Name() string        { return t.name }
+func (t *gateDiscoveryTool) Description() string { return "target-cluster discovery fixture" }
+func (t *gateDiscoveryTool) Parameters() json.RawMessage {
+	if t.name == gateAPIResourcesListToolName {
+		return json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
+	}
+	return json.RawMessage(`{"type":"object","properties":{"apiVersion":{"type":"string"},"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["apiVersion","kind"]}`)
+}
+
+func (t *gateDiscoveryTool) Execute(_ context.Context, args json.RawMessage) (string, error) {
+	if t.name == gateAPIResourcesListToolName {
+		return `{"resources":[` +
+			`{"apiVersion":"apps/v1","kind":"Deployment","name":"deployments","namespaced":true},` +
+			`{"apiVersion":"v1","kind":"Pod","name":"pods","namespaced":true},` +
+			`{"apiVersion":"v1","kind":"Node","name":"nodes","namespaced":false},` +
+			`{"apiVersion":"operators.coreos.com/v1alpha1","kind":"Subscription","name":"subscriptions","namespaced":true},` +
+			`{"apiVersion":"messaging.knative.dev/v1","kind":"Subscription","name":"subscriptions","namespaced":true}` +
+			`]}`, nil
+	}
+	var input struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return "", err
+	}
+	switch input.APIVersion + "/" + input.Kind {
+	case "apps/v1/Deployment", "v1/Pod", "v1/Node", "operators.coreos.com/v1alpha1/Subscription", "messaging.knative.dev/v1/Subscription":
+		return fmt.Sprintf(`{"apiVersion":%q,"kind":%q,"items":[]}`, input.APIVersion, input.Kind+"List"), nil
+	default:
+		return "", fmt.Errorf("exact GVK is not served: %s/%s", input.APIVersion, input.Kind)
+	}
+}
+
+func newGateDiscoveryRegistry() *toolregistry.Registry {
+	registry := toolregistry.New()
+	registry.Register(&gateDiscoveryTool{name: gateAPIResourcesListToolName})
+	registry.Register(&gateDiscoveryTool{name: "resources_list"})
+	return registry
 }
 
 // gateMockLLMClient records calls and returns pre-configured responses.
@@ -108,11 +161,12 @@ func (m *gateMockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.Ch
 
 // gateRecordingAuditStore captures audit events for gate assertions.
 type gateRecordingAuditStore struct {
-	mu     sync.Mutex
-	events []*audit.AuditEvent
+	mu      sync.Mutex
+	events  []*audit.AuditEvent
+	ctxErrs []error
 }
 
-func (s *gateRecordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
+func (s *gateRecordingAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// #2121: snapshot event.Data (and EventOutcome) at call time, matching
@@ -130,6 +184,7 @@ func (s *gateRecordingAuditStore) StoreAudit(_ context.Context, event *audit.Aud
 	}
 	snapshot.Data = dataCopy
 	s.events = append(s.events, &snapshot)
+	s.ctxErrs = append(s.ctxErrs, ctx.Err())
 	return nil
 }
 
@@ -140,6 +195,18 @@ func (s *gateRecordingAuditStore) eventsByAction(action string) []*audit.AuditEv
 	for _, e := range s.events {
 		if e.EventAction == action {
 			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (s *gateRecordingAuditStore) contextErrorsByAction(action string) []error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []error
+	for i, event := range s.events {
+		if event.EventAction == action {
+			out = append(out, s.ctxErrs[i])
 		}
 	}
 	return out
@@ -183,6 +250,46 @@ func newAmbiguousSubscriptionMapper() *meta.DefaultRESTMapper {
 	return mapper
 }
 
+// failingDiscoveryResolver models an unavailable Kubernetes discovery service.
+type failingDiscoveryResolver struct{}
+
+func (failingDiscoveryResolver) IsClusterScoped(string) (bool, error) {
+	return false, fmt.Errorf("discovery unavailable")
+}
+
+func (failingDiscoveryResolver) IsAmbiguousKind(string) (bool, []schema.GroupVersionResource, error) {
+	return false, nil, fmt.Errorf("discovery unavailable")
+}
+
+// recordingDiscoveryTool models the target cluster's external MCP endpoint.
+type recordingDiscoveryTool struct{ calls int }
+
+func (*recordingDiscoveryTool) Name() string        { return "api_resources_list" }
+func (*recordingDiscoveryTool) Description() string { return "target-cluster type discovery" }
+func (*recordingDiscoveryTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (t *recordingDiscoveryTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	t.calls++
+	return `{"resources":[{"apiVersion":"remote.example/v1","kind":"Subscription","name":"subscriptions","namespaced":true}]}`, nil
+}
+
+type cancellingDiscoveryTool struct {
+	cancel context.CancelFunc
+}
+
+func (*cancellingDiscoveryTool) Name() string { return "api_resources_list" }
+func (*cancellingDiscoveryTool) Description() string {
+	return "cancelling target-cluster discovery fixture"
+}
+func (*cancellingDiscoveryTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (t *cancellingDiscoveryTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	t.cancel()
+	return `{"resources":[{"apiVersion":"apps/v1","kind":"Deployment","name":"deployments","namespaced":true}]}`, nil
+}
+
 var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 
 	var (
@@ -213,6 +320,97 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		Severity:     "critical",
 		Message:      "RBAC denial on wrong API group",
 	}
+
+	It("UT-KA-2588-001: rejects an unregistered GVK supplied after ambiguity retry [BR-KA-212]", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription needs repair","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription needs repair","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"unregistered.example/v1"}}`}},
+			gateWfToolResp(`{"workflow_id":"restart-sub","confidence":0.9}`),
+		}
+		inv := newTestInvestigator(investigator.Config{
+			Client: mockClient, Builder: builder, ResultParser: rp,
+			Enricher: enricher, AuditStore: auditStore, Logger: logger,
+			MaxTurns: 15, PhaseTools: phaseTools,
+			ScopeResolver: investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper()),
+		})
+
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue(), "an unregistered GVK must not be accepted")
+		Expect(result.WorkflowID).To(BeEmpty(), "no workflow may be selected for an unverified GVK")
+	})
+
+	It("UT-KA-2588-002: blocks workflow selection when GVK discovery fails [BR-KA-212]", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription needs repair","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"operators.coreos.com/v1alpha1"}}`}},
+			gateWfToolResp(`{"workflow_id":"restart-sub","confidence":0.9}`),
+		}
+		inv := newTestInvestigator(investigator.Config{
+			Client: mockClient, Builder: builder, ResultParser: rp,
+			Enricher: enricher, AuditStore: auditStore, Logger: logger,
+			MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: failingDiscoveryResolver{},
+			// Do not let the default discovery fixture mask the unavailable
+			// target-scoped discovery path this scenario is proving.
+			Registry: toolregistry.New(),
+		})
+
+		result, err := inv.Investigate(context.Background(), signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue(), "discovery failure cannot verify the GVK")
+		Expect(result.WorkflowID).To(BeEmpty(), "no workflow may be selected without GVK verification")
+	})
+
+	It("UT-KA-2609-001: verifies fleet GVK against the target cluster rather than the hub [BR-INTEGRATION-054]", func() {
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Subscription needs repair","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"remote.example/v1"}}`}},
+			gateWfToolResp(`{"workflow_id":"restart-sub","confidence":0.9}`),
+		}
+		discovery := &recordingDiscoveryTool{}
+		ctx := investigator.WithFleetOverlay(audit.WithClusterID(context.Background(), "spoke"), map[string]tools.Tool{
+			"api_resources_list": discovery,
+		})
+		remoteSignal := signal
+		remoteSignal.ClusterID = "spoke"
+		inv := newTestInvestigator(investigator.Config{
+			Client: mockClient, Builder: builder, ResultParser: rp,
+			Enricher: enricher, AuditStore: auditStore, Logger: logger,
+			MaxTurns: 15, PhaseTools: phaseTools,
+			ScopeResolver: investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper()),
+		})
+
+		result, err := inv.Investigate(ctx, remoteSignal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(discovery.calls).To(BeNumerically(">", 0), "the target-cluster discovery tool must be consulted")
+		Expect(result.RemediationTarget.APIVersion).To(Equal("remote.example/v1"))
+	})
+
+	It("UT-KA-2609-021: persists the cancellation gate audit with a live context [BR-AUDIT-005]", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		mockClient.responses = []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Deployment needs repair","confidence":0.85,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"demo-operator","api_version":"apps/v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Deployment needs repair","confidence":0.85,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"demo-operator","api_version":"apps/v1"}}`}},
+		}
+		registry := toolregistry.New()
+		registry.Register(&cancellingDiscoveryTool{cancel: cancel})
+		inv := newTestInvestigator(investigator.Config{
+			Client: mockClient, Builder: builder, ResultParser: rp,
+			Enricher: enricher, AuditStore: auditStore, Logger: logger,
+			MaxTurns: 15, PhaseTools: phaseTools, Registry: registry,
+			ScopeResolver: investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper()),
+		})
+
+		result, err := inv.Investigate(ctx, signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.Cancelled).To(BeTrue(), "cancellation during target GVK verification must remain cancellation")
+		gateEvents := auditStore.eventsByAction(audit.ActionAPIVersionGate)
+		Expect(gateEvents).To(HaveLen(1))
+		Expect(gateEvents[0].Data).To(HaveKeyWithValue("retry_outcome", "cancelled"))
+		Expect(auditStore.contextErrorsByAction(audit.ActionAPIVersionGate)).To(ConsistOf(BeNil()),
+			"cancellation audit persistence must not receive the canceled context")
+		Expect(auditStore.contextErrorsByAction(audit.ActionToolExecution)).To(ConsistOf(BeNil()),
+			"target-scoped discovery tool-call audit persistence must not receive the canceled context")
+	})
 
 	It("UT-KA-2586-018: invalid API-version gate retry fails closed (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
@@ -315,13 +513,13 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		})
 	})
 
-	Describe("UT-KA-1044-003: Unambiguous kind — gate auto-resolves apiVersion (#1051)", func() {
-		It("should auto-resolve apiVersion for Deployment without LLM retry (Issue #1051 / BR-WORKFLOW-004)", func() {
+	Describe("UT-KA-1044-003: Unambiguous kind — gate verifies the exact model GVK", func() {
+		It("should verify the supplied Deployment apiVersion without LLM retry (BR-WORKFLOW-004)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment needs more replicas",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"wrong.example/v1"}
+					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"scale-up","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
@@ -341,14 +539,16 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			Expect(result.WorkflowID).To(Equal("scale-up"),
 				"UT-KA-1044-003: pipeline should proceed to workflow selection")
 			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"UT-KA-1051-010 (TP-1051): mapper must validate and replace a model apiVersion for non-ambiguous Deployment")
+				"UT-KA-1044-003: the exact model apiVersion must be preserved after target-scoped verification")
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"UT-KA-1044-003: the supplied GVK must carry independent verification provenance")
 			Expect(mockClient.calls).To(HaveLen(2),
-				"UT-KA-1044-003: gate must not add extra LLM calls for unambiguous kinds")
+				"UT-KA-1044-003: exact GVK verification must not add an LLM call")
 		})
 	})
 
-	Describe("UT-KA-1051-011: Core-group kind — gate auto-resolves apiVersion", func() {
-		It("should auto-resolve apiVersion to v1 for Pod without LLM retry (Issue #1051 / BR-WORKFLOW-004)", func() {
+	Describe("UT-KA-1051-011: Core-group kind — gate verifies the exact model GVK", func() {
+		It("should verify apiVersion v1 for Pod without LLM retry (BR-WORKFLOW-004)", func() {
 			coreMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
 				{Group: "", Version: "v1"},
 				{Group: "apps", Version: "v1"},
@@ -371,7 +571,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod OOMKilled",
 					"confidence":0.90,
-					"remediation_target":{"kind":"Pod","name":"my-pod","namespace":"default"}
+					"remediation_target":{"kind":"Pod","name":"my-pod","namespace":"default","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"restart-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"my-pod","namespace":"default"}}`),
 			}
@@ -387,14 +587,16 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationTarget.APIVersion).To(Equal("v1"),
-				"UT-KA-1051-011: core-group Pod must resolve to apiVersion v1 (no group prefix)")
+				"UT-KA-1051-011: core-group Pod must preserve the exact apiVersion v1 (no group prefix)")
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"UT-KA-1051-011: the supplied core-group GVK must be independently verified")
 			Expect(mockClient.calls).To(HaveLen(2),
-				"UT-KA-1051-011: auto-resolve must not add extra LLM calls")
+				"UT-KA-1051-011: exact GVK verification must not add an LLM call")
 		})
 	})
 
-	Describe("UT-KA-1044-004: nil scopeResolver graceful degradation", func() {
-		It("should skip the gate when ScopeResolver is nil (BR-AI-1044 AC7)", func() {
+	Describe("UT-KA-1044-004: nil scopeResolver does not bypass exact-GVK validation", func() {
+		It("should require review when a target GVK is missing and no mapper is available (BR-KA-212)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Subscription needs restart",
@@ -414,10 +616,10 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.HumanReviewNeeded).To(BeFalse(),
-				"UT-KA-1044-004: nil resolver must not trigger human review")
-			Expect(result.WorkflowID).To(Equal("restart-sub"),
-				"UT-KA-1044-004: pipeline should proceed normally without resolver")
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"UT-KA-1044-004: nil resolver must not bypass missing-GVK review")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"UT-KA-1044-004: an unverified target must not select a workflow")
 		})
 	})
 
@@ -446,8 +648,8 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		})
 	})
 
-	Describe("UT-KA-1044-006: unvalidated api_version bypasses retry but not finalization", func() {
-		It("should clear a model api_version when authoritative target enrichment has none (BR-KA-191)", func() {
+	Describe("UT-KA-1044-006: nonempty api_version requires independent verification", func() {
+		It("should preserve a model api_version only after target-scoped verification (BR-KA-212)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Subscription etcd needs restart",
@@ -467,11 +669,13 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.RemediationTarget.APIVersion).To(BeEmpty(),
-				"UT-KA-1044-006: unvalidated model api_version must not survive finalization")
-			// Only 2 LLM calls: RCA + workflow (no gate retry)
+			Expect(result.RemediationTarget.APIVersion).To(Equal("operators.coreos.com/v1alpha1"),
+				"UT-KA-1044-006: independently verified model api_version must survive finalization")
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue(),
+				"UT-KA-1044-006: the target must carry verification provenance")
+			// Only 2 LLM calls: RCA + workflow (no gate correction retry)
 			Expect(mockClient.calls).To(HaveLen(2),
-				"UT-KA-1044-006: gate must not fire when api_version is already populated")
+				"UT-KA-1044-006: a valid supplied api_version must not trigger correction")
 		})
 	})
 
@@ -558,8 +762,8 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 		})
 	})
 
-	Describe("UT-KA-1044-009: IsAmbiguousKind mapper error — gate skips", func() {
-		It("should skip gate and keep original result when mapper returns error (BR-AI-1044 error)", func() {
+	Describe("UT-KA-1044-009: IsAmbiguousKind mapper error cannot bypass the gate", func() {
+		It("should require review when the mapper fails and the model omits api_version (BR-KA-212)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Subscription etcd needs restart",
@@ -581,9 +785,10 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			// Gate should skip on mapper error — pipeline proceeds normally
-			Expect(result.HumanReviewNeeded).To(BeFalse(),
-				"UT-KA-1044-009: mapper error must not trigger human review")
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"UT-KA-1044-009: mapper failure must not bypass missing-GVK review")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"UT-KA-1044-009: an unverified target must not select a workflow")
 		})
 	})
 
@@ -701,7 +906,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 	})
 
 	Describe("UT-KA-1044-022: Adversarial api_version from LLM", func() {
-		It("should accept adversarial api_version without gate rejection (BR-AI-1044 adversarial)", func() {
+		It("should reject a malformed api_version and require review (BR-KA-212, SI-10)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Subscription etcd needs restart",
@@ -727,11 +932,12 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			// Gate accepts any non-empty api_version; validation is downstream
-			Expect(result.RemediationTarget.APIVersion).To(Equal("../../etc/passwd"),
-				"UT-KA-1044-022: gate must accept any non-empty api_version (validation is downstream)")
-			Expect(result.HumanReviewNeeded).To(BeFalse(),
-				"UT-KA-1044-022: non-empty api_version must prevent human review")
+			Expect(result.RemediationTarget.APIVersion).To(BeEmpty(),
+				"UT-KA-1044-022: malformed api_version must not survive failed verification")
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"UT-KA-1044-022: malformed api_version must require human review")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"UT-KA-1044-022: malformed api_version must not select a workflow")
 		})
 	})
 

@@ -31,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -62,7 +61,7 @@ var _ = Describe("Kubernaut Agent Investigator — production dispatch path boun
 
 	Describe("IT-KA-1949-001: RunWorkflowDiscoveryFromRCA (Investigator.RunWorkflowDiscovery, the production entry InvestigateTool.handleDiscoverWorkflows drives via InvestigatorRunnerAdapter) returns within bounded time when a real registered tool hangs", func() {
 		It("does not hang past ToolCallTimeout+margin, and completes the turn once the LLM sees the timeout tool-result and issues its final decision", func() {
-			reg := registry.New()
+			reg := newGateDiscoveryRegistry()
 			reg.Register(hangingKubectlDescribeTool{})
 
 			client := &gateMockLLMClient{
@@ -98,7 +97,10 @@ var _ = Describe("Kubernaut Agent Investigator — production dispatch path boun
 			})
 
 			rcaResult := &katypes.InvestigationResult{RCASummary: "OOMKilled", Confidence: 0.9}
-			signal := katypes.SignalContext{Name: "test-pod", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod"}
+			signal := katypes.SignalContext{
+				Name: "test-pod", Namespace: "default", ResourceKind: "Pod", ResourceName: "test-pod",
+				ResourceAPIVersion: "v1",
+			}
 
 			type callResult struct {
 				result *katypes.InvestigationResult

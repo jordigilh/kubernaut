@@ -74,6 +74,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -151,6 +152,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -187,7 +189,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			// RCA returns a different remediation target to trigger re-enrichment
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
-					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Root cause is worker-pod OOM","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"production"}}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Root cause is worker-pod OOM","remediation_target":{"kind":"Pod","name":"worker-pod","namespace":"production","api_version":"v1"}}`}},
 					{
 						Message:   llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "list_available_actions", Arguments: `{}`}},
@@ -231,6 +233,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, tool := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(tool)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 			mapper := newItTestMapper()
 			mapper.(*meta.DefaultRESTMapper).Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
 			configmaps := suiteDynamicClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default")
@@ -268,6 +271,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
+			registerITTargetScopedDiscoveryTools(reg)
 
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)

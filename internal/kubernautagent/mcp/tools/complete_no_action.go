@@ -220,6 +220,12 @@ func buildNoActionResult(driver *mcpinternal.InteractiveSession, input CompleteN
 			RCASummary: "Investigation completed without workflow selection",
 		}
 	}
+	// A no-action completion is a terminal dismissal/escalation boundary, not
+	// workflow selection. The driver RCA may contain the Phase 3 recommendation;
+	// never carry that executable proposal into the completed result.
+	confidence := finalResult.Confidence
+	investigator.ClearWorkflowSelectionFields(finalResult)
+	finalResult.Confidence = confidence
 
 	if input.EscalationReason != "" {
 		finalResult.HumanReviewNeeded = true

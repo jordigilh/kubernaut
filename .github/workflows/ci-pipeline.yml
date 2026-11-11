@@ -99,7 +99,7 @@ jobs:
 
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
@@ -141,7 +141,7 @@ jobs:
     name: Lint (Go Services)
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -226,7 +226,7 @@ jobs:
     name: License Scan
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -276,7 +276,7 @@ jobs:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -403,7 +403,7 @@ jobs:
     name: "Build (${{ matrix.service }}/${{ matrix.arch }})"
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -569,7 +569,7 @@ jobs:
     name: Build Infra (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -691,7 +691,7 @@ jobs:
     name: Resolve operator source
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
@@ -753,7 +753,7 @@ jobs:
     name: Build operator (${{ matrix.arch }})
     needs: [resolve-operator]
     if: needs.resolve-operator.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -816,7 +816,7 @@ jobs:
     name: Package operator qualification artifact
     needs: [resolve-operator, build-operator-arch]
     if: needs.resolve-operator.result == 'success' && needs.build-operator-arch.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       operator_sha: ${{ needs.resolve-operator.outputs.operator_sha }}
@@ -908,7 +908,7 @@ jobs:
     name: Integration (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1120,7 +1120,7 @@ jobs:
     name: CEL Immutability Regression (K8s v1.31.0, #2284)
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1730,7 +1730,7 @@ jobs:
     name: Must-Gather contract checks (no application chart)
     needs: [detect-changes, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -1748,7 +1748,7 @@ jobs:
     name: Test Suite Summary
     needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
@@ -2057,7 +2057,7 @@ jobs:
     needs: [detect-changes, summary]
     if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.summary.result == 'failure'
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: quay.io/jordigilh/engram:latest
     permissions:
       actions: read
@@ -2127,7 +2127,7 @@ jobs:
             build-infra-images, build-operator,
             integration-tests, cel-immutability-regression, e2e-tests,
             must-gather-e2e-test, summary]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Evaluate CI results
         run: |

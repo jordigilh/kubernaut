@@ -17,18 +17,26 @@ limitations under the License.
 package investigator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
 // gateRetryOutcome enumerates why a validation-gate retry ended the way it
@@ -61,6 +69,9 @@ const (
 	// the parsed retry result still failed the gate's own check) with no more
 	// specific outcome above applying.
 	gateRetryExhausted gateRetryOutcome = "exhausted"
+	// gateRetryCancelled: the parent investigation context ended while the
+	// gate was verifying or correcting the target.
+	gateRetryCancelled gateRetryOutcome = "cancelled"
 )
 
 // submitOnlyRCATools returns the single-tool submit-only tool list used by
@@ -400,15 +411,1103 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	return retryResult
 }
 
-// apiVersionValidationGate validates target API versions against the REST mapper
-// (Issues #1044/#1051). For a kind with one mapper result, the mapper version
-// replaces any model proposal and is marked as validated. When the kind exists
-// in multiple API groups (e.g. Subscription in operators.coreos.com and
-// messaging.knative.dev) and api_version is empty, the gate injects a correction
-// message naming the conflicting groups and retries once. A non-empty model value
-// still bypasses that retry but remains unvalidated. On exhaustion, the gate sets
-// HumanReviewNeeded=true to prevent incorrect RBAC grants from resolving to the
-// wrong API group.
+type apiVersionVerification struct {
+	validated bool
+	cancelled bool
+	source    string
+	reason    string
+}
+
+type apiResourceDiscoveryPayload struct {
+	Resources []struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+	} `json:"resources"`
+	Warning string `json:"warning"`
+}
+
+const maxAPIVersionCorrectionDiscoveryRounds = 2
+
+// The model may request both target-scoped discovery endpoints in one retry
+// response, but an oversized batch must not consume the general tool budget.
+const maxAPIVersionCorrectionDiscoveryCallsPerResponse = 2
+
+func (inv *Investigator) executeTargetScopedDiscoveryTool(ctx context.Context, name string, args json.RawMessage, correlationID string, auditIndex int) (string, error) {
+	// Gate-owned discovery is still a normal investigator tool call. Keep the
+	// same anomaly budget, sanitizer/alignment handling, timeout, audit record,
+	// observer events and per-investigation metrics as model-dispatched calls.
+	callCtx := ctx
+	if inv.toolCallTimeout > 0 {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(callCtx, inv.toolCallTimeout)
+		defer cancel()
+	}
+	toolCall := llm.ToolCall{Name: name, Arguments: string(args)}
+	inv.metricsFor(correlationID).AddToolCalls(1)
+	emitToSink(ctx, session.EventTypeToolCallStart, 0, string(katypes.PhaseRCA), map[string]interface{}{
+		"tool_name":  name,
+		"tool_index": auditIndex,
+	})
+	result := inv.executeToolWithOptions(callCtx, name, args, correlationID, katypes.PhaseRCA, true)
+	inv.emitToolCallAudit(context.WithoutCancel(ctx), toolCall, auditIndex, result, string(katypes.PhaseRCA), correlationID)
+	emitToSink(ctx, session.EventTypeToolResult, 0, string(katypes.PhaseRCA), map[string]interface{}{
+		"tool_name":      name,
+		"tool_index":     auditIndex,
+		"result_preview": truncatePreview(result, 200),
+	})
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := callCtx.Err(); err != nil {
+		return "", err
+	}
+	if toolErr := discoveryToolError(result); toolErr != nil {
+		return "", fmt.Errorf("target-scoped discovery tool %q: %w", name, toolErr)
+	}
+	return result, nil
+}
+
+func isInvestigationCancellation(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		(errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil)
+}
+
+func discoveryToolError(result string) error {
+	var envelope struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result), &envelope); err == nil && strings.EqualFold(envelope.Status, "error") {
+		if envelope.Error == "" {
+			return fmt.Errorf("target-scoped discovery tool returned an error")
+		}
+		return fmt.Errorf("target-scoped discovery tool returned an error: %s", envelope.Error)
+	}
+	return nil
+}
+
+func hasExactAPIResource(payload apiResourceDiscoveryPayload, target katypes.RemediationTarget) bool {
+	for _, resource := range payload.Resources {
+		if strings.EqualFold(resource.Kind, target.Kind) && resource.APIVersion == target.APIVersion {
+			return true
+		}
+	}
+	return false
+}
+
+// hasExactResourceListEvidence accepts the structured list response returned
+// by the local metadata resolver and the remote kube-mcp-server. The local
+// resolver returns a metadata list object, while kube-mcp-server's YAML output
+// is a sequence of the listed objects. A successful metadata list or empty
+// remote sequence proves that the requested list endpoint accepted the exact
+// GVK; non-empty sequences must carry matching per-item GVK evidence.
+func hasExactResourceListEvidence(result string, target katypes.RemediationTarget) bool {
+	return hasExactResourceListEvidenceForSource(result, target, true)
+}
+
+func hasExactResourceListEvidenceForSource(result string, target katypes.RemediationTarget, allowMetadataList bool) bool {
+	if strings.EqualFold(strings.TrimSpace(result), "No resources found") {
+		return true
+	}
+	jsonResult, err := sigsyaml.YAMLToJSON([]byte(result))
+	if err != nil {
+		return false
+	}
+	trimmed := bytes.TrimSpace(jsonResult)
+	if len(trimmed) == 0 {
+		return false
+	}
+
+	switch trimmed[0] {
+	case '[':
+		return hasExactResourceListSequence(trimmed, target)
+	case '{':
+		return hasExactResourceListEnvelope(trimmed, target, allowMetadataList)
+	default:
+		return false
+	}
+}
+
+func hasExactResourceListSequence(trimmed []byte, target katypes.RemediationTarget) bool {
+	var items []json.RawMessage
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return false
+	}
+	if len(items) == 0 {
+		return items != nil
+	}
+	return resourceListItemsWellFormed(items, target, true)
+}
+
+func hasExactResourceListEnvelope(trimmed []byte, target katypes.RemediationTarget, allowMetadataList bool) bool {
+	var payload struct {
+		APIVersion string          `json:"apiVersion"`
+		Kind       string          `json:"kind"`
+		Items      json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		return false
+	}
+	if len(payload.Items) == 0 || validateResourceListEnvelope(payload.APIVersion, payload.Kind, target.APIVersion, target.Kind) != nil {
+		return false
+	}
+	if payload.APIVersion == "meta.k8s.io/v1" && !allowMetadataList {
+		return false
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(payload.Items, &items); err != nil || items == nil {
+		return false
+	}
+	return resourceListItemsWellFormed(items, target, false)
+}
+
+// resourceListItemsWellFormed rejects opaque item values before a list can
+// establish exact-GVK evidence. Full remote objects must carry the requested
+// apiVersion/kind; local metadata summaries may instead carry a metadata map.
+func resourceListItemsWellFormed(items []json.RawMessage, target katypes.RemediationTarget, requireGVK bool) bool {
+	for _, rawItem := range items {
+		var item map[string]json.RawMessage
+		if err := json.Unmarshal(rawItem, &item); err != nil || item == nil {
+			return false
+		}
+		apiVersionRaw, hasAPIVersion := item["apiVersion"]
+		kindRaw, hasKind := item["kind"]
+		if hasAPIVersion || hasKind {
+			var apiVersion, kind string
+			if !hasAPIVersion || !hasKind || json.Unmarshal(apiVersionRaw, &apiVersion) != nil ||
+				json.Unmarshal(kindRaw, &kind) != nil || apiVersion != target.APIVersion ||
+				!strings.EqualFold(kind, target.Kind) {
+				return false
+			}
+			continue
+		}
+		if requireGVK {
+			return false
+		}
+		metadataRaw, hasMetadata := item["metadata"]
+		if !hasMetadata {
+			return false
+		}
+		if _, err := projectResourceMetadata(metadataRaw); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// projectResourceMetadata validates and retains only the bounded metadata
+// fields safe for investigator context and audit persistence. Present fields
+// must have their declared scalar types; silently dropping malformed values
+// would turn invalid cluster evidence into apparently trustworthy evidence.
+func projectResourceMetadata(rawMetadata json.RawMessage) (map[string]interface{}, error) {
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(rawMetadata, &metadata); err != nil || metadata == nil {
+		return nil, fmt.Errorf("resources_list item metadata is malformed")
+	}
+	safeMetadata := make(map[string]interface{}, 6)
+	for _, key := range []string{"name", "namespace", "uid", "resourceVersion"} {
+		if rawValue, exists := metadata[key]; exists {
+			var value string
+			trimmed := bytes.TrimSpace(rawValue)
+			if bytes.Equal(trimmed, []byte("null")) || json.Unmarshal(rawValue, &value) != nil {
+				return nil, fmt.Errorf("resources_list metadata.%s is not a string", key)
+			}
+			safeMetadata[key] = value
+		}
+	}
+	if rawLabels, exists := metadata["labels"]; exists {
+		trimmed := bytes.TrimSpace(rawLabels)
+		var labels map[string]string
+		if bytes.Equal(trimmed, []byte("null")) || json.Unmarshal(rawLabels, &labels) != nil || labels == nil {
+			return nil, fmt.Errorf("resources_list metadata.labels is not a string map")
+		}
+		safeMetadata["labels"] = k8s.BoundedResourceLabels(labels)
+	}
+	return safeMetadata, nil
+}
+
+type resourceListCompleteness struct {
+	itemCount  int
+	totalCount *int
+	truncated  bool
+}
+
+type resourceListWireMetadata struct {
+	itemCount          json.RawMessage
+	totalCount         json.RawMessage
+	truncated          json.RawMessage
+	continueToken      json.RawMessage
+	remainingItemCount json.RawMessage
+}
+
+// parseResourceListCompleteness preserves server-provided list completeness
+// metadata while rejecting malformed scalar values. Missing fields are derived
+// from the projected item count, which is exact for an unpaginated response.
+func parseResourceListCompleteness(itemCount int, metadata resourceListWireMetadata) (resourceListCompleteness, error) {
+	completeness := resourceListCompleteness{itemCount: itemCount}
+	parsedItemCount, hasItemCount, err := parseResourceListNonNegativeInt(metadata.itemCount, "item_count")
+	if err != nil {
+		return resourceListCompleteness{}, err
+	}
+	if hasItemCount && parsedItemCount != itemCount {
+		return resourceListCompleteness{}, fmt.Errorf("resources_list item_count does not match items")
+	}
+	continuation, err := resourceListContinuation(metadata.continueToken)
+	if err != nil {
+		return resourceListCompleteness{}, err
+	}
+	remaining, hasRemaining, err := parseResourceListNonNegativeInt(metadata.remainingItemCount, "remaining item count")
+	if err != nil {
+		return resourceListCompleteness{}, err
+	}
+	completeness.truncated, err = resourceListTruncated(metadata.truncated, continuation)
+	if err != nil {
+		return resourceListCompleteness{}, err
+	}
+	totalCount, hasTotalCount, err := resourceListTotalCount(completeness.itemCount, metadata.totalCount, completeness.truncated, remaining, hasRemaining)
+	if err != nil {
+		return resourceListCompleteness{}, err
+	}
+	if hasTotalCount {
+		completeness.totalCount = &totalCount
+	}
+	return completeness, nil
+}
+
+func parseResourceListNonNegativeInt(raw json.RawMessage, field string) (int, bool, error) {
+	if len(raw) == 0 {
+		return 0, false, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return 0, false, fmt.Errorf("resources_list %s is malformed", field)
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err != nil || value < 0 {
+		return 0, false, fmt.Errorf("resources_list %s is malformed", field)
+	}
+	return value, true, nil
+}
+
+func resourceListContinuation(raw json.RawMessage) (bool, error) {
+	if len(raw) == 0 {
+		return false, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return false, fmt.Errorf("resources_list continuation token is malformed")
+	}
+	var token string
+	if err := json.Unmarshal(raw, &token); err != nil {
+		return false, fmt.Errorf("resources_list continuation token is malformed")
+	}
+	return token != "", nil
+}
+
+func resourceListTotalCount(itemCount int, raw json.RawMessage, incomplete bool, remaining int, hasRemaining bool) (int, bool, error) {
+	totalCount, hasTotal, err := parseResourceListNonNegativeInt(raw, "total_count")
+	if err != nil {
+		return 0, false, err
+	}
+	switch {
+	case hasTotal:
+		if totalCount < itemCount {
+			return 0, false, fmt.Errorf("resources_list total_count is malformed")
+		}
+		return totalCount, true, nil
+	case hasRemaining:
+		totalCount = itemCount + remaining
+		if totalCount < itemCount {
+			return 0, false, fmt.Errorf("resources_list total_count is malformed")
+		}
+		return totalCount, true, nil
+	case !incomplete:
+		totalCount = itemCount
+		return totalCount, true, nil
+	default:
+		return 0, false, nil
+	}
+}
+
+func resourceListTruncated(raw json.RawMessage, continuation bool) (bool, error) {
+	if len(raw) == 0 {
+		return continuation, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return false, fmt.Errorf("resources_list truncated flag is malformed")
+	}
+	var truncated bool
+	if err := json.Unmarshal(raw, &truncated); err != nil {
+		return false, fmt.Errorf("resources_list truncated flag is malformed")
+	}
+	if continuation && !truncated {
+		return false, fmt.Errorf("resources_list continuation requires truncated=true")
+	}
+	return truncated, nil
+}
+
+// parseResourceListPageHeader reads the comment metadata emitted by
+// kube-mcp-server before a YAML list. The opaque token is intentionally not
+// retained in the projected payload; its presence only proves the page is
+// incomplete, while remainingItemCount can establish a bounded total.
+func parseResourceListPageHeader(result string) (resourceListWireMetadata, error) {
+	var metadata resourceListWireMetadata
+	for _, line := range strings.Split(result, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "#") {
+			break
+		}
+		field, value, ok := strings.Cut(strings.TrimSpace(strings.TrimPrefix(line, "#")), ":")
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		switch strings.TrimSpace(field) {
+		case "continue":
+			if value == "" {
+				return resourceListWireMetadata{}, fmt.Errorf("resources_list continuation token is malformed")
+			}
+			metadata.continueToken = json.RawMessage(strconv.Quote(value))
+		case "remainingItemCount":
+			metadata.remainingItemCount = json.RawMessage(value)
+		}
+	}
+	return metadata, nil
+}
+
+func validateResourceListEnvelope(apiVersion, kind, targetAPIVersion, targetKind string) error {
+	listKind, isList := strings.CutSuffix(kind, "List")
+	if !isList || !strings.EqualFold(listKind, targetKind) {
+		return fmt.Errorf("resources_list response envelope kind does not match the requested GVK")
+	}
+	if apiVersion != "meta.k8s.io/v1" && apiVersion != targetAPIVersion {
+		return fmt.Errorf("resources_list response envelope apiVersion does not match the requested GVK")
+	}
+	return nil
+}
+
+// projectResourcesListOutput removes resource bodies before a target-scoped
+// list reaches alignment, the LLM, or audit persistence. kube-mcp-server's
+// YAML mode returns a bare sequence and table mode returns structured rows,
+// while the local resolver returns a metadata-list object; all are reduced to
+// GVK plus bounded metadata.
+func projectResourcesListOutput(result string, args json.RawMessage) (string, error) {
+	target, err := parseResourceListTarget(args)
+	if err != nil {
+		return "", err
+	}
+	if strings.EqualFold(strings.TrimSpace(result), "No resources found") {
+		completeness, completenessErr := parseResourceListCompleteness(0, resourceListWireMetadata{})
+		if completenessErr != nil {
+			return "", completenessErr
+		}
+		return marshalProjectedResourceList(target.APIVersion, target.Kind+"List", []map[string]interface{}{}, completeness)
+	}
+	pageMetadata, pageMetadataErr := parseResourceListPageHeader(result)
+	if pageMetadataErr != nil {
+		return "", pageMetadataErr
+	}
+	jsonResult, err := sigsyaml.YAMLToJSON([]byte(result))
+	if err != nil {
+		return "", fmt.Errorf("resources_list response is not structured: %w", err)
+	}
+	trimmed := bytes.TrimSpace(jsonResult)
+	if len(trimmed) == 0 {
+		return "", fmt.Errorf("resources_list response is empty")
+	}
+
+	switch trimmed[0] {
+	case '[':
+		return projectResourceListSequence(trimmed, target, pageMetadata)
+	case '{':
+		if isStructuredResourceListTable(trimmed) {
+			return projectResourceListTable(trimmed, target, pageMetadata)
+		}
+		return projectResourceListEnvelope(trimmed, target, pageMetadata)
+	default:
+		return "", fmt.Errorf("resources_list response is neither a list nor an object")
+	}
+}
+
+func isStructuredResourceListTable(trimmed []byte) bool {
+	var envelope struct {
+		APIVersion string          `json:"apiVersion"`
+		Kind       string          `json:"kind"`
+		Items      json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
+		return false
+	}
+	return envelope.APIVersion == "" && envelope.Kind == "" && len(envelope.Items) > 0
+}
+
+func projectResourceListTable(trimmed []byte, target katypes.RemediationTarget, pageMetadata resourceListWireMetadata) (string, error) {
+	var envelope struct {
+		Items      json.RawMessage `json:"items"`
+		ItemCount  json.RawMessage `json:"item_count"`
+		TotalCount json.RawMessage `json:"total_count"`
+		Truncated  json.RawMessage `json:"truncated"`
+		Continue   json.RawMessage `json:"continue"`
+		Remaining  json.RawMessage `json:"remainingItemCount"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil || len(envelope.Items) == 0 {
+		return "", fmt.Errorf("resources_list table response is malformed")
+	}
+	pageMetadata = mergeResourceListWireMetadata(pageMetadata, resourceListWireMetadata{
+		itemCount: envelope.ItemCount, totalCount: envelope.TotalCount,
+		truncated: envelope.Truncated, continueToken: envelope.Continue,
+		remainingItemCount: envelope.Remaining,
+	})
+
+	var rows []json.RawMessage
+	if err := json.Unmarshal(envelope.Items, &rows); err != nil || rows == nil {
+		return "", fmt.Errorf("resources_list table response items are malformed")
+	}
+	safeItems, err := projectResourceListTableItems(rows, target)
+	if err != nil {
+		return "", err
+	}
+	completeness, err := parseResourceListCompleteness(len(safeItems), pageMetadata)
+	if err != nil {
+		return "", err
+	}
+	return marshalProjectedResourceList(target.APIVersion, target.Kind+"List", safeItems, completeness)
+}
+
+func projectResourceListTableItems(rows []json.RawMessage, target katypes.RemediationTarget) ([]map[string]interface{}, error) {
+	safeItems := make([]map[string]interface{}, 0, len(rows))
+	for _, rawRow := range rows {
+		row, err := projectResourceListTableItem(rawRow, target)
+		if err != nil {
+			return nil, err
+		}
+		safeItems = append(safeItems, row)
+	}
+	return safeItems, nil
+}
+
+func projectResourceListTableItem(rawRow json.RawMessage, target katypes.RemediationTarget) (map[string]interface{}, error) {
+	var row map[string]json.RawMessage
+	if err := json.Unmarshal(rawRow, &row); err != nil || row == nil {
+		return nil, fmt.Errorf("resources_list table row is malformed")
+	}
+
+	if err := validateResourceListTableRowGVK(row, target); err != nil {
+		return nil, err
+	}
+	safe := map[string]interface{}{
+		"apiVersion": target.APIVersion,
+		"kind":       target.Kind,
+	}
+	metadata, err := projectResourceListTableMetadata(row)
+	if err != nil {
+		return nil, err
+	}
+	if len(metadata) == 0 {
+		return nil, fmt.Errorf("resources_list table row has no recognized metadata")
+	}
+	safe["metadata"] = metadata
+	return safe, nil
+}
+
+func validateResourceListTableRowGVK(row map[string]json.RawMessage, target katypes.RemediationTarget) error {
+	apiVersionRaw, hasAPIVersion := row["apiVersion"]
+	kindRaw, hasKind := row["kind"]
+	if hasAPIVersion != hasKind {
+		return fmt.Errorf("resources_list table row is missing its GVK")
+	}
+	if !hasAPIVersion {
+		return nil
+	}
+
+	var apiVersion, kind string
+	if json.Unmarshal(apiVersionRaw, &apiVersion) != nil || json.Unmarshal(kindRaw, &kind) != nil ||
+		apiVersion != target.APIVersion || !strings.EqualFold(kind, target.Kind) {
+		return fmt.Errorf("resources_list table row does not match the requested GVK")
+	}
+	return nil
+}
+
+func projectResourceListTableMetadata(row map[string]json.RawMessage) (map[string]interface{}, error) {
+	metadata := make(map[string]interface{}, 4)
+	for _, field := range []struct {
+		rowKey      string
+		metadataKey string
+	}{
+		{rowKey: "Name", metadataKey: "name"},
+		{rowKey: "Namespace", metadataKey: "namespace"},
+		{rowKey: "UID", metadataKey: "uid"},
+		{rowKey: "ResourceVersion", metadataKey: "resourceVersion"},
+	} {
+		rawValue, exists := row[field.rowKey]
+		if !exists {
+			continue
+		}
+		value, err := resourceListTableString(rawValue, field.rowKey)
+		if err != nil {
+			return nil, err
+		}
+		metadata[field.metadataKey] = value
+	}
+	if rawMetadata, exists := row["metadata"]; exists {
+		safeMetadata, err := projectResourceMetadata(rawMetadata)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range safeMetadata {
+			metadata[key] = value
+		}
+	}
+	return metadata, nil
+}
+
+func resourceListTableString(rawValue json.RawMessage, field string) (string, error) {
+	var value string
+	if bytes.Equal(bytes.TrimSpace(rawValue), []byte("null")) || json.Unmarshal(rawValue, &value) != nil {
+		return "", fmt.Errorf("resources_list table row %s is not a string", field)
+	}
+	return value, nil
+}
+
+func parseResourceListTarget(args json.RawMessage) (katypes.RemediationTarget, error) {
+	var target struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+	}
+	if err := json.Unmarshal(args, &target); err != nil || target.APIVersion == "" || target.Kind == "" {
+		return katypes.RemediationTarget{}, fmt.Errorf("resources_list target arguments are malformed")
+	}
+	return katypes.RemediationTarget{APIVersion: target.APIVersion, Kind: target.Kind}, nil
+}
+
+func projectResourceListSequence(trimmed []byte, target katypes.RemediationTarget, pageMetadata resourceListWireMetadata) (string, error) {
+	var items []json.RawMessage
+	if err := json.Unmarshal(trimmed, &items); err != nil || items == nil {
+		return "", fmt.Errorf("resources_list response is not a list")
+	}
+	safeItems, err := projectResourceListItems(items, target, true)
+	if err != nil {
+		return "", err
+	}
+	completeness, err := parseResourceListCompleteness(len(safeItems), pageMetadata)
+	if err != nil {
+		return "", err
+	}
+	return marshalProjectedResourceList(target.APIVersion, target.Kind+"List", safeItems, completeness)
+}
+
+func projectResourceListEnvelope(trimmed []byte, target katypes.RemediationTarget, pageMetadata resourceListWireMetadata) (string, error) {
+
+	var envelope struct {
+		APIVersion string          `json:"apiVersion"`
+		Kind       string          `json:"kind"`
+		Items      json.RawMessage `json:"items"`
+		ItemCount  json.RawMessage `json:"item_count"`
+		TotalCount json.RawMessage `json:"total_count"`
+		Truncated  json.RawMessage `json:"truncated"`
+		Continue   json.RawMessage `json:"continue"`
+		Remaining  json.RawMessage `json:"remainingItemCount"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil || len(envelope.Items) == 0 {
+		return "", fmt.Errorf("resources_list response envelope is malformed")
+	}
+	if err := validateResourceListEnvelope(envelope.APIVersion, envelope.Kind, target.APIVersion, target.Kind); err != nil {
+		return "", err
+	}
+	pageMetadata = mergeResourceListWireMetadata(pageMetadata, resourceListWireMetadata{
+		itemCount: envelope.ItemCount, totalCount: envelope.TotalCount,
+		truncated: envelope.Truncated, continueToken: envelope.Continue,
+		remainingItemCount: envelope.Remaining,
+	})
+	var items []json.RawMessage
+	if err := json.Unmarshal(envelope.Items, &items); err != nil || items == nil {
+		return "", fmt.Errorf("resources_list response items are malformed")
+	}
+	safeItems, err := projectResourceListItems(items, target, false)
+	if err != nil {
+		return "", err
+	}
+	completeness, err := parseResourceListCompleteness(len(safeItems), pageMetadata)
+	if err != nil {
+		return "", err
+	}
+	return marshalProjectedResourceList(envelope.APIVersion, envelope.Kind, safeItems, completeness)
+}
+
+func projectResourceListItems(items []json.RawMessage, target katypes.RemediationTarget, requireGVK bool) ([]map[string]interface{}, error) {
+	safeItems := make([]map[string]interface{}, 0, len(items))
+	for _, rawItem := range items {
+		item, err := projectResourceListItem(rawItem, target.APIVersion, target.Kind, requireGVK)
+		if err != nil {
+			return nil, err
+		}
+		safeItems = append(safeItems, item)
+	}
+	return safeItems, nil
+}
+
+func mergeResourceListWireMetadata(base, override resourceListWireMetadata) resourceListWireMetadata {
+	if len(override.itemCount) > 0 {
+		base.itemCount = override.itemCount
+	}
+	if len(override.totalCount) > 0 {
+		base.totalCount = override.totalCount
+	}
+	if len(override.truncated) > 0 {
+		base.truncated = override.truncated
+	}
+	if len(override.continueToken) > 0 {
+		base.continueToken = override.continueToken
+	}
+	if len(override.remainingItemCount) > 0 {
+		base.remainingItemCount = override.remainingItemCount
+	}
+	return base
+}
+
+func projectResourceListItem(rawItem json.RawMessage, targetAPIVersion, targetKind string, requireGVK bool) (map[string]interface{}, error) {
+	var item map[string]json.RawMessage
+	if err := json.Unmarshal(rawItem, &item); err != nil || item == nil {
+		return nil, fmt.Errorf("resources_list item is malformed")
+	}
+	safe, hasGVK, err := projectResourceItemGVK(item, targetAPIVersion, targetKind, requireGVK)
+	if err != nil {
+		return nil, err
+	}
+
+	if metadataRaw, ok := item["metadata"]; ok {
+		safeMetadata, metadataErr := projectResourceMetadata(metadataRaw)
+		if metadataErr != nil {
+			return nil, metadataErr
+		}
+		safe["metadata"] = safeMetadata
+	} else if !hasGVK {
+		return nil, fmt.Errorf("resources_list item has no safe metadata")
+	}
+	return safe, nil
+}
+
+func projectResourceItemGVK(item map[string]json.RawMessage, targetAPIVersion, targetKind string, requireGVK bool) (map[string]interface{}, bool, error) {
+	safe := make(map[string]interface{}, 3)
+	apiVersionRaw, hasAPIVersion := item["apiVersion"]
+	kindRaw, hasKind := item["kind"]
+	if !hasAPIVersion && !hasKind {
+		if requireGVK {
+			return nil, false, fmt.Errorf("resources_list item is missing its GVK")
+		}
+		return safe, false, nil
+	}
+
+	var apiVersion, kind string
+	if !hasAPIVersion || !hasKind || json.Unmarshal(apiVersionRaw, &apiVersion) != nil ||
+		json.Unmarshal(kindRaw, &kind) != nil || apiVersion != targetAPIVersion ||
+		!strings.EqualFold(kind, targetKind) {
+		return nil, false, fmt.Errorf("resources_list item does not match the requested GVK")
+	}
+	safe["apiVersion"] = apiVersion
+	safe["kind"] = kind
+	return safe, true, nil
+}
+
+func marshalProjectedResourceList(apiVersion, kind string, items []map[string]interface{}, completeness resourceListCompleteness) (string, error) {
+	projected := map[string]interface{}{
+		"apiVersion": apiVersion,
+		"kind":       kind,
+		"items":      items,
+		"item_count": completeness.itemCount,
+		"truncated":  completeness.truncated,
+	}
+	if completeness.totalCount != nil {
+		projected["total_count"] = *completeness.totalCount
+	}
+	data, err := json.Marshal(projected)
+	if err != nil {
+		return "", fmt.Errorf("marshal projected resources_list response: %w", err)
+	}
+	return string(data), nil
+}
+
+func verifyAPIResourcesListEvidence(result string, target katypes.RemediationTarget) (bool, error) {
+	if toolErr := discoveryToolError(result); toolErr != nil {
+		return false, toolErr
+	}
+
+	var payload apiResourceDiscoveryPayload
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return false, fmt.Errorf("malformed api_resources_list response: %w", err)
+	}
+	if payload.Warning != "" {
+		return false, fmt.Errorf("api_resources_list returned a partial discovery warning: %s", payload.Warning)
+	}
+	if !hasExactAPIResource(payload, target) {
+		return false, fmt.Errorf("api_resources_list did not return the exact GVK %s/%s", target.APIVersion, target.Kind)
+	}
+	return true, nil
+}
+
+func verifyResourcesListEvidence(result string, target katypes.RemediationTarget, allowMetadataList bool) error {
+	if toolErr := discoveryToolError(result); toolErr != nil {
+		return toolErr
+	}
+	if !hasExactResourceListEvidenceForSource(result, target, allowMetadataList) {
+		return fmt.Errorf("resources_list did not return structured evidence for the exact GVK %s/%s", target.APIVersion, target.Kind)
+	}
+	return nil
+}
+
+func (inv *Investigator) verifyExactTargetAPIVersion(ctx context.Context, target katypes.RemediationTarget, correlationID string) apiVersionVerification {
+	if target.APIVersion == "" {
+		return apiVersionVerification{reason: "api_version is required"}
+	}
+	if !isValidAPIVersion(target.APIVersion) {
+		return apiVersionVerification{reason: fmt.Sprintf("api_version %q is malformed", target.APIVersion)}
+	}
+
+	args, _ := json.Marshal(map[string]string{"kind": target.Kind})
+	apiResult, apiErr := inv.executeTargetScopedDiscoveryTool(ctx, "api_resources_list", args, correlationID, 0)
+	if apiErr == nil {
+		validated, verificationErr := verifyAPIResourcesListEvidence(apiResult, target)
+		if validated {
+			return apiVersionVerification{validated: true, source: "api_resources_list"}
+		}
+		apiErr = verificationErr
+	}
+	if apiErr != nil && isInvestigationCancellation(ctx, apiErr) {
+		return apiVersionVerification{cancelled: true, reason: "exact GVK verification cancelled: " + apiErr.Error()}
+	}
+	if apiErr != nil && !strings.Contains(apiErr.Error(), "did not return the exact GVK") {
+		return apiVersionVerification{reason: "exact GVK could not be independently verified: " + apiErr.Error()}
+	}
+
+	// api_resources_list intentionally exposes preferred versions only. A
+	// successful exact resources_list call is independent positive evidence for
+	// a served non-preferred version and does not require the named object to
+	// exist. It is never used to infer absence from an empty list.
+	listArgs, _ := json.Marshal(map[string]interface{}{
+		"apiVersion": target.APIVersion,
+		"kind":       target.Kind,
+		"namespace":  target.Namespace,
+		"limit":      100,
+	})
+	listResult, listErr := inv.executeTargetScopedDiscoveryTool(ctx, "resources_list", listArgs, correlationID, 1)
+	if listErr == nil {
+		_, remoteTarget := FleetOverlayFromContext(ctx)
+		listErr = verifyResourcesListEvidence(listResult, target, !remoteTarget)
+		if listErr == nil {
+			return apiVersionVerification{validated: true, source: "resources_list"}
+		}
+	}
+	if listErr != nil && isInvestigationCancellation(ctx, listErr) {
+		return apiVersionVerification{cancelled: true, reason: "exact GVK verification cancelled: " + listErr.Error()}
+	}
+
+	reason := "exact GVK could not be independently verified"
+	if apiErr != nil {
+		reason += ": " + apiErr.Error()
+	}
+	if listErr != nil {
+		reason += "; resources_list: " + listErr.Error()
+	}
+	return apiVersionVerification{reason: reason}
+}
+
+func markExactTargetAPIVersionValidated(ctx context.Context, result *katypes.InvestigationResult, source string) {
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	target := result.RemediationTarget
+	target.APIVersionValidated = true
+	result.RemediationTarget = target
+	result.APIVersionValidation = &katypes.APIVersionValidation{
+		ClusterID: clusterID, Kind: target.Kind, Name: target.Name,
+		Namespace: target.Namespace, APIVersion: target.APIVersion, Source: source,
+	}
+}
+
+func cloneAPIVersionValidation(validation *katypes.APIVersionValidation) *katypes.APIVersionValidation {
+	if validation == nil {
+		return nil
+	}
+	clone := *validation
+	return &clone
+}
+
+// TargetAPIVersionValidationMatches verifies the complete server-owned
+// provenance binding before a result crosses an investigation or interactive
+// handoff boundary. clusterID is the authoritative target-cluster identity for
+// that boundary; an empty value denotes the local hub investigation.
+func TargetAPIVersionValidationMatches(result *katypes.InvestigationResult, clusterID string) bool {
+	if result == nil || !result.RemediationTarget.APIVersionValidated || result.APIVersionValidation == nil {
+		return false
+	}
+	validation := result.APIVersionValidation
+	target := result.RemediationTarget
+	return validation.ClusterID == clusterID &&
+		strings.EqualFold(validation.Kind, target.Kind) &&
+		validation.Name == target.Name &&
+		validation.Namespace == target.Namespace &&
+		validation.APIVersion == target.APIVersion &&
+		validation.Source != ""
+}
+
+func completeAPIVersionValidation(result *katypes.InvestigationResult) bool {
+	if result == nil || result.APIVersionValidation == nil {
+		return false
+	}
+	return TargetAPIVersionValidationMatches(result, result.APIVersionValidation.ClusterID)
+}
+
+func clearTargetAPIVersionValidation(result *katypes.InvestigationResult) {
+	if result == nil {
+		return
+	}
+	result.RemediationTarget.APIVersionValidated = false
+	result.APIVersionValidation = nil
+}
+
+func sameCorrectionTarget(expected, actual katypes.RemediationTarget) bool {
+	return strings.EqualFold(expected.Kind, actual.Kind) &&
+		expected.Name == actual.Name && expected.Namespace == actual.Namespace
+}
+
+func (inv *Investigator) correctionToolDefinition(ctx context.Context, name string) (llm.ToolDefinition, bool) {
+	if overlay, ok := FleetOverlayFromContext(ctx); ok {
+		tool, found := resolveTool(overlay, name)
+		if !found {
+			return llm.ToolDefinition{}, false
+		}
+		return llm.ToolDefinition{Name: tool.Name(), Description: tool.Description(), Parameters: tool.Parameters()}, true
+	}
+	if inv.registry != nil {
+		for _, tool := range inv.registry.ToolsForPhase(katypes.PhaseRCA, inv.phaseTools) {
+			if tool.Name() == name {
+				return llm.ToolDefinition{Name: tool.Name(), Description: tool.Description(), Parameters: tool.Parameters()}, true
+			}
+		}
+	}
+	return llm.ToolDefinition{}, false
+}
+
+func (inv *Investigator) targetScopedCorrectionTools(ctx context.Context) []llm.ToolDefinition {
+	defs := make([]llm.ToolDefinition, 0, 3)
+	for _, name := range []string{"api_resources_list", "resources_list"} {
+		if definition, ok := inv.correctionToolDefinition(ctx, name); ok {
+			defs = append(defs, definition)
+		}
+	}
+	defs = append(defs, submitOnlyRCATools()...)
+	return defs
+}
+
+// resolveTargetScopedCorrectionSubmission lets the model use only the
+// target-cluster discovery tools during the bounded correction turn. Tool
+// results are fed back to the model before it must resubmit the RCA. The
+// harness still independently verifies the submitted GVK afterwards; model
+// claims about discovery never establish validation.
+type correctionToolCalls struct {
+	submitContent string
+	otherTools    []llm.ToolCall
+	discovery     []llm.ToolCall
+	unknown       []llm.ToolCall
+}
+
+func classifyCorrectionToolCalls(resp llm.ChatResponse, allowed map[string]struct{}) correctionToolCalls {
+	classified := correctionToolCalls{}
+	for _, toolCall := range resp.ToolCalls {
+		if toolCall.Name == SubmitResultToolName && classified.submitContent == "" {
+			classified.submitContent = toolCall.Arguments
+			continue
+		}
+		classified.otherTools = append(classified.otherTools, toolCall)
+		if toolCall.Name == SubmitResultToolName {
+			classified.unknown = append(classified.unknown, toolCall)
+			continue
+		}
+		if _, ok := allowed[toolCall.Name]; ok {
+			classified.discovery = append(classified.discovery, toolCall)
+		} else {
+			classified.unknown = append(classified.unknown, toolCall)
+		}
+	}
+	return classified
+}
+
+func correctionToolAllowlist(tools []llm.ToolDefinition) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		allowed[tool.Name] = struct{}{}
+	}
+	return allowed
+}
+
+func (inv *Investigator) executeCorrectionDiscoveryCalls(
+	ctx context.Context,
+	llmCtx LLMInvocationContext,
+	calls []llm.ToolCall,
+	discoveryRounds int,
+	gateEvent *audit.AuditEvent,
+) ([]llm.Message, gateRetryOutcome, bool) {
+	toolMessages := make([]llm.Message, 0, len(calls))
+	if len(calls) > 0 && discoveryRounds >= maxAPIVersionCorrectionDiscoveryRounds {
+		gateEvent.Data["discovery_tool_error"] = "correction discovery tool-call budget exhausted"
+		return nil, gateRetryExhausted, false
+	}
+	if len(calls) > maxAPIVersionCorrectionDiscoveryCallsPerResponse {
+		gateEvent.Data["discovery_tool_error"] = "correction discovery response exceeded the tool-call budget"
+		return nil, gateRetryExhausted, false
+	}
+	inv.metricsFor(llmCtx.CorrelationID).AddToolCalls(len(calls))
+	for _, toolCall := range calls {
+		emitToSink(ctx, session.EventTypeToolCallStart, 0, string(katypes.PhaseRCA), map[string]interface{}{
+			"tool_name": toolCall.Name,
+		})
+		toolResult := inv.executeToolCall(ctx, toolCall, llmCtx.CorrelationID, katypes.PhaseRCA)
+		inv.emitToolCallAudit(context.WithoutCancel(ctx), toolCall, len(toolMessages), toolResult, string(katypes.PhaseRCA), llmCtx.CorrelationID)
+		emitToSink(ctx, session.EventTypeToolResult, 0, string(katypes.PhaseRCA), map[string]interface{}{
+			"tool_name":      toolCall.Name,
+			"result_preview": truncatePreview(toolResult, 200),
+		})
+		if discoveryErr := discoveryToolError(toolResult); discoveryErr != nil {
+			gateEvent.Data["discovery_tool_error"] = sanitization.SanitizeForLog(truncatePreview(discoveryErr.Error(), 500))
+			return nil, gateRetryExhausted, false
+		}
+		calledTools, _ := gateEvent.Data["correction_discovery_tools_called"].([]string)
+		gateEvent.Data["correction_discovery_tools_called"] = append(calledTools, toolCall.Name)
+		toolMessages = append(toolMessages, llm.Message{
+			Role:       "tool",
+			Content:    toolResult,
+			ToolCallID: toolCall.ID,
+			ToolName:   toolCall.Name,
+		})
+	}
+	return toolMessages, "", true
+}
+
+func appendCorrectionUnknownToolGuidance(
+	messages []llm.Message,
+	unknown []llm.ToolCall,
+	usedReminder bool,
+	gateEvent *audit.AuditEvent,
+) ([]llm.Message, bool, gateRetryOutcome, bool) {
+	if len(unknown) == 0 {
+		return messages, usedReminder, "", true
+	}
+	if usedReminder {
+		gateEvent.Data["other_tools_called"] = toolCallNames(unknown)
+		return messages, usedReminder, gateRetryOtherToolExhausted, false
+	}
+	for _, toolCall := range unknown {
+		messages = append(messages, llm.Message{
+			Role:       "tool",
+			Content:    fmt.Sprintf("Tool %q is not available for this correction step.", toolCall.Name),
+			ToolCallID: toolCall.ID,
+			ToolName:   toolCall.Name,
+		})
+	}
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: "You must use only api_resources_list or resources_list for target-cluster evidence, then call submit_result to resubmit your root cause analysis.",
+	})
+	return messages, true, "", true
+}
+
+func appendCorrectionEvidencePrompt(messages []llm.Message) []llm.Message {
+	return append(messages, llm.Message{
+		Role:    "user",
+		Content: "Use the target-cluster discovery result above to choose the exact api_version, then call submit_result with the complete root cause analysis.",
+	})
+}
+
+func (inv *Investigator) requestCorrectionFollowup(
+	ctx context.Context,
+	llmCtx LLMInvocationContext,
+	messages []llm.Message,
+	tools []llm.ToolDefinition,
+	gateEvent *audit.AuditEvent,
+) (llm.ChatResponse, error) {
+	current, err := llm.ChatWithParams(ctx, llmCtx.Client, llm.ChatRequest{
+		Messages: messages,
+		Tools:    tools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	}, llmCtx.RuntimeParams)
+	if err != nil {
+		gateEvent.Data["discovery_tool_error"] = err.Error()
+		return llm.ChatResponse{}, err
+	}
+	if llmCtx.Tokens != nil {
+		llmCtx.Tokens.Add(current.Usage)
+	}
+	inv.metricsFor(llmCtx.CorrelationID).IncLLMTurns()
+	inv.recordTokenUsage(llmCtx.CorrelationID, current.Usage)
+	return current, nil
+}
+
+func (inv *Investigator) resolveTargetScopedCorrectionSubmission(
+	ctx context.Context,
+	llmCtx LLMInvocationContext,
+	retryMessages []llm.Message,
+	resp llm.ChatResponse,
+	tools []llm.ToolDefinition,
+	gateEvent *audit.AuditEvent,
+) (content string, usedReminder bool, outcome gateRetryOutcome, ok bool) {
+	allowed := correctionToolAllowlist(tools)
+	messages := append([]llm.Message(nil), retryMessages...)
+	discoveryRounds := 0
+	current := resp
+
+	for {
+		classified := classifyCorrectionToolCalls(current, allowed)
+		if classified.submitContent != "" {
+			if len(classified.otherTools) > 0 {
+				gateEvent.Data["other_tools_called"] = toolCallNames(classified.otherTools)
+				return "", usedReminder, gateRetryOtherToolExhausted, false
+			}
+			return classified.submitContent, usedReminder, "", true
+		}
+		if len(current.ToolCalls) == 0 {
+			if current.Message.Content != "" {
+				return current.Message.Content, usedReminder, "", true
+			}
+			return "", usedReminder, gateRetryEmptyResponse, false
+		}
+
+		assistantMessage := current.Message
+		assistantMessage.ToolCalls = current.ToolCalls
+		messages = append(messages, assistantMessage)
+		toolMessages, toolOutcome, toolOK := inv.executeCorrectionDiscoveryCalls(ctx, llmCtx, classified.discovery, discoveryRounds, gateEvent)
+		if !toolOK {
+			return "", usedReminder, toolOutcome, false
+		}
+		messages = append(messages, toolMessages...)
+		var guidanceOutcome gateRetryOutcome
+		messages, usedReminder, guidanceOutcome, ok = appendCorrectionUnknownToolGuidance(messages, classified.unknown, usedReminder, gateEvent)
+		if !ok {
+			return "", usedReminder, guidanceOutcome, false
+		}
+		if len(classified.unknown) == 0 {
+			discoveryRounds++
+			messages = appendCorrectionEvidencePrompt(messages)
+		}
+
+		var err error
+		current, err = inv.requestCorrectionFollowup(ctx, llmCtx, messages, tools, gateEvent)
+		if err != nil {
+			return "", usedReminder, gateRetryOtherToolExhausted, false
+		}
+	}
+}
+
+func toolCallNames(calls []llm.ToolCall) []string {
+	names := make([]string, 0, len(calls))
+	for _, call := range calls {
+		names = append(names, call.Name)
+	}
+	return names
+}
+
+// apiVersionValidationGate requires the LLM to supply an exact apiVersion and
+// independently verifies that GVK against the target-scoped discovery tools.
+// The REST mapper is used only for correction-message hints; it never decides
+// whether a model-supplied GVK is valid or fills a missing version.
 func (inv *Investigator) apiVersionValidationGate(
 	ctx context.Context,
 	result *katypes.InvestigationResult,
@@ -417,31 +1516,54 @@ func (inv *Investigator) apiVersionValidationGate(
 ) *katypes.InvestigationResult {
 	tokens, correlationID, client, modelName, runtimeParams :=
 		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
-	if inv.scopeResolver == nil {
+	if result == nil {
 		return result
 	}
 	kind := result.RemediationTarget.Kind
 	if kind == "" {
 		return result
 	}
-
-	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(kind)
-	if err != nil {
-		inv.logger.Error(err, "apiVersionValidationGate: IsAmbiguousKind failed, skipping gate",
-			"kind", kind, "correlation_id", correlationID)
-		return result
-	}
-	if !ambiguous {
-		return inv.autoResolveNonAmbiguousAPIVersion(result, gvrs, kind, correlationID)
-	}
+	clearTargetAPIVersionValidation(result)
+	auditCtx := context.WithoutCancel(ctx)
+	verification := apiVersionVerification{}
 	if result.RemediationTarget.APIVersion != "" {
-		// A model-supplied version does not resolve an ambiguous kind. It is
-		// retained for the gate's existing no-retry behavior, but remains
-		// unvalidated and cannot become final target authority.
-		return result
+		verification = inv.verifyExactTargetAPIVersion(ctx, result.RemediationTarget, correlationID)
+		if verification.cancelled {
+			gateEvent := newAPIVersionGateEvent(ctx, correlationID, modelName, "", result.RemediationTarget)
+			recordAPIVersionVerification(gateEvent, result.RemediationTarget, verification, false)
+			gateEvent.Data["retry_outcome"] = string(gateRetryCancelled)
+			gateEvent.EventOutcome = audit.OutcomeFailure
+			audit.StoreBestEffort(auditCtx, inv.auditStore, gateEvent, inv.auditLog())
+			return markAPIVersionValidationCancelled(result, history, llmCtx.rcaBudget)
+		}
+		if verification.validated {
+			markExactTargetAPIVersionValidated(ctx, result, verification.source)
+			gateEvent := newAPIVersionGateEvent(ctx, correlationID, modelName, "", result.RemediationTarget)
+			recordAPIVersionVerification(gateEvent, result.RemediationTarget, verification, true)
+			audit.StoreBestEffort(auditCtx, inv.auditStore, gateEvent, inv.auditLog())
+			return result
+		}
+		// A discovery transport/tool failure cannot be repaired by changing the
+		// model answer. Escalate without allowing an unverified target through.
+		if strings.Contains(verification.reason, "unavailable") || strings.Contains(verification.reason, "partial discovery warning") || strings.Contains(verification.reason, "malformed") {
+			gateEvent := newAPIVersionGateEvent(ctx, correlationID, modelName, "", result.RemediationTarget)
+			recordAPIVersionVerification(gateEvent, result.RemediationTarget, verification, false)
+			exhausted := inv.apiVersionGateExhaustion(result, "target-scoped discovery", kind, correlationID, gateEvent, gateRetryExhausted)
+			audit.StoreBestEffort(auditCtx, inv.auditStore, gateEvent, inv.auditLog())
+			return exhausted
+		}
 	}
 
-	groupList := conflictingGroupList(gvrs)
+	groupList := ""
+	if inv.scopeResolver != nil {
+		_, gvrs, err := inv.scopeResolver.IsAmbiguousKind(kind)
+		if err != nil {
+			inv.logger.Info("apiVersionValidationGate: mapper hint unavailable; continuing with target-scoped discovery",
+				"kind", kind, "error", err, "correlation_id", correlationID)
+		} else {
+			groupList = conflictingGroupList(gvrs)
+		}
+	}
 
 	inv.logger.Info("apiVersionValidationGate triggered: ambiguous kind missing api_version",
 		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
@@ -449,37 +1571,61 @@ func (inv *Investigator) apiVersionValidationGate(
 	// #1777 (BR-AUDIT-005, FedRAMP AU-3): prompt_length/prompt_preview are
 	// populated in retryForAPIVersion, once the actual retry prompt exists —
 	// see the audit.StoreBestEffort call there for why.
-	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-	gateEvent.EventAction = audit.ActionAPIVersionGate
-	gateEvent.EventOutcome = audit.OutcomeSuccess
-	gateEvent.Data["model"] = modelName
-	gateEvent.Data["ambiguous_kind"] = kind
-	gateEvent.Data["conflicting_groups"] = groupList
+	gateEvent := newAPIVersionGateEvent(ctx, correlationID, modelName, groupList, result.RemediationTarget)
 
 	return inv.retryForAPIVersion(ctx, retryForAPIVersionParams{
 		Result: result, History: history, Client: client, RuntimeParams: runtimeParams, Tokens: tokens,
-		Kind: kind, GroupList: groupList, CorrelationID: correlationID, GateEvent: gateEvent,
+		Kind: kind, GroupList: groupList, CorrelationID: correlationID, GateEvent: gateEvent, RCABudget: llmCtx.rcaBudget,
 	})
 }
 
-// autoResolveNonAmbiguousAPIVersion auto-resolves apiVersion for a
-// non-ambiguous kind using the REST mapper (#1051), guaranteeing
-// RemediationTarget.APIVersion is populated after RCA so GVK-format workflow
-// component matching can proceed. PROD-2: when len(gvrs) > 1 but not
-// ambiguous (multiple versions in the same group, e.g. v1 and v1beta1),
-// auto-resolve is skipped because the preferred version is not
-// deterministic; the fallback in custom tools uses lowercase kind for
-// discovery in this edge case.
-func (inv *Investigator) autoResolveNonAmbiguousAPIVersion(result *katypes.InvestigationResult, gvrs []schema.GroupVersionResource, kind, correlationID string) *katypes.InvestigationResult {
-	if len(gvrs) == 1 {
-		result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-		result.RemediationTarget.APIVersionValidated = true
-		inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
-			"kind", kind,
-			"api_version", result.RemediationTarget.APIVersion,
-			"correlation_id", correlationID)
+func newAPIVersionGateEvent(ctx context.Context, correlationID, modelName, groupList string, target katypes.RemediationTarget) *audit.AuditEvent {
+	event := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	event.EventAction = audit.ActionAPIVersionGate
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["model"] = modelName
+	event.Data["ambiguous_kind"] = target.Kind
+	event.Data["conflicting_groups"] = groupList
+	event.Data["target_kind"] = target.Kind
+	event.Data["target_name"] = target.Name
+	event.Data["target_namespace"] = target.Namespace
+	event.Data["target_api_version"] = target.APIVersion
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	event.Data["target_cluster_id"] = clusterID
+	return event
+}
+
+func recordAPIVersionVerification(event *audit.AuditEvent, target katypes.RemediationTarget, verification apiVersionVerification, validated bool) {
+	if event == nil {
+		return
 	}
+	event.Data["target_kind"] = target.Kind
+	event.Data["target_name"] = target.Name
+	event.Data["target_namespace"] = target.Namespace
+	event.Data["target_api_version"] = target.APIVersion
+	event.Data["api_version_validation_status"] = map[bool]string{true: "validated", false: "inconclusive"}[validated]
+	if verification.source != "" {
+		event.Data["api_version_validation_source"] = verification.source
+	}
+	if verification.reason != "" {
+		event.Data["api_version_validation_reason"] = sanitization.SanitizeForLog(truncatePreview(verification.reason, 500))
+	}
+	if !validated {
+		event.EventOutcome = audit.OutcomeFailure
+	}
+}
+
+func markAPIVersionValidationCancelled(result *katypes.InvestigationResult, history []llm.Message, budget *rcaLoopBudget) *katypes.InvestigationResult {
+	result = markRCAContinuationCancelled(result, history, budget)
+	clearTargetAPIVersionValidation(result)
+	ClearWorkflowSelectionFields(result)
 	return result
+}
+
+func markAPIVersionRetryCancelled(result *katypes.InvestigationResult, history []llm.Message, budget *rcaLoopBudget, gateEvent *audit.AuditEvent) *katypes.InvestigationResult {
+	gateEvent.Data["retry_outcome"] = string(gateRetryCancelled)
+	gateEvent.EventOutcome = audit.OutcomeFailure
+	return markAPIVersionValidationCancelled(result, history, budget)
 }
 
 // conflictingGroupList returns the deduplicated, comma-joined list of API
@@ -507,20 +1653,17 @@ type retryForAPIVersionParams struct {
 	Tokens                         *TokenAccumulator
 	Kind, GroupList, CorrelationID string
 	GateEvent                      *audit.AuditEvent
+	RCABudget                      *rcaLoopBudget
 }
 
-// retryForAPIVersion re-submits the RCA request with a correction message
-// asking the LLM to disambiguate the API group for kind, and parses the
-// retry response. Falls back to apiVersionGateExhaustion (forcing human
-// review) at every failure point: LLM error, empty response, parse error, or
-// a retry result that still lacks api_version.
-func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVersionParams) *katypes.InvestigationResult {
-	result, history := p.Result, p.History
-	kind, groupList, correlationID, gateEvent := p.Kind, p.GroupList, p.CorrelationID, p.GateEvent
-	llmCtx := LLMInvocationContext{
-		Tokens: p.Tokens, CorrelationID: p.CorrelationID, Client: p.Client,
-		RuntimeParams: p.RuntimeParams,
-	}
+type apiVersionCorrectionAttempt struct {
+	llmCtx   LLMInvocationContext
+	messages []llm.Message
+	tools    []llm.ToolDefinition
+	response llm.ChatResponse
+}
+
+func (inv *Investigator) runAPIVersionCorrectionAttempt(ctx context.Context, p retryForAPIVersionParams) (apiVersionCorrectionAttempt, error) {
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is %q, which exists in multiple API groups: %s. `+
 			`Without an explicit api_version, the system cannot determine the correct API group `+
@@ -529,51 +1672,69 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 			`"group/version" (e.g. "operators.coreos.com/v1alpha1"). `+
 			`Review your investigation context (kubectl_describe output) to determine which `+
 			`API group the target %s/%s belongs to.`,
-		kind, groupList, kind, result.RemediationTarget.Name,
+		p.Kind, p.GroupList, p.Kind, p.Result.RemediationTarget.Name,
 	)
-	retryMessages := appendCorrectionMessage(history, correctionMsg)
-	submitOnlyTools := submitOnlyRCATools()
+	retryMessages := appendCorrectionMessage(p.History, correctionMsg)
+	correctionTools := inv.targetScopedCorrectionTools(ctx)
+	p.GateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+	p.GateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
 
-	// #1777 (BR-AUDIT-005, FedRAMP AU-3): the audit event must reflect the
-	// retry prompt actually sent to the LLM. Populating these fields before
-	// retryMessages exists forced prompt_length/prompt_preview to a
-	// hardcoded 0/"" that misrepresented every gate retry as an empty
-	// request.
-	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
+	llmCtx := LLMInvocationContext{
+		Tokens: p.Tokens, CorrelationID: p.CorrelationID, Client: p.Client,
+		RuntimeParams: p.RuntimeParams, rcaBudget: p.RCABudget,
+	}
+	emitGateRetryKeepalive(ctx, "resolving_api_version_ambiguity")
+	resp, err := llm.ChatWithParams(ctx, llmCtx.Client, llm.ChatRequest{
+		Messages: retryMessages,
+		Tools:    correctionTools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	}, llmCtx.RuntimeParams)
+	if err != nil {
+		return apiVersionCorrectionAttempt{}, err
+	}
+	if llmCtx.Tokens != nil {
+		llmCtx.Tokens.Add(resp.Usage)
+	}
+	// #2387: gate retry is its own LLM turn on top of the loop-counted turns.
+	inv.metricsFor(p.CorrelationID).IncLLMTurns()
+	inv.recordTokenUsage(p.CorrelationID, resp.Usage)
+	return apiVersionCorrectionAttempt{
+		llmCtx: llmCtx, messages: retryMessages, tools: correctionTools, response: resp,
+	}, nil
+}
+
+// retryForAPIVersion re-submits the RCA request with a correction message
+// asking the LLM to disambiguate the API group for kind, and parses the
+// retry response. Falls back to apiVersionGateExhaustion (forcing human
+// review) at every failure point: LLM error, empty response, parse error, or
+// a retry result that still lacks api_version.
+func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVersionParams) *katypes.InvestigationResult {
+	result := p.Result
+	kind, groupList, correlationID, gateEvent := p.Kind, p.GroupList, p.CorrelationID, p.GateEvent
+	priorReviewNeeded, priorReviewReason := result.HumanReviewNeeded, result.HumanReviewReason
 	// #2121 (BR-AI-2121, FedRAMP AU-3): fire once, after the final outcome is
 	// known, via defer -- this also fixes a pre-existing bug (#2124) where
 	// gateEvent.Data["retry_outcome"] was mutated below AFTER this store
 	// call fired, so a production audit store (which serializes Data into
 	// an outbound request synchronously at call time) never actually
 	// persisted retry_outcome.
-	defer audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
+	defer audit.StoreBestEffort(context.WithoutCancel(ctx), inv.auditStore, gateEvent, inv.auditLog())
 
-	// #2088 (main port of #2086): same silent-gap risk as retryForSameKind
-	// above -- this retry LLM call is non-streamed and emits no sink events
-	// during the round-trip.
-	emitGateRetryKeepalive(ctx, "resolving_api_version_ambiguity")
-
-	resp, retryErr := llm.ChatWithParams(ctx, llmCtx.Client, llm.ChatRequest{
-		Messages: retryMessages,
-		Tools:    submitOnlyTools,
-		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-	}, llmCtx.RuntimeParams)
+	attempt, retryErr := inv.runAPIVersionCorrectionAttempt(ctx, p)
 	if retryErr != nil {
+		if isInvestigationCancellation(ctx, retryErr) {
+			return markAPIVersionRetryCancelled(result, p.History, p.RCABudget, gateEvent)
+		}
 		inv.logger.Error(retryErr, "apiVersionValidationGate: retry failed, triggering human review",
 			"kind", kind, "correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryExhausted)
 	}
-	if llmCtx.Tokens != nil {
-		llmCtx.Tokens.Add(resp.Usage)
-	}
-	// #2387: gate retry is its own LLM turn on top of the loop-counted turns.
-	inv.metricsFor(correlationID).IncLLMTurns()
-	inv.recordTokenUsage(correlationID, resp.Usage)
-
-	retryContent, usedReminder, failOutcome, ok := inv.resolveGateRetrySubmission(
-		ctx, llmCtx, retryMessages, resp, submitOnlyTools, gateEvent, "apiVersionValidationGate")
+	retryContent, usedReminder, failOutcome, ok := inv.resolveTargetScopedCorrectionSubmission(
+		ctx, attempt.llmCtx, attempt.messages, attempt.response, attempt.tools, gateEvent)
 	if !ok {
+		if ctx.Err() != nil {
+			return markAPIVersionRetryCancelled(result, p.History, p.RCABudget, gateEvent)
+		}
 		inv.logger.Info("apiVersionValidationGate: triggering human review after unresolved retry",
 			"kind", kind, "retry_outcome", failOutcome, "correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, failOutcome)
@@ -581,17 +1742,37 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 
 	retryResult, parseErr := inv.parseRCA(retryContent)
 	if parseErr != nil {
+		if ctx.Err() != nil {
+			return markAPIVersionRetryCancelled(result, p.History, p.RCABudget, gateEvent)
+		}
 		inv.logger.Error(parseErr, "apiVersionValidationGate: retry parse failed, triggering human review",
 			"correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryParseError)
 	}
 
-	if retryResult.RemediationTarget.APIVersion == "" {
-		inv.logger.Info("apiVersionValidationGate: retry still missing api_version, triggering human review",
+	if !sameCorrectionTarget(result.RemediationTarget, retryResult.RemediationTarget) {
+		inv.logger.Info("apiVersionValidationGate: retry changed the remediation target, triggering human review",
 			"kind", kind, "correlation_id", correlationID)
 		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryExhausted)
 	}
-	retryResult.RemediationTarget.APIVersionValidated = true
+	verification := inv.verifyExactTargetAPIVersion(ctx, retryResult.RemediationTarget, correlationID)
+	if verification.cancelled {
+		recordAPIVersionVerification(gateEvent, retryResult.RemediationTarget, verification, false)
+		gateEvent.Data["retry_outcome"] = string(gateRetryCancelled)
+		gateEvent.EventOutcome = audit.OutcomeFailure
+		return markAPIVersionValidationCancelled(result, p.History, p.RCABudget)
+	}
+	if !verification.validated {
+		inv.logger.Info("apiVersionValidationGate: retry GVK could not be independently verified, triggering human review",
+			"kind", retryResult.RemediationTarget.Kind,
+			"api_version", retryResult.RemediationTarget.APIVersion,
+			"reason", verification.reason,
+			"correlation_id", correlationID)
+		recordAPIVersionVerification(gateEvent, retryResult.RemediationTarget, verification, false)
+		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent, gateRetryExhausted)
+	}
+	markExactTargetAPIVersionValidated(ctx, retryResult, verification.source)
+	recordAPIVersionVerification(gateEvent, retryResult.RemediationTarget, verification, true)
 	preserveGateConfidence(result, retryResult)
 
 	gateEvent.EventOutcome = audit.OutcomeSuccess
@@ -600,17 +1781,23 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 	} else {
 		gateEvent.Data["retry_outcome"] = string(gateRetryResolved)
 	}
-	// Clear parser-set HumanReviewNeeded from the retry result. The gate's
-	// decision is authoritative: if the retry provided api_version, the
-	// pipeline should continue to workflow selection, not abort.
-	retryResult.HumanReviewNeeded = false
-	retryResult.HumanReviewReason = ""
+	// The gate must not erase an unrelated review decision carried by the
+	// accepted result. Normal RCA parsing clears its own provisional review
+	// marker before entering this gate; a non-empty reason here is therefore
+	// preserved across a successful API-version correction.
+	if priorReviewNeeded {
+		retryResult.HumanReviewNeeded = true
+		retryResult.HumanReviewReason = priorReviewReason
+	} else {
+		retryResult.HumanReviewNeeded = false
+		retryResult.HumanReviewReason = ""
+	}
 	// The retry is a fresh submission on its own turn: its own Reasoning
 	// block (if any) is authoritative for the accepted result, mirroring
 	// runRCA's "winning turn" semantics (BR-AI-086 AC6, #1578). Without this,
 	// resp.Message.Reasoning from the retry call is silently discarded and
 	// the gate-accepted result loses reasoning captured by the LLM client.
-	retryResult.Reasoning = toReasoningSummary(resp.Message.Reasoning)
+	retryResult.Reasoning = toReasoningSummary(attempt.response.Message.Reasoning)
 	inv.logger.Info("apiVersionValidationGate: retry provided api_version, accepted",
 		"kind", kind,
 		"api_version", retryResult.RemediationTarget.APIVersion,
@@ -633,23 +1820,23 @@ func (inv *Investigator) apiVersionGateExhaustion(
 	gateEvent *audit.AuditEvent,
 	outcome gateRetryOutcome,
 ) *katypes.InvestigationResult {
-	gateEvent.Data["retry_outcome"] = string(outcome)
-	gateEvent.EventOutcome = audit.OutcomeFailure
-	result.HumanReviewNeeded = true
-	result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+	if gateEvent != nil {
+		gateEvent.Data["retry_outcome"] = string(outcome)
+		gateEvent.EventOutcome = audit.OutcomeFailure
+	}
+	if !result.HumanReviewNeeded {
+		result.HumanReviewNeeded = true
+	}
+	if result.HumanReviewReason == "" {
+		result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+	}
 
 	// Clear workflow fields: the workflow was selected based on an ambiguous
 	// kind without api_version, so it may target the wrong API group and lead
 	// to incorrect RBAC grants. Leaving it populated would cause the API
 	// response to include selected_workflow despite human review escalation.
-	result.WorkflowID = ""
-	result.ExecutionEngine = ""
-	result.ExecutionBundle = ""
-	result.ExecutionBundleDigest = ""
-	result.WorkflowRationale = ""
-	result.WorkflowVersion = ""
+	ClearWorkflowSelectionFields(result)
 	result.Confidence = 0
-	result.AlternativeWorkflows = nil
 
 	result.Warnings = append(result.Warnings,
 		fmt.Sprintf("apiVersionValidationGate: kind %q is ambiguous (API groups: %s) "+
@@ -658,6 +1845,40 @@ func (inv *Investigator) apiVersionGateExhaustion(
 	inv.logger.Info("apiVersionValidationGate: exhausted, human review required",
 		"kind", kind, "conflicting_groups", groupList, "retry_outcome", outcome, "correlation_id", correlationID)
 	return result
+}
+
+// ClearWorkflowSelectionFields removes all executable workflow-selection data
+// from a result while preserving unrelated investigation fields.
+func ClearWorkflowSelectionFields(result *katypes.InvestigationResult) {
+	if result == nil {
+		return
+	}
+	result.WorkflowID = ""
+	result.ProposedWorkflowID = ""
+	result.Confidence = 0
+	result.Parameters = nil
+	result.ExecutionEngine = ""
+	result.ExecutionBundle = ""
+	result.ExecutionBundleDigest = ""
+	result.ServiceAccountName = ""
+	result.EngineConfig = nil
+	result.WorkflowRationale = ""
+	result.WorkflowVersion = ""
+	result.WorkflowSelectionConfidence = nil
+	result.ActionType = ""
+	result.WorkflowName = ""
+	result.ExecutionClusterID = ""
+	result.Dependencies = nil
+	result.Resources = nil
+	result.DeclaredParameterNames = nil
+	result.ParameterSchema = nil
+	result.AlternativeWorkflows = nil
+	result.HandoffDigest = ""
+	result.RepeatJustification = nil
+	result.RepeatJustificationRequired = nil
+	result.PriorWorkflowMatch = nil
+	result.RepeatValidationOutcome = ""
+	result.PriorRemediationUIDs = nil
 }
 
 func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator) {
@@ -728,16 +1949,6 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	// likewise catalog-authoritative -- always overwrite, same pattern as
 	// ActionType/WorkflowName above.
 	result.ExecutionClusterID = meta.ClusterID
-}
-
-// gvrToAPIVersion converts a GroupVersionResource to the apiVersion string
-// format used by Kubernetes: "group/version" for named groups, "version" for
-// core group (empty group). Issue #1051.
-func gvrToAPIVersion(gvr schema.GroupVersionResource) string {
-	if gvr.Group == "" {
-		return gvr.Version
-	}
-	return gvr.Group + "/" + gvr.Version
 }
 
 // CheckWorkflowTargetAlignment verifies that the selected workflow's component
