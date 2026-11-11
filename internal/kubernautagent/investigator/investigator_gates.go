@@ -904,9 +904,10 @@ func projectResourceListTableItem(rawRow json.RawMessage, target katypes.Remedia
 	if err != nil {
 		return nil, err
 	}
-	if len(metadata) > 0 {
-		safe["metadata"] = metadata
+	if len(metadata) == 0 {
+		return nil, fmt.Errorf("resources_list table row has no recognized metadata")
 	}
+	safe["metadata"] = metadata
 	return safe, nil
 }
 

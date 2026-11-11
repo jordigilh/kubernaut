@@ -202,4 +202,19 @@ var _ = Describe("Target-scoped resources_list payload verification", func() {
 		)
 		Expect(err).To(HaveOccurred())
 	})
+
+	It("UT-KA-2609-027 [SI-10]: rejects empty or display-only structured table rows", func() {
+		for _, row := range []string{
+			`{}`,
+			`{"Status":"Running"}`,
+			`{"apiVersion":"apps/v1","kind":"Deployment"}`,
+			`{"metadata":{}}`,
+		} {
+			_, err := projectResourcesListOutput(
+				`{"items":[`+row+`]}`,
+				[]byte(`{"apiVersion":"apps/v1","kind":"Deployment"}`),
+			)
+			Expect(err).To(HaveOccurred(), "row %s must not establish exact-GVK evidence", row)
+		}
+	})
 })
