@@ -82,8 +82,32 @@ on:
           - ubuntu-24.04
         default: ubuntu-26.04
 
+      inotify_profile:
+        description: Diagnostic inotify quota profile for targeted E2E lanes
+        required: false
+        type: choice
+        options:
+          - current
+          - ubuntu-24-equivalent
+        default: current
+
+      e2e_scope:
+        description: Run all E2E lanes or only the Ubuntu compatibility targets
+        required: false
+        type: choice
+        options:
+          - all
+          - diagnostic-target
+        default: all
+
+      preserve_e2e_cluster:
+        description: Preserve target Kind clusters until workflow diagnostics finish
+        required: false
+        type: boolean
+        default: false
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner_label || 'default' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner_label || 'default' }}-${{ inputs.inotify_profile || 'current' }}-${{ inputs.e2e_scope || 'all' }}
   cancel-in-progress: true
 
 # Least-privilege default for every job. No job in this workflow needs
@@ -1246,7 +1270,7 @@ jobs:
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ${{ inputs.runner_label || 'ubuntu-26.04' }}
-    timeout-minutes: ${{ matrix.timeout }}
+    timeout-minutes: ${{ matrix.service == 'fullpipeline' && 45 || matrix.service == 'fleet' && 45 || matrix.service == 'workflowexecution' && 30 || matrix.service == 'kubernautagent' && 30 || matrix.service == 'apifrontend' && 25 || matrix.service == 'apifrontend-fleet' && 25 || matrix.service == 'fleetmetadatacache-kuadrant' && 25 || 20 }}
     permissions:
       contents: read
     env:
@@ -1256,89 +1280,17 @@ jobs:
       # if a given service's image wasn't loaded (non-fatal, just slower).
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
       E2E_COVERAGE: true  # Enable coverage instrumentation for local builds (GOFLAGS=-cover)
+      INOTIFY_PROFILE: ${{ inputs.inotify_profile || 'current' }}
+      PRESERVE_E2E_CLUSTER: ${{ inputs.preserve_e2e_cluster == true && 'true' || 'false' }}
+      GINKGO_LABEL: ${{ matrix.service == 'apifrontend' && '!fleet-mode-af' || matrix.service == 'apifrontend-fleet' && 'fleet-mode-af' || '' }}
+      AF_E2E_LANE: ${{ matrix.service == 'apifrontend' && 'local' || matrix.service == 'apifrontend-fleet' && 'fleet' || '' }}
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, apifrontend-fleet, fullpipeline, fleet, fleetmetadatacache-kuadrant, fleetmetadatacache-eaigw]
-        include:
-          - service: signalprocessing
-            service_name: "Signal Processing"
-            timeout: 20
-          - service: aianalysis
-            service_name: "AI Analysis"
-            timeout: 20
-          - service: authwebhook
-            service_name: "Auth Webhook"
-            timeout: 20
-          - service: workflowexecution
-            service_name: "Workflow Execution"
-            # The Tekton-backed E2E suite can spend most of its budget on
-            # cluster setup and parallel worker startup before Ginkgo reports
-            # results. Keep the CI budget aligned with the documented 30m E2E
-            # timeout instead of allowing GitHub to cancel at 20m.
-            timeout: 30
-          - service: remediationorchestrator
-            service_name: "Remediation Orchestrator"
-            timeout: 20
-          - service: notification
-            service_name: "Notification"
-            timeout: 20
-          - service: gateway
-            service_name: "Gateway"
-            timeout: 20
-          - service: datastorage
-            service_name: "Data Storage"
-            timeout: 20
-          - service: effectivenessmonitor
-            service_name: "Effectiveness Monitor"
-            timeout: 20
-          - service: kubernautagent
-            service_name: "Kubernaut Agent"
-            timeout: 30
-          - service: apifrontend
-            service_name: "API Frontend"
-            timeout: 25
-            ginkgo_label: "!fleet-mode-af"
-            af_e2e_lane: local
-          - service: apifrontend-fleet
-            service_name: "API Frontend (Fleet mode)"
-            timeout: 25
-            ginkgo_label: fleet-mode-af
-            af_e2e_lane: fleet
-          - service: fullpipeline
-            service_name: "Full Pipeline"
-            # Issue #1802 investigation: baseline suite runtime was already
-            # 15-18min against a 25min budget before E2E-FP-1189-005 (issue
-            # #1189, ~2m46s) was added, leaving too little headroom -- CI
-            # runs were landing at/over 25min and getting hard job-timeout
-            # cancelled (distinct from the #1802 ineffective-chain flake).
-            # The suite reached 27m on PR #2383 before the 30m budget expired;
-            # keep headroom for the current full-pipeline scenario set.
-            timeout: 45
-          - service: fleet
-            service_name: "Fleet Multi-Cluster"
-            # 45 (up from 35, PR #1790 round-12 RCA): originally sized around
-            # PHASE 6's per-deployment rollout-status wait (480s->720s) to
-            # tolerate node-wide kubelet starvation from a since-removed
-            # post-install TLS re-sign + 4-deployment rolling restart (DA17,
-            # round-14, eliminated the restart entirely by baking host-access
-            # SANs into the original chart-issued certs). Kept at 45 rather
-            # than lowered back down: round-15's PHASE 8 readiness-timeout fix
-            # (waitForFullPipelineServicesReady, test/infrastructure/
-            # fullpipeline_e2e.go) added its own up-to-6-minute-per-service
-            # margin for fleet's MCP-Gateway-dependent gateway/RO readiness
-            # checks, and this job's heavier Istio/Kuadrant/Keycloak/
-            # kube-mcp-server footprint (vs. fullpipeline's 20min budget)
-            # still warrants headroom the other E2E jobs don't need.
-            timeout: 45
-          - service: fleetmetadatacache-kuadrant
-            service_name: "Fleet Metadata Cache (Kuadrant)"
-            # The Make target allows 25m; 15m cancels this lane during
-            # Kuadrant bootstrap before the Ginkgo suite can finish.
-            timeout: 25
-          - service: fleetmetadatacache-eaigw
-            service_name: "Fleet Metadata Cache (EAIGW)"
-            timeout: 20
+        service: >-
+          ${{ fromJSON(inputs.e2e_scope == 'diagnostic-target' &&
+          '["fullpipeline","fleet","fleetmetadatacache-eaigw"]' ||
+          '["signalprocessing","aianalysis","authwebhook","workflowexecution","remediationorchestrator","notification","gateway","datastorage","effectivenessmonitor","kubernautagent","apifrontend","apifrontend-fleet","fullpipeline","fleet","fleetmetadatacache-kuadrant","fleetmetadatacache-eaigw"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1381,6 +1333,37 @@ jobs:
         run: make generate
       - name: Install Podman
         uses: ./.github/actions/install-podman
+      - name: Configure inotify diagnostic profile
+        if: matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runner-diagnostics
+
+          case "${INOTIFY_PROFILE}" in
+            current)
+              echo "Using the runner's current inotify quotas"
+              ;;
+            ubuntu-24-equivalent)
+              echo "Applying Ubuntu 24.04-equivalent inotify quotas"
+              sudo sysctl -w fs.inotify.max_user_instances=1280
+              sudo sysctl -w fs.inotify.max_user_watches=655360
+              ;;
+            *)
+              echo "Unsupported inotify profile: ${INOTIFY_PROFILE}" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "profile=${INOTIFY_PROFILE}"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            for f in /proc/sys/fs/inotify/max_user_instances /proc/sys/fs/inotify/max_user_watches /proc/sys/fs/inotify/max_queued_events; do
+              echo "$f=$(cat "$f")"
+            done
+            echo "inotify_instances_in_use=$(find /proc/[0-9]*/fd -maxdepth 1 -lname 'anon_inode:inotify' 2>/dev/null | wc -l)"
+            echo "inotify_watches_in_use=$(awk '/^inotify/ {count++} END {print count+0}' /proc/[0-9]*/fdinfo/* 2>/dev/null || true)"
+          } | tee runner-diagnostics/inotify-before-e2e.txt
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
       - name: Download exact-SHA operator artifact for FP/Fleet
@@ -1446,9 +1429,6 @@ jobs:
       # matrix.timeout budget (job-level timeout-minutes below), which is more time
       # than any individual retry attempt got before.
       - name: Run ${{ matrix.service }} E2E tests
-        env:
-          GINKGO_LABEL: ${{ matrix.ginkgo_label }}
-          AF_E2E_LANE: ${{ matrix.af_e2e_lane }}
         run: make test-e2e-${{ matrix.service }}
       
       - name: Capture Ubuntu runtime and Kubernetes diagnostics
@@ -1456,9 +1436,61 @@ jobs:
         shell: bash
         run: |
           set +e
-          mkdir -p runner-diagnostics
+          mkdir -p runner-diagnostics/kind-export
+          primary_kubeconfig=""
+          remote_kubeconfig=""
+          primary_cluster=""
+          remote_cluster=""
+
+          case "${{ matrix.service }}" in
+            fullpipeline)
+              primary_kubeconfig="$HOME/.kube/fullpipeline-e2e-config"
+              primary_cluster="fullpipeline-e2e"
+              ;;
+            fleet)
+              primary_kubeconfig="$HOME/.kube/fleet-e2e-config"
+              remote_kubeconfig="$HOME/.kube/fleet-e2e-remote-config"
+              primary_cluster="fleet-e2e"
+              remote_cluster="fleet-e2e-remote"
+              ;;
+            fleetmetadatacache-eaigw)
+              primary_kubeconfig="$HOME/.kube/fmc-eaigw-e2e-config"
+              remote_kubeconfig="$HOME/.kube/fmc-eaigw-e2e-remote-config"
+              primary_cluster="fmc-eaigw-e2e"
+              remote_cluster="fmc-eaigw-e2e-remote"
+              ;;
+          esac
+
+          capture_cluster() {
+            local label="$1"
+            local kubeconfig="$2"
+            local cluster="$3"
+            local output_dir="runner-diagnostics/kind-export/${label}"
+
+            mkdir -p "$output_dir"
+            echo "--- ${label} cluster: ${cluster} ---"
+            if [ ! -f "$kubeconfig" ]; then
+              echo "kubeconfig_missing=${kubeconfig}"
+              return 0
+            fi
+
+            export KUBECONFIG="$kubeconfig"
+            echo "kubeconfig=${kubeconfig}"
+            kubectl cluster-info
+            kubectl get --raw='/readyz?verbose'
+            kubectl get nodes -o wide
+            kubectl describe nodes
+            kubectl get pods -A -o wide
+            kubectl describe pods -A
+            kubectl get events -A --sort-by=.lastTimestamp
+            kind export logs "$output_dir/kind" --name "$cluster"
+          }
+
           {
             echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_label=${{ inputs.runner_label || 'ubuntu-26.04' }}"
+            echo "inotify_profile=${INOTIFY_PROFILE}"
+            echo "preserve_e2e_cluster=${PRESERVE_E2E_CLUSTER}"
             echo '--- limits and FD/inotify state ---'
             ulimit -a
             echo "ulimit_n=$(ulimit -n)"
@@ -1481,18 +1513,23 @@ jobs:
             sudo -n journalctl -k --no-pager -n 300
             sudo -n journalctl -u containerd --no-pager -n 300
             sudo -n dmesg --color=never | tail -300
-            echo '--- Kubernetes state ---'
-            kubectl cluster-info
-            kubectl get --raw='/readyz?verbose'
-            kubectl get nodes -o wide
-            kubectl describe nodes
-            kubectl get pods -A -o wide
-            kubectl describe pods -A
-            kubectl get events -A --sort-by=.lastTimestamp
             echo '--- Kind clusters ---'
             kind get clusters
           } > runner-diagnostics/post-e2e.txt 2>&1
+
+          {
+            echo '--- live inotify usage ---'
+            echo "inotify_instances_in_use=$(find /proc/[0-9]*/fd -maxdepth 1 -lname 'anon_inode:inotify' 2>/dev/null | wc -l)"
+            echo "inotify_watches_in_use=$(awk '/^inotify/ {count++} END {print count+0}' /proc/[0-9]*/fdinfo/* 2>/dev/null || true)"
+            echo '--- preserved Kubernetes state ---'
+            capture_cluster primary "$primary_kubeconfig" "$primary_cluster"
+            if [ -n "$remote_cluster" ]; then
+              capture_cluster remote "$remote_kubeconfig" "$remote_cluster"
+            fi
+          } > runner-diagnostics/kubernetes-before-cleanup.txt 2>&1
+
           cat runner-diagnostics/post-e2e.txt
+          cat runner-diagnostics/kubernetes-before-cleanup.txt
 
       - name: Calculate and save E2E coverage
         if: always()
@@ -1607,7 +1644,9 @@ jobs:
       - name: Cleanup Kind cluster
         if: always()
         run: |
-          # FIX: Dynamically detect and cleanup E2E clusters (custom names per service)
+          # Suite cleanup is disabled for the diagnostic run so the preceding
+          # steps can capture failure-time Kubernetes state. Delete clusters
+          # only after diagnostics and artifacts have been uploaded.
           for cluster in $(kind get clusters 2>/dev/null | grep -E "e2e"); do
             echo "🗑️  Deleting Kind cluster: $cluster"
             kind delete cluster --name "$cluster" || true
