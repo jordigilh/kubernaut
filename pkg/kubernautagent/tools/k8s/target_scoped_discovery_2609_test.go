@@ -186,9 +186,14 @@ var _ = Describe("Target-scoped Kubernetes discovery tools (#2609)", func() {
 
 var _ = Describe("Exact target-scoped metadata resolver (#2609)", func() {
 	It("UT-KA-2609-009/016 [SI-10]: lists namespaced and cluster-scoped targets with bounded selectors", func() {
-		metadataClient := newMetadataSummaryClient(&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: "target-config", Namespace: "prod"},
-		})
+		metadataClient := newMetadataSummaryClient(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-config", Namespace: "prod"},
+			},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-config", Namespace: "staging"},
+			},
+		)
 		resolver := k8s.NewDynamicResolver(
 			dynamicfake.NewSimpleDynamicClient(buildTestScheme()),
 			buildTestMapper(), buildTestKindIndex(), logr.Discard(),
@@ -202,6 +207,7 @@ var _ = Describe("Exact target-scoped metadata resolver (#2609)", func() {
 		data, marshalErr := json.Marshal(result)
 		Expect(marshalErr).NotTo(HaveOccurred())
 		Expect(string(data)).To(MatchJSON(`{"apiVersion":"meta.k8s.io/v1","kind":"ConfigMapList","items":[{"metadata":{"name":"target-config","namespace":"prod"}}],"item_count":1,"total_count":1,"truncated":false}`))
+		Expect(string(data)).NotTo(ContainSubstring(`"namespace":"staging"`))
 		Expect(metadataClient.lastListOptions.Limit).To(Equal(k8s.DefaultResourceListLimit))
 		Expect(metadataClient.lastListOptions.LabelSelector).To(Equal("app=api"))
 		Expect(metadataClient.lastListOptions.FieldSelector).To(Equal("metadata.name=target-config"))
