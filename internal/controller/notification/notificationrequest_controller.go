@@ -170,6 +170,14 @@ type NotificationRequestReconciler struct {
 	// Key: notification UID, Value: map[eventType]bool
 	// Cleaned up on notification deletion
 	emittedAuditEvents sync.Map
+
+	// DD-NOT-008: Serialize concurrent reconciles for the same
+	// NotificationRequest through delivery and status persistence. The
+	// namespace/name key is available before fetching the object and is stable
+	// for the lifetime of a reconcile request. This closes the gap that remains
+	// when the orchestrator releases its delivery mutex before AtomicStatusUpdate
+	// persists the attempt.
+	reconcileLocks notificationReconcileLockManager
 }
 
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -245,6 +253,13 @@ func (r *NotificationRequestReconciler) fetchAndCheckDuplicateReconcile(ctx cont
 // BR-NOT-053: At-Least-Once Delivery (reconciliation loop)
 // BR-NOT-056: CRD Lifecycle Management (phase state machine)
 func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	unlock := r.reconcileLocks.lock(req.String())
+	defer unlock()
+
+	return r.reconcile(ctx, req)
+}
+
+func (r *NotificationRequestReconciler) reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	notification, guardResult, done, err := r.fetchAndCheckDuplicateReconcile(ctx, req, log)
