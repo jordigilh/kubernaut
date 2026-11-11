@@ -60,3 +60,27 @@ All rows require production callers, real integration dispatch and passing IT. I
 Wrong-cluster/group execution is critical: fail closed, exact-match evidence, isolate contexts, test AC-6 and ASVS 4.0.3 V4.1.5. Partial or silently filtered discovery can mislead; only proven completeness permits an absence/uniqueness conclusion. Type registration is not named-object existence. TOCTOU can invalidate discovery before execution: recheck at the approved boundary or fail safely on changed evidence; never claim a discovery snapshot guarantees later state. Do not log secrets or raw sensitive resource contents. Audit existing/new events for SOC2 CC7.2 reconstruction and FedRAMP AU-2/AU-3 fields, correlation, cluster, evidence provenance, outcome and error details; AC-6 least privilege and SI-10 input validation require IT and E2E proof. CC8.1 concerns change management, not event completeness.
 
 Rollback is an authorized revert of this issue's own committed changes or a deployment rollback, never discard unrelated work. Since old behavior is unsafe, rollback must disable automatic selection for affected targets or require manual review; do not reinstate silent hub fallback. Coordinate image/schema rollback with the owner; no mixed-version support is promised.
+
+## Coverage and security evidence at PR #2612 head
+
+The changed-production statement mapping against
+`da031cc8232c1df5d9337d8f09ee63370fe14b97..639f69376e15cf34aa58ef9964ddc036fffc48d0`
+keeps the full **1,155-statement** denominator: executable changed Go code,
+excluding `_test.go`, `test/`, and `docs/`. The current profile is **958/1,155
+(82.94%)**, up from **897/1,155 (77.66%)**. The narrower target-only subset is
+not used as the gate. The current rerun covered every package containing changed
+production Go code, including the new `pkg/kubernautagent/tools/k8s` specs.
+
+The new tests provide lower-tier evidence for:
+
+- exact target-scoped GVK discovery and namespace/cluster scope;
+- malformed input, invalid GVK, partial warning, and resolver-error fail-closed behavior;
+- bounded metadata-only output and selector propagation;
+- exact-kind filtering and no inferred absence from incomplete discovery.
+
+These tests support the existing BR-KA-212, BR-WORKFLOW-004, BR-AUDIT-005,
+BR-INTEGRATION-054/065, FedRAMP AC-4/AC-6/SI-10, OWASP ASVS V4.1.5, AU-2/AU-3,
+and SOC 2 CC7.2 mappings already recorded in the test plan. They do **not** add
+evidence for real gateway credentials, rejected/expired sessions, full bootstrap
+or gateway deployment wiring, audit persistence, or the two planned E2E journeys.
+SOC 2 CC8.1 remains a change-management/process mapping only.
