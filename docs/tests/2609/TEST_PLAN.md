@@ -182,3 +182,71 @@ Use the five-row [wiring manifest](IMPLEMENTATION_PLAN.md#wiring-manifest-and-ch
 | 1.7 | 2026-11-08 | Reconciled remote evidence wording: 5/5 focused investigator-entry IT passed, while full bootstrap/gateway wiring remains unproven; retained the 2/2 E2E and 5/5 legacy compatibility results. |
 | 1.8 | 2026-11-08 | Replaced stale local totals with reproducible current counts (491/491 investigator, 14/14 focused, 42/42 broader regression, 275/275 MCP, 132/132 K8s), recorded registry expectations, and documented the transient aggregate OPA timeout plus successful final rerun. |
 | 1.9 | 2026-11-08 | Reconciled review evidence: removed overclaimed `E2E-KA-2609-001`/`002` labels from legacy paths and retained the planned #2609 E2E journeys as unclaimed until their required fleet, partial-discovery, missing-object and stale/no-action coverage is implemented. |
+| 1.10 | 2026-11-11 | Added behavior-focused target-scoped discovery/list tests and current-head changed-production coverage evidence: 958/1,155 (82.94%). Added a plain-language security objective matrix and retained explicit bootstrap, credential, persistence, and planned E2E gaps. |
+
+## 17. PR #2612 changed-production coverage and security evidence
+
+### 17.1 Structural coverage measurement
+
+The full changed-production denominator is preserved. It is the set of executable
+Go statements intersecting the added/modified lines in
+`da031cc8232c1df5d9337d8f09ee63370fe14b97..639f69376e15cf34aa58ef9964ddc036fffc48d0`,
+excluding `_test.go`, `test/`, and `docs/` files. This produces **1,155
+statements**, not the narrower target-only subset of 1,065 statements.
+
+- Before the additional tests: **897/1,155 (77.66%)**.
+- After the additional tests: **958/1,155 (82.94%)**.
+- The K8s discovery/list additions moved from **23/92** to **84/92** changed
+  statements. The new Ginkgo specs exercise real projection, exact-GVK
+  resolution, namespace/cluster scope, malformed input, partial discovery
+  warnings, bounded selectors, and fail-closed errors.
+
+The profile evidence was collected with `-covermode=atomic` from the repository
+test run and a current rerun of every package containing changed production Go
+code:
+
+```text
+go test ./... -covermode=atomic -coverprofile=<baseline> -count=1 -timeout=30m
+go test ./cmd/kubernautagent ./internal/controller/notification \
+  ./internal/kubernautagent/investigator \
+  ./internal/kubernautagent/mcp/tools \
+  ./internal/kubernautagent/tools/custom ./pkg/fleet/mcpclient \
+  ./pkg/kubernautagent/tools/k8s ./pkg/kubernautagent/types \
+  ./pkg/notification/delivery ./pkg/notification/status \
+  ./pkg/shared/k8s/ownerchain ./pkg/shared/tls \
+  -covermode=atomic -coverprofile=<current-changed-packages> -count=1 -timeout=20m
+```
+
+The final mapping replaces the affected-package entries with the current
+profile and retains the unchanged package entries from the baseline profile.
+This is a changed-line structural measure; it is not a claim that the whole
+repository or every changed service has 100% coverage.
+
+The repository-wide invocation did not complete locally: unrelated external
+spike packages failed or blocked on unavailable envtest/MCP binaries before the
+timeout. Those packages are outside the changed-production denominator. The
+current changed-package rerun completed successfully; the external failures
+are retained as environment evidence rather than reclassified as passes.
+
+### 17.2 Objective evidence matrix
+
+| Plain-language objective | Evidence now present | Existing repository mapping | Boundary / remaining gap |
+|---|---|---|---|
+| Exact target isolation and no hub fallback | `UT-KA-2609-001/002/005`, `UT-KA-2609-011/013/014`; focused `IT-KA-2609-002`; new exact-GVK list tests | FedRAMP AC-4; OWASP ASVS 4.0.3 V4.1.5 (existing §7 mapping) | Full production bootstrap and deployed gateway route remain unproven; planned `E2E-KA-2609-001/002` are still unclaimed. |
+| Authorization and least-privilege boundaries | Target-scoped correction allowlist, explicit group/GVK selection, fail-closed discovery errors, and focused IT dispatch assertions | FedRAMP AC-6; OWASP ASVS 4.0.3 V4.1.5 (existing §7 mapping) | Real gateway RBAC and separate object-permission checks were not run in this checkout. |
+| Input validation and malformed-data rejection | New `UT-KA-2609-003/005/006/009/016` cases cover malformed tool arguments, invalid GVKs, exact-kind filtering, partial warnings, and resolver errors | FedRAMP SI-10 (existing §7 mapping) | No claim is made for unexercised external server parser behavior. |
+| Credential and session handling | Existing `pkg/fleet/mcpclient` session/error and recovery unit coverage remains green | No additional ASVS/FedRAMP/SOC 2 control is claimed by these local tests | Real credential propagation, rejected credentials, expired credentials, and configured gateway session expiry remain unproven. |
+| Auditability and reconstruction | Existing `UT-KA-2609-015`, focused `IT-KA-2609-005`, and correlation/error assertions remain documented | BR-AUDIT-005; FedRAMP AU-2/AU-3; SOC 2 CC7.2 (existing §7 mapping) | Persistence, retention, and a full signal→analysis→selection→execution reconstruction journey remain unproven. |
+| Sensitive-data minimization | Existing bounded-output tests plus the new exact metadata-list assertions keep bulk results to bounded metadata; no resource body is used by the new tests | Objective stated in this plan; no separate control is newly asserted | No claim is made for external audit-store redaction or deployed log retention. |
+| Fail-safe ambiguity and partial-discovery handling | `UT-KA-2609-005/006/007/012`, new partial-warning test, and existing review/no-selection assertions | FedRAMP SI-10/AC-4 where already mapped in §7 | Full remote denied/partial journey remains unproven; no absence or uniqueness is inferred from incomplete data. |
+| Concurrency and state isolation | `UT-KA-2609-013/014`, existing race run, and exact target identity assertions | Objective stated in this plan; no additional control is newly asserted | A deployed multi-cluster concurrent E2E journey remains unclaimed. |
+| Change and deployment control | Build, compile-only, lint, focused tests, and diff checks are recorded in §13 | SOC 2 CC8.1, for the implementation/change process only (existing mapping) | This does not prove runtime deployment, approval, image rollout, or production configuration. |
+
+### 17.3 Evidence still missing
+
+The coverage threshold is met, but the stronger production-readiness gates are
+not silently converted into passes: the five-row full wiring manifest remains
+**0/5 demonstrated**, planned `E2E-KA-2609-001/002` remain unclaimed, and real
+fleet credential rejection/expiry plus audit persistence/reconstruction remain
+unproven. These are explicit blockers for a full bootstrap/gateway/persistence
+or credential-security claim, not coverage gaps to be hidden by the unit profile.
