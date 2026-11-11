@@ -83,13 +83,14 @@ on:
         default: ubuntu-26.04
 
       inotify_profile:
-        description: Diagnostic inotify quota profile for targeted E2E lanes
+        description: Inotify quota profile for targeted E2E lanes
         required: false
         type: choice
         options:
           - current
+          - ubuntu-26-instances-1280
           - ubuntu-24-equivalent
-        default: current
+        default: ubuntu-26-instances-1280
 
       e2e_scope:
         description: Run all E2E lanes or only the Ubuntu compatibility targets
@@ -107,7 +108,7 @@ on:
         default: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner_label || 'default' }}-${{ inputs.inotify_profile || 'current' }}-${{ inputs.e2e_scope || 'all' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner_label || 'default' }}-${{ inputs.inotify_profile || 'ubuntu-26-instances-1280' }}-${{ inputs.e2e_scope || 'all' }}
   cancel-in-progress: true
 
 # Least-privilege default for every job. No job in this workflow needs
@@ -1280,7 +1281,7 @@ jobs:
       # if a given service's image wasn't loaded (non-fatal, just slower).
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
       E2E_COVERAGE: true  # Enable coverage instrumentation for local builds (GOFLAGS=-cover)
-      INOTIFY_PROFILE: ${{ inputs.inotify_profile || 'current' }}
+      INOTIFY_PROFILE: ${{ inputs.inotify_profile || 'ubuntu-26-instances-1280' }}
       PRESERVE_E2E_CLUSTER: ${{ inputs.preserve_e2e_cluster == true && 'true' || 'false' }}
       GINKGO_LABEL: ${{ matrix.service == 'apifrontend' && '!fleet-mode-af' || matrix.service == 'apifrontend-fleet' && 'fleet-mode-af' || '' }}
       AF_E2E_LANE: ${{ matrix.service == 'apifrontend' && 'local' || matrix.service == 'apifrontend-fleet' && 'fleet' || '' }}
@@ -1343,6 +1344,10 @@ jobs:
           case "${INOTIFY_PROFILE}" in
             current)
               echo "Using the runner's current inotify quotas"
+              ;;
+            ubuntu-26-instances-1280)
+              echo "Applying the Ubuntu 26.04 inotify instance-quota workaround"
+              sudo sysctl -w fs.inotify.max_user_instances=1280
               ;;
             ubuntu-24-equivalent)
               echo "Applying Ubuntu 24.04-equivalent inotify quotas"
