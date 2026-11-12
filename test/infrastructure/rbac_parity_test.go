@@ -195,6 +195,50 @@ var _ = Describe("RO RAR RBAC parity (IT-RO-2564-004)", func() {
 	})
 })
 
+// IT-AA-2575-004 [BR-AI-009, AC-6]: AIAnalysis verifies the selected workflow
+// through the trusted catalog before persisting the result. The direct AIAnalysis
+// E2E manifest and generated controller RBAC must both retain read-only catalog
+// access so that this verification cannot fail with an authorization error.
+var _ = Describe("AIAnalysis RBAC parity (IT-AA-2575-004)", func() {
+	It("grants read-only RemediationWorkflow access in generated and direct E2E RBAC", func() {
+		generatedPath := filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml")
+		generatedRules, err := parseClusterRoleRules(generatedPath, "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "generated manager role must be parseable")
+
+		inlineRules, err := parseClusterRoleRulesFromYAML(
+			[]byte(aiAnalysisControllerRBACManifest()), "aianalysis-controller")
+		Expect(err).NotTo(HaveOccurred(), "direct AIAnalysis RBAC fixture must be parseable")
+
+		for name, rules := range map[string][]rbacv1.PolicyRule{
+			"generated controller RBAC":  generatedRules,
+			"direct AIAnalysis E2E RBAC": inlineRules,
+		} {
+			var matching []rbacv1.PolicyRule
+			for _, rule := range rules {
+				if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, "remediationworkflows") {
+					matching = append(matching, rule)
+				}
+			}
+			Expect(matching).NotTo(BeEmpty(), "%s must contain a RemediationWorkflow rule", name)
+			for _, rule := range matching {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"),
+					"%s RemediationWorkflow rule must grant catalog reads", name)
+			}
+		}
+
+		var directRule *rbacv1.PolicyRule
+		for i := range inlineRules {
+			if slices.Contains(inlineRules[i].APIGroups, "kubernaut.ai") && slices.Contains(inlineRules[i].Resources, "remediationworkflows") {
+				directRule = &inlineRules[i]
+				break
+			}
+		}
+		Expect(directRule).NotTo(BeNil())
+		Expect(directRule.Verbs).To(ConsistOf("get", "list", "watch"),
+			"direct AIAnalysis E2E access must remain read-only")
+	})
+})
+
 // UT-INFRA-RBAC-002: Structural parity test for PersonaToolClusterRolesYAML.
 //
 // Incident (2026-08-03): #1869/#1884 added kubernaut_get_approval_request and

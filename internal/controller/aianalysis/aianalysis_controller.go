@@ -127,6 +127,7 @@ type AIAnalysisReconciler struct {
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationworkflows,verbs=get;list;watch
 // DD-AA-KA-001 Amendment #2214: AA no longer interacts with
 // InvestigationSession at all (neither reads it for decision-making nor
 // writes its terminal phase) -- AF's AgentSessionTerminalCloseReconciler now
