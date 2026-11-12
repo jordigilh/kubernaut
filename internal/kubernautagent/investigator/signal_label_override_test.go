@@ -1060,8 +1060,14 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 			rcaResult := &katypes.InvestigationResult{
 				RemediationTarget: katypes.RemediationTarget{
 					Kind:                "Deployment",
+					Name:                "api-server",
+					Namespace:           "production",
 					APIVersion:          "apps/v1",
 					APIVersionValidated: true,
+				},
+				APIVersionValidation: &katypes.APIVersionValidation{
+					Kind: "Deployment", Name: "api-server", Namespace: "production",
+					APIVersion: "apps/v1", Source: "api_resources_list",
 				},
 			}
 			enrichData := &enrichment.EnrichmentResult{

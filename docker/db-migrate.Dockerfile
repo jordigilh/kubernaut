@@ -30,10 +30,10 @@ ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:1e30f4a501268d9468011bf40d2a930c00a870f2fb6da6884118afd9cc5a6e7e AS goose-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.3@sha256:05f3da136a4dbe077f30606e2e53a4f5cab185989c98309823ea06a9a1c52a50 AS goose-builder
 USER root
 ARG TARGETARCH
-ENV GOTOOLCHAIN=go1.26.10+auto
+ENV GOTOOLCHAIN=go1.26.11+auto
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
 # no_clickhouse/no_mssql/no_mysql/no_sqlite3/no_turso/no_vertica/no_ydb: keep
 # only the postgres driver (see comment above) -- libsql remains registered
@@ -56,7 +56,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
       -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:f0c7b9ae9914fcf183e7c36fc46864903c2d2caf3af327421913ae54b3d29e94 AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:cc3d766e796fbb50d6fcd599f4bad4c231aeae41822c6e86e7da664a996221ca AS production
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown

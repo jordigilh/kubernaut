@@ -35,6 +35,8 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
@@ -67,6 +69,16 @@ var _ = Describe("Issue #2521 production K8s tool wiring", func() {
 
 		reg := registry.New()
 		registerK8sTools(reg, infra, logr.Discard(), audit.NopAuditStore{})
+		expectedNames := append([]string{}, k8s.AllToolNames...)
+		expectedNames = append(expectedNames, k8s.MetricsToolNames...)
+		expectedNames = append(expectedNames, k8s.NodeProxyToolNames...)
+		expectedNames = append(expectedNames, logs.ToolName)
+		Expect(reg.All()).To(HaveLen(len(expectedNames)), "production K8s wiring must register every conditional tool family")
+		for _, name := range expectedNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "production K8s wiring missing tool: "+name)
+		}
+
 		result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
 			json.RawMessage(`{"kind":"ConfigMap","namespace":"prod"}`))
 		Expect(err).NotTo(HaveOccurred())

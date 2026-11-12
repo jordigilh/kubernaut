@@ -52,13 +52,14 @@ type discoverySignalResolver struct{}
 
 func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
 	return &katypes.SignalContext{
-		Name:         "OOMKilled",
-		Severity:     "critical",
-		Environment:  "Production",
-		Priority:     "P0",
-		ResourceKind: "Deployment",
-		Namespace:    "production",
-		ResourceName: "api-server",
+		Name:               "OOMKilled",
+		Severity:           "critical",
+		Environment:        "Production",
+		Priority:           "P0",
+		ResourceKind:       "Deployment",
+		Namespace:          "production",
+		ResourceName:       "api-server",
+		ResourceAPIVersion: "apps/v1",
 	}, nil
 }
 
@@ -113,6 +114,84 @@ func callTool(sess *mcpsdk.ClientSession, toolName string, args map[string]any) 
 		Name:      toolName,
 		Arguments: args,
 	})
+}
+
+// expectStoredGVKHandoff proves the production discover_workflows ->
+// select_workflow boundary retains the server-owned target provenance. The
+// selection guard must evaluate this exact in-memory snapshot, not the
+// serialized discovery response.
+const nilValidationValue = "<nil>"
+
+func expectStoredGVKHandoff(stack *realMCPTestStack, rrID string) {
+	driver, err := stack.SessionMgr.GetDriver(rrID)
+	Expect(err).NotTo(HaveOccurred(), "interactive driver must remain available after discovery")
+	Expect(driver).NotTo(BeNil())
+	Expect(driver.RCAResult).NotTo(BeNil())
+
+	target := driver.RCAResult.RemediationTarget
+	validation := driver.RCAResult.APIVersionValidation
+	signal := stack.SessionMgr.GetSignalContext(driver.SessionID)
+	clusterID := ""
+	if signal != nil {
+		clusterID = signal.ClusterID
+	}
+	GinkgoWriter.Printf(
+		"stored GVK handoff rr_id=%s target=%s/%s/%s api_version=%s validated=%t validation={cluster_id:%s kind:%s name:%s namespace:%s api_version:%s source:%s} signal_cluster_id=%s human_review=%t\n",
+		rrID, target.Kind, target.Namespace, target.Name, target.APIVersion,
+		target.APIVersionValidated, validationClusterID(validation), validationKind(validation),
+		validationName(validation), validationNamespace(validation), validationAPIVersion(validation),
+		validationSource(validation), clusterID, driver.RCAResult.HumanReviewNeeded,
+	)
+
+	Expect(driver.RCAResult.HumanReviewNeeded).To(BeFalse(), "successful workflow discovery must not leave the RCA in human review")
+	Expect(target.APIVersionValidated).To(BeTrue(), "stored target must retain exact-GVK validation")
+	Expect(validation).NotTo(BeNil(), "stored target must retain validation metadata")
+	Expect(validation.Source).NotTo(BeEmpty(), "stored target validation must identify its evidence source")
+	Expect(validation.ClusterID).To(Equal(clusterID), "stored validation must bind to the session target cluster")
+	Expect(investigator.TargetAPIVersionValidationMatches(driver.RCAResult, clusterID)).To(BeTrue(),
+		"stored target provenance must match the session target cluster and complete target identity")
+}
+
+func validationClusterID(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.ClusterID
+}
+
+func validationKind(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.Kind
+}
+
+func validationName(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.Name
+}
+
+func validationNamespace(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.Namespace
+}
+
+func validationAPIVersion(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.APIVersion
+}
+
+func validationSource(validation *katypes.APIVersionValidation) string {
+	if validation == nil {
+		return nilValidationValue
+	}
+	return validation.Source
 }
 
 var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integration", "discovery"), func() {
@@ -183,6 +262,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			output, err = decodeOutput(result)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("workflows_discovered"))
+			expectStoredGVKHandoff(stack, "rr-disc-001")
 
 			By("verifying discovery response contains parameters from real Mock LLM (#1169)")
 			responseStr, ok := output["response"].(string)
@@ -210,6 +290,13 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"workflow_id": recommendedWfID(),
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-001 select_workflow error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 			output, err = decodeOutput(result)
 			Expect(err).NotTo(HaveOccurred())
@@ -778,13 +865,14 @@ type crossResourceSignalResolver struct{}
 
 func (d *crossResourceSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
 	return &katypes.SignalContext{
-		Name:         "OOMKilled",
-		Severity:     "critical",
-		Environment:  "Production",
-		Priority:     "P0",
-		ResourceKind: "Pod",
-		Namespace:    "production",
-		ResourceName: "api-server-pod-xyz",
+		Name:               "OOMKilled",
+		Severity:           "critical",
+		Environment:        "Production",
+		Priority:           "P0",
+		ResourceKind:       "Pod",
+		Namespace:          "production",
+		ResourceName:       "api-server-pod-xyz",
+		ResourceAPIVersion: "v1",
 	}, nil
 }
 
@@ -823,6 +911,10 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 		MaxTurns:      15,
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
+		Registry:      mcpTargetScopedRegistry(),
+		Pipeline: investigator.Pipeline{
+			CatalogFetcher: mcpCatalogFetcher(),
+		},
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
@@ -922,6 +1014,10 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 		MaxTurns:      15,
 		ModelName:     "test-model",
 		ScopeResolver: itScopeResolver(),
+		Registry:      mcpTargetScopedRegistry(),
+		Pipeline: investigator.Pipeline{
+			CatalogFetcher: mcpCatalogFetcher(),
+		},
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 

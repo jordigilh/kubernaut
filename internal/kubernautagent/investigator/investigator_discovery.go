@@ -24,6 +24,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -57,30 +58,41 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// flows) the autonomous legs all share this scope; resetting would wipe
 	// them. Assembly below sets cumulative totals from the scope.
 
-	inv.autoResolveRCATargetAPIVersion(rcaResult, correlationID)
-
 	preKind := signal.ResourceKind
-	signal = syncSignalFromRCAForWorkflowDiscovery(signal, rcaResult.RemediationTarget)
-	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
 	var err error
 	ctx, err = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
 	if err != nil {
 		return nil, err
 	}
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
+	if rcaResult.HumanReviewNeeded {
+		// A pre-existing review decision is authoritative. Interactive
+		// workflow discovery must not clear it merely because a caller asks
+		// for a catalog lookup.
+		ApplyTotals(rcaResult, inv.InvestigationTotals(correlationID))
+		return rcaResult, nil
+	}
+	rcaClient, _, rcaRuntimeParams := inv.resolveForPhase(katypes.PhaseRCA)
+	rcaResult = inv.apiVersionValidationGate(ctx, rcaResult, nil, LLMInvocationContext{
+		Client: rcaClient, RuntimeParams: rcaRuntimeParams, CorrelationID: correlationID,
+	})
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	if rcaResult.HumanReviewNeeded ||
+		(rcaResult.RemediationTarget.Kind != "" && !TargetAPIVersionValidationMatches(rcaResult, clusterID)) {
+		// Target verification failure invalidates any stale typed outcome from
+		// the preceding RCA leg. Cancellation is authoritative and must remain
+		// the terminal outcome for the interactive request.
+		if !rcaResult.Cancelled {
+			markRCAIncomplete(rcaResult)
+		}
+		ApplyTotals(rcaResult, inv.InvestigationTotals(correlationID))
+		return rcaResult, nil
+	}
 
-	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
-		"rca_target_kind", rcaResult.RemediationTarget.Kind,
-		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
-		"signal_kind_before", preKind,
-		"signal_kind", signal.ResourceKind,
-		"signal_api_version", signal.ResourceAPIVersion,
-		"signal_namespace", signal.Namespace,
-		"signal_severity", signal.Severity,
-		"signal_environment", signal.Environment,
-		"signal_priority", signal.Priority,
-		"signal_cluster", signal.ClusterClassification,
-		"correlation_id", correlationID)
+	signal = syncSignalFromRCAForWorkflowDiscovery(signal, rcaResult.RemediationTarget)
+	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
+
+	inv.logWorkflowDiscoveryTarget(preKind, signal, rcaResult, correlationID)
 
 	// F5 (#1374): Resolve enrichment when the enricher is wired, mirroring
 	// the autonomous path (Investigate). Pre-RCA enrichment uses the signal
@@ -116,32 +128,107 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// GitOps-aware scoring (parity with autonomous path).
 	inv.attachRCADetectedLabelsJSON(&signal, rawEnrichData, correlationID)
 
-	p1Ctx := BuildPhase1Context(rcaResult)
-	markWorkflowDiscoveryStarted(rcaResult)
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, LLMInvocationContext{
-		CorrelationID:      correlationID,
-		Client:             client,
-		ModelName:          modelName,
-		RuntimeParams:      runtimeParams,
-		workflowEnrichment: rawEnrichData,
+	return inv.executeWorkflowSelectionFromRCA(ctx, workflowSelectionFromRCAParams{
+		signal:        signal,
+		rcaResult:     rcaResult,
+		enrichData:    enrichData,
+		rawEnrichData: rawEnrichData,
+		client:        client,
+		modelName:     modelName,
+		runtimeParams: runtimeParams,
+		correlationID: correlationID,
+	})
+}
+
+func (inv *Investigator) logWorkflowDiscoveryTarget(
+	preKind string,
+	signal katypes.SignalContext,
+	rcaResult *katypes.InvestigationResult,
+	correlationID string,
+) {
+	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
+		"rca_target_kind", rcaResult.RemediationTarget.Kind,
+		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
+		"signal_kind_before", preKind,
+		"signal_kind", signal.ResourceKind,
+		"signal_api_version", signal.ResourceAPIVersion,
+		"signal_namespace", signal.Namespace,
+		"signal_severity", signal.Severity,
+		"signal_environment", signal.Environment,
+		"signal_priority", signal.Priority,
+		"signal_cluster", signal.ClusterClassification,
+		"correlation_id", correlationID)
+}
+
+type workflowSelectionFromRCAParams struct {
+	signal        katypes.SignalContext
+	rcaResult     *katypes.InvestigationResult
+	enrichData    *prompt.EnrichmentData
+	rawEnrichData *enrichment.EnrichmentResult
+	client        llm.Client
+	modelName     string
+	runtimeParams llm.RuntimeParams
+	correlationID string
+}
+
+func (inv *Investigator) executeWorkflowSelectionFromRCA(ctx context.Context, p workflowSelectionFromRCAParams) (*katypes.InvestigationResult, error) {
+	p1Ctx := BuildPhase1Context(p.rcaResult)
+	markWorkflowDiscoveryStarted(p.rcaResult)
+	workflowResult, err := inv.runWorkflowSelection(ctx, p.signal, p.rcaResult.RCASummary, p.enrichData, p1Ctx, LLMInvocationContext{
+		CorrelationID:      p.correlationID,
+		Client:             p.client,
+		ModelName:          p.modelName,
+		RuntimeParams:      p.runtimeParams,
+		workflowEnrichment: p.rawEnrichData,
 	})
 	if err != nil {
 		return nil, err
 	}
-	applyWorkflowDiscoveryTypedStatus(workflowResult, rcaResult, rawEnrichData)
-
-	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
+	applyWorkflowDiscoveryTypedStatus(workflowResult, p.rcaResult, p.rawEnrichData)
+	FinalizeWorkflowResult(workflowResult, p.signal, p.rcaResult, p.rawEnrichData)
+	workflowResult = inv.revalidateFinalizedWorkflowTarget(ctx, workflowResult, p.rcaResult, p.client, p.runtimeParams, p.correlationID)
 	// #2387: cumulative per-RR totals straight from the scope (message +
 	// extraction + Phase 3 legs, plus any prior autonomous legs in takeover
 	// flows). No rcaResult summation: under scope-source-of-truth results
 	// never pre-carry counts.
-	inv.applyMetricsFromScope(workflowResult, correlationID)
-	inv.setTokenUsageFromScope(workflowResult, correlationID)
+	inv.applyMetricsFromScope(workflowResult, p.correlationID)
+	inv.setTokenUsageFromScope(workflowResult, p.correlationID)
 	// #2586: interactive discovery has no per-call TokenAccumulator, but must
 	// still persist the finalized RCA reasoning and confidence in the durable
 	// response projection before returning to the MCP session.
-	inv.emitResponseComplete(ctx, workflowResult, &TokenAccumulator{}, correlationID, modelName, investigationCompletionInteractiveTurnID)
+	inv.emitResponseComplete(ctx, workflowResult, &TokenAccumulator{}, p.correlationID, p.modelName, investigationCompletionInteractiveTurnID)
 	return workflowResult, nil
+}
+
+// revalidateFinalizedWorkflowTarget closes the handoff gap between target
+// verification and authoritative finalization. Enrichment may resolve a model
+// identified child (for example, Pod) to its owning remediation target (for
+// example, Deployment), and RCA may not identify a target separately from the
+// signal. Either case can leave the finalized target without provenance. The
+// Phase 3 proposal is not executable until this final target has fresh
+// target-cluster GVK verification; an unverifiable target is cleared by
+// enforceVerifiedWorkflowTarget and requires human review.
+func (inv *Investigator) revalidateFinalizedWorkflowTarget(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	rcaResult *katypes.InvestigationResult,
+	client llm.Client,
+	runtimeParams llm.RuntimeParams,
+	correlationID string,
+) *katypes.InvestigationResult {
+	if result == nil || rcaResult == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" {
+		return result
+	}
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	if TargetAPIVersionValidationMatches(result, clusterID) {
+		return result
+	}
+
+	result = inv.apiVersionValidationGate(ctx, result, nil, LLMInvocationContext{
+		Client: client, RuntimeParams: runtimeParams, CorrelationID: correlationID,
+	})
+	inv.enforceVerifiedWorkflowTarget(ctx, result)
+	return result
 }
 
 func syncSignalFromRCAForWorkflowDiscovery(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
@@ -219,31 +306,6 @@ func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context
 	inv.setTokenUsageFromScope(result, correlationID)
 	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID, firstNonEmpty(modelName, inv.modelName), investigationCompletionInteractiveTurnID)
 	return result
-}
-
-// autoResolveRCATargetAPIVersion resolves and validates
-// rcaResult.RemediationTarget.APIVersion, mirroring the autonomous
-// apiVersionValidationGate in runRCA. It mutates rcaResult in place. Uses the
-// REST mapper via scopeResolver: if the kind maps to exactly one API group,
-// the mapper version replaces any model proposal and is marked as validated.
-func (inv *Investigator) autoResolveRCATargetAPIVersion(rcaResult *katypes.InvestigationResult, correlationID string) {
-	if rcaResult.RemediationTarget.Kind == "" || inv.scopeResolver == nil {
-		return
-	}
-	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
-	if err != nil {
-		inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
-			"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
-		return
-	}
-	if !ambiguous && len(gvrs) == 1 {
-		rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-		rcaResult.RemediationTarget.APIVersionValidated = true
-		inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
-			"kind", rcaResult.RemediationTarget.Kind,
-			"api_version", rcaResult.RemediationTarget.APIVersion,
-			"correlation_id", correlationID)
-	}
 }
 
 // resolveRCAWorkflowDiscoveryEnrichment resolves (and, when the RCA target

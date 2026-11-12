@@ -82,8 +82,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-004: same-kind retry preserves an explicit zero RCA score (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node under pressure","confidence":0,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node under pressure","confidence":0,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -95,8 +95,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 	DescribeTable("UT-KA-2586-010: invalid RCA confidence cannot become a trusted score (BR-AI-012, SI-10)",
 		func(score string) {
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed Node target","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 			}
 			inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -115,9 +115,9 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-011: a corrected valid RCA score is preserved after retry (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Corrected","confidence":0.65,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Corrected","confidence":0.65,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -129,8 +129,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-012: invalid gate retry retains the original valid RCA (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":1.1,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -141,7 +141,7 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 	})
 
 	DescribeTable("UT-KA-2586-013: nested workflow confidence cannot mask invalid RCA confidence (BR-AI-012, SI-10)", func(score string) {
-		invalid := `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`
+		invalid := `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`
 		mockClient.responses = []llm.ChatResponse{
 			{Message: llm.Message{Role: "assistant", Content: invalid}},
 			{Message: llm.Message{Role: "assistant", Content: invalid}},
@@ -182,8 +182,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	DescribeTable("UT-KA-2586-014: nested workflow score does not replace the RCA score (BR-AI-012, SI-10)", func(rcaField string, expected *float64) {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},` + rcaField + `"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}},` + rcaField + `"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -198,9 +198,9 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-015: nested invalid RCA is corrected without borrowing workflow confidence (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Invalid","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":1.1,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Corrected","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":0.4,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Invalid","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}},"confidence":1.1,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Corrected","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}},"confidence":0.4,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Confirmed","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -211,7 +211,7 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 	})
 
 	DescribeTable("UT-KA-2586-016: interactive extraction rejects invalid RCA confidence (BR-AI-012, SI-10)", func(score string) {
-		invalid := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}}
+		invalid := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"Node pressure","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}},"confidence":` + score + `,"selected_workflow":{"workflow_id":"rotate-node-logs","confidence":0.7}}`}}
 		mockClient.responses = []llm.ChatResponse{invalid, invalid}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 		result, err := inv.RunRCAExtractionFromConversation(context.Background(), []llm.Message{{Role: "user", Content: "investigate Node pressure"}}, "rr-interactive-2586")
@@ -221,7 +221,7 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 	}, Entry("negative", "-0.1"), Entry("above one", "1.1"))
 
 	DescribeTable("UT-KA-2586-019: malformed RCA confidence triggers bounded correction (BR-AI-012, SI-10)", func(score string) {
-		invalid := `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`
+		invalid := `{"rca_summary":"Node pressure","confidence":` + score + `,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`
 		mockClient.responses = []llm.ChatResponse{{Message: llm.Message{Role: "assistant", Content: invalid}}, {Message: llm.Message{Role: "assistant", Content: invalid}}}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 		result, err := inv.Investigate(context.Background(), signal)
@@ -234,8 +234,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-028: null gate retry cannot be treated as omitted confidence (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":null,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Original","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Invalid retry","confidence":null,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 			gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -258,8 +258,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-020: same-kind RCA-only result retains prior score when retry omits it (BR-AI-012, AU-3)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Node pressure","confidence":0.8,"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 		result, err := inv.Investigate(context.Background(), signal)
@@ -271,8 +271,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	DescribeTable("UT-KA-2586-022: same-kind retry respects confidence presence (BR-AI-012, AU-3)", func(initial, retry string, expected *float64) {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial",` + initial + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved",` + retry + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial",` + initial + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved",` + retry + `"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 		result, err := inv.Investigate(context.Background(), signal)
@@ -289,8 +289,8 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 
 	It("UT-KA-2586-023: numeric string confidence remains accepted (BR-AI-012, SI-10)", func() {
 		mockClient.responses = []llm.ChatResponse{
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial","confidence":"0.65","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
-			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Initial","confidence":"0.65","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Resolved","investigation_outcome":"problem_resolved","remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}}`}},
 		}
 		inv := newTestInvestigator(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 		result, err := inv.Investigate(context.Background(), signal)
@@ -306,13 +306,13 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure due to accumulated container logs",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Turn 2: gate retry — LLM re-confirms the same target but the tool
 				// call arguments omit confidence entirely (the observed #2119 failure mode).
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed: Node itself is the correct target, log accumulation is host-level",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"},
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"},
 					"due_diligence":{"target_accuracy":"host-level log rotation misconfiguration confirmed via kubectl describe node"}
 				}`}},
 				// Phase 3 (workflow selection) also omits confidence here -- a
@@ -353,14 +353,14 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Gate retry: LLM re-evaluates and returns a deliberately lower,
 				// genuinely-recomputed confidence for the same target.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Re-confirmed Node as target, but evidence is less conclusive than initially assessed",
 					"confidence":0.55,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 			}
@@ -387,12 +387,12 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				// Gate retry also omits confidence.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed Node as target",
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs"}`),
 			}
@@ -419,12 +419,12 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under DiskPressure",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Confirmed Node as target",
 					"confidence":0.88,
-					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23"}
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-23","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"rotate-node-logs","confidence":0.9}`),
 			}

@@ -110,6 +110,26 @@ func discoveryWithWorkflow(wfID string) *mcpinternal.WorkflowDiscoveryResult {
 	}
 }
 
+// verifiedTargetResult models the post-discovery session snapshot required by
+// interactive selection. The production discovery path supplies this
+// server-owned provenance before select_workflow can assemble an executable
+// result.
+func verifiedTargetResult(name, namespace string) *katypes.InvestigationResult {
+	return &katypes.InvestigationResult{
+		RemediationTarget: katypes.RemediationTarget{
+			Kind:                "Deployment",
+			Name:                name,
+			Namespace:           namespace,
+			APIVersion:          "apps/v1",
+			APIVersionValidated: true,
+		},
+		APIVersionValidation: &katypes.APIVersionValidation{
+			Kind: "Deployment", Name: name, Namespace: namespace,
+			APIVersion: "apps/v1", Source: "api_resources_list",
+		},
+	}
+}
+
 type mockEnrichmentRunner struct {
 	result      *enrichment.EnrichmentResult
 	err         error
@@ -336,7 +356,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-enrich-cluster",
 					CorrelationID:   "rr-enrich-cluster",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -373,7 +393,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-enrich-signal-error",
 					CorrelationID:   "rr-enrich-signal-error",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -404,7 +424,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-empty-overlay-2419",
 					CorrelationID:   "rr-empty-overlay-2419",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -1862,15 +1882,11 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 					SessionID:     "sess-ac-004",
 					CorrelationID: "rr-ac-004",
 					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
-					RCAResult: &katypes.InvestigationResult{
-						RCASummary: "needs more memory",
-						RemediationTarget: katypes.RemediationTarget{
-							Kind:       "Deployment",
-							Name:       "memory-eater",
-							Namespace:  "fp-interactive",
-							APIVersion: "apps/v1",
-						},
-					},
+					RCAResult: func() *katypes.InvestigationResult {
+						result := verifiedTargetResult("memory-eater", "fp-interactive")
+						result.RCASummary = "needs more memory"
+						return result
+					}(),
 					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
 						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-recommended"},
 						Alternatives: []mcpinternal.DiscoveredWorkflow{{
@@ -2145,9 +2161,13 @@ var _ = Describe("kubernaut_complete_no_action — interactive pipeline completi
 					CorrelationID: "rr-cna-007",
 					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 					RCAResult: &katypes.InvestigationResult{
-						RCASummary: "Pod OOM due to memory leak",
-						Confidence: 0.92,
-						Severity:   "critical",
+						RCASummary:        "Pod OOM due to memory leak",
+						Confidence:        0.92,
+						Severity:          "critical",
+						WorkflowID:        "wf-discovered",
+						ExecutionBundle:   "bundle-discovered",
+						ExecutionEngine:   "job",
+						WorkflowRationale: "recommended workflow",
 					},
 					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
 						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-discovered"},
@@ -2171,6 +2191,10 @@ var _ = Describe("kubernaut_complete_no_action — interactive pipeline completi
 			Expect(completer.completedResult.Confidence).To(Equal(0.92))
 			Expect(completer.completedResult.WorkflowID).To(BeEmpty(),
 				"no workflow should be selected")
+			Expect(completer.completedResult.ExecutionBundle).To(BeEmpty(),
+				"no executable workflow bundle should survive no-action completion")
+			Expect(completer.completedResult.ExecutionEngine).To(BeEmpty(),
+				"no executable workflow engine should survive no-action completion")
 			Expect(completer.completedResult.Reason).To(Equal("user prefers manual fix"))
 			Expect(*completer.completedResult.IsActionable).To(BeFalse())
 		})

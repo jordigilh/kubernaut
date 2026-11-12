@@ -58,6 +58,7 @@ type Client struct {
 	clusterID        string
 	toolPrefix       string
 	scheme           *runtime.Scheme
+	httpClient       *http.Client
 	mu               sync.Mutex
 	closed           bool
 	gatewayCAWatcher interface{ Stop() }
@@ -72,15 +73,14 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 		opt(cfg)
 	}
 	if cfg.transportErr != nil {
-		if cfg.gatewayCAWatcher != nil {
-			cfg.gatewayCAWatcher.Stop()
-		}
+		closeClientConfigResources(cfg)
 		return nil, cfg.transportErr
 	}
 	if cfg.discoverProbeTimeout > 0 {
 		wrapTransportWithDiscoverProbe(cfg)
 	}
 	if err := startGatewayCAWatcher(ctx, cfg.gatewayCAWatcher); err != nil {
+		closeHTTPClientIdleConnections(cfg.httpClient)
 		return nil, err
 	}
 
@@ -96,9 +96,7 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
-		if cfg.gatewayCAWatcher != nil {
-			cfg.gatewayCAWatcher.Stop()
-		}
+		closeClientConfigResources(cfg)
 		return nil, fmt.Errorf("connect to MCP Gateway at %s: %w", endpoint, err)
 	}
 
@@ -107,8 +105,22 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 		clusterID:        cfg.clusterID,
 		toolPrefix:       cfg.toolPrefix,
 		scheme:           cfg.resolvedScheme(),
+		httpClient:       cfg.httpClient,
 		gatewayCAWatcher: cfg.gatewayCAWatcher,
 	}, nil
+}
+
+func closeClientConfigResources(cfg *clientConfig) {
+	if cfg.gatewayCAWatcher != nil {
+		cfg.gatewayCAWatcher.Stop()
+	}
+	closeHTTPClientIdleConnections(cfg.httpClient)
+}
+
+func closeHTTPClientIdleConnections(httpClient *http.Client) {
+	if httpClient != nil {
+		httpClient.CloseIdleConnections()
+	}
 }
 
 // wrapTransportWithDiscoverProbe wraps cfg.httpClient's transport with
@@ -277,9 +289,12 @@ func (c *Client) Close() error {
 		c.gatewayCAWatcher = nil
 	}
 	if c.sessionProvider != nil {
+		closeHTTPClientIdleConnections(c.httpClient)
 		return nil
 	}
-	return c.session.Close()
+	closeErr := c.session.Close()
+	closeHTTPClientIdleConnections(c.httpClient)
+	return closeErr
 }
 
 // ClusterID returns the cluster this client is bound to.

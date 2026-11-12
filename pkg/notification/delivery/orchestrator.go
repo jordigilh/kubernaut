@@ -91,8 +91,9 @@ type Orchestrator struct {
 	successfulDeliveries sync.Map
 
 	// DD-NOT-008 v2: Per-notification delivery mutex. Serializes the
-	// reserve-check-deliver cycle for each notification, eliminating the
-	// TOCTOU window between in-flight decrement and status persistence.
+	// reserve-check-deliver cycle for each notification. The controller's
+	// reconcileLocks provides the wider delivery-to-status-persistence boundary;
+	// this mutex also protects direct orchestrator callers.
 	// Key: notification UID, Value: *sync.Mutex
 	deliveryMu sync.Map
 
@@ -228,9 +229,9 @@ func (o *Orchestrator) DeliverToChannels(
 ) (*DeliveryResult, error) {
 	log := o.logger.WithValues("notification", notification.Name, "namespace", notification.Namespace)
 
-	// DD-NOT-008 v2: Serialize delivery attempts per notification. This eliminates
-	// the TOCTOU window where concurrent reconciles both pass the max-attempts gate
-	// because inFlight was decremented before status persistence.
+	// DD-NOT-008 v2: Serialize delivery attempts per notification. The controller
+	// also serializes the surrounding reconcile through status persistence; this
+	// mutex protects the delivery boundary for direct orchestrator callers.
 	mu := o.getDeliveryMutex(string(notification.UID))
 	mu.Lock()
 	defer mu.Unlock()
@@ -370,9 +371,9 @@ func (o *Orchestrator) deliverAndRecordAttempt(ctx context.Context, notification
 	durationSeconds := math.Round(time.Since(start).Seconds()*1000) / 1000
 
 	// Decrement in-flight counter now that delivery is complete.
-	// DD-NOT-008 v2: The per-notification mutex in DeliverToChannels
-	// serializes concurrent reconciles, so the decrement-before-persist
-	// gap is no longer exploitable.
+	// DD-NOT-008 v2: Controller-level reconciliation serialization keeps the
+	// decrement-before-persist interval from being observed by another
+	// reconcile. Direct orchestrator callers remain protected by DeliverToChannels.
 	o.decrementInFlightAttempts(string(notification.UID), string(channel))
 
 	// Create delivery attempt record (but DON'T write to status yet)

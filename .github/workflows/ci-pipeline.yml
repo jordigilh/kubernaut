@@ -99,7 +99,7 @@ jobs:
 
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
@@ -141,7 +141,7 @@ jobs:
     name: Lint (Go Services)
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -153,7 +153,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -226,7 +226,7 @@ jobs:
     name: License Scan
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -237,7 +237,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Install go-licenses
@@ -276,7 +276,7 @@ jobs:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -304,7 +304,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -403,7 +403,7 @@ jobs:
     name: "Build (${{ matrix.service }}/${{ matrix.arch }})"
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -462,7 +462,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -569,7 +569,7 @@ jobs:
     name: Build Infra (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -607,7 +607,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -691,7 +691,7 @@ jobs:
     name: Resolve operator source
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 10
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
@@ -753,7 +753,7 @@ jobs:
     name: Build operator (${{ matrix.arch }})
     needs: [resolve-operator]
     if: needs.resolve-operator.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -816,7 +816,7 @@ jobs:
     name: Package operator qualification artifact
     needs: [resolve-operator, build-operator-arch]
     if: needs.resolve-operator.result == 'success' && needs.build-operator-arch.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     outputs:
       operator_sha: ${{ needs.resolve-operator.outputs.operator_sha }}
@@ -908,7 +908,7 @@ jobs:
     name: Integration (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1001,7 +1001,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Cache generated code
         id: gen-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -1120,7 +1120,7 @@ jobs:
     name: CEL Immutability Regression (K8s v1.31.0, #2284)
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1130,7 +1130,7 @@ jobs:
           submodules: true
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Install Podman
         uses: ./.github/actions/install-podman
       - name: Load pre-built images (artifact-based, no registry)
@@ -1192,7 +1192,7 @@ jobs:
     name: E2E (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
@@ -1355,7 +1355,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Cache generated code
         id: gen-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -1372,7 +1372,6 @@ jobs:
         run: make generate
       - name: Install Podman
         uses: ./.github/actions/install-podman
-
       - name: Configure E2E runner resource limits
         shell: bash
         run: |
@@ -1390,9 +1389,8 @@ jobs:
             fi
           }
 
-          # These are ceilings, not allocations. Keep ubuntu-24.04 as the
-          # active E2E baseline; the ubuntu-26.04 comparison is evaluated
-          # separately so runner-image effects remain isolated.
+          # These are ceilings, not allocations. The Ubuntu 26 inotify instance
+          # quota is applied separately for the affected E2E lanes.
           set_sysctl_floor fs.inotify.max_user_watches 1048576
           set_sysctl_floor fs.inotify.max_user_instances 8192
           set_sysctl_floor fs.inotify.max_queued_events 32768
@@ -1423,6 +1421,11 @@ jobs:
             echo "Podman host info:"
             podman info --debug 2>&1 || true
           } | tee /tmp/e2e-runner-resources-after.txt
+
+      - name: Configure Ubuntu 26 inotify instance quota
+        if: matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw'
+        shell: bash
+        run: bash hack/ci/configure-ubuntu-26-inotify.sh
 
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
@@ -1730,7 +1733,7 @@ jobs:
     name: Must-Gather contract checks (no application chart)
     needs: [detect-changes, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -1748,7 +1751,7 @@ jobs:
     name: Test Suite Summary
     needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     permissions:
       contents: read
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
@@ -2057,7 +2060,7 @@ jobs:
     needs: [detect-changes, summary]
     if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.summary.result == 'failure'
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     container: quay.io/jordigilh/engram:latest
     permissions:
       actions: read
@@ -2127,7 +2130,7 @@ jobs:
             build-infra-images, build-operator,
             integration-tests, cel-immutability-regression, e2e-tests,
             must-gather-e2e-test, summary]
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     steps:
       - name: Evaluate CI results
         run: |

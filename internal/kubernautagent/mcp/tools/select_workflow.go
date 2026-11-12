@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -413,6 +414,9 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	}
 
 	backfillTargetFromRCA(&input, driver)
+	if err := t.validateSelectionTarget(input, driver); err != nil {
+		return SelectWorkflowOutput{}, err
+	}
 
 	pctx := &PreSelectionContext{SessionID: driver.SessionID}
 	for _, hook := range t.preSelectionHooks {
@@ -456,6 +460,32 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		Confidence: 1.0,
 		Rationale:  "User-selected via interactive mode",
 	}, nil
+}
+
+// validateSelectionTarget prevents an interactive caller from turning a
+// stale discovery snapshot or a caller-supplied target override into an
+// executable workflow. The RCA target's exact GVK must have been verified on
+// the same cluster before selection; generic RCA results without a target do
+// not require this Kubernetes-specific check.
+func (t *SelectWorkflowTool) validateSelectionTarget(input SelectWorkflowInput, driver *mcpinternal.InteractiveSession) error {
+	if driver == nil || driver.RCAResult == nil {
+		return ErrCodeNoSession
+	}
+	target := driver.RCAResult.RemediationTarget
+	if target.Kind == "" {
+		return nil
+	}
+	if driver.RCAResult.HumanReviewNeeded {
+		return ErrCodeInvalidWorkflow.WithDetail("reason", "RCA requires human review before workflow selection")
+	}
+	if !investigator.TargetAPIVersionValidationMatches(driver.RCAResult, t.clusterIDForSession(driver.SessionID)) {
+		return ErrCodeInvalidInput.WithDetail("field", "remediation_target.api_version")
+	}
+	if !strings.EqualFold(input.Kind, target.Kind) || input.Name != target.Name ||
+		input.Namespace != target.Namespace || input.APIVersion != target.APIVersion {
+		return ErrCodeInvalidInput.WithDetail("field", "remediation_target")
+	}
+	return nil
 }
 
 // authorizeSelectionDriver verifies the requesting user is the active driver

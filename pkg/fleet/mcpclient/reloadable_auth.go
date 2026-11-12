@@ -45,7 +45,8 @@ type ReloadableOAuth2Transport struct {
 	base        http.RoundTripper
 	logger      logr.Logger
 
-	watchers []*hotreload.FileWatcher
+	watchers        []*hotreload.FileWatcher
+	tokenHTTPClient *http.Client
 
 	tokenURL         string
 	clientIDPath     string
@@ -142,6 +143,18 @@ func (t *ReloadableOAuth2Transport) RoundTrip(req *http.Request) (*http.Response
 	return t.base.RoundTrip(reqClone)
 }
 
+// CloseIdleConnections releases idle connections owned by both the OAuth2
+// token client and the wrapped gateway transport.
+func (t *ReloadableOAuth2Transport) CloseIdleConnections() {
+	t.mu.RLock()
+	tokenHTTPClient := t.tokenHTTPClient
+	t.mu.RUnlock()
+	closeHTTPClientIdleConnections(tokenHTTPClient)
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 // InvalidateToken forces a new token acquisition on the next request.
 // Used by the retry wrapper after receiving a 401 response.
 func (t *ReloadableOAuth2Transport) InvalidateToken() {
@@ -187,9 +200,13 @@ func (t *ReloadableOAuth2Transport) rebuildTokenSource() error {
 	}
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 
+	tokenSource := ccConfig.TokenSource(ctx)
 	t.mu.Lock()
-	t.tokenSource = ccConfig.TokenSource(ctx)
+	previousTokenHTTPClient := t.tokenHTTPClient
+	t.tokenSource = tokenSource
+	t.tokenHTTPClient = httpClient
 	t.mu.Unlock()
+	closeHTTPClientIdleConnections(previousTokenHTTPClient)
 
 	t.logger.Info("OAuth2 TokenSource rebuilt",
 		"clientID", clientID,

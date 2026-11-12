@@ -111,7 +111,7 @@ var _ = Describe("#2121: gate retries must recover from (or account for) an unde
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod OOMKilled",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production"}
+					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production","api_version":"v1"}
 				}`}},
 				// Gate retry attempt 1: LLM calls an undeclared tool instead of submit_result (#2121).
 				undeclaredToolResp("kubectl_describe"),
@@ -154,7 +154,7 @@ var _ = Describe("#2121: gate retries must recover from (or account for) an unde
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod OOMKilled",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production"}
+					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production","api_version":"v1"}
 				}`}},
 				// Both the initial retry and the reminder retry call an undeclared tool.
 				undeclaredToolResp("kubectl_describe"),
@@ -289,7 +289,7 @@ var _ = Describe("#2121: gate retries must recover from (or account for) an unde
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod OOMKilled",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production"}
+					"remediation_target":{"kind":"Pod","name":"api-server-xyz","namespace":"production","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment memory limit too low",
