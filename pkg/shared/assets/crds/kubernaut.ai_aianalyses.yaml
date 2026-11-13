@@ -1339,19 +1339,6 @@ spec:
                         maximum: 1
                         minimum: 0
                         type: number
-                      declaredParameterNames:
-                        additionalProperties:
-                          type: boolean
-                        description: |-
-                          DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-                          uses for defense-in-depth stripping of undeclared parameters (#243). Not
-                          "omitempty": nil (missing schema, fail closed) and a non-nil empty map
-                          (schema declares zero allowed parameters, strip everything) are
-                          distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
-                          encoding/json "omitempty" treats a zero-length map the same as nil and
-                          silently drops it from the wire payload, collapsing that distinction.
-                        nullable: true
-                        type: object
                       dependencies:
                         description: |-
                           Dependencies declares the Secrets/ConfigMaps the workflow's schema
@@ -1437,54 +1424,77 @@ spec:
                           by the LLM.
                         pattern: ^sha256:[a-f0-9]{64}$
                         type: string
-                      parameterSchema:
+                      parameterEvidence:
                         description: |-
-                          ParameterSchema is the catalog-resolved schema used to review parameters.
-                          Nil denotes missing metadata; an empty list declares no parameters.
-                        items:
-                          description: RemediationWorkflowParameter defines a workflow
-                            input parameter
+                          ParameterEvidence preserves the original numeric JSON lexemes for audit.
+                          It is not a schema copy and is immutable with the selected values.
+                        type: string
+                      parameters:
+                        additionalProperties:
+                          description: |-
+                            TypedParameterValue is the persisted structural discriminated union for one
+                            workflow parameter. The strict ordinary-JSON codec rejects null, objects,
+                            malformed values and nested arrays before this type reaches the API server.
                           properties:
-                            default:
-                              x-kubernetes-preserve-unknown-fields: true
-                            dependsOn:
+                            arrayValue:
                               items:
-                                type: string
+                                description: |-
+                                  TypedPrimitiveParameter is one primitive element of a workflow parameter
+                                  array. Arrays deliberately cannot contain arrays or objects.
+                                properties:
+                                  booleanValue:
+                                    type: boolean
+                                  floatValue:
+                                    type: number
+                                  integerValue:
+                                    format: int64
+                                    type: integer
+                                  kind:
+                                    enum:
+                                    - string
+                                    - integer
+                                    - float
+                                    - boolean
+                                    type: string
+                                  stringValue:
+                                    type: string
+                                required:
+                                - kind
+                                type: object
+                                x-kubernetes-validations:
+                                - message: kind must match exactly one primitive value
+                                  rule: (self.kind == 'string') == has(self.stringValue)
+                                    && (self.kind == 'integer') == has(self.integerValue)
+                                    && (self.kind == 'float') == has(self.floatValue)
+                                    && (self.kind == 'boolean') == has(self.booleanValue)
                               type: array
-                            description:
-                              type: string
-                            enum:
-                              items:
-                                type: string
-                              type: array
-                            maximum:
-                              type: number
-                            minimum:
-                              type: number
-                            name:
-                              type: string
-                            pattern:
-                              type: string
-                            required:
+                            booleanValue:
                               type: boolean
-                            type:
+                            floatValue:
+                              type: number
+                            integerValue:
+                              format: int64
+                              type: integer
+                            kind:
                               enum:
                               - string
                               - integer
+                              - float
                               - boolean
                               - array
-                              - float
+                              type: string
+                            stringValue:
                               type: string
                           required:
-                          - description
-                          - name
-                          - required
-                          - type
+                          - kind
                           type: object
-                        type: array
-                      parameters:
-                        additionalProperties:
-                          type: string
+                          x-kubernetes-validations:
+                          - message: kind must match exactly one value
+                            rule: (self.kind == 'string') == has(self.stringValue)
+                              && (self.kind == 'integer') == has(self.integerValue)
+                              && (self.kind == 'float') == has(self.floatValue) &&
+                              (self.kind == 'boolean') == has(self.booleanValue) &&
+                              (self.kind == 'array') == has(self.arrayValue)
                         description: |-
                           Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003).
                           Nil indicates missing data; an explicitly empty map is preserved.
@@ -1648,11 +1658,6 @@ spec:
                     - workflowName
                     type: object
                     x-kubernetes-validations:
-                    - message: selected workflow parameter schema is immutable once
-                        selectedAt is populated (BR-ORCH-025)
-                      rule: '!has(oldSelf.selectedAt) || ((has(self.parameterSchema)
-                        == has(oldSelf.parameterSchema)) && (!has(self.parameterSchema)
-                        || self.parameterSchema == oldSelf.parameterSchema))'
                     - message: 'selectedWorkflow is immutable once selectedAt is populated
                         (Issue #1661, DD-WORKFLOW-018)'
                       rule: '!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId
@@ -1672,11 +1677,11 @@ spec:
                         && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources)
                         || self.resources == oldSelf.resources) && (has(self.parameters)
                         == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters
-                        == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt))
-                        && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt)
-                        && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames))
-                        && (!has(self.declaredParameterNames) || self.declaredParameterNames
-                        == oldSelf.declaredParameterNames))'
+                        == oldSelf.parameters) && (has(self.parameterEvidence) ==
+                        has(oldSelf.parameterEvidence)) && (!has(self.parameterEvidence)
+                        || self.parameterEvidence == oldSelf.parameterEvidence) &&
+                        (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt)
+                        || self.selectedAt == oldSelf.selectedAt))'
                     - message: selection metadata is immutable once selectedAt is
                         populated (DD-KA-2496)
                       rule: '!has(oldSelf.selectedAt) || ((has(self.repeatJustification)

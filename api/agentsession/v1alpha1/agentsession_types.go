@@ -331,8 +331,7 @@ type AgentSessionResult struct {
 	// execution_bundle, confidence, parameters), free-form per KA's schema.
 	// Absent (nil) means no workflow was selected.
 	// +optional
-	// +kubebuilder:pruning:PreserveUnknownFields
-	SelectedWorkflow *apiextensionsv1.JSON `json:"selectedWorkflow,omitempty"`
+	SelectedWorkflow *AgentSessionSelectedWorkflow `json:"selectedWorkflow,omitempty"`
 	// SelectionAssessment retains curated rejected-proposal reasoning, never
 	// executable workflow configuration (DD-KA-2496 / BR-KA-016). Nested fields
 	// use the KA snake_case wire contract, matching SelectedWorkflow above.

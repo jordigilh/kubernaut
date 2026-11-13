@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,12 +130,10 @@ type RemediationApprovalRequestSpec struct {
 	// Parameters freezes the original selected parameter values. An empty map is
 	// distinct from missing data.
 	// +optional
-	Parameters map[string]string `json:"parameters,omitzero"`
-
-	// ParameterSchema freezes the catalog-resolved constraints for review.
-	// Nil denotes missing metadata; an empty list declares no parameters.
+	Parameters sharedtypes.TypedParameterMap `json:"parameters,omitzero"`
+	// ParameterEvidence retains the submitted numeric lexemes.
 	// +optional
-	ParameterSchema []remediationworkflowv1.RemediationWorkflowParameter `json:"parameterSchema,omitzero"`
+	ParameterEvidence string `json:"parameterEvidence,omitempty"`
 
 	// TargetContext freezes the target and cluster context for this review.
 	// +optional
@@ -246,7 +243,10 @@ type WorkflowOverride struct {
 	// Parameters contains partial changes to the original values. Omitted keys
 	// are unchanged; nil and an explicitly empty map are both no-ops.
 	// +optional
-	Parameters map[string]string `json:"parameters,omitzero"`
+	Parameters sharedtypes.TypedParameterMap `json:"parameters,omitzero"`
+	// ParameterEvidence retains the submitted override numeric lexemes.
+	// +optional
+	ParameterEvidence string `json:"parameterEvidence,omitempty"`
 	// Rationale for the override decision (audit trail).
 	// +optional
 	Rationale string `json:"rationale,omitempty"`

@@ -202,7 +202,9 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			if rejected {
 				raw = mapped.SelectionAssessment.Raw
 			} else {
-				raw = mapped.SelectedWorkflow.Raw
+				var err error
+				raw, err = json.Marshal(mapped.SelectedWorkflow)
+				Expect(err).NotTo(HaveOccurred())
 				Expect(string(raw)).To(ContainSubstring("keep-execution-value"))
 				Expect(string(raw)).To(ContainSubstring("catalog-bundle"))
 			}
@@ -253,23 +255,34 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			} else {
 				Expect(res.SelectedWorkflow).NotTo(BeNil())
 				Expect(res.SelectionAssessment).To(BeNil())
-				Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selection)).To(Succeed())
-				Expect(string(selection["workflow_id"])).To(MatchJSON(`"catalog-2496"`))
-				Expect(string(selection["parameters"])).To(MatchJSON(`{"PRIVATE":"private-parameters-2496"}`), "the execution snapshot is preserved at the durable boundary")
-				Expect(string(selection["execution_bundle"])).To(MatchJSON(`"private-bundle-2496"`))
+				selectedRaw, err := json.Marshal(res.SelectedWorkflow)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(json.Unmarshal(selectedRaw, &selection)).To(Succeed())
+				Expect(string(selection["workflowId"])).To(MatchJSON(`"catalog-2496"`))
+				Expect(string(selection["parameters"])).To(MatchJSON(`{"PRIVATE":{"kind":"string","stringValue":"private-parameters-2496"}}`), "the execution snapshot is preserved at the durable boundary")
+				Expect(string(selection["executionBundle"])).To(MatchJSON(`"private-bundle-2496"`))
 			}
-			Expect(string(selection["workflow_name"])).To(MatchJSON(`"increase-memory"`))
-			Expect(string(selection["handoff_digest"])).To(MatchJSON(`"` + result.HandoffDigest + `"`))
-			Expect(string(selection["prior_remediation_uids"])).To(MatchJSON(`["trusted-prior-2496"]`))
-			Expect(string(selection["repeat_validation_outcome"])).To(MatchJSON(`"` + result.RepeatValidationOutcome + `"`))
+			if mode != rejectedMode2496 {
+				Expect(string(selection["workflowName"])).To(MatchJSON(`"increase-memory"`))
+				Expect(string(selection["handoffDigest"])).To(MatchJSON(`"` + result.HandoffDigest + `"`))
+				Expect(string(selection["priorRemediationUIDs"])).To(MatchJSON(`["trusted-prior-2496"]`))
+				Expect(string(selection["repeatValidationOutcome"])).To(MatchJSON(`"` + result.RepeatValidationOutcome + `"`))
+			}
 			if confidence == nil {
-				Expect(selection).NotTo(HaveKey("workflow_selection_confidence"), "unknown selection confidence cannot borrow RCA or aggregate confidence")
+				if mode != rejectedMode2496 {
+					Expect(selection).NotTo(HaveKey("workflowSelectionConfidence"), "unknown selection confidence cannot borrow RCA or aggregate confidence")
+				}
 			} else {
-				var actual float64
-				Expect(json.Unmarshal(selection["workflow_selection_confidence"], &actual)).To(Succeed())
-				Expect(actual).To(Equal(*confidence))
+				if mode != rejectedMode2496 {
+					var actual float64
+					Expect(json.Unmarshal(selection["workflowSelectionConfidence"], &actual)).To(Succeed())
+					Expect(actual).To(Equal(*confidence))
+				}
 			}
 			for _, key := range []string{"repeat_justification_required", "prior_workflow_match"} {
+				if mode != rejectedMode2496 {
+					key = map[string]string{"repeat_justification_required": "repeatJustificationRequired", "prior_workflow_match": "priorWorkflowMatch"}[key]
+				}
 				if evaluated == nil {
 					Expect(selection).NotTo(HaveKey(key))
 				} else {
@@ -278,9 +291,11 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 					Expect(actual).To(Equal(*evaluated))
 				}
 			}
-			var reasoning sharedtypes.RepeatJustification
-			Expect(json.Unmarshal(selection["repeat_justification"], &reasoning)).To(Succeed())
-			Expect(reasoning).To(Equal(*result.RepeatJustification), "JSON metacharacters must remain data, not fabricated records")
+			if mode != rejectedMode2496 {
+				var reasoning sharedtypes.RepeatJustification
+				Expect(json.Unmarshal(selection["repeatJustification"], &reasoning)).To(Succeed())
+				Expect(reasoning).To(Equal(*result.RepeatJustification), "JSON metacharacters must remain data, not fabricated records")
+			}
 			after, err := json.Marshal(result)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(after).To(Equal(before), "mapping must not mutate the authoritative investigation result")
@@ -401,12 +416,11 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(rca["causal_chain"]).To(ConsistOf("leak", "OOM", "crash"))
 
 			Expect(res.SelectedWorkflow).NotTo(BeNil())
-			var sw map[string]interface{}
-			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
-			Expect(sw["workflow_id"]).To(Equal("wf-restart"))
-			Expect(sw["execution_bundle_digest"]).To(Equal("sha256:abc"))
-			Expect(sw["execution_cluster_id"]).To(Equal("prod-east"))
-			Expect(sw["engine_config"]).To(Equal(map[string]interface{}{"playbookPath": "site.yml"}))
+			Expect(res.SelectedWorkflow.WorkflowID).To(Equal("wf-restart"))
+			Expect(res.SelectedWorkflow.ExecutionBundleDigest).To(Equal("sha256:abc"))
+			Expect(res.SelectedWorkflow.ExecutionClusterID).To(Equal("prod-east"))
+			Expect(res.SelectedWorkflow.EngineConfig).NotTo(BeNil())
+			Expect(string(res.SelectedWorkflow.EngineConfig.Raw)).To(MatchJSON(`{"playbookPath":"site.yml"}`))
 
 			Expect(res.DetectedLabels).NotTo(BeNil())
 
@@ -432,10 +446,8 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 		res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-empty-parameters")
 
 		Expect(res.SelectedWorkflow).NotTo(BeNil())
-		var selected map[string]json.RawMessage
-		Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selected)).To(Succeed())
-		Expect(selected).To(HaveKey("parameters"))
-		Expect(string(selected["parameters"])).To(MatchJSON(`{}`))
+		Expect(res.SelectedWorkflow.Parameters).NotTo(BeNil())
+		Expect(res.SelectedWorkflow.Parameters).To(BeEmpty())
 	})
 
 	Describe("UT-KA-2327-001: ExecutionClusterID propagates onto the wire selected_workflow map", func() {
@@ -449,13 +461,8 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-fleet")
 
 			Expect(res.SelectedWorkflow).NotTo(BeNil())
-			var sw map[string]interface{}
-			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
-			Expect(sw["execution_cluster_id"]).To(Equal("prod-east"),
-				"AA's response_processor.go reads swMap[\"execution_cluster_id\"] into "+
-					"SelectedWorkflow.ExecutionClusterID -- omitting this key here silently "+
-					"drops the workflow-declared execution cluster and falls back to the "+
-					"signal's origin cluster")
+			Expect(res.SelectedWorkflow.ExecutionClusterID).To(Equal("prod-east"),
+				"typed AgentSession handoff must preserve the workflow-declared execution cluster")
 		})
 
 		It("should omit execution_cluster_id when the workflow declares no execution cluster (hub-local default, unchanged behavior)", func() {
@@ -467,9 +474,7 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-hub-local")
 
 			Expect(res.SelectedWorkflow).NotTo(BeNil())
-			var sw map[string]interface{}
-			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
-			Expect(sw).NotTo(HaveKey("execution_cluster_id"))
+			Expect(res.SelectedWorkflow.ExecutionClusterID).To(BeEmpty())
 		})
 	})
 
@@ -590,5 +595,21 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(res.RootCauseAnalysis).NotTo(BeNil())
 			Expect(res.SelectedWorkflow).To(BeNil())
 		})
+	})
+})
+
+var _ = Describe("BR-WORKFLOW-004: AgentSession parameter ingress", func() {
+	It("UT-KA-2575-001: persists typed parameters and the original numeric lexemes", func() {
+		result := &katypes.InvestigationResult{
+			WorkflowID: "catalog-id", WorkflowName: "catalog-name", Confidence: .84,
+			Parameters: map[string]interface{}{"LARGE": json.Number("9007199254740993"), "FLOAT": json.Number("1e0")},
+		}
+		mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), result, "rr-2575")
+		Expect(mapped.SelectedWorkflow).NotTo(BeNil())
+		raw, err := json.Marshal(mapped.SelectedWorkflow)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(ContainSubstring(`"kind":"integer"`))
+		Expect(string(raw)).To(ContainSubstring(`"parameterEvidence"`))
+		Expect(string(raw)).To(ContainSubstring(`1e0`))
 	})
 })

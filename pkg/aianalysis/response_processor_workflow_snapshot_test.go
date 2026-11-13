@@ -18,25 +18,22 @@ limitations under the License.
 // execution snapshot (Issue #1661 Change 11b, DD-WORKFLOW-018).
 //
 // storeSelectedWorkflow (pkg/aianalysis/handlers/response_processor.go) must
-// extract Dependencies/Resources/DeclaredParameterNames — schema-derived data
-// KA already places on the wire selected_workflow map (Change 11a, Phase
-// 37-39) — into AIAnalysis.Status.SelectedWorkflow, and stamp SelectedAt so
+// extract typed Dependencies/Resources from the AgentSession handoff and stamp
+// SelectedAt so
 // the CEL write-once guard (Phase 41) can lock the snapshot after first write.
 //
-// RED: SelectedWorkflow has no Dependencies/Resources/DeclaredParameterNames/
-// SelectedAt fields yet — this file must fail to compile.
+// The persisted handoff intentionally contains no schema snapshot or derived
+// parameter allowlist.
 package aianalysis_test
 
 import (
 	"context"
-	"encoding/json"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -46,13 +43,10 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// rawJSONWFSnap marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
-func rawJSONWFSnap(v interface{}) *apiextensionsv1.JSON {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return &apiextensionsv1.JSON{Raw: raw}
+// rawJSONWFSnap retains the historical fixture name while returning the typed
+// AgentSession handoff used by the production mapper.
+func rawJSONWFSnap(v interface{}) *agentsessionv1.AgentSessionSelectedWorkflow {
+	return typedAgentSessionWorkflow(v)
 }
 
 var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1661 Change 11b)", func() {
@@ -86,7 +80,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// DeclaredParameterNames from KA's response map (DD-WORKFLOW-018)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-2390-001: extracts Dependencies/Resources/DeclaredParameterNames from the KA response into SelectedWorkflow", func() {
+	It("UT-AA-2390-001: extracts typed Dependencies/Resources while omitting schema-derived state", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-001",
 			Analysis:         "Root cause: memory pressure",
@@ -105,7 +99,6 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 					"requests": map[string]interface{}{"cpu": "100m", "memory": "128Mi"},
 					"limits":   map[string]interface{}{"cpu": "500m", "memory": "512Mi"},
 				},
-				"declared_parameter_names": map[string]interface{}{"TARGET_NAMESPACE": true, "REPLICAS": true},
 			}),
 		}
 
@@ -125,13 +118,14 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		Expect(sw.Resources.Requests.Cpu().String()).To(Equal("100m"))
 		Expect(sw.Resources.Limits.Cpu().String()).To(Equal("500m"))
 
-		Expect(sw.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		_, hasAllowlist := reflect.TypeOf(*sw).FieldByName("DeclaredParameterNames")
+		Expect(hasAllowlist).To(BeFalse(), "schema-derived allowlists must not cross the AgentSession/AIA boundary")
 
 		Expect(sw.SelectedAt).ToNot(BeNil(), "SelectedAt must be stamped for the CEL immutability guard (Phase 41)")
 		Expect(sw.SelectedAt.Time).ToNot(BeZero())
 	})
 
-	It("UT-AA-2570-112: BR-ORCH-025 preserves the full selected parameter schema", func() {
+	It("UT-AA-2575-001: BR-ORCH-025 does not persist a selected parameter schema snapshot", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID: "test-schema", Analysis: "Root cause", Confidence: 0.92,
 			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
@@ -141,15 +135,11 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		}
 		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).NotTo(HaveOccurred())
-		schema := analysis.Status.GetRCAResult().SelectedWorkflow.ParameterSchema
-		Expect(schema).To(HaveLen(1))
-		Expect(schema[0].Name).To(Equal("REPLICAS"))
-		Expect(*schema[0].Minimum).To(Equal(float64(1)))
-		Expect(*schema[0].Maximum).To(Equal(float64(9)))
-		Expect(schema[0].DependsOn).To(Equal([]string{"MODE"}))
+		_, hasSchema := reflect.TypeOf(*analysis.Status.GetRCAResult().SelectedWorkflow).FieldByName("ParameterSchema")
+		Expect(hasSchema).To(BeFalse(), "the live Workflow CRD is the sole schema authority")
 	})
 
-	It("UT-AA-2570-119: BR-ORCH-025 preserves a large integer through AgentSession decoding", func() {
+	It("UT-AA-2575-002: preserves a large integer through the typed AgentSession handoff", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID: "test-precision", Analysis: "Root cause", Confidence: 0.92,
 			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
@@ -159,10 +149,13 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		}
 		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("P", "9007199254740993"))
+		parameter := analysis.Status.GetRCAResult().SelectedWorkflow.Parameters["P"]
+		Expect(parameter.Kind).To(Equal("integer"))
+		Expect(parameter.IntegerValue).NotTo(BeNil())
+		Expect(*parameter.IntegerValue).To(Equal(int64(9007199254740993)))
 	})
 
-	DescribeTable("UT-AA-2570-116: BR-ORCH-025 distinguishes empty and unavailable schema", func(raw interface{}, shouldBePresent bool) {
+	DescribeTable("UT-AA-2575-003: BR-ORCH-025 does not persist schema presence or contents", func(raw interface{}) {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID: "test-schema-presence", Analysis: "Root cause", Confidence: 0.92,
 			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
@@ -171,24 +164,19 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		}
 		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).NotTo(HaveOccurred())
-		schema := analysis.Status.GetRCAResult().SelectedWorkflow.ParameterSchema
-		if shouldBePresent {
-			Expect(schema).NotTo(BeNil())
-			Expect(schema).To(BeEmpty())
-		} else {
-			Expect(schema).To(BeNil())
-		}
+		_, hasSchema := reflect.TypeOf(*analysis.Status.GetRCAResult().SelectedWorkflow).FieldByName("ParameterSchema")
+		Expect(hasSchema).To(BeFalse())
 	},
-		Entry("empty list", []interface{}{}, true),
-		Entry("malformed value", "not-an-array", false),
-		Entry("null", nil, false),
+		Entry("empty list", []interface{}{}),
+		Entry("malformed value", "not-an-array"),
+		Entry("null", nil),
 	)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-338-002: round-trip when the fields are absent — no panic, nil/empty
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-2390-002: leaves Dependencies/Resources/DeclaredParameterNames nil when absent from the KA response, without panicking", func() {
+	It("UT-AA-2390-002: leaves Dependencies/Resources nil when absent from the typed handoff, without panicking", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-002",
 			Analysis:         "Root cause: crash loop",
@@ -212,7 +200,8 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		Expect(sw).ToNot(BeNil())
 		Expect(sw.Dependencies).To(BeNil())
 		Expect(sw.Resources).To(BeNil())
-		Expect(sw.DeclaredParameterNames).To(BeEmpty())
+		_, hasAllowlist := reflect.TypeOf(*sw).FieldByName("DeclaredParameterNames")
+		Expect(hasAllowlist).To(BeFalse())
 		Expect(sw.SelectedAt).ToNot(BeNil(), "SelectedAt must still be stamped even when the schema-derived fields are absent")
 	})
 

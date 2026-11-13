@@ -128,14 +128,15 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai.Status.EnsureApproval().ApprovalRequired = false
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
 				},
 				Confidence: 0.95,
+				Parameters: trustedTargetParameters(namespace, "test-app"),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "High confidence auto-approve",
 			}
@@ -247,8 +248,8 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
@@ -258,7 +259,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
-			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+			supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, namespace, "test-app")
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())

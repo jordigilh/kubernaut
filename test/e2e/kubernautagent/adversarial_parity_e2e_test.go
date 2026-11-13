@@ -250,8 +250,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			// (unlike the retired client's optional field), so no hasHR check.
 			if !result.NeedsHumanReview {
 				Expect(result.SelectedWorkflow).NotTo(BeNil(), "actionable result should have selectedWorkflow")
-				sw := decodeDetectedLabels(result.SelectedWorkflow)
-				Expect(sw).To(HaveKey("workflow_id"))
+				Expect(result.SelectedWorkflow.WorkflowID).NotTo(BeEmpty())
 			}
 		})
 
@@ -338,8 +337,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			// Workflow selection must have run and produced a result.
 			Expect(result.SelectedWorkflow).NotTo(BeNil(),
 				"E2E-KA-1039-001: selectedWorkflow must be present (pipeline continued)")
-			sw := decodeDetectedLabels(result.SelectedWorkflow)
-			Expect(sw).To(HaveKey("workflow_id"),
+			Expect(result.SelectedWorkflow.WorkflowID).NotTo(BeEmpty(),
 				"E2E-KA-1039-001: selectedWorkflow must contain workflow_id")
 
 			Expect(result.Confidence).To(BeNumerically(">=", 0.5),
@@ -370,8 +368,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			// Investigation must still succeed despite the warning.
 			Expect(result.SelectedWorkflow).NotTo(BeNil(),
 				"E2E-KA-1039-002: investigation must succeed with workflow selected")
-			sw := decodeDetectedLabels(result.SelectedWorkflow)
-			Expect(sw).To(HaveKey("workflow_id"),
+			Expect(result.SelectedWorkflow.WorkflowID).NotTo(BeEmpty(),
 				"E2E-KA-1039-002: selectedWorkflow must contain workflow_id")
 		})
 	})

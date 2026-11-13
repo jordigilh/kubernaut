@@ -199,12 +199,7 @@ func registerCRDTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weig
 			return tools.HandleGetApprovalRequest(ctx, cfg.TypedClient, args)
 		})
 
-	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
-		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
-			args.Namespace = cfg.Namespace
-			username := usernameFromCtx(ctx)
-			return tools.HandleApprove(ctx, cfg.TypedClient, args, username)
-		})
+	registerApprovalTool(srv, cfg, sem)
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
@@ -438,6 +433,29 @@ func registerTool[In any](srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.
 	)
 }
 
+// registerApprovalTool keeps the MCP input schema as ordinary JSON while the
+// typed handler still receives raw JSON through ApproveArgs.UnmarshalJSON. The
+// generic registration path would infer its schema from WorkflowOverride and
+// incorrectly expose the persisted discriminated union to LLM/tool callers.
+func registerApprovalTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted) {
+	schemaJSON, err := json.Marshal(tools.ApproveInputSchema())
+	if err != nil {
+		panic(fmt.Sprintf("marshal approval input schema: %v", err))
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+		panic(fmt.Sprintf("decode approval input schema: %v", err))
+	}
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "kubernaut_approve",
+		Description: "Approve a remediation action",
+		InputSchema: schema,
+	}, wrapTool(cfg, sem, "kubernaut_approve", func(ctx context.Context, args tools.ApproveArgs) (any, error) {
+		args.Namespace = cfg.Namespace
+		return tools.HandleApprove(ctx, cfg.TypedClient, args, usernameFromCtx(ctx))
+	}))
+}
+
 // wrapTool applies cross-cutting middleware to a tool handler:
 // 1. RBAC check
 // 2. Semaphore acquisition
@@ -580,6 +598,7 @@ func handleApprovalDecisionDenied[In any](ctx context.Context, cfg *MCPBridgeCon
 				OriginalParameters:  info.OriginalParameters,
 				OverrideParameters:  info.OverrideParameters,
 				EffectiveParameters: info.EffectiveParameters,
+				ParameterEvidence:   info.ParameterEvidence,
 				OverrideRationale:   info.OverrideRationale,
 			}
 		})
@@ -623,7 +642,8 @@ func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolNa
 		}
 		auditOptions = append(auditOptions, func(event *audit.Event) {
 			event.Approval = &audit.ApprovalAudit{WorkflowID: info.WorkflowID, OriginalParameters: info.OriginalParameters,
-				OverrideParameters: info.OverrideParameters, EffectiveParameters: info.EffectiveParameters, OverrideRationale: info.OverrideRationale}
+				OverrideParameters: info.OverrideParameters, EffectiveParameters: info.EffectiveParameters,
+				ParameterEvidence: info.ParameterEvidence, OverrideRationale: info.OverrideRationale}
 		})
 	}
 	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail, auditOptions...)

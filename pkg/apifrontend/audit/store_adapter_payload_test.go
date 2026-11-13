@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-faster/jx"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -11,7 +12,7 @@ import (
 var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: complete denial payload (AU-3, SI-10)", func() {
 	It("UT-AUD-2570-036: BR-AUDIT-005 preserves approval intent in the typed tool payload", func() {
 		rationale := "reviewed"
-		union := buildToolExecutedPayload(&Event{Type: EventToolExecuted, Approval: &ApprovalAudit{WorkflowID: "wf-reviewed", OriginalParameters: map[string]string{"P": "2", "Q": "keep"}, OverrideParameters: map[string]string{"P": "1.0"}, EffectiveParameters: map[string]string{"P": "1.0", "Q": "keep"}, OverrideRationale: &rationale}, Detail: map[string]string{
+		union := buildToolExecutedPayload(&Event{Type: EventToolExecuted, Approval: &ApprovalAudit{WorkflowID: "wf-reviewed", OriginalParameters: typedParameters(`{"P":2,"Q":"keep"}`), OverrideParameters: typedParameters(`{"P":1.0}`), EffectiveParameters: typedParameters(`{"P":1.0,"Q":"keep"}`), ParameterEvidence: `{"P":2,"Q":"keep"}`, OverrideRationale: &rationale}, Detail: map[string]string{
 			"tool_name": "kubernaut_approve", "tool_outcome": "success", "workflow_id": "wf-reviewed", "approval_request": "rar-audit-2570", "approval_decision": "Approved",
 			"original_parameters": `{"P":"2","Q":"keep"}`, "override_parameters": `{"P":"1.0"}`,
 			"effective_parameters": `{"P":"1.0","Q":"keep"}`, "override_rationale": "reviewed",
@@ -24,14 +25,15 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: complete denial payload (AU-3, SI
 		Expect(string(fields["workflow_id"])).To(MatchJSON(`"wf-reviewed"`))
 		Expect(string(fields["approval_request"])).To(MatchJSON(`"rar-audit-2570"`))
 		Expect(string(fields["approval_decision"])).To(MatchJSON(`"Approved"`))
-		Expect(string(fields["original_parameters"])).To(MatchJSON(`{"P":"2","Q":"keep"}`))
-		Expect(string(fields["override_parameters"])).To(MatchJSON(`{"P":"1.0"}`))
-		Expect(string(fields["effective_parameters"])).To(MatchJSON(`{"P":"1.0","Q":"keep"}`))
+		Expect(string(fields["original_parameters"])).To(MatchJSON(`{"P":{"kind":"integer","integerValue":2},"Q":{"kind":"string","stringValue":"keep"}}`))
+		Expect(string(fields["override_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1}}`))
+		Expect(string(fields["effective_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1},"Q":{"kind":"string","stringValue":"keep"}}`))
+		Expect(string(fields["parameter_evidence"])).To(MatchJSON(`"{\"P\":2,\"Q\":\"keep\"}"`))
 		Expect(string(fields["override_rationale"])).To(MatchJSON(`"reviewed"`))
 	})
 
 	It("UT-AUD-2570-038: BR-AUDIT-005 distinguishes no override from an explicit empty override", func() {
-		event := &Event{Type: EventToolExecuted, Detail: map[string]string{"tool_name": "kubernaut_approve", "tool_outcome": "success"}, Approval: &ApprovalAudit{OriginalParameters: map[string]string{}, EffectiveParameters: map[string]string{}}}
+		event := &Event{Type: EventToolExecuted, Detail: map[string]string{"tool_name": "kubernaut_approve", "tool_outcome": "success"}, Approval: &ApprovalAudit{OriginalParameters: typedParameters(`{}`), EffectiveParameters: typedParameters(`{}`)}}
 		without := buildToolExecutedPayload(event)
 		payload, ok := without.GetApifrontendToolExecutedPayload()
 		Expect(ok).To(BeTrue())
@@ -40,7 +42,7 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: complete denial payload (AU-3, SI
 		_, present = payload.OverrideRationale.Get()
 		Expect(present).To(BeFalse())
 		rationale := ""
-		event.Approval.OverrideParameters = map[string]string{}
+		event.Approval.OverrideParameters = typedParameters(`{}`)
 		event.Approval.OverrideRationale = &rationale
 		with := buildToolExecutedPayload(event)
 		payload, ok = with.GetApifrontendToolExecutedPayload()
@@ -94,3 +96,11 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: complete denial payload (AU-3, SI
 			Expect(string(payload.Endpoint)).To(Equal(endpoint))
 		}, Entry("missing", ""), Entry("unsupported", "not-a-protocol"))
 })
+
+func typedParameters(raw string) sharedtypes.TypedParameterMap {
+	values, _, err := sharedtypes.DecodeTypedParameterMap([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+	return values
+}

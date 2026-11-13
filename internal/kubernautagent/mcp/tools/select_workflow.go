@@ -17,7 +17,9 @@ limitations under the License.
 package tools
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -30,6 +32,8 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
@@ -112,6 +116,48 @@ type SelectWorkflowInput struct {
 	Parameters       map[string]any `json:"parameters,omitempty"`
 	ActingUser       string         `json:"acting_user,omitempty"`
 	ActingUserGroups []string       `json:"acting_user_groups,omitempty"`
+}
+
+// UnmarshalJSON keeps MCP selection parameters as ordinary JSON while using
+// json.Number for every numeric token. The persisted typed union is constructed
+// only after this boundary; decoding through interface{} without UseNumber can
+// round values such as 9007199254740993 before validation.
+func (i *SelectWorkflowInput) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		RRID             string          `json:"rr_id"`
+		WorkflowID       string          `json:"workflow_id"`
+		Kind             string          `json:"kind,omitempty"`
+		Name             string          `json:"name,omitempty"`
+		Namespace        string          `json:"namespace,omitempty"`
+		APIVersion       string          `json:"api_version,omitempty"`
+		SpecHash         string          `json:"spec_hash,omitempty"`
+		IncidentID       string          `json:"incident_id,omitempty"`
+		Parameters       json.RawMessage `json:"parameters"`
+		ActingUser       string          `json:"acting_user,omitempty"`
+		ActingUserGroups []string        `json:"acting_user_groups,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*i = SelectWorkflowInput{
+		RRID: wire.RRID, WorkflowID: wire.WorkflowID, Kind: wire.Kind,
+		Name: wire.Name, Namespace: wire.Namespace, APIVersion: wire.APIVersion,
+		SpecHash: wire.SpecHash, IncidentID: wire.IncidentID,
+		ActingUser: wire.ActingUser, ActingUserGroups: wire.ActingUserGroups,
+	}
+	raw := bytes.TrimSpace(wire.Parameters)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	if _, _, err := sharedtypes.DecodeTypedParameterMap(raw); err != nil {
+		return fmt.Errorf("invalid workflow parameters: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&i.Parameters); err != nil {
+		return fmt.Errorf("decode workflow parameters: %w", err)
+	}
+	return nil
 }
 
 // actingUserOverride implements actingUserInput (registration.go).
@@ -383,7 +429,13 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	if err != nil {
 		return SelectWorkflowOutput{}, fmt.Errorf("workflow catalog lookup failed: %w", err)
 	}
-	if err := validateSelectedParameters(input.Parameters, workflow.DeclaredParameterNames); err != nil {
+	parameters := input.Parameters
+	if workflow.ParameterSchema != nil && driver.RCAResult != nil {
+		selected := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
+		applySelectionParameterOverrides(selected, input.Parameters)
+		parameters = selected.Parameters
+	}
+	if err := validateSelectedParameters(parameters, workflow); err != nil {
 		return SelectWorkflowOutput{}, err
 	}
 
@@ -749,8 +801,18 @@ func cloneParameterMap(src map[string]interface{}) map[string]interface{} {
 
 // validateSelectedParameters prevents selection input from adding undeclared
 // parameters to the selected workflow's execution request.
-func validateSelectedParameters(parameters map[string]interface{}, declaredParameterNames map[string]bool) error {
-	if len(parameters) == 0 {
+func validateSelectedParameters(parameters map[string]interface{}, workflow *CatalogWorkflow) error {
+	typed, _, err := sharedtypes.TypedParameterMapFromValues(parameters)
+	if err != nil {
+		return ErrCodeInvalidParameter.WithDetail("reason", err.Error())
+	}
+	if workflow == nil {
+		return ErrCodeInvalidParameter.WithDetail("reason", "selected workflow is missing")
+	}
+	if workflow.ParameterSchema != nil {
+		if err := remediationapprovalrequest.ValidateTypedParameterSet(workflow.ParameterSchema, typed); err != nil {
+			return ErrCodeInvalidParameter.WithDetail("reason", err.Error())
+		}
 		return nil
 	}
 
@@ -760,7 +822,7 @@ func validateSelectedParameters(parameters map[string]interface{}, declaredParam
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if !declaredParameterNames[name] {
+		if !workflow.DeclaredParameterNames[name] {
 			return ErrCodeInvalidParameter.WithDetail("parameter", name)
 		}
 	}

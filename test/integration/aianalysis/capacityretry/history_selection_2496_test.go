@@ -38,7 +38,6 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	aaconfig "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
@@ -73,7 +72,7 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		Expect(kube.Delete(ctx, ns)).To(Succeed())
 	})
 
-	It("IT-AA-2570-027: BR-ORCH-025 persists exact parameters and schema from AgentSession through AA", func() {
+	It("IT-AA-2570-027: BR-ORCH-025 persists exact typed parameters without a schema copy", func() {
 		analysis := newCapacityRetryAnalysis(ns.Name, "selection-precision", 0, 5*time.Second)
 		result := historySelectionResult2496(0.92)
 		result.Parameters = map[string]interface{}{"P": json.Number("9007199254740993")}
@@ -87,10 +86,15 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		Expect(kube.Get(ctx, client.ObjectKeyFromObject(analysis), persisted)).To(Succeed())
 		selected := persisted.Status.GetRCAResult().SelectedWorkflow
 		Expect(selected).NotTo(BeNil())
-		Expect(selected.Parameters).To(HaveKeyWithValue("P", "9007199254740993"))
-		Expect(selected.ParameterSchema).To(HaveLen(1))
-		Expect(selected.ParameterSchema[0].Name).To(Equal("P"))
-		Expect(*selected.ParameterSchema[0].Minimum).To(Equal(float64(1)))
+		Expect(selected.Parameters).To(HaveKey("P"))
+		Expect(selected.Parameters["P"].Kind).To(Equal("integer"))
+		Expect(*selected.Parameters["P"].IntegerValue).To(Equal(int64(9007199254740993)))
+		encoded, err := json.Marshal(selected)
+		Expect(err).NotTo(HaveOccurred())
+		var stored map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &stored)).To(Succeed())
+		Expect(stored).NotTo(HaveKey("parameterSchema"))
+		Expect(stored).NotTo(HaveKey("declaredParameterNames"))
 	})
 
 	It("IT-RO-2586-007: admitted approval snapshot reaches the Console event with distinct scores (BR-ORCH-026, AU-3)", func() {
@@ -99,8 +103,8 @@ var _ = Describe("#2496 admitted AgentSession selection persistence", func() {
 		ai := &aianalysisv1.AIAnalysis{ObjectMeta: metav1.ObjectMeta{Name: "ai-2586", Namespace: ns.Name}, Status: aianalysisv1.AIAnalysisStatus{
 			Approval: &aianalysisv1.ApprovalStatus{ApprovalRequired: true, ApprovalReason: "user policy requires review"},
 			RCAResult: &aianalysisv1.RCAResult{RootCause: "memory pressure", RCAConfidence: &zero, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-review", WorkflowName: "wf-review", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflow:v1", DeclaredParameterNames: map[string]bool{}},
-				Confidence:       .95, Parameters: map[string]string{}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "wf-review", WorkflowName: "wf-review", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "oci://example.invalid/workflow:v1"},
+				Confidence:       .95, Parameters: sharedtypes.TypedParameterMap{},
 			}},
 		}}
 		name, err := rocreator.NewApprovalCreator(kube, kube.Scheme(), nil, 15*time.Minute).Create(ctx, rr, ai)
@@ -346,6 +350,7 @@ func historySelectionResult2496(confidence float64) *katypes.InvestigationResult
 	return &katypes.InvestigationResult{
 		RCASummary: "Memory pressure", RCAConfidence: &rcaConfidence, Confidence: confidence,
 		WorkflowID: "catalog-id-2496", WorkflowName: "increase-memory", WorkflowVersion: "1.0.0", ActionType: "IncreaseMemory",
+		Parameters:        map[string]interface{}{},
 		ExecutionBundle:   "ghcr.io/kubernaut/increase-memory@sha256:" + strings.Repeat("a", 64),
 		WorkflowRationale: "Current memory pressure warrants selection", WorkflowSelectionConfidence: &confidence,
 		RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: "New memory limit observed",

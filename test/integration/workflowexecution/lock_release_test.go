@@ -46,7 +46,6 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 		By("Phase 1: Creating WFE1 and running it to completion")
 		wfe1 := createUniqueJobWFE("lock-rel1", targetResource)
 		wfe1.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe1.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		defer cleanupJobWFE(wfe1)
 		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
@@ -78,7 +77,6 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 		By("Phase 2: Creating WFE2 immediately (within cooldown window)")
 		wfe2 := createUniqueJobWFE("lock-rel2", targetResource)
 		wfe2.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		defer cleanupJobWFE(wfe2)
 		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -53,11 +54,14 @@ import (
 
 var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we-006"), func() {
 	var workflowID string
-	BeforeEach(func() { workflowID = trustedWorkflowFixture("Dependency resolution fixture", "job") })
+	BeforeEach(func() {
+		workflowID = trustedWorkflowFixtureWithParameters("Dependency resolution fixture", "job", []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Description: "execution namespace"},
+		})
+	})
 	dependencyWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 
@@ -78,6 +82,14 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			defer func() { _ = k8sClient.Delete(ctx, secret) }()
 
 			wfe := dependencyWFE("depres-001", "default/deployment/dep-test-001")
+			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
+				"Dependency resolution secret fixture",
+				"job",
+				[]remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Description: "execution namespace"}},
+				&remediationworkflowv1.RemediationWorkflowDependencies{
+					Secrets: []remediationworkflowv1.RemediationWorkflowResourceDependency{{Name: "it-gitea-creds-001"}},
+				},
+			)
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "it-gitea-creds-001"}},
 			}
@@ -85,8 +97,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
 			}
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"NAMESPACE": true}
-			wfe.Spec.Parameters = map[string]string{"NAMESPACE": "default", "UNDECLARED": "must-not-reach-job"}
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"NAMESPACE": `"default"`})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -128,6 +139,14 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			defer func() { _ = k8sClient.Delete(ctx, cm) }()
 
 			wfe := dependencyWFE("depres-002", "default/deployment/dep-test-002")
+			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
+				"Dependency resolution ConfigMap fixture",
+				"job",
+				[]remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Description: "execution namespace"}},
+				&remediationworkflowv1.RemediationWorkflowDependencies{
+					ConfigMaps: []remediationworkflowv1.RemediationWorkflowResourceDependency{{Name: "it-remediation-config-002"}},
+				},
+			)
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "it-remediation-config-002"}},
 			}
@@ -156,6 +175,14 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 
 		It("IT-WE-2390-002 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
 			wfe := dependencyWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
+			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
+				"Dependency resolution missing secret fixture",
+				"job",
+				[]remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Description: "execution namespace"}},
+				&remediationworkflowv1.RemediationWorkflowDependencies{
+					Secrets: []remediationworkflowv1.RemediationWorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},
+				},
+			)
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},
 			}

@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
@@ -213,8 +214,17 @@ func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.
 	if rar.Spec.RequiredBy.IsZero() || !now.Before(rar.Spec.RequiredBy.Time) {
 		return h.denyDecision(ctx, logger, rar, authCtx, "approval decision deadline has passed")
 	}
+	var verifiedWorkflow *remediationworkflowv1.RemediationWorkflow
 	if rar.Status.Decision == remediationv1.ApprovalDecisionApproved && rar.Status.WorkflowOverride == nil {
-		if err := rarconditions.ValidateParameterOverride(&rar.Spec, nil); err != nil {
+		if rar.Spec.Workflow == nil || rar.Spec.Workflow.WorkflowID == "" {
+			return h.denyDecision(ctx, logger, rar, authCtx, "approval rejected: workflow identity is missing")
+		}
+		var err error
+		verifiedWorkflow, err = workflowidentity.GetVerified(ctx, h.reader, h.trustedNamespace, rar.Spec.Workflow.WorkflowID)
+		if err != nil {
+			return h.denyDecision(ctx, logger, rar, authCtx, fmt.Sprintf("approval rejected: workflow identity: %v", err))
+		}
+		if err := rarconditions.ValidateParameterOverrideWithWorkflow(&rar.Spec, verifiedWorkflow, nil); err != nil {
 			return h.denyDecision(ctx, logger, rar, authCtx, err.Error())
 		}
 	}
@@ -223,7 +233,7 @@ func (h *RemediationApprovalRequestAuthHandler) handleHumanDecision(ctx context.
 	rar.Status.DecidedAt = &decidedAt
 
 	if rar.Status.WorkflowOverride != nil {
-		if resp, done := h.checkWorkflowOverride(ctx, logger, rar, authCtx); done {
+		if resp, done := h.checkWorkflowOverride(ctx, logger, rar, authCtx, verifiedWorkflow); done {
 			return resp
 		}
 	}
@@ -448,14 +458,14 @@ func (h *RemediationApprovalRequestAuthHandler) decodeRARRequest(logger logr.Log
 // checkWorkflowOverride validates a WorkflowOverride, if present, AFTER
 // authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid
 // overrides). done is true when validation failed and resp must be returned.
-func (h *RemediationApprovalRequestAuthHandler) checkWorkflowOverride(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) (admission.Response, bool) {
+func (h *RemediationApprovalRequestAuthHandler) checkWorkflowOverride(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext, verifiedWorkflow *remediationworkflowv1.RemediationWorkflow) (admission.Response, bool) {
 	overrideLog := logger.WithValues(
 		"override.workflowName", rar.Status.WorkflowOverride.WorkflowName,
 		"override.hasParams", rar.Status.WorkflowOverride.Parameters != nil,
 		"override.rationale", rar.Status.WorkflowOverride.Rationale,
 		"authenticatedUser", authCtx.Username,
 	)
-	if err := h.validateWorkflowOverride(ctx, rar); err != nil {
+	if err := h.validateWorkflowOverride(ctx, rar, verifiedWorkflow); err != nil {
 		overrideLog.Info("Override validation failed", "error", err.Error(), "decision", rar.Status.Decision)
 		return h.denyDecision(ctx, logger, rar, authCtx, err.Error()), true
 	}
@@ -498,7 +508,11 @@ func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx conte
 	// REFACTOR-AW-003: Build audit payload using extracted helper
 	// Per DD-WEBHOOK-003: Business context ONLY (attribution in structured columns)
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := BuildRARApprovalAuditPayload(rar)
+	payload, err := BuildRARApprovalAuditPayload(rar)
+	if err != nil {
+		logger.Error(err, "Failed to build approval audit payload", "rar", rar.Name)
+		return
+	}
 	auditEvent.EventData = WrapRARApprovalPayloadWithDiscriminator(payload)
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
@@ -550,7 +564,12 @@ func (h *RemediationApprovalRequestAuthHandler) emitDeniedApprovalAuditEvent(ctx
 		now := metav1.NewTime(h.clock.Now())
 		payloadRAR.Status.DecidedAt = &now
 	}
-	event.EventData = WrapRARApprovalPayloadWithDiscriminator(BuildRARApprovalAuditPayload(payloadRAR))
+	payload, err := BuildRARApprovalAuditPayload(payloadRAR)
+	if err != nil {
+		logger.Error(err, "Denied approval audit payload construction failed", "reason", reason)
+		return
+	}
+	event.EventData = WrapRARApprovalPayloadWithDiscriminator(payload)
 	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Denied approval audit enqueue failed", "reason", reason)
 	}
@@ -577,7 +596,7 @@ func finalizeRARResponse(logger logr.Logger, req admission.Request, rar *remedia
 // validateWorkflowOverride validates the parameter-only RAR override (BR-ORCH-025).
 // - Override is only valid when decision is Approved
 // - Workflow switching is outside the approval contract
-func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
+func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx context.Context, rar *remediationv1.RemediationApprovalRequest, verifiedWorkflow *remediationworkflowv1.RemediationWorkflow) error {
 	override := rar.Status.WorkflowOverride
 	if override == nil {
 		return nil
@@ -590,11 +609,18 @@ func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx con
 	if override.WorkflowName != "" {
 		return fmt.Errorf("override rejected: workflow switching is not supported")
 	}
-	if err := rarconditions.ValidateParameterOverride(&rar.Spec, override.Parameters); err != nil {
-		return fmt.Errorf("override rejected: %w", err)
+	if verifiedWorkflow == nil {
+		if rar.Spec.Workflow == nil || rar.Spec.Workflow.WorkflowID == "" {
+			return fmt.Errorf("override rejected: workflow identity is missing")
+		}
+		var err error
+		verifiedWorkflow, err = workflowidentity.GetVerified(ctx, h.reader, h.trustedNamespace, rar.Spec.Workflow.WorkflowID)
+		if err != nil {
+			return fmt.Errorf("override rejected: workflow identity: %w", err)
+		}
 	}
-	if err := workflowidentity.Verify(ctx, h.reader, h.trustedNamespace, rar.Spec.Workflow.WorkflowID); err != nil {
-		return fmt.Errorf("override rejected: workflow identity: %w", err)
+	if err := rarconditions.ValidateParameterOverrideWithWorkflow(&rar.Spec, verifiedWorkflow, override.Parameters); err != nil {
+		return fmt.Errorf("override rejected: %w", err)
 	}
 
 	return nil

@@ -30,9 +30,12 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+const humanReviewReasonParameterValidationFailed = "parameter_validation_failed"
 
 // MapSpecToSignal converts an AgentSession's Spec (AA's 1:1 translation of
 // the retired agentclient.IncidentRequest, BR-AA-KA-065.2) into KA's
@@ -187,7 +190,26 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 	applyHumanReviewReason(res, log, r)
 
 	if r.WorkflowID != "" {
-		res.SelectedWorkflow = marshalJSON(buildSelectedWorkflowMap(r))
+		selected, err := buildTypedSelectedWorkflow(r)
+		if err != nil {
+			log.Error(err, "selected workflow parameters rejected at AgentSession boundary", "incidentID", incidentID)
+			copyResult := *r
+			copyResult.WorkflowID = ""
+			copyResult.ProposedWorkflowID = r.WorkflowID
+			copyResult.HumanReviewNeeded = true
+			copyResult.HumanReviewReason = humanReviewReasonParameterValidationFailed
+			copyResult.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
+			copyResult.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusFailed
+			copyResult.Warnings = append(append([]string(nil), r.Warnings...), "selected workflow parameters rejected")
+			r = &copyResult
+			res.NeedsHumanReview = true
+			res.HumanReviewReason = humanReviewReasonParameterValidationFailed
+			res.Warnings = buildWarnings(r)
+			res.TerminalOutcome = r.TerminalOutcome
+			res.WorkflowDiscoveryStatus = r.WorkflowDiscoveryStatus
+		} else {
+			res.SelectedWorkflow = selected
+		}
 	} else if r.ProposedWorkflowID != "" {
 		res.SelectionAssessment = marshalJSON(buildSelectionAssessmentMap(r))
 	}
@@ -207,6 +229,80 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 		res.AlignmentVerdict = buildAlignmentVerdict(r)
 	}
 	return res
+}
+
+// buildTypedSelectedWorkflow is the KA-to-AgentSession
+// selection writer. It converts ordinary JSON parameters before the CRD object
+// is constructed, retaining a separate lossless evidence string for downstream
+// audit builders. No schema snapshot or derived allowlist crosses this boundary.
+func buildTypedSelectedWorkflow(r *katypes.InvestigationResult) (*agentsessionv1.AgentSessionSelectedWorkflow, error) {
+	parameters, evidence, err := sharedtypes.TypedParameterMapFromValues(r.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	selected := &agentsessionv1.AgentSessionSelectedWorkflow{
+		WorkflowID:            r.WorkflowID,
+		WorkflowName:          r.WorkflowName,
+		ActionType:            r.ActionType,
+		Version:               r.WorkflowVersion,
+		ExecutionBundle:       r.ExecutionBundle,
+		ExecutionBundleDigest: r.ExecutionBundleDigest,
+		ExecutionEngine:       r.ExecutionEngine,
+		ServiceAccountName:    r.ServiceAccountName,
+		ExecutionClusterID:    r.ExecutionClusterID,
+		Confidence:            r.Confidence,
+		Parameters:            parameters,
+		ParameterEvidence:     evidence,
+		Rationale:             r.WorkflowRationale,
+		RepeatValidation:      r.RepeatValidationOutcome,
+		HandoffDigest:         r.HandoffDigest,
+		PriorRemediationUIDs:  append([]string(nil), r.PriorRemediationUIDs...),
+	}
+	if r.EngineConfig != nil {
+		selected.EngineConfig = r.EngineConfig.DeepCopy()
+	}
+	if r.Dependencies != nil {
+		selected.Dependencies = mapWorkflowDependencies(r.Dependencies)
+	}
+	if r.Resources != nil {
+		selected.Resources = r.Resources.DeepCopy()
+	}
+	if r.WorkflowSelectionConfidence != nil {
+		value := *r.WorkflowSelectionConfidence
+		selected.SelectionConfidence = &value
+	}
+	if r.RepeatJustificationRequired != nil {
+		value := *r.RepeatJustificationRequired
+		selected.RepeatRequired = &value
+	}
+	if r.PriorWorkflowMatch != nil {
+		value := *r.PriorWorkflowMatch
+		selected.PriorWorkflowMatch = &value
+	}
+	if safe := katypes.SafeRepeatJustification(r.RepeatJustification); safe != nil {
+		selected.RepeatJustification = safe.DeepCopy()
+	}
+	return selected, nil
+}
+
+func mapWorkflowDependencies(input *models.WorkflowDependencies) *sharedtypes.WorkflowDependencies {
+	if input == nil {
+		return nil
+	}
+	output := &sharedtypes.WorkflowDependencies{}
+	if input.Secrets != nil {
+		output.Secrets = make([]sharedtypes.WorkflowResourceDependency, len(input.Secrets))
+		for i, item := range input.Secrets {
+			output.Secrets[i].Name = item.Name
+		}
+	}
+	if input.ConfigMaps != nil {
+		output.ConfigMaps = make([]sharedtypes.WorkflowResourceDependency, len(input.ConfigMaps))
+		for i, item := range input.ConfigMaps {
+			output.ConfigMaps[i].Name = item.Name
+		}
+	}
+	return output
 }
 
 // mapEvidenceStatus converts KA's internal bounded evidence contract to the
@@ -350,75 +446,6 @@ func buildRootCauseAnalysisMap(r *katypes.InvestigationResult) map[string]interf
 	return rca
 }
 
-func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interface{} {
-	sw := map[string]interface{}{
-		"workflow_id": r.WorkflowID,
-		"confidence":  r.Confidence,
-	}
-	addSelectionMetadata(sw, r)
-	if safe := katypes.SafeRepeatJustification(r.RepeatJustification); safe != nil {
-		sw["repeat_justification"] = safe
-	}
-	if r.Parameters != nil {
-		sw["parameters"] = r.Parameters
-	}
-	addWorkflowExecutionMetadata(sw, r)
-	if r.WorkflowVersion != "" {
-		sw["version"] = r.WorkflowVersion
-	}
-	if r.WorkflowRationale != "" {
-		sw["rationale"] = r.WorkflowRationale
-	}
-	if r.Dependencies != nil {
-		sw["dependencies"] = r.Dependencies
-	}
-	if r.Resources != nil {
-		sw["resources"] = r.Resources
-	}
-	if r.DeclaredParameterNames != nil {
-		sw["declared_parameter_names"] = r.DeclaredParameterNames
-	}
-	if r.ParameterSchema != nil {
-		sw["parameter_schema"] = r.ParameterSchema
-	}
-	if r.ActionType != "" {
-		sw["action_type"] = r.ActionType
-	}
-	if r.WorkflowName != "" {
-		sw["workflow_name"] = r.WorkflowName
-	}
-	// Issue #2326/#2327 (DD-FLEET-008, BR-FLEET-004): ExecutionClusterID was
-	// missing from this map entirely -- buildSelectedWorkflowMap is the sole
-	// production path onto the wire selected_workflow map since the HTTP
-	// handler (mapInvestigationResultToResponse) was retired, so AA's
-	// response_processor.go's GetStringFromMap(swMap, "execution_cluster_id")
-	// always saw a zero value regardless of what enrichFromCatalog set on
-	// r.ExecutionClusterID, silently dropping the workflow-declared
-	// execution cluster and falling back to RemediationRequest.Spec.ClusterID.
-	if r.ExecutionClusterID != "" {
-		sw["execution_cluster_id"] = r.ExecutionClusterID
-	}
-	return sw
-}
-
-func addWorkflowExecutionMetadata(destination map[string]interface{}, r *katypes.InvestigationResult) {
-	if r.ExecutionBundle != "" {
-		destination["execution_bundle"] = r.ExecutionBundle
-	}
-	if r.ExecutionBundleDigest != "" {
-		destination["execution_bundle_digest"] = r.ExecutionBundleDigest
-	}
-	if r.ExecutionEngine != "" {
-		destination["execution_engine"] = r.ExecutionEngine
-	}
-	if r.ServiceAccountName != "" {
-		destination["service_account_name"] = r.ServiceAccountName
-	}
-	if r.EngineConfig != nil {
-		destination["engine_config"] = r.EngineConfig
-	}
-}
-
 // DD-KA-2496: this explicit allow-list cannot promote a rejected ID into an
 // executable workflow or accidentally serialize private execution material.
 func buildSelectionAssessmentMap(r *katypes.InvestigationResult) map[string]interface{} {
@@ -506,17 +533,17 @@ func applyHumanReviewReason(res *agentsessionv1.AgentSessionResult, log logr.Log
 }
 
 var exactHumanReviewReasons = map[string]string{
-	"rca_incomplete":              "rca_incomplete",
-	"investigation_inconclusive":  "investigation_inconclusive",
-	"workflow_not_found":          "workflow_not_found",
-	"no_matching_workflows":       "no_matching_workflows",
-	"image_mismatch":              "image_mismatch",
-	"parameter_validation_failed": "parameter_validation_failed",
-	"low_confidence":              "low_confidence",
-	"llm_parsing_error":           "llm_parsing_error",
-	"alignment_check_failed":      "alignment_check_failed",
-	"operator_escalation":         "operator_escalation",
-	"decision_expired":            "decision_expired",
+	"rca_incomplete":                           "rca_incomplete",
+	"investigation_inconclusive":               "investigation_inconclusive",
+	"workflow_not_found":                       "workflow_not_found",
+	"no_matching_workflows":                    "no_matching_workflows",
+	"image_mismatch":                           "image_mismatch",
+	humanReviewReasonParameterValidationFailed: humanReviewReasonParameterValidationFailed,
+	"low_confidence":                           "low_confidence",
+	"llm_parsing_error":                        "llm_parsing_error",
+	"alignment_check_failed":                   "alignment_check_failed",
+	"operator_escalation":                      "operator_escalation",
+	"decision_expired":                         "decision_expired",
 }
 
 func mapHumanReviewReason(reason string) (string, bool) {
@@ -539,7 +566,7 @@ func mapHumanReviewReasonHeuristic(reason string) (string, bool) {
 	case strings.Contains(reason, "mismatch") || strings.Contains(reason, "image"):
 		return "image_mismatch", false
 	case strings.Contains(reason, "parameter") || strings.Contains(reason, "validation"):
-		return "parameter_validation_failed", false
+		return humanReviewReasonParameterValidationFailed, false
 	case strings.Contains(reason, "confidence"):
 		return "low_confidence", false
 	case strings.Contains(reason, "parse") || strings.Contains(reason, "parsing"):

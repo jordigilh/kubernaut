@@ -182,8 +182,8 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	It("UT-AUD-2570-030/032: BR-AUDIT-005 records the committed parameter decision", func() {
 		rar := newRemediationApprovalRequestApproved("rar-audit-2570", "rr-audit-2570", "alice")
 		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed"}
-		rar.Spec.Parameters = map[string]string{"P": "2", "UNCHANGED": "keep"}
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "1.0"}, Rationale: "reviewed"}
+		rar.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "2", "UNCHANGED": "keep"})
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"P": "1.0"}), Rationale: "reviewed"}
 		fakeClient := newFakeClient(rar)
 		store := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, store, metrics)
@@ -197,9 +197,9 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		Expect(err).NotTo(HaveOccurred())
 		var fields map[string]json.RawMessage
 		Expect(json.Unmarshal(data, &fields)).To(Succeed())
-		Expect(string(fields["original_parameters"])).To(MatchJSON(`{"P":"2","UNCHANGED":"keep"}`))
-		Expect(string(fields["override_parameters"])).To(MatchJSON(`{"P":"1.0"}`))
-		Expect(string(fields["effective_parameters"])).To(MatchJSON(`{"P":"1.0","UNCHANGED":"keep"}`))
+		Expect(string(fields["original_parameters"])).To(MatchJSON(`{"P":{"kind":"integer","integerValue":2},"UNCHANGED":{"kind":"string","stringValue":"keep"}}`))
+		Expect(string(fields["override_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1.0}}`))
+		Expect(string(fields["effective_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1.0},"UNCHANGED":{"kind":"string","stringValue":"keep"}}`))
 		Expect(string(fields["override_rationale"])).To(MatchJSON(`"reviewed"`))
 		Expect(string(fields["workflow_id"])).To(MatchJSON(`"wf-reviewed"`))
 	})
