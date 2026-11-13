@@ -27,58 +27,66 @@ import (
 )
 
 var _ = Describe("RemediationApprovalRequest parameter validation", func() {
+	It("UT-AW-2575-020: validates overrides against the live workflow and rejects target changes", func() {
+		spec := managedDependencySpec()
+		workflow := workflowForTest(spec.Workflow.WorkflowID)
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflow, typedParameters(`{"MEMORY_LIMIT_NEW":"1Gi"}`))).To(Succeed())
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflow, typedParameters(`{"TARGET_RESOURCE_KIND":"Pod"}`))).NotTo(Succeed())
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflow, typedParameters(`{"UNKNOWN":"x"}`))).NotTo(Succeed())
+		workflow.Status.WorkflowID = "different"
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflow, nil)).NotTo(Succeed())
+	})
 	It("UT-AW-2570-100: BR-KA-191 accepts injected target API version absent from the workflow schema", func() {
 		spec := &remediationv1.RemediationApprovalRequestSpec{
 			Workflow: &sharedtypes.WorkflowSnapshot{
-				WorkflowID:             "wf-target-api-version",
-				DeclaredParameterNames: map[string]bool{"P": true},
+				WorkflowID: "wf-target-api-version",
 			},
-			Parameters: map[string]string{
-				"P":                           "safe",
-				"TARGET_RESOURCE_API_VERSION": "apps/v1",
-			},
-			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{
-				{Name: "P", Type: "string"},
-			},
+			Parameters:    typedParameters(`{"P":"safe","TARGET_RESOURCE_API_VERSION":"apps/v1"}`),
 			TargetContext: &remediationv1.ApprovalTargetContext{},
 		}
 
-		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, nil)).To(Succeed())
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflowForTest(spec.Workflow.WorkflowID), nil)).To(Succeed())
 	})
 
 	It("UT-AW-2570-101: BR-KA-191 accepts an original parameter depending on an injected target value", func() {
 		spec := managedDependencySpec()
 
-		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, nil)).To(Succeed())
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflowForTest(spec.Workflow.WorkflowID), nil)).To(Succeed())
 	})
 
 	It("UT-AW-2570-102: BR-KA-191 accepts an override when its dependency is an injected target value", func() {
 		spec := managedDependencySpec()
 
-		Expect(remediationapprovalrequest.ValidateParameterOverride(spec, map[string]string{
-			"MEMORY_LIMIT_NEW": "1Gi",
-		})).To(Succeed())
+		Expect(remediationapprovalrequest.ValidateParameterOverrideWithWorkflow(spec, workflowForTest(spec.Workflow.WorkflowID),
+			typedParameters(`{"MEMORY_LIMIT_NEW":"1Gi"}`))).To(Succeed())
 	})
 })
 
 func managedDependencySpec() *remediationv1.RemediationApprovalRequestSpec {
 	return &remediationv1.RemediationApprovalRequestSpec{
 		Workflow: &sharedtypes.WorkflowSnapshot{
-			WorkflowID:             "wf-managed-dependency",
-			DeclaredParameterNames: map[string]bool{"MEMORY_LIMIT_NEW": true},
+			WorkflowID: "wf-managed-dependency",
 		},
-		Parameters: map[string]string{
-			"MEMORY_LIMIT_NEW":     "512Mi",
-			"TARGET_RESOURCE_KIND": "Deployment",
-		},
-		ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{
-			{
-				Name:      "MEMORY_LIMIT_NEW",
-				Type:      "string",
-				Required:  true,
-				DependsOn: []string{"TARGET_RESOURCE_KIND"},
-			},
-		},
+		Parameters:    typedParameters(`{"MEMORY_LIMIT_NEW":"512Mi","TARGET_RESOURCE_KIND":"Deployment"}`),
 		TargetContext: &remediationv1.ApprovalTargetContext{},
 	}
+}
+
+func typedParameters(raw string) sharedtypes.TypedParameterMap {
+	values, _, err := sharedtypes.DecodeTypedParameterMap([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+	return values
+}
+
+func workflowForTest(id string) *remediationworkflowv1.RemediationWorkflow {
+	w := &remediationworkflowv1.RemediationWorkflow{}
+	w.Status.WorkflowID = id
+	if id == "wf-target-api-version" {
+		w.Spec.Parameters = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}
+	} else {
+		w.Spec.Parameters = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, DependsOn: []string{"TARGET_RESOURCE_KIND"}}}
+	}
+	return w
 }

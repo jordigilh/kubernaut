@@ -256,8 +256,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "test-workflow",
-					WorkflowName:    "test-workflow",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
@@ -265,6 +265,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				},
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence: 0.95,
+				Parameters: trustedTargetParameters(testNamespace, "test-pod"),
 			}
 			ai.Status.EnsureApproval().ApprovalRequired = false
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
@@ -532,16 +533,17 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "test-workflow",
-					WorkflowName:    "test-workflow",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				},
 				Confidence: 0.65, // Low confidence
+				Parameters: trustedTargetParameters(testNamespace, "test-pod"),
 			}
-			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+			supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, testNamespace, "test-pod")
 			ai.Status.EnsureApproval().ApprovalRequired = true
 			ai.Status.Approval.ApprovalReason = "Confidence below threshold (0.65 < 0.80)"
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())

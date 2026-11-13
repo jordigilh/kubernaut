@@ -59,7 +59,6 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 	conflictWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 	Context("BR-WE-002: Concurrent PipelineRun Creation", func() {

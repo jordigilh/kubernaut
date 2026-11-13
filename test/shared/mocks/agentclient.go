@@ -238,25 +238,17 @@ func BuildMockRCA(summary string, severity string, contributingFactors []string)
 	return jsonRaw(m)
 }
 
-// BuildMockSelectedWorkflow creates a mock SelectedWorkflow as raw JSON.
-func BuildMockSelectedWorkflow(workflowID string, containerImage string, confidence float64, rationale string) *apiextensionsv1.JSON {
-	m := map[string]interface{}{}
-	if workflowID != "" {
-		m["workflow_id"] = workflowID
-	}
-	if containerImage != "" {
-		m["execution_bundle"] = containerImage
-	}
-	if confidence > 0 {
-		m["confidence"] = confidence
-	}
-	if rationale != "" {
-		m["rationale"] = rationale
-	}
-	if len(m) == 0 {
+// BuildMockSelectedWorkflow creates a typed mock AgentSession selection.
+func BuildMockSelectedWorkflow(workflowID string, containerImage string, confidence float64, rationale string) *agentsessionv1.AgentSessionSelectedWorkflow {
+	if workflowID == "" && containerImage == "" && confidence == 0 && rationale == "" {
 		return nil
 	}
-	return jsonRaw(m)
+	return &agentsessionv1.AgentSessionSelectedWorkflow{
+		WorkflowID:      workflowID,
+		ExecutionBundle: containerImage,
+		Confidence:      confidence,
+		Rationale:       rationale,
+	}
 }
 
 // NewMockAgentSessionResult builds a minimal successful AgentSessionResult.

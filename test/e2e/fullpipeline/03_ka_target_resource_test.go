@@ -263,11 +263,14 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 
 		// Cross-validation: WFE params must be consistent with AA remediationTarget
-		Expect(params["TARGET_RESOURCE_NAME"]).To(Equal(ar.Name),
+		Expect(params["TARGET_RESOURCE_NAME"].StringValue).NotTo(BeNil())
+		Expect(*params["TARGET_RESOURCE_NAME"].StringValue).To(Equal(ar.Name),
 			"TARGET_RESOURCE_NAME must match remediationTarget.name")
-		Expect(params["TARGET_RESOURCE_KIND"]).To(Equal(ar.Kind),
+		Expect(params["TARGET_RESOURCE_KIND"].StringValue).NotTo(BeNil())
+		Expect(*params["TARGET_RESOURCE_KIND"].StringValue).To(Equal(ar.Kind),
 			"TARGET_RESOURCE_KIND must match remediationTarget.kind")
-		Expect(params["TARGET_RESOURCE_NAMESPACE"]).To(Equal(ar.Namespace),
+		Expect(params["TARGET_RESOURCE_NAMESPACE"].StringValue).NotTo(BeNil())
+		Expect(*params["TARGET_RESOURCE_NAMESPACE"].StringValue).To(Equal(ar.Namespace),
 			"TARGET_RESOURCE_NAMESPACE must match remediationTarget.namespace")
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

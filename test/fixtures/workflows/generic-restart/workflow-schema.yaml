@@ -49,3 +49,7 @@ spec:
       type: string
       required: true
       description: "Name of the pod to restart"
+    - name: REPLICA_COUNT
+      type: integer
+      required: false
+      description: "Optional target replica count for alternative selection tests"

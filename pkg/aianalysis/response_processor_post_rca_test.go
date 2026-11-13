@@ -260,13 +260,22 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 		Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
 			"SelectedWorkflow must be populated after successful processing")
-		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+		name := analysis.Status.GetRCAResult().SelectedWorkflow.Parameters["TARGET_RESOURCE_NAME"]
+		Expect(name.Kind).To(Equal("string"))
+		Expect(name.StringValue).NotTo(BeNil())
+		Expect(*name.StringValue).To(Equal("memory-eater"),
 			"TARGET_RESOURCE_NAME must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+		kind := analysis.Status.GetRCAResult().SelectedWorkflow.Parameters["TARGET_RESOURCE_KIND"]
+		Expect(kind.StringValue).NotTo(BeNil())
+		Expect(*kind.StringValue).To(Equal("Deployment"),
 			"TARGET_RESOURCE_KIND must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+		namespace := analysis.Status.GetRCAResult().SelectedWorkflow.Parameters["TARGET_RESOURCE_NAMESPACE"]
+		Expect(namespace.StringValue).NotTo(BeNil())
+		Expect(*namespace.StringValue).To(Equal("production"),
 			"TARGET_RESOURCE_NAMESPACE must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+		limit := analysis.Status.GetRCAResult().SelectedWorkflow.Parameters["MEMORY_LIMIT_NEW"]
+		Expect(limit.StringValue).NotTo(BeNil())
+		Expect(*limit.StringValue).To(Equal("512Mi"),
 			"LLM-provided MEMORY_LIMIT_NEW must round-trip from KA response to AIAnalysis status")
 	})
 
@@ -325,13 +334,10 @@ func createAnalysisForPostRCA() *aianalysisv1.AIAnalysis {
 	}
 }
 
-// rawJSONPostRCA marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
-func rawJSONPostRCA(v interface{}) *apiextensionsv1.JSON {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return &apiextensionsv1.JSON{Raw: raw}
+// rawJSONPostRCA retains the historical fixture name while returning the
+// typed AgentSession handoff used by the production mapper.
+func rawJSONPostRCA(v interface{}) *agentsessionv1.AgentSessionSelectedWorkflow {
+	return typedAgentSessionWorkflow(v)
 }
 
 func buildResultWithDetectedLabels(labels map[string]interface{}) *agentsessionv1.AgentSessionResult {
@@ -346,8 +352,16 @@ func buildResultWithDetectedLabels(labels map[string]interface{}) *agentsessionv
 			"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
 			"confidence":       0.90,
 		}),
-		DetectedLabels: rawJSONPostRCA(labels),
+		DetectedLabels: rawJSONLabelsPostRCA(labels),
 	}
+}
+
+func rawJSONLabelsPostRCA(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
 }
 
 // ═══════════════════════════════════════════════════════════════════════

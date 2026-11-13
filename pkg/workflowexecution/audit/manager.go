@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ServiceName is the canonical service identifier for audit events.
@@ -96,16 +97,21 @@ var sensitiveAuditParameterKey = regexp.MustCompile(`(?i)(^|[_-])(password|passw
 // for AU-3/CC7.2 reconstruction while preventing common credential-bearing
 // parameter keys from being written to durable audit storage (ASVS V7.1.1,
 // V7.2.1; AU-9/AU-11).
-func sanitizeAuditParameters(parameters map[string]string) api.WorkflowExecutionAuditPayloadParameters {
-	sanitized := make(api.WorkflowExecutionAuditPayloadParameters, len(parameters))
+func sanitizeAuditParameters(parameters sharedtypes.TypedParameterMap) (api.WorkflowExecutionAuditPayloadParameters, error) {
+	safeValues := make(sharedtypes.TypedParameterMap, len(parameters))
 	for key, value := range parameters {
 		if sensitiveAuditParameterKey.MatchString(key) {
-			sanitized[key] = redactedAuditParameter
+			redacted := redactedAuditParameter
+			safeValues[key] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &redacted}
 			continue
 		}
-		sanitized[key] = value
+		safeValues[key] = value
 	}
-	return sanitized
+	values, err := audit.ToOgenParameterMap(safeValues)
+	if err != nil {
+		return nil, fmt.Errorf("convert execution audit parameters: %w", err)
+	}
+	return api.WorkflowExecutionAuditPayloadParameters(values), nil
 }
 
 // Event types for WorkflowExecution audit events (per ADR-034 v1.5 + OpenAPI spec)
@@ -322,7 +328,11 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildExecutionStartedPayload(wfe, pipelineRunName, pipelineRunNamespace)
+	payload, err := buildExecutionStartedPayloadChecked(wfe, pipelineRunName, pipelineRunNamespace)
+	if err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to build execution-started audit payload", "wfe", wfe.Name)
+		return fmt.Errorf("build execution-started audit payload: %w", err)
+	}
 
 	// Use proper Gap #6 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(payload)
@@ -375,6 +385,11 @@ func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *wor
 // RecordExecutionWorkflowStarted (Wave 6 6e-ii GREEN: funlen remediation) —
 // pure code motion, no behavior change.
 func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, pipelineRunName string, resourceNamespaces ...string) api.WorkflowExecutionAuditPayload {
+	payload, _ := buildExecutionStartedPayloadChecked(wfe, pipelineRunName, resourceNamespaces...)
+	return payload
+}
+
+func buildExecutionStartedPayloadChecked(wfe *workflowexecutionv1alpha1.WorkflowExecution, pipelineRunName string, resourceNamespaces ...string) (api.WorkflowExecutionAuditPayload, error) {
 	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
 	phase := wfe.Status.Phase
 	if phase == "" {
@@ -398,9 +413,16 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(sanitizeAuditParameters(wfe.Spec.Parameters))
+		parameters, err := sanitizeAuditParameters(wfe.Spec.Parameters)
+		if err != nil {
+			return api.WorkflowExecutionAuditPayload{}, err
+		}
+		payload.Parameters.SetTo(parameters)
 	}
-	return payload
+	if wfe.Spec.ParameterEvidence != "" {
+		payload.ParameterEvidence.SetTo(wfe.Spec.ParameterEvidence)
+	}
+	return payload, nil
 }
 
 // recordAuditEvent is the internal implementation for recording audit events.
@@ -460,7 +482,11 @@ func (m *Manager) recordAuditEvent(
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
+	payload, err := buildWorkflowExecutionAuditPayloadChecked(wfe, m.executionNamespace)
+	if err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to build workflow-execution audit payload", "wfe", wfe.Name)
+		return fmt.Errorf("build workflow-execution audit payload: %w", err)
+	}
 
 	// Set event data using ogen union constructor based on action
 	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
@@ -513,7 +539,12 @@ func mapOutcomeToOgen(outcome string) api.AuditEventRequestEventOutcome {
 // failure summary, PipelineRun linkage, and sanitized SOC2 chain-of-custody parameters
 // (Issue #103). Extracted from recordAuditEvent (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
-func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceNamespaces ...string) api.WorkflowExecutionAuditPayload {
+func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution) api.WorkflowExecutionAuditPayload {
+	payload, _ := buildWorkflowExecutionAuditPayloadChecked(wfe)
+	return payload
+}
+
+func buildWorkflowExecutionAuditPayloadChecked(wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceNamespaces ...string) (api.WorkflowExecutionAuditPayload, error) {
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
@@ -565,9 +596,16 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(sanitizeAuditParameters(wfe.Spec.Parameters))
+		parameters, err := sanitizeAuditParameters(wfe.Spec.Parameters)
+		if err != nil {
+			return api.WorkflowExecutionAuditPayload{}, err
+		}
+		payload.Parameters.SetTo(parameters)
 	}
-	return payload
+	if wfe.Spec.ParameterEvidence != "" {
+		payload.ParameterEvidence.SetTo(wfe.Spec.ParameterEvidence)
+	}
+	return payload, nil
 }
 
 func setExecutionResourceIdentity(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName, resourceNamespace string) {
@@ -696,7 +734,11 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
+	payload, err := buildWorkflowExecutionAuditPayloadChecked(wfe, m.executionNamespace)
+	if err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to build failed workflow-execution audit payload", "wfe", wfe.Name)
+		return fmt.Errorf("build failed workflow-execution audit payload: %w", err)
+	}
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
 	// **Refactoring**: 2026-01-22 - Use shared helper for type-safe component enum conversion

@@ -28,7 +28,6 @@ limitations under the License.
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,13 +39,16 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
 
 // defaultLowConfidenceFloor is the V1.0 global default applied when no
@@ -68,6 +70,8 @@ type ResponseProcessor struct {
 	metrics            *metrics.Metrics
 	auditClient        AuditClientInterface
 	lowConfidenceFloor *float64 // BR-AI-088.4, Issue #1828: operator-configurable override of defaultLowConfidenceFloor
+	workflowReader     client.Reader
+	catalogNamespace   string
 }
 
 // NewResponseProcessor creates a new ResponseProcessor
@@ -118,34 +122,6 @@ func mapFromAgentSessionJSON(j *apiextensionsv1.JSON) map[string]interface{} {
 	return m
 }
 
-// mapSelectedWorkflowJSON preserves the numeric lexemes of workflow parameters
-// while retaining existing float64 decoding for unrelated response fields.
-func mapSelectedWorkflowJSON(j *apiextensionsv1.JSON) map[string]interface{} {
-	m := mapFromAgentSessionJSON(j)
-	if m == nil {
-		return nil
-	}
-	var raw struct {
-		Parameters json.RawMessage `json:"parameters"`
-	}
-	if err := json.Unmarshal(j.Raw, &raw); err != nil {
-		ctrl.Log.Error(err, "Failed to decode selected workflow parameters")
-		return nil
-	}
-	if len(raw.Parameters) == 0 {
-		return m
-	}
-	var parameters interface{}
-	decoder := json.NewDecoder(bytes.NewReader(raw.Parameters))
-	decoder.UseNumber()
-	if err := decoder.Decode(&parameters); err != nil {
-		ctrl.Log.Error(err, "Failed to preserve selected workflow parameter values")
-		return nil
-	}
-	m["parameters"] = parameters
-	return m
-}
-
 // ProcessAgentSessionResult processes the curated AgentSessionResult KA wrote
 // to AgentSession.Status.Result on the Completed transition.
 // BR-AI-009: Reset failure counter on successful API call
@@ -153,6 +129,14 @@ func mapSelectedWorkflowJSON(j *apiextensionsv1.JSON) map[string]interface{} {
 func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) (ctrl.Result, error) {
 	if res == nil {
 		return ctrl.Result{}, fmt.Errorf("agent session result is nil")
+	}
+	// Standalone processor unit tests and non-persisting parser callers may use
+	// this component without the production catalog option. The production
+	// InvestigatingHandler always supplies WithWorkflowCatalog before this
+	// method can persist an AgentSession result; when that boundary is wired,
+	// verification is mandatory and fail-closed.
+	if err := p.verifySelectedWorkflowForPersistence(ctx, res.SelectedWorkflow); err != nil {
+		return ctrl.Result{}, err
 	}
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
@@ -238,6 +222,20 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	}
 
 	return p.finalizeSuccessfulInvestigation(analysis, res, hasSelectedWorkflow)
+}
+
+func (p *ResponseProcessor) verifySelectedWorkflowForPersistence(ctx context.Context, selected *agentsessionv1.AgentSessionSelectedWorkflow) error {
+	if selected == nil || (p.workflowReader == nil && p.catalogNamespace == "") {
+		return nil
+	}
+	workflow, err := workflowidentity.GetVerified(ctx, p.workflowReader, p.catalogNamespace, selected.WorkflowID)
+	if err != nil {
+		return fmt.Errorf("verify selected workflow before analysis persistence: %w", err)
+	}
+	if err := remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(workflow, selected.Parameters); err != nil {
+		return fmt.Errorf("validate selected workflow before analysis persistence: %w", err)
+	}
+	return nil
 }
 
 // handleEvidenceFailure keeps transport/schema evidence failures on the
@@ -487,88 +485,69 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 }
 
 // storeSelectedWorkflow populates analysis.Status.SelectedWorkflow from the
-// KA response's selected_workflow map (DD-CONTRACT-002), including optional
-// parameters and BR-WE-016 raw engine_config pass-through. No-op if the map
-// can't be extracted.
+// typed AgentSession handoff. The workflow CRD remains the only schema
+// authority; no parameter schema or derived allowlist is copied into status.
 func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
-	if swMap == nil {
+	if res.SelectedWorkflow == nil {
 		return
 	}
-	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
-			ActionType:            GetStringFromMap(swMap, "action_type"),
-			Version:               GetStringFromMap(swMap, "version"),
-			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-			// #1661 DD-WE-005 v2.0 / RCA follow-up: the WFE Job executor now reads
-			// the execution ServiceAccount exclusively from this CRD-embedded
-			// snapshot (wfe.Spec.WorkflowRef.ServiceAccountName, no
-			// executor-config fallback) -- omitting it here silently downgraded
-			// every job-engine Pod to the namespace's "default" SA, which lacks
-			// the workflow's cross-namespace get/patch RBAC and fails the Job
-			// fast (BackoffLimitExceeded) despite the image pulling and starting
-			// fine.
-			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
-			// Issue #2326 (DD-FLEET-008, BR-FLEET-004): workflow-declared
-			// execution cluster, catalog-authoritative like ActionType/
-			// WorkflowName above.
-			ExecutionClusterID: GetStringFromMap(swMap, "execution_cluster_id"),
-		},
-		Confidence: GetFloat64FromMap(swMap, "confidence"),
-		Rationale:  GetStringFromMap(swMap, "rationale"),
-	}
-	// Map parameters if present (map[string]string)
-	if paramsRaw, ok := swMap["parameters"]; ok {
-		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-			sw.Parameters = convertMapToStringMap(paramsMapIface)
-		}
-	}
-	// BR-WE-016: Extract engine_config as raw JSON for pass-through
-	if ecRaw, ok := swMap["engine_config"]; ok && ecRaw != nil {
-		if ecBytes, err := json.Marshal(ecRaw); err == nil {
-			sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
-		}
-	}
-	stampWorkflowSnapshot(sw, swMap)
+	sw := selectedWorkflowFromAgentSession(res.SelectedWorkflow)
 	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 
-// stampWorkflowSnapshot populates the CRD-embedded execution snapshot fields
-// (Issue #1661 Change 11b, DD-WORKFLOW-018) and stamps SelectedAt, arming the
-// SelectedWorkflow write-once CEL guard (mirrors PostRCAContext/ADR-056).
-// Shared by all three population call sites — storeSelectedWorkflow,
-// preservePartialSelectedWorkflow, preserveLowConfidenceWorkflow — so every
-// terminal path that persists a SelectedWorkflow locks it the same way.
-func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]interface{}) {
-	sw.Dependencies = extractWorkflowDependencies(swMap)
-	sw.Resources = extractResourceRequirements(swMap)
-	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
-	sw.ParameterSchema = extractParameterSchema(swMap)
-	stampSelectionMetadata(sw, swMap)
+func selectedWorkflowFromAgentSession(input *agentsessionv1.AgentSessionSelectedWorkflow) *aianalysisv1.SelectedWorkflow {
+	if input == nil {
+		return nil
+	}
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:            input.WorkflowID,
+			WorkflowName:          input.WorkflowName,
+			ActionType:            input.ActionType,
+			Version:               input.Version,
+			ExecutionBundle:       input.ExecutionBundle,
+			ExecutionBundleDigest: input.ExecutionBundleDigest,
+			ExecutionEngine:       input.ExecutionEngine,
+			ServiceAccountName:    input.ServiceAccountName,
+			ExecutionClusterID:    input.ExecutionClusterID,
+		},
+		Confidence:        input.Confidence,
+		Rationale:         input.Rationale,
+		ParameterEvidence: input.ParameterEvidence,
+	}
+	if input.EngineConfig != nil {
+		sw.EngineConfig = input.EngineConfig.DeepCopy()
+	}
+	if input.Dependencies != nil {
+		sw.Dependencies = input.Dependencies.DeepCopy()
+	}
+	if input.Resources != nil {
+		sw.Resources = input.Resources.DeepCopy()
+	}
+	if input.Parameters != nil {
+		sw.Parameters = input.Parameters.DeepCopy()
+	}
+	if input.RepeatJustification != nil {
+		sw.RepeatJustification = katypes.SafeRepeatJustification(input.RepeatJustification)
+	}
+	if input.SelectionConfidence != nil {
+		value := *input.SelectionConfidence
+		sw.WorkflowSelectionConfidence = &value
+	}
+	if input.RepeatRequired != nil {
+		value := *input.RepeatRequired
+		sw.RepeatJustificationRequired = &value
+	}
+	if input.PriorWorkflowMatch != nil {
+		value := *input.PriorWorkflowMatch
+		sw.PriorWorkflowMatch = &value
+	}
+	sw.RepeatValidationOutcome = input.RepeatValidation
+	sw.HandoffDigest = input.HandoffDigest
+	sw.PriorRemediationUIDs = append([]string(nil), input.PriorRemediationUIDs...)
 	now := metav1.Now()
 	sw.SelectedAt = &now
-}
-
-// All three selected-workflow preservation paths use this mapping; pointer
-// presence distinguishes unknown from explicit zero/false without RCA fallback.
-func stampSelectionMetadata(sw *aianalysisv1.SelectedWorkflow, m map[string]interface{}) {
-	sw.WorkflowSelectionConfidence = optionalSelectionConfidence(m)
-	sw.RepeatJustificationRequired = optionalSelectionBool(m, "repeat_justification_required")
-	sw.PriorWorkflowMatch = optionalSelectionBool(m, "prior_workflow_match")
-	sw.RepeatValidationOutcome = GetStringFromMap(m, "repeat_validation_outcome")
-	sw.HandoffDigest = GetStringFromMap(m, "handoff_digest")
-	sw.PriorRemediationUIDs = boundedPriorRemediationUIDs(GetStringSliceFromMap(m, "prior_remediation_uids"))
-	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
-		sw.RepeatJustification = katypes.SafeRepeatJustification(&sharedtypes.RepeatJustification{
-			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
-			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
-			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
-		})
-	}
+	return sw
 }
 
 func optionalSelectionConfidence(m map[string]interface{}) *float64 {
@@ -872,24 +851,10 @@ func recordValidationAttemptsHistory(analysis *aianalysisv1.AIAnalysis, resAttem
 // selected_workflow (when present) on a failed-resolution analysis, so
 // operators retain visibility into what KA was considering.
 func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
-	if swMap == nil {
+	sw := selectedWorkflowFromAgentSession(res.SelectedWorkflow)
+	if sw == nil {
 		return
 	}
-	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
-			WorkflowName:       GetStringFromMap(swMap, "workflow_name"),
-			ActionType:         GetStringFromMap(swMap, "action_type"),
-			ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
-			ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
-			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
-			ExecutionClusterID: GetStringFromMap(swMap, "execution_cluster_id"),
-		},
-		Confidence: GetFloat64FromMap(swMap, "confidence"),
-		Rationale:  GetStringFromMap(swMap, "rationale"),
-	}
-	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 
@@ -1181,32 +1146,10 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 // (partial information, for operator/human-review context) on a
 // low-confidence-failed analysis.
 func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
-	swMap := mapSelectedWorkflowJSON(res.SelectedWorkflow)
-	if swMap == nil {
+	sw := selectedWorkflowFromAgentSession(res.SelectedWorkflow)
+	if sw == nil {
 		return
 	}
-	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
-			ActionType:            GetStringFromMap(swMap, "action_type"),
-			Version:               GetStringFromMap(swMap, "version"),
-			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-			ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
-			ExecutionClusterID:    GetStringFromMap(swMap, "execution_cluster_id"),
-		},
-		Confidence: GetFloat64FromMap(swMap, "confidence"),
-		Rationale:  GetStringFromMap(swMap, "rationale"),
-	}
-	// Map parameters if present
-	if paramsRaw, ok := swMap["parameters"]; ok {
-		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-			sw.Parameters = convertMapToStringMap(paramsMapIface)
-		}
-	}
-	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 

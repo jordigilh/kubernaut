@@ -20,6 +20,7 @@ import (
 	"time"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ApprovalRequestEventPayload is the structured payload emitted as a
@@ -89,9 +90,9 @@ type ApprovalResolvedEventPayload struct {
 
 // ApprovalWorkflowOverridePayload represents an operator workflow override.
 type ApprovalWorkflowOverridePayload struct {
-	WorkflowName string            `json:"workflowName,omitempty"`
-	Parameters   map[string]string `json:"parameters,omitempty"`
-	Rationale    string            `json:"rationale,omitempty"`
+	WorkflowName string                        `json:"workflowName,omitempty"`
+	Parameters   sharedtypes.TypedParameterMap `json:"parameters,omitempty"`
+	Rationale    string                        `json:"rationale,omitempty"`
 }
 
 // MarshalApprovalRequestPayload extracts RAR spec fields from a typed

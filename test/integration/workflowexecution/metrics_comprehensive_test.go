@@ -62,7 +62,6 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 	metricsWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 	Context("BR-WE-008: Execution Total Counter", func() {

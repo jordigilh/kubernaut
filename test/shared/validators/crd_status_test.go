@@ -108,8 +108,10 @@ func completeAA() *aianalysisv1.AIAnalysis {
 						ExecutionEngine:       "tekton",
 					},
 					Confidence: 0.95,
-					Parameters: map[string]string{"NAMESPACE": "default"},
-					Rationale:  "Restart will clear memory",
+					Parameters: sharedtypes.TypedParameterMap{
+						"NAMESPACE": {Kind: "string", StringValue: stringPtr("default")},
+					},
+					Rationale: "Restart will clear memory",
 				},
 			},
 			InvestigationMetadata: &aianalysisv1.InvestigationMetadata{
@@ -132,6 +134,10 @@ func completeAA() *aianalysisv1.AIAnalysis {
 			},
 		},
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func completeAAWithApproval() *aianalysisv1.AIAnalysis {

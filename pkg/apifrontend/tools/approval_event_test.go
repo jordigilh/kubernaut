@@ -146,7 +146,7 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 				DecisionMessage: "Reviewed evidence, proceeding with revert",
 				WorkflowOverride: &remediationv1.WorkflowOverride{
 					WorkflowName: "gitops-manual-sync-v1",
-					Parameters:   map[string]string{"SYNC_PRUNE": "true"},
+					Parameters:   typedParameters(`{"SYNC_PRUNE":true}`),
 					Rationale:    "Prefer sync over revert",
 				},
 			},
@@ -165,7 +165,8 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 		Expect(parsed.DecisionMessage).To(Equal("Reviewed evidence, proceeding with revert"))
 		Expect(parsed.WorkflowOverride).NotTo(BeNil())
 		Expect(parsed.WorkflowOverride.WorkflowName).To(Equal("gitops-manual-sync-v1"))
-		Expect(parsed.WorkflowOverride.Parameters).To(HaveKeyWithValue("SYNC_PRUNE", "true"))
+		Expect(parsed.WorkflowOverride.Parameters).To(HaveKey("SYNC_PRUNE"))
+		Expect(parsed.WorkflowOverride.Parameters["SYNC_PRUNE"].Kind).To(Equal("boolean"))
 		Expect(parsed.WorkflowOverride.Rationale).To(Equal("Prefer sync over revert"))
 	})
 
