@@ -320,6 +320,55 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 // - Deterministic ordering, no timing issues
 // Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
+// aiAnalysisControllerRBACManifest returns the ServiceAccount and ClusterRole
+// used by the direct AIAnalysis E2E deployment. The binding remains alongside
+// the workload manifest below because it is applied with the other resources.
+//
+// Keep this fixture aligned with the Kubebuilder markers on
+// AIAnalysisReconciler. workflowidentity.GetVerified lists the trusted
+// RemediationWorkflow catalog before the controller persists its result
+// (BR-AI-009, Issue #2575), so that access is intentionally read-only.
+func aiAnalysisControllerRBACManifest() string {
+	return `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["investigationsessions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["investigationsessions/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows"]
+  verbs: ["get", "list", "watch"]
+# AgentSessionCreator.GetOrCreate needs create/get/list/watch so the
+# controller's AgentSession informer can synchronize. Delete and update are
+# required by its retry and cancellation paths.
+- apiGroups: ["kubernaut.ai"]
+  resources: ["agentsessions"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+`
+}
+
 func deployAIAnalysisControllerManifestOnly(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Use dynamic image name parameter (built by BuildImageForKind)
@@ -356,62 +405,7 @@ data:
     rego:
       policyPath: "/etc/aianalysis/policies/approval.rego"
       confidenceThreshold: 0.9
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: aianalysis-controller
-  namespace: kubernaut-system
-automountServiceAccountToken: true  # Kubernetes 1.24+ - ensure token is mounted
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: aianalysis-controller
-rules:
-- apiGroups: ["kubernaut.ai"]
-  resources: ["aianalyses"]
-  verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["kubernaut.ai"]
-  resources: ["aianalyses/status"]
-  verbs: ["get", "update", "patch"]
-- apiGroups: ["kubernaut.ai"]
-  resources: ["investigationsessions"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["kubernaut.ai"]
-  resources: ["investigationsessions/status"]
-  verbs: ["get", "update", "patch"]
-# AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): mirrors the
-# production Helm chart's aianalysis-controller ClusterRole
-# (operator-managed manifests/aianalysis/aianalysis.yaml) -- "create" for the
-# initial dispatch write, "get"/"list"/"watch" so AA's own AgentSession
-# EventSource informer can sync. Missing this grant here (this hand-rolled
-# E2E manifest had drifted from the Helm chart) is why the controller's cache
-# never synced: it retried "agentsessions is forbidden" every few seconds
-# until controller-runtime's 2-minute CacheSyncTimeout killed mgr.Start(),
-# crash-looping the whole aianalysis-controller pod (CI run 32280464090,
-# "E2E (aianalysis)": 34/36 specs failed, including trivial health checks --
-# consistent with the pod never becoming Ready at all).
-# "delete" (BR-AI-009, DD-AA-KA-001 amendment) is for
-# AgentSessionCreator.DeleteForRetry -- this hand-rolled manifest drifted
-# from the Helm chart a second time (E2E-AA-065's first two CI runs both hit
-# "agentsessions is forbidden" on delete; RCA in DD-AA-KA-001's Gap 5
-# amendment). "update" is for the same DeleteForRetry call: it strips
-# agentsessionv1.TerminalCloseFinalizer itself before deleting (#2214
-# finalizer fix), which needs Update, not just Delete -- this manifest
-# drifted a third time (CI run 32525130330, "E2E (aianalysis)": "cannot
-# update resource \"agentsessions\"" on every capacity-exceeded retry).
-# Keep this rule's verbs in sync with both
-# operator-managed manifests/aianalysis/aianalysis.yaml and
-# config/rbac/role.yaml (kubebuilder marker in
-# internal/controller/aianalysis/aianalysis_controller.go) whenever any of
-# the three changes.
-- apiGroups: ["kubernaut.ai"]
-  resources: ["agentsessions"]
-  verbs: ["get", "list", "watch", "create", "update", "delete"]
-- apiGroups: [""]
-  resources: ["events"]
-  verbs: ["create", "patch"]
+%s
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -559,7 +553,7 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: 30284
-`, imageName, GetImagePullPolicy(),
+`, aiAnalysisControllerRBACManifest(), imageName, GetImagePullPolicy(),
 		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
@@ -810,6 +804,7 @@ func seedAIAnalysisWorkflows(ctx context.Context, namespace, kubeconfigPath stri
 	genericRestartParams := []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 		{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
+		{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Optional target replica count for alternative selection tests"},
 	}
 	testSignalParams := []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
