@@ -33,6 +33,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -251,16 +252,19 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(),
 			"WorkflowExecution should have parameters")
+		parameterEngineValues, conversionErr := sharedtypes.TypedParameterMapToEngineValues(params)
+		Expect(conversionErr).NotTo(HaveOccurred(),
+			"WorkflowExecution parameters should use valid typed values")
 
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
 			"[E2E-FP-496-002] TARGET_RESOURCE_NAME must match root_owner name")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
 			"[E2E-FP-496-002] TARGET_RESOURCE_KIND must match root_owner kind")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", testNamespace),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", testNamespace),
 			"[E2E-FP-496-002] TARGET_RESOURCE_NAMESPACE must match root_owner namespace")
 
 		GinkgoWriter.Printf("  [E2E-FP-496-002] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
-			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
+			parameterEngineValues["TARGET_RESOURCE_NAME"], parameterEngineValues["TARGET_RESOURCE_KIND"], parameterEngineValues["TARGET_RESOURCE_NAMESPACE"])
 
 		// Cross-validation: WFE params must be consistent with AA remediationTarget
 		Expect(params["TARGET_RESOURCE_NAME"].StringValue).NotTo(BeNil())
