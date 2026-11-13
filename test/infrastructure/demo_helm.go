@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
@@ -271,6 +273,80 @@ func loadDemoImagesToKind(ctx context.Context, clusterName string, opts DemoHelm
 	for i, image := range images {
 		if err := LoadImageToKind(ctx, image, demoLocalImageServices[i], clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load local demo image %s into Kind cluster %q: %w", image, clusterName, err)
+		}
+	}
+	return nil
+}
+
+// demoImageArchive describes an image that is built outside the upstream
+// checkout and must be loaded after Kind exists but before the user-owned CR is
+// applied. The Console is the first consumer of this boundary; keeping the
+// input as an environment contract avoids copying Kind creation into callers.
+type demoImageArchive struct {
+	Image       string
+	ServiceName string
+	ArchivePath string
+}
+
+// preCRDemoImageArchivesFromEnvironment resolves the optional pre-CR image
+// archive contract. An archive is intentionally opt-in so existing demos that
+// use published Console images keep their normal registry-pull behavior.
+func preCRDemoImageArchivesFromEnvironment() ([]demoImageArchive, error) {
+	archivePath := strings.TrimSpace(os.Getenv("KUBERNAUT_CONSOLE_IMAGE_TAR"))
+	if archivePath == "" {
+		return nil, nil
+	}
+
+	image := strings.TrimSpace(os.Getenv("KUBERNAUT_CONSOLE_IMAGE"))
+	if image == "" {
+		return nil, fmt.Errorf("KUBERNAUT_CONSOLE_IMAGE is required when KUBERNAUT_CONSOLE_IMAGE_TAR is configured")
+	}
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("KUBERNAUT_CONSOLE_IMAGE_TAR %q is unavailable: %w", archivePath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("KUBERNAUT_CONSOLE_IMAGE_TAR %q is not a regular file", archivePath)
+	}
+
+	return []demoImageArchive{{
+		Image:       image,
+		ServiceName: "kubernaut-console",
+		ArchivePath: archivePath,
+	}}, nil
+}
+
+// loadPreCRDemoImageArchivesToKind loads caller-built images after upstream
+// creates the Kind cluster and before the Kubernaut CR is applied. The archive
+// is loaded into Podman first so LoadImageToKind can reuse the canonical
+// Podman-save/Kind-load path and its bounded retry behavior.
+func loadPreCRDemoImageArchivesToKind(ctx context.Context, clusterName string, writer io.Writer) error {
+	archives, err := preCRDemoImageArchivesFromEnvironment()
+	if err != nil {
+		return err
+	}
+	if len(archives) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(clusterName) == "" {
+		return fmt.Errorf("Kind cluster name is required when a pre-CR demo image archive is configured")
+	}
+
+	for _, image := range archives {
+		_, _ = fmt.Fprintf(writer, "📦 Loading pre-CR image archive: %s\n", image.ArchivePath)
+		load := exec.CommandContext(ctx, "podman", "load", "--input", image.ArchivePath)
+		load.Stdout = writer
+		load.Stderr = writer
+		if err := load.Run(); err != nil {
+			return fmt.Errorf("load pre-CR image archive %q: %w", image.ArchivePath, err)
+		}
+
+		check := exec.CommandContext(ctx, "podman", "image", "exists", image.Image)
+		if err := check.Run(); err != nil {
+			return fmt.Errorf("pre-CR image %q is unavailable after loading %s: %w", image.Image, image.ArchivePath, err)
+		}
+		if err := LoadImageToKind(ctx, image.Image, image.ServiceName, clusterName, writer); err != nil {
+			return fmt.Errorf("load pre-CR image %q into Kind cluster %q: %w", image.Image, clusterName, err)
 		}
 	}
 	return nil

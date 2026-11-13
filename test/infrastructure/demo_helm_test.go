@@ -18,6 +18,8 @@ package infrastructure
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -186,6 +188,49 @@ var _ = Describe("demo local image loading", func() {
 		Expect(isLocalDemoImageRepository("localhost")).To(BeTrue())
 		Expect(isLocalDemoImageRepository("localhost/kubernaut")).To(BeTrue())
 		Expect(isLocalDemoImageRepository("quay.io/kubernaut-ai")).To(BeFalse())
+	})
+})
+
+var _ = Describe("pre-CR demo image archive contract", func() {
+	BeforeEach(func() {
+		DeferCleanup(os.Unsetenv, "KUBERNAUT_CONSOLE_IMAGE")
+		DeferCleanup(os.Unsetenv, "KUBERNAUT_CONSOLE_IMAGE_TAR")
+	})
+
+	It("UT-INFRA-FLEETDEMO-070 [BR-PLATFORM-014]: ignores the optional hook when no archive is configured", func() {
+		Expect(preCRDemoImageArchivesFromEnvironment()).To(BeEmpty())
+	})
+
+	It("UT-INFRA-FLEETDEMO-071 [BR-PLATFORM-014]: requires the image reference for a configured archive", func() {
+		archive := filepath.Join(GinkgoT().TempDir(), "console-image.tar")
+		Expect(os.WriteFile(archive, []byte("verified archive"), 0o600)).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", archive)).To(Succeed())
+
+		_, err := preCRDemoImageArchivesFromEnvironment()
+		Expect(err).To(MatchError(ContainSubstring("KUBERNAUT_CONSOLE_IMAGE")))
+	})
+
+	It("UT-INFRA-FLEETDEMO-072 [BR-PLATFORM-014]: rejects a missing verified archive", func() {
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE", "localhost/kubernaut-console:test")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", filepath.Join(GinkgoT().TempDir(), "missing.tar"))).To(Succeed())
+
+		_, err := preCRDemoImageArchivesFromEnvironment()
+		Expect(err).To(MatchError(ContainSubstring("KUBERNAUT_CONSOLE_IMAGE_TAR")))
+	})
+
+	It("UT-INFRA-FLEETDEMO-073 [BR-PLATFORM-014]: returns the verified Console archive and image contract", func() {
+		archive := filepath.Join(GinkgoT().TempDir(), "console-image.tar")
+		Expect(os.WriteFile(archive, []byte("verified archive"), 0o600)).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE", "localhost/kubernaut-console:test")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", archive)).To(Succeed())
+
+		archives, err := preCRDemoImageArchivesFromEnvironment()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(archives).To(Equal([]demoImageArchive{{
+			Image:       "localhost/kubernaut-console:test",
+			ServiceName: "kubernaut-console",
+			ArchivePath: archive,
+		}}))
 	})
 })
 
