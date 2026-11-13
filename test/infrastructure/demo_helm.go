@@ -329,7 +329,7 @@ func loadPreCRDemoImageArchivesToKind(ctx context.Context, clusterName string, w
 		return nil
 	}
 	if strings.TrimSpace(clusterName) == "" {
-		return fmt.Errorf("Kind cluster name is required when a pre-CR demo image archive is configured")
+		return fmt.Errorf("kind cluster name is required when a pre-CR demo image archive is configured")
 	}
 
 	for _, image := range archives {
