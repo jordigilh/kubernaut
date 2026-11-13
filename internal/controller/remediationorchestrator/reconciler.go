@@ -28,6 +28,7 @@ limitations under the License.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/finalizers,verbs=update
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationworkflows,verbs=get;list;watch
 package controller
 
 import (
