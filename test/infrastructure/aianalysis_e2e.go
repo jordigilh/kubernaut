@@ -404,7 +404,7 @@ data:
         maxRetries: 3
     rego:
       policyPath: "/etc/aianalysis/policies/approval.rego"
-  confidenceThreshold: 0.9
+      confidenceThreshold: 0.9
 %s
 ---
 apiVersion: rbac.authorization.k8s.io/v1
