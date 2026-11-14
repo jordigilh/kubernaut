@@ -66,14 +66,16 @@ const osAssignedAddr = "127.0.0.1:0"
 // pyramid invariant (AGENTS.md).
 
 // fakeClusterRegistry is a minimal registry.ClusterRegistry stub. These
-// wiring tests only prove HTTP/TLS routing (buildFMCServers), never
+// wiring tests prove HTTP/TLS routing and readiness propagation, never
 // cluster-list business logic (that is fmc.Handler's job, covered by
 // pkg/fleet/fmc/handler_test.go).
-type fakeClusterRegistry struct{}
+type fakeClusterRegistry struct {
+	clusters []registry.ClusterInfo
+}
 
 var _ registry.ClusterRegistry = (*fakeClusterRegistry)(nil)
 
-func (f *fakeClusterRegistry) List() []registry.ClusterInfo { return nil }
+func (f *fakeClusterRegistry) List() []registry.ClusterInfo { return f.clusters }
 func (f *fakeClusterRegistry) Get(string) (registry.ClusterInfo, bool) {
 	return registry.ClusterInfo{}, false
 }
@@ -260,6 +262,35 @@ var _ = Describe("buildValkeyTLSConfig (DD-PLATFORM-006 Decision Area 13 follow-
 		got := buildValkeyTLSConfig(fmcconfig.ValkeyTLSConfig{Enabled: true, CAFile: certFile}, logr.Discard())
 		Expect(got).ToNot(BeNil())
 		Expect(got.RootCAs).ToNot(BeNil(), "the configured caFile must be loaded into RootCAs so the server cert can be verified")
+	})
+})
+
+var _ = Describe("FMC readiness production wiring (BR-SCOPE-001)", func() {
+	It("IT-FMC-READINESS-001 [BR-SCOPE-001]: keeps a registered cluster unavailable when the writer lease is not acquired", func() {
+		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+			MCPInitialSync:       true,
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			Lease: scopecache.LeaseView{
+				Policy: scopecache.LeasePolicyProcessWideRequired,
+			},
+			LeasePolicy: scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		deps := &fmcDeps{
+			clusterRegistry: &fakeClusterRegistry{clusters: []registry.ClusterInfo{{
+				ID:              "registered-cluster",
+				RegistrationUID: "registration-uid",
+			}}},
+			readiness: readiness,
+		}
+
+		Expect(deps.Ready()).To(BeFalse(),
+			"a registered cluster whose sync has not acquired the required writer lease must keep FMC unready")
 	})
 })
 

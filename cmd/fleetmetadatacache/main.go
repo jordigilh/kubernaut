@@ -110,6 +110,7 @@ func (d *fmcDeps) Ready() bool {
 	if d.clusterRegistry != nil {
 		global.RegistryInitialSync = d.clusterRegistry.Ready()
 		global.RegistryWatchHealthy = d.clusterRegistry.Ready()
+		global.RegisteredPartitionCount = len(d.clusterRegistry.List())
 	}
 	if d.statusStore != nil {
 		global.ScriptReady = d.statusStore.ScriptReady()
@@ -269,11 +270,12 @@ func buildFMCRegistryDependencies(
 		os.Exit(1)
 	}
 	if err := readinessSnapshot.PublishGlobal(scopecache.FMCGlobalReadiness{
-		RegistryInitialSync:  clusterRegistry.Ready(),
-		RegistryWatchHealthy: clusterRegistry.Ready(),
-		ScriptReady:          statusStore.ScriptReady(),
-		ValkeyReady:          true,
-		LeasePolicy:          scopecache.LeasePolicyProcessWideRequired,
+		RegistryInitialSync:      clusterRegistry.Ready(),
+		RegistryWatchHealthy:     clusterRegistry.Ready(),
+		RegisteredPartitionCount: len(clusterRegistry.List()),
+		ScriptReady:              statusStore.ScriptReady(),
+		ValkeyReady:              true,
+		LeasePolicy:              scopecache.LeasePolicyProcessWideRequired,
 		Lease: scopecache.LeaseView{
 			Policy: scopecache.LeasePolicyProcessWideRequired,
 		},

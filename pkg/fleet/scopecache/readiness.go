@@ -85,24 +85,27 @@ type FMCGlobalReadiness struct {
 	MCPInitialSync       bool
 	RegistryInitialSync  bool
 	RegistryWatchHealthy bool
-	ScriptReady          bool
-	ValkeyReady          bool
-	Lease                LeaseView
-	ActiveLeaseValid     bool
-	LeasePolicy          LeasePolicy
+	// RegisteredPartitionCount distinguishes an empty, synchronized registry
+	// from registrations that have not yet begun a fenced repair.
+	RegisteredPartitionCount int
+	ScriptReady              bool
+	ValkeyReady              bool
+	Lease                    LeaseView
+	ActiveLeaseValid         bool
+	LeasePolicy              LeasePolicy
 }
 
 // ServiceReady reports whether global FMC prerequisites permit service
 // readiness. Partition-specific proof is checked by FMCReadinessSnapshot.
 func (g FMCGlobalReadiness) ServiceReady(partitionCount int) bool {
-	if partitionCount < 0 || !g.globalDependenciesReady() {
+	if partitionCount < 0 || g.RegisteredPartitionCount < 0 || g.RegisteredPartitionCount > partitionCount || !g.globalDependenciesReady() {
 		return false
 	}
 	if g.Lease.Invalid || (g.Lease.Active && !g.Lease.healthy()) {
 		return false
 	}
 	if g.LeasePolicy == LeasePolicyProcessWideRequired {
-		if partitionCount == 0 {
+		if partitionCount == 0 && g.RegisteredPartitionCount == 0 {
 			return true
 		}
 		return g.ActiveLeaseValid && g.Lease.Active && g.Lease.healthy()
@@ -201,6 +204,9 @@ func (s *FMCReadinessSnapshot) PublishGlobal(global FMCGlobalReadiness) error {
 	}
 	if !validLeasePolicy(global.LeasePolicy) || global.Lease.Policy != global.LeasePolicy {
 		return ReadinessError{Code: ReadinessInvalid, Reason: "global lease policy is inconsistent"}
+	}
+	if global.RegisteredPartitionCount < 0 {
+		return ReadinessError{Code: ReadinessInvalid, Reason: "registered partition count is negative"}
 	}
 	if err := validateLeaseView(global.Lease); err != nil {
 		return err
