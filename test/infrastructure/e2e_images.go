@@ -1,9 +1,12 @@
 package infrastructure
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -408,19 +411,31 @@ func loadImageToKindIntoCluster(ctx context.Context, imageName, serviceName, clu
 			return nil
 		}
 	}
+	return loadPodmanImageToKind(ctx, imageName, serviceName, clusterName, removePodmanImage, writer)
+}
 
+// loadPodmanImageToKind exports an image already available in Podman's local
+// store and imports it into Kind. It deliberately does not pull from a
+// registry; callers that received an image from a verified archive must load
+// that exact local image into the cluster.
+func loadPodmanImageToKind(ctx context.Context, imageName, serviceName, clusterName string, removePodmanImage bool, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster: %s\n", clusterName)
 
-	// Extract tag from image name for tar filename
-	// imageName format: "localhost/kubernaut/datastorage:tag-abc123"
-	parts := strings.Split(imageName, ":")
-	imageTag := "latest"
-	if len(parts) > 1 {
-		imageTag = parts[1]
+	tempPrefix := "kubernaut-kind-image-"
+	if serviceName != "" {
+		tempPrefix += strings.NewReplacer("/", "-", ":", "-").Replace(serviceName) + "-"
 	}
+	tempDir, err := os.MkdirTemp("", tempPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary image archive directory: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove temporary image archive directory %s: %v\n", tempDir, err)
+		}
+	}()
 
-	// Create temporary tar file
-	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", serviceName, imageTag)
+	tmpFile := filepath.Join(tempDir, "image.tar")
 	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to: %s\n", tmpFile)
 	saveCmd := exec.CommandContext(ctx, "podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
@@ -432,16 +447,7 @@ func loadImageToKindIntoCluster(ctx context.Context, imageName, serviceName, clu
 	// Load tar file into Kind
 	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
 	if err := loadImageArchiveWithRetry(ctx, tmpFile, clusterName, writer); err != nil {
-		// Clean up tar file on error
-		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to load image to Kind: %w", err)
-	}
-
-	// Clean up tar file
-	if err := os.Remove(tmpFile); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove temp file %s: %v\n", tmpFile, err)
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Removed tar file: %s\n", tmpFile)
 	}
 
 	if removePodmanImage {
@@ -461,6 +467,65 @@ func loadImageToKindIntoCluster(ctx context.Context, imageName, serviceName, clu
 	_, _ = fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
 
 	return nil
+}
+
+// loadPodmanImageArchive validates the archive identity before importing it
+// into Podman. Checking the archive manifest prevents a pre-existing local tag
+// from satisfying the contract when the supplied archive contains a different
+// image.
+func loadPodmanImageArchive(ctx context.Context, archivePath, imageName string, writer io.Writer) error {
+	if err := validatePodmanImageArchive(archivePath, imageName); err != nil {
+		return err
+	}
+
+	load := exec.CommandContext(ctx, "podman", "load", "--input", archivePath)
+	load.Stdout = writer
+	load.Stderr = writer
+	if err := load.Run(); err != nil {
+		return fmt.Errorf("load image archive: %w", err)
+	}
+	return nil
+}
+
+func validatePodmanImageArchive(archivePath, imageName string) error {
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("open image archive %q: %w", archivePath, err)
+	}
+	defer func() { _ = archive.Close() }()
+
+	reader := tar.NewReader(archive)
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return fmt.Errorf("image archive %q does not contain manifest.json", archivePath)
+		}
+		if err != nil {
+			return fmt.Errorf("read image archive %q: %w", archivePath, err)
+		}
+		if strings.TrimPrefix(header.Name, "./") != "manifest.json" {
+			continue
+		}
+
+		var manifest []struct {
+			RepoTags []string `json:"RepoTags"`
+		}
+		manifestData, err := io.ReadAll(reader)
+		if err != nil {
+			return fmt.Errorf("read image archive manifest %q: %w", archivePath, err)
+		}
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return fmt.Errorf("parse image archive manifest %q: %w", archivePath, err)
+		}
+		for _, image := range manifest {
+			for _, repoTag := range image.RepoTags {
+				if repoTag == imageName {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("image archive does not contain image %q", imageName)
+	}
 }
 
 // loadImageArchiveMaxAttempts bounds the retry loop in loadImageArchiveWithRetry.
