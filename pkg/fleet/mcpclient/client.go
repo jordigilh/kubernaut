@@ -249,7 +249,7 @@ func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...clien
 		selector := formatLabelSelector(labels)
 		request.LabelSelector = &selector
 	}
-	observation, err := c.ListObserved(ctx, request)
+	observation, err := c.listResourcesForClient(ctx, request)
 	if err != nil {
 		return err
 	}

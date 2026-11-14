@@ -61,7 +61,15 @@ func FailureOf(err error) ObservationFailure {
 }
 
 func (c *Client) listResources(ctx context.Context, request ListRequest) (ListObservation, error) {
-	if err := validateListRequest(request); err != nil {
+	return c.listResourcesWithValidation(ctx, request, true)
+}
+
+func (c *Client) listResourcesForClient(ctx context.Context, request ListRequest) (ListObservation, error) {
+	return c.listResourcesWithValidation(ctx, request, false)
+}
+
+func (c *Client) listResourcesWithValidation(ctx context.Context, request ListRequest, strict bool) (ListObservation, error) {
+	if err := validateListRequest(request, strict); err != nil {
 		return failedObservation(FailureScope, err)
 	}
 
@@ -82,7 +90,7 @@ func (c *Client) listResources(ctx context.Context, request ListRequest) (ListOb
 			return failedObservation(FailureTool, fmt.Errorf("list resources page %d returned error: %s", page, ExtractText(result)))
 		}
 
-		pageItems, continuation, err := extractObservationPage(result, request)
+		pageItems, continuation, err := extractObservationPage(result, request, strict)
 		if err != nil {
 			return failedObservation(FailureOf(err), err)
 		}
@@ -109,7 +117,7 @@ func (c *Client) listResources(ctx context.Context, request ListRequest) (ListOb
 	return failedObservation(FailureBounds, fmt.Errorf("observation exceeds %d pages", maxObservationPages))
 }
 
-func validateListRequest(request ListRequest) error {
+func validateListRequest(request ListRequest, strict bool) error {
 	if request.APIVersion == "" || request.Kind == "" {
 		return fmt.Errorf("apiVersion and kind are required")
 	}
@@ -123,11 +131,13 @@ func validateListRequest(request ListRequest) error {
 	if err != nil || gv.Version == "" {
 		return fmt.Errorf("invalid apiVersion %q", request.APIVersion)
 	}
-	if _, ok := observedScope(gv, request.Kind); !ok {
-		return fmt.Errorf("unsupported observed GVK %s, Kind=%s", request.APIVersion, request.Kind)
-	}
-	if isClusterScopedGVK(gv, request.Kind) && request.Namespace != "" {
-		return fmt.Errorf("cluster-scoped kind %s must not have a namespace", request.Kind)
+	if strict {
+		if _, ok := observedScope(gv, request.Kind); !ok {
+			return fmt.Errorf("unsupported observed GVK %s, Kind=%s", request.APIVersion, request.Kind)
+		}
+		if isClusterScopedGVK(gv, request.Kind) && request.Namespace != "" {
+			return fmt.Errorf("cluster-scoped kind %s must not have a namespace", request.Kind)
+		}
 	}
 	return nil
 }
@@ -169,7 +179,7 @@ func appendObservationItems(observation *ListObservation, seen map[string]scope.
 	return nil
 }
 
-func extractObservationPage(result *mcp.CallToolResult, request ListRequest) ([]ObservedItem, ContinuationField, error) {
+func extractObservationPage(result *mcp.CallToolResult, request ListRequest, strict bool) ([]ObservedItem, ContinuationField, error) {
 	if result.StructuredContent == nil {
 		return nil, ContinuationField{}, observationFailure(FailureMalformedContent, fmt.Errorf("structuredContent is required"))
 	}
@@ -199,7 +209,7 @@ func extractObservationPage(result *mcp.CallToolResult, request ListRequest) ([]
 	}
 	observed := make([]ObservedItem, 0, len(items))
 	for index, rawItem := range items {
-		item, err := validateObservedItem(rawItem, request)
+		item, err := validateObservedItem(rawItem, request, strict)
 		if err != nil {
 			return nil, continuation, err
 		}
@@ -226,7 +236,7 @@ func parseContinuation(structured map[string]any) (ContinuationField, error) {
 	return ContinuationField{Present: true, Value: value}, nil
 }
 
-func validateObservedItem(rawItem any, request ListRequest) (ObservedItem, error) {
+func validateObservedItem(rawItem any, request ListRequest, strict bool) (ObservedItem, error) {
 	item, ok := rawItem.(map[string]any)
 	if !ok {
 		return ObservedItem{}, observationFailure(FailureItem, fmt.Errorf("item is not an object"))
@@ -238,8 +248,12 @@ func validateObservedItem(rawItem any, request ListRequest) (ObservedItem, error
 	if err != nil {
 		return ObservedItem{}, observationFailure(FailureItem, err)
 	}
-	if err := validateObservedScope(request, name, namespace); err != nil {
-		return ObservedItem{}, observationFailure(FailureScope, err)
+	if strict {
+		if err := validateObservedScope(request, name, namespace); err != nil {
+			return ObservedItem{}, observationFailure(FailureScope, err)
+		}
+	} else if request.Namespace != "" && namespace != request.Namespace {
+		return ObservedItem{}, observationFailure(FailureScope, fmt.Errorf("listed item %q has namespace %q, expected %q", name, namespace, request.Namespace))
 	}
 
 	labels, labelsPresent, labelState, err := observedLabelState(metadata)

@@ -27,6 +27,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -214,6 +215,41 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			var args map[string]any
 			Expect(json.Unmarshal(calls[0].Arguments, &args)).To(Succeed())
 			Expect(args["labelSelector"]).To(Equal("app=nginx"))
+		})
+
+		It("UT-FLEET-MCP-012 [BR-FLEET-002, BR-WORKFLOW-008]: lists Event resources without applying the FMC observation allowlist", func() {
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("event-cluster"),
+				mockgw.WithStructuredContent([]map[string]any{{
+					"apiVersion": "v1",
+					"kind":       "Event",
+					"metadata": map[string]any{
+						"name":      "failed-mount",
+						"namespace": "default",
+					},
+				}}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("event-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			list := &corev1.EventList{}
+			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "EventList"})
+
+			Expect(c.List(ctx, list, client.InNamespace("default"))).To(Succeed())
+			Expect(list.Items).To(HaveLen(1))
+			Expect(list.Items[0].Name).To(Equal("failed-mount"))
+			Expect(list.Items[0].Namespace).To(Equal("default"))
+
+			_, err = c.ListObserved(ctx, mcpclient.ListRequest{
+				APIVersion: "v1",
+				Kind:       "Event",
+				Namespace:  "default",
+				Limit:      mcpclient.ObservationPageLimit,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureScope))
 		})
 	})
 
