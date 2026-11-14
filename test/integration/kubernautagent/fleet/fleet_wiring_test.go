@@ -213,7 +213,17 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 	Describe("IT-FLEET-FMC-001 [AC-4]: NewFromSession + WithClusterID creates working reader for FMC Writer", func() {
 		It("creates a client.Reader from an existing session that can list resources through the MCP gateway", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-fmc"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("cluster-fmc"),
+				mockgw.WithStructuredContent([]map[string]any{{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name":      "item-1",
+						"namespace": "default",
+					},
+				}}),
+			)
 
 			parent, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())

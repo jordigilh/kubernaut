@@ -18,6 +18,7 @@ package scopecache_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -150,15 +151,160 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		partition := scopecache.PartitionStateKey{ClusterID: "prod-east", RegistrationUID: "registration-uid-1"}
 		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
 		Expect(err).ToNot(HaveOccurred())
-		_, err = store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+		identity := scopecache.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "payments",
+			Name:      "checkout",
+		}
+		_, err = store.Repair(ctx, scopecache.RepairRequest{
 			Partition:                partition,
 			RegistrationUID:          partition.RegistrationUID,
 			ExpectedRegistryRevision: 1,
 			WriterFence:              fence,
 			Generation:               start.Generation,
 			Token:                    scopecache.RepairToken{Value: "different-token"},
-			ExpectedCount:            0,
+			Observations: scopecache.ValidatedObservationSet{
+				Items: []scopecache.RepairObservation{{
+					Identity:      identity,
+					APIVersion:    "apps/v1",
+					LabelsPresent: true,
+					LabelState:    scope.LabelStateTrue,
+					TTL:           30 * time.Second,
+				}},
+				Complete:  true,
+				PageCount: 1,
+				ItemCount: 1,
+			},
 		})
+		Expect(err).To(HaveOccurred(), "a mismatched token must not repair")
+
+		start, err = store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition:                partition,
+			RegistrationUID:          partition.RegistrationUID,
+			ExpectedRegistryRevision: 1,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			Observations: scopecache.ValidatedObservationSet{
+				Items: []scopecache.RepairObservation{{
+					Identity:      identity,
+					APIVersion:    "apps/v1",
+					LabelsPresent: true,
+					LabelState:    scope.LabelStateTrue,
+					TTL:           30 * time.Second,
+				}},
+				Complete:  true,
+				PageCount: 1,
+				ItemCount: 1,
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		commitRequest := scopecache.RepairCommitRequest{
+			Partition:                partition,
+			RegistrationUID:          partition.RegistrationUID,
+			ExpectedRegistryRevision: 1,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			ExpectedCount:            1,
+			Proof:                    repair,
+		}
+		commit, err := store.CommitRepair(ctx, commitRequest)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(commit.Committed).To(BeTrue())
+
+		_, err = store.CommitRepair(ctx, commitRequest)
 		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("commit"))
+	})
+
+	It("IT-FMC-CACHE-015 [BR-SCOPE-001]: cleanup examines every stale member before deleting indexed entries", func() {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		server.SetTime(time.Unix(1_700_000_000, 0))
+		store, err := scopecache.NewValkeyStatusStoreAt(server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+
+		fence := scopecache.WriterFence{HolderPodUID: "pod-uid-1", HolderSessionUID: "session-uid-1", LeaseEpoch: 3, Fence: 3}
+		partition := scopecache.PartitionStateKey{ClusterID: "prod-east", RegistrationUID: "registration-uid-1"}
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+
+		stale := make([]scopecache.RepairObservation, 0, 300)
+		for i := 0; i < 300; i++ {
+			stale = append(stale, scopecache.RepairObservation{
+				Identity: scopecache.ResourceIdentity{
+					ClusterID: "prod-east",
+					Group:     "apps",
+					Version:   "v1",
+					Kind:      "Deployment",
+					Namespace: "payments",
+					Name:      fmt.Sprintf("stale-%03d", i),
+				},
+				APIVersion:    "apps/v1",
+				LabelsPresent: true,
+				LabelState:    scope.LabelStateTrue,
+				TTL:           30 * time.Second,
+			})
+		}
+		firstRepair, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition:                partition,
+			RegistrationUID:          partition.RegistrationUID,
+			ExpectedRegistryRevision: 1,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			Observations:             scopecache.ValidatedObservationSet{Items: stale, Complete: true, PageCount: 1, ItemCount: len(stale)},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(firstRepair.CleanCommitEligible).To(BeTrue())
+		_, err = store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+			Partition:                partition,
+			RegistrationUID:          partition.RegistrationUID,
+			ExpectedRegistryRevision: 1,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			ExpectedCount:            len(stale),
+			Proof:                    firstRepair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		start, err = store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		current := scopecache.RepairObservation{
+			Identity: scopecache.ResourceIdentity{
+				ClusterID: "prod-east",
+				Group:     "apps",
+				Version:   "v1",
+				Kind:      "Deployment",
+				Namespace: "payments",
+				Name:      "zz-observed",
+			},
+			APIVersion:    "apps/v1",
+			LabelsPresent: true,
+			LabelState:    scope.LabelStateTrue,
+			TTL:           30 * time.Second,
+		}
+		secondRepair, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition:                partition,
+			RegistrationUID:          partition.RegistrationUID,
+			ExpectedRegistryRevision: 1,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			Observations:             scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{current}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(secondRepair.CleanupCount).To(Equal(300))
 	})
 })

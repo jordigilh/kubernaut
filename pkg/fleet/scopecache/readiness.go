@@ -102,6 +102,9 @@ func (g FMCGlobalReadiness) ServiceReady(partitionCount int) bool {
 		return false
 	}
 	if g.LeasePolicy == LeasePolicyProcessWideRequired {
+		if partitionCount == 0 {
+			return true
+		}
 		return g.ActiveLeaseValid && g.Lease.Active && g.Lease.healthy()
 	}
 	if g.LeasePolicy == LeasePolicyProcessWideOptional {

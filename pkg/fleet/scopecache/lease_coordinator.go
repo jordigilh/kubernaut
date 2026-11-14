@@ -179,6 +179,11 @@ func (c *KubernetesLeaseCoordinator) Verify(ctx context.Context, expected Writer
 		c.markLost(expected, err)
 		return err
 	}
+	if leaseAvailable(lease, time.Now().UTC()) {
+		err := fmt.Errorf("%w: lease expired", ErrStaleFence)
+		c.markLost(expected, err)
+		return err
+	}
 	return nil
 }
 
@@ -199,6 +204,12 @@ func (c *KubernetesLeaseCoordinator) Renew(ctx context.Context, expected WriterF
 	}
 	if !leaseMatches(lease, expected, string(c.podUID)) {
 		err := fmt.Errorf("%w: lease ownership changed", ErrStaleFence)
+		c.mu.Unlock()
+		c.markLost(expected, err)
+		return err
+	}
+	if leaseAvailable(lease, time.Now().UTC()) {
+		err := fmt.Errorf("%w: lease expired", ErrStaleFence)
 		c.mu.Unlock()
 		c.markLost(expected, err)
 		return err

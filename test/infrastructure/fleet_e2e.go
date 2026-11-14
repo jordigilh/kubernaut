@@ -3136,12 +3136,17 @@ func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage
 	// E2E_COVERAGE=true silently produced zero FMC E2E coverage data.
 	// Mirrors notificationControllerManifest's injection pattern
 	// (notification_e2e.go) using the same shared fixtures.
-	coverageEnvYAML := ""
+	coverageEnvYAML := `
+        env:
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid`
 	coverageVolumeMountYAML := ""
 	coverageVolumeYAML := ""
 	coverageSecurityContextYAML := ""
 	if enableCoverage {
-		coverageEnvYAML = "\n        env:" + coverageEnvYAMLFixture
+		coverageEnvYAML += coverageEnvYAMLFixture
 		coverageVolumeMountYAML = `
         - name: coverdata
           mountPath: /coverdata`

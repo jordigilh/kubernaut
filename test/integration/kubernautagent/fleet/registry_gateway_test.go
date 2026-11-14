@@ -86,7 +86,17 @@ var _ = Describe("Registry Gateway Adapter Integration (BR-INTEGRATION-065)", fu
 
 	Describe("IT-REG-GW-003 [AC-3]: ToolPrefixResolver wires prefix from registry into MCP client calls", func() {
 		It("MCP client uses ToolPrefix from ToolPrefixAdapter when resolving tool names", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("spoke-a"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("spoke-a"),
+				mockgw.WithStructuredContent([]map[string]any{{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name":      "item-1",
+						"namespace": "default",
+					},
+				}}),
+			)
 
 			parentClient, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())

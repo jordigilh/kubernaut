@@ -221,6 +221,24 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 	})
 
 	Describe("onDelete", func() {
+		It("UT-REG-EAIGW-017 [AC-3]: resolves the current cluster map through the lock-scoped owner", func() {
+			deleted := newBackendUnstructured("current-map", "https://mcp.example/current-map")
+			staleClusters := map[string]ClusterInfo{
+				"current-map": {ID: "current-map", RegistrationUID: string(deleted.GetUID())},
+			}
+			currentClusters := map[string]ClusterInfo{
+				"current-map": {ID: "current-map", RegistrationUID: string(deleted.GetUID())},
+			}
+			w.clusters = currentClusters
+
+			handleDeletedCluster(deleted, &w.mu, func() map[string]ClusterInfo {
+				return currentClusters
+			}, &w.revision, w.metrics, w.logger, func(ClusterEvent) {})
+
+			Expect(currentClusters).NotTo(HaveKey("current-map"))
+			Expect(staleClusters).To(HaveKey("current-map"))
+		})
+
 		It("UT-REG-EAIGW-006: should remove cluster from registry and emit Deleted event", func() {
 			u := newBackendUnstructured("dev-west",
 				"https://mcp.example.com/dev-west")

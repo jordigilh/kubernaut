@@ -386,7 +386,7 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *EAIGWRegistry) onDelete(obj interface{}) {
-	handleDeletedCluster(obj, &w.mu, w.clusters, &w.revision, w.metrics, w.logger, w.emit)
+	handleDeletedCluster(obj, &w.mu, func() map[string]ClusterInfo { return w.clusters }, &w.revision, w.metrics, w.logger, w.emit)
 }
 
 func (w *EAIGWRegistry) removeIfCurrent(obj interface{}) {

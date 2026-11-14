@@ -1444,7 +1444,7 @@ qualification evidence during this source-only phase.
    swallowed-error, GVK-loss, AI `InferGVK`, boolean-HTTP, and namespace-fallback failures.
    RED also defines/tests the conversion of every listed dirty v2 route/media/test consumer;
    no source conversion is required before RED.
-3. **GREEN**: after the RED contracts pass; wire the minimal internal
+3. **GREEN**: after the RED contracts are authored and their expected failures are recorded; wire the minimal internal
    Valkey protocol, Lease, typed result, GVK schema, typed scope seams and FMC v1 scope
    path, and atomically convert the unreleased source plus every listed consumer before any
    production-composition or wiring credit. Do not add a public v2 route/media or
@@ -1457,14 +1457,12 @@ qualification evidence during this source-only phase.
    the separate audit-owner disposition. This step makes no production, cluster, ACM,
    Valkey qualification, deployment, or release claim.
 
-Before implementation approval, three separate independent read-only CodeRabbit-style
-reviews must run against one immutable plan-approval baseline. Each must report no
-actionable P0–P2 finding; the current unreleased source is context, not accepted v2 behavior.
-Preserve complete responses, session IDs, exact plan/source hashes, Engram references, and
-disposition diffs in `docs/tests/2593/evidence/reviews/`. After approval, expected source
-changes are captured and reviewed per RED/GREEN/REFACTOR pass and do not reset this counter.
-Any plan/TP/architecture/approval drift, pre-approval source drift, or new actionable finding
-resets the count to zero.
+The former three-review pre-implementation gate is historical and superseded by the
+approved fast-path boundary above. The current unreleased source is context, not accepted
+v2 behavior. Preserve complete historical responses, session IDs, exact plan/source hashes,
+Engram references, and disposition diffs in `docs/tests/2593/evidence/reviews/`. Expected
+source changes are captured and reviewed per RED/GREEN/REFACTOR pass; they do not introduce
+another three-review cycle or suspend RED while approval-pending dependencies are recorded.
 
 ---
 
@@ -1473,7 +1471,7 @@ resets the count to zero.
 | Deliverable | Location | Required content |
 |---|---|---|
 | This test plan | `docs/tests/2593/TEST_PLAN.md` | Frozen IEEE 829 strategy, denominators, mappings and execution matrix |
-| Active bounded implementation plan | OpenChamber knowledge plan `44585f5b-5673-4cd9-ad59-7b0ba98dff66` at `/Users/jgil/.config/openchamber/projects/path_L1VzZXJzL2pnaWwvZ28vc3JjL2dpdGh1Yi5jb20vam9yZGlnaWxoL2t1YmVybmF1dA/plans/1794533840933-fmc-bounded-implementation-and-review.md` | **Only active implementation-plan authority** for this pre-release v1 slice: approval gates, internal protocol, public v1 contract, and review gate; exact current SHA-256 is external capture data |
+ | Active bounded implementation plan | OpenChamber knowledge plan `44585f5b-5673-4cd9-ad59-7b0ba98dff66` at `/Users/jgil/.config/openchamber/projects/path_L1VzZXJzL2pnaWwvZ28vc3JjL2dpdGh1Yi5jb20vam9yZGlnaWxoL2t1YmVybmF1dA/plans/1794533840933-fmc-bounded-implementation-and-review.md` | **Only active implementation-plan authority** for this pre-release v1 slice: approval gates, internal protocol, public v1 contract, and review gate; exact current SHA-256 is external capture data |
 | Historical external implementation plan (non-authoritative) | `1794436520127-fmc-resource-presence-and-ttl-recovery-tdd.md` | Historical context only; do not read, hash, require, compare, or use for approval/readiness |
 | Unit test suite | `pkg/fleet/fmc/`, `pkg/fleet/scopecache/`, `pkg/fleet/registry/`, `pkg/shared/scope/`, `pkg/fleet/inventory/` | Ginkgo/Gomega behavior proof for 12 UT rows |
 | Integration suite | `test/integration/fleetmetadatacache/`, Gateway, RO, AF, SP, AI and typed-scope fleet paths | Source dispatch proof for 4 IT rows and 19 wiring rows |
@@ -1509,7 +1507,7 @@ go test ./test/integration/remediationorchestrator -ginkgo.v -ginkgo.focus='IT-R
 go test ./test/integration/apifrontend/fleet -ginkgo.v -ginkgo.focus='IT-(AF-PRES-007|AF-ROUTE-010)'
 go test ./test/integration/signalprocessing/fleet -ginkgo.v -ginkgo.focus='IT-FMC-PRES-010'
 go test ./test/integration/aianalysis/fleet -ginkgo.v -ginkgo.focus='IT-FMC-GVK-022'
-go test ./test/integration/scope ./test/integration/fleet -ginkgo.v -ginkgo.focus='IT-SCOPE-TYPED-01(8|9|20|21)'
+go test ./test/integration/scope ./test/integration/fleet -ginkgo.v -ginkgo.focus='IT-SCOPE-TYPED-0(18|19|20|21)'
 
 # Conditional control gate; requires explicit authorization and a real Kind cluster
 go test ./test/e2e/fleet -ginkgo.v -ginkgo.focus='E2E-FMC-AUTH-018'

@@ -96,6 +96,9 @@ func NewClientWithStatusStore(statusStore StatusStore, registration registry.Cur
 // IsManaged checks if a resource on a remote cluster is labeled kubernaut.ai/managed=true.
 // Returns (true, nil) if managed, (false, nil) if not found (cache miss treated as unmanaged).
 func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind, namespace, name string) (bool, error) {
+	if c == nil || c.reader == nil {
+		return false, fmt.Errorf("scopecache: IsManaged is unsupported for status-store clients")
+	}
 	key, err := BuildKey(clusterID, group, version, kind, namespace, name)
 	if err != nil {
 		return false, err

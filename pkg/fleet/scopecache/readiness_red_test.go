@@ -126,4 +126,24 @@ var _ = Describe("FMC readiness snapshot (BR-SCOPE-001, BR-SECURITY-016)", func(
 		_, err := snapshot.PartitionReady(partition, registrationUID, 5, fence, 12)
 		Expect(err).To(MatchError(ContainSubstring("revision")))
 	})
+
+	It("UT-FMC-CACHE-016 [BR-SCOPE-001]: treats an empty registry as ready without a process-wide lease", func() {
+		snapshot, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(snapshot.PublishGlobal(scopecache.FMCGlobalReadiness{
+			MCPInitialSync:       true,
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			Lease: scopecache.LeaseView{
+				Policy: scopecache.LeasePolicyProcessWideRequired,
+			},
+			LeasePolicy: scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		ready, err := snapshot.ServiceReady()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ready).To(BeTrue())
+	})
 })

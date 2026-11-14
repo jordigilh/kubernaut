@@ -306,7 +306,7 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 	if err := s.publishGlobal(session); err != nil {
 		return fmt.Errorf("publish FMC global readiness for cluster %s: %w", cluster.ID, err)
 	}
-	result, err := s.repairPartition(ctx, cluster, snapshot, session.Fence)
+	result, err := s.repairPartition(ctx, snapshot.Info, snapshot, session.Fence)
 	if err != nil {
 		s.metrics.SyncErrors.WithLabelValues(cluster.ID, "repair_failed").Inc()
 		return fmt.Errorf("sync cluster %s repair: %w", cluster.ID, err)
@@ -326,13 +326,13 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 func (s *Syncer) syncLegacyCluster(ctx context.Context, cluster registry.ClusterInfo, start time.Time) error {
 	var observations []observedResource
 	for _, kind := range s.config.ResourceKinds {
-		kindObservations, err := s.syncKind(ctx, cluster, kind)
+		kindResult, err := s.syncKind(ctx, cluster, kind)
 		if err != nil {
 			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "list_failed").Inc()
 			s.logger.Error(err, "Failed to sync kind", "cluster", cluster.ID, "kind", kind)
 			return fmt.Errorf("sync cluster %s incomplete: %w", cluster.ID, err)
 		}
-		observations = append(observations, kindObservations...)
+		observations = append(observations, kindResult.Resources...)
 	}
 	seenKeys := make(map[string]struct{}, len(observations))
 	for _, observation := range observations {
@@ -364,6 +364,14 @@ func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.Partition
 	})
 }
 
+func (s *Syncer) markRepairUncertain(ctx context.Context, start scopecache.RepairStartResult, clusterID string, failure scopecache.RepairFailure) {
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cleanupCancel()
+	if err := s.statusStore.MarkRepairUncertain(cleanupCtx, start, failure); err != nil {
+		s.logger.Error(err, "failed to mark FMC repair uncertain", "cluster", clusterID)
+	}
+}
+
 // repairPartition performs the only production lifecycle that can publish a
 // clean partition. BeginRepair runs before any MCP source collection.
 func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterInfo, snapshot registry.RegistrationSnapshot, fence scopecache.WriterFence) (scopecache.RepairResult, error) {
@@ -377,26 +385,20 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		return scopecache.RepairResult{}, err
 	}
 	leaseView := s.leaseView(fence)
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cleanupCancel()
 	if err := s.readiness.BeginPartitionRepair(partition, cluster.RegistrationUID, snapshot.Revision, leaseView, start.Generation); err != nil {
-		failure := scopecache.RepairFailure{Code: scopecache.RepairFailureInvalidRequest, Message: err.Error()}
-		_ = s.statusStore.MarkRepairUncertain(cleanupCtx, start, failure)
+		s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureInvalidRequest, Message: err.Error()})
 		return scopecache.RepairResult{}, err
 	}
 	committed := false
-	defer func(cleanupCtx context.Context) {
+	defer func() {
 		if committed {
 			return
 		}
-		failure := scopecache.RepairFailure{Code: scopecache.RepairFailureSourceIncomplete, Message: "repair did not commit"}
-		if markErr := s.statusStore.MarkRepairUncertain(cleanupCtx, start, failure); markErr != nil {
-			s.logger.Error(markErr, "failed to mark FMC repair uncertain", "cluster", cluster.ID)
-		}
+		s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureSourceIncomplete, Message: "repair did not commit"})
 		_ = s.readiness.InvalidatePartition(partition, "repair did not commit")
-	}(cleanupCtx)
+	}()
 
-	repairItems, err := s.collectRepairObservations(ctx, cluster)
+	observations, err := s.collectRepairObservations(ctx, cluster)
 	if err != nil {
 		return scopecache.RepairResult{}, err
 	}
@@ -414,10 +416,10 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		Generation:               start.Generation,
 		Token:                    start.Token,
 		Observations: scopecache.ValidatedObservationSet{
-			Items:     repairItems,
+			Items:     observations.Items,
 			Complete:  true,
-			PageCount: len(s.config.ResourceKinds),
-			ItemCount: len(repairItems),
+			PageCount: observations.PageCount,
+			ItemCount: len(observations.Items),
 		},
 	})
 	if err != nil {
@@ -430,7 +432,7 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		WriterFence:              fence,
 		Generation:               start.Generation,
 		Token:                    start.Token,
-		ExpectedCount:            len(repairItems),
+		ExpectedCount:            len(observations.Items),
 		Proof:                    repairResult,
 	})
 	if err != nil {
@@ -446,21 +448,28 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 	return repairResult, nil
 }
 
-func (s *Syncer) collectRepairObservations(ctx context.Context, cluster registry.ClusterInfo) ([]scopecache.RepairObservation, error) {
+type repairObservationCollection struct {
+	Items     []scopecache.RepairObservation
+	PageCount int
+}
+
+func (s *Syncer) collectRepairObservations(ctx context.Context, cluster registry.ClusterInfo) (repairObservationCollection, error) {
 	var observations []observedResource
+	pageCount := 0
 	for _, kind := range s.config.ResourceKinds {
-		kindObservations, err := s.syncKind(ctx, cluster, kind)
+		kindResult, err := s.syncKind(ctx, cluster, kind)
 		if err != nil {
-			return nil, fmt.Errorf("collect repair observations for kind %s: %w", kind, err)
+			return repairObservationCollection{}, fmt.Errorf("collect repair observations for kind %s: %w", kind, err)
 		}
-		observations = append(observations, kindObservations...)
+		observations = append(observations, kindResult.Resources...)
+		pageCount += kindResult.PageCount
 	}
 
 	seenKeys := make(map[string]struct{}, len(observations))
 	repairItems := make([]scopecache.RepairObservation, 0, len(observations))
 	for _, observed := range observations {
 		if _, exists := seenKeys[observed.key]; exists {
-			return nil, fmt.Errorf("repair has duplicate resource identity %q", observed.key)
+			return repairObservationCollection{}, fmt.Errorf("repair has duplicate resource identity %q", observed.key)
 		}
 		seenKeys[observed.key] = struct{}{}
 		repairItems = append(repairItems, scopecache.RepairObservation{
@@ -471,7 +480,7 @@ func (s *Syncer) collectRepairObservations(ctx context.Context, cluster registry
 			TTL:           observed.cacheObservation.TTL,
 		})
 	}
-	return repairItems, nil
+	return repairObservationCollection{Items: repairItems, PageCount: pageCount}, nil
 }
 
 func (s *Syncer) publishCleanPartition(
@@ -549,15 +558,20 @@ type observedResource struct {
 	cacheObservation scopecache.Observation
 }
 
-func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kind string) ([]observedResource, error) {
+type kindObservationResult struct {
+	Resources []observedResource
+	PageCount int
+}
+
+func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kind string) (kindObservationResult, error) {
 	reader, err := s.readerFactory.ReaderFor(ctx, cluster)
 	if err != nil {
-		return nil, fmt.Errorf("syncKind: create reader for kind=%s cluster=%s: %w", kind, cluster.ID, err)
+		return kindObservationResult{}, fmt.Errorf("syncKind: create reader for kind=%s cluster=%s: %w", kind, cluster.ID, err)
 	}
 
 	gvk, ok := kindToGVK[kind]
 	if !ok {
-		return nil, fmt.Errorf("syncKind: unknown resource kind %q (add to kindToGVK map)", kind)
+		return kindObservationResult{}, fmt.Errorf("syncKind: unknown resource kind %q (add to kindToGVK map)", kind)
 	}
 
 	observed, err := reader.ListObserved(ctx, observation.ListRequest{
@@ -566,30 +580,30 @@ func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kin
 		Limit:      observation.ObservationPageLimit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("syncKind: list kind=%s cluster=%s: %w", kind, cluster.ID, err)
+		return kindObservationResult{}, fmt.Errorf("syncKind: list kind=%s cluster=%s: %w", kind, cluster.ID, err)
 	}
 	if !observed.Complete {
 		failure := observed.Failure
 		if failure == observation.FailureNone {
 			failure = observation.FailureMalformedContent
 		}
-		return nil, fmt.Errorf("syncKind: incomplete observation kind=%s cluster=%s failure=%s", kind, cluster.ID, failure)
+		return kindObservationResult{}, fmt.Errorf("syncKind: incomplete observation kind=%s cluster=%s failure=%s", kind, cluster.ID, failure)
 	}
 
 	observationWriter, ok := s.writer.(ObservationWriter)
 	if !ok && s.statusStore == nil {
-		return nil, fmt.Errorf("syncKind: writer does not support presence-aware observations")
+		return kindObservationResult{}, fmt.Errorf("syncKind: writer does not support presence-aware observations")
 	}
 
 	resources := make([]observedResource, 0, len(observed.Items))
 	for i := range observed.Items {
 		resource, itemErr := s.buildObservedResource(cluster, kind, gvk, observationWriter, &observed.Items[i])
 		if itemErr != nil {
-			return nil, itemErr
+			return kindObservationResult{}, itemErr
 		}
 		resources = append(resources, resource)
 	}
-	return resources, nil
+	return kindObservationResult{Resources: resources, PageCount: observed.PageCount}, nil
 }
 
 func (s *Syncer) buildObservedResource(
@@ -650,14 +664,14 @@ func (s *Syncer) Run(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cleanupCancel()
-	defer func(cleanupCtx context.Context) {
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
 		s.releaseFence(cleanupCtx)
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
-	}(cleanupCtx)
+	}()
 
 	if s.config.WaitForBrokerReady {
 		s.waitForBrokerReady(ctx)

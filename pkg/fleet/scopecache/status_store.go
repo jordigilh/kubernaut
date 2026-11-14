@@ -141,7 +141,7 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 
 func (s *ValkeyStatusStore) cleanupRepairMembers(ctx context.Context, request RepairRequest, seen map[string]struct{}) (int, error) {
 	cursor := 0
-	cleanupCount := 0
+	allMembers := make([]string, 0)
 	for {
 		items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), indexKey(request.Partition)},
 			"repair_list_members", request.RegistrationUID, request.ExpectedRegistryRevision,
@@ -149,30 +149,34 @@ func (s *ValkeyStatusStore) cleanupRepairMembers(ctx context.Context, request Re
 			request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
 			request.Token.Value, cursor)
 		if err != nil {
-			return cleanupCount, err
+			return 0, err
 		}
 		next, members, err := parseRepairMembers(items)
 		if err != nil {
-			return cleanupCount, repairFailureError(RepairFailureIndexInvalid, err, false)
+			return 0, repairFailureError(RepairFailureIndexInvalid, err, false)
 		}
-		for _, member := range members {
-			if _, exists := seen[member]; exists {
-				continue
-			}
-			count, err := s.cleanupRepairMember(ctx, request, member)
-			if err != nil {
-				return cleanupCount, err
-			}
-			cleanupCount += count
-		}
+		allMembers = append(allMembers, members...)
 		if next < 0 {
-			return cleanupCount, nil
+			break
 		}
 		if next <= cursor {
-			return cleanupCount, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("repair member cursor did not advance"), false)
+			return 0, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("repair member cursor did not advance"), false)
 		}
 		cursor = next
 	}
+
+	cleanupCount := 0
+	for _, member := range allMembers {
+		if _, exists := seen[member]; exists {
+			continue
+		}
+		count, err := s.cleanupRepairMember(ctx, request, member)
+		if err != nil {
+			return cleanupCount, err
+		}
+		cleanupCount += count
+	}
+	return cleanupCount, nil
 }
 
 func (s *ValkeyStatusStore) cleanupRepairMember(ctx context.Context, request RepairRequest, member string) (int, error) {
