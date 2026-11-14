@@ -61,7 +61,7 @@ in infrastructure setup.
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
 | `fleetmetadatacache` | The lane still reports inherited `kube-mcp-server: unknown flag: --port` and two `fmc scope check failed` cases; 17/20 executed specs passed, with 6 skipped | Hold dependency/fixture environment attribution; the validated structured-observation fix is already in the bounded diff | 95% |
-| `gateway` | Fleet signal/scope paths report `scope: explicit group/version is required for "Deployment"` | Hold; GVK contract is outside #2593 | 92% attribution, below fix threshold |
+| `gateway` | Fleet signal/scope paths report `scope: explicit group/version is required for "Deployment"` | Introduced by this PR's explicit remote-GVK validation (`pkg/gateway/signal_ingestion.go:491-495`); current fleet fixtures create remote Deployment signals without `apiVersion`. The fail-closed behavior is intentional, while producer/fixture alignment remains held for an approved follow-up | 98% attribution |
 | `signalprocessing` | Remote enrichment and ClusterRegistry wiring fail on the same GVK/adjacent fleet path | Hold; do not expand into GVK or #2592 work | 90% attribution, below fix threshold |
 | `apifrontend` | Fleet AF severity/remediation ownership assertions fail | Hold; AF/RO ownership attribution is unresolved | <90% |
 | `remediationorchestrator` | Remote managed-resource routing fails in fleet scope integration | Hold; AF/RO ownership attribution is unresolved | <90% |

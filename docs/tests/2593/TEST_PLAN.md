@@ -1084,7 +1084,7 @@ zero credit and is not part of any active denominator.
 |---|---|---|
 | Checkout | `7a4ed304580298802520e292cad0a7c4efccd17b` | Review-only working tree; preserve existing DD-FLEET-011 changes |
 | `origin/main` | `18870e92d58b83c1c061841130bc73fde62abc70` | Observed 2026-11-11; baseline for the clean fast path |
-| Plan revision | SHA-256 recorded in the external plan ledger | Recompute after every amendment |
+| Repository-versioned authority revision | SHA-256 of `docs/tests/2593/TEST_PLAN.md` | Recompute after every amendment |
 | Test-plan artifact | `TP-2593-v0.9`, Fast-path implementation baseline | `docs/tests/2593/TEST_PLAN.md`; functional scenarios are frozen; pass captures record later source changes |
 | Valkey fixtures | Not yet qualified | Do not merge `redis:7-alpine`, unpinned 8.1, pinned 8.0.2, or 9.1.1 evidence without a deployment contract |
 
@@ -1386,7 +1386,7 @@ create a claim in this source-only plan.
 
 Every evidence artifact must record: owner, independent reviewer, UTC timestamp, source
 revision, command or test command, redaction status, expected result, actual result, and
-the plan/test-plan SHA-256. Directory-only evidence is not complete. Any future external
+the repository-versioned authority/test-plan SHA-256. Directory-only evidence is not complete. Any future external
 deployment artifact may add its image/config digest and environment metadata, but that is
 not required or credited for this source-only amendment. Required source-level evidence
 templates include:
@@ -1424,7 +1424,7 @@ qualification evidence during this source-only phase.
 
 | Dependency | Owner | Status | Impact if unavailable | Required resolution |
 |---|---|---|---|---|
-| BR-SCOPE-001/002/010 and ADR-053 amendments | Architecture/scope owner | Pending final disposition | Final semantics/qualification remain blocked; RED records the exact fail-closed contract | Approve/reject the exact reconciliation in the external plan |
+| BR-SCOPE-001/002/010 and ADR-053 amendments | Architecture/scope owner | Pending final disposition | Final semantics/qualification remain blocked; RED records the exact fail-closed contract | Approve/reject the exact reconciliation in the repository-versioned authority and applicable ADR evidence |
 | ADR-068/DD-FLEET-011 reconciliation and new fleet DD | Architecture owner | Pending final disposition | Final cache/typed-scope evidence remains blocked | Approve a new DD-FLEET record; preserve DD-FLEET-011 files |
 | Internal Valkey test dependency and semantics | Platform/Valkey owner | Missing | TTL/recovery GREEN blocked | Approve the controlled test dependency and internal TTL/status/fence/repair evidence; no qualification claim |
 | Rendered identity/RBAC and target-kind matrix | Operator/security owner | Missing | Source collection and auth ITs blocked | Attach rendered manifests, SAR/TokenReview and MCP label-bearing evidence |
@@ -1617,4 +1617,5 @@ approved contract changes; all scenario IDs remain visible.
 
 No public v2 route/media, deployment, cluster, ACM, Valkey qualification, GitHub, or release
 changes are authorized. Source changes are limited to the clean worktree and the bounded
-TDD steps in the active OpenChamber plan.
+TDD steps in this repository-versioned authority; the OpenChamber plan is historical
+provenance only.

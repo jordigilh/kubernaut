@@ -4,9 +4,11 @@ This directory holds review artifacts for the FMC presence/TTL recovery plan.
 
 ## Rules
 
-- A review is non-gating unless it records the complete response, session/message IDs,
-  exact external-plan and `TEST_PLAN.md` SHA-256 values, checkout `HEAD`, `origin/main`,
-  Engram/source references, and a finding-disposition diff.
+- A new review is non-gating unless it records the complete response, session/message IDs,
+  the exact repository-versioned `TEST_PLAN.md` SHA-256, checkout `HEAD`, `origin/main`,
+  Engram/source references, and a finding-disposition diff. Historical captures retain
+  their external-plan SHA-256 values, but an external-plan hash is not required for a new
+  review because the OpenChamber plan is historical provenance only.
 - The former three independent reviews with no actionable P0–P2 findings were the
   pre-RED approval gate for the dirty-worktree plan. They remain historical evidence
   and are not repeated for the user-approved clean-worktree fast path.
@@ -15,7 +17,8 @@ This directory holds review artifacts for the FMC presence/TTL recovery plan.
   clean worktree; each RED/GREEN/REFACTOR pass still requires its own immutable
   source-diff capture and review.
 - Historical R1–R3 responses remain discoverable through the external plan ledger's
-  OpenChamber session/message IDs; they are not clean approvals.
+  OpenChamber session/message IDs; they are not clean approvals. New review captures use
+  the repository-versioned authority hash and do not require an external-plan hash.
 
 ## Historical archived round
 
@@ -91,8 +94,10 @@ not create a second three-review cycle.
 - Repository-versioned bounded implementation/test authority: `docs/tests/2593/TEST_PLAN.md`.
 - Historical OpenChamber plan: knowledge plan ID
   `44585f5b-5673-4cd9-ad59-7b0ba98dff66`, title `FMC bounded implementation and review`.
-- Test plan: `TP-2593-v0.9`, repository-versioned fast-path SHA-256
+- Historical test-plan snapshot: `TP-2593-v0.9`, repository-versioned fast-path SHA-256
   `363f36c3a59c7fc46c72a37347479cb5e2df775d8b6770f8854eda1e405eb482`.
+- Current repository-versioned authority SHA-256 for new review captures:
+  `aede83812e3991df16daeab295d4a45da95e1274f5559f9dfa15daebbbad23e8`.
 - Source checkout `HEAD`: `7a4ed304580298802520e292cad0a7c4efccd17b`.
 - Source checkout `origin/main`: `18870e92d58b83c1c061841130bc73fde62abc70`.
 - Test-plan identity: `TP-2593-v0.9`, Fast-path implementation baseline — Step 0 complete; RED pending.
