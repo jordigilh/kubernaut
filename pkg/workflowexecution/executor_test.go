@@ -149,9 +149,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 							ExecutionEngine: "job",
 						},
 					},
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"NAMESPACE": "default",
-					},
+					}),
 				},
 			}
 
@@ -532,6 +532,42 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
 			Expect(paramMap).To(HaveKeyWithValue("REPLICAS", "3"))
 			Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/param-app"))
+		})
+
+		It("UT-WE-2613-001 [BR-WE-014]: should replace a stale TARGET_RESOURCE parameter with Spec.TargetResource", func() {
+			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+			tektonExec = executor.NewTektonExecutor(k8sClient)
+
+			const authoritativeTarget = "production/deployment/current-app"
+			wfe := newTestWFE("test-wfe-authoritative-target", "production", authoritativeTarget,
+				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+				map[string]string{
+					"TARGET_RESOURCE": "stale/deployment/old-app",
+					"NAMESPACE":       "production",
+				})
+
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{
+				DeclaredParameterNames: map[string]bool{
+					"TARGET_RESOURCE": true,
+					"NAMESPACE":       true,
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			var pr tektonv1.PipelineRun
+			Expect(k8sClient.Get(ctx, client.ObjectKey{
+				Name:      result.ResourceName,
+				Namespace: "kubernaut-workflows",
+			}, &pr)).To(Succeed())
+
+			targetCount := 0
+			for _, param := range pr.Spec.Params {
+				if param.Name == "TARGET_RESOURCE" {
+					targetCount++
+					Expect(param.Value.StringVal).To(Equal(authoritativeTarget))
+				}
+			}
+			Expect(targetCount).To(Equal(1), "TARGET_RESOURCE must be emitted exactly once")
 		})
 
 		It("should produce only TARGET_RESOURCE when parameters are empty (UT-WE-014-063)", func() {
@@ -1489,7 +1525,7 @@ func newTestWFE(name, namespace, targetResource, workflowID, containerImage stri
 					ExecutionEngine: "tekton",
 				},
 			},
-			Parameters: params,
+			Parameters: typedParametersFromStrings(params),
 		},
 	}
 }

@@ -22,6 +22,7 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
@@ -400,6 +401,17 @@ func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
 	}
 	if infra.Reconciler == nil {
 		t.Fatal("Reconciler must not be nil even with sub-minimum retention TTL")
+	}
+}
+
+// IT-AF-2570-003 / BR-AUTH-001: the production approval client must decode
+// trusted RemediationWorkflow objects during workflow identity verification.
+func TestBuildK8sTypedSchemeIncludesRemediationWorkflow(t *testing.T) {
+	scheme := buildK8sTypedScheme()
+	for _, kind := range []string{"RemediationWorkflow", "RemediationWorkflowList"} {
+		if gvk := remediationworkflowv1.GroupVersion.WithKind(kind); !scheme.Recognizes(gvk) {
+			t.Errorf("production APIFrontend scheme does not recognize %s", gvk)
+		}
 	}
 }
 

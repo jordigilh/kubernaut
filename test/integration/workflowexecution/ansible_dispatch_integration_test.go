@@ -78,21 +78,20 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{"NAMESPACE": true},
-							WorkflowName:           "ansible-restart",
-							ActionType:             "RestartPod",
-							Version:                "1.0.0",
-							ExecutionBundle:        "https://github.com/kubernaut/playbooks.git",
-							ExecutionEngine:        "ansible",
+							WorkflowID:      workflowID,
+							WorkflowName:    "ansible-restart",
+							ActionType:      "RestartPod",
+							Version:         "1.0.0",
+							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+							ExecutionEngine: "ansible",
 							EngineConfig: &apiextensionsv1.JSON{
 								Raw: engineConfig,
 							},
 						},
 					},
-					Parameters: map[string]string{
-						"NAMESPACE": "default",
-					},
+					Parameters: typedParametersFromStrings(map[string]string{
+						"MESSAGE": "default",
+					}),
 				},
 			}
 

@@ -43,7 +43,6 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 	lifecycleWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 	// Use unique target resources per test for parallel isolation (4 procs)
@@ -74,7 +73,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		It("should preserve spec fields after creation", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-spec-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("spec", targetResource)
-			wfe.Spec.Parameters = map[string]string{"KEY": "value"}
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"MESSAGE": `"value"`})
 			wfe.Spec.Confidence = 0.95
 
 			defer func() {
@@ -88,7 +87,11 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal(targetResource))
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
-			Expect(created.Spec.Parameters).To(HaveKeyWithValue("KEY", "value"))
+			message, ok := created.Spec.Parameters["MESSAGE"]
+			Expect(ok).To(BeTrue())
+			Expect(message.Kind).To(Equal("string"))
+			Expect(message.StringValue).ToNot(BeNil())
+			Expect(*message.StringValue).To(Equal("value"))
 			Expect(created.Spec.Confidence).To(Equal(0.95))
 
 			GinkgoWriter.Println("✅ Spec fields preserved")

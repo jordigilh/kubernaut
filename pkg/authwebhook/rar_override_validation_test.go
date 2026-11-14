@@ -159,6 +159,23 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		}
 	}
 
+	buildVerifiedActiveRW := func(name, namespace string, parameters []remediationworkflowv1.RemediationWorkflowParameter) *remediationworkflowv1.RemediationWorkflow {
+		rw := buildActiveRW(name, namespace)
+		rw.Spec.Parameters = parameters
+		content, err := contenthash.MarshalCleanCRDContent(rw)
+		Expect(err).NotTo(HaveOccurred())
+		rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+		rw.Status.WorkflowID = contenthash.DeterministicUUID(rw.Status.ContentHash)
+		return rw
+	}
+
+	workflowReader := func(scheme *runtime.Scheme, rw *remediationworkflowv1.RemediationWorkflow) client.Reader {
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).WithStatusSubresource(rw).
+			WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj client.Object) []string {
+				return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+			}).Build()
+	}
+
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockStore = &MockAuditStore{}
@@ -172,7 +189,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 
 	It("UT-AW-2570-003: BR-ORCH-025 preserves explicit empty override parameters distinctly from omission", func() {
 		for _, params := range []map[string]string{nil, {}} {
-			original := remediationv1.WorkflowOverride{Parameters: params}
+			original := remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(params)}
 			encoded, err := json.Marshal(original)
 			Expect(err).NotTo(HaveOccurred())
 			var decoded remediationv1.WorkflowOverride
@@ -187,18 +204,18 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	})
 
 	It("UT-AW-2570-099: BR-KA-191 validates original parameters on an ordinary approval", func() {
-		reader = fake.NewClientBuilder().WithScheme(scheme).Build()
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
-		Expect(handler.InjectDecoder(decoder)).To(Succeed())
-
 		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
 		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{
-			WorkflowID:             "wf-original",
-			DeclaredParameterNames: map[string]bool{"P": true},
+			WorkflowID: "wf-original",
 		}
-		oldRAR.Spec.Parameters = map[string]string{"P": "1.0"}
-		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer"}}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "1.0"})
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer"}}
 		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		rw := buildVerifiedActiveRW("original-workflow", "kubernaut-system", schema)
+		oldRAR.Spec.Workflow.WorkflowID = rw.Status.WorkflowID
+		reader = workflowReader(scheme, rw)
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
+		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 
@@ -224,17 +241,19 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	})
 
 	DescribeTable("UT-AW-2570-066: BR-KA-191 rejects invalid reviewed parameter values", func(changes map[string]string, wantError string) {
-		reader = fake.NewClientBuilder().WithScheme(scheme).Build()
+		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-original"}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "3"})
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Required: true, Description: "count"}}
+		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		rw := buildVerifiedActiveRW("invalid-override", "kubernaut-system", schema)
+		oldRAR.Spec.Workflow.WorkflowID = rw.Status.WorkflowID
+		reader = workflowReader(scheme, rw)
 		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
-		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
-		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-original", DeclaredParameterNames: map[string]bool{"P": true}}
-		oldRAR.Spec.Parameters = map[string]string{"P": "3"}
-		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Required: true, Description: "count"}}
-		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: changes}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(changes)}
 		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
 		Expect(response.Allowed).To(BeFalse())
 		Expect(response.Result.Message).To(ContainSubstring(wantError))
@@ -244,21 +263,21 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	)
 
 	It("UT-AW-2570-103: BR-AUDIT-005 records an audit event for an invalid override denial", func() {
-		reader = fake.NewClientBuilder().WithScheme(scheme).Build()
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
-		Expect(handler.InjectDecoder(decoder)).To(Succeed())
-
 		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
 		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{
-			WorkflowID:             "wf-invalid-override-audit",
-			DeclaredParameterNames: map[string]bool{"P": true},
+			WorkflowID: "wf-invalid-override-audit",
 		}
-		oldRAR.Spec.Parameters = map[string]string{"P": "original"}
-		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "original"})
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string"}}
 		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+		rw := buildVerifiedActiveRW("invalid-override-audit", "kubernaut-system", schema)
+		oldRAR.Spec.Workflow.WorkflowID = rw.Status.WorkflowID
+		reader = workflowReader(scheme, rw)
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
+		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"NEW": "value"}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"NEW": "value"})}
 
 		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
 
@@ -275,24 +294,20 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
-		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-missing", DeclaredParameterNames: map[string]bool{"P": true}}
-		oldRAR.Spec.Parameters = map[string]string{"P": "3"}
-		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}}
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-missing"}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "3"})
 		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "4"}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"P": "4"})}
 		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
 		Expect(response.Allowed).To(BeFalse())
 		Expect(response.Result.Message).To(ContainSubstring("workflow"))
 	})
 
 	DescribeTable("UT-AW-2570-124: BR-AUTH-001 verifies trusted catalog content before approval", func(foreign, stale bool, allowed bool) {
-		rw := buildActiveRW("trusted-restart", "kubernaut-system")
-		content, err := contenthash.MarshalCleanCRDContent(rw)
-		Expect(err).NotTo(HaveOccurred())
-		workflowID := contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
-		rw.Status.WorkflowID = workflowID
+		rw := buildVerifiedActiveRW("trusted-restart", "kubernaut-system", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}})
+		workflowID := rw.Status.WorkflowID
 		if foreign {
 			rw.Namespace = "foreign-namespace"
 		}
@@ -306,15 +321,18 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
-		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID, DeclaredParameterNames: map[string]bool{"P": true}}
-		oldRAR.Spec.Parameters = map[string]string{"P": "3"}
-		oldRAR.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}}
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(map[string]string{"P": "3"})
 		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "4"}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"P": "4"})}
 		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
-		Expect(response.Allowed).To(Equal(allowed))
+		reason := ""
+		if response.Result != nil {
+			reason = response.Result.Message
+		}
+		Expect(response.Allowed).To(Equal(allowed), reason)
 		if !allowed {
 			Expect(response.Result.Message).To(ContainSubstring("workflow"))
 		}
@@ -325,31 +343,27 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	)
 
 	DescribeTable("BR-KA-191: admission validates the complete effective parameter map without rewriting review text", func(schema []remediationworkflowv1.RemediationWorkflowParameter, original, changes map[string]string, allowed bool) {
-		rw := buildActiveRW("trusted-parameters", "kubernaut-system")
-		content, err := contenthash.MarshalCleanCRDContent(rw)
-		Expect(err).NotTo(HaveOccurred())
-		rw.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+		rw := buildVerifiedActiveRW("trusted-parameters", "kubernaut-system", schema)
 		reader = fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).WithStatusSubresource(rw).
 			WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj client.Object) []string {
 				return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
 			}).Build()
 		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
-		declared := make(map[string]bool, len(schema))
-		for _, parameter := range schema {
-			declared[parameter.Name] = true
-		}
 		oldRAR := buildRAR(remediationv1.ApprovalDecisionPending, nil)
-		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: rw.Status.WorkflowID, DeclaredParameterNames: declared}
-		oldRAR.Spec.Parameters = original
-		oldRAR.Spec.ParameterSchema = schema
+		oldRAR.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: rw.Status.WorkflowID}
+		oldRAR.Spec.Parameters = typedParametersFromStrings(original)
 		oldRAR.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 		rar := oldRAR.DeepCopy()
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: changes, Rationale: "reviewed"}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(changes), Rationale: "reviewed"}
 		response := handler.Handle(ctx, buildAdmissionRequest(rar, oldRAR))
-		Expect(response.Allowed).To(Equal(allowed))
-		Expect(rar.Status.WorkflowOverride.Parameters).To(Equal(changes))
+		reason := ""
+		if response.Result != nil {
+			reason = response.Result.Message
+		}
+		Expect(response.Allowed).To(Equal(allowed), reason)
+		Expect(rar.Status.WorkflowOverride.Parameters).To(Equal(typedParametersFromStrings(changes)))
 		if allowed {
 			for _, patch := range response.Patches {
 				Expect(patch.Path).NotTo(HavePrefix("/status/workflowOverride"), "admission must not rewrite reviewer input")
@@ -392,7 +406,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		It("should reject workflow switching even when the workflow is active", func() {
 			rar := buildRAR(remediationv1.ApprovalDecisionApproved, &remediationv1.WorkflowOverride{
 				WorkflowName: "drain-restart",
-				Parameters:   map[string]string{"TIMEOUT": "30s"},
+				Parameters:   typedParametersFromStrings(map[string]string{"TIMEOUT": "30s"}),
 				Rationale:    "prefer safe restart",
 			})
 
@@ -481,12 +495,11 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 
 		It("should accept schema-valid changes to an existing parameter", func() {
 			rar := buildRAR(remediationv1.ApprovalDecisionApproved, &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{"TIMEOUT": "60s"},
+				Parameters: typedParametersFromStrings(map[string]string{"TIMEOUT": "60s"}),
 				Rationale:  "increase timeout for slow network",
 			})
-			rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID, DeclaredParameterNames: map[string]bool{"TIMEOUT": true}}
-			rar.Spec.Parameters = map[string]string{"TIMEOUT": "30s"}
-			rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "TIMEOUT", Type: "string", Description: "timeout"}}
+			rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID}
+			rar.Spec.Parameters = typedParametersFromStrings(map[string]string{"TIMEOUT": "30s"})
 			rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
 
 			resp := handler.Handle(ctx, buildAdmissionRequest(rar, nil))

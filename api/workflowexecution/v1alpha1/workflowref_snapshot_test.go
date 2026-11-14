@@ -33,7 +33,7 @@ import (
 // Authority: DD-WORKFLOW-018. WorkflowRef must carry the same CRD-embedded
 // execution snapshot fields AIAnalysis.Status.SelectedWorkflow already gained
 // in Change 11b (Phase 41) -- ExecutionEngine, ServiceAccountName,
-// Dependencies, Resources, DeclaredParameterNames -- so RemediationOrchestrator
+// Dependencies, and Resources -- so RemediationOrchestrator
 // (Change 11d) can pass them straight through from AA's snapshot into the
 // WorkflowExecution spec, and WorkflowExecution (Change 11e) can stop
 // re-fetching this data from DataStorage entirely.
@@ -45,12 +45,11 @@ import (
 // pointer/map fields are the classic place a generated DeepCopyInto silently
 // stays shallow.
 //
-// RED: WorkflowRef has no ExecutionEngine/ServiceAccountName/Dependencies/
-// Resources/DeclaredParameterNames fields yet -- this file must fail to
-// compile.
+// RED: WorkflowRef initially lacked the non-schema execution metadata fields;
+// this test documents the approved snapshot contract and deep-copy behavior.
 // ========================================
 var _ = Describe("WorkflowRef — Issue #1661 Change 11c CRD-embedded execution snapshot", func() {
-	It("UT-WFE-339-001: carries ExecutionEngine/ServiceAccountName/Dependencies/Resources/DeclaredParameterNames and deep-copies them independently", func() {
+	It("UT-WFE-339-001: carries non-schema execution metadata and deep-copies it independently", func() {
 		original := workflowexecutionv1alpha1.WorkflowRef{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:         "wf-oom-recovery",
@@ -65,7 +64,6 @@ var _ = Describe("WorkflowRef — Issue #1661 Change 11c CRD-embedded execution 
 					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 					Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
 				},
-				DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true},
 			},
 		}
 
@@ -78,15 +76,12 @@ var _ = Describe("WorkflowRef — Issue #1661 Change 11c CRD-embedded execution 
 		Expect(clone.Dependencies.Secrets).To(Equal(original.Dependencies.Secrets))
 		Expect(clone.Resources).ToNot(BeNil())
 		Expect(clone.Resources.Requests.Cpu().String()).To(Equal("100m"))
-		Expect(clone.DeclaredParameterNames).To(Equal(original.DeclaredParameterNames))
 
 		By("the clone's pointer/map fields being independent copies, not aliases (deep, not shallow, copy)")
 		Expect(clone.Dependencies).ToNot(BeIdenticalTo(original.Dependencies))
 		Expect(clone.Resources).ToNot(BeIdenticalTo(original.Resources))
 
 		clone.Dependencies.Secrets[0].Name = "mutated"
-		clone.DeclaredParameterNames["REPLICAS"] = false
 		Expect(original.Dependencies.Secrets[0].Name).To(Equal("db-creds"), "mutating the clone must not affect the original (DeepCopyInto must deep-copy the slice, not just the pointer)")
-		Expect(original.DeclaredParameterNames["REPLICAS"]).To(BeTrue(), "mutating the clone's map must not affect the original")
 	})
 })

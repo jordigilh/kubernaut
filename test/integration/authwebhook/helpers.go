@@ -41,6 +41,43 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+func typedStringParameters(values map[string]string) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		result[name] = typedStringParameter(value)
+	}
+	return result
+}
+
+func typedStringParameter(value string) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "string", StringValue: &value}
+}
+
+func typedFloatParameters(values map[string]float64) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		result[name] = typedFloatParameter(value)
+	}
+	return result
+}
+
+func typedFloatParameter(value float64) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "float", FloatValue: &value}
+}
+
+func typedIntegerParameters(values map[string]int64) sharedtypes.TypedParameterMap {
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, value := range values {
+		result[name] = typedIntegerParameter(value)
+	}
+	return result
+}
+
+func typedIntegerParameter(value int64) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "integer", IntegerValue: &value}
+}
+
 // uniqueActionType generates a unique action type name that satisfies the
 // PascalCase-only kubebuilder Pattern on ActionType.spec.name / RW's
 // spec.actionType (#1661 CRD schema hardening): no hyphens, so it also
@@ -148,6 +185,7 @@ func updateStatusAndWaitForWebhook(
 	}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
 		"Webhook should mutate CRD within 10 seconds")
 }
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUDIT EVENT VALIDATION HELPERS - DD-TESTING-001 Compliance
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

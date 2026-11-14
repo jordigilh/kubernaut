@@ -34,6 +34,7 @@ import (
 
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -346,16 +347,19 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+		parameterEngineValues, conversionErr := sharedtypes.TypedParameterMapToEngineValues(params)
+		Expect(conversionErr).NotTo(HaveOccurred(),
+			"interactive WFE parameters should use valid typed values")
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
 			"TARGET_RESOURCE_NAME must be injected into interactive WFE parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
 			"TARGET_RESOURCE_KIND must be injected into interactive WFE parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
 			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
-		Expect(params).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 			"E2E-FP-2390-001: explicit selection parameters must reach the WorkflowExecution")
 		GinkgoWriter.Printf("  [E2E-FP-1189-004] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
-			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
+			parameterEngineValues["TARGET_RESOURCE_NAME"], parameterEngineValues["TARGET_RESOURCE_KIND"], parameterEngineValues["TARGET_RESOURCE_NAMESPACE"])
 
 	})
 })

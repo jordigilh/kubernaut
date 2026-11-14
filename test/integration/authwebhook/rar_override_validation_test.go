@@ -96,15 +96,18 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 	})
 
 	It("IT-AF-2570-012: BR-AUTH-001 admits only the first concurrent AF decision through AuthWebhook", func() {
+		workflow := createTrustedWorkflow(ctx, "test-rw-af-race-"+randomSuffix(), []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "P", Type: "string", Description: "fixture"},
+		})
 		rar := &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-rar-af-race-" + randomSuffix(), Namespace: namespace},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
 				RemediationRequestRef: corev1.ObjectReference{Name: "test-rr", Namespace: namespace}, AIAnalysisRef: remediationv1.ObjectRef{Name: "test-analysis"},
 				Confidence: 0.72, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
-				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-test", Version: "1.0.0", ExecutionBundle: "example:v1", Rationale: "review"},
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: workflow.Status.WorkflowID, Version: workflow.Spec.Version, ExecutionBundle: workflow.Spec.Execution.Bundle, Rationale: "review"},
 				RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true}},
-				Parameters: map[string]string{"P": "2"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}},
+				Workflow:      &sharedtypes.WorkflowSnapshot{WorkflowID: workflow.Status.WorkflowID, WorkflowName: workflow.Name, ActionType: workflow.Spec.ActionType, Version: workflow.Spec.Version, ExecutionBundle: workflow.Spec.Execution.Bundle},
+				Parameters:    typedStringParameters(map[string]string{"P": "2"}),
 				TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 			},
 		}
@@ -157,7 +160,9 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(context.Background(), rw))).To(Succeed()) })
 		content, err := contenthash.MarshalCleanCRDContent(rw)
 		Expect(err).NotTo(HaveOccurred())
-		rw.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+		rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+		rw.Status.WorkflowID = contenthash.DeterministicUUID(rw.Status.ContentHash)
+		rw.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
 		rar := &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-rar-af-partial-" + randomSuffix(), Namespace: namespace},
@@ -166,8 +171,11 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				Confidence: 0.72, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: rw.Status.WorkflowID, Version: "1.0.0", ExecutionBundle: testutil.ValidBundleRef, Rationale: "review"},
 				RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: rw.Status.WorkflowID, WorkflowName: rw.Name, ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: testutil.ValidBundleRef, DeclaredParameterNames: map[string]bool{"P": true, "Q": true}},
-				Parameters: map[string]string{"P": "2", "Q": "keep"}, ParameterSchema: parameters,
+				Workflow: &sharedtypes.WorkflowSnapshot{WorkflowID: rw.Status.WorkflowID, WorkflowName: rw.Name, ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: testutil.ValidBundleRef},
+				Parameters: sharedtypes.TypedParameterMap{
+					"P": typedFloatParameter(2),
+					"Q": typedStringParameter("keep"),
+				},
 				TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 			},
 		}
@@ -179,7 +187,7 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		Expect(err).NotTo(HaveOccurred())
 		review, err := tools.HandleGetApprovalRequest(ctx, afClient, tools.GetApprovalRequestArgs{Namespace: namespace, Name: rar.Name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(review.Parameters).To(Equal(map[string]string{"P": "2", "Q": "keep"}))
+		Expect(review.Parameters).To(Equal(map[string]interface{}{"P": float64(2), "Q": "keep"}))
 		Expect(review.ParameterSchema).To(Equal(parameters))
 		Expect(review.Workflow.WorkflowID).To(Equal(rw.Status.WorkflowID))
 		roleName := "mcp-approval-" + randomSuffix()
@@ -235,15 +243,18 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		Expect(readResponse.Body.String()).NotTo(ContainSubstring(`"isError":true`))
 		Expect(readResponse.Body.String()).To(ContainSubstring("threshold"))
 		Expect(readResponse.Body.String()).To(ContainSubstring("keep"))
-		response := post(session, fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}}}`, rar.Name))
+		response := post(session, fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":1.5},"rationale":"reviewed"}}}}`, rar.Name))
 		Expect(response.Code).To(Equal(http.StatusOK))
 		Expect(response.Body.String()).NotTo(ContainSubstring(`"isError":true`))
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), persisted)).To(Succeed())
 		Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
 		Expect(persisted.Status.DecidedBy).To(Equal("operator@example.com"))
-		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(map[string]string{"P": "1.0"}))
-		Expect(persisted.Spec.Parameters).To(Equal(map[string]string{"P": "2", "Q": "keep"}))
+		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedFloatParameters(map[string]float64{"P": 1.5})))
+		Expect(persisted.Spec.Parameters).To(Equal(sharedtypes.TypedParameterMap{
+			"P": typedFloatParameter(2),
+			"Q": typedStringParameter("keep"),
+		}))
 		Eventually(func(g Gomega) {
 			events, queryErr := queryAuditEvents(dsClient, correlationID, nil)
 			g.Expect(queryErr).NotTo(HaveOccurred())
@@ -257,10 +268,15 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				changes, changesPresent := payload.OverrideParameters.Get()
 				effective, effectivePresent := payload.EffectiveParameters.Get()
 				g.Expect(originalPresent && changesPresent && effectivePresent).To(BeTrue())
-				g.Expect(original).To(HaveKeyWithValue("P", "2"))
-				g.Expect(changes).To(HaveKeyWithValue("P", "1.0"))
-				g.Expect(effective).To(HaveKeyWithValue("P", "1.0"))
-				g.Expect(effective).To(HaveKeyWithValue("Q", "keep"))
+				originalP, originalPOk := original["P"].GetWorkflowParameterFloat()
+				changesP, changesPOk := changes["P"].GetWorkflowParameterFloat()
+				effectiveP, effectivePOk := effective["P"].GetWorkflowParameterFloat()
+				effectiveQ, effectiveQOk := effective["Q"].GetWorkflowParameterString()
+				g.Expect(originalPOk && changesPOk && effectivePOk && effectiveQOk).To(BeTrue())
+				g.Expect(originalP.FloatValue).To(Equal(float64(2)))
+				g.Expect(changesP.FloatValue).To(Equal(float64(1.5)))
+				g.Expect(effectiveP.FloatValue).To(Equal(float64(1.5)))
+				g.Expect(effectiveQ.StringValue).To(Equal("keep"))
 				g.Expect(payload.WorkflowID.Value).To(Equal(rw.Status.WorkflowID))
 				g.Expect(payload.OverrideRationale.Value).To(Equal("reviewed"))
 				g.Expect(payload.DelegatedUser.Value).To(Equal("operator@example.com"))
@@ -305,10 +321,15 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 					changes, changesPresent := intent.OverrideParameters.Get()
 					effective, effectivePresent := intent.EffectiveParameters.Get()
 					g.Expect(originalPresent && changesPresent && effectivePresent).To(BeTrue())
-					g.Expect(original).To(HaveKeyWithValue("P", "2"))
-					g.Expect(changes).To(HaveKeyWithValue("P", "1.0"))
-					g.Expect(effective).To(HaveKeyWithValue("P", "1.0"))
-					g.Expect(effective).To(HaveKeyWithValue("Q", "keep"))
+					originalP, originalPOk := original["P"].GetWorkflowParameterFloat()
+					changesP, changesPOk := changes["P"].GetWorkflowParameterFloat()
+					effectiveP, effectivePOk := effective["P"].GetWorkflowParameterFloat()
+					effectiveQ, effectiveQOk := effective["Q"].GetWorkflowParameterString()
+					g.Expect(originalPOk && changesPOk && effectivePOk && effectiveQOk).To(BeTrue())
+					g.Expect(originalP.FloatValue).To(Equal(float64(2)))
+					g.Expect(changesP.FloatValue).To(Equal(float64(1.5)))
+					g.Expect(effectiveP.FloatValue).To(Equal(float64(1.5)))
+					g.Expect(effectiveQ.StringValue).To(Equal("keep"))
 					g.Expect(intent.WorkflowID.Value).To(Equal(rw.Status.WorkflowID))
 					g.Expect(event.ActorID.Value).To(Equal("operator@example.com"))
 					foundIntent = true
@@ -323,10 +344,15 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				changes, changesPresent := payload.OverrideParameters.Get()
 				effective, effectivePresent := payload.EffectiveParameters.Get()
 				g.Expect(originalPresent && changesPresent && effectivePresent).To(BeTrue())
-				g.Expect(original).To(HaveKeyWithValue("P", "2"))
-				g.Expect(changes).To(HaveKeyWithValue("P", "1.0"))
-				g.Expect(effective).To(HaveKeyWithValue("P", "1.0"))
-				g.Expect(effective).To(HaveKeyWithValue("Q", "keep"))
+				originalP, originalPOk := original["P"].GetWorkflowParameterFloat()
+				changesP, changesPOk := changes["P"].GetWorkflowParameterFloat()
+				effectiveP, effectivePOk := effective["P"].GetWorkflowParameterFloat()
+				effectiveQ, effectiveQOk := effective["Q"].GetWorkflowParameterString()
+				g.Expect(originalPOk && changesPOk && effectivePOk && effectiveQOk).To(BeTrue())
+				g.Expect(originalP.FloatValue).To(Equal(float64(2)))
+				g.Expect(changesP.FloatValue).To(Equal(float64(1.5)))
+				g.Expect(effectiveP.FloatValue).To(Equal(float64(1.5)))
+				g.Expect(effectiveQ.StringValue).To(Equal("keep"))
 				g.Expect(payload.WorkflowID.Value).To(Equal(rw.Status.WorkflowID))
 				g.Expect(event.ActorID.Value).To(Equal("operator@example.com"))
 				found = true
@@ -350,13 +376,16 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 		err := k8sClient.Status().Update(ctx, rar)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("snapshot"))
+		Expect(err.Error()).To(ContainSubstring("workflow identity"))
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), persisted)).To(Succeed())
 		Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
 	})
 
 	It("IT-AW-2570-004: BR-KA-191 rejects a decimal integer before a decision is persisted", func() {
+		workflow := createTrustedWorkflow(ctx, "test-rw-schema-"+randomSuffix(), []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "P", Type: "integer", Description: "replica count"},
+		})
 		rar := &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-rar-schema-" + randomSuffix(), Namespace: namespace},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
@@ -364,18 +393,17 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				AIAnalysisRef:         remediationv1.ObjectRef{Name: "test-analysis"},
 				Confidence:            0.72, ConfidenceLevel: "medium", Reason: "Below threshold",
 				InvestigationSummary: "Test investigation", WhyApprovalRequired: "Medium confidence",
-				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-original", Version: "1.0.0", ExecutionBundle: "original-bundle:v1", Rationale: "AI selected"},
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: workflow.Status.WorkflowID, Version: workflow.Spec.Version, ExecutionBundle: workflow.Spec.Execution.Bundle, Rationale: "AI selected"},
 				RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "Restart", Rationale: "OOM recovery"}},
 				RequiredBy:          metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)),
-				Workflow:            &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-original", WorkflowName: "wf-original", ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: "original-bundle:v1", DeclaredParameterNames: map[string]bool{"P": true}},
-				Parameters:          map[string]string{"P": "3"},
-				ParameterSchema:     []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Required: true, Description: "count"}},
+				Workflow:            &sharedtypes.WorkflowSnapshot{WorkflowID: workflow.Status.WorkflowID, WorkflowName: workflow.Name, ActionType: workflow.Spec.ActionType, Version: workflow.Spec.Version, ExecutionBundle: workflow.Spec.Execution.Bundle},
+				Parameters:          typedIntegerParameters(map[string]int64{"P": 3}),
 				TargetContext:       &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "test-pod"}},
 			},
 		}
 		createAndWaitForCRD(ctx, k8sClient, rar)
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "1.0"}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedFloatParameters(map[string]float64{"P": 1})}
 		err := k8sClient.Status().Update(ctx, rar)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("P"))
@@ -393,14 +421,14 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				Confidence: 0.72, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-missing", Version: "v1", ExecutionBundle: "example:v1", Rationale: "review"},
 				RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)),
-				Workflow:   &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-missing", WorkflowName: "wf-missing", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true}},
-				Parameters: map[string]string{"P": "3"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}},
+				Workflow:      &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-missing", WorkflowName: "wf-missing", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1"},
+				Parameters:    typedStringParameters(map[string]string{"P": "3"}),
 				TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 			},
 		}
 		createAndWaitForCRD(ctx, k8sClient, rar)
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "4"}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"P": "4"})}
 		err := k8sClient.Status().Update(ctx, rar)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("workflow"))
@@ -424,7 +452,9 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
 		content, err := contenthash.MarshalCleanCRDContent(rw)
 		Expect(err).NotTo(HaveOccurred())
-		workflowID := contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+		rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+		workflowID := contenthash.DeterministicUUID(rw.Status.ContentHash)
+		rw.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 		rw.Status.WorkflowID = workflowID
 		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
 		rar := &remediationv1.RemediationApprovalRequest{
@@ -434,17 +464,17 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 				AIAnalysisRef:         remediationv1.ObjectRef{Name: "test-analysis"},
 				Confidence:            0.72, ConfidenceLevel: "medium", Reason: "Below threshold",
 				InvestigationSummary: "Test investigation", WhyApprovalRequired: "Medium confidence",
-				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-original", Version: "1.0.0", ExecutionBundle: "original-bundle:v1", Rationale: "AI selected"},
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: workflowID, Version: rw.Spec.Version, ExecutionBundle: rw.Spec.Execution.Bundle, Rationale: "AI selected"},
 				RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "Restart", Rationale: "OOM recovery"}},
 				RequiredBy:          metav1.NewTime(metav1.Now().Add(15 * 60 * 1000000000)),
-				Workflow:            &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID, WorkflowName: rw.Name, ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: testutil.ValidBundleRef, DeclaredParameterNames: map[string]bool{"P": true}},
-				Parameters:          map[string]string{"P": "2"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}},
-				TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
+				Workflow:            &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID, WorkflowName: rw.Name, ActionType: "RestartPod", Version: "1.0.0", ExecutionBundle: testutil.ValidBundleRef},
+				Parameters:          typedFloatParameters(map[string]float64{"P": 2}),
+				TargetContext:       &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 			},
 		}
 		createAndWaitForCRD(ctx, k8sClient, rar)
 		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{}}
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{})}
 		Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rar), persisted)).To(Succeed())
@@ -455,10 +485,10 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 		changed := &remediationv1.RemediationApprovalRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rar-valid-override-" + randomSuffix(), Namespace: namespace}, Spec: *rar.Spec.DeepCopy()}
 		createAndWaitForCRD(ctx, k8sClient, changed)
 		changed.Status.Decision = remediationv1.ApprovalDecisionApproved
-		changed.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "1.0"}}
+		changed.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedFloatParameters(map[string]float64{"P": 1})}
 		Expect(k8sClient.Status().Update(ctx, changed)).To(Succeed())
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(changed), persisted)).To(Succeed())
-		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(map[string]string{"P": "1.0"}))
+		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedFloatParameters(map[string]float64{"P": 1})))
 	})
 
 	Context("IT-AW-594-005: Override referencing non-existent RW → webhook denies", func() {

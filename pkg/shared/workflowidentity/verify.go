@@ -57,8 +57,17 @@ func (e *retryExhaustedError) Unwrap() error {
 // Verify performs a point-in-time direct server-side lookup and recomputes the
 // content-derived identity. It never returns live catalog data for execution.
 func Verify(ctx context.Context, reader client.Reader, namespace, workflowID string) error {
+	_, err := GetVerified(ctx, reader, namespace, workflowID)
+	return err
+}
+
+// GetVerified performs the same point-in-time identity fence as Verify and
+// returns a deep-copied workflow only after its live spec has been proven to
+// correspond to workflowID. Callers may use the returned spec ephemerally for
+// validation or execution; it must not be persisted as a schema snapshot.
+func GetVerified(ctx context.Context, reader client.Reader, namespace, workflowID string) (*remediationworkflowv1.RemediationWorkflow, error) {
 	if reader == nil || ValidateNamespace(namespace) != nil || workflowID == "" {
-		return fmt.Errorf("workflow identity lookup has invalid trusted namespace, reader, or workflow ID")
+		return nil, fmt.Errorf("workflow identity lookup has invalid trusted namespace, reader, or workflow ID")
 	}
 	backoffConfig := backoff.Config{BasePeriod: 100 * time.Millisecond, MaxPeriod: 500 * time.Millisecond, Multiplier: 2, JitterPercent: 20}
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -67,13 +76,13 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 			return verifyMatches(workflows, namespace, workflowID)
 		}
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 		if !isTransient(err) {
-			return fmt.Errorf("lookup trusted workflow ID %q: %w", workflowID, err)
+			return nil, fmt.Errorf("lookup trusted workflow ID %q: %w", workflowID, err)
 		}
 		if attempt == 3 {
-			return &retryExhaustedError{
+			return nil, &retryExhaustedError{
 				attempts: attempt,
 				cause:    fmt.Errorf("lookup trusted workflow ID %q: %w", workflowID, err),
 			}
@@ -82,11 +91,11 @@ func Verify(ctx context.Context, reader client.Reader, namespace, workflowID str
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-timer.C:
 		}
 	}
-	return fmt.Errorf("workflow identity lookup exhausted")
+	return nil, fmt.Errorf("workflow identity lookup exhausted")
 }
 
 // IsTransient reports whether an error from workflow identity verification is
@@ -126,25 +135,34 @@ func listTrustedWorkflows(ctx context.Context, reader client.Reader, namespace, 
 }
 
 func isUnsupportedWorkflowIDSelector(err error) bool {
-	return apierrors.IsBadRequest(err) && strings.Contains(err.Error(), "field label not supported: "+workflowIDFieldPath)
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return (apierrors.IsBadRequest(err) && strings.Contains(message, "field label not supported: "+workflowIDFieldPath)) ||
+		strings.Contains(message, "no index with name "+workflowIDFieldPath+" has been registered")
 }
 
-func verifyMatches(workflows []remediationworkflowv1.RemediationWorkflow, namespace, workflowID string) error {
+func verifyMatches(workflows []remediationworkflowv1.RemediationWorkflow, namespace, workflowID string) (*remediationworkflowv1.RemediationWorkflow, error) {
 	if len(workflows) != 1 {
-		return fmt.Errorf("workflow ID %q has %d trusted catalog matches", workflowID, len(workflows))
+		return nil, fmt.Errorf("workflow ID %q has %d trusted catalog matches", workflowID, len(workflows))
 	}
 	workflow := &workflows[0]
 	if workflow.Namespace != namespace || workflow.Status.WorkflowID != workflowID {
-		return fmt.Errorf("workflow ID %q does not match trusted catalog status", workflowID)
+		return nil, fmt.Errorf("workflow ID %q does not match trusted catalog status", workflowID)
 	}
 	content, err := contenthash.MarshalCleanCRDContent(workflow)
 	if err != nil {
-		return fmt.Errorf("marshal trusted workflow %q: %w", workflowID, err)
+		return nil, fmt.Errorf("marshal trusted workflow %q: %w", workflowID, err)
 	}
-	if contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content))) != workflowID {
-		return fmt.Errorf("workflow ID %q does not match trusted catalog content", workflowID)
+	contentHash := contenthash.ComputeContentHash(string(content))
+	if contenthash.DeterministicUUID(contentHash) != workflowID {
+		return nil, fmt.Errorf("workflow ID %q does not match trusted catalog content", workflowID)
 	}
-	return nil
+	if workflow.Status.ContentHash != "" && workflow.Status.ContentHash != contentHash {
+		return nil, fmt.Errorf("workflow ID %q does not match trusted catalog content hash", workflowID)
+	}
+	return workflow.DeepCopy(), nil
 }
 
 // ValidateNamespace rejects a missing or malformed trusted service namespace.

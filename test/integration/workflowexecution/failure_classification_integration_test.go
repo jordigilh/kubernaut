@@ -226,6 +226,7 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				},
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
+			Parameters:     sharedtypes.TypedParameterMap{},
 		},
 	}
 }
@@ -258,7 +259,6 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 	testName := fmt.Sprintf("test-%s-%s", testSuffix, generateRandomString(8))
 	wfe := createMinimalWorkflowExecution(testName, namespace)
 	wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixture("Failure classification fixture", "tekton")
-	wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 
 	By("Creating WorkflowExecution")
 	Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

@@ -167,11 +167,8 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 
 		By("Completing AI analysis with a workflow recommendation targeting ns-b/app")
 		ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
-		helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-			TargetKind:      "Deployment",
-			TargetName:      "app",
-			TargetNamespace: nsB,
-		})
+		completionOpts := trustedWorkflowCompletionOptions("Deployment", "app", nsB)
+		helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 		By("Verifying the real RO controller does NOT block ns-b/app despite ns-a's cross-namespace same-hash chain")
 		we := helpers.WaitForWECreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)

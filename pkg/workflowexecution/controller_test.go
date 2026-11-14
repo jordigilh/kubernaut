@@ -433,10 +433,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
 						},
 					},
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"NAMESPACE":       "payment",
 						"DEPLOYMENT_NAME": "payment-api",
-					},
+					}),
 				},
 			}
 
@@ -3261,10 +3261,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 								ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
 							},
 						},
-						Parameters: map[string]string{
+						Parameters: typedParametersFromStrings(map[string]string{
 							"NAMESPACE":       "payment",
 							"DEPLOYMENT_NAME": "payment-api",
-						},
+						}),
 					},
 				}
 
@@ -3280,8 +3280,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				params, ok := eventData["parameters"].(map[string]interface{})
 				Expect(ok).To(BeTrue(), "parameters should be a map")
-				Expect(params["NAMESPACE"]).To(Equal("payment"))
-				Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
+				Expect(params["NAMESPACE"]).To(Equal(map[string]interface{}{"kind": "string", "stringValue": "payment"}))
+				Expect(params["DEPLOYMENT_NAME"]).To(Equal(map[string]interface{}{"kind": "string", "stringValue": "payment-api"}))
 			})
 
 			It("should include parameters in execution.started audit event", func() {
@@ -3304,10 +3304,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 								ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
 							},
 						},
-						Parameters: map[string]string{
+						Parameters: typedParametersFromStrings(map[string]string{
 							"NAMESPACE":       "payment",
 							"DEPLOYMENT_NAME": "payment-api",
-						},
+						}),
 					},
 				}
 
@@ -3323,8 +3323,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				params, ok := eventData["parameters"].(map[string]interface{})
 				Expect(ok).To(BeTrue(), "parameters should be a map")
-				Expect(params["NAMESPACE"]).To(Equal("payment"))
-				Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
+				Expect(params["NAMESPACE"]).To(Equal(map[string]interface{}{"kind": "string", "stringValue": "payment"}))
+				Expect(params["DEPLOYMENT_NAME"]).To(Equal(map[string]interface{}{"kind": "string", "stringValue": "payment-api"}))
 			})
 
 			It("should omit parameters when WFE has nil parameters", func() {
@@ -3418,10 +3418,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 								ExecutionBundle: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
 							},
 						},
-						Parameters: map[string]string{
+						Parameters: typedParametersFromStrings(map[string]string{
 							"NAMESPACE":       "production",
 							"DEPLOYMENT_NAME": "payment-api",
-						},
+						}),
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseRunning,
@@ -5480,9 +5480,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							},
 						},
 						TargetResource: "deployments/test-app",
-						Parameters: map[string]string{
+						Parameters: typedParametersFromStrings(map[string]string{
 							"PARAM1": "value1",
-						},
+						}),
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -5495,7 +5495,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				var updated workflowexecutionv1alpha1.WorkflowExecution
 				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
 				Expect(updated.Spec.Parameters).To(HaveLen(1))
-				Expect(updated.Spec.Parameters["PARAM1"]).To(Equal("value1"))
+				Expect(updated.Spec.Parameters["PARAM1"]).To(Equal(typedParameterValue("value1")))
 			})
 		})
 

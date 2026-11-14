@@ -84,6 +84,7 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 }
 
 var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", func() {
+	var approvedTestWorkflow *remediationworkflowv1.RemediationWorkflow
 
 	var (
 		ctx    context.Context
@@ -95,11 +96,18 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 		scheme = runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
+		approvedTestWorkflow = nil
 	})
 
 	newHandler := func(c client.Client, cbs prodcontroller.AwaitingApprovalCallbacks) *prodcontroller.AwaitingApprovalHandler {
+		if approvedTestWorkflow != nil {
+			Expect(c.Create(ctx, approvedTestWorkflow.DeepCopy())).To(Succeed())
+		}
 		m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		return prodcontroller.NewAwaitingApprovalHandler(c, m, cbs)
+		h := prodcontroller.NewAwaitingApprovalHandler(c, m, cbs)
+		h.SetCatalogNamespace(defaultFixture)
+		return h
 	}
 
 	awaitingRR := func(name string) *remediationv1.RemediationRequest {
@@ -109,6 +117,10 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	}
 
 	makeRAR := func(rrName string, decision remediationv1.ApprovalDecision) *remediationv1.RemediationApprovalRequest {
+		if approvedTestWorkflow == nil {
+			approvedSelection := &aianalysisv1.SelectedWorkflow{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowName: "wf-restart", ActionType: "patch", ExecutionEngine: "job"}, Parameters: typedParametersFromStrings(map[string]string{"MODE": `"reviewed"`})}
+			approvedTestWorkflow = verifiedWorkflowForSelection(approvedSelection)
+		}
 		now := metav1.Now()
 		requiredBy := metav1.NewTime(now.Add(1 * time.Hour))
 		decidedBy := "admin@example.com"
@@ -121,11 +133,10 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rar-%s", rrName), Namespace: defaultFixture},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
-				RequiredBy:      requiredBy,
-				Workflow:        &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-restart", DeclaredParameterNames: map[string]bool{}},
-				Parameters:      map[string]string{},
-				ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
-				TargetContext:   &remediationv1.ApprovalTargetContext{RemediationTarget: &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "my-app", Namespace: defaultFixture}},
+				RequiredBy:    requiredBy,
+				Workflow:      &sharedtypes.WorkflowSnapshot{WorkflowID: approvedTestWorkflow.Status.WorkflowID, WorkflowName: approvedTestWorkflow.Name, ActionType: approvedTestWorkflow.Spec.ActionType, Version: approvedTestWorkflow.Spec.Version, ExecutionBundle: approvedTestWorkflow.Spec.Execution.Bundle, ExecutionEngine: approvedTestWorkflow.Spec.Execution.Engine},
+				Parameters:    typedParametersFromStrings(map[string]string{}),
+				TargetContext: &remediationv1.ApprovalTargetContext{RemediationTarget: &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "my-app", Namespace: defaultFixture}},
 			},
 			Status: remediationv1.RemediationApprovalRequestStatus{
 				Decision:  decision,
@@ -137,6 +148,10 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	}
 
 	makeAI := func(name string) *aianalysisv1.AIAnalysis {
+		if approvedTestWorkflow == nil {
+			approvedSelection := &aianalysisv1.SelectedWorkflow{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowName: "wf-restart", ActionType: "patch", ExecutionEngine: "job"}}
+			approvedTestWorkflow = verifiedWorkflowForSelection(approvedSelection)
+		}
 		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -144,7 +159,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 				RCAResult: &aianalysisv1.RCAResult{
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:   "wf-restart",
+							WorkflowID:   approvedTestWorkflow.Status.WorkflowID,
 							WorkflowName: "wf-restart",
 							ActionType:   "patch",
 						},
@@ -268,8 +283,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			rr := awaitingRR("apr-snapshot-only")
 			rr.Status.EnsurePhaseProgress().AIAnalysisRef = nil
 			rar := makeRAR(rr.Name, remediationv1.ApprovalDecisionApproved)
-			rar.Spec.Parameters = map[string]string{"MODE": "reviewed"}
-			rar.Spec.Workflow.DeclaredParameterNames = map[string]bool{"MODE": true}
+			rar.Spec.Parameters = typedParametersFromStrings(map[string]string{"MODE": "reviewed"})
 			rar.Spec.TargetContext.SignalTarget = remediationv1.ResourceIdentifier{Kind: "Pod", Name: "original-pod", Namespace: defaultFixture}
 			rar.Spec.TargetContext.SignalClusterID = "reviewed-cluster"
 			rar.Spec.TargetContext.RemediationTarget = &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "reviewed-app", Namespace: defaultFixture}
@@ -294,8 +308,8 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			created := false
 			cbs.WFECallbacks.CreateWFE = func(_ context.Context, inputRR *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error) {
 				created = true
-				Expect(ai.Status.RCAResult.SelectedWorkflow.WorkflowID).To(Equal("wf-restart"))
-				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).To(Equal(map[string]string{"MODE": "reviewed"}))
+				Expect(ai.Status.RCAResult.SelectedWorkflow.WorkflowID).To(Equal(approvedTestWorkflow.Status.WorkflowID))
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).To(Equal(typedParametersFromStrings(map[string]string{"MODE": "reviewed"})))
 				Expect(ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name).To(Equal("reviewed-app"))
 				Expect(inputRR.Spec.TargetResource.Name).To(Equal("original-pod"))
 				Expect(inputRR.Spec.ClusterID).To(Equal("reviewed-cluster"))
@@ -334,8 +348,6 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			Expect(failed).To(BeTrue())
 		},
 			Entry("missing original parameters", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Parameters = nil }),
-			Entry("missing parameter schema", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.ParameterSchema = nil }),
-			Entry("missing declarations", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Workflow.DeclaredParameterNames = nil }),
 			Entry("missing target context", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.TargetContext = nil }),
 			Entry("missing workflow identity", func(rar *remediationv1.RemediationApprovalRequest) { rar.Spec.Workflow.WorkflowID = "" }),
 			Entry("UT-RO-2570-042: approved legacy workflow switch", func(rar *remediationv1.RemediationApprovalRequest) {

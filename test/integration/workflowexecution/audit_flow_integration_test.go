@@ -132,16 +132,16 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: targetResource,
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -253,16 +253,16 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: targetResource,
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

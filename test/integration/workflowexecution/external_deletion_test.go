@@ -59,7 +59,6 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 	deletionWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 

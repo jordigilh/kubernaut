@@ -377,8 +377,8 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 				},
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:      "wf-restart-pods",
-						WorkflowName:    "wf-restart-pods",
+						WorkflowID:      trustedRestartWorkflowID,
+						WorkflowName:    trustedRestartWorkflowName,
 						ActionType:      "RestartPod",
 						Version:         "v1.0.0",
 						ExecutionBundle: "test-image:latest",
@@ -403,13 +403,14 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-restart-pods",
-				WorkflowName:    "wf-restart-pods",
+				WorkflowID:      trustedRestartWorkflowID,
+				WorkflowName:    trustedRestartWorkflowName,
 				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
 			},
 			Confidence: 0.95,
+			Parameters: trustedTargetParameters(ns, "test-app"),
 		}
 		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",

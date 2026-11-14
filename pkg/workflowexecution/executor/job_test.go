@@ -133,7 +133,7 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 			},
 			TargetResource: targetResource,
 			ClusterID:      clusterID,
-			Parameters:     map[string]string{"TIMEOUT": "30s"},
+			Parameters:     typedParametersFromStrings(map[string]string{"TIMEOUT": "30s"}),
 		},
 	}
 }
@@ -207,6 +207,42 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(envNames).To(ContainElement("TARGET_RESOURCE"))
 			Expect(envNames).To(ContainElement("TIMEOUT"))
+		})
+
+		It("UT-WE-2613-002 [BR-WE-014]: should replace a stale TARGET_RESOURCE environment value with Spec.TargetResource", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			const authoritativeTarget = "production/deployment/current-app"
+			wfe := newTestWFE("wfe-authoritative-target", authoritativeTarget, "")
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
+				"TARGET_RESOURCE": "stale/deployment/old-app",
+				"TIMEOUT":         "30s",
+			})
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{
+				DeclaredParameterNames: map[string]bool{
+					"TARGET_RESOURCE": true,
+					"TIMEOUT":         true,
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{
+				Name:      result.ResourceName,
+				Namespace: namespace,
+			}, &job)).To(Succeed())
+
+			targetCount := 0
+			for _, env := range job.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == "TARGET_RESOURCE" {
+					targetCount++
+					Expect(env.Value).To(Equal(authoritativeTarget))
+				}
+			}
+			Expect(targetCount).To(Equal(1), "TARGET_RESOURCE must be emitted exactly once")
 		})
 
 		It("UT-WE-2392-JOB-001 [BR-WE-014, AU-11]: omits Kubernetes TTL when failed execution retention is enabled", func() {
@@ -1242,7 +1278,7 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 			Namespace: "kubernaut-system",
 			UID:       types.UID("550e8400-e29b-41d4-a716-446655440006"),
 		}
-		wfe.Spec.Parameters = map[string]string{"workflow_output": secretOutput}
+		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"workflow_output": secretOutput})
 
 		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())

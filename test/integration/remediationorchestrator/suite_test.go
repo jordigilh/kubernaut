@@ -390,6 +390,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// kubernaut-system. Creating RR/SP/AI/WE in testNamespace would pass locally but fail in CI
 	// when production-like behavior is expected (e.g. cache only has controller namespace).
 	_ = os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", ROControllerNamespace)
+	By("Seeding content-derived trusted workflow fixtures")
+	seedTrustedWorkflowFixtures()
 
 	By("Setting up the controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
@@ -497,14 +499,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	)
 
 	reconciler := controller.NewReconciler(controller.ReconcilerDeps{
-		Client:        k8sManager.GetClient(),
-		APIReader:     k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
-		Scheme:        k8sManager.GetScheme(),
-		AuditStore:    auditStore,                                                           // Real audit store for ADR-032 compliance
-		Recorder:      k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
-		Metrics:       roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
-		Timeouts:      controller.TimeoutConfig{},                                           // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
-		RoutingEngine: routingEngine,                                                        // Real routing engine for integration tests (BR-ORCH-042)
+		Client:           k8sManager.GetClient(),
+		APIReader:        k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
+		CatalogNamespace: ROControllerNamespace,
+		Scheme:           k8sManager.GetScheme(),
+		AuditStore:       auditStore,                                                           // Real audit store for ADR-032 compliance
+		Recorder:         k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
+		Metrics:          roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
+		Timeouts:         controller.TimeoutConfig{},                                           // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
+		RoutingEngine:    routingEngine,                                                        // Real routing engine for integration tests (BR-ORCH-042)
 	}, eaCreator) // ADR-EM-001: EA creation on terminal phases
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
@@ -779,11 +782,10 @@ func approveRAR(rarName string, mutate func(rar *remediationv1.RemediationApprov
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 // Phase is always set to Completed; tests needing other phases should update
 // sp.Status.Phase directly (no caller currently needs a non-Completed phase).
-// supplyEmptyApprovalSnapshot marks a selected workflow as explicitly having no parameters.
-func supplyEmptyApprovalSnapshot(selected *aianalysisv1.SelectedWorkflow) {
-	selected.Parameters = map[string]string{}
-	selected.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
-	selected.DeclaredParameterNames = map[string]bool{}
+// supplyApprovalSnapshotParameters records the typed target values required by
+// the trusted workflow used by approval-path fixtures.
+func supplyApprovalSnapshotParameters(selected *aianalysisv1.SelectedWorkflow, namespace, podName string) {
+	selected.Parameters = trustedTargetParameters(namespace, podName)
 }
 
 func updateSPStatus(name string, severity ...string) error {
