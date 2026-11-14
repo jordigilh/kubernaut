@@ -17,7 +17,10 @@ limitations under the License.
 package infrastructure
 
 import (
+	"archive/tar"
+	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,8 +196,13 @@ var _ = Describe("demo local image loading", func() {
 
 var _ = Describe("pre-CR demo image archive contract", func() {
 	BeforeEach(func() {
-		DeferCleanup(os.Unsetenv, "KUBERNAUT_CONSOLE_IMAGE")
-		DeferCleanup(os.Unsetenv, "KUBERNAUT_CONSOLE_IMAGE_TAR")
+		for _, name := range []string{"KUBERNAUT_CONSOLE_IMAGE", "KUBERNAUT_CONSOLE_IMAGE_TAR"} {
+			original, existed := os.LookupEnv(name)
+			Expect(os.Unsetenv(name)).To(Succeed())
+			DeferCleanup(func() {
+				restoreEnvironment(name, original, existed)
+			})
+		}
 	})
 
 	It("UT-INFRA-FLEETDEMO-070 [BR-PLATFORM-014]: ignores the optional hook when no archive is configured", func() {
@@ -232,7 +240,158 @@ var _ = Describe("pre-CR demo image archive contract", func() {
 			ArchivePath: archive,
 		}}))
 	})
+
+	It("UT-INFRA-FLEETDEMO-074 [BR-PLATFORM-014]: rejects an archive that does not contain the configured image", func() {
+		archive := filepath.Join(GinkgoT().TempDir(), "console-image.tar")
+		writeImageArchiveManifest(archive, "localhost/kubernaut-console:other")
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE", "localhost/kubernaut-console:test")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", archive)).To(Succeed())
+
+		callsPath := setupPreCRCommandStubs(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$PRE_CR_CALL_LOG"
+if [ "$1" = "load" ]; then
+  printf 'Loaded image(s): localhost/kubernaut-console:other\n'
+fi
+`, `#!/bin/sh
+set -eu
+printf 'unexpected kind invocation\n' >&2
+exit 1
+`)
+
+		err := loadPreCRDemoImageArchivesToKind(context.Background(), "demo", io.Discard)
+		Expect(err).To(MatchError(ContainSubstring("image archive does not contain image")))
+		calls, readErr := os.ReadFile(callsPath)
+		Expect(readErr).NotTo(HaveOccurred())
+		Expect(string(calls)).NotTo(ContainSubstring("save"))
+	})
+
+	It("UT-INFRA-FLEETDEMO-075 [BR-PLATFORM-014]: loads the exact archive image without a registry pull", func() {
+		archive := filepath.Join(GinkgoT().TempDir(), "console-image.tar")
+		writeImageArchiveManifest(archive, "registry.example:5000/team/kubernaut-console:demo")
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE", "registry.example:5000/team/kubernaut-console:demo")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", archive)).To(Succeed())
+		previousRegistry, hadPreviousRegistry := os.LookupEnv("IMAGE_REGISTRY")
+		DeferCleanup(func() {
+			restoreEnvironment("IMAGE_REGISTRY", previousRegistry, hadPreviousRegistry)
+		})
+		Expect(os.Setenv("IMAGE_REGISTRY", "registry.example:5000")).To(Succeed())
+
+		callsPath := setupPreCRCommandStubs(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$PRE_CR_CALL_LOG"
+case "$1" in
+  load)
+    printf 'Loaded image(s): registry.example:5000/team/kubernaut-console:demo\n'
+    ;;
+  save)
+    previous=''
+    for arg in "$@"; do
+      if [ "$previous" = "-o" ]; then
+        : > "$arg"
+        break
+      fi
+      previous="$arg"
+    done
+    ;;
+  rmi)
+    ;;
+  pull)
+    printf 'unexpected registry pull\n' >&2
+    exit 1
+    ;;
+  *)
+    printf 'unexpected podman operation: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
+`, `#!/bin/sh
+set -eu
+printf 'kind-archive=%s\n' "$3" >> "$PRE_CR_CALL_LOG"
+`)
+
+		err := loadPreCRDemoImageArchivesToKind(context.Background(), "demo", io.Discard)
+		Expect(err).NotTo(HaveOccurred())
+		calls, readErr := os.ReadFile(callsPath)
+		Expect(readErr).NotTo(HaveOccurred())
+		Expect(string(calls)).NotTo(ContainSubstring("pull"))
+		Expect(string(calls)).To(ContainSubstring("kind-archive="))
+	})
+
+	It("UT-INFRA-FLEETDEMO-076 [BR-PLATFORM-014]: returns a Kind archive load failure", func() {
+		archive := filepath.Join(GinkgoT().TempDir(), "console-image.tar")
+		writeImageArchiveManifest(archive, "localhost/kubernaut-console:test")
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE", "localhost/kubernaut-console:test")).To(Succeed())
+		Expect(os.Setenv("KUBERNAUT_CONSOLE_IMAGE_TAR", archive)).To(Succeed())
+
+		setupPreCRCommandStubs(`#!/bin/sh
+set -eu
+case "$1" in
+  load)
+    printf 'Loaded image(s): localhost/kubernaut-console:test\n'
+    ;;
+  save)
+    previous=''
+    for arg in "$@"; do
+      if [ "$previous" = "-o" ]; then
+        : > "$arg"
+        break
+      fi
+      previous="$arg"
+    done
+    ;;
+  rmi)
+    ;;
+esac
+`, `#!/bin/sh
+set -eu
+printf 'kind load failed\n' >&2
+exit 1
+`)
+
+		err := loadPreCRDemoImageArchivesToKind(context.Background(), "demo", io.Discard)
+		Expect(err).To(MatchError(ContainSubstring("failed to load image to Kind")))
+	})
 })
+
+func setupPreCRCommandStubs(podmanScript, kindScript string) string {
+	dir := GinkgoT().TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	Expect(os.WriteFile(logPath, nil, 0o600)).To(Succeed())
+	for name, script := range map[string]string{"podman": podmanScript, "kind": kindScript} {
+		Expect(os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755)).To(Succeed())
+	}
+
+	previousPath, hadPreviousPath := os.LookupEnv("PATH")
+	previousLog, hadPreviousLog := os.LookupEnv("PRE_CR_CALL_LOG")
+	Expect(os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))).To(Succeed())
+	Expect(os.Setenv("PRE_CR_CALL_LOG", logPath)).To(Succeed())
+	DeferCleanup(func() {
+		restoreEnvironment("PATH", previousPath, hadPreviousPath)
+		restoreEnvironment("PRE_CR_CALL_LOG", previousLog, hadPreviousLog)
+	})
+	return logPath
+}
+
+func writeImageArchiveManifest(path string, imageRefs ...string) {
+	manifest, err := json.Marshal([]struct {
+		RepoTags []string `json:"RepoTags"`
+	}{{RepoTags: imageRefs}})
+	Expect(err).NotTo(HaveOccurred())
+
+	archive, err := os.Create(path)
+	Expect(err).NotTo(HaveOccurred())
+	tarWriter := tar.NewWriter(archive)
+	Expect(tarWriter.WriteHeader(&tar.Header{
+		Name: "manifest.json",
+		Mode: 0o600,
+		Size: int64(len(manifest)),
+	})).To(Succeed())
+	_, err = tarWriter.Write(manifest)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(tarWriter.Close()).To(Succeed())
+	Expect(archive.Close()).To(Succeed())
+}
 
 var _ = Describe("demoDefaultAAPolicyRego", func() {
 	It("UT-INFRA-FLEETDEMO-022: always requires approval, unconditionally", func() {

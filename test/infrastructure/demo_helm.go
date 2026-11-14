@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
@@ -334,18 +333,10 @@ func loadPreCRDemoImageArchivesToKind(ctx context.Context, clusterName string, w
 
 	for _, image := range archives {
 		_, _ = fmt.Fprintf(writer, "📦 Loading pre-CR image archive: %s\n", image.ArchivePath)
-		load := exec.CommandContext(ctx, "podman", "load", "--input", image.ArchivePath)
-		load.Stdout = writer
-		load.Stderr = writer
-		if err := load.Run(); err != nil {
+		if err := loadPodmanImageArchive(ctx, image.ArchivePath, image.Image, writer); err != nil {
 			return fmt.Errorf("load pre-CR image archive %q: %w", image.ArchivePath, err)
 		}
-
-		check := exec.CommandContext(ctx, "podman", "image", "exists", image.Image)
-		if err := check.Run(); err != nil {
-			return fmt.Errorf("pre-CR image %q is unavailable after loading %s: %w", image.Image, image.ArchivePath, err)
-		}
-		if err := LoadImageToKind(ctx, image.Image, image.ServiceName, clusterName, writer); err != nil {
+		if err := loadPodmanImageToKind(ctx, image.Image, image.ServiceName, clusterName, true, writer); err != nil {
 			return fmt.Errorf("load pre-CR image %q into Kind cluster %q: %w", image.Image, clusterName, err)
 		}
 	}
