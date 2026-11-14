@@ -33,6 +33,9 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		server, err := miniredis.Run()
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(server.Close)
+		// Keep the strict server-time/PTTL proof deterministic under miniredis's
+		// Go Lua interpreter, which otherwise advances the wall clock mid-script.
+		server.SetTime(time.Unix(1_700_000_000, 0))
 
 		store, err := scopecache.NewValkeyStatusStoreAt(server.Addr())
 		Expect(err).ToNot(HaveOccurred())

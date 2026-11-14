@@ -40,6 +40,8 @@ type ValkeyStatusStore struct {
 	scripts *ScriptManager
 }
 
+const maxRepairIndexMembers = 10000
+
 // NewValkeyStatusStore creates a status store backed by Valkey.
 func NewValkeyStatusStore(client *redis.Client) (*ValkeyStatusStore, error) {
 	scripts, err := NewScriptManager(client)
@@ -161,7 +163,7 @@ func (s *ValkeyStatusStore) cleanupRepairMembers(ctx context.Context, request Re
 			if err != nil {
 				return cleanupCount, err
 			}
-			cleanupCount += int(count)
+			cleanupCount += count
 		}
 		if next < 0 {
 			return cleanupCount, nil
@@ -173,7 +175,7 @@ func (s *ValkeyStatusStore) cleanupRepairMembers(ctx context.Context, request Re
 	}
 }
 
-func (s *ValkeyStatusStore) cleanupRepairMember(ctx context.Context, request RepairRequest, member string) (int64, error) {
+func (s *ValkeyStatusStore) cleanupRepairMember(ctx context.Context, request RepairRequest, member string) (int, error) {
 	items, err := s.evalMutation(ctx,
 		[]string{statusKey(request.Partition), indexKey(request.Partition), recordKey(request.Partition, member)},
 		"cleanup_member", request.RegistrationUID, request.ExpectedRegistryRevision,
@@ -183,12 +185,12 @@ func (s *ValkeyStatusStore) cleanupRepairMember(ctx context.Context, request Rep
 	if err != nil {
 		return 0, err
 	}
-	count, err := scriptInt(items, 1)
+	count, err := scriptNativeInt(items, 1)
 	if err != nil {
 		return 0, repairFailureError(RepairFailureIndexInvalid, err, false)
 	}
-	if count < 0 {
-		return 0, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("cleanup count is negative"), false)
+	if count < 0 || count > 1 {
+		return 0, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("cleanup count is out of bounds"), false)
 	}
 	return count, nil
 }
@@ -482,6 +484,18 @@ func scriptInt(items []interface{}, index int) (int64, error) {
 	return strconv.ParseInt(value, 10, 64)
 }
 
+func scriptNativeInt(items []interface{}, index int) (int, error) {
+	value := scriptString(items, index)
+	if value == "" {
+		return 0, fmt.Errorf("script integer is empty")
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("script integer is outside native int range: %w", err)
+	}
+	return parsed, nil
+}
+
 func validateBeginRepairRequest(request BeginRepairRequest) error {
 	if err := request.Partition.Validate(); err != nil {
 		return err
@@ -570,9 +584,12 @@ func parseRepairMembers(items []interface{}) (int, []string, error) {
 	if len(items) == 0 {
 		return -1, nil, fmt.Errorf("empty repair member response")
 	}
-	next, err := scriptInt(items, 0)
+	next, err := scriptNativeInt(items, 0)
 	if err != nil {
 		return -1, nil, fmt.Errorf("invalid repair member cursor: %w", err)
+	}
+	if next < -1 || next > maxRepairIndexMembers {
+		return -1, nil, fmt.Errorf("repair member cursor is out of bounds")
 	}
 	members := make([]string, 0, len(items)-1)
 	for index := 1; index < len(items); index++ {
@@ -582,7 +599,7 @@ func parseRepairMembers(items []interface{}) (int, []string, error) {
 		}
 		members = append(members, member)
 	}
-	return int(next), members, nil
+	return next, members, nil
 }
 
 func ttlValidation(serverNow, expiresAt, pttl int64) TTLPTTLValidation {
