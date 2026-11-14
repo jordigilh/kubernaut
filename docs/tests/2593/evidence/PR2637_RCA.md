@@ -1,8 +1,8 @@
 # PR #2637 Consolidated RCA
 
-**Reviewed commit:** `0a1f56b20` (`fix(fleet): gate readiness on registered partitions`)
+**Reviewed commit:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
 **Branch:** `work/2593-fmc-presence`
-**CI runs:** `43638876513` (CI Pipeline, in progress at capture), `43638876402` (CodeQL, in progress at capture), `43638876444` (Gitleaks secret scan, passed)
+**CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed)
 **Review date:** 2026-11-14
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 
@@ -24,43 +24,57 @@ release approval and does not authorize cluster activity, E2E qualification, #25
 
 ### Current-head checks
 
-At the time of this update, Gitleaks run `43638876444` passed and the current CI
-Pipeline run `43638876513` had passed the `fleetmetadatacache` unit-test lane. The
-remaining CI jobs and CodeQL run `43638876402` were still in progress, so no final
-remote pass/fail claim is made here. `Test Suite Summary` and `Merge Gate` are
+Commit `93db7975b9fe999ee068068f55e9dffc78c9d3b5` is the final reviewed head.
+CodeQL run `43642008872` and Gitleaks run `43642008918` passed. CI Pipeline run
+`43642008948` completed with all unit-test lanes, service builds, Go lint, license
+scan, CEL immutability regression, operator build/package, and unaffected
+integration/E2E lanes passing. Its failures are limited to the held integration
+and E2E categories documented below. `Test Suite Summary` and `Merge Gate` are
 downstream rollups, not independent root causes.
 
-Local validation for `0a1f56b20` passed:
+Local validation for `93db7975b` passed:
 
 - `go build ./...`
 - `golangci-lint run --timeout=5m` (0 issues)
-- `go test ./pkg/fleet/scopecache -ginkgo.v`
+- `go test -race ./pkg/fleet/scopecache -ginkgo.v` (33/33 specs)
 - `go test ./cmd/fleetmetadatacache -ginkgo.v`
 - `go test ./pkg/fleet/fmc -ginkgo.v`
 - `go test ./pkg/fleet/mcpclient -ginkgo.v`
 - `go test ./pkg/workflowexecution/...`
 
-The local `go test ./...` attempt was blocked before the EAIGW E2E specs by the
-container image build: `dnf` reported a malformed package database and `No space left
-on device`. This is an environment/infrastructure failure, not source evidence.
+The local consolidated package run also exposed the unrelated baseline
+`UT-AUDIT-2522-001` timing failure. The earlier local `go test ./...` attempt was
+blocked before the EAIGW E2E specs by the container image build: `dnf` reported a
+malformed package database and `No space left on device`. Neither is source
+evidence against the bounded FMC changes.
+
+### Final CI result: run `43642008948`
+
+The current-head remote result does not authorize source expansion. The PR remains
+`BEHIND`, `MERGEABLE`, and `REVIEW_REQUIRED`; the required human review is still
+outstanding. The prior FMC E2E `POD_UID` startup defect is covered by the generated
+manifest fix and static contract test, but both current FMC E2E lanes fail earlier
+in infrastructure setup.
 
 ### Failed integration lanes
 
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
-| `fleetmetadatacache` | FMC integration path reports inherited `kube-mcp-server: unknown flag: --port`; strict fixture failures are separately covered below | Hold infrastructure failure; fix the validated fixture only | 95% |
-| `kubernautagent` | `observation invalid_item`: fixture rows lack the requested Pod GVK/metadata | Fix the fixture with structured Pod items | 97% |
+| `fleetmetadatacache` | The lane still reports inherited `kube-mcp-server: unknown flag: --port` and two `fmc scope check failed` cases; 17/20 executed specs passed, with 6 skipped | Hold dependency/fixture environment attribution; the validated structured-observation fix is already in the bounded diff | 95% |
 | `gateway` | Fleet signal/scope paths report `scope: explicit group/version is required for "Deployment"` | Hold; GVK contract is outside #2593 | 92% attribution, below fix threshold |
 | `signalprocessing` | Remote enrichment and ClusterRegistry wiring fail on the same GVK/adjacent fleet path | Hold; do not expand into GVK or #2592 work | 90% attribution, below fix threshold |
 | `apifrontend` | Fleet AF severity/remediation ownership assertions fail | Hold; AF/RO ownership attribution is unresolved | <90% |
 | `remediationorchestrator` | Remote managed-resource routing fails in fleet scope integration | Hold; AF/RO ownership attribution is unresolved | <90% |
 
+The previously observed `kubernautagent` structured-observation fixture failure is
+resolved; its current unit, integration, and E2E lanes passed.
+
 ### Failed E2E lanes
 
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
-| `fleetmetadatacache-eaigw` | FMC deployment cannot become ready; `cmd/fleetmetadatacache/main.go` logs `POD_UID is required` | Add the downward-API `POD_UID` to the generated FMC pod manifest | 98% |
-| `fleetmetadatacache-kuadrant` | Same FMC rollout timeout and missing `POD_UID` startup condition | Covered by the same manifest fix; no E2E run is authorized here | 98% |
+| `fleetmetadatacache-eaigw` | Setup fails before specs: the remote Kind kube-apiserver is `Pending`, and in-cluster `10.96.0.1:443` returns `connection refused`; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
+| `fleetmetadatacache-kuadrant` | Setup fails before specs with the same remote kube-apiserver/API VIP failure; the `mcp-gateway` rollout also has an old replica pending termination; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
 | `fleet` | Setup fails before specs because of independent infrastructure/resource/Podman conditions | Hold; no introduced-versus-inherited proof | <90% |
 | `apifrontend-fleet` | Setup fails before specs because of independent infrastructure/resource conditions | Hold; no introduced-versus-inherited proof | <90% |
 
