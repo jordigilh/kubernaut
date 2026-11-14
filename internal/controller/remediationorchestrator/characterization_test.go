@@ -96,14 +96,15 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) *prodcontroller.Reconciler {
 	recorder := record.NewFakeRecorder(20)
 	return prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-		Client:        c,
-		APIReader:     apiReader,
-		Scheme:        scheme,
-		AuditStore:    nil,
-		Recorder:      recorder,
-		Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-		Timeouts:      newCharTimeouts(),
-		RoutingEngine: routingEngine,
+		Client:           c,
+		APIReader:        apiReader,
+		Scheme:           scheme,
+		AuditStore:       nil,
+		Recorder:         recorder,
+		Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		Timeouts:         newCharTimeouts(),
+		CatalogNamespace: defaultFixture,
+		RoutingEngine:    routingEngine,
 	})
 }
 
@@ -421,10 +422,11 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				remediationv1.PhaseAnalyzing, "sp-anz005", "ai-anz005", "")
 
 			ai := newAIAnalysisCompleted("ai-anz005", defaultFixture, "anz005", 0.95, "wf-test")
+			catalogWorkflow := verifiedWorkflowForSelection(ai.Status.GetRCAResult().SelectedWorkflow)
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, ai).
+				WithObjects(rr, ai, catalogWorkflow).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
@@ -495,10 +497,13 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				remediationv1.PhaseAwaitingApproval, "sp-apr002", "", "")
 
 			rar := newRemediationApprovalRequestApproved("rar-apr002", "apr002", "admin")
+			selected := &aianalysisv1.SelectedWorkflow{WorkflowSnapshot: *rar.Spec.Workflow, Parameters: rar.Spec.Parameters}
+			workflow := verifiedWorkflowForSelection(selected)
+			rar.Spec.Workflow = &selected.WorkflowSnapshot
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, rar).
+				WithObjects(rr, rar, workflow).
 				WithStatusSubresource(
 					&remediationv1.RemediationRequest{},
 					&remediationv1.RemediationApprovalRequest{},
@@ -528,10 +533,12 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 
 			rar := newRemediationApprovalRequestApproved("rar-apr003", "apr003", "admin")
 			ai := newAIAnalysisCompleted("ai-apr003", defaultFixture, "apr003", 0.95, "wf-test")
+			workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
+			rar.Spec.Workflow.WorkflowID = workflow.Status.WorkflowID
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, rar, ai).
+				WithObjects(rr, rar, ai, workflow).
 				WithStatusSubresource(
 					&remediationv1.RemediationRequest{},
 					&remediationv1.RemediationApprovalRequest{},

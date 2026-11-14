@@ -29,6 +29,7 @@ import (
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
@@ -36,6 +37,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -53,9 +56,10 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		store = &MockAuditStore{}
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(store, nil, "kubernaut-system")
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(store, completeSafetyWorkflowReader(scheme), "kubernaut-system")
 		Expect(handler.InjectDecoder(admission.NewDecoder(scheme))).To(Succeed())
 	})
 
@@ -137,7 +141,7 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 	It("UT-AW-2570-019: BR-AUTH-001 permits ordinary approval without catalog access", func() {
 		rar := safetyRAR(remediationv1.ApprovalDecisionApproved, "operator@example.com", time.Time{})
 		response := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
-		Expect(response.Allowed).To(BeTrue(), "the test handler has no catalog reader")
+		Expect(response.Allowed).To(BeTrue(), "the verified live workflow permits the ordinary approval")
 	})
 
 	It("UT-AW-2570-094: BR-AUTH-001 rejects an override while approval is pending", func() {
@@ -151,10 +155,10 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 
 	It("UT-AW-2570-123: BR-ORCH-025 rejects approval of a legacy RAR without a snapshot", func() {
 		rar := safetyRAR(remediationv1.ApprovalDecisionApproved, "operator@example.com", time.Time{})
-		rar.Spec.ParameterSchema = nil
+		rar.Spec.Workflow = nil
 		response := handleSafetyAdmission(ctx, handler, rar, safetyPendingRAR(rar), "operator@example.com")
 		Expect(response.Allowed).To(BeFalse())
-		Expect(response.Result.Message).To(ContainSubstring("snapshot"))
+		Expect(response.Result.Message).To(ContainSubstring("workflow identity"))
 	})
 
 	It("IT-AW-2564-016: preserves the trusted RO expiry timestamp", func() {
@@ -189,7 +193,7 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 
 	DescribeTable("UT-AW-2570-021: BR-AUTH-001 rejects terminal decision and override mutation", func(mutate func(*remediationv1.RemediationApprovalRequest)) {
 		oldRAR := safetyRAR(remediationv1.ApprovalDecisionApproved, "original@example.com", time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC))
-		oldRAR.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"P": "reviewed"}, Rationale: "original"}
+		oldRAR.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParameters(`{"P":"reviewed"}`), Rationale: "original"}
 		newRAR := oldRAR.DeepCopy()
 		mutate(newRAR)
 		resp := handleSafetyAdmission(ctx, handler, newRAR, oldRAR, "original@example.com")
@@ -201,7 +205,7 @@ var _ = Describe("RAR approval safety admission (BR-ORCH-026)", func() {
 			rar.Status.Decision = remediationv1.ApprovalDecisionRejected
 		}),
 		Entry("change override value", func(rar *remediationv1.RemediationApprovalRequest) {
-			rar.Status.WorkflowOverride.Parameters["P"] = "changed"
+			rar.Status.WorkflowOverride.Parameters = typedParameters(`{"P":"changed"}`)
 		}),
 		Entry("remove override", func(rar *remediationv1.RemediationApprovalRequest) { rar.Status.WorkflowOverride = nil }),
 	)
@@ -343,10 +347,47 @@ func safetyRARWithRequiredBy(decision remediationv1.ApprovalDecision, decidedBy 
 }
 
 func completeSafetySnapshot(spec *remediationv1.RemediationApprovalRequestSpec) {
-	spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-safety", DeclaredParameterNames: map[string]bool{}}
-	spec.Parameters = map[string]string{}
-	spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{}
+	spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: completeSafetyWorkflow().Status.WorkflowID}
+	spec.Parameters = typedParameters(`{}`)
 	spec.TargetContext = &remediationv1.ApprovalTargetContext{}
+}
+
+func completeSafetyWorkflow() *remediationworkflowv1.RemediationWorkflow {
+	rw := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: "workflow-safety", Namespace: "kubernaut-system"},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Version:    "1.0",
+			ActionType: "Test",
+			Description: remediationworkflowv1.RemediationWorkflowDescription{
+				What:      "approval safety workflow",
+				WhenToUse: "approval safety tests",
+			},
+			Execution: remediationworkflowv1.RemediationWorkflowExecution{
+				Engine: "job",
+				Bundle: "oci://example.test/workflow:safety",
+			},
+			Parameters: []remediationworkflowv1.RemediationWorkflowParameter{},
+		},
+	}
+	content, err := contenthash.MarshalCleanCRDContent(rw)
+	if err != nil {
+		panic(err)
+	}
+	rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+	rw.Status.WorkflowID = contenthash.DeterministicUUID(rw.Status.ContentHash)
+	return rw
+}
+
+func completeSafetyWorkflowReader(scheme *runtime.Scheme) client.Reader {
+	rw := completeSafetyWorkflow()
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(rw).
+		WithStatusSubresource(rw).
+		WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj client.Object) []string {
+			return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+		}).
+		Build()
 }
 
 func safetyPendingRAR(rar *remediationv1.RemediationApprovalRequest) *remediationv1.RemediationApprovalRequest {

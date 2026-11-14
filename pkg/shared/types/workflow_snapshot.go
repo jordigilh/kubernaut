@@ -141,15 +141,4 @@ type WorkflowSnapshot struct {
 	// requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-
-	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-	// uses for defense-in-depth stripping of undeclared parameters (#243). Not
-	// "omitempty": nil (missing schema, fail closed) and a non-nil empty map
-	// (schema declares zero allowed parameters, strip everything) are
-	// distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
-	// encoding/json "omitempty" treats a zero-length map the same as nil and
-	// silently drops it from the wire payload, collapsing that distinction.
-	// +optional
-	// +nullable
-	DeclaredParameterNames map[string]bool `json:"declaredParameterNames"`
 }

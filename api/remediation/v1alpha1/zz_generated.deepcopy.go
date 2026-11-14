@@ -21,7 +21,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	remediationworkflowv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -348,16 +347,9 @@ func (in *RemediationApprovalRequestSpec) DeepCopyInto(out *RemediationApprovalR
 	}
 	if in.Parameters != nil {
 		in, out := &in.Parameters, &out.Parameters
-		*out = make(map[string]string, len(*in))
+		*out = make(types.TypedParameterMap, len(*in))
 		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-	if in.ParameterSchema != nil {
-		in, out := &in.ParameterSchema, &out.ParameterSchema
-		*out = make([]remediationworkflowv1alpha1.RemediationWorkflowParameter, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 	if in.TargetContext != nil {
@@ -676,9 +668,9 @@ func (in *WorkflowOverride) DeepCopyInto(out *WorkflowOverride) {
 	*out = *in
 	if in.Parameters != nil {
 		in, out := &in.Parameters, &out.Parameters
-		*out = make(map[string]string, len(*in))
+		*out = make(types.TypedParameterMap, len(*in))
 		for key, val := range *in {
-			(*out)[key] = val
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 }

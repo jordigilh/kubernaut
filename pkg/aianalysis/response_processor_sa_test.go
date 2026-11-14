@@ -18,12 +18,9 @@ package aianalysis_test
 
 import (
 	"context"
-	"encoding/json"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -34,13 +31,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
 
-// rawJSONSA marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
-func rawJSONSA(v interface{}) *apiextensionsv1.JSON {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return &apiextensionsv1.JSON{Raw: raw}
+// rawJSONSA retains the historical fixture name while returning the typed
+// AgentSession handoff used by the production mapper.
+func rawJSONSA(v interface{}) *agentsessionv1.AgentSessionSelectedWorkflow {
+	return typedAgentSessionWorkflow(v)
 }
 
 // ========================================

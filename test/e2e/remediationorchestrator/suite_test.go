@@ -103,6 +103,11 @@ var (
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
 
+	// Trusted workflow identity shared by all parallel E2E processes. The
+	// RemediationWorkflow is admitted once by AuthWebhook during process-1
+	// bootstrap; all selected-workflow fixtures use its status.workflowId.
+	trustedWorkflowID string
+
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
 )
@@ -143,6 +148,22 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Seeding the trusted workflow used by RemediationOrchestrator E2E fixtures")
+		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsViaKubectlApply(
+			ctx,
+			tempKubeconfigPath,
+			controllerNamespace,
+			[]infrastructure.WorkflowSeedSpec{{
+				FixtureDir:  "generic-restart",
+				Environment: "production",
+			}},
+			GinkgoWriter,
+		)
+		Expect(seedErr).ToNot(HaveOccurred())
+		trustedWorkflowID = workflowUUIDs[trustedWorkflowName+":production"]
+		Expect(trustedWorkflowID).ToNot(BeEmpty(), "trusted workflow UUID must be populated")
+		GinkgoWriter.Printf("✅ Trusted workflow seeded: %s → %s\n", trustedWorkflowName, trustedWorkflowID)
+
 		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
 		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
 		e2eSAName := "remediationorchestrator-e2e-sa"
@@ -165,17 +186,21 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Printf("   Kubeconfig: %s\n", tempKubeconfigPath)
 		GinkgoWriter.Println("   Process 1 will now share kubeconfig + auth token with other processes")
 
-		// Return kubeconfig path and auth token to all processes
-		return []byte(fmt.Sprintf("%s|%s", tempKubeconfigPath, token))
+		// Return kubeconfig path, auth token, and the catalog UUID to all processes.
+		return []byte(fmt.Sprintf("%s|%s|%s", tempKubeconfigPath, token, trustedWorkflowID))
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
 	func(data []byte) {
-		// Parse data: "kubeconfig|authToken"
-		parts := strings.Split(string(data), "|")
+		// Parse data: "kubeconfig|authToken|trustedWorkflowID"
+		parts := strings.SplitN(string(data), "|", 3)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
 		}
+		if len(parts) > 2 {
+			trustedWorkflowID = parts[2]
+		}
+		Expect(trustedWorkflowID).ToNot(BeEmpty(), "trusted workflow UUID must be shared with every process")
 
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.TODO())

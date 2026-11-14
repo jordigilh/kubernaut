@@ -272,3 +272,13 @@ func decodeDetectedLabels(labels *apiextensionsv1.JSON) map[string]json.RawMessa
 	}
 	return dl
 }
+
+// expectSelectedWorkflowStringParameter asserts the typed AgentSession
+// parameter representation without reopening the retired raw JSON boundary.
+func expectSelectedWorkflowStringParameter(workflow *agentsessionv1.AgentSessionSelectedWorkflow, name, expected string) {
+	value, ok := workflow.Parameters[name]
+	Expect(ok).To(BeTrue(), name)
+	Expect(value.Kind).To(Equal("string"), name)
+	Expect(value.StringValue).NotTo(BeNil(), name)
+	Expect(*value.StringValue).To(Equal(expected), name)
+}

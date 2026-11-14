@@ -97,11 +97,8 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				TargetKind:      "Deployment",
-				TargetName:      "test-app",
-				TargetNamespace: testNS,
-			})
+			completionOpts := trustedWorkflowCompletionOptions("Deployment", "test-app", testNS)
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 			we := helpers.WaitForWECreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateWECompletion(ctx, k8sClient, we)
@@ -153,14 +150,11 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				ApprovalRequired: true,
-				ApprovalReason:   "Confidence below auto-approve threshold",
-				Confidence:       0.65,
-				TargetKind:       "Pod",
-				TargetName:       "test-pod",
-				TargetNamespace:  testNS,
-			})
+			completionOpts := trustedWorkflowCompletionOptions("Pod", "test-pod", testNS)
+			completionOpts.ApprovalRequired = true
+			completionOpts.ApprovalReason = "Confidence below auto-approve threshold"
+			completionOpts.Confidence = 0.65
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 			By("Waiting for RO to create RemediationApprovalRequest")
 			rar := helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -222,14 +216,11 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				ApprovalRequired: true,
-				ApprovalReason:   "Confidence below auto-approve threshold",
-				Confidence:       0.45,
-				TargetKind:       "Pod",
-				TargetName:       "risky-pod",
-				TargetNamespace:  testNS,
-			})
+			completionOpts := trustedWorkflowCompletionOptions("Pod", "risky-pod", testNS)
+			completionOpts.ApprovalRequired = true
+			completionOpts.ApprovalReason = "Confidence below auto-approve threshold"
+			completionOpts.Confidence = 0.45
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 			By("Waiting for RO to create RemediationApprovalRequest")
 			rar := helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)

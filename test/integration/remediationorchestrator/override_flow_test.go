@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -59,6 +60,7 @@ import (
 const (
 	completed           = "Completed"
 	operatorKubernautAi = "operator@kubernaut.ai"
+	jobEngine           = "job"
 	ansibleEngine       = "ansible"
 )
 
@@ -142,7 +144,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 					Priority:    "P1",
 				},
 				Execution: remediationworkflowv1.RemediationWorkflowExecution{
-					Engine:             "job",
+					Engine:             jobEngine,
 					Bundle:             "override-bundle:v2.0@sha256:override123",
 					BundleDigest:       "sha256:override123",
 					EngineConfig:       &apiextensionsv1.JSON{Raw: []byte(`{"image":"drain:v2"}`)},
@@ -165,25 +167,20 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	defaultAIWorkflow := func() *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:             "wf-ai-original",
-				WorkflowName:           "wf-ai-original",
-				ActionType:             "RestartPod",
-				Version:                "1.0.0",
-				ExecutionBundle:        "ai-bundle:v1.0@sha256:aaa",
-				ExecutionBundleDigest:  "sha256:aaa",
-				ExecutionEngine:        "tekton",
-				DeclaredParameterNames: map[string]bool{"NAMESPACE": true, "POD_NAME": true},
+				WorkflowID:            trustedAIOriginalWorkflowID,
+				WorkflowName:          trustedAIOriginalWorkflowName,
+				ActionType:            "RestartPod",
+				Version:               "1.0.0",
+				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
+				ExecutionBundleDigest: "sha256:aaa",
+				ExecutionEngine:       "tekton",
 			},
 			Confidence: 0.72,
 			Rationale:  "AI recommended restart",
-			Parameters: map[string]string{
+			Parameters: typedStringParameters(map[string]string{
 				"NAMESPACE": "default",
 				"POD_NAME":  "app-pod-1",
-			},
-			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{
-				{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"},
-				{Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"},
-			},
+			}),
 		}
 	}
 
@@ -249,11 +246,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
 		}, timeout, interval).Should(Succeed())
-		Expect(rar.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "app-pod-1"}))
+		Expect(rar.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "app-pod-1"})))
 
 		ai := &aianalysisv1.AIAnalysis{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "ai-" + rrName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-		ai.Status.RCAResult.SelectedWorkflow.Parameters["NAMESPACE"] = "changed-after-review"
+		ai.Status.RCAResult.SelectedWorkflow.Parameters["NAMESPACE"] = typedStringParameter("changed-after-review")
 		ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name = "changed-after-review"
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
@@ -262,15 +259,15 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}, Rationale: "operator review"}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}), Rationale: "operator review"}
 		})).To(Succeed())
 
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
-		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
-		Expect(we.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"}))
+		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
+		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
 		Expect(we.Spec.TargetResource).To(Equal(fmt.Sprintf("%s/Deployment/test-app", namespace)))
 	})
 
@@ -282,27 +279,25 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}, Rationale: "operator review"}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}), Rationale: "operator review"}
 		})).To(Succeed())
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
-		Expect(we.Spec.Parameters).To(Equal(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"}))
+		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
 	})
 
 	It("IT-RO-WE-2570-003: BR-ORCH-025 fails closed when the approved catalog identity disappears before WE dispatch", func() {
-		catalogNS := createTestNamespace(ctx, "ro-we-2570-catalog")
-		DeferCleanup(func() { deleteTestNamespace(catalogNS) })
 		selected := defaultAIWorkflow()
 		rw := &remediationworkflowv1.RemediationWorkflow{
-			ObjectMeta: metav1.ObjectMeta{Name: "missing-2570-" + uuid.NewString()[:8], Namespace: catalogNS},
+			ObjectMeta: metav1.ObjectMeta{Name: "missing-2570-" + uuid.NewString()[:8], Namespace: ROControllerNamespace},
 			Spec: remediationworkflowv1.RemediationWorkflowSpec{
 				Version: "1.0.0", ActionType: "RestartPod",
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Isolated approval fixture", WhenToUse: "Integration test"},
 				Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
-				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: "job", Bundle: testutil.ValidBundleRef},
-				Parameters:  selected.ParameterSchema,
+				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: jobEngine, Bundle: testutil.ValidBundleRef},
+				Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"}, {Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"}},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
@@ -314,11 +309,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		workflowID := rw.Status.WorkflowID
 		selected.WorkflowID = workflowID
 		selected.WorkflowName = rw.Name
-		selected.ExecutionEngine = "job"
+		selected.ExecutionEngine = jobEngine
 		selected.ExecutionBundle = testutil.ValidBundleRef
 		selected.ExecutionBundleDigest = ""
 		var matches remediationworkflowv1.RemediationWorkflowList
-		Expect(k8sManager.GetAPIReader().List(ctx, &matches, client.InNamespace(catalogNS), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
+		Expect(k8sManager.GetAPIReader().List(ctx, &matches, client.InNamespace(ROControllerNamespace), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
 		Expect(matches.Items).To(HaveLen(1))
 		Expect(matches.Items[0].UID).To(Equal(rw.UID))
 
@@ -337,20 +332,25 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			g.Expect(we.Spec.RemediationRequestRef.Name).To(Equal(rrName))
 			g.Expect(we.Status.ExecutionRef).To(BeNil())
 		}, timeout, interval).Should(Succeed())
+		// The real WE controller adds this metadata before dispatch. This suite
+		// runs RO-only, so add the finalizer explicitly to exercise WE's
+		// terminal failure path after the trusted catalog entry disappears.
+		controllerutil.AddFinalizer(&we, wecontroller.FinalizerName)
+		Expect(k8sClient.Update(ctx, &we)).To(Succeed())
 
 		// No WE reconciler is registered with this RO manager: deletion is a
 		// deterministic barrier before the production WE reconciler is invoked.
 		Expect(k8sClient.Delete(ctx, rw, client.Preconditions{UID: &rw.UID})).To(Succeed())
 		Eventually(func(g Gomega) {
 			var found remediationworkflowv1.RemediationWorkflowList
-			g.Expect(k8sManager.GetAPIReader().List(ctx, &found, client.InNamespace(catalogNS), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
+			g.Expect(k8sManager.GetAPIReader().List(ctx, &found, client.InNamespace(ROControllerNamespace), client.MatchingFields{"status.workflowId": workflowID})).To(Succeed())
 			g.Expect(found.Items).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 
 		registry := weexecutor.NewRegistry()
-		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
+		registry.Register(jobEngine, weexecutor.NewJobExecutor(k8sManager.GetClient()))
 		reconciler := wecontroller.NewReconciler(k8sManager, wecontroller.ReconcilerOptions{
-			ExecutionNamespace: namespace, CatalogNamespace: catalogNS, CooldownPeriod: time.Second,
+			ExecutionNamespace: namespace, CatalogNamespace: ROControllerNamespace, CooldownPeriod: time.Second,
 			Metrics: wemetrics.NewMetricsWithRegistry(prometheus.NewRegistry()), StatusManager: westatus.NewManager(k8sManager.GetClient()),
 			AuditStore: auditStore, PhaseManager: wephase.NewManager(), AuditManager: weaudit.NewManager(auditStore, ctrl.Log.WithName("missing-workflow-2570")), ExecutorRegistry: registry,
 		})
@@ -371,11 +371,6 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 	DescribeTable("IT-RO-2570-043: BR-ORCH-025 carries approved values through the WE reconciler into execution inputs", func(engine string, injectUndeclared bool) {
 		selected := defaultAIWorkflow()
-		if injectUndeclared {
-			// This suite has no admission webhook. Deliberately model a malformed
-			// stored snapshot to prove WE's independent allowlist strips the value.
-			selected.Parameters["UNDECLARED"] = "must-not-reach-executor"
-		}
 		var engineConfig *apiextensionsv1.JSON
 		if engine == ansibleEngine {
 			engineConfig = &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"playbooks/restart.yml","jobTemplateName":"restart-pod"}`)}
@@ -387,7 +382,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				Description: remediationworkflowv1.RemediationWorkflowDescription{What: "Approval job fixture", WhenToUse: "For integration tests"},
 				Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
 				Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef, EngineConfig: engineConfig},
-				Parameters:  selected.ParameterSchema,
+				Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "NAMESPACE", Type: "string", Required: true, Description: "namespace"}, {Name: "POD_NAME", Type: "string", Required: true, Description: "pod name"}},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
@@ -408,13 +403,35 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			current.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			current.Status.DecidedAt = &decidedAt
-			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}}
+			current.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"})}
 		})).To(Succeed())
 		key := types.NamespacedName{Name: "we-" + rrName, Namespace: ROControllerNamespace}
-		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, &workflowexecutionv1.WorkflowExecution{}) }, timeout, interval).Should(Succeed())
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error { return k8sManager.GetAPIReader().Get(ctx, key, we) }, timeout, interval).Should(Succeed())
+		executionKey := key
+		if injectUndeclared {
+			// RO has already validated the selected values and approved override
+			// against the live workflow. Create a malformed persisted WFE after that
+			// boundary to prove WE's independent live-schema validation rejects the
+			// value before dispatch. WFE specs are immutable after creation, so an
+			// update cannot model this deliberately malformed stored snapshot.
+			malformed := we.DeepCopy()
+			malformed.Name += "-malformed"
+			malformed.ResourceVersion = ""
+			malformed.UID = ""
+			malformed.CreationTimestamp = metav1.Time{}
+			malformed.Generation = 0
+			malformed.ManagedFields = nil
+			malformed.Finalizers = nil
+			malformed.Status = workflowexecutionv1.WorkflowExecutionStatus{}
+			malformed.Spec.Parameters["UNDECLARED"] = typedStringParameter("must-not-reach-executor")
+			Expect(k8sClient.Create(ctx, malformed)).To(Succeed())
+			DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, malformed))).To(Succeed()) })
+			executionKey = types.NamespacedName{Name: malformed.Name, Namespace: malformed.Namespace}
+		}
 
 		registry := weexecutor.NewRegistry()
-		registry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
+		registry.Register(jobEngine, weexecutor.NewJobExecutor(k8sManager.GetClient()))
 		registry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient()))
 		launches := make(chan map[string]interface{}, 1)
 		if engine == ansibleEngine {
@@ -471,13 +488,34 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}
 		})
 		Eventually(func(g Gomega) {
-			_, reconcileErr := weReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			_, reconcileErr := weReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: executionKey})
 			g.Expect(reconcileErr).NotTo(HaveOccurred())
+			if injectUndeclared {
+				g.Expect(k8sManager.GetAPIReader().Get(ctx, executionKey, we)).To(Succeed())
+				g.Expect(we.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed))
+				g.Expect(we.Status.FailureDetails).NotTo(BeNil())
+				g.Expect(we.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1.FailureReasonConfigurationError))
+				g.Expect(we.Status.FailureDetails.Message).To(ContainSubstring(`parameter "UNDECLARED" is not declared`))
+				g.Expect(we.Status.ExecutionRef).To(BeNil())
+				switch engine {
+				case jobEngine:
+					var jobs batchv1.JobList
+					g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
+					g.Expect(jobs.Items).To(BeEmpty())
+				case "tekton":
+					var runs tektonv1.PipelineRunList
+					g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
+					g.Expect(runs.Items).To(BeEmpty())
+				case ansibleEngine:
+					g.Expect(ansibleValues).To(BeNil())
+				}
+				return
+			}
 			values := make(map[string]string)
 			switch engine {
-			case "job":
+			case jobEngine:
 				var jobs batchv1.JobList
-				g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": key.Name})).To(Succeed())
+				g.Expect(k8sManager.GetAPIReader().List(ctx, &jobs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 				g.Expect(jobs.Items).To(HaveLen(1))
 				jobName = jobs.Items[0].Name
 				g.Expect(jobs.Items[0].Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -486,7 +524,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				}
 			case "tekton":
 				var runs tektonv1.PipelineRunList
-				g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": key.Name})).To(Succeed())
+				g.Expect(k8sManager.GetAPIReader().List(ctx, &runs, client.InNamespace(ROControllerNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": executionKey.Name})).To(Succeed())
 				g.Expect(runs.Items).To(HaveLen(1))
 				pipelineName = runs.Items[0].Name
 				for _, param := range runs.Items[0].Spec.Params {
@@ -514,12 +552,12 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}
 		}, timeout, 250*time.Millisecond).Should(Succeed())
 	},
-		Entry("Job", "job", false),
+		Entry("Job", jobEngine, false),
 		Entry("Tekton", "tekton", false),
 		Entry("Ansible", ansibleEngine, false),
-		Entry("Job strips undeclared input", "job", true),
-		Entry("Tekton strips undeclared input", "tekton", true),
-		Entry("Ansible strips undeclared input", ansibleEngine, true),
+		Entry("Job rejects undeclared input before dispatch", jobEngine, true),
+		Entry("Tekton rejects undeclared input before dispatch", "tekton", true),
+		Entry("Ansible rejects undeclared input before dispatch", ansibleEngine, true),
 	)
 
 	Context("IT-RO-2570-042: approved legacy workflow switching", func() {
@@ -588,7 +626,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 
-			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
+			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
 			Expect(we.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
 			Expect(we.Spec.WorkflowRef.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
 		})
@@ -612,7 +650,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				decidedAt := metav1.Now()
 				rar.Status.DecidedAt = &decidedAt
 				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-					Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
+					Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}),
 					Rationale:  "change pod name",
 				}
 			})).To(Succeed())
@@ -624,9 +662,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 
-			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ai-original"))
-			Expect(we.Spec.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
-			Expect(we.Spec.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
+			Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{
+				"NAMESPACE": "default",
+				"POD_NAME":  "reviewed-pod",
+			})))
 		})
 	})
 
@@ -647,7 +687,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				decidedAt := metav1.Now()
 				rar.Status.DecidedAt = &decidedAt
 				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-					Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
+					Parameters: typedStringParameters(map[string]string{"POD_NAME": "reviewed-pod"}),
 					Rationale:  "operator review",
 				}
 			})).To(Succeed())

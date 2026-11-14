@@ -247,6 +247,40 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			Expect(output.Confidence).To(Equal(1.0))
 			Expect(output.Rationale).To(Equal("User-selected via interactive mode"))
 		})
+
+		It("UT-VAL-2575-008: validates selection values against the catalog live schema before handoff", func() {
+			wfID := "wf-constrained"
+			minimum := float64(1)
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID: wfID,
+					ParameterSchema: []models.WorkflowParameter{
+						{Name: "MODE", Type: "string", Required: true, Enum: []string{"safe", "fast"}},
+						{Name: "COUNT", Type: "integer", Required: true, Minimum: &minimum},
+					},
+				},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-constrained",
+					CorrelationID:   "rr-constrained",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-constrained",
+				WorkflowID: wfID,
+				Parameters: map[string]interface{}{"MODE": "unsafe", "COUNT": json.Number("0")},
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid_parameter"))
+			Expect(err.Error()).To(Or(ContainSubstring("enum"), ContainSubstring("below minimum")))
+		})
 	})
 
 	Describe("UT-KA-703-TOOL-006b: Workflow not found in catalog", func() {

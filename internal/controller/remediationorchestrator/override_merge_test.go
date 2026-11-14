@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -74,100 +73,38 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 				ServiceAccountName:    "ai-sa",
 			},
 			Confidence: 0.72,
-			Parameters: map[string]string{
+			Parameters: typedParametersFromStrings(map[string]string{
 				"NAMESPACE": defaultFixture,
 				"POD_NAME":  "app-pod-1",
-			},
+			}),
 			Rationale: "AI recommended pod restart for OOMKill recovery",
 		}
 	})
 
-	buildRW := func(name string) *remediationworkflowv1.RemediationWorkflow {
-		return &remediationworkflowv1.RemediationWorkflow{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-			Spec: remediationworkflowv1.RemediationWorkflowSpec{
-				Version:    "2.0.0",
-				ActionType: "DrainRestart",
-				Description: remediationworkflowv1.RemediationWorkflowDescription{
-					What:      "Drains and restarts node",
-					WhenToUse: "When node is unhealthy",
-				},
-				Labels: remediationworkflowv1.RemediationWorkflowLabels{
-					Severity:    []string{"critical"},
-					Environment: []string{"production"},
-					Component:   []string{"v1/Node"},
-					Priority:    "P1",
-				},
-				Execution: remediationworkflowv1.RemediationWorkflowExecution{
-					Engine:             "job",
-					Bundle:             "override-bundle:v2.0@sha256:bbb",
-					BundleDigest:       "sha256:bbb",
-					EngineConfig:       &apiextensionsv1.JSON{Raw: []byte(`{"image":"drain-restart:v2"}`)},
-					ServiceAccountName: "override-sa",
-				},
-				Parameters: []remediationworkflowv1.RemediationWorkflowParameter{
-					{Name: "TIMEOUT", Type: "string", Required: true, Description: "timeout"},
-				},
-			},
-			Status: remediationworkflowv1.RemediationWorkflowStatus{
-				WorkflowID:    "wf-override-002",
-				CatalogStatus: sharedtypes.CatalogStatusActive,
-			},
-		}
-	}
-
-	Describe("UT-RO-594-001: Override workflowName → resolved spec uses RW data; Confidence preserved", func() {
-		It("should replace workflow fields from RW while preserving AIA confidence", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
-
-			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
-			}
-
-			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(applied).To(BeTrue())
-
-			Expect(resolved.WorkflowID).To(Equal("wf-override-002"))
-			Expect(resolved.WorkflowName).To(Equal("drain-restart"),
-				"Issue #1661 Change 12: WorkflowName must be re-mapped from the override-target RW's metadata.name")
-			Expect(resolved.ActionType).To(Equal("DrainRestart"))
-			Expect(resolved.Version).To(Equal("2.0.0"))
-			Expect(resolved.ExecutionBundle).To(Equal("override-bundle:v2.0@sha256:bbb"))
-			Expect(resolved.ExecutionBundleDigest).To(Equal("sha256:bbb"))
-			Expect(resolved.ExecutionEngine).To(Equal("job"))
-			Expect(resolved.ServiceAccountName).To(Equal("override-sa"))
-			Expect(resolved.EngineConfig).NotTo(BeNil())
-			Expect(string(resolved.EngineConfig.Raw)).To(ContainSubstring("drain-restart:v2"))
-
-			// G2: Confidence preserved from AIA
-			Expect(resolved.Confidence).To(Equal(0.72))
-
-			// Parameters from AIA (override.Parameters is nil)
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
+	Describe("UT-RO-594-001: workflow switching is rejected", func() {
+		It("rejects a workflow-name override and preserves the reviewed workflow", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+			resolved, applied, err := override.ResolveWorkflow(ctx, reader, &remediationv1.WorkflowOverride{WorkflowName: "drain-restart"}, aiWorkflow, namespace)
+			Expect(err).To(MatchError("workflow switching is not permitted"))
+			Expect(applied).To(BeFalse())
+			Expect(resolved).To(BeNil())
 		})
 	})
 
 	Describe("BR-ORCH-025: partial reviewer parameter overrides (#2570)", func() {
 		It("UT-RO-2570-096 preserves omitted original parameter values", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
-			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"POD_NAME": "reviewed-pod"}}
+			changes := &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"})}
 
 			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resolved.Parameters).To(Equal(map[string]string{"NAMESPACE": defaultFixture, "POD_NAME": "reviewed-pod"}))
-			Expect(aiWorkflow.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
+			Expect(resolved.Parameters).To(Equal(typedParametersFromStrings(map[string]string{"NAMESPACE": defaultFixture, "POD_NAME": "reviewed-pod"})))
+			Expect(aiWorkflow.Parameters).To(HaveKeyWithValue("POD_NAME", typedParameterValue("app-pod-1")))
 		})
 
 		It("UT-RO-2570-097 treats an explicit empty override as a no-op", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
-			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{}}
+			changes := &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{})}
 
 			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
@@ -176,7 +113,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 
 		It("UT-RO-2570-103 rejects keys absent from the original parameters", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
-			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"NEW_KEY": "value"}}
+			changes := &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"NEW_KEY": "value"})}
 			_, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
 			Expect(err).To(HaveOccurred())
 			Expect(aiWorkflow.Parameters).NotTo(HaveKey("NEW_KEY"))
@@ -184,20 +121,20 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 
 		It("UT-RO-2570-104 rejects changes to target resource parameters", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
-			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = "original"
-			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"TARGET_RESOURCE_NAME": "different"}}
+			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = typedParameterValue("original")
+			changes := &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"TARGET_RESOURCE_NAME": "different"})}
 			_, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
 			Expect(err).To(HaveOccurred())
-			Expect(aiWorkflow.Parameters["TARGET_RESOURCE_NAME"]).To(Equal("original"))
+			Expect(aiWorkflow.Parameters["TARGET_RESOURCE_NAME"]).To(Equal(typedParameterValue("original")))
 		})
 
 		It("UT-RO-2570-105 preserves an unchanged target resource parameter", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
-			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = "original"
-			changes := &remediationv1.WorkflowOverride{Parameters: map[string]string{"TARGET_RESOURCE_NAME": "original"}}
+			aiWorkflow.Parameters["TARGET_RESOURCE_NAME"] = typedParameterValue("original")
+			changes := &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(map[string]string{"TARGET_RESOURCE_NAME": "original"})}
 			resolved, _, err := override.ResolveWorkflow(ctx, reader, changes, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resolved.Parameters["TARGET_RESOURCE_NAME"]).To(Equal("original"))
+			Expect(resolved.Parameters["TARGET_RESOURCE_NAME"]).To(Equal(typedParameterValue("original")))
 		})
 	})
 
@@ -206,9 +143,9 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{
+				Parameters: typedParametersFromStrings(map[string]string{
 					"POD_NAME": "reviewed-pod",
-				},
+				}),
 			}
 
 			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
@@ -220,8 +157,8 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(resolved.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
 			Expect(resolved.ExecutionEngine).To(Equal("tekton"))
 			Expect(resolved.Parameters).To(HaveLen(2))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", typedParameterValue("reviewed-pod")))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", typedParameterValue(defaultFixture)))
 		})
 	})
 
@@ -236,45 +173,39 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(resolved.WorkflowID).To(Equal("wf-ai-001"))
 			Expect(resolved.Version).To(Equal("1.0.0"))
 			Expect(resolved.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", typedParameterValue(defaultFixture)))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", typedParameterValue("app-pod-1")))
 			Expect(resolved.Confidence).To(Equal(0.72))
 		})
 	})
 
-	Describe("UT-RO-594-004: Override both workflowName + params → both overridden", func() {
-		It("should use RW workflow data AND override parameters", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
-
+	Describe("UT-RO-594-004: parameter-only override", func() {
+		It("keeps the reviewed workflow and overlays parameters", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
-				Parameters: map[string]string{
+				Parameters: typedParametersFromStrings(map[string]string{
 					"POD_NAME": "reviewed-pod",
-				},
+				}),
 			}
 
 			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(applied).To(BeTrue())
 
-			Expect(resolved.WorkflowID).To(Equal("wf-override-002"))
-			Expect(resolved.Version).To(Equal("2.0.0"))
+			Expect(resolved.WorkflowID).To(Equal("wf-ai-001"))
+			Expect(resolved.Version).To(Equal("1.0.0"))
 			Expect(resolved.Parameters).To(HaveLen(2))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "reviewed-pod"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", typedParameterValue("reviewed-pod")))
 		})
 	})
 
 	Describe("UT-RO-594-005: Override rationale preserved", func() {
 		It("should use override rationale when provided", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
-				Rationale:    "operator prefers drain-restart over AI recommendation",
+				Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"}),
+				Rationale:  "operator prefers drain-restart over AI recommendation",
 			}
 
 			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
@@ -288,7 +219,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{"POD_NAME": "reviewed-pod"},
+				Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"}),
 				Rationale:  "",
 			}
 
@@ -303,7 +234,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{},
+				Parameters: typedParametersFromStrings(map[string]string{}),
 			}
 
 			resolved, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
@@ -323,18 +254,16 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(applied).To(BeTrue())
 			Expect(resolved.Parameters).To(HaveLen(2))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", typedParameterValue(defaultFixture)))
 		})
 	})
 
 	Describe("UT-RO-594-007: Override present → OperatorOverride event emitted", func() {
 		It("should return overrideApplied=true when override is present", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
+				Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"}),
 			}
 
 			_, applied, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
@@ -353,29 +282,25 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 		})
 	})
 
-	Describe("UT-RO-594-009: Override applied → SelectedWorkflowRef reflects override", func() {
-		It("should return a resolved workflow that reflects the overridden RW data", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
+	Describe("UT-RO-594-009: parameter override preserves workflow identity", func() {
+		It("should return a resolved workflow with the reviewed identity", func() {
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
+				Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"}),
 			}
 
 			resolved, _, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
 
-			// SelectedWorkflowRef would be built from this resolved spec:
-			Expect(resolved.WorkflowID).To(Equal("wf-override-002"), "SelectedWorkflowRef.WorkflowID should reflect override")
-			Expect(resolved.Version).To(Equal("2.0.0"), "SelectedWorkflowRef.Version should reflect override")
-			Expect(resolved.ExecutionBundle).To(Equal("override-bundle:v2.0@sha256:bbb"), "SelectedWorkflowRef.ExecutionBundle should reflect override")
-			Expect(resolved.ExecutionBundleDigest).To(Equal("sha256:bbb"), "SelectedWorkflowRef.ExecutionBundleDigest should reflect override")
+			Expect(resolved.WorkflowID).To(Equal("wf-ai-001"))
+			Expect(resolved.Version).To(Equal("1.0.0"))
+			Expect(resolved.Parameters["POD_NAME"]).To(Equal(typedParameterValue("reviewed-pod")))
 		})
 	})
 
-	Describe("UT-RO-594-010: Override RW deleted (NotFound) → error for FailurePhaseApproval", func() {
-		It("should return an error when the override RW is not found", func() {
+	Describe("UT-RO-594-010: workflow switching is rejected before lookup", func() {
+		It("should reject a deleted workflow name without a catalog lookup", func() {
 			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
@@ -384,24 +309,17 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 
 			_, _, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("deleted-workflow"))
-
-			// R10: The error should be identifiable as a NotFound override error
-			// so the reconciler can call transitionToFailed with FailurePhaseApproval
-			Expect(override.IsOverrideNotFoundError(err)).To(BeTrue(),
-				"error should be identifiable as override-not-found for FailurePhaseApproval transition")
+			Expect(err).To(MatchError("workflow switching is not permitted"))
+			Expect(override.IsOverrideNotFoundError(err)).To(BeFalse())
 		})
 	})
 
 	Describe("DeepCopy safety (G4)", func() {
 		It("should not mutate the original aiWorkflow when override is applied", func() {
-			rw := buildRW("drain-restart")
-			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
-				WithStatusSubresource(rw).Build()
+			reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			overrideSpec := &remediationv1.WorkflowOverride{
-				WorkflowName: "drain-restart",
-				Parameters:   map[string]string{"POD_NAME": "reviewed-pod"},
+				Parameters: typedParametersFromStrings(map[string]string{"POD_NAME": "reviewed-pod"}),
 			}
 
 			originalID := aiWorkflow.WorkflowID
@@ -410,13 +328,13 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			resolved, _, err := override.ResolveWorkflow(ctx, reader, overrideSpec, aiWorkflow, namespace)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Resolved should have override data
-			Expect(resolved.WorkflowID).To(Equal("wf-override-002"))
+			// Resolved keeps the reviewed identity and receives the override.
+			Expect(resolved.WorkflowID).To(Equal(originalID))
 
 			// Original should be untouched
 			Expect(aiWorkflow.WorkflowID).To(Equal(originalID))
 			Expect(aiWorkflow.Parameters).To(HaveLen(originalParams))
-			Expect(aiWorkflow.Parameters["POD_NAME"]).To(Equal("app-pod-1"))
+			Expect(aiWorkflow.Parameters["POD_NAME"]).To(Equal(typedParameterValue("app-pod-1")))
 		})
 	})
 })

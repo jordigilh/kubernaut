@@ -34,13 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -129,14 +127,11 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				ApprovalRequired: true,
-				ApprovalReason:   "Confidence below 80% auto-approve threshold",
-				Confidence:       0.75,
-				TargetKind:       "Deployment",
-				TargetName:       "test-app",
-				TargetNamespace:  testNamespace,
-			})
+			completionOpts := trustedWorkflowCompletionOptions("Deployment", "test-app", testNamespace)
+			completionOpts.ApprovalRequired = true
+			completionOpts.ApprovalReason = "Confidence below 80% auto-approve threshold"
+			completionOpts.Confidence = 0.75
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", controllerNamespace, testRAR.Name)
@@ -387,14 +382,11 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				ApprovalRequired: true,
-				ApprovalReason:   "Confidence below 80% auto-approve threshold",
-				Confidence:       0.75,
-				TargetKind:       "Deployment",
-				TargetName:       "test-app-expiry",
-				TargetNamespace:  testNamespace,
-			})
+			completionOpts := trustedWorkflowCompletionOptions("Deployment", "test-app-expiry", testNamespace)
+			completionOpts.ApprovalRequired = true
+			completionOpts.ApprovalReason = "Confidence below 80% auto-approve threshold"
+			completionOpts.Confidence = 0.75
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, completionOpts)
 
 			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 
@@ -494,6 +486,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			correlationID = testRR.Name
 
 			// Create RAR (RAR lives in same namespace as RR per RO controller)
+			workflowSnapshot := trustedWorkflowSnapshot()
 			testRAR = &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
@@ -513,16 +506,13 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					InvestigationSummary: "Testing audit trail durability",
 					WhyApprovalRequired:  "Compliance validation",
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-						WorkflowID:      "restart-pod-v1",
+						WorkflowID:      trustedWorkflowID,
 						Version:         "1.0.0",
-						ExecutionBundle: "kubernaut/restart-pod:v1",
+						ExecutionBundle: trustedWorkflowBundle,
 						Rationale:       "Standard pod restart",
 					},
-					Workflow: &sharedtypes.WorkflowSnapshot{
-						WorkflowID: "restart-pod-v1", DeclaredParameterNames: map[string]bool{},
-					},
-					Parameters:      map[string]string{},
-					ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+					Workflow:   &workflowSnapshot,
+					Parameters: trustedWorkflowParameters("Deployment", "test-app-persist", testNamespace),
 					TargetContext: &remediationv1.ApprovalTargetContext{
 						SignalTarget: testRR.Spec.TargetResource,
 					},

@@ -133,26 +133,32 @@ func assertAuditSelection2496(ds *ogenclient.Client, correlationID string, resul
 			g.Expect(payload.ResponseData.SelectedWorkflow.IsSet()).To(BeFalse())
 			return
 		}
-		var selected map[string]any
-		g.Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selected)).To(Succeed())
+		selected := result.SelectedWorkflow
 		stored, present := payload.ResponseData.SelectedWorkflow.Get()
 		g.Expect(present).To(BeTrue())
-		g.Expect(stored.WorkflowId.Value).To(Equal(selected["workflow_id"]))
-		g.Expect(stored.WorkflowName.Value).To(Equal(selected["workflow_name"]))
+		g.Expect(stored.WorkflowId.Value).To(Equal(selected.WorkflowID))
+		g.Expect(stored.WorkflowName.Value).To(Equal(selected.WorkflowName))
 		g.Expect(stored.WorkflowName.Value).NotTo(BeEmpty(), "catalog-authoritative workflow name is mandatory")
+		g.Expect(selected.SelectionConfidence).NotTo(BeNil())
 		g.Expect(stored.WorkflowSelectionConfidence.IsSet()).To(BeTrue())
-		g.Expect(stored.WorkflowSelectionConfidence.Value).To(Equal(selected["workflow_selection_confidence"]))
-		g.Expect(stored.HandoffDigest.Value).To(Equal(selected["handoff_digest"]))
+		g.Expect(stored.WorkflowSelectionConfidence.Value).To(Equal(*selected.SelectionConfidence))
+		g.Expect(stored.HandoffDigest.Value).To(Equal(selected.HandoffDigest))
 		g.Expect(stored.HandoffDigest.Value).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
-		g.Expect(stored.RepeatJustificationRequired.Value).To(Equal(selected["repeat_justification_required"]))
-		g.Expect(stored.PriorWorkflowMatch.Value).To(Equal(selected["prior_workflow_match"]))
-		g.Expect(string(stored.RepeatValidationOutcome.Value)).To(Equal(selected["repeat_validation_outcome"]))
-		if justification, present := selected["repeat_justification"]; present {
+		g.Expect(selected.RepeatRequired).NotTo(BeNil())
+		g.Expect(stored.RepeatJustificationRequired.Value).To(Equal(*selected.RepeatRequired))
+		g.Expect(selected.PriorWorkflowMatch).NotTo(BeNil())
+		g.Expect(stored.PriorWorkflowMatch.Value).To(Equal(*selected.PriorWorkflowMatch))
+		g.Expect(string(stored.RepeatValidationOutcome.Value)).To(Equal(selected.RepeatValidation))
+		if selected.RepeatJustification != nil {
 			raw, marshalErr := json.Marshal(stored.RepeatJustification.Value)
 			g.Expect(marshalErr).NotTo(HaveOccurred())
 			var parts map[string]any
 			g.Expect(json.Unmarshal(raw, &parts)).To(Succeed())
-			g.Expect(parts).To(Equal(justification), "repeat explanation must survive typed ingestion unchanged")
+			expectedRaw, expectedErr := json.Marshal(selected.RepeatJustification)
+			g.Expect(expectedErr).NotTo(HaveOccurred())
+			var expected map[string]any
+			g.Expect(json.Unmarshal(expectedRaw, &expected)).To(Succeed())
+			g.Expect(parts).To(Equal(expected), "repeat explanation must survive typed ingestion unchanged")
 			g.Expect(parts).To(HaveLen(3), "reasoning must not include parameters, execution bundles or handoff contents")
 		}
 	}, 30*time.Second, time.Second).Should(Succeed())
@@ -820,10 +826,8 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			Expect(helmManagedSet).To(BeTrue())
 			Expect(helmManaged).To(BeTrue())
 
-			var selected map[string]interface{}
-			Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selected)).To(Succeed())
-			selectedWorkflowID, selectedWorkflowIDSet := selected["workflow_id"].(string)
-			Expect(selectedWorkflowIDSet).To(BeTrue())
+			selectedWorkflowID := result.SelectedWorkflow.WorkflowID
+			Expect(selectedWorkflowID).NotTo(BeEmpty())
 			bestWorkflowID, bestWorkflowIDSet := preferred.BestWorkflowID.Get()
 			Expect(bestWorkflowIDSet).To(BeTrue())
 			Expect(selectedWorkflowID).To(Equal(bestWorkflowID),
@@ -904,15 +908,8 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			Expect(generic).NotTo(BeNil(), "generic RestartPod must remain available for an RCA-driven override")
 			Expect(generic.Preferred).To(BeFalse(), "the model may override a lower-ranked generic family")
 			Expect(generic.PreferenceReason).To(Equal("highest-scoring matching workflow"))
-			selectedWorkflowID, selectedWorkflowIDSet := func() (string, bool) {
-				var selected map[string]interface{}
-				if err := json.Unmarshal(result.SelectedWorkflow.Raw, &selected); err != nil {
-					return "", false
-				}
-				workflowID, ok := selected["workflow_id"].(string)
-				return workflowID, ok
-			}()
-			Expect(selectedWorkflowIDSet).To(BeTrue())
+			selectedWorkflowID := result.SelectedWorkflow.WorkflowID
+			Expect(selectedWorkflowID).NotTo(BeEmpty())
 			bestWorkflowID, bestWorkflowIDSet := generic.BestWorkflowID.Get()
 			Expect(bestWorkflowIDSet).To(BeTrue())
 			Expect(selectedWorkflowID).To(Equal(bestWorkflowID),

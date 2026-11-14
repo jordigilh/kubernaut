@@ -180,11 +180,7 @@ var _ = Describe("Audit parameter redaction [AU-3, AU-9, AU-11, ASVS V7.1.1/V7.2
 	It("UT-WE-AUDIT-2512-003: redacts credential-like parameters while preserving safe reconstruction fields", func() {
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				Parameters: map[string]string{
-					"DB_PASSWORD":  "do-not-persist",
-					"ACCESS_TOKEN": "do-not-persist",
-					"REPLICAS":     "3",
-				},
+				Parameters: typedParameters(`{"DB_PASSWORD":"do-not-persist","ACCESS_TOKEN":"do-not-persist","REPLICAS":3}`),
 			},
 		}
 
@@ -192,9 +188,29 @@ var _ = Describe("Audit parameter redaction [AU-3, AU-9, AU-11, ASVS V7.1.1/V7.2
 		completed := buildWorkflowExecutionAuditPayload(wfe)
 
 		Expect(started.Parameters.IsSet()).To(BeTrue())
-		Expect(started.Parameters.Value["DB_PASSWORD"]).To(Equal(redactedAuditParameter))
-		Expect(started.Parameters.Value["ACCESS_TOKEN"]).To(Equal(redactedAuditParameter))
-		Expect(started.Parameters.Value["REPLICAS"]).To(Equal("3"))
-		Expect(completed.Parameters.Value["DB_PASSWORD"]).To(Equal(redactedAuditParameter))
+		password := started.Parameters.Value["DB_PASSWORD"]
+		passwordValue, ok := password.GetWorkflowParameterString()
+		Expect(ok).To(BeTrue())
+		Expect(passwordValue.StringValue).To(Equal(redactedAuditParameter))
+		token := started.Parameters.Value["ACCESS_TOKEN"]
+		tokenValue, ok := token.GetWorkflowParameterString()
+		Expect(ok).To(BeTrue())
+		Expect(tokenValue.StringValue).To(Equal(redactedAuditParameter))
+		replicas := started.Parameters.Value["REPLICAS"]
+		replicasValue, ok := replicas.GetWorkflowParameterInteger()
+		Expect(ok).To(BeTrue())
+		Expect(replicasValue.IntegerValue).To(Equal(int64(3)))
+		completedPassword := completed.Parameters.Value["DB_PASSWORD"]
+		completedPasswordValue, ok := completedPassword.GetWorkflowParameterString()
+		Expect(ok).To(BeTrue())
+		Expect(completedPasswordValue.StringValue).To(Equal(redactedAuditParameter))
 	})
 })
+
+func typedParameters(raw string) sharedtypes.TypedParameterMap {
+	values, _, err := sharedtypes.DecodeTypedParameterMap([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+	return values
+}

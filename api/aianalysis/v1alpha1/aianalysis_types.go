@@ -20,7 +20,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -824,36 +823,30 @@ type RemediationTarget struct {
 // SelectedWorkflow contains the AI-selected workflow for execution
 // DD-CONTRACT-002: Output format for RO to create WorkflowExecution
 // Field-by-field per Issue #2284: on K8s v1.31.x, whole-object "self ==
-// oldSelf" spuriously evaluates false when a nullable:true field
-// (declaredParameterNames) holds nil on both sides, rejecting identical
-// idempotent resubmits and causing an infinite reconcile loop. engineConfig
-// is excluded from the comparison entirely: x-kubernetes-preserve-unknown-fields
-// makes it CEL-inaccessible ("undefined field 'engineConfig'" at compile
-// time) -- a documented, narrow trade-off (see EngineConfig's own doc
-// comment for the precedent of pushing that validation to the Go/RO layer).
-// Parameter defaults use preserve-unknown JSON. They cannot be accessed directly
-// in CEL; the API-server integration test verifies equality for default changes.
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || ((has(self.parameterSchema) == has(oldSelf.parameterSchema)) && (!has(self.parameterSchema) || self.parameterSchema == oldSelf.parameterSchema))",message="selected workflow parameter schema is immutable once selectedAt is populated (BR-ORCH-025)"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId && self.workflowName == oldSelf.workflowName && self.actionType == oldSelf.actionType && self.version == oldSelf.version && self.executionBundle == oldSelf.executionBundle && self.confidence == oldSelf.confidence && self.rationale == oldSelf.rationale && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest)) && (!has(self.executionBundleDigest) || self.executionBundleDigest == oldSelf.executionBundleDigest) && (has(self.executionEngine) == has(oldSelf.executionEngine)) && (!has(self.executionEngine) || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName) == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName) || self.serviceAccountName == oldSelf.serviceAccountName) && (has(self.dependencies) == has(oldSelf.dependencies)) && (!has(self.dependencies) || self.dependencies == oldSelf.dependencies) && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources) || self.resources == oldSelf.resources) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt) && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames)) && (!has(self.declaredParameterNames) || self.declaredParameterNames == oldSelf.declaredParameterNames))",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
+// oldSelf" can spuriously evaluate false when nullable execution metadata is
+// absent on both sides, rejecting identical idempotent resubmits and causing an
+// infinite reconcile loop. engineConfig is excluded from the comparison
+// entirely: x-kubernetes-preserve-unknown-fields makes it CEL-inaccessible
+// ("undefined field 'engineConfig'" at compile time) -- a documented, narrow
+// trade-off (see EngineConfig's own doc comment for the precedent of pushing
+// that validation to the Go/RO layer).
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId && self.workflowName == oldSelf.workflowName && self.actionType == oldSelf.actionType && self.version == oldSelf.version && self.executionBundle == oldSelf.executionBundle && self.confidence == oldSelf.confidence && self.rationale == oldSelf.rationale && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest)) && (!has(self.executionBundleDigest) || self.executionBundleDigest == oldSelf.executionBundleDigest) && (has(self.executionEngine) == has(oldSelf.executionEngine)) && (!has(self.executionEngine) || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName) == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName) || self.serviceAccountName == oldSelf.serviceAccountName) && (has(self.dependencies) == has(oldSelf.dependencies)) && (!has(self.dependencies) || self.dependencies == oldSelf.dependencies) && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources) || self.resources == oldSelf.resources) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.parameterEvidence) == has(oldSelf.parameterEvidence)) && (!has(self.parameterEvidence) || self.parameterEvidence == oldSelf.parameterEvidence) && (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt))",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || ((has(self.repeatJustification) == has(oldSelf.repeatJustification)) && (!has(self.repeatJustification) || self.repeatJustification == oldSelf.repeatJustification) && (has(self.workflowSelectionConfidence) == has(oldSelf.workflowSelectionConfidence)) && (!has(self.workflowSelectionConfidence) || self.workflowSelectionConfidence == oldSelf.workflowSelectionConfidence) && (has(self.repeatJustificationRequired) == has(oldSelf.repeatJustificationRequired)) && (!has(self.repeatJustificationRequired) || self.repeatJustificationRequired == oldSelf.repeatJustificationRequired) && (has(self.priorWorkflowMatch) == has(oldSelf.priorWorkflowMatch)) && (!has(self.priorWorkflowMatch) || self.priorWorkflowMatch == oldSelf.priorWorkflowMatch) && (has(self.repeatValidationOutcome) == has(oldSelf.repeatValidationOutcome)) && (!has(self.repeatValidationOutcome) || self.repeatValidationOutcome == oldSelf.repeatValidationOutcome) && (has(self.handoffDigest) == has(oldSelf.handoffDigest)) && (!has(self.handoffDigest) || self.handoffDigest == oldSelf.handoffDigest) && (has(self.priorRemediationUIDs) == has(oldSelf.priorRemediationUIDs)) && (!has(self.priorRemediationUIDs) || self.priorRemediationUIDs == oldSelf.priorRemediationUIDs))",message="selection metadata is immutable once selectedAt is populated (DD-KA-2496)"
 type SelectedWorkflow struct {
 	// WorkflowSnapshot is the catalog-resolved execution snapshot
 	// (WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle/
 	// ExecutionBundleDigest/ExecutionEngine/EngineConfig/ServiceAccountName/
-	// Dependencies/Resources/DeclaredParameterNames), inline-embedded so its
+	// Dependencies/Resources), inline-embedded so its
 	// field list can never drift from WorkflowExecution.Spec.WorkflowRef,
 	// which embeds the same type (Issue #1661 Change 12, DD-WORKFLOW-018).
 	//
 	// ========================================
 	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11b, DD-WORKFLOW-018)
 	// ========================================
-	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
-	// schema data KA already validated during workflow selection (Change 11a).
-	// Embedding them here lets RemediationOrchestrator/WorkflowExecution trust
-	// this CRD snapshot instead of independently re-fetching the workflow from
-	// DataStorage — closing the gap where an in-flight remediation could
-	// observe a RemediationWorkflow that was updated or deleted after
-	// selection completed.
+	// Dependencies/Resources are execution metadata KA already resolved during
+	// workflow selection. Parameter schemas and schema-derived allowlists are
+	// deliberately not persisted; downstream boundaries reverify the live
+	// trusted workflow identified by status.workflowId.
 	sharedtypes.WorkflowSnapshot `json:",inline"`
 
 	// Confidence score (0.0-1.0)
@@ -863,11 +856,11 @@ type SelectedWorkflow struct {
 	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003).
 	// Nil indicates missing data; an explicitly empty map is preserved.
 	// +optional
-	Parameters map[string]string `json:"parameters,omitzero"`
-	// ParameterSchema is the catalog-resolved schema used to review parameters.
-	// Nil denotes missing metadata; an empty list declares no parameters.
+	Parameters sharedtypes.TypedParameterMap `json:"parameters,omitzero"`
+	// ParameterEvidence preserves the original numeric JSON lexemes for audit.
+	// It is not a schema copy and is immutable with the selected values.
 	// +optional
-	ParameterSchema []remediationworkflowv1.RemediationWorkflowParameter `json:"parameterSchema,omitzero"`
+	ParameterEvidence string `json:"parameterEvidence,omitempty"`
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
 

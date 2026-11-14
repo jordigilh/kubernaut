@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
@@ -285,13 +286,16 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+		parameterEngineValues, conversionErr := sharedtypes.TypedParameterMapToEngineValues(params)
+		Expect(conversionErr).NotTo(HaveOccurred(),
+			"interactive WFE parameters should use valid typed values")
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
 			"TARGET_RESOURCE_NAME must be injected into interactive WFE parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
 			"TARGET_RESOURCE_KIND must be injected into interactive WFE parameters")
-		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
+		Expect(parameterEngineValues).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
 			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
 		GinkgoWriter.Printf("  [E2E-FP-1189-005] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
-			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
+			parameterEngineValues["TARGET_RESOURCE_NAME"], parameterEngineValues["TARGET_RESOURCE_KIND"], parameterEngineValues["TARGET_RESOURCE_NAMESPACE"])
 	})
 })

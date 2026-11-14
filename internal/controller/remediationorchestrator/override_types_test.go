@@ -40,10 +40,10 @@ var _ = Describe("BR-ORCH-030: WorkflowOverride Type Serialization (#594)", func
 				Decision: remediationv1.ApprovalDecisionApproved,
 				WorkflowOverride: &remediationv1.WorkflowOverride{
 					WorkflowName: "drain-restart",
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"TIMEOUT": "30s",
 						"FORCE":   "true",
-					},
+					}),
 					Rationale: "prefer safe restart over rolling update",
 				},
 			}
@@ -58,8 +58,8 @@ var _ = Describe("BR-ORCH-030: WorkflowOverride Type Serialization (#594)", func
 			Expect(restored.WorkflowOverride).NotTo(BeNil())
 			Expect(restored.WorkflowOverride.WorkflowName).To(Equal("drain-restart"))
 			Expect(restored.WorkflowOverride.Parameters).To(HaveLen(2))
-			Expect(restored.WorkflowOverride.Parameters["TIMEOUT"]).To(Equal("30s"))
-			Expect(restored.WorkflowOverride.Parameters["FORCE"]).To(Equal("true"))
+			Expect(restored.WorkflowOverride.Parameters["TIMEOUT"]).To(Equal(typedParameterValue("30s")))
+			Expect(restored.WorkflowOverride.Parameters["FORCE"]).To(Equal(typedParameterValue("true")))
 			Expect(restored.WorkflowOverride.Rationale).To(Equal("prefer safe restart over rolling update"))
 		})
 	})

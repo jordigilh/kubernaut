@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -33,7 +34,7 @@ import (
 // DD-AUTH-MCP-001 v3.0: Includes delegation fields when trusted intermediary is involved.
 //
 // Note: Uses toRemediationApprovalAuditPayloadDecision from audit_helpers.go
-func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest) api.RemediationApprovalAuditPayload {
+func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest) (api.RemediationApprovalAuditPayload, error) {
 	payload := api.RemediationApprovalAuditPayload{
 		EventType:       api.RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided,
 		RequestName:     rar.Name,
@@ -45,30 +46,14 @@ func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest)
 	if rar.Spec.Workflow != nil {
 		payload.WorkflowID = api.NewOptString(rar.Spec.Workflow.WorkflowID)
 	}
-	if rar.Spec.Parameters != nil {
-		original := make(api.RemediationApprovalAuditPayloadOriginalParameters, len(rar.Spec.Parameters))
-		effective := make(api.RemediationApprovalAuditPayloadEffectiveParameters, len(rar.Spec.Parameters))
-		for name, value := range rar.Spec.Parameters {
-			original[name] = value
-			effective[name] = value
-		}
-		if rar.Status.WorkflowOverride != nil {
-			for name, value := range rar.Status.WorkflowOverride.Parameters {
-				effective[name] = value
-			}
-		}
-		payload.OriginalParameters = api.NewOptRemediationApprovalAuditPayloadOriginalParameters(original)
-		payload.EffectiveParameters = api.NewOptRemediationApprovalAuditPayloadEffectiveParameters(effective)
+	if err := addRARApprovalParameters(&payload, rar); err != nil {
+		return api.RemediationApprovalAuditPayload{}, err
 	}
-	if rar.Status.WorkflowOverride != nil {
-		if rar.Status.WorkflowOverride.Parameters != nil {
-			changes := make(api.RemediationApprovalAuditPayloadOverrideParameters, len(rar.Status.WorkflowOverride.Parameters))
-			for name, value := range rar.Status.WorkflowOverride.Parameters {
-				changes[name] = value
-			}
-			payload.OverrideParameters = api.NewOptRemediationApprovalAuditPayloadOverrideParameters(changes)
-		}
-		payload.OverrideRationale = api.NewOptString(rar.Status.WorkflowOverride.Rationale)
+	if err := addRAROverrideParameters(&payload, rar); err != nil {
+		return api.RemediationApprovalAuditPayload{}, err
+	}
+	if !payload.ParameterEvidence.IsSet() && rar.Spec.ParameterEvidence != "" {
+		payload.ParameterEvidence = api.NewOptString(rar.Spec.ParameterEvidence)
 	}
 	if rar.Status.DecidedVia != "" {
 		payload.DelegatedUser = api.NewOptString(rar.Status.DecidedBy)
@@ -81,7 +66,58 @@ func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest)
 	if rar.Spec.PolicyEvaluation != nil && rar.Spec.PolicyEvaluation.PolicyHash != "" {
 		payload.PolicyHash = api.NewOptString(rar.Spec.PolicyEvaluation.PolicyHash)
 	}
-	return payload
+	return payload, nil
+}
+
+func addRARApprovalParameters(payload *api.RemediationApprovalAuditPayload, rar *remediationv1.RemediationApprovalRequest) error {
+	if rar.Spec.Parameters == nil {
+		return nil
+	}
+	values, err := sharedaudit.ToOgenParameterMap(rar.Spec.Parameters)
+	if err != nil {
+		return fmt.Errorf("convert original approval parameters: %w", err)
+	}
+	original := make(api.RemediationApprovalAuditPayloadOriginalParameters, len(rar.Spec.Parameters))
+	effective := make(api.RemediationApprovalAuditPayloadEffectiveParameters, len(rar.Spec.Parameters))
+	for name, value := range values {
+		original[name] = value
+		effective[name] = value
+	}
+	if rar.Status.WorkflowOverride != nil {
+		overrideValues, err := sharedaudit.ToOgenParameterMap(rar.Status.WorkflowOverride.Parameters)
+		if err != nil {
+			return fmt.Errorf("convert approval override parameters: %w", err)
+		}
+		for name, value := range overrideValues {
+			effective[name] = value
+		}
+	}
+	payload.OriginalParameters = api.NewOptRemediationApprovalAuditPayloadOriginalParameters(original)
+	payload.EffectiveParameters = api.NewOptRemediationApprovalAuditPayloadEffectiveParameters(effective)
+	return nil
+}
+
+func addRAROverrideParameters(payload *api.RemediationApprovalAuditPayload, rar *remediationv1.RemediationApprovalRequest) error {
+	override := rar.Status.WorkflowOverride
+	if override == nil {
+		return nil
+	}
+	if override.Parameters != nil {
+		values, err := sharedaudit.ToOgenParameterMap(override.Parameters)
+		if err != nil {
+			return fmt.Errorf("convert approval override parameters: %w", err)
+		}
+		changes := make(api.RemediationApprovalAuditPayloadOverrideParameters, len(values))
+		for name, value := range values {
+			changes[name] = value
+		}
+		payload.OverrideParameters = api.NewOptRemediationApprovalAuditPayloadOverrideParameters(changes)
+	}
+	if override.ParameterEvidence != "" {
+		payload.ParameterEvidence = api.NewOptString(override.ParameterEvidence)
+	}
+	payload.OverrideRationale = api.NewOptString(override.Rationale)
+	return nil
 }
 
 // WrapRARApprovalPayloadWithDiscriminator wraps the audit payload with the correct discriminator.
@@ -115,7 +151,10 @@ func BuildRARApprovalAuditEvent(
 
 	// Import audit package helpers
 	// Note: We'll use these in the handler refactoring
-	payload := BuildRARApprovalAuditPayload(rar)
+	payload, err := BuildRARApprovalAuditPayload(rar)
+	if err != nil {
+		return nil, fmt.Errorf("build RAR approval audit payload: %w", err)
+	}
 	eventData := WrapRARApprovalPayloadWithDiscriminator(payload)
 
 	// Return the event data - the handler will set structured fields

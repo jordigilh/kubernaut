@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	. "github.com/onsi/gomega"
@@ -32,7 +34,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -41,6 +42,53 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 )
+
+// verifiedWorkflowForSelection creates the live catalog object required by
+// production-path unit tests that exercise approval or execution creation. It
+// updates the selected snapshot to the content-derived ID, so tests retain
+// the same identity fence as production instead of relying on a bypass.
+func verifiedWorkflowForSelection(selected *aianalysisv1.SelectedWorkflow) *remediationworkflowv1.RemediationWorkflow {
+	namespace := defaultFixture
+	parameters := make([]remediationworkflowv1.RemediationWorkflowParameter, 0, len(selected.Parameters))
+	for name, value := range selected.Parameters {
+		parameters = append(parameters, remediationworkflowv1.RemediationWorkflowParameter{
+			Name:        name,
+			Type:        value.Kind,
+			Description: "unit-test parameter",
+		})
+	}
+	engine := selected.ExecutionEngine
+	if engine == "" {
+		engine = "job"
+	}
+	bundle := selected.ExecutionBundle
+	if bundle == "" {
+		bundle = "test-bundle:latest"
+	}
+	workflow := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: "verified-workflow", Namespace: namespace},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Version:    selected.Version,
+			ActionType: selected.ActionType,
+			Description: remediationworkflowv1.RemediationWorkflowDescription{
+				What: "unit-test workflow", WhenToUse: "unit-test",
+			},
+			Labels: remediationworkflowv1.RemediationWorkflowLabels{
+				Severity: []string{"critical"}, Environment: []string{"production"},
+				Component: []string{"v1/Pod"}, Priority: "P1",
+			},
+			Execution:  remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: bundle},
+			Parameters: parameters,
+		},
+	}
+	content, err := contenthash.MarshalCleanCRDContent(workflow)
+	Expect(err).NotTo(HaveOccurred())
+	contentHash := contenthash.ComputeContentHash(string(content))
+	workflow.Status.ContentHash = contentHash
+	workflow.Status.WorkflowID = contenthash.DeterministicUUID(contentHash)
+	selected.WorkflowID = workflow.Status.WorkflowID
+	return workflow
+}
 
 // setupScheme creates a scheme with all CRD types registered.
 // Must mirror cmd/remediationorchestrator/main.go init() exactly.
@@ -246,12 +294,10 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 				ExecutionBundle: "test-image:latest",
 				// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
 				// required field on validateSelectedWorkflow.
-				ExecutionEngine:        "job",
-				DeclaredParameterNames: map[string]bool{},
+				ExecutionEngine: "job",
 			},
-			Confidence:      confidence,
-			Parameters:      map[string]string{},
-			ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+			Confidence: confidence,
+			Parameters: typedParametersFromStrings(map[string]string{}),
 		},
 		RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
 			Summary:  "Test root cause",
@@ -390,9 +436,8 @@ func newRemediationApprovalRequestApproved(name, rrName, decidedBy string) *reme
 				Name: "ai-" + rrName,
 			},
 			Confidence:           0.4,
-			Workflow:             &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "test-image:latest", ExecutionEngine: "job", DeclaredParameterNames: map[string]bool{}},
-			Parameters:           map[string]string{},
-			ParameterSchema:      []remediationworkflowv1.RemediationWorkflowParameter{},
+			Workflow:             &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-test", WorkflowName: "wf-test", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "test-image:latest", ExecutionEngine: "job"},
+			Parameters:           typedParametersFromStrings(map[string]string{}),
 			TargetContext:        &remediationv1.ApprovalTargetContext{RemediationTarget: &remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "test-deployment", Namespace: namespace}},
 			ConfidenceLevel:      "low",
 			Reason:               "Low confidence score requires approval",

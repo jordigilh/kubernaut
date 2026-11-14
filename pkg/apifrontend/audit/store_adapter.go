@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -71,7 +72,12 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 			"event_type", req.EventType)
 		return
 	}
-	req.EventData = buildEventData(e)
+	var err error
+	req.EventData, err = buildEventDataChecked(e)
+	if err != nil {
+		a.logger.Error(err, "failed to build typed audit payload", "event_type", req.EventType)
+		return
+	}
 
 	if err := a.store.StoreAudit(ctx, req); err != nil {
 		a.logger.Error(err, "failed to store audit event",
@@ -303,12 +309,15 @@ var eventDataBuilders = map[EventType]eventDataBuilder{
 	EventConsoleManagedResourceGetRead:  buildConsoleManagedResourceGetReadPayload,
 }
 
-func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
+func buildEventDataChecked(e *Event) (ogenclient.AuditEventRequestEventData, error) {
+	if e.Type == EventToolExecuted {
+		return buildToolExecutedPayloadChecked(e)
+	}
 	builder, ok := eventDataBuilders[e.Type]
 	if !ok {
-		return ogenclient.AuditEventRequestEventData{}
+		return ogenclient.AuditEventRequestEventData{}, nil
 	}
-	return builder(e)
+	return builder(e), nil
 }
 
 func buildAuthSuccessPayload(e *Event) ogenclient.AuditEventRequestEventData {
@@ -697,6 +706,11 @@ func buildAuthAccessDeniedPayload(e *Event) ogenclient.AuditEventRequestEventDat
 }
 
 func buildToolExecutedPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	payload, _ := buildToolExecutedPayloadChecked(e)
+	return payload
+}
+
+func buildToolExecutedPayloadChecked(e *Event) (ogenclient.AuditEventRequestEventData, error) {
 	d := e.Detail
 	payload := ogenclient.ApifrontendToolExecutedPayload{
 		EventType:           ogenclient.ApifrontendToolExecutedPayloadEventTypeApifrontendToolExecuted,
@@ -705,36 +719,82 @@ func buildToolExecutedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 		ExecutionDurationMs: detailInt(d, "execution_duration_ms"),
 		ToolOutcome:         ogenclient.ApifrontendToolExecutedPayloadToolOutcome(detailStr(d, "tool_outcome")),
 	}
-	if v := detailStr(d, "target_resource"); v != "" {
-		payload.TargetResource = ogenclient.NewOptString(v)
+	applyToolExecutedOptionalFields(&payload, d)
+	if err := applyToolExecutedApprovalFields(&payload, e); err != nil {
+		return ogenclient.AuditEventRequestEventData{}, err
 	}
-	if v := detailStr(d, "target_namespace"); v != "" {
-		payload.TargetNamespace = ogenclient.NewOptString(v)
+	return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(payload), nil
+}
+
+func applyToolExecutedOptionalFields(payload *ogenclient.ApifrontendToolExecutedPayload, details map[string]string) {
+	if value := detailStr(details, "target_resource"); value != "" {
+		payload.TargetResource = ogenclient.NewOptString(value)
 	}
-	if v := detailStr(d, "target_kind"); v != "" {
-		payload.TargetKind = ogenclient.NewOptString(v)
+	if value := detailStr(details, "target_namespace"); value != "" {
+		payload.TargetNamespace = ogenclient.NewOptString(value)
 	}
-	if v := detailStr(d, "error_code"); v != "" {
-		payload.ErrorCode = ogenclient.NewOptString(v)
+	if value := detailStr(details, "target_kind"); value != "" {
+		payload.TargetKind = ogenclient.NewOptString(value)
 	}
-	if approval := e.Approval; approval != nil {
-		payload.WorkflowID = ogenclient.NewOptString(approval.WorkflowID)
-		payload.ApprovalRequest = ogenclient.NewOptString(detailStr(d, "approval_request"))
-		payload.ApprovalDecision = ogenclient.NewOptString(detailStr(d, "approval_decision"))
-		if approval.OverrideRationale != nil {
-			payload.OverrideRationale = ogenclient.NewOptString(*approval.OverrideRationale)
+	if value := detailStr(details, "error_code"); value != "" {
+		payload.ErrorCode = ogenclient.NewOptString(value)
+	}
+}
+
+func applyToolExecutedApprovalFields(payload *ogenclient.ApifrontendToolExecutedPayload, event *Event) error {
+	approval := event.Approval
+	if approval == nil {
+		return nil
+	}
+	payload.WorkflowID = ogenclient.NewOptString(approval.WorkflowID)
+	payload.ApprovalRequest = ogenclient.NewOptString(detailStr(event.Detail, "approval_request"))
+	payload.ApprovalDecision = ogenclient.NewOptString(detailStr(event.Detail, "approval_decision"))
+	if approval.OverrideRationale != nil {
+		payload.OverrideRationale = ogenclient.NewOptString(*approval.OverrideRationale)
+	}
+	converted, err := convertToolExecutedApprovalParameters(approval)
+	if err != nil {
+		return err
+	}
+	payload.OriginalParameters = converted.original
+	payload.OverrideParameters = converted.override
+	payload.EffectiveParameters = converted.effective
+	if approval.ParameterEvidence != "" {
+		payload.ParameterEvidence = ogenclient.NewOptString(approval.ParameterEvidence)
+	}
+	return nil
+}
+
+type toolExecutedApprovalParameters struct {
+	original  ogenclient.OptApifrontendToolExecutedPayloadOriginalParameters
+	override  ogenclient.OptApifrontendToolExecutedPayloadOverrideParameters
+	effective ogenclient.OptApifrontendToolExecutedPayloadEffectiveParameters
+}
+
+func convertToolExecutedApprovalParameters(approval *ApprovalAudit) (toolExecutedApprovalParameters, error) {
+	var result toolExecutedApprovalParameters
+	if approval.OriginalParameters != nil {
+		values, err := sharedaudit.ToOgenParameterMap(approval.OriginalParameters)
+		if err != nil {
+			return result, fmt.Errorf("convert original approval parameters: %w", err)
 		}
-		if approval.OriginalParameters != nil {
-			payload.OriginalParameters = ogenclient.NewOptApifrontendToolExecutedPayloadOriginalParameters(ogenclient.ApifrontendToolExecutedPayloadOriginalParameters(approval.OriginalParameters))
-		}
-		if approval.OverrideParameters != nil {
-			payload.OverrideParameters = ogenclient.NewOptApifrontendToolExecutedPayloadOverrideParameters(ogenclient.ApifrontendToolExecutedPayloadOverrideParameters(approval.OverrideParameters))
-		}
-		if approval.EffectiveParameters != nil {
-			payload.EffectiveParameters = ogenclient.NewOptApifrontendToolExecutedPayloadEffectiveParameters(ogenclient.ApifrontendToolExecutedPayloadEffectiveParameters(approval.EffectiveParameters))
-		}
+		result.original = ogenclient.NewOptApifrontendToolExecutedPayloadOriginalParameters(ogenclient.ApifrontendToolExecutedPayloadOriginalParameters(values))
 	}
-	return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(payload)
+	if approval.OverrideParameters != nil {
+		values, err := sharedaudit.ToOgenParameterMap(approval.OverrideParameters)
+		if err != nil {
+			return result, fmt.Errorf("convert override approval parameters: %w", err)
+		}
+		result.override = ogenclient.NewOptApifrontendToolExecutedPayloadOverrideParameters(ogenclient.ApifrontendToolExecutedPayloadOverrideParameters(values))
+	}
+	if approval.EffectiveParameters != nil {
+		values, err := sharedaudit.ToOgenParameterMap(approval.EffectiveParameters)
+		if err != nil {
+			return result, fmt.Errorf("convert effective approval parameters: %w", err)
+		}
+		result.effective = ogenclient.NewOptApifrontendToolExecutedPayloadEffectiveParameters(ogenclient.ApifrontendToolExecutedPayloadEffectiveParameters(values))
+	}
+	return result, nil
 }
 
 func buildWorkflowDiscoveryPayload(e *Event) ogenclient.AuditEventRequestEventData {

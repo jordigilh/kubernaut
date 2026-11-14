@@ -82,8 +82,8 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 	ai.Status.Phase = aianalysisv1.PhaseCompleted
 	ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:      "wf-restart-pods",
-			WorkflowName:    "wf-restart-pods",
+			WorkflowID:      trustedRestartWorkflowID,
+			WorkflowName:    trustedRestartWorkflowName,
 			ActionType:      "RestartPod",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
@@ -91,6 +91,7 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 		},
 		// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 		Confidence: 0.95,
+		Parameters: trustedTargetParameters(ns, "test-app"),
 	}
 	ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:    "Dedup test RCA",
@@ -138,8 +139,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},
@@ -209,8 +210,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},
@@ -305,8 +306,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart-pods",
-						WorkflowName: "wf-restart-pods",
+						WorkflowID:   trustedRestartWorkflowID,
+						WorkflowName: trustedRestartWorkflowName,
 						ActionType:   "RestartPod",
 						Version:      "v1.0.0",
 					},
