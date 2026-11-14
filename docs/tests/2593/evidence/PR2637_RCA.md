@@ -1,8 +1,9 @@
 # PR #2637 Consolidated RCA
 
-**Reviewed commit:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
+**Reviewed source commit:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
 **Branch:** `work/2593-fmc-presence`
-**CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed)
+**Documentation follow-up:** subsequent commits are documentation-only; no production or test implementation changes were made after the reviewed source commit.
+**CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
 **Review date:** 2026-11-14
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 
@@ -24,7 +25,9 @@ release approval and does not authorize cluster activity, E2E qualification, #25
 
 ### Current-head checks
 
-Commit `93db7975b9fe999ee068068f55e9dffc78c9d3b5` is the final reviewed head.
+Commit `93db7975b9fe999ee068068f55e9dffc78c9d3b5` is the final reviewed source
+head. The later `8d4fc4cc8` and `7ec90d893` commits only update RCA/review
+authority documentation; they do not change production or test implementation.
 CodeQL run `43642008872` and Gitleaks run `43642008918` passed. CI Pipeline run
 `43642008948` completed with all unit-test lanes, service builds, Go lint, license
 scan, CEL immutability regression, operator build/package, and unaffected
@@ -41,6 +44,10 @@ Local validation for `93db7975b` passed:
 - `go test ./pkg/fleet/fmc -ginkgo.v`
 - `go test ./pkg/fleet/mcpclient -ginkgo.v`
 - `go test ./pkg/workflowexecution/...`
+
+The documentation-only follow-up run `43647855182` was still queued/in progress
+when checked; its CodeQL (`43647854978`) and Gitleaks (`43647855127`) checks passed,
+but no CI Pipeline pass/fail claim is made for that run.
 
 The local consolidated package run also exposed the unrelated baseline
 `UT-AUDIT-2522-001` timing failure. The earlier local `go test ./...` attempt was
@@ -124,6 +131,29 @@ outside-diff minor finding. Each is classified below.
 |---|---|---|
 | `status_store_red_test.go`: replay a successfully committed token | **Fix** | The test must prove consumed-token rejection, not only mismatched-token rejection. |
 | `console_policyread_2584_test.go`: recompute changed fixture ID | Hold | Outside the PR boundary and explicitly excluded #2584 work. |
+
+### Follow-up review validation
+
+CodeRabbit reviews `5907153134` (reviewed head `5a67d69e8`) and `5907439439`
+(reviewed head `8d4fc4cc8`) were rechecked against the current branch. The latest
+review was published before the documentation-only `7ec90d893` follow-up, so its
+external-plan finding is already reflected below.
+
+| Finding | Current evidence | Disposition |
+|---|---|---|
+| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `aede83812e3991df16daeab295d4a45da95e1274f5559f9dfa15daebbbad23e8`. | **Addressed** in `7ec90d893`; no source change required. |
+| Gateway GVK rejection was classified as inherited | The gateway row now records the rejection as introduced by the explicit remote-GVK validation and identifies the current fixture omission of `apiVersion`; fail-closed behavior remains intentional. | **Addressed** in `7ec90d893`; producer/fixture alignment remains a held GVK follow-up. |
+| Successful repair test needs deterministic server time | `status_store_red_test.go:233` calls `server.SetTime(...)` before the cleanup lifecycle; CodeRabbit confirmed this finding as addressed in `93db7975b`. | **Addressed**. |
+| Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
+| Fence verification/reacquisition and dependency refresh can restore stale readiness | `ensureFence` clears local ownership before reacquisition, while `fmcDeps.Ready` and the syncer publish a previously read global snapshot. Both findings are valid concurrency/security concerns. | **Hold** for coordinated readiness/fence synchronization design and tests; no partial fix is authorized. |
+| Empty observations can never produce clean proof; missing `structuredContent` might be empty | `hasCleanRepairProof` correctly rejects zero TTL proof, and `extractObservationPage` correctly rejects missing `structuredContent`. No digest-pinned producer capture proves a reliable empty response. | **Hold** on the existing fail-closed protocol boundary; do not fabricate empty proof. |
+| FMC E2E ServiceAccount lacks Lease permissions; chart deployment lacks `POD_UID` | The raw E2E manifest emits `POD_UID`, but its `fmcGatewayRBACRules` do not grant Lease access. This is a valid deployment-fixture concern; this repository has no `charts/**` tree, and the Helm authority is the operator repository. | **Hold** for the deployment/E2E owner and explicit E2E qualification; current CI failed during remote Kind setup before FMC specs. |
+| Controller-runtime fake, rendered-manifest test, integration no-mocks fixture, and `Syncer` state extraction | These are valid maintainability/test-harness suggestions, but each requires a production seam or broader fixture/refactor change beyond the bounded FMC A/B closure. | **Hold**; do not expand the 87-file boundary or introduce an untested refactor. |
+| Gateway HPA RBAC | The scope client is informer-backed, but the effective Gateway ServiceAccount binding is owned by `kubernaut-operator`, not this repository. | **Hold** for the deployment owner; no permission change is inferred from this checkout. |
+
+No additional implementation change is justified within the approved boundary. Held
+findings remain explicit follow-up work, not silent approval or evidence that the
+current E2E/deployment contracts are qualified.
 
 ## Approved implementation boundary
 
