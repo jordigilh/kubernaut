@@ -1,8 +1,8 @@
 # PR #2637 Consolidated RCA
 
-**Reviewed commit:** `e10aad684` (`fix(ci): stabilize FMC presence checks`)
+**Reviewed commit:** `0a1f56b20` (`fix(fleet): gate readiness on registered partitions`)
 **Branch:** `work/2593-fmc-presence`
-**CI run:** `43616596962`
+**CI runs:** `43638876513` (CI Pipeline, in progress at capture), `43638876402` (CodeQL, in progress at capture), `43638876444` (Gitleaks secret scan, passed)
 **Review date:** 2026-11-14
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 
@@ -16,18 +16,33 @@ The PR has two different classes of evidence:
    ownership, deployment, security, or architecture changes. They remain held and are
    not used to expand #2593.
 
-This RCA is the consolidated disposition required before implementation. It is not a
+This RCA is the consolidated disposition after the bounded source fixes. It is not a
 release approval and does not authorize cluster activity, E2E qualification, #2584,
 #2592, GVK migration, inventory redesign, or ownership redesign.
 
 ## CI evidence and attribution
 
-### Passed checks
+### Current-head checks
 
-The following PR checks passed in run `43616596962`: Go analysis and lint, CodeQL,
-gitleaks, license scan, all unit-test lanes, all build lanes, CEL regression checks,
-and must-gather validation. `Test Suite Summary` and `Merge Gate` are downstream
-rollups, not independent root causes.
+At the time of this update, Gitleaks run `43638876444` passed and the current CI
+Pipeline run `43638876513` had passed the `fleetmetadatacache` unit-test lane. The
+remaining CI jobs and CodeQL run `43638876402` were still in progress, so no final
+remote pass/fail claim is made here. `Test Suite Summary` and `Merge Gate` are
+downstream rollups, not independent root causes.
+
+Local validation for `0a1f56b20` passed:
+
+- `go build ./...`
+- `golangci-lint run --timeout=5m` (0 issues)
+- `go test ./pkg/fleet/scopecache -ginkgo.v`
+- `go test ./cmd/fleetmetadatacache -ginkgo.v`
+- `go test ./pkg/fleet/fmc -ginkgo.v`
+- `go test ./pkg/fleet/mcpclient -ginkgo.v`
+- `go test ./pkg/workflowexecution/...`
+
+The local `go test ./...` attempt was blocked before the EAIGW E2E specs by the
+container image build: `dnf` reported a malformed package database and `No space left
+on device`. This is an environment/infrastructure failure, not source evidence.
 
 ### Failed integration lanes
 
@@ -60,15 +75,15 @@ outside-diff minor finding. Each is classified below.
 |---|---|---|
 | `docs/tests/2593/TEST_PLAN.md`: publish the external active plan | Hold | The approved fast-path boundary deliberately retains the external plan authority; publishing or replacing it changes the review/approval workflow. |
 | `pkg/fleet/fmc/syncer.go`: use `snapshot.Info` for repair collection | **Fix** | The repair reader must use the registration configuration matching the captured snapshot revision. |
-| `pkg/fleet/fmc/syncer.go`: empty registry never becomes ready | **Fix** | Empty-registry readiness is an existing contract and belongs in `FMCGlobalReadiness.ServiceReady`. |
+| `pkg/fleet/fmc/syncer.go`: empty registry never becomes ready | **Fix** | `FMCGlobalReadiness.ServiceReady` preserves the empty-registry exemption, while the production readiness path now publishes the registered-cluster count so a registered cluster without a lease or repair partition remains unavailable. |
 | `pkg/fleet/mcpclient/client.go`: strict-list integration fixture | **Fix** | The fixture is invalid under the already-approved structured observation contract. |
-| `pkg/fleet/mcpclient/client.go`: restore ordinary `Event` list behavior | Hold | Requires an executor-facing list-path redesign outside the bounded FMC observation change. |
+| `pkg/fleet/mcpclient/client.go`: restore ordinary `Event` list behavior | **Fix** | `Client.List` now uses a generic structured-object path for ordinary reader calls; strict `ListObserved` retains the FMC observed-GVK allowlist. `UT-FLEET-MCP-012` covers both paths. |
 | `pkg/fleet/mcpclient/observation.go`: infer empty response without `structuredContent` | Hold | The digest-pinned producer behavior is not proven; fail-closed semantics remain required. |
 | `pkg/fleet/registry/delete.go`: resolve the current map under lock | **Fix** | This is a localized deletion consistency race with a clear lock-scoped correction. |
 | `pkg/fleet/registry/eaigw_registry.go`: fence `Probe` and `Start` publication | Hold | Requires EAIGW refresh/generation architecture and is not an FMC presence fix. |
 | `pkg/fleet/registry/eaigw_registry.go`: replace global repair fencing with per-registration revisions | Hold | Cross-registry repair-fencing redesign; outside #2593. |
 | FMC E2E manifest: inject `POD_UID` | **Fix** | The production entry point requires it and the generated manifest omits it. |
-| `pkg/fleet/scopecache/readiness.go`: remove deregistered partitions | Hold | Readiness lifecycle/replacement semantics need an architectural decision and broader tests. |
+| `pkg/fleet/scopecache/readiness.go`: remove deregistered partitions | Hold | Readiness lifecycle/replacement semantics need an architectural decision and broader tests. The current fix does not claim stale-partition removal. |
 | `pkg/fleet/scopecache/readiness.go`: compare proofs with the active writer fence | Hold | Security/readiness lifecycle redesign; no change below the authorized boundary. |
 | `fmc_v2_atomic.lua`: cleanup-safe pagination | **Fix** | Positional cursors skip stale members after cleanup mutation. |
 | `pkg/fleet/scopecache/status_store.go`: prove complete empty observations | Hold | Empty-partition proof semantics are unresolved and must not be fabricated with zero TTLs. |
@@ -98,23 +113,29 @@ outside-diff minor finding. Each is classified below.
 
 ## Approved implementation boundary
 
-The implementation may change only the following validated concerns:
+The implementation changed only the following validated concerns:
 
 - snapshot-consistent FMC repair configuration;
 - empty-registry readiness;
 - deletion locking, cleanup context timing, aggregate page counts, and cleanup-safe pagination;
 - structured MCP integration fixture data;
+- generic ordinary MCP list behavior without weakening strict FMC observation validation;
 - FMC E2E `POD_UID` wiring;
+- registered-cluster readiness fencing while preserving empty-registry readiness;
 - nil-reader safety and lease-expiry handling;
 - committed repair-token replay coverage and focused test-plan documentation.
 
 No held finding is a prerequisite for this bounded implementation. Any new failure in
 the held categories requires a new attribution decision rather than an opportunistic
-scope expansion.
+scope expansion. The remaining held findings are plan authority, digest-pinned producer
+behavior, registry refresh/per-registration fencing, readiness partition removal and
+active-fence lifecycle, empty-partition Valkey proof, effective Gateway RBAC, and
+production broker-observation wiring.
 
 ## Validation record
 
-The RED phase must add Ginkgo/Gomega tests with BR or scenario IDs before production
-changes. GREEN must wire the minimal fixes and pass the affected tests. REFACTOR must
-run the required build, lint, focused tests, and diff checks. The final report must
-separate source-attributed failures from inherited CI/infrastructure failures.
+The RED phase added Ginkgo/Gomega tests with BR or scenario IDs before the production
+changes. GREEN wired the minimal fixes and passed the affected tests. REFACTOR ran the
+required build, lint, focused tests, and diff checks. The current evidence separates
+source-attributed defects from the inherited GVK/ownership/infrastructure findings and
+the local E2E image-build failure.
