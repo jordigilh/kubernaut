@@ -170,13 +170,13 @@ var _ = Describe("TTLCache", func() {
 			})
 
 			It("UT-SP-1110-044: TTLCache evicts expired entries during Set when at capacity", func() {
-				c := cache.NewTTLCache(10 * time.Millisecond)
+				c := cache.NewTTLCache(100 * time.Millisecond)
 
 				for i := 0; i < 20; i++ {
 					c.Set(fmt.Sprintf("expired-key-%d", i), "value")
 				}
 
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(150 * time.Millisecond)
 
 				c.Set("fresh-key", "fresh-value")
 

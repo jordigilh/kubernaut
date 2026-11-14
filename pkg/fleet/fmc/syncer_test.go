@@ -28,8 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/fleet/observation"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -39,6 +39,7 @@ import (
 // to verify label filter arguments (AC-4: information flow enforcement).
 type spyReader struct {
 	capturedListOpts client.ListOptions
+	capturedRequest  observation.ListRequest
 	listItems        []unstructured.Unstructured
 	listErr          error
 }
@@ -57,12 +58,42 @@ func (r *spyReader) List(_ context.Context, list client.ObjectList, opts ...clie
 	return r.listErr
 }
 
+func (r *spyReader) ListObserved(_ context.Context, request observation.ListRequest) (observation.ListObservation, error) {
+	r.capturedRequest = request
+	if r.listErr != nil {
+		return observation.ListObservation{Failure: observation.FailureTransport}, r.listErr
+	}
+	items := make([]observation.ObservedItem, 0, len(r.listItems))
+	for _, item := range r.listItems {
+		items = append(items, observation.ObservedItem{
+			Object:     item,
+			LabelState: scope.LabelStateAbsent,
+		})
+	}
+	return observation.ListObservation{
+		Items:     items,
+		Complete:  true,
+		PageCount: 1,
+		ItemCount: len(items),
+	}, nil
+}
+
 // stubWriter is a test double for CacheWriter that counts writes.
 type stubWriter struct {
-	keysWritten []string
+	keysWritten    []string
+	observedStates map[string]scope.LabelState
 }
 
 func (w *stubWriter) Set(_ context.Context, key string, _ time.Duration) error {
+	w.keysWritten = append(w.keysWritten, key)
+	return nil
+}
+
+func (w *stubWriter) SetObservation(_ context.Context, key string, labelState scope.LabelState, _ time.Duration) error {
+	if w.observedStates == nil {
+		w.observedStates = make(map[string]scope.LabelState)
+	}
+	w.observedStates[key] = labelState
 	w.keysWritten = append(w.keysWritten, key)
 	return nil
 }
@@ -83,8 +114,8 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 		metrics = fmc.NewMetrics(reg)
 	})
 
-	Describe("UT-FLEET-FMC-003 [AC-4]: managed-label filter in syncKind", func() {
-		It("passes MatchingLabels{kubernaut.ai/managed: true} to the reader List call, enforcing information flow control", func() {
+	Describe("UT-FMC-PRES-005 [BR-SCOPE-001]: unfiltered source observation in syncKind", func() {
+		It("does not use a positive-only label selector, so presence and explicit false can be observed", func() {
 			spy := &spyReader{
 				listItems: []unstructured.Unstructured{
 					{Object: map[string]interface{}{
@@ -98,7 +129,7 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 				},
 			}
 
-			readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				return spy, nil
 			})
 
@@ -117,12 +148,27 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 			err := syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(spy.capturedListOpts.LabelSelector).ToNot(BeNil(),
-				"List must be called with a label selector to enforce AC-4 information flow boundaries")
+			Expect(spy.capturedRequest.LabelSelector).To(BeNil(),
+				"FMC must observe all identity-bearing items, not only managed=true matches")
+		})
+	})
 
-			selectorStr := spy.capturedListOpts.LabelSelector.String()
-			Expect(selectorStr).To(ContainSubstring(scope.ManagedLabelKey+"="+scope.ManagedLabelValueTrue),
-				"only resources with kubernaut.ai/managed=true must pass through the information flow boundary")
+	Describe("UT-FMC-PRES-006 [BR-SCOPE-001]: sync errors", func() {
+		It("returns a failure when a source list fails instead of swallowing the error", func() {
+			spy := &spyReader{listErr: fmt.Errorf("source unavailable")}
+			readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+				return spy, nil
+			})
+			syncer := fmc.NewSyncerWithReaderFactory(
+				&stubRegistry{clusters: []registry.ClusterInfo{{ID: "cluster-a"}}},
+				readerFactory,
+				writer,
+				fmc.Config{KeyTTL: time.Second, ResourceKinds: []string{"Pod"}},
+				logr.Discard(), metrics,
+			)
+
+			err := syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })
@@ -222,7 +268,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 				},
 			}
 
-			readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				return spy, nil
 			})
 
@@ -253,7 +299,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 					return &spyReader{}, nil
 				}),
 				writer,
@@ -278,7 +324,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 					return &spyReader{}, nil
 				}),
 				writer,
@@ -302,7 +348,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 					return &spyReader{}, nil
 				}),
 				writer,
@@ -329,7 +375,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 					return spy, nil
 				}),
 				writer,
@@ -359,7 +405,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 	Describe("broker readiness probe [SI-4, SC-5]", func() {
 		It("UT-FLEET-FMC-010 [SI-4, SC-5]: syncer waits for broker readiness with exponential backoff before starting sync cycles, preventing startup storms against an unready MCP gateway (BR-FLEET-002)", func() {
 			attempts := 0
-			failingFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			failingFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				attempts++
 				if attempts <= 3 {
 					return nil, fmt.Errorf("broker not ready: tools not synced (attempt %d)", attempts)
@@ -400,7 +446,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 
 		It("UT-FLEET-FMC-011 [SI-4]: syncer proceeds immediately to sync cycles when readiness probe is disabled, preserving backward compatibility (BR-FLEET-002)", func() {
 			attempts := 0
-			failingFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			failingFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				attempts++
 				return nil, fmt.Errorf("broker not ready")
 			})
@@ -437,7 +483,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 
 		It("UT-FLEET-FMC-012 [SC-5]: syncer skips readiness probe when no clusters are registered, avoiding unnecessary network probes against an empty registry (BR-FLEET-002)", func() {
 			probeAttempts := 0
-			factory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			factory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				probeAttempts++
 				return &spyReader{}, nil
 			})
@@ -472,7 +518,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 
 		It("UT-FLEET-FMC-013 [SI-4]: syncer shuts down cleanly when context is cancelled during readiness probe, ensuring graceful termination during deployment rollouts (BR-FLEET-002)", func() {
 			probeCtx, probeCancel := context.WithCancel(context.Background())
-			factory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+			factory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 				return nil, fmt.Errorf("broker not ready")
 			})
 
@@ -524,7 +570,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			)
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 					return spy, nil
 				}),
 				writer,

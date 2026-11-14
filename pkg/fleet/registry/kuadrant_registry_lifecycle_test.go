@@ -46,6 +46,7 @@ func newMCPServerRegistrationUnstructured(name, prefix string, labels map[string
 		"kind":       "MCPServerRegistration",
 		"metadata": map[string]interface{}{
 			"name":      name,
+			"uid":       "registration-" + name,
 			"namespace": "kuadrant-system",
 			"labels":    labels,
 		},

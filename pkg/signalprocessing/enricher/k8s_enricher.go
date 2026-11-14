@@ -57,6 +57,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/cache"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
@@ -511,6 +512,16 @@ func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessing
 	result := &signalprocessingv1alpha1.KubernetesContext{
 		ClusterID: signal.ClusterID,
 	}
+	gvk, err := remoteTargetGVK(signal)
+	if err != nil {
+		e.logger.Error(err, "Remote target GVK is unavailable, entering degraded mode",
+			"clusterID", signal.ClusterID,
+			"kind", signal.TargetResource.Kind,
+			"name", signal.TargetResource.Name)
+		result.DegradedMode = true
+		e.metrics.RecordEnrichmentError("remote_gvk_unavailable")
+		return result, nil
+	}
 
 	reader, err := e.readerFactory.ReaderFor(ctx, signal.ClusterID)
 	if err != nil {
@@ -523,11 +534,11 @@ func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessing
 
 	e.fetchRemoteNamespaceContext(ctx, reader, signal, result)
 
-	if !e.fetchRemoteWorkloadContext(ctx, reader, signal, result) {
+	if !e.fetchRemoteWorkloadContext(ctx, reader, signal, result, gvk) {
 		return result, nil
 	}
 
-	e.buildRemoteOwnerChain(ctx, reader, signal, result)
+	e.buildRemoteOwnerChain(ctx, reader, signal, result, gvk)
 
 	return result, nil
 }
@@ -562,9 +573,9 @@ func (e *K8sEnricher) fetchRemoteNamespaceContext(ctx context.Context, reader cl
 // primary enrichment target. Returns false when the caller must return
 // immediately (workload not found). Extracted from enrichRemote (Wave 6
 // 6e-iii GREEN: funlen remediation) — pure code motion, no behavior change.
-func (e *K8sEnricher) fetchRemoteWorkloadContext(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) bool {
+func (e *K8sEnricher) fetchRemoteWorkloadContext(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext, gvk schema.GroupVersionKind) bool {
 	workloadMeta := &metav1.PartialObjectMetadata{}
-	workloadMeta.SetGroupVersionKind(kindToGVK(signal.TargetResource.Kind))
+	workloadMeta.SetGroupVersionKind(gvk)
 	key := types.NamespacedName{
 		Namespace: signal.TargetResource.Namespace,
 		Name:      signal.TargetResource.Name,
@@ -591,13 +602,13 @@ func (e *K8sEnricher) fetchRemoteWorkloadContext(ctx context.Context, reader cli
 // this enrichment flow). A build failure degrades gracefully (owner chain
 // stays nil). Extracted from enrichRemote (Wave 6 6e-iii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
-func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) {
+func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext, gvk schema.GroupVersionKind) {
 	if signal.TargetResource.Kind != kindPod {
 		return
 	}
 	remoteBuilder := ownerchain.NewBuilder(reader, e.logger)
-	chain, chainErr := remoteBuilder.Build(ctx, signal.TargetResource.Namespace,
-		signal.TargetResource.Kind, signal.TargetResource.Name)
+	chain, chainErr := remoteBuilder.BuildWithAPIVersion(ctx, signal.TargetResource.Namespace,
+		gvk.GroupVersion().String(), signal.TargetResource.Kind, signal.TargetResource.Name)
 	if chainErr != nil {
 		e.logger.V(1).Info("Remote owner chain build failed", "error", chainErr)
 		return
@@ -605,24 +616,17 @@ func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.R
 	result.OwnerChain = chain
 }
 
-// kindToGVK maps common workload kinds to their GroupVersionKind.
-func kindToGVK(kind string) schema.GroupVersionKind {
-	switch kind {
-	case kindPod:
-		return schema.GroupVersionKind{Version: "v1", Kind: kindPod}
-	case "Deployment":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
-	case "StatefulSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}
-	case "DaemonSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}
-	case "ReplicaSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"}
-	case "Service":
-		return schema.GroupVersionKind{Version: "v1", Kind: "Service"}
-	case "Node":
-		return schema.GroupVersionKind{Version: "v1", Kind: "Node"}
-	default:
-		return schema.GroupVersionKind{Version: "v1", Kind: kind}
+func remoteTargetGVK(signal *signalprocessingv1alpha1.SignalData) (schema.GroupVersionKind, error) {
+	group, version, err := scope.ParseAPIVersion(signal.TargetResource.APIVersion)
+	if err != nil {
+		return schema.GroupVersionKind{}, err
 	}
+	return scope.GVKForIdentity(scope.ResourceIdentity{
+		ClusterID: signal.ClusterID,
+		Group:     group,
+		Version:   version,
+		Kind:      signal.TargetResource.Kind,
+		Namespace: signal.TargetResource.Namespace,
+		Name:      signal.TargetResource.Name,
+	}, true)
 }

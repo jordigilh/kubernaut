@@ -94,9 +94,10 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 		signal := &signalprocessingv1.SignalData{
 			ClusterID: "prod-east-1",
 			TargetResource: signalprocessingv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "api-server",
-				Namespace: "prod",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "prod",
 			},
 		}
 
@@ -157,9 +158,10 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 		signal := &signalprocessingv1.SignalData{
 			ClusterID: "nonexistent-cluster",
 			TargetResource: signalprocessingv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "api-server",
-				Namespace: "prod",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "prod",
 			},
 		}
 
@@ -169,5 +171,32 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 		Expect(result.DegradedMode).To(BeTrue(),
 			"should enter degraded mode when remote reader cannot be obtained")
 		Expect(result.ClusterID).To(Equal("nonexistent-cluster"))
+	})
+
+	It("UT-FMC-PRES-008 [SI-10]: enters degraded mode instead of inferring a remote GVK", func() {
+		remoteDeploy := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-server", Namespace: "prod"},
+		}
+		remoteClient := fake.NewClientBuilder().
+			WithScheme(localScheme).
+			WithObjects(remoteDeploy).
+			Build()
+		factory := &fleettest.StubReaderFactory{
+			Readers: map[string]client.Reader{"prod-east-1": remoteClient},
+		}
+
+		e := enricher.NewK8sEnricher(localClient, nil, zap.New(zap.UseDevMode(true)), m, 5*time.Second, 30*time.Second)
+		e.SetReaderFactory(factory)
+
+		result, err := e.Enrich(ctx, &signalprocessingv1.SignalData{
+			ClusterID: "prod-east-1",
+			TargetResource: signalprocessingv1.ResourceIdentifier{
+				Kind: "Deployment", Name: "api-server", Namespace: "prod",
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.DegradedMode).To(BeTrue())
+		Expect(result.Workload).To(BeNil())
 	})
 })

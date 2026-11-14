@@ -19,10 +19,12 @@ package mcpclient_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/observation"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -163,7 +167,10 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 
 	Describe("List (client.Reader)", func() {
 		It("UT-FLEET-P0-002: populates UnstructuredList via client.Reader.List", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("prod-west"),
+				mockgw.WithStructuredContent(validPodItems("kube-system")),
+			)
 
 			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-west"))
 			Expect(err).ToNot(HaveOccurred())
@@ -184,7 +191,10 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 		})
 
 		It("UT-FLEET-P0-003: passes MatchingLabels to list_resources", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("prod-west"),
+				mockgw.WithStructuredContent(validPodItems("kube-system")),
+			)
 
 			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-west"))
 			Expect(err).ToNot(HaveOccurred())
@@ -257,7 +267,10 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 
 	Describe("List with Kuadrant prefix (WithToolPrefix)", func() {
 		It("UT-FLEET-KUA-002: uses Kuadrant prefix for List tool call", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-b", "spoke_b_"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithKuadrantCluster("spoke-b", "spoke_b_"),
+				mockgw.WithStructuredContent(validPodItems("kube-system")),
+			)
 
 			parentClient, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())
@@ -408,7 +421,7 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 	})
 
 	Describe("IT-FLEET-PARSE: Structured content parsing wiring (BR-FLEET-002)", func() {
-		It("IT-FLEET-PARSE-001 [AC-4]: List normalizes table-format structuredContent into proper Unstructured", func() {
+		It("IT-FLEET-PARSE-001 [AC-4]: List rejects table-format content as an incomplete observation", func() {
 			gw = mockgw.NewMockGateway(
 				mockgw.WithMultiCluster("table-cluster"),
 			)
@@ -421,13 +434,8 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
 
 			err = c.List(ctx, list, client.InNamespace("kube-system"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(list.Items).To(HaveLen(2))
-			Expect(list.Items[0].GetKind()).To(Equal("Pod"))
-			Expect(list.Items[0].GetAPIVersion()).To(Equal("v1"))
-			Expect(list.Items[0].GetName()).To(Equal("item-1"))
-			Expect(list.Items[0].GetNamespace()).To(Equal("kube-system"))
-			Expect(list.Items[1].GetName()).To(Equal("item-2"))
+			Expect(err).To(HaveOccurred())
+			Expect(list.Items).To(BeEmpty())
 		})
 
 		It("IT-FLEET-PARSE-003 [AC-4]: List with StructuredContent returns items from structured data", func() {
@@ -462,7 +470,7 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			Expect(list.Items[0].GetLabels()).To(HaveKeyWithValue("app", "structured"))
 		})
 
-		It("IT-FLEET-PARSE-004 [SI-10]: List with a successful, zero-match response (no StructuredContent field) returns an empty list, not an error", func() {
+		It("IT-FMC-PRES-004 [BR-SCOPE-001, SI-10]: List without structured observation fails closed instead of claiming an empty source", func() {
 			// Root cause (Issue #54 fleet E2E RCA, CI run 30464667745): real
 			// kube-mcp-server omits StructuredContent entirely for a
 			// zero-match List call (IsError=false) rather than returning
@@ -485,9 +493,312 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSetList"})
 
 			err = c.List(ctx, list, client.InNamespace("kubernaut-system"))
-			Expect(err).ToNot(HaveOccurred(),
-				"a successful zero-match List response must not surface as an error")
+			Expect(err).To(HaveOccurred(),
+				"missing structured content cannot establish source presence or completeness")
 			Expect(list.Items).To(BeEmpty())
 		})
 	})
+
+	Describe("IT-FMC-PRES-001: typed complete-scan observation bridge (BR-SCOPE-001, SI-10)", func() {
+		It("follows an opaque continuation and preserves the exact bounded request contract", func() {
+			var requestArgs []map[string]any
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("paged-cluster"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					var args map[string]any
+					if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+						return nil, fmt.Errorf("decode list arguments: %w", err)
+					}
+					requestArgs = append(requestArgs, args)
+					if _, hasContinue := args["continue"]; !hasContinue {
+						return observationPageResult([]map[string]any{observedPod("page-one")}, "opaque-next", true), nil
+					}
+					if args["continue"] != "opaque-next" {
+						return nil, fmt.Errorf("unexpected continuation %v", args["continue"])
+					}
+					return observationPageResult([]map[string]any{observedPod("page-two")}, "", false), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("paged-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, mcpclient.ListRequest{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Namespace:  "default",
+				Limit:      mcpclient.ObservationPageLimit,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Complete).To(BeTrue())
+			Expect(result.PageCount).To(Equal(2))
+			Expect(result.ItemCount).To(Equal(2))
+			Expect(result.Items).To(HaveLen(2))
+			Expect(result.Continuation.Present).To(BeFalse(), "an omitted final continuation is distinct from a token")
+			Expect(requestArgs).To(HaveLen(2))
+			Expect(requestArgs[0]).ToNot(HaveKey("continue"))
+			Expect(requestArgs[0]).ToNot(HaveKey("labelSelector"))
+			Expect(requestArgs[0]).To(HaveKeyWithValue("apiVersion", "v1"))
+			Expect(requestArgs[0]).To(HaveKeyWithValue("kind", "Pod"))
+			Expect(requestArgs[0]).To(HaveKeyWithValue("namespace", "default"))
+			Expect(requestArgs[0]["limit"]).To(BeNumerically("==", mcpclient.ObservationPageLimit))
+			Expect(requestArgs[1]).To(HaveKeyWithValue("continue", "opaque-next"))
+			Expect(requestArgs[1]["limit"]).To(BeNumerically("==", mcpclient.ObservationPageLimit))
+		})
+
+		It("rejects a present empty continuation token as incomplete", func() {
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("malformed-continuation"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return observationPageResultWithRawContinuation([]map[string]any{observedPod("pod")}, ""), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("malformed-continuation"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureContinuation))
+			Expect(result.Complete).To(BeFalse())
+			Expect(gw.CallLog()).To(HaveLen(1))
+		})
+
+		It("rejects a repeated continuation token instead of looping", func() {
+			var calls int
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("repeated-continuation"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					calls++
+					return observationPageResult([]map[string]any{observedPod(fmt.Sprintf("pod-%d", calls))}, "same-token", true), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("repeated-continuation"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureContinuation))
+			Expect(result.Complete).To(BeFalse())
+			Expect(gw.CallLog()).To(HaveLen(2))
+		})
+
+		It("stops at the bounded page limit", func() {
+			var calls int
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("page-bound"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					calls++
+					return observationPageResult(nil, fmt.Sprintf("page-token-%d", calls), true), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("page-bound"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureBounds))
+			Expect(result.Complete).To(BeFalse())
+			Expect(calls).To(Equal(observation.MaxObservationPages))
+		})
+
+		It("stops at the bounded item limit", func() {
+			items := make([]map[string]any, observation.MaxObservationItems+1)
+			for i := range items {
+				items[i] = observedPod(fmt.Sprintf("pod-%d", i))
+			}
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("item-bound"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return observationPageResult(items, "", false), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("item-bound"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureBounds))
+			Expect(result.Complete).To(BeFalse())
+		})
+
+		It("rejects duplicate and conflicting canonical identities", func() {
+			duplicateItems := []map[string]any{observedPod("same"), observedPod("same")}
+			conflictingItems := []map[string]any{observedPod("same"), observedPodWithLabel("same", scope.ManagedLabelValueFalse)}
+
+			for _, testCase := range []struct {
+				name      string
+				items     []map[string]any
+				failure   mcpclient.ObservationFailure
+				clusterID string
+			}{
+				{name: "duplicate", items: duplicateItems, failure: mcpclient.FailureDuplicate, clusterID: "duplicate-identity"},
+				{name: "conflict", items: conflictingItems, failure: mcpclient.FailureConflict, clusterID: "conflicting-identity"},
+			} {
+				By(testCase.name)
+				gw = mockgw.NewMockGateway(
+					mockgw.WithMultiCluster(testCase.clusterID),
+					mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+						return observationPageResult(testCase.items, "", false), nil
+					}),
+				)
+
+				c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID(testCase.clusterID))
+				Expect(err).ToNot(HaveOccurred())
+				result, listErr := c.ListObserved(ctx, validObservationRequest())
+				Expect(listErr).To(HaveOccurred())
+				Expect(mcpclient.FailureOf(listErr)).To(Equal(testCase.failure))
+				Expect(result.Complete).To(BeFalse())
+				Expect(c.Close()).To(Succeed())
+				gw.Close()
+				gw = nil
+			}
+		})
+
+		It("preserves absent, empty, false, and invalid managed-label states", func() {
+			items := []map[string]any{
+				observedPod("absent"),
+				observedPodWithLabels("empty", map[string]any{}),
+				observedPodWithLabel("false", scope.ManagedLabelValueFalse),
+				observedPodWithLabel("invalid", "unexpected"),
+			}
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("label-states"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return observationPageResult(items, "", false), nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("label-states"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Complete).To(BeTrue())
+			Expect(result.Items[0].LabelsPresent).To(BeFalse())
+			Expect(result.Items[0].LabelState).To(Equal(scope.LabelStateAbsent))
+			Expect(result.Items[1].LabelsPresent).To(BeTrue())
+			Expect(result.Items[1].LabelState).To(Equal(scope.LabelStateAbsent))
+			Expect(result.Items[2].LabelState).To(Equal(scope.LabelStateFalse))
+			Expect(result.Items[3].LabelState).To(Equal(scope.LabelStateInvalid))
+		})
+
+		It("returns a typed source failure when a later page fails", func() {
+			var calls int
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("source-failure"),
+				mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					calls++
+					if calls == 1 {
+						return observationPageResult([]map[string]any{observedPod("first")}, "next", true), nil
+					}
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: "remote list failed"}},
+						IsError: true,
+					}, nil
+				}),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("source-failure"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			result, err := c.ListObserved(ctx, validObservationRequest())
+			Expect(err).To(HaveOccurred())
+			Expect(mcpclient.FailureOf(err)).To(Equal(mcpclient.FailureTool))
+			Expect(result.Complete).To(BeFalse())
+			Expect(calls).To(Equal(2))
+		})
+	})
 })
+
+func validPodItems(namespace string) []map[string]any {
+	return []map[string]any{
+		{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]any{
+				"name":      "item-1",
+				"namespace": namespace,
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]any{
+				"name":      "item-2",
+				"namespace": namespace,
+			},
+		},
+	}
+}
+
+func validObservationRequest() mcpclient.ListRequest {
+	return mcpclient.ListRequest{
+		APIVersion: "v1",
+		Kind:       "Pod",
+		Namespace:  "default",
+		Limit:      mcpclient.ObservationPageLimit,
+	}
+}
+
+func observedPod(name string) map[string]any {
+	return map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": "default",
+		},
+	}
+}
+
+func observedPodWithLabel(name, value string) map[string]any {
+	return observedPodWithLabels(name, map[string]any{scope.ManagedLabelKey: value})
+}
+
+func observedPodWithLabels(name string, labels map[string]any) map[string]any {
+	item := observedPod(name)
+	metadata := item["metadata"].(map[string]any)
+	metadata["labels"] = labels
+	return item
+}
+
+func observationPageResult(items []map[string]any, continuation string, includeContinuation bool) *mcp.CallToolResult {
+	structured := map[string]any{"items": mapItemsAsAny(items)}
+	if includeContinuation {
+		structured["continue"] = continuation
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: "structured page"}},
+		StructuredContent: structured,
+	}
+}
+
+func observationPageResultWithRawContinuation(items []map[string]any, continuation any) *mcp.CallToolResult {
+	structured := map[string]any{
+		"items":    mapItemsAsAny(items),
+		"continue": continuation,
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: "structured page"}},
+		StructuredContent: structured,
+	}
+}
+
+func mapItemsAsAny(items []map[string]any) []any {
+	result := make([]any, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
+	}
+	return result
+}

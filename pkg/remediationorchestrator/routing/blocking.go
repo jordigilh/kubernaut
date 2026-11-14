@@ -813,12 +813,21 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 // checkScopeForResource checks scope using the unified ScopeChecker (ADR-068).
 // ResourceIdentity.ClusterID routes internally: empty → local, non-empty → remote.
 func (r *RoutingEngine) checkScopeForResource(ctx context.Context, rr *remediationv1.RemediationRequest) (bool, error) {
-	return r.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: rr.Spec.ClusterID,
 		Kind:      rr.Spec.TargetResource.Kind,
 		Namespace: rr.Spec.TargetResource.Namespace,
 		Name:      rr.Spec.TargetResource.Name,
-	})
+	}, rr.Spec.TargetResource.APIVersion)
+	if err != nil {
+		return false, fmt.Errorf("target GVK is invalid: %w", err)
+	}
+	if rr.Spec.ClusterID != "" {
+		if _, err := scope.GVKForIdentity(identity, true); err != nil {
+			return false, fmt.Errorf("target GVK is unavailable: %w", err)
+		}
+	}
+	return r.scopeChecker.IsManagedResource(ctx, identity)
 }
 
 // calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.

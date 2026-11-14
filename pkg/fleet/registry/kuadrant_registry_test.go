@@ -83,6 +83,7 @@ var _ = Describe("KuadrantRegistry.Start (BR-INTEGRATION-065)", func() {
 					"kind":       "MCPServerRegistration",
 					"metadata": map[string]interface{}{
 						"name":      fmt.Sprintf("cluster-%d", i),
+						"uid":       fmt.Sprintf("registration-cluster-%d", i),
 						"namespace": "kuadrant-system",
 						"labels": map[string]interface{}{
 							"kubernaut.ai/managed": "true",

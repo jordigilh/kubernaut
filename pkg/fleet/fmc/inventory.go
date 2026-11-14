@@ -95,6 +95,9 @@ func (c *HTTPClient) GetManagedResource(ctx context.Context, clusterID, resource
 	if resource.ID != resourceID || resource.ClusterID != clusterID {
 		return inventory.Resource{}, fmt.Errorf("%w: FMC returned a mismatched resource identity", inventory.ErrUnavailable)
 	}
+	if err := resource.Validate(); err != nil {
+		return inventory.Resource{}, fmt.Errorf("%w: FMC returned an invalid resource identity: %w", inventory.ErrUnavailable, err)
+	}
 	return resource, nil
 }
 

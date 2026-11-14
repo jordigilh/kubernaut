@@ -823,7 +823,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-scope", Namespace: "default"},
 				Spec: remediationv1.RemediationRequestSpec{
 					ClusterID:      "remote-cluster",
-					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-cross-cluster", Namespace: "default"},
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "nginx-cross-cluster", Namespace: "default"},
 				},
 			}
 
@@ -850,7 +850,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "rr-effective-execution-cluster", Namespace: "default"},
 				Spec: remediationv1.RemediationRequestSpec{
 					ClusterID:      "signal-origin-cluster",
-					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-effective-cluster", Namespace: "default"},
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "nginx-effective-cluster", Namespace: "default"},
 				},
 			}
 
@@ -1115,9 +1115,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "api-frontend",
-						Namespace: "demo-hpa",
+						APIVersion: "apps/v1",
+						Kind:       "Deployment",
+						Name:       "api-frontend",
+						Namespace:  "demo-hpa",
 					},
 				},
 			}
@@ -1865,9 +1866,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					ClusterID: "prod-east",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "nginx",
-						Namespace: "default",
+						APIVersion: "apps/v1",
+						Kind:       "Deployment",
+						Name:       "nginx",
+						Namespace:  "default",
 					},
 					SignalType: "alert",
 					TargetType: "kubernetes",

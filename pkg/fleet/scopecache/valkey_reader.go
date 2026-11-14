@@ -19,8 +19,12 @@ package scopecache
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // ValkeyCacheReader implements CacheReader using a Valkey (Redis-compatible) client.
@@ -60,6 +64,35 @@ func (v *ValkeyCacheReader) Exists(ctx context.Context, key string) (bool, error
 		return false, err
 	}
 	return result > 0, nil
+}
+
+// Read returns the presence-aware observation stored by the FMC writer. The
+// legacy value "1" remains readable as a verified managed observation for
+// compatibility with existing direct test/setup writers; new sync cycles use
+// the explicit label-state values.
+func (v *ValkeyCacheReader) Read(ctx context.Context, key string) (CachedObservation, error) {
+	value, err := v.client.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return CachedObservation{State: RecordMissing}, nil
+	}
+	if err != nil {
+		return CachedObservation{State: RecordUncertain}, err
+	}
+
+	var labelState scope.LabelState
+	switch value {
+	case "1", string(scope.LabelStateTrue):
+		labelState = scope.LabelStateTrue
+	case string(scope.LabelStateFalse):
+		labelState = scope.LabelStateFalse
+	case string(scope.LabelStateAbsent):
+		labelState = scope.LabelStateAbsent
+	case string(scope.LabelStateInvalid):
+		labelState = scope.LabelStateInvalid
+	default:
+		return CachedObservation{State: RecordUncertain}, fmt.Errorf("scopecache: unknown cache label state %q", value)
+	}
+	return CachedObservation{State: RecordVerifiedPresent, LabelState: labelState}, nil
 }
 
 // Ping checks connectivity to the Valkey backend.

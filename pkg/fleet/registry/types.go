@@ -20,12 +20,21 @@ limitations under the License.
 // Envoy AI Gateway (EAIGWRegistry) and Kuadrant (KuadrantRegistry).
 package registry
 
-import "context"
+import (
+	"context"
+	"reflect"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
 
 // ClusterInfo holds metadata about a discovered managed cluster.
 type ClusterInfo struct {
 	// ID is the unique identifier (CR name in the MCP Gateway).
 	ID string
+	// RegistrationUID is the Kubernetes metadata.uid of the gateway registration
+	// object. It fences cache state across delete/recreate incarnations that
+	// reuse the same registration name.
+	RegistrationUID string
 	// MCPEndpoint is the URL to reach the cluster's MCP server through the gateway.
 	MCPEndpoint string
 	// ToolPrefix is the prefix used by the MCP Gateway for this cluster's tools.
@@ -35,6 +44,51 @@ type ClusterInfo struct {
 	Labels map[string]string
 	// Namespace where the MCP Gateway CRD was found.
 	Namespace string
+}
+
+// RegistrationSnapshot is an immutable view of one current registry entry and
+// the registry revision at which it was observed.
+type RegistrationSnapshot struct {
+	Info     ClusterInfo
+	Revision uint64
+}
+
+func clusterInfoEqual(left, right ClusterInfo) bool {
+	return left.ID == right.ID &&
+		left.RegistrationUID == right.RegistrationUID &&
+		left.MCPEndpoint == right.MCPEndpoint &&
+		left.ToolPrefix == right.ToolPrefix &&
+		left.Namespace == right.Namespace &&
+		reflect.DeepEqual(left.Labels, right.Labels)
+}
+
+func clusterMapEqual(left, right map[string]ClusterInfo) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for id, leftInfo := range left {
+		rightInfo, ok := right[id]
+		if !ok || !clusterInfoEqual(leftInfo, rightInfo) {
+			return false
+		}
+	}
+	return true
+}
+
+func objectUID(obj interface{}) string {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return ""
+	}
+	return string(u.GetUID())
+}
+
+// CurrentRegistrationGuard provides the short critical section used by cache
+// repair and commit operations. The callback runs only while the requested
+// registration UID and revision are still current.
+type CurrentRegistrationGuard interface {
+	Snapshot(clusterID string) (RegistrationSnapshot, bool)
+	WithCurrent(context.Context, string, string, uint64, func(ClusterInfo) error) error
 }
 
 // ClusterEvent represents a change in the cluster registry.

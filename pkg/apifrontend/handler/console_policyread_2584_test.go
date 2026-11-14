@@ -19,6 +19,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console inventory list", func() {
@@ -127,9 +128,10 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 
 	It("IT-AF-2593-PUBLIC-METADATA-003 [BR-API-001]: returns policy-scope observed time and freshness metadata", func() {
 		page := inventory.Page{
-			State:      inventory.StateEmpty,
-			ObservedAt: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
-			Freshness:  inventory.Freshness{State: inventory.FreshnessStale, AsOf: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)},
+			State:        inventory.StateEmpty,
+			ObservedAt:   time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
+			Freshness:    inventory.Freshness{State: inventory.FreshnessStale, AsOf: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)},
+			Completeness: inventory.CompletenessComplete,
 		}
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: page})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/policies/scope?cluster_id=local", http.NoBody)
@@ -240,7 +242,7 @@ func successfulPage() inventory.Page {
 		Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: observedAt},
 		Completeness: inventory.CompletenessComplete,
 		Items: []inventory.Resource{{
-			ID:        "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			ID:        inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"}),
 			ClusterID: "local",
 			Group:     "apps",
 			Version:   "v1",
@@ -263,10 +265,10 @@ type consoleCurrentPolicyStub struct{}
 
 func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
 	return []policyread.PolicyMetadata{{
-		Type:         "aiAnalysis",
+		Type:          "aiAnalysis",
 		ConfigMapName: "aianalysis-policy",
 		ConfigMapKey:  "approval.rego",
-		Revision:     "sha256:ai",
+		Revision:      "sha256:ai",
 	}}, nil
 }
 

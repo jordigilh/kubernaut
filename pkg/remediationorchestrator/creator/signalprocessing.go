@@ -164,8 +164,9 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 // buildTargetResource converts ResourceIdentifier to SignalProcessing format.
 func (c *SignalProcessingCreator) buildTargetResource(rr *remediationv1.RemediationRequest) signalprocessingv1.ResourceIdentifier {
 	return signalprocessingv1.ResourceIdentifier{
-		Kind:      rr.Spec.TargetResource.Kind,
-		Name:      rr.Spec.TargetResource.Name,
-		Namespace: rr.Spec.TargetResource.Namespace,
+		APIVersion: rr.Spec.TargetResource.APIVersion,
+		Kind:       rr.Spec.TargetResource.Kind,
+		Name:       rr.Spec.TargetResource.Name,
+		Namespace:  rr.Spec.TargetResource.Namespace,
 	}
 }

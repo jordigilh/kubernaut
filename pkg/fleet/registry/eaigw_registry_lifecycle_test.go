@@ -47,6 +47,7 @@ func newBackendUnstructured(name, endpoint string) *unstructured.Unstructured {
 			"kind":       "Backend",
 			"metadata": map[string]interface{}{
 				"name":      name,
+				"uid":       "backend-" + name,
 				"namespace": "kubernaut-system",
 				"labels": map[string]interface{}{
 					ManagedLabel: "true",
@@ -132,6 +133,39 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 				onWatchError: func(error) {},
 			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh, w.trackableClusterInfo)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-REG-EAIGW-015 [AC-3]: rejects stale delete and old revision commits after same-name recreation", func() {
+			oldRegistration := newBackendUnstructured("prod-east", "https://old.example")
+			newRegistration := newBackendUnstructured("prod-east", "https://new.example")
+			newRegistration.SetUID("backend-prod-east-recreated")
+
+			w.onAdd(oldRegistration)
+			oldSnapshot, found := w.Snapshot("prod-east")
+			Expect(found).To(BeTrue())
+
+			w.onUpdate(oldRegistration, newRegistration)
+			w.onDelete(oldRegistration)
+
+			current, found := w.Get("prod-east")
+			Expect(found).To(BeTrue())
+			Expect(current.RegistrationUID).To(Equal("backend-prod-east-recreated"))
+			Expect(w.WithCurrent(context.Background(), "prod-east", oldSnapshot.Info.RegistrationUID, oldSnapshot.Revision, func(ClusterInfo) error {
+				return nil
+			})).To(MatchError(ContainSubstring("registration changed")))
+		})
+
+		It("UT-REG-EAIGW-016 [AC-3]: rejects a commit after a same-UID registry update increments revision", func() {
+			first := newBackendUnstructured("prod-east", "https://old.example")
+			second := newBackendUnstructured("prod-east", "https://new.example")
+			w.onAdd(first)
+			snapshot, found := w.Snapshot("prod-east")
+			Expect(found).To(BeTrue())
+			w.onUpdate(first, second)
+
+			Expect(w.WithCurrent(context.Background(), "prod-east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error {
+				return nil
+			})).To(MatchError(ContainSubstring("registration changed")))
 		})
 	})
 

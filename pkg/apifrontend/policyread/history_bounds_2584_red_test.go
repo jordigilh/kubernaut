@@ -18,7 +18,7 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 	It("UT-AF-2584-HISTORY-001: uses streaming history reads instead of retaining legacy full lists", func() {
 		history := &streamingHistoryStub{}
 		resource := inventory.Resource{
-			ID:        "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			ID:        policyReadTestResourceID,
 			ClusterID: "local",
 			Group:     "apps",
 			Version:   "v1",
@@ -51,7 +51,7 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 	It("UT-AF-2584-HISTORY-002: propagates a streaming history failure without returning policy rows", func() {
 		history := &streamingHistoryStub{streamErr: errors.New("history page unavailable")}
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
-			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete, Items: []inventory.Resource{{ID: "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Name: "checkout", Scope: inventory.Scope{Included: true}}}}},
+			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete, Items: []inventory.Resource{{ID: policyReadTestResourceID, ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true}}}}},
 			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
 				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
 			}},

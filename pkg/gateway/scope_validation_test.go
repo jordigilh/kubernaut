@@ -66,6 +66,8 @@ type mockScopeChecker struct {
 	callCount  int
 	lastParams struct {
 		namespace string
+		group     string
+		version   string
 		kind      string
 		name      string
 	}
@@ -74,6 +76,8 @@ type mockScopeChecker struct {
 func (m *mockScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
 	m.callCount++
 	m.lastParams.namespace = resource.Namespace
+	m.lastParams.group = resource.Group
+	m.lastParams.version = resource.Version
 	m.lastParams.kind = resource.Kind
 	m.lastParams.name = resource.Name
 	return m.managed, m.err
@@ -345,6 +349,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		By("3. Parse and process signal (should be rejected)")
 		signal, err := parsePrometheusSignal(ctx, testNamespace, "PodRestart", "worker-pod-999")
 		Expect(err).ToNot(HaveOccurred())
+		signal.Resource.APIVersion = "v1"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
@@ -360,6 +365,10 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 			"BR-SCOPE-002: Scope checker should be called exactly once per signal")
 		Expect(mockScope.lastParams.namespace).To(Equal(testNamespace),
 			"BR-SCOPE-002: Scope checker must receive the signal namespace")
+		Expect(mockScope.lastParams.group).To(BeEmpty(),
+			"IT-FMC-GVK-022: core-resource signals must preserve an empty API group")
+		Expect(mockScope.lastParams.version).To(Equal("v1"),
+			"IT-FMC-GVK-022: explicit apiVersion must reach the pre-RR scope check")
 		Expect(mockScope.lastParams.kind).To(Equal("Pod"),
 			"BR-SCOPE-002: Scope checker must receive the resource kind")
 		Expect(mockScope.lastParams.name).ToNot(BeEmpty(),

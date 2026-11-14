@@ -479,12 +479,22 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
-	managed, err := s.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
 		Namespace: signal.Namespace,
 		Name:      signal.Resource.Name,
-	})
+	}, signal.Resource.APIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
+	}
+	if signal.ClusterID != "" {
+		if _, err := scope.GVKForIdentity(identity, true); err != nil {
+			return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
+		}
+	}
+
+	managed, err := s.scopeChecker.IsManagedResource(ctx, identity)
 	if err != nil {
 		return nil, fmt.Errorf("scope validation failed: %w", err)
 	}

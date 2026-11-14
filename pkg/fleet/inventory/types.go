@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -139,6 +140,23 @@ func (r Resource) Identity() scope.ResourceIdentity {
 	}
 }
 
+// Validate checks that the public ID is the exact canonical encoding of the
+// resource identity. Readers call this before returning an exact resource so a
+// backend cannot substitute a valid-looking ID for a different target.
+func (r Resource) Validate() error {
+	if err := ValidateResourceID(r.ID); err != nil {
+		return fmt.Errorf("%w: resource ID is invalid", ErrUnavailable)
+	}
+	expectedID, err := CanonicalResourceIDChecked(r.Identity())
+	if err != nil {
+		return fmt.Errorf("%w: resource identity is invalid: %w", ErrUnavailable, err)
+	}
+	if r.ID != expectedID {
+		return fmt.Errorf("%w: item ID does not match canonical identity", ErrUnavailable)
+	}
+	return nil
+}
+
 // Page is the canonical list response. Non-success states must contain no
 // resource records; callers can safely serialize the state envelope only.
 type Page struct {
@@ -181,11 +199,14 @@ var (
 	ErrUnavailable = errors.New("inventory unavailable")
 	// ErrNotFound identifies an exact resource ID that is not present.
 	ErrNotFound = errors.New("inventory resource not found")
+	// ErrInvalidIdentity identifies a canonical identity that cannot safely be
+	// used to derive a public inventory ID.
+	ErrInvalidIdentity = errors.New("invalid canonical resource identity")
 )
 
 var filterValuePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]+$`)
-var cursorPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
-var resourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
+var resourceIDPattern = regexp.MustCompile(`^r-[0-9a-f]{64}$`)
+var kindPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 
 // Normalize validates filters and applies the bounded default page size.
 func (f Filters) Normalize() (Filters, error) {
@@ -200,6 +221,11 @@ func (f Filters) Normalize() (Filters, error) {
 	}
 	if err := validateResourceIDCombination(f); err != nil {
 		return Filters{}, err
+	}
+	if f.ResourceID != "" {
+		if err := ValidateResourceID(f.ResourceID); err != nil {
+			return Filters{}, err
+		}
 	}
 	for field, value := range filterValues(f) {
 		if err := validateFilterValue(field, value); err != nil {
@@ -242,8 +268,11 @@ func filterValues(filters Filters) map[string]string {
 }
 
 func validateCursor(cursor string) error {
-	if cursor != "" && (len(cursor) > MaxCursorLength || !cursorPattern.MatchString(cursor)) {
-		return fmt.Errorf("%w: cursor is not a valid opaque token", ErrInvalidFilter)
+	if cursor == "" {
+		return nil
+	}
+	if len(cursor) > MaxCursorLength || ValidateResourceID(cursor) != nil {
+		return fmt.Errorf("%w: cursor is not a valid resource ID", ErrInvalidFilter)
 	}
 	return nil
 }
@@ -261,8 +290,51 @@ func validateFilterValue(field, value string) error {
 // ValidateResourceID validates the opaque ID accepted by exact inventory
 // reads. Resource IDs never contain path separators or arbitrary query text.
 func ValidateResourceID(resourceID string) error {
-	if resourceID == "" || len(resourceID) > MaxFilterLength || !resourceIDPattern.MatchString(resourceID) {
+	if !resourceIDPattern.MatchString(resourceID) {
 		return fmt.Errorf("%w: resource_id is not a valid opaque ID", ErrInvalidFilter)
+	}
+	return nil
+}
+
+// ValidateResourceIdentity validates every field that participates in the
+// public canonical ID. It prevents ambiguous tuple encodings and enforces the
+// Kubernetes naming rules needed by the inventory wire contract.
+func ValidateResourceIdentity(identity scope.ResourceIdentity) error {
+	if err := validateIdentityValue("cluster_id", identity.ClusterID, true); err != nil {
+		return err
+	}
+	if identity.Group != "" {
+		if len(validation.IsDNS1123Subdomain(identity.Group)) > 0 {
+			return fmt.Errorf("%w: group %q is not a DNS subdomain", ErrInvalidIdentity, identity.Group)
+		}
+	}
+	if len(validation.IsDNS1123Label(identity.Version)) > 0 {
+		return fmt.Errorf("%w: version %q is not a DNS label", ErrInvalidIdentity, identity.Version)
+	}
+	if !kindPattern.MatchString(identity.Kind) {
+		return fmt.Errorf("%w: kind %q is invalid", ErrInvalidIdentity, identity.Kind)
+	}
+	if identity.Namespace != "" && len(validation.IsDNS1123Label(identity.Namespace)) > 0 {
+		return fmt.Errorf("%w: namespace %q is not a DNS label", ErrInvalidIdentity, identity.Namespace)
+	}
+	if len(validation.IsDNS1123Subdomain(identity.Name)) > 0 {
+		return fmt.Errorf("%w: name %q is not a DNS subdomain", ErrInvalidIdentity, identity.Name)
+	}
+	if scope.IsClusterScopedKind(identity.Kind) && identity.Namespace != "" {
+		return fmt.Errorf("%w: cluster-scoped kind %q cannot have a namespace", ErrInvalidIdentity, identity.Kind)
+	}
+	return nil
+}
+
+func validateIdentityValue(field, value string, required bool) error {
+	if value == "" {
+		if required {
+			return fmt.Errorf("%w: %s is required", ErrInvalidIdentity, field)
+		}
+		return nil
+	}
+	if len(value) > MaxFilterLength || !filterValuePattern.MatchString(value) {
+		return fmt.Errorf("%w: %s contains unsupported characters or is too long", ErrInvalidIdentity, field)
 	}
 	return nil
 }
@@ -272,19 +344,68 @@ func ValidateResourceID(resourceID string) error {
 func (p Page) Validate() error {
 	switch p.State {
 	case StateSuccess:
-		if p.Completeness != CompletenessComplete {
-			return fmt.Errorf("%w: successful page is incomplete", ErrUnavailable)
-		}
+		return p.validateSuccess()
 	case StateEmpty:
-		if len(p.Items) != 0 {
-			return fmt.Errorf("%w: empty page contains items", ErrUnavailable)
-		}
+		return p.validateEmpty()
 	case StatePartial, StateStale, StateUnavailable, StateForbidden, StateNotFound:
-		if len(p.Items) != 0 || p.NextCursor != "" {
-			return fmt.Errorf("%w: state-only page contains records or cursor", ErrUnavailable)
-		}
+		return p.validateStateOnly()
 	default:
 		return fmt.Errorf("%w: unsupported page state %q", ErrUnavailable, p.State)
+	}
+}
+
+func (p Page) validateSuccess() error {
+	if p.Completeness != CompletenessComplete {
+		return fmt.Errorf("%w: successful page is incomplete", ErrUnavailable)
+	}
+	if len(p.Items) == 0 {
+		return fmt.Errorf("%w: successful page must contain at least one item", ErrUnavailable)
+	}
+	if err := validatePageItems(p.Items); err != nil {
+		return err
+	}
+	if p.NextCursor == "" {
+		return nil
+	}
+	if err := ValidateResourceID(p.NextCursor); err != nil {
+		return fmt.Errorf("%w: next_cursor is not a valid resource ID", ErrUnavailable)
+	}
+	if p.NextCursor != p.Items[len(p.Items)-1].ID {
+		return fmt.Errorf("%w: next_cursor must identify the last item", ErrUnavailable)
+	}
+	return nil
+}
+
+func (p Page) validateEmpty() error {
+	if p.Completeness != CompletenessComplete {
+		return fmt.Errorf("%w: empty page must be complete", ErrUnavailable)
+	}
+	if len(p.Items) != 0 || p.NextCursor != "" {
+		return fmt.Errorf("%w: empty page contains records or cursor", ErrUnavailable)
+	}
+	return nil
+}
+
+func (p Page) validateStateOnly() error {
+	if p.Completeness != CompletenessPartial {
+		return fmt.Errorf("%w: state-only page must be partial", ErrUnavailable)
+	}
+	if len(p.Items) != 0 || p.NextCursor != "" {
+		return fmt.Errorf("%w: state-only page contains records or cursor", ErrUnavailable)
+	}
+	return nil
+}
+
+func validatePageItems(items []Resource) error {
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if err := item.Validate(); err != nil {
+			return err
+		}
+		if _, duplicate := seen[item.ID]; duplicate {
+			return fmt.Errorf("%w: duplicate item ID %q", ErrUnavailable, item.ID)
+		}
+		seen[item.ID] = struct{}{}
 	}
 	return nil
 }
@@ -297,10 +418,24 @@ func StateOnly(state State) Page {
 	}
 }
 
-// CanonicalResourceID returns an opaque, stable ID derived from the complete
-// resource identity. It is intentionally one-way so IDs do not expose target
-// names or namespaces when used in audit details or links.
+// CanonicalResourceID returns an opaque, stable ID derived from a validated
+// complete resource identity. Invalid identities return an empty string; new
+// production callers should use CanonicalResourceIDChecked so invalid input is
+// handled rather than silently discarded.
 func CanonicalResourceID(identity scope.ResourceIdentity) string {
+	resourceID, err := CanonicalResourceIDChecked(identity)
+	if err != nil {
+		return ""
+	}
+	return resourceID
+}
+
+// CanonicalResourceIDChecked validates the complete six-field public identity
+// before hashing it. Registration incarnation data is intentionally excluded.
+func CanonicalResourceIDChecked(identity scope.ResourceIdentity) (string, error) {
+	if err := ValidateResourceIdentity(identity); err != nil {
+		return "", err
+	}
 	canonical := strings.Join([]string{
 		identity.ClusterID,
 		identity.Group,
@@ -310,7 +445,7 @@ func CanonicalResourceID(identity scope.ResourceIdentity) string {
 		identity.Name,
 	}, "\x00")
 	digest := sha256.Sum256([]byte(canonical))
-	return "r-" + hex.EncodeToString(digest[:])
+	return "r-" + hex.EncodeToString(digest[:]), nil
 }
 
 // SortResources orders resources deterministically for cursor-compatible page

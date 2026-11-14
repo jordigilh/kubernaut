@@ -137,18 +137,20 @@ type PolicyInput struct {
 
 // TargetResourceInput contains target resource identification
 type TargetResourceInput struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
 }
 
 // RemediationTargetInput is the LLM-identified target resource for Rego policy evaluation.
 // ADR-055: Replaces target_in_owner_chain boolean with structured resource data,
 // enabling granular per-kind approval policies.
 type RemediationTargetInput struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
 }
 
 // PolicyResult represents Rego policy evaluation result
@@ -284,9 +286,10 @@ func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 		"business_priority": input.SignalContext.BusinessPriority,
 		// Target resource
 		"target_resource": map[string]interface{}{
-			"kind":      input.TargetResource.Kind,
-			"name":      input.TargetResource.Name,
-			"namespace": input.TargetResource.Namespace,
+			"api_version": input.TargetResource.APIVersion,
+			"kind":        input.TargetResource.Kind,
+			"name":        input.TargetResource.Name,
+			"namespace":   input.TargetResource.Namespace,
 		},
 		// Detected labels
 		"detected_labels": input.Classification.DetectedLabels,

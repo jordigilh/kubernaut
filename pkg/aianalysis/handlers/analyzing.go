@@ -401,9 +401,10 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 		// Target resource
 		TargetResource: rego.TargetResourceInput{
-			Kind:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind,
-			Name:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name,
-			Namespace: analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace,
+			APIVersion: analysis.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion,
+			Kind:       analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind,
+			Name:       analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name,
+			Namespace:  analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace,
 		},
 
 		// KA response data
@@ -426,9 +427,10 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 	if rca != nil && rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.RemediationTarget != nil {
 		ar := rca.RootCauseAnalysis.RemediationTarget
 		input.RemediationTarget = &rego.RemediationTargetInput{
-			Kind:      ar.Kind,
-			Name:      ar.Name,
-			Namespace: ar.Namespace,
+			APIVersion: ar.APIVersion,
+			Kind:       ar.Kind,
+			Name:       ar.Name,
+			Namespace:  ar.Namespace,
 		}
 	}
 

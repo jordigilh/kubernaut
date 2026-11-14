@@ -84,6 +84,7 @@ type EAIGWRegistry struct {
 
 	mu       sync.RWMutex
 	clusters map[string]ClusterInfo
+	revision uint64
 	ready    bool
 	started  bool
 
@@ -130,6 +131,41 @@ func (w *EAIGWRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	return info, ok
 }
 
+// Snapshot returns the current registration and the registry revision at
+// which it was read. The revision changes whenever a registry event publishes
+// an add, update, or delete.
+func (w *EAIGWRegistry) Snapshot(clusterID string) (RegistrationSnapshot, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	info, ok := w.clusters[clusterID]
+	if !ok {
+		return RegistrationSnapshot{}, false
+	}
+	return RegistrationSnapshot{Info: info, Revision: w.revision}, true
+}
+
+// WithCurrent runs callback while holding the registry update exclusion after
+// verifying both the registration UID and the exact snapshot revision.
+func (w *EAIGWRegistry) WithCurrent(ctx context.Context, clusterID, registrationUID string, expectedRevision uint64, callback func(ClusterInfo) error) error {
+	if callback == nil {
+		return fmt.Errorf("registry current callback is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	info, ok := w.clusters[clusterID]
+	if !ok {
+		return fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	if info.RegistrationUID != registrationUID || w.revision != expectedRevision {
+		return fmt.Errorf("cluster %q registration changed", clusterID)
+	}
+	return callback(info)
+}
+
 // WatchClusters returns the event channel.
 func (w *EAIGWRegistry) WatchClusters() <-chan ClusterEvent {
 	return w.eventCh
@@ -161,7 +197,11 @@ func (w *EAIGWRegistry) Probe(ctx context.Context) error {
 		return err
 	}
 	w.mu.Lock()
+	changed := !clusterMapEqual(w.clusters, refreshed)
 	w.clusters = refreshed
+	if changed {
+		w.revision++
+	}
 	w.ready = true
 	w.mu.Unlock()
 	return nil
@@ -181,6 +221,9 @@ func (w *EAIGWRegistry) Start(ctx context.Context) error {
 	w.mu.Lock()
 	for id, info := range seeded {
 		w.clusters[id] = info
+	}
+	if len(seeded) > 0 {
+		w.revision++
 	}
 	w.ready = true
 	w.started = true
@@ -282,12 +325,19 @@ func (w *EAIGWRegistry) onAdd(obj interface{}) {
 	}
 
 	w.mu.Lock()
+	_, existed := w.clusters[info.ID]
 	w.clusters[info.ID] = info
+	w.revision++
+	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 
-	w.metrics.NilSafeSetClusters(float64(len(w.clusters)))
+	w.metrics.NilSafeSetClusters(float64(clusterCount))
 	w.metrics.NilSafeIncReconcile()
-	w.emit(ClusterEvent{Type: EventAdded, Cluster: info})
+	eventType := EventAdded
+	if existed {
+		eventType = EventUpdated
+	}
+	w.emit(ClusterEvent{Type: eventType, Cluster: info})
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
 }
 
@@ -310,15 +360,24 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 	if !ok {
 		return
 	}
-	info, err := ExtractClusterInfo(u)
-	if err != nil {
-		w.logger.Error(err, "failed to extract cluster info on update", "name", u.GetName())
-		w.metrics.NilSafeIncReconcileError()
+	info, trackable := w.trackableClusterInfo(u)
+	if !trackable {
+		w.removeIfCurrent(u)
 		return
 	}
 
 	w.mu.Lock()
+	current, existed := w.clusters[info.ID]
+	if existed && current.RegistrationUID != info.RegistrationUID {
+		// The informer can deliver an old update after a delete/recreate. Never
+		// allow that old incarnation to overwrite the current registration.
+		if oldUID := objectUID(oldObj); oldUID == "" || oldUID != current.RegistrationUID {
+			w.mu.Unlock()
+			return
+		}
+	}
 	w.clusters[info.ID] = info
+	w.revision++
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
@@ -327,30 +386,29 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *EAIGWRegistry) onDelete(obj interface{}) {
+	handleDeletedCluster(obj, &w.mu, w.clusters, &w.revision, w.metrics, w.logger, w.emit)
+}
+
+func (w *EAIGWRegistry) removeIfCurrent(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return
-		}
-		u, ok = tombstone.Obj.(*unstructured.Unstructured)
-		if !ok {
-			return
-		}
+		return
 	}
-
 	id := u.GetName()
+	uid := string(u.GetUID())
 	w.mu.Lock()
 	info, existed := w.clusters[id]
-	delete(w.clusters, id)
-	w.mu.Unlock()
-
-	if existed {
-		w.metrics.NilSafeSetClusters(float64(len(w.clusters)))
-		w.metrics.NilSafeIncReconcile()
-		w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
-		w.logger.Info("cluster deleted", "id", id)
+	if !existed || uid == "" || info.RegistrationUID != uid {
+		w.mu.Unlock()
+		return
 	}
+	delete(w.clusters, id)
+	w.revision++
+	clusterCount := len(w.clusters)
+	w.mu.Unlock()
+	w.metrics.NilSafeSetClusters(float64(clusterCount))
+	w.metrics.NilSafeIncReconcile()
+	w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
 }
 
 func (w *EAIGWRegistry) emit(event ClusterEvent) {
@@ -378,10 +436,14 @@ func ExtractClusterInfo(u *unstructured.Unstructured) (ClusterInfo, error) {
 	}
 
 	info := ClusterInfo{
-		ID:         name,
-		Namespace:  u.GetNamespace(),
-		Labels:     u.GetLabels(),
-		ToolPrefix: name + "__",
+		ID:              name,
+		RegistrationUID: string(u.GetUID()),
+		Namespace:       u.GetNamespace(),
+		Labels:          u.GetLabels(),
+		ToolPrefix:      name + "__",
+	}
+	if info.RegistrationUID == "" {
+		return ClusterInfo{}, fmt.Errorf("backend CRD %q has empty metadata.uid", name)
 	}
 
 	// Extract MCP endpoint from status.endpoint or spec.
