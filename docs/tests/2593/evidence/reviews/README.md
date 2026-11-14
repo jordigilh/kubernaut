@@ -11,7 +11,7 @@ This directory holds review artifacts for the FMC presence/TTL recovery plan.
   pre-RED approval gate for the dirty-worktree plan. They remain historical evidence
   and are not repeated for the user-approved clean-worktree fast path.
 - The active fast-path boundary is recorded in `../FAST_PATH_CARRY_HOLD.md` and the
-  bounded OpenChamber plan. Expected implementation changes are allowed only in the
+  repository-versioned authority in `../TEST_PLAN.md`. Expected implementation changes are allowed only in the
   clean worktree; each RED/GREEN/REFACTOR pass still requires its own immutable
   source-diff capture and review.
 - Historical R1–R3 responses remain discoverable through the external plan ledger's
@@ -72,8 +72,8 @@ the next clean gate.
 
 ## Historical amended baseline / reset metadata
 
-**Amendment/reset event:** 2026-11-13 — `TP-2593-v0.9` and the bounded OpenChamber plan
-were amended under the user-approved pre-GA v1/no-migration public contract and the
+**Amendment/reset event:** 2026-11-13 — `TP-2593-v0.9` and the repository-versioned bounded
+implementation/test authority were amended under the user-approved pre-GA v1/no-migration public contract and the
 user-approved internal `PartitionStateKey`/tokenized repair/epoch-scoped LeaseSession
 contract. This correction also resolves RED/Step 0 sequencing, replaces the circular capture
 recipe with two-phase utility-bound validation, and fixes neutral observation-reader package
@@ -88,12 +88,11 @@ approval gate. No clean review or approval is claimed here, and the historical c
 remains `0/3`; the user-approved clean-worktree fast path is recorded separately and does
 not create a second three-review cycle.
 
-- Bounded/OpenChamber plan: knowledge plan ID
-  `44585f5b-5673-4cd9-ad59-7b0ba98dff66`, registered path
-  `/Users/jgil/.config/openchamber/projects/path_L1VzZXJzL2pnaWwvZ28vc3JjL2dpdGh1Yi5jb20vam9yZGlnaWxoL2t1YmVybmF1dA/plans/1794533840933-fmc-bounded-implementation-and-review.md`,
-  amended fast-path SHA-256 `c3d2df305a5afe4ed2ad03bf1c4b7940eff318b705aff4cd6cea944b9f556884`.
-- Test plan: `TP-2593-v0.9`, fast-path SHA-256
-  `d603a0a53bbfb97b83dc82bac95b1dd8f127627e890ad1dc2b908887fc350015`.
+- Repository-versioned bounded implementation/test authority: `docs/tests/2593/TEST_PLAN.md`.
+- Historical OpenChamber plan: knowledge plan ID
+  `44585f5b-5673-4cd9-ad59-7b0ba98dff66`, title `FMC bounded implementation and review`.
+- Test plan: `TP-2593-v0.9`, repository-versioned fast-path SHA-256
+  `363f36c3a59c7fc46c72a37347479cb5e2df775d8b6770f8854eda1e405eb482`.
 - Source checkout `HEAD`: `7a4ed304580298802520e292cad0a7c4efccd17b`.
 - Source checkout `origin/main`: `18870e92d58b83c1c061841130bc73fde62abc70`.
 - Test-plan identity: `TP-2593-v0.9`, Fast-path implementation baseline — Step 0 complete; RED pending.
@@ -120,7 +119,8 @@ not create a second three-review cycle.
   not accepted behavior or cleanup; expected source changes after the clean boundary are
   reviewed in immutable RED/GREEN/REFACTOR pass captures and do not reset the historical
   `0/3` counter.
-- Hash command: `shasum -a 256 <file>` on 2026-11-13.
+- Hash command: `shasum -a 256 <file>` on 2026-11-13; the repository-versioned authority
+  hash is recomputed after each committed amendment.
 
 Prior reviews and R13 remain immutable historical evidence and are not edited. The
 pre-amendment **`0/3`** clean-review state remains historical/non-clean; no clean review

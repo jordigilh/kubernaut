@@ -73,7 +73,7 @@ outside-diff minor finding. Each is classified below.
 
 | Finding | Disposition | Reason |
 |---|---|---|
-| `docs/tests/2593/TEST_PLAN.md`: publish the external active plan | Hold | The approved fast-path boundary deliberately retains the external plan authority; publishing or replacing it changes the review/approval workflow. |
+| `docs/tests/2593/TEST_PLAN.md`: publish the external active plan | **Fix** | `docs/tests/2593/TEST_PLAN.md` is now the repository-versioned active implementation/test authority; the developer-local OpenChamber plan is retained only as historical provenance. |
 | `pkg/fleet/fmc/syncer.go`: use `snapshot.Info` for repair collection | **Fix** | The repair reader must use the registration configuration matching the captured snapshot revision. |
 | `pkg/fleet/fmc/syncer.go`: empty registry never becomes ready | **Fix** | `FMCGlobalReadiness.ServiceReady` preserves the empty-registry exemption, while the production readiness path now publishes the registered-cluster count so a registered cluster without a lease or repair partition remains unavailable. |
 | `pkg/fleet/mcpclient/client.go`: strict-list integration fixture | **Fix** | The fixture is invalid under the already-approved structured observation contract. |
@@ -127,7 +127,7 @@ The implementation changed only the following validated concerns:
 
 No held finding is a prerequisite for this bounded implementation. Any new failure in
 the held categories requires a new attribution decision rather than an opportunistic
-scope expansion. The remaining held findings are plan authority, digest-pinned producer
+scope expansion. The remaining held findings are digest-pinned producer
 behavior, registry refresh/per-registration fencing, readiness partition removal and
 active-fence lifecycle, empty-partition Valkey proof, effective Gateway RBAC, and
 production broker-observation wiring.

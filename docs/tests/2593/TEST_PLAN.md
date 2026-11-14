@@ -10,9 +10,11 @@
 **Status**: Fast-path implementation baseline — Step 0 complete; RED pending
 **Branch**: `work/2593-fmc-presence`
 
-> This is the authoritative scenario and evidence-boundary artifact for the bounded
-> #2593 implementation. The user-approved clean-worktree fast path authorizes RED and
-> subsequent implementation only in `/private/var/folders/r7/gktmmltd1zq7wqhsjjslwsm80000gn/T/opencode/2593-fmc-implementation`;
+> This repository-versioned file is the active bounded implementation and test authority
+> for #2593. It contains the approved fast-path boundary, approval-pending constraints,
+> TDD execution, production-wiring, evidence, and final validation gates. The user-approved
+> clean-worktree fast path authorizes RED and subsequent implementation only in the clean
+> worktree recorded by `evidence/FAST_PATH_CARRY_HOLD.md`;
 > it authorizes no public v2 route/media, cluster activity, deployment, release, GitHub
 > update, ACM Search qualification, or ACM Console inventory. The original dirty
 > worktree and all held paths remain preserved. Functional scenarios, denominators,
@@ -21,7 +23,7 @@
 ### Fast-path execution boundary (2026-11-13)
 
 The historical review-only Step 0/three-clean-review sequencing below is superseded
-for this clean worktree by the bounded plan's approved fast path. The carry/hold
+for this clean worktree by the repository-versioned authority's approved fast path. The carry/hold
 classification is recorded in `evidence/FAST_PATH_CARRY_HOLD.md`; the original draft
 worktree remains untouched. This is not a new functional plan or a public API approval:
 RED starts from the carried foundation, GREEN still requires production wiring and
@@ -150,10 +152,10 @@ user-approved clean-worktree fast path permits bounded RED from the recorded car
 boundary; it does not waive these gates for GREEN completion, qualification, or release:
 
 - The [v0.9 amendment note](#amendment-note-user-approved-pre-ga-v1no-migration-and-internal-repairlease-decision)
-  records the user-approved pre-GA v1/no-migration decision; the bounded OpenChamber plan
-  named in Section 12 is the only active implementation-plan authority for this pre-release
-  v1 slice. Its exact plan SHA-256 is captured externally in the Step 0 approved-inputs
-  record/capture envelope and is not asserted in this mutable test plan.
+  records the user-approved pre-GA v1/no-migration decision. This repository-versioned
+  test plan is the active implementation/test authority for the pre-release v1 slice;
+  the external OpenChamber plan remains historical provenance and is not required for
+  approval, readiness, or review.
 - BR-SCOPE-001/002/010 and ADR-053 amendments for verified observation, typed
   unavailable state, explicit remote GVK, invalid-label behavior, and deferred
   cluster-scoped behavior.
@@ -1437,7 +1439,7 @@ qualification evidence during this source-only phase.
 ### 11.2 Authoritative execution sequence
 
 1. **DISCOVERY**: use the approved fast-path boundary, carry/hold manifest, public v1
-   contract and bounded plan. Record unresolved final-evidence dependencies without
+   contract and repository-versioned implementation/test authority. Record unresolved final-evidence dependencies without
    starting another planning or three-review cycle.
 2. **RED**: add failing Ginkgo/Gomega UTs and production-path ITs for every selected
    wiring row, including all 19 implementation rows. Capture current positive-only,
@@ -1471,7 +1473,8 @@ another three-review cycle or suspend RED while approval-pending dependencies ar
 | Deliverable | Location | Required content |
 |---|---|---|
 | This test plan | `docs/tests/2593/TEST_PLAN.md` | Frozen IEEE 829 strategy, denominators, mappings and execution matrix |
- | Active bounded implementation plan | OpenChamber knowledge plan `44585f5b-5673-4cd9-ad59-7b0ba98dff66` at `/Users/jgil/.config/openchamber/projects/path_L1VzZXJzL2pnaWwvZ28vc3JjL2dpdGh1Yi5jb20vam9yZGlnaWxoL2t1YmVybmF1dA/plans/1794533840933-fmc-bounded-implementation-and-review.md` | **Only active implementation-plan authority** for this pre-release v1 slice: approval gates, internal protocol, public v1 contract, and review gate; exact current SHA-256 is external capture data |
+| Active bounded implementation/test authority | `docs/tests/2593/TEST_PLAN.md` (Sections 2, 5, 8–13) | Versioned in this repository; contains the approved fast-path boundary, approval-pending constraints, internal protocol, public v1 contract, TDD execution, production wiring, evidence, and final validation gates |
+| Historical external implementation plan | OpenChamber knowledge plan `44585f5b-5673-4cd9-ad59-7b0ba98dff66` (`FMC bounded implementation and review`) | Historical provenance only; no developer-local path, external hash, or OpenChamber session is required for approval/readiness |
 | Historical external implementation plan (non-authoritative) | `1794436520127-fmc-resource-presence-and-ttl-recovery-tdd.md` | Historical context only; do not read, hash, require, compare, or use for approval/readiness |
 | Unit test suite | `pkg/fleet/fmc/`, `pkg/fleet/scopecache/`, `pkg/fleet/registry/`, `pkg/shared/scope/`, `pkg/fleet/inventory/` | Ginkgo/Gomega behavior proof for 12 UT rows |
 | Integration suite | `test/integration/fleetmetadatacache/`, Gateway, RO, AF, SP, AI and typed-scope fleet paths | Source dispatch proof for 4 IT rows and 19 wiring rows |
