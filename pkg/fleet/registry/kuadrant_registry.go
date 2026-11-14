@@ -46,6 +46,7 @@ type KuadrantRegistry struct {
 
 	mu       sync.RWMutex
 	clusters map[string]ClusterInfo
+	revision uint64
 	ready    bool
 	started  bool
 
@@ -90,6 +91,39 @@ func (w *KuadrantRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	return info, ok
 }
 
+// Snapshot returns the current registration and registry revision.
+func (w *KuadrantRegistry) Snapshot(clusterID string) (RegistrationSnapshot, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	info, ok := w.clusters[clusterID]
+	if !ok {
+		return RegistrationSnapshot{}, false
+	}
+	return RegistrationSnapshot{Info: info, Revision: w.revision}, true
+}
+
+// WithCurrent runs callback only while the requested registration UID and
+// exact registry revision remain current.
+func (w *KuadrantRegistry) WithCurrent(ctx context.Context, clusterID, registrationUID string, expectedRevision uint64, callback func(ClusterInfo) error) error {
+	if callback == nil {
+		return fmt.Errorf("registry current callback is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	info, ok := w.clusters[clusterID]
+	if !ok {
+		return fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	if info.RegistrationUID != registrationUID || w.revision != expectedRevision {
+		return fmt.Errorf("cluster %q registration changed", clusterID)
+	}
+	return callback(info)
+}
+
 func (w *KuadrantRegistry) WatchClusters() <-chan ClusterEvent {
 	return w.eventCh
 }
@@ -119,7 +153,11 @@ func (w *KuadrantRegistry) Probe(ctx context.Context) error {
 		return err
 	}
 	w.mu.Lock()
+	changed := !clusterMapEqual(w.clusters, refreshed)
 	w.clusters = refreshed
+	if changed {
+		w.revision++
+	}
 	w.ready = true
 	w.mu.Unlock()
 	return nil
@@ -139,6 +177,9 @@ func (w *KuadrantRegistry) Start(ctx context.Context) error {
 	w.mu.Lock()
 	for id, info := range seeded {
 		w.clusters[id] = info
+	}
+	if len(seeded) > 0 {
+		w.revision++
 	}
 	w.ready = true
 	w.started = true
@@ -174,12 +215,19 @@ func (w *KuadrantRegistry) onAdd(obj interface{}) {
 	}
 
 	w.mu.Lock()
+	_, existed := w.clusters[info.ID]
 	w.clusters[info.ID] = info
+	w.revision++
+	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 
-	w.metrics.NilSafeSetClusters(float64(len(w.clusters)))
+	w.metrics.NilSafeSetClusters(float64(clusterCount))
 	w.metrics.NilSafeIncReconcile()
-	w.emit(ClusterEvent{Type: EventAdded, Cluster: info})
+	eventType := EventAdded
+	if existed {
+		eventType = EventUpdated
+	}
+	w.emit(ClusterEvent{Type: eventType, Cluster: info})
 	w.logger.Info("cluster added", "id", info.ID, "toolPrefix", info.ToolPrefix)
 }
 
@@ -219,25 +267,40 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 		id := u.GetName()
 		w.mu.Lock()
 		info, existed := w.clusters[id]
+		if existed && info.RegistrationUID != string(u.GetUID()) {
+			w.mu.Unlock()
+			return
+		}
 		delete(w.clusters, id)
+		if existed {
+			w.revision++
+		}
+		clusterCount := len(w.clusters)
 		w.mu.Unlock()
 		if existed {
-			w.metrics.NilSafeSetClusters(float64(len(w.clusters)))
+			w.metrics.NilSafeSetClusters(float64(clusterCount))
 			w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
 			w.logger.Info("cluster disabled, removing", "id", id)
 		}
 		return
 	}
 
-	info, err := extractKuadrantClusterInfo(u)
-	if err != nil {
-		w.logger.Error(err, "failed to extract cluster info on update", "name", u.GetName())
-		w.metrics.NilSafeIncReconcileError()
+	info, trackable := w.trackableClusterInfo(u)
+	if !trackable {
+		w.removeIfCurrent(u)
 		return
 	}
 
 	w.mu.Lock()
+	current, existed := w.clusters[info.ID]
+	if existed && current.RegistrationUID != info.RegistrationUID {
+		if oldUID := objectUID(oldObj); oldUID == "" || oldUID != current.RegistrationUID {
+			w.mu.Unlock()
+			return
+		}
+	}
 	w.clusters[info.ID] = info
+	w.revision++
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
@@ -246,30 +309,29 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *KuadrantRegistry) onDelete(obj interface{}) {
+	handleDeletedCluster(obj, &w.mu, func() map[string]ClusterInfo { return w.clusters }, &w.revision, w.metrics, w.logger, w.emit)
+}
+
+func (w *KuadrantRegistry) removeIfCurrent(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return
-		}
-		u, ok = tombstone.Obj.(*unstructured.Unstructured)
-		if !ok {
-			return
-		}
+		return
 	}
-
 	id := u.GetName()
+	uid := string(u.GetUID())
 	w.mu.Lock()
 	info, existed := w.clusters[id]
-	delete(w.clusters, id)
-	w.mu.Unlock()
-
-	if existed {
-		w.metrics.NilSafeSetClusters(float64(len(w.clusters)))
-		w.metrics.NilSafeIncReconcile()
-		w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
-		w.logger.Info("cluster deleted", "id", id)
+	if !existed || uid == "" || info.RegistrationUID != uid {
+		w.mu.Unlock()
+		return
 	}
+	delete(w.clusters, id)
+	w.revision++
+	clusterCount := len(w.clusters)
+	w.mu.Unlock()
+	w.metrics.NilSafeSetClusters(float64(clusterCount))
+	w.metrics.NilSafeIncReconcile()
+	w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
 }
 
 func (w *KuadrantRegistry) emit(event ClusterEvent) {
@@ -293,11 +355,16 @@ func extractKuadrantClusterInfo(u *unstructured.Unstructured) (ClusterInfo, erro
 	if name == "" {
 		return ClusterInfo{}, fmt.Errorf("MCPServerRegistration has empty name")
 	}
+	registrationUID := string(u.GetUID())
+	if registrationUID == "" {
+		return ClusterInfo{}, fmt.Errorf("MCPServerRegistration %q has empty metadata.uid", name)
+	}
 
 	info := ClusterInfo{
-		ID:        name,
-		Namespace: u.GetNamespace(),
-		Labels:    u.GetLabels(),
+		ID:              name,
+		RegistrationUID: registrationUID,
+		Namespace:       u.GetNamespace(),
+		Labels:          u.GetLabels(),
 	}
 
 	prefix, _, _ := unstructured.NestedString(u.Object, "spec", "prefix")

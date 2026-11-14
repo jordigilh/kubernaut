@@ -95,6 +95,14 @@ var _ = Describe("Fleet static operator contract", func() {
 })
 
 var _ = Describe("EAIGW stable Service alias", func() {
+	It("UT-FMC-E2E-001 [BR-INTEGRATION-065]: injects POD_UID into the FMC deployment manifest", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleet_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).To(ContainSubstring("- name: POD_UID"))
+		Expect(text).To(ContainSubstring("fieldPath: metadata.uid"))
+	})
+
 	It("UT-2492-CR-STATIC-005 [BR-FLEET-004]: gives FMC's MCP client the gateway CA", func() {
 		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleet_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())

@@ -295,7 +295,7 @@ var _ = Describe("Scope Manager", func() {
 		})
 
 		// UT-SCOPE-001-012: Invalid label value
-		It("UT-SCOPE-001-012: should treat invalid label value as unset (fall through)", func() {
+		It("UT-FMC-PRES-003 [BR-SCOPE-001]: invalid resource label cannot inherit namespace scope", func() {
 			ns := makeNamespace("ns-with-valid", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
 			})
@@ -306,7 +306,7 @@ var _ = Describe("Scope Manager", func() {
 
 			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "ns-with-valid", Kind: "Pod", Name: "weird-pod"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Invalid resource label should be ignored, inheriting from namespace")
+			Expect(managed).To(BeFalse(), "invalid resource label must not be treated as absent")
 		})
 
 		// UT-SCOPE-001-016: Resource lookup non-NotFound error — fail closed.

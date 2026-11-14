@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const policyReadTestResourceID = "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+var policyReadTestResourceID = inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
 
 type policyReadAuditRecorder struct {
 	events []*audit.Event
@@ -45,7 +45,7 @@ func TestPolicyRead(t *testing.T) {
 
 var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope projection", func() {
 	It("UT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: accepts an empty result without evaluating a freshness marker", func() {
-		page := inventory.Page{State: inventory.StateEmpty, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
+		page := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: &inventoryStub{page: page}, Authorizer: allowAuthorizer{}})
 		Expect(err).NotTo(HaveOccurred())
 

@@ -584,6 +584,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 			It("should pass target resource fields", func() {
 				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = "apps/v1"
 				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind = "Deployment"
 				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name = "my-app"
 				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace = "production"
@@ -592,6 +593,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.TargetResource.APIVersion).To(Equal("apps/v1"))
 				Expect(spy.LastInput.TargetResource.Kind).To(Equal("Deployment"))
 				Expect(spy.LastInput.TargetResource.Name).To(Equal("my-app"))
 				Expect(spy.LastInput.TargetResource.Namespace).To(Equal("production"))

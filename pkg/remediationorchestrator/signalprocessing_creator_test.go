@@ -19,6 +19,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -109,6 +110,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 					SignalType:  "alert",
 				})
 				rr.Spec.SignalLabels = map[string]string{"label1": "value1"}
+				rr.Spec.TargetResource.APIVersion = "apps/v1"
 
 				// Act
 				name, err := spCreator.Create(ctx, rr)
@@ -137,6 +139,10 @@ var _ = Describe("SignalProcessingCreator", func() {
 				Expect(createdSP.Spec.Signal.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))
 				Expect(createdSP.Spec.Signal.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name))
 				Expect(createdSP.Spec.Signal.TargetResource.Namespace).To(Equal(rr.Spec.TargetResource.Namespace))
+				encodedTarget, err := json.Marshal(createdSP.Spec.Signal.TargetResource)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(encodedTarget)).To(ContainSubstring(`"apiVersion":"apps/v1"`),
+					"IT-FMC-GVK-022: SignalProcessing must persist the target apiVersion")
 
 				// Verify Labels pass-through
 				Expect(createdSP.Spec.Signal.Labels).To(HaveKeyWithValue("label1", "value1"))

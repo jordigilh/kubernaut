@@ -34,7 +34,7 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		func(gatewayType registry.MCPGatewayType, gvr schema.GroupVersionResource, apiVersion, kind, listKind string) {
 			registration := &unstructured.Unstructured{Object: map[string]interface{}{
 				"apiVersion": apiVersion, "kind": kind,
-				"metadata": map[string]interface{}{"name": "local-cluster", "namespace": "kubernaut-system", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
+				"metadata": map[string]interface{}{"name": "local-cluster", "uid": "registration-local-cluster", "namespace": "kubernaut-system", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
 			}}
 			dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: listKind}, registration)
 			clusterRegistry, err := registry.NewClusterRegistry(gatewayType, dynamicClient, registry.RegistryConfig{}, nil, logr.Discard())
@@ -74,7 +74,7 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 	It("IT-AF-2593-REGISTRY-001 [BR-SECURITY-016]: rejects an ACM target outside the managed gateway registry", func() {
 		backend := &unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": "gateway.envoyproxy.io/v1alpha1", "kind": "Backend",
-			"metadata": map[string]interface{}{"name": "local-cluster", "namespace": "kubernaut-system", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
+			"metadata": map[string]interface{}{"name": "local-cluster", "uid": "backend-local-cluster", "namespace": "kubernaut-system", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
 		}}
 		dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{registry.BackendGVR: "BackendList"}, backend)
 		clusterRegistry, err := registry.NewClusterRegistry(registry.GatewayEAIGW, dynamicClient, registry.RegistryConfig{}, nil, logr.Discard())

@@ -156,6 +156,13 @@ type SignalData struct {
 
 // ResourceIdentifier identifies the target resource for remediation.
 type ResourceIdentifier struct {
+	// API version of the target resource (e.g. "v1" or "apps/v1").
+	// The value is propagated from Gateway through RemediationRequest and must
+	// be explicit for remote/federated reads so a Kind collision cannot select
+	// the wrong API group.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+
 	// Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
 	Kind string `json:"kind"`
 	// Resource name

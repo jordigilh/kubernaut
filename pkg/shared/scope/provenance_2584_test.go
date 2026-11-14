@@ -29,15 +29,15 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
 	})
 
-	It("treats an invalid resource label as absent and inherits a valid namespace label", func() {
+	It("UT-FMC-PRES-001 [BR-SCOPE-001]: treats an invalid resource label as unavailable and never inherits namespace scope", func() {
 		resolved := scope.ResolveLabels(
 			map[string]string{scope.ManagedLabelKey: "enabled"},
 			map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
 			false,
 		)
 
-		Expect(resolved.Included).To(BeTrue())
-		Expect(resolved.Source).To(Equal(scope.ScopeSourceNamespaceLabel))
+		Expect(resolved.Included).To(BeFalse())
+		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
 		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
 	})
@@ -77,9 +77,9 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 			Name:      "checkout",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(resolved.Included).To(BeTrue())
+		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
 		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
-		Expect(resolved.Source).To(Equal(scope.ScopeSourceNamespaceLabel))
+		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 	})
 })

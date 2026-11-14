@@ -26,27 +26,26 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/fleet/observation"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // IT-FMC-BROKER: Broker readiness probe integration tests.
 // Authority: BR-FLEET-002 (Fleet Metadata Caching)
 // FedRAMP: SI-4 (Information System Monitoring) -- startup readiness tracking
-//          SC-5 (Denial of Service Protection) -- backoff prevents startup storms
+//
+//	SC-5 (Denial of Service Protection) -- backoff prevents startup storms
 //
 // Pyramid Invariant: IT proves wiring.
 // These tests mirror the Syncer construction in cmd/fleetmetadatacache/main.go
 // to verify that the WaitForBrokerReady config field is correctly wired through
 // the production dispatch path:
 //
-//   fmcconfig.ServiceConfig.Sync.WaitForBrokerReady (YAML config)
-//     -> fmc.Config.WaitForBrokerReady (syncer config)
-//       -> syncer.Run() calls waitForBrokerReady() before sync loop
+//	fmcconfig.ServiceConfig.Sync.WaitForBrokerReady (YAML config)
+//	  -> fmc.Config.WaitForBrokerReady (syncer config)
+//	    -> syncer.Run() calls waitForBrokerReady() before sync loop
 //
 // Wiring Manifest:
 //
@@ -78,8 +77,8 @@ var _ = Describe("IT-FMC-BROKER: Broker readiness probe wiring (BR-FLEET-002)", 
 		var probeAttempts atomic.Int32
 		var syncAllCalled atomic.Bool
 
-		By("Creating a ReaderFactory that simulates an unready broker (mirrors cmd/fleetmetadatacache/main.go line 147-153)")
-		readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+		By("Creating an ObservedReaderFactory that simulates an unready broker (mirrors cmd/fleetmetadatacache/main.go line 263-276)")
+		readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
 			attempt := probeAttempts.Add(1)
 			if attempt <= 3 {
 				return nil, fmt.Errorf("broker not ready: tools not synced (attempt %d)", attempt)
@@ -96,12 +95,12 @@ var _ = Describe("IT-FMC-BROKER: Broker readiness probe wiring (BR-FLEET-002)", 
 
 		syncerConfig := fmc.Config{
 			SyncInterval:               time.Hour,
-			KeyTTL:                      30 * time.Second,
-			ResourceKinds:               []string{"Pod"},
-			WaitForBrokerReady:          true,
-			BrokerProbeInitialInterval:  5 * time.Millisecond,
-			BrokerProbeMaxInterval:      20 * time.Millisecond,
-			BrokerProbeTimeout:          5 * time.Second,
+			KeyTTL:                     30 * time.Second,
+			ResourceKinds:              []string{"Pod"},
+			WaitForBrokerReady:         true,
+			BrokerProbeInitialInterval: 5 * time.Millisecond,
+			BrokerProbeMaxInterval:     20 * time.Millisecond,
+			BrokerProbeTimeout:         5 * time.Second,
 		}
 
 		syncer := fmc.NewSyncerWithReaderFactory(clusterReg, readerFactory, writer, syncerConfig, logr.Discard(), metrics)
@@ -124,25 +123,11 @@ var _ = Describe("IT-FMC-BROKER: Broker readiness probe wiring (BR-FLEET-002)", 
 	})
 })
 
-// itSpyReader is a minimal client.Reader for IT tests.
+// itSpyReader is a minimal observation reader for IT tests.
 type itSpyReader struct{}
 
-func (r *itSpyReader) Get(_ context.Context, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
-	return nil
-}
-
-func (r *itSpyReader) List(_ context.Context, list client.ObjectList, _ ...client.ListOption) error {
-	if ul, ok := list.(*unstructured.UnstructuredList); ok {
-		ul.Items = []unstructured.Unstructured{
-			{Object: map[string]interface{}{
-				"apiVersion": "v1", "kind": "Pod",
-				"metadata": map[string]interface{}{
-					"name": "it-pod", "namespace": "default",
-				},
-			}},
-		}
-	}
-	return nil
+func (r *itSpyReader) ListObserved(_ context.Context, _ observation.ListRequest) (observation.ListObservation, error) {
+	return observation.ListObservation{Complete: true, PageCount: 1}, nil
 }
 
 // itStubRegistry is a minimal registry for IT tests.
@@ -151,11 +136,11 @@ type itStubRegistry struct {
 	eventCh  chan registry.ClusterEvent
 }
 
-func (r *itStubRegistry) List() []registry.ClusterInfo       { return r.clusters }
+func (r *itStubRegistry) List() []registry.ClusterInfo                { return r.clusters }
 func (r *itStubRegistry) WatchClusters() <-chan registry.ClusterEvent { return r.eventCh }
-func (r *itStubRegistry) Ready() bool                        { return true }
-func (r *itStubRegistry) Start(_ context.Context) error      { return nil }
-func (r *itStubRegistry) Stop()                              { close(r.eventCh) }
+func (r *itStubRegistry) Ready() bool                                 { return true }
+func (r *itStubRegistry) Start(_ context.Context) error               { return nil }
+func (r *itStubRegistry) Stop()                                       { close(r.eventCh) }
 
 func (r *itStubRegistry) Get(clusterID string) (registry.ClusterInfo, bool) {
 	for _, c := range r.clusters {

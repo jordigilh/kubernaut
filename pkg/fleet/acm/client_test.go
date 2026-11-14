@@ -82,7 +82,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
 		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
 		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
-		Entry("invalid inherits namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", true),
+		Entry("invalid does not inherit namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", false),
 		Entry("missing labels default unmanaged", "", "", false),
 	)
 

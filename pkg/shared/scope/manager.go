@@ -153,6 +153,7 @@ const (
 	ScopeSourceResourceLabel  ScopeSource = "resource-label"
 	ScopeSourceNamespaceLabel ScopeSource = "namespace-label"
 	ScopeSourceNone           ScopeSource = "none"
+	ScopeSourceLegacy         ScopeSource = "legacy"
 	ScopeSourceUnavailable    ScopeSource = "unavailable"
 )
 
@@ -187,6 +188,16 @@ func resolveLabelStates(resourceState, namespaceState LabelState, clusterScoped 
 		resolution.Source = ScopeSourceResourceLabel
 		return resolution
 	}
+	if resourceState == LabelStateInvalid {
+		resolution.Source = ScopeSourceUnavailable
+		resolution.Reason = "invalid_resource_label"
+		return resolution
+	}
+	if namespaceState == LabelStateInvalid {
+		resolution.Source = ScopeSourceUnavailable
+		resolution.Reason = "invalid_namespace_label"
+		return resolution
+	}
 	if !clusterScoped && namespaceState != LabelStateAbsent && namespaceState != LabelStateInvalid {
 		resolution.Included = namespaceState == LabelStateTrue
 		resolution.Source = ScopeSourceNamespaceLabel
@@ -197,7 +208,7 @@ func resolveLabelStates(resourceState, namespaceState LabelState, clusterScoped 
 
 func labelState(labels map[string]string) LabelState {
 	value, ok := labels[ManagedLabelKey]
-	if !ok || value == "" {
+	if !ok {
 		return LabelStateAbsent
 	}
 	switch value {
@@ -210,6 +221,39 @@ func labelState(labels map[string]string) LabelState {
 	}
 }
 
+// Check implements the additive typed scope contract for local callers. The
+// existing IsManagedResource method remains available for compatibility; it
+// still returns a boolean, while this method keeps unavailable and invalid
+// outcomes distinct from verified_unmanaged.
+func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error) {
+	resolution, err := m.Resolve(ctx, resource)
+	if err != nil {
+		return ScopeResult{
+			State:      ScopeUnavailable,
+			Provenance: ScopeSourceUnavailable,
+			Reason:     "scope_lookup_error",
+			Retryable:  true,
+		}, err
+	}
+	if resolution.Source == ScopeSourceUnavailable {
+		return ScopeResult{
+			State:      ScopeInvalid,
+			Provenance: ScopeSourceUnavailable,
+			Reason:     resolution.Reason,
+		}, nil
+	}
+	managed := resolution.Included
+	state := ScopeVerifiedUnmanaged
+	if managed {
+		state = ScopeVerifiedManaged
+	}
+	return ScopeResult{
+		State:      state,
+		Managed:    &managed,
+		Provenance: resolution.Source,
+	}, nil
+}
+
 // Resolve reads the local resource and namespace metadata and returns the
 // effective managed-scope decision with provenance. Remote identities are
 // rejected because the local Manager cannot inspect another cluster.
@@ -218,9 +262,19 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 		return Resolution{}, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
 	}
 	clusterScoped := isClusterScoped(resource.Kind) || resource.Namespace == ""
-	if _, known := kindToGroup[resource.Kind]; known {
+	shouldReadResource := false
+	if resource.Group != "" || resource.Version != "" {
+		shouldReadResource = true
+	} else if _, known := kindToGroup[resource.Kind]; known {
+		shouldReadResource = true
+	}
+	if shouldReadResource {
+		gvk, gvkErr := GVKForIdentity(resource, false)
+		if gvkErr != nil {
+			return Resolution{}, gvkErr
+		}
 		obj := &metav1.PartialObjectMetadata{}
-		obj.SetGroupVersionKind(InferGVK(resource.Kind))
+		obj.SetGroupVersionKind(gvk)
 		lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
 		err := m.client.Get(lookupCtx, client.ObjectKey{Namespace: resource.Namespace, Name: resource.Name}, obj)
 		cancel()

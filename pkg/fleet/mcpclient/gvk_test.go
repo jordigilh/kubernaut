@@ -76,7 +76,10 @@ var _ = Describe("GVK inference (Issue #1542 follow-up)", func() {
 		})
 
 		It("UT-FLEET-GVK-002: List succeeds for a typed *corev1.PodList without explicit GVK", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("prod-west"),
+				mockgw.WithStructuredContent(validPodItems("default")),
+			)
 			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-west"))
 			Expect(err).ToNot(HaveOccurred())
 			defer c.Close()
@@ -210,4 +213,3 @@ var _ = Describe("GVK inference (Issue #1542 follow-up)", func() {
 		})
 	})
 })
-

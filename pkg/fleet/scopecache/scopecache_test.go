@@ -98,35 +98,25 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(managed).To(BeTrue())
 		})
 
-		// Issue #54 SOC2 gap RCA (CI run 28495045499): every fleet E2E caller
-		// (pkg/gateway/server.go validateScope) builds a scope.ResourceIdentity
-		// with Group/Version left empty -- exactly as documented on
-		// scope.ResourceIdentity ("optional -- inferred from Kind when empty").
-		// pkg/fleet/fmc/syncer.go, however, writes cache keys using the
-		// resource's REAL GVK obtained from the K8s API (e.g. "apps/v1" for
-		// Deployment). Without inferring Group/Version here the same way
-		// scope.Manager already does (pkg/shared/scope/manager.go InferGVK),
-		// the read-side key ("kubernaut:managed:...://Deployment:...") never
-		// matches the write-side key ("kubernaut:managed:...:apps/v1/Deployment:..."),
-		// so every federated scope check permanently and deterministically
-		// resolves to "not managed" regardless of any sync/cache timing.
-		It("UT-FLEET-SC-011 [AC-4]: IsManagedResource with empty Group/Version infers from Kind like scope.Manager", func() {
+		It("UT-FMC-PRES-008 [SI-10]: remote scope checks require explicit GVK", func() {
 			key, err := scopecache.BuildKey("loopback-cluster", "apps", "v1", "Deployment", "kubernaut-system", "memory-eater")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[key] = true
 
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "loopback-cluster",
+				Group:     "apps",
+				Version:   "v1",
 				Kind:      "Deployment",
 				Namespace: "kubernaut-system",
 				Name:      "memory-eater",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
-				"empty Group/Version must be inferred from Kind (apps/v1 for Deployment) to match syncer-written keys")
+				"the exact explicit GVK must match the syncer-written key")
 		})
 
-		It("UT-FLEET-SC-012 [AC-4]: IsManagedResource infers core-group empty-string GVK for Pod", func() {
+		It("UT-FMC-PRES-008 [SI-10]: missing remote GVK cannot use a core-v1 fallback", func() {
 			key, err := scopecache.BuildKey("loopback-cluster", "", "v1", "Pod", "kubernaut-system", "web-0")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[key] = true
@@ -137,8 +127,8 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 				Namespace: "kubernaut-system",
 				Name:      "web-0",
 			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(err).To(HaveOccurred())
+			Expect(managed).To(BeFalse())
 		})
 
 		// Issue #2311: fleet (remote-cluster) scope checks must honor the same
@@ -150,7 +140,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		// selector can't match "resources whose namespace has this label"),
 		// so every such resource was permanently rejected as unmanaged on
 		// fleet clusters despite working correctly on the hub.
-		It("UT-FLEET-SC-013 [Issue #2311]: IsManagedResource falls back to the namespace-level label when the resource-level key is not cached", func() {
+		It("UT-FMC-CACHE-001 [BR-SCOPE-001]: cache miss does not fall back to a managed namespace", func() {
 			nsKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "demo-checkout")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[nsKey] = true
@@ -159,13 +149,14 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "demo-checkout",
 				Name:      "worker-5f74bb54f7-28jpv",
 			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
-				"a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources, same as local")
+			Expect(err).To(HaveOccurred(), "a resource cache miss is an unavailable scope decision")
+			Expect(managed).To(BeFalse(),
+				"a managed namespace must not authorize a resource whose presence is unverified")
 		})
 
 		It("UT-FLEET-SC-014 [Issue #2311]: IsManagedResource prefers the resource-level label over the namespace fallback when both are cached", func() {
@@ -176,6 +167,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "demo-checkout",
 				Name:      "worker-1",
@@ -184,13 +176,15 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(managed).To(BeTrue())
 		})
 
-		It("UT-FLEET-SC-015 [Issue #2311]: IsManagedResource returns unmanaged when neither the resource nor its namespace is cached", func() {
-			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
+		It("UT-FMC-CACHE-002 [BR-SCOPE-001]: cache miss is observable instead of verified unmanaged", func() {
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "unmanaged-ns",
 				Name:      "orphan",
 			})
+			Expect(err).To(HaveOccurred())
 			Expect(managed).To(BeFalse())
 		})
 
@@ -204,6 +198,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Node",
 				Namespace: "",
 				Name:      "worker-node-1",

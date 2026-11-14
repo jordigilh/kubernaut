@@ -251,9 +251,26 @@ func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...clien
 		labels = parseSelectorToMap(listOpts.LabelSelector.String())
 	}
 
-	items, err := c.listResources(ctx, itemKind, apiVersion, listOpts.Namespace, labels)
+	request := ListRequest{
+		APIVersion: apiVersion,
+		Kind:       itemKind,
+		Namespace:  listOpts.Namespace,
+		Limit:      ObservationPageLimit,
+	}
+	if len(labels) > 0 {
+		selector := formatLabelSelector(labels)
+		request.LabelSelector = &selector
+	}
+	observation, err := c.listResourcesForClient(ctx, request)
 	if err != nil {
 		return err
+	}
+	if !observation.Complete {
+		return fmt.Errorf("list %s/%s returned incomplete observation", apiVersion, itemKind)
+	}
+	items := make([]unstructured.Unstructured, 0, len(observation.Items))
+	for _, observed := range observation.Items {
+		items = append(items, observed.Object)
 	}
 
 	if ul, ok := list.(*unstructured.UnstructuredList); ok {
@@ -420,40 +437,11 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 	return obj, nil
 }
 
-// listResources calls the MCP list_resources tool and returns parsed unstructured items.
-// apiVersion is a mandatory parameter required by the K8s MCP Server.
-func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
-	toolName := c.resolveToolName(ToolList)
-	args := map[string]any{
-		"kind":       kind,
-		"apiVersion": apiVersion,
-	}
-	if namespace != "" {
-		args["namespace"] = namespace
-	}
-	if len(labels) > 0 {
-		args["labelSelector"] = formatLabelSelector(labels)
-	}
-
-	result, err := c.callTool(ctx, toolName, args)
-	if err != nil {
-		return nil, err
-	}
-
-	if result.IsError {
-		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
-	}
-
-	// A successful call (IsError=false) with no StructuredContent means
-	// kube-mcp-server found zero matching resources for this kind/selector --
-	// not a parse failure. Issue #54 fleet E2E RCA (CI run 30464667745):
-	// treating this as a hard error caused FMC's syncer to log "structuredContent
-	// required but not present in response" on every sync cycle for every
-	// resource kind with zero kubernaut.ai/managed=true matches
-	// (StatefulSet/DaemonSet/Service), for the pod's entire lifetime.
-	// normalizeTableItems(nil, ...) already returns an empty (non-nil) slice.
-	sc := extractStructuredList(result)
-	return normalizeTableItems(sc, kind, apiVersion), nil
+// ListObserved calls the MCP list_resources tool through the strict FMC source
+// path. It requires structured Kubernetes objects, validates every page and
+// follows opaque continuation tokens within the bounded scan limits.
+func (c *Client) ListObserved(ctx context.Context, request ListRequest) (ListObservation, error) {
+	return c.listResources(ctx, request)
 }
 
 // PopulateObject copies data from a fetched unstructured object into the target

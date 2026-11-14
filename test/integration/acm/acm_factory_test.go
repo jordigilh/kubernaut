@@ -248,7 +248,7 @@ var _ = Describe("ACM Search Factory Bearer-Token Auth (BR-INTEGRATION-065, #155
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
 
