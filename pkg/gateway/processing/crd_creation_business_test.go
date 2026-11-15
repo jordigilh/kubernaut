@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -147,6 +148,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				"AlertName must be correctly populated for remediation identification")
 			Expect(rr.Name).To(ContainSubstring("rr-"),
 				"CRD name must follow rr-{fingerprint-prefix}-{timestamp} pattern")
+			Expect(rr.Finalizers).To(ContainElement(cancellation.RemediationRequestFinalizer),
+				"the gateway must install the cancellation finalizer before RR creation")
 		})
 
 		It("creates CRD with correct severity for remediation prioritization", func() {

@@ -28,7 +28,7 @@ import (
 // ========================================
 
 // ApprovalDecision represents the operator's decision on an approval request
-// +kubebuilder:validation:Enum="";Approved;Rejected;Expired
+// +kubebuilder:validation:Enum="";Approved;Rejected;Expired;Cancelled
 type ApprovalDecision string
 
 const (
@@ -40,6 +40,9 @@ const (
 	ApprovalDecisionRejected ApprovalDecision = "Rejected"
 	// ApprovalDecisionExpired indicates the approval request timed out
 	ApprovalDecisionExpired ApprovalDecision = "Expired"
+	// ApprovalDecisionCancelled indicates the system cancelled the approval
+	// because its parent RemediationRequest was cancelled. Users cannot set it.
+	ApprovalDecisionCancelled ApprovalDecision = "Cancelled"
 )
 
 // ObjectRef is a lightweight reference to another object in the same namespace

@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -74,6 +75,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			string(rr.Status.OverallPhase),
 		).Observe(time.Since(startTime).Seconds())
 	}()
+
+	// Issue #2588: retain the parent while child controllers observe the
+	// cancellation request and acknowledge verified shutdown. Existing deleting
+	// RRs are processed below even if they predate this finalizer.
+	if err := r.ensureCancellationFinalizer(ctx, rr); err != nil {
+		logger.Error(err, "Failed to add RemediationRequest cancellation finalizer")
+		return ctrl.Result{}, err
+	}
+
+	if cancellationRequested(rr) {
+		return r.reconcileCancellation(ctx, rr, logger)
+	}
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
 	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
@@ -131,6 +144,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// here, the phase is genuinely unknown.
 	logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
 	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
+}
+
+func (r *Reconciler) ensureCancellationFinalizer(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		// Ordinary terminal outcomes must not retain the cancellation finalizer:
+		// otherwise a later retention deletion would be misread as a new
+		// cancellation request and regress the terminal phase. A terminal
+		// Cancelled RR with cancellation status is the one exception: it may be
+		// retrying finalizer removal after cancellation completion.
+		cancellationCleanupPending := rr.Status.OverallPhase == remediationv1.PhaseCancelled && rr.Status.Cancellation != nil
+		if !cancellationCleanupPending && controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
+			controllerutil.RemoveFinalizer(rr, remediationRequestCancellationFinalizer)
+			return r.client.Update(ctx, rr)
+		}
+		return nil
+	}
+	if !rr.DeletionTimestamp.IsZero() || controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
+		return nil
+	}
+	controllerutil.AddFinalizer(rr, remediationRequestCancellationFinalizer)
+	return r.client.Update(ctx, rr)
+}
+
+func cancellationRequested(rr *remediationv1.RemediationRequest) bool {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		return rr.Status.OverallPhase == remediationv1.PhaseCancelled &&
+			controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer)
+	}
+	return rr.Status.OverallPhase == remediationv1.PhaseCancelling || !rr.DeletionTimestamp.IsZero()
 }
 
 // checkGlobalTimeout evaluates BR-ORCH-027's global remediation timeout
@@ -324,12 +366,18 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 		// Non-fatal: continue to return
 	}
 
-	// #1421: Cascade terminal phase to non-terminal child CRDs.
+	// #1421: Cascade legacy terminal phase to non-terminal child CRDs.
+	// Issue #2588 cancellation is excluded when the RR carries cancellation
+	// status, because child controllers own their stop request, backend
+	// verification, and status acknowledgement. Preserve the pre-2588 cascade
+	// for legacy Cancelled RRs that have no cancellation status.
 	// Kubernetes-native parent-manages-children: RO is responsible for
 	// transitioning children to a terminal state when the parent RR terminates.
 	// Per-child errors are logged internally by cascadeTerminalToChildren and
 	// never fail the parent reconcile.
-	r.cascadeTerminalToChildren(ctx, rr)
+	if rr.Status.OverallPhase != remediationv1.PhaseCancelled || rr.Status.Cancellation == nil {
+		r.cascadeTerminalToChildren(ctx, rr)
+	}
 
 	// BR-ORCH-044: Track routing decision - no action needed
 	r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()

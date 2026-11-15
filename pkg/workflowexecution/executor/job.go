@@ -881,6 +881,74 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 	return nil
 }
 
+// RequestStop requests idempotent termination of the Job backing a WFE. It
+// deliberately does not wait for deletion; VerifyStopped provides the
+// positive backend acknowledgement used by the controller.
+func (j *JobExecutor) RequestStop(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+	jobName, err := jobNameForWFE(wfe)
+	if err != nil {
+		return err
+	}
+	var existing batchv1.Job
+	existing.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("get Job %s/%s for cancellation: %w", namespace, jobName, err)
+	}
+	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	expected.Name = jobName
+	if !jobCanBeDeletedByWFE(&existing, expected, wfe) {
+		return fmt.Errorf("refusing to cancel Job %s/%s: %w", namespace, jobName, ErrExecutionIdentityMismatch)
+	}
+	propagation := metav1.DeletePropagationBackground
+	if err := c.Delete(ctx, &existing, &client.DeleteOptions{PropagationPolicy: &propagation}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete Job %s/%s for cancellation: %w", namespace, jobName, err)
+	}
+	return nil
+}
+
+// VerifyStopped reports positive evidence that the Job is gone or terminal.
+// A deletion timestamp without disappearance is Unknown, never Stopped.
+func (j *JobExecutor) VerifyStopped(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (StopVerification, error) {
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+	jobName, err := jobNameForWFE(wfe)
+	if err != nil {
+		return StopVerification{State: StopStateUnknown}, err
+	}
+	var existing batchv1.Job
+	existing.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return StopVerification{State: StopStateStopped, Message: "Job is no longer present"}, nil
+		}
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("verify Job %s/%s cancellation: %w", namespace, jobName, err)
+	}
+	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	expected.Name = jobName
+	if !jobCanBeDeletedByWFE(&existing, expected, wfe) {
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("refusing to inspect Job %s/%s: %w", namespace, jobName, ErrExecutionIdentityMismatch)
+	}
+	if !existing.DeletionTimestamp.IsZero() {
+		return StopVerification{State: StopStateUnknown, Message: "Job deletion requested but not yet observed"}, nil
+	}
+	for _, condition := range existing.Status.Conditions {
+		if condition.Status == corev1.ConditionTrue &&
+			(condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed) {
+			return StopVerification{State: StopStateStopped, Message: "Job reached a terminal condition"}, nil
+		}
+	}
+	return StopVerification{State: StopStateRunning, Message: "Job is still active"}, nil
+}
+
 // buildJob creates a Kubernetes Job from the WFE spec.
 // Parameters are injected as environment variables.
 // DD-WE-006: deps are mounted as volumes when non-nil.

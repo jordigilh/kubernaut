@@ -802,7 +802,10 @@ metadata:
 rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["signalprocessings", "remediationrequests"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["signalprocessings"]
+  verbs: ["create", "update", "patch", "delete"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["signalprocessings/status", "signalprocessings/finalizers"]
   verbs: ["get", "update", "patch"]

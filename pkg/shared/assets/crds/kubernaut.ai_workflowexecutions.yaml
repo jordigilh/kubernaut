@@ -420,6 +420,20 @@ spec:
               Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for failure classification
               Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
             properties:
+              awxLaunchLabel:
+                description: |-
+                  AWXLaunchLabel is a unique, persisted AWX launch label. The Ansible
+                  executor writes it before sending the launch request so cancellation can
+                  discover and stop a job even when the launch response is lost.
+                type: string
+              awxLaunchRecoveryRetryCount:
+                description: |-
+                  AWXLaunchRecoveryRetryCount records bounded attempts to discover an AWX
+                  job after an ambiguous launch response. The WFE remains Pending when the
+                  budget is exhausted so cancellation cannot mistake a failed recovery for a
+                  verified terminal backend.
+                format: int32
+                type: integer
               blockClearance:
                 description: |-
                   BlockClearance tracks the clearing of PreviousExecutionFailed blocks
@@ -459,6 +473,12 @@ spec:
                 - clearReason
                 - clearedBy
                 type: object
+              cancellationRetryCount:
+                description: |-
+                  CancellationRetryCount records persisted backend stop/verification
+                  attempts so controller restarts preserve bounded cancellation progress.
+                format: int32
+                type: integer
               completionTime:
                 description: CompletionTime when execution completed (success or failure)
                 format: date-time
@@ -680,8 +700,10 @@ spec:
                 enum:
                 - Pending
                 - Running
+                - Cancelling
                 - Completed
                 - Failed
+                - Cancelled
                 type: string
               startTime:
                 description: StartTime when execution started

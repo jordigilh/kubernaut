@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -33,6 +34,18 @@ type AWXHTTPClient struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
+}
+
+// AWXAPIError preserves the HTTP status returned by AWX so callers can make
+// idempotency decisions without parsing human-readable error strings.
+type AWXAPIError struct {
+	Operation  string
+	StatusCode int
+	Body       string
+}
+
+func (e *AWXAPIError) Error() string {
+	return fmt.Sprintf("AWX %s returned %d: %s", e.Operation, e.StatusCode, e.Body)
 }
 
 // NewAWXHTTPClient creates a new AWX REST API client.
@@ -61,11 +74,25 @@ func NewAWXHTTPClient(baseURL, token string) (*AWXHTTPClient, error) {
 }
 
 func (c *AWXHTTPClient) LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error) {
-	url := fmt.Sprintf("%s/api/v2/job_templates/%d/launch/", c.baseURL, templateID)
+	return c.launchJobTemplate(ctx, templateID, extraVars, nil, nil)
+}
+
+func (c *AWXHTTPClient) LaunchJobTemplateWithLabels(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, labels []string) (int, error) {
+	return c.launchJobTemplate(ctx, templateID, extraVars, credentialIDs, labels)
+}
+
+func (c *AWXHTTPClient) launchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, labels []string) (int, error) {
+	launchURL := fmt.Sprintf("%s/api/v2/job_templates/%d/launch/", c.baseURL, templateID)
 
 	payload := map[string]interface{}{}
 	if len(extraVars) > 0 {
 		payload["extra_vars"] = extraVars
+	}
+	if len(credentialIDs) > 0 {
+		payload["credentials"] = credentialIDs
+	}
+	if len(labels) > 0 {
+		payload["labels"] = labels
 	}
 
 	body, err := json.Marshal(payload)
@@ -73,7 +100,7 @@ func (c *AWXHTTPClient) LaunchJobTemplate(ctx context.Context, templateID int, e
 		return 0, fmt.Errorf("marshal launch payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, launchURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, fmt.Errorf("create launch request: %w", err)
 	}
@@ -81,51 +108,116 @@ func (c *AWXHTTPClient) LaunchJobTemplate(ctx context.Context, templateID int, e
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("AWX launch request: %w", err)
+		return 0, fmt.Errorf("%w: AWX launch request: %w", ErrAWXLaunchRecoveryPending, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("AWX launch returned %d: %s", resp.StatusCode, string(respBody))
+		apiErr := &AWXAPIError{Operation: "launch", StatusCode: resp.StatusCode, Body: string(respBody)}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return 0, fmt.Errorf("%w: %w", ErrAWXLaunchRecoveryPending, apiErr)
+		}
+		return 0, apiErr
 	}
 
 	var result struct {
 		ID int `json:"id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode launch response: %w", err)
+		return 0, fmt.Errorf("%w: decode launch response: %w", ErrAWXLaunchRecoveryPending, err)
+	}
+	if result.ID <= 0 {
+		return 0, fmt.Errorf("%w: AWX launch response did not include a valid job ID", ErrAWXLaunchRecoveryPending)
 	}
 
 	return result.ID, nil
 }
 
 func (c *AWXHTTPClient) GetJobStatus(ctx context.Context, jobID int) (*AWXJobStatus, error) {
-	url := fmt.Sprintf("%s/api/v2/jobs/%d/", c.baseURL, jobID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, err := c.getAWXResource(ctx, fmt.Sprintf("%s/api/v2/jobs/%d/", c.baseURL, jobID), "status")
 	if err != nil {
-		return nil, fmt.Errorf("create status request: %w", err)
+		return nil, err
+	}
+
+	var status AWXJobStatus
+	if err := json.Unmarshal(body, &status); err != nil {
+		return nil, fmt.Errorf("decode status response: %w", err)
+	}
+	return &status, nil
+}
+
+func (c *AWXHTTPClient) GetJobTemplate(ctx context.Context, templateID int) (*AWXJobTemplate, error) {
+	body, err := c.getAWXResource(ctx, fmt.Sprintf("%s/api/v2/job_templates/%d/", c.baseURL, templateID), "job template")
+	if err != nil {
+		return nil, err
+	}
+
+	var template AWXJobTemplate
+	if err := json.Unmarshal(body, &template); err != nil {
+		return nil, fmt.Errorf("decode AWX job template response: %w", err)
+	}
+	return &template, nil
+}
+
+func (c *AWXHTTPClient) getAWXResource(ctx context.Context, requestURL, operation string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create %s request: %w", operation, err)
 	}
 	c.setHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("AWX status request: %w", err)
+		return nil, fmt.Errorf("AWX %s request: %w", operation, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("AWX status returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, &AWXAPIError{Operation: operation, StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
-	var status AWXJobStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, fmt.Errorf("decode status response: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s response: %w", operation, err)
+	}
+	return body, nil
+}
+
+func (c *AWXHTTPClient) FindJobsByLabel(ctx context.Context, label string) ([]AWXJobStatus, error) {
+	query := url.Values{}
+	query.Set("labels__name", label)
+	listURL := fmt.Sprintf("%s/api/v2/jobs/?%s", c.baseURL, query.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create AWX job label search request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("AWX job label search request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, &AWXAPIError{Operation: "job label search", StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
-	return &status, nil
+	var result struct {
+		Count   int            `json:"count"`
+		Results []AWXJobStatus `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode AWX job label search response: %w", err)
+	}
+	if result.Count > len(result.Results) {
+		return nil, fmt.Errorf("AWX job label search returned %d matches but only %d results; refusing ambiguous recovery", result.Count, len(result.Results))
+	}
+	return result.Results, nil
 }
 
 func (c *AWXHTTPClient) CancelJob(ctx context.Context, jobID int) error {
@@ -145,7 +237,7 @@ func (c *AWXHTTPClient) CancelJob(ctx context.Context, jobID int) error {
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("AWX cancel returned %d: %s", resp.StatusCode, string(respBody))
+		return &AWXAPIError{Operation: "cancel", StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	return nil
@@ -352,46 +444,7 @@ func (c *AWXHTTPClient) DeleteCredential(ctx context.Context, credentialID int) 
 }
 
 func (c *AWXHTTPClient) LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error) {
-	url := fmt.Sprintf("%s/api/v2/job_templates/%d/launch/", c.baseURL, templateID)
-
-	payload := map[string]interface{}{}
-	if len(extraVars) > 0 {
-		payload["extra_vars"] = extraVars
-	}
-	if len(credentialIDs) > 0 {
-		payload["credentials"] = credentialIDs
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return 0, fmt.Errorf("marshal launch payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return 0, fmt.Errorf("create launch request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("AWX launch request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("AWX launch returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		ID int `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode launch response: %w", err)
-	}
-
-	return result.ID, nil
+	return c.launchJobTemplate(ctx, templateID, extraVars, credentialIDs, nil)
 }
 
 func (c *AWXHTTPClient) GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error) {

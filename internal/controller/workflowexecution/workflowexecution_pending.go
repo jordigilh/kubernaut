@@ -21,6 +21,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -46,8 +47,10 @@ import (
 )
 
 const (
-	executionEngineAnsible = "ansible"
-	executionEngineJob     = "job"
+	executionEngineAnsible      = "ansible"
+	executionEngineJob          = "job"
+	awxLaunchRecoveryMaxRetries = 5
+	awxLaunchRecoveryRequeue    = 10 * time.Second
 )
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from
@@ -442,20 +445,45 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 	// already resolved by resolveSchemaMetadata above (createOpts is populated).
 
 	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
-	if createErr != nil {
-		if !apierrors.IsAlreadyExists(createErr) {
-			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
-			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.WorkflowRef.ExecutionEngine, createErr))
-			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
-		}
-
-		// DD-WE-003 Layer 2: Execution-time collision handling
-		result, res, err := r.handleCreateAlreadyExists(ctx, wfe, resourceName, createErr)
-		return result, res, err, true
+	if createErr == nil {
+		return createResult, ctrl.Result{}, nil, false
 	}
 
-	return createResult, ctrl.Result{}, nil, false
+	if errors.Is(createErr, weexecutor.ErrAWXLaunchRecoveryPending) {
+		wfe.Status.AWXLaunchRecoveryRetryCount++
+		conditionReason := "AWXLaunchRecoveryPending"
+		if wfe.Status.AWXLaunchRecoveryRetryCount >= awxLaunchRecoveryMaxRetries {
+			conditionReason = "AWXLaunchRecoveryExhausted"
+		}
+		meta.SetStatusCondition(&wfe.Status.Conditions, metav1.Condition{
+			Type:               "AWXLaunchRecovery",
+			Status:             metav1.ConditionFalse,
+			Reason:             conditionReason,
+			Message:            createErr.Error(),
+			ObservedGeneration: wfe.Generation,
+		})
+		if err := r.updateStatus(ctx, wfe, "AWX launch recovery"); err != nil {
+			return &weexecutor.CreateResult{}, ctrl.Result{}, err, true
+		}
+		if wfe.Status.AWXLaunchRecoveryRetryCount >= awxLaunchRecoveryMaxRetries {
+			logger.Error(createErr, "AWX launch recovery retry budget exhausted; retaining Pending phase")
+			return &weexecutor.CreateResult{}, ctrl.Result{}, nil, true
+		}
+		logger.Info("AWX launch response is ambiguous; retrying label discovery",
+			"attempt", wfe.Status.AWXLaunchRecoveryRetryCount,
+			"maxAttempts", awxLaunchRecoveryMaxRetries)
+		return &weexecutor.CreateResult{}, ctrl.Result{RequeueAfter: awxLaunchRecoveryRequeue}, nil, true
+	}
+	if !apierrors.IsAlreadyExists(createErr) {
+		logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
+		markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+			fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.WorkflowRef.ExecutionEngine, createErr))
+		return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
+	}
+
+	// DD-WE-003 Layer 2: Execution-time collision handling
+	result, res, err := r.handleCreateAlreadyExists(ctx, wfe, resourceName, createErr)
+	return result, res, err, true
 }
 
 // handleCreateAlreadyExists resolves a DD-WE-003 Layer 2 execution-time

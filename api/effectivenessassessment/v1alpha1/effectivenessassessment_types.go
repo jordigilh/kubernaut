@@ -57,6 +57,10 @@ const (
 	// deferral deadline (creation + HashComputeDelay) is in the future.
 	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253, Issue #277
 	PhaseWaitingForPropagation = "WaitingForPropagation"
+	// PhaseCancelling indicates parent cancellation is being acknowledged.
+	PhaseCancelling = "Cancelling"
+	// PhaseCancelled is the terminal state after cancellation acknowledgement.
+	PhaseCancelled = "Cancelled"
 )
 
 // AssessmentReason constants describe why an assessment completed with a particular outcome.
@@ -213,8 +217,13 @@ type EAConfig struct {
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Cancelling;Completed;Failed;Cancelled
 	Phase string `json:"phase,omitempty"`
+
+	// CancellationRetryCount records persisted retries while the assessment
+	// transitions through the cancellation handshake.
+	// +optional
+	CancellationRetryCount int32 `json:"cancellationRetryCount,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.
 	// Computed by the EM controller on first reconciliation as:

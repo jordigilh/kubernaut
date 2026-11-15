@@ -406,6 +406,7 @@ spec:
                 - Approval
                 - ManualReview
                 - Completion
+                - Cancellation
                 type: string
             required:
             - body

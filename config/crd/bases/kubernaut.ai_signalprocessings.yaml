@@ -226,7 +226,7 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: remediationRequestRef.name is required for audit trail correlation
-              rule: self.remediationRequestRef.name != ''
+              rule: self.remediationRequestRef.name != ""
             - message: spec is immutable after creation (ADR-001)
               rule: self == oldSelf
           status:
@@ -514,8 +514,10 @@ spec:
                 - Enriching
                 - Classifying
                 - Categorizing
+                - Cancelling
                 - Completed
                 - Failed
+                - Cancelled
                 type: string
               priorityAssignment:
                 description: |-

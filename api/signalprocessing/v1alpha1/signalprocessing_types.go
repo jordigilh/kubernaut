@@ -59,7 +59,7 @@ type SignalProcessing struct {
 //
 // To reprocess a signal, delete and recreate the SignalProcessing CRD.
 //
-// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ''",message="remediationRequestRef.name is required for audit trail correlation"
+// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != \"\"",message="remediationRequestRef.name is required for audit trail correlation"
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type SignalProcessingSpec struct {
 	// Reference to parent RemediationRequest
@@ -183,7 +183,7 @@ type EnrichmentConfig struct {
 // SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
 // BR-SP-051: Phase State Machine
 // BR-COMMON-001: Capitalized phase values per Kubernetes API conventions
-// +kubebuilder:validation:Enum=Pending;Enriching;Classifying;Categorizing;Completed;Failed
+// +kubebuilder:validation:Enum=Pending;Enriching;Classifying;Categorizing;Cancelling;Completed;Failed;Cancelled
 type SignalProcessingPhase string
 
 const (
@@ -195,10 +195,14 @@ const (
 	PhaseClassifying SignalProcessingPhase = "Classifying"
 	// PhaseCategorizing is when business categorization is in progress.
 	PhaseCategorizing SignalProcessingPhase = "Categorizing"
+	// PhaseCancelling indicates parent cancellation is being acknowledged.
+	PhaseCancelling SignalProcessingPhase = "Cancelling"
 	// PhaseCompleted is the terminal success state.
 	PhaseCompleted SignalProcessingPhase = "Completed"
 	// PhaseFailed is the terminal error state.
 	PhaseFailed SignalProcessingPhase = "Failed"
+	// PhaseCancelled is the terminal state after cancellation acknowledgement.
+	PhaseCancelled SignalProcessingPhase = "Cancelled"
 )
 
 // SignalProcessingStatus defines the observed state of SignalProcessing.

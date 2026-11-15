@@ -109,7 +109,7 @@ import (
 //
 // Reference: docs/requirements/BR-COMMON-001-phase-value-format-standard.md
 //
-// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Verifying;Blocked;Completed;Failed;TimedOut;Skipped;Cancelled
+// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Verifying;Blocked;Cancelling;Completed;Failed;TimedOut;Skipped;Cancelled
 type RemediationPhase string
 
 const (
@@ -146,6 +146,13 @@ const (
 	// - UnmanagedResource: Retries until scope label added or RR times out (BR-SCOPE-001)
 	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
 	PhaseBlocked RemediationPhase = "Blocked"
+
+	// PhaseCancelling indicates that cancellation has been requested and child
+	// controllers are cooperatively stopping their work. It is non-terminal:
+	// the RemediationRequest cannot become Cancelled until required children
+	// acknowledge a terminal outcome or no remaining work.
+	// Reference: BR-AUDIT-005, issue #2588.
+	PhaseCancelling RemediationPhase = "Cancelling"
 
 	// PhaseCompleted is the terminal success state.
 	PhaseCompleted RemediationPhase = "Completed"
@@ -524,6 +531,13 @@ type RemediationRequestStatus struct {
 	// +optional
 	OperatorAudit *OperatorAudit `json:"operatorAudit,omitempty"`
 
+	// Cancellation records the idempotent cancellation request accepted by the
+	// authorized cancellation API. RO owns the subsequent lifecycle transition
+	// and child acknowledgement aggregation.
+	// Reference: BR-AUDIT-005, issue #2588.
+	// +optional
+	Cancellation *CancellationStatus `json:"cancellation,omitempty"`
+
 	// WorkflowSelection tracks the AI-selected workflow, its execution reference,
 	// the resolved remediation target, and kubectl display strings.
 	// Reference: BR-AUDIT-005 Gap #5-6, BR-KA-212, Issue #387, Issue #635.
@@ -562,6 +576,74 @@ type RemediationRequestStatus struct {
 	// Gap #8: Moved from spec to status to enable operator mutability + audit trail
 	// +optional
 	TimeoutConfig *TimeoutConfig `json:"timeoutConfig,omitempty"`
+}
+
+// CancellationSource identifies the authoritative source that requested RR
+// cancellation.
+// +kubebuilder:validation:Enum=User;Deletion;System
+type CancellationSource string
+
+const (
+	CancellationSourceUser     CancellationSource = "User"
+	CancellationSourceDeletion CancellationSource = "Deletion"
+	CancellationSourceSystem   CancellationSource = "System"
+)
+
+// CancellationState describes the cancellation request lifecycle recorded on
+// the parent RR. Child stop acknowledgements are owned by the child CRDs.
+// +kubebuilder:validation:Enum=Requested;InProgress;Completed;Failed
+type CancellationState string
+
+const (
+	CancellationStateRequested  CancellationState = "Requested"
+	CancellationStateInProgress CancellationState = "InProgress"
+	CancellationStateCompleted  CancellationState = "Completed"
+	CancellationStateFailed     CancellationState = "Failed"
+)
+
+// CancellationStatus records the durable, idempotent cancellation request and
+// its aggregate parent-level state. It deliberately does not claim that child
+// or backend work has stopped; that evidence is reported by each child.
+type CancellationStatus struct {
+	// RequestID is stable across retries and controller restarts.
+	RequestID string `json:"requestID"`
+
+	// RequestedAt records when cancellation was first accepted.
+	RequestedAt *metav1.Time `json:"requestedAt,omitempty"`
+
+	// RequestedBy identifies the authenticated actor or system controller.
+	RequestedBy string `json:"requestedBy,omitempty"`
+
+	// Source identifies the cancellation authority.
+	Source CancellationSource `json:"source,omitempty"`
+
+	// Reason describes why cancellation was requested.
+	Reason string `json:"reason,omitempty"`
+
+	// State is the parent-level cancellation lifecycle state.
+	State CancellationState `json:"state,omitempty"`
+
+	// LastError contains the latest observable cancellation failure, if any.
+	LastError string `json:"lastError,omitempty"`
+
+	// RetryCount records bounded cancellation attempts for operator visibility.
+	RetryCount int32 `json:"retryCount,omitempty"`
+}
+
+// GetCancellation returns Status.Cancellation, or an empty value for reads.
+func (s *RemediationRequestStatus) GetCancellation() *CancellationStatus {
+	if s.Cancellation == nil {
+		return &CancellationStatus{}
+	}
+	return s.Cancellation
+}
+
+// EnsureCancellation initializes Status.Cancellation for writes.
+func (s *RemediationRequestStatus) EnsureCancellation() *CancellationStatus {
+	if s.Cancellation == nil {
+		s.Cancellation = &CancellationStatus{}
+	}
+	return s.Cancellation
 }
 
 // OutcomeRemediated is the Status.Outcome value for a successfully remediated

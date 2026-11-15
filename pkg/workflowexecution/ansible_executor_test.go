@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
@@ -62,6 +63,9 @@ type mockAWXClient struct {
 	createCredentialFn         func(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	deleteCredentialFn         func(ctx context.Context, credentialID int) error
 	launchWithCredsFn          func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
+	launchWithLabelsFn         func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, labels []string) (int, error)
+	findJobsByLabelFn          func(ctx context.Context, label string) ([]executor.AWXJobStatus, error)
+	getJobTemplateFn           func(ctx context.Context, templateID int) (*executor.AWXJobTemplate, error)
 	getTemplateCredsFn         func(ctx context.Context, templateID int) ([]int, error)
 }
 
@@ -133,6 +137,30 @@ func (m *mockAWXClient) LaunchJobTemplateWithCreds(ctx context.Context, template
 		return m.launchWithCredsFn(ctx, templateID, extraVars, credentialIDs)
 	}
 	return 42, nil
+}
+
+func (m *mockAWXClient) LaunchJobTemplateWithLabels(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, labels []string) (int, error) {
+	if m.launchWithLabelsFn != nil {
+		return m.launchWithLabelsFn(ctx, templateID, extraVars, credentialIDs, labels)
+	}
+	if len(credentialIDs) > 0 {
+		return m.LaunchJobTemplateWithCreds(ctx, templateID, extraVars, credentialIDs)
+	}
+	return m.LaunchJobTemplate(ctx, templateID, extraVars)
+}
+
+func (m *mockAWXClient) FindJobsByLabel(ctx context.Context, label string) ([]executor.AWXJobStatus, error) {
+	if m.findJobsByLabelFn != nil {
+		return m.findJobsByLabelFn(ctx, label)
+	}
+	return nil, nil
+}
+
+func (m *mockAWXClient) GetJobTemplate(ctx context.Context, templateID int) (*executor.AWXJobTemplate, error) {
+	if m.getJobTemplateFn != nil {
+		return m.getJobTemplateFn(ctx, templateID)
+	}
+	return &executor.AWXJobTemplate{ID: templateID, AskLabelsOnLaunch: true, JobSliceCount: 1}, nil
 }
 
 func (m *mockAWXClient) GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error) {
@@ -219,6 +247,59 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 			Expect(capturedTemplateID).To(Equal(99))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("NAMESPACE", "default"))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("REPLICAS", BeNumerically("==", 3)))
+		})
+
+		It("UT-WE-2588-015: generates a unique persisted label and sends it with the AWX launch", func() {
+			var labels []string
+			awxClient.launchWithLabelsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int, gotLabels []string) (int, error) {
+				labels = append([]string(nil), gotLabels...)
+				return 42, nil
+			}
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/restart.yml",
+				"jobTemplateName": "restart-pod",
+			})
+			wfe := newAnsibleWFE("labelled-wfe", "default", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(wfe.Status.AWXLaunchLabel).To(HavePrefix("kubernaut-awx-launch-"))
+			Expect(labels).To(Equal([]string{wfe.Status.AWXLaunchLabel}))
+		})
+
+		It("UT-WE-2588-016: recovers a persisted launch label without launching a duplicate", func() {
+			const launchLabel = "kubernaut-awx-launch-2588-recover-create"
+			awxClient.findJobsByLabelFn = func(_ context.Context, label string) ([]executor.AWXJobStatus, error) {
+				Expect(label).To(Equal(launchLabel))
+				return []executor.AWXJobStatus{{ID: 777, Status: "running"}}, nil
+			}
+			awxClient.launchWithLabelsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int, _ []string) (int, error) {
+				return 0, fmt.Errorf("duplicate AWX launch")
+			}
+			wfe := newAnsibleWFE("recover-create", "default", nil, nil)
+			wfe.Status.AWXLaunchLabel = launchLabel
+
+			result, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.ResourceName).To(Equal("awx-job-777"))
+		})
+
+		It("UT-WE-2588-022: rejects an AWX template that cannot accept launch labels", func() {
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-label-capability", "default", engineConfig, nil)
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.getJobTemplateFn = func(_ context.Context, _ int) (*executor.AWXJobTemplate, error) {
+				return &executor.AWXJobTemplate{ID: 10, AskLabelsOnLaunch: false, JobSliceCount: 1}, nil
+			}
+			awxClient.launchWithLabelsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int, _ []string) (int, error) {
+				return 0, fmt.Errorf("launch must not be attempted")
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).To(MatchError(ContainSubstring("does not allow launch labels")))
 		})
 
 		It("UT-WE-015-006: should inject WFE and RR context into extra_vars (#311, #313)", func() {
@@ -447,6 +528,101 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 
 			err := ansibleExec.Cleanup(ctx, wfe, "default")
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Verified cancellation", func() {
+		It("UT-WE-2588-011: recovers a lost AWX launch response by label before cancelling and verifying", func() {
+			const launchLabel = "kubernaut-awx-launch-2588-lost-response"
+			var cancelledJobID int
+			awxClient.findJobsByLabelFn = func(_ context.Context, label string) ([]executor.AWXJobStatus, error) {
+				Expect(label).To(Equal(launchLabel))
+				return []executor.AWXJobStatus{{ID: 321, Status: "running"}}, nil
+			}
+			awxClient.cancelFunc = func(_ context.Context, jobID int) error {
+				cancelledJobID = jobID
+				return nil
+			}
+			awxClient.getStatusFunc = func(_ context.Context, jobID int) (*executor.AWXJobStatus, error) {
+				return &executor.AWXJobStatus{ID: jobID, Status: "canceled"}, nil
+			}
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "awx-lost-response", Namespace: "default"},
+				Status:     workflowexecutionv1alpha1.WorkflowExecutionStatus{AWXLaunchLabel: launchLabel},
+			}
+
+			Expect(ansibleExec.RequestStop(ctx, wfe, "default")).To(Succeed())
+			Expect(wfe.Status.ExecutionRef).To(Equal(&corev1.LocalObjectReference{Name: "awx-job-321"}))
+			verification, err := ansibleExec.VerifyStopped(ctx, wfe, "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(verification.State).To(Equal(executor.StopStateStopped))
+			Expect(cancelledJobID).To(Equal(321))
+		})
+
+		It("UT-WE-2588-012: fails closed when an AWX launch label matches multiple jobs", func() {
+			awxClient.findJobsByLabelFn = func(_ context.Context, _ string) ([]executor.AWXJobStatus, error) {
+				return []executor.AWXJobStatus{{ID: 321}, {ID: 322}}, nil
+			}
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "awx-ambiguous-response", Namespace: "default"},
+				Status:     workflowexecutionv1alpha1.WorkflowExecutionStatus{AWXLaunchLabel: "kubernaut-awx-launch-2588-ambiguous"},
+			}
+
+			Expect(ansibleExec.RequestStop(ctx, wfe, "default")).To(MatchError(ContainSubstring("multiple AWX jobs")))
+			Expect(wfe.Status.ExecutionRef).To(BeNil())
+		})
+
+		It("UT-WE-2588-AWX-003: treats a missing AWX job during stop as idempotent success", func() {
+			awxClient.cancelFunc = func(context.Context, int) error {
+				return &executor.AWXAPIError{StatusCode: http.StatusNotFound, Operation: "cancel"}
+			}
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "awx-missing", Namespace: "default"},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionRef: &corev1.LocalObjectReference{Name: "awx-job-404"},
+				},
+			}
+
+			Expect(ansibleExec.RequestStop(ctx, wfe, "default")).To(Succeed())
+		})
+
+		It("UT-WE-2588-AWX-001: requests cancellation and verifies a terminal AWX status", func() {
+			var cancelledJobID int
+			awxClient.cancelFunc = func(_ context.Context, jobID int) error {
+				cancelledJobID = jobID
+				return nil
+			}
+			awxClient.getStatusFunc = func(_ context.Context, jobID int) (*executor.AWXJobStatus, error) {
+				return &executor.AWXJobStatus{ID: jobID, Status: "canceled"}, nil
+			}
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "cancel-wfe", Namespace: "default"},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionRef: &corev1.LocalObjectReference{Name: "awx-job-99"},
+				},
+			}
+
+			Expect(ansibleExec.RequestStop(ctx, wfe, "default")).To(Succeed())
+			verification, err := ansibleExec.VerifyStopped(ctx, wfe, "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(verification.State).To(Equal(executor.StopStateStopped))
+			Expect(cancelledJobID).To(Equal(99))
+		})
+
+		It("UT-WE-2588-AWX-002: does not acknowledge a still-running AWX job", func() {
+			awxClient.getStatusFunc = func(_ context.Context, jobID int) (*executor.AWXJobStatus, error) {
+				return &executor.AWXJobStatus{ID: jobID, Status: "running"}, nil
+			}
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "running-cancel-wfe", Namespace: "default"},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionRef: &corev1.LocalObjectReference{Name: "awx-job-100"},
+				},
+			}
+
+			verification, err := ansibleExec.VerifyStopped(ctx, wfe, "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(verification.State).To(Equal(executor.StopStateRunning))
 		})
 	})
 })
@@ -1100,6 +1276,81 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			By("Verifying total count is exactly 3 (no duplicates)")
 			Expect(launchedCredIDs).To(HaveLen(3),
 				"merged list should contain exactly template (2) + ephemeral (1) = 3 credentials")
+		})
+
+		It("UT-WE-2588-017: launch failure deletes only WFE-created credentials", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: "kubernaut-workflows"},
+				Data:       map[string][]byte{"token": []byte("abc")},
+			}
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-launch-failure-cleanup", "kubernaut-system", engineConfig, nil)
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 42, nil
+			}
+			awxClient.getTemplateCredsFn = func(_ context.Context, _ int) ([]int, error) {
+				return []int{100, 200}, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 0, fmt.Errorf("AWX launch response lost")
+			}
+			var deleted []int
+			awxClient.deleteCredentialFn = func(_ context.Context, credentialID int) error {
+				deleted = append(deleted, credentialID)
+				return nil
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(deleted).To(Equal([]int{42}))
+		})
+
+		It("UT-WE-2588-020: retains WFE-created credentials when the AWX launch response is ambiguous", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: "kubernaut-workflows"},
+				Data:       map[string][]byte{"token": []byte("abc")},
+			}
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-ambiguous-launch-creds", "kubernaut-system", engineConfig, nil)
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) { return 15, nil }
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) { return 42, nil }
+			awxClient.getTemplateCredsFn = func(_ context.Context, _ int) ([]int, error) { return []int{100, 200}, nil }
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 0, fmt.Errorf("%w: connection closed after AWX accepted the launch", executor.ErrAWXLaunchRecoveryPending)
+			}
+			var deleted []int
+			awxClient.deleteCredentialFn = func(_ context.Context, credentialID int) error {
+				deleted = append(deleted, credentialID)
+				return nil
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}}},
+			})
+			Expect(err).To(MatchError(ContainSubstring("awx launch recovery pending")))
+			Expect(deleted).To(BeEmpty(), "credentials must remain available while an accepted AWX job is recoverable")
+			Expect(wfe.Status.EphemeralCredentialIDs).To(Equal([]int{42}))
 		})
 
 		It("UT-WE-365-002: should deduplicate when template and ephemeral credentials overlap", func() {

@@ -111,6 +111,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			existingWE := helpers.NewWorkflowExecution("we-test-remediation", "default")
+			existingWE.Spec.RemediationRequestRef = corev1.ObjectReference{
+				Name:      rr.Name,
+				Namespace: rr.Namespace,
+			}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingWE).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			ctx := context.Background()
@@ -127,6 +131,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			existingWE := helpers.NewWorkflowExecution("we-test-remediation", "default")
+			existingWE.Spec.RemediationRequestRef = corev1.ObjectReference{
+				Name:      rr.Name,
+				Namespace: rr.Namespace,
+			}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingWE).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 

@@ -243,10 +243,15 @@ const (
 	PhasePending = "Pending"
 	// PhaseRunning indicates the PipelineRun is actively executing
 	PhaseRunning = "Running"
+	// PhaseCancelling indicates parent cancellation is stopping and verifying
+	// the external execution resource.
+	PhaseCancelling = "Cancelling"
 	// PhaseCompleted indicates successful completion
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates a permanent failure
 	PhaseFailed = "Failed"
+	// PhaseCancelled indicates verified external execution termination.
+	PhaseCancelled = "Cancelled"
 )
 
 // Issue #501: Condition and event constants for TokenRequest TTL validation.
@@ -279,9 +284,14 @@ type WorkflowExecutionStatus struct {
 
 	// Phase tracks current execution stage
 	// V1.0: Skipped phase removed - RO makes routing decisions before WFE creation
-	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Running;Cancelling;Completed;Failed;Cancelled
 	// +optional
 	Phase string `json:"phase,omitempty"`
+
+	// CancellationRetryCount records persisted backend stop/verification
+	// attempts so controller restarts preserve bounded cancellation progress.
+	// +optional
+	CancellationRetryCount int32 `json:"cancellationRetryCount,omitempty"`
 
 	// StartTime when execution started
 	// +optional
@@ -343,6 +353,19 @@ type WorkflowExecutionStatus struct {
 	// subresource to avoid violating spec immutability (ADR-001).
 	// +optional
 	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
+
+	// AWXLaunchLabel is a unique, persisted AWX launch label. The Ansible
+	// executor writes it before sending the launch request so cancellation can
+	// discover and stop a job even when the launch response is lost.
+	// +optional
+	AWXLaunchLabel string `json:"awxLaunchLabel,omitempty"`
+
+	// AWXLaunchRecoveryRetryCount records bounded attempts to discover an AWX
+	// job after an ambiguous launch response. The WFE remains Pending when the
+	// budget is exhausted so cancellation cannot mistake a failed recovery for a
+	// verified terminal backend.
+	// +optional
+	AWXLaunchRecoveryRetryCount int32 `json:"awxLaunchRecoveryRetryCount,omitempty"`
 
 	// WorkflowName is the human-readable workflow name. Superseded (Issue
 	// #1661 Change 12): the authoritative value now lives on

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -151,6 +152,26 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 // sub-structs (PhaseProgress, RoutingStatus, CompletionStatus, OperatorAudit,
 // WorkflowSelection), each with a GetX()/EnsureX() nil-safe accessor pair.
 var _ = Describe("RemediationRequestStatus God-Struct Decomposition (BR-COMMON-001, issue #2206)", func() {
+	It("UT-CRD-2588-001: DeepCopy isolates CancellationStatus and RequestedAt", func() {
+		requestedAt := metav1.Now()
+		original := &v1alpha1.RemediationRequest{
+			Status: v1alpha1.RemediationRequestStatus{
+				Cancellation: &v1alpha1.CancellationStatus{
+					RequestID:   "cancel-2588",
+					RequestedAt: &requestedAt,
+					LastError:   "original",
+				},
+			},
+		}
+
+		copy := original.DeepCopy()
+		copy.Status.Cancellation.LastError = "changed"
+		copy.Status.Cancellation.RequestedAt.Time = copy.Status.Cancellation.RequestedAt.Time.Add(time.Minute)
+
+		Expect(original.Status.Cancellation.LastError).To(Equal("original"))
+		Expect(original.Status.Cancellation.RequestedAt.Time).To(Equal(requestedAt.Time))
+	})
+
 	Describe("GetPhaseProgress / EnsurePhaseProgress", func() {
 		It("UT-CRD-2206-001: GetPhaseProgress returns zero-value without mutating Status when nil", func() {
 			status := v1alpha1.RemediationRequestStatus{}

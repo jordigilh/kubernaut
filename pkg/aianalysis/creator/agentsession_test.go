@@ -21,14 +21,17 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 )
 
@@ -47,6 +50,7 @@ var _ = Describe("AgentSessionCreator.DeleteForCascadeCancel [IR-4, AC-6]", func
 		scheme = runtime.NewScheme()
 		_ = clientgoscheme.AddToScheme(scheme)
 		_ = agentsessionv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
 	})
 
 	// UT-AA-2214-004: happy path -- deletes the deterministically-named
@@ -58,10 +62,15 @@ var _ = Describe("AgentSessionCreator.DeleteForCascadeCancel [IR-4, AC-6]", func
 				Namespace: "default",
 			},
 		}
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "aa-rr-cascade-004", Namespace: "default", UID: types.UID("analysis-uid")},
+			Spec:       aianalysisv1.AIAnalysisSpec{RemediationRequestRef: corev1.ObjectReference{Name: "rr-cascade-004", Namespace: "default"}},
+		}
+		Expect(controllerutil.SetControllerReference(analysis, as, scheme)).To(Succeed())
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(as).Build()
 		c := creator.NewAgentSessionCreator(fakeClient, scheme)
 
-		Expect(c.DeleteForCascadeCancel(ctx, "rr-cascade-004", "default")).To(Succeed())
+		Expect(c.DeleteForCascadeCancel(ctx, analysis)).To(Succeed())
 
 		var fetched agentsessionv1.AgentSession
 		err := fakeClient.Get(ctx, types.NamespacedName{Name: "as-rr-cascade-004", Namespace: "default"}, &fetched)
@@ -74,7 +83,42 @@ var _ = Describe("AgentSessionCreator.DeleteForCascadeCancel [IR-4, AC-6]", func
 	It("UT-AA-2214-005: is idempotent -- NotFound is not an error [AC-6]", func() {
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		c := creator.NewAgentSessionCreator(fakeClient, scheme)
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "aa-rr-never-existed", Namespace: "default"},
+			Spec:       aianalysisv1.AIAnalysisSpec{RemediationRequestRef: corev1.ObjectReference{Name: "rr-never-existed", Namespace: "default"}},
+		}
 
-		Expect(c.DeleteForCascadeCancel(ctx, "rr-never-existed", "default")).To(Succeed())
+		Expect(c.DeleteForCascadeCancel(ctx, analysis)).To(Succeed())
+	})
+
+	It("UT-AA-2588-003: refuses to delete an AgentSession owned by a stale AIAnalysis UID", func() {
+		controller := true
+		as := &agentsessionv1.AgentSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "as-rr-cascade-stale",
+				Namespace: "default",
+				UID:       types.UID("session-uid"),
+				OwnerReferences: []metav1.OwnerReference{{
+					Kind:       "AIAnalysis",
+					Name:       "aa-rr-cascade-stale",
+					UID:        types.UID("old-analysis-uid"),
+					Controller: &controller,
+				}},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(as).Build()
+		c := creator.NewAgentSessionCreator(fakeClient, scheme)
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aa-rr-cascade-stale",
+				Namespace: "default",
+				UID:       types.UID("current-analysis-uid"),
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{RemediationRequestRef: corev1.ObjectReference{Name: "rr-cascade-stale", Namespace: "default"}},
+		}
+
+		Expect(c.DeleteForCascadeCancel(ctx, analysis)).To(MatchError(ContainSubstring("identity mismatch")))
+		var fetched agentsessionv1.AgentSession
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: as.Name, Namespace: as.Namespace}, &fetched)).To(Succeed())
 	})
 })

@@ -155,6 +155,42 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 	})
 })
 
+// IT-RBAC-2588-001: The rendered operator manager role must contain the
+// permissions required by the system-owned cancellation path. This is the
+// static half of the RBAC/SAR check; deployed qualification supplies the live
+// ServiceAccount SAR evidence.
+var _ = Describe("Issue #2588 manager RBAC", func() {
+	var rules []rbacv1.PolicyRule
+
+	BeforeEach(func() {
+		var err error
+		rules, err = parseClusterRoleRules(filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml"), "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "rendered manager role must be parseable")
+		Expect(rules).NotTo(BeEmpty(), "rendered manager role must have rules")
+	})
+
+	DescribeTable("required cancellation permission is rendered",
+		func(apiGroup, resource string, verbs []string) {
+			for _, rule := range rules {
+				if !slices.Contains(rule.APIGroups, apiGroup) || !slices.Contains(rule.Resources, resource) {
+					continue
+				}
+				for _, verb := range verbs {
+					Expect(rule.Verbs).To(ContainElement(verb),
+						"manager-role %s/%s must include verb %q", apiGroup, resource, verb)
+				}
+				return
+			}
+			Fail("manager-role must contain a rule for " + apiGroup + "/" + resource)
+		},
+		Entry("RR metadata and cancellation finalizer", "kubernaut.ai", "remediationrequests", []string{"get", "list", "watch", "update", "patch", "delete"}),
+		Entry("RR status", "kubernaut.ai", "remediationrequests/status", []string{"get", "update", "patch"}),
+		Entry("RR finalizers", "kubernaut.ai", "remediationrequests/finalizers", []string{"update"}),
+		Entry("RAR metadata", "kubernaut.ai", "remediationapprovalrequests", []string{"get", "list", "watch", "create", "update", "patch"}),
+		Entry("RAR status", "kubernaut.ai", "remediationapprovalrequests/status", []string{"get", "update", "patch"}),
+	)
+})
+
 // UT-INFRA-RBAC-002: Structural parity test for PersonaToolClusterRolesYAML.
 //
 // Incident (2026-08-03): #1869/#1884 added kubernaut_get_approval_request and

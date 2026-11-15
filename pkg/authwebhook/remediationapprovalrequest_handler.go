@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -34,14 +35,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+const systemDecisionActor = "system"
+
 // afServiceAccountName is the compile-time constant for the AF ServiceAccount name.
 // This is the sole trusted intermediary for approval delegation (DD-AUTH-MCP-001 v3.0).
 const afServiceAccountName = "apifrontend"
+
+// remediationOrchestratorServiceAccountName is the only controller identity
+// allowed to write the system-only Cancelled RAR decision (issue #2588).
+const remediationOrchestratorServiceAccountName = "remediationorchestrator-controller"
 
 // BuildTrustedAFSA constructs the fully-qualified AF SA identity from a namespace.
 // The SA name is a compile-time constant; only the namespace varies per deployment.
 func BuildTrustedAFSA(namespace string) string {
 	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, afServiceAccountName)
+}
+
+func buildTrustedServiceAccount(namespace, serviceAccountName string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName)
 }
 
 // RemediationApprovalRequestAuthHandler handles authentication for RemediationApprovalRequest decisions
@@ -60,6 +71,7 @@ type RemediationApprovalRequestAuthHandler struct {
 	auditStore    audit.AuditStore
 	reader        client.Reader
 	trustedAFSA   string
+	trustedROSA   string
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler.
@@ -71,6 +83,7 @@ func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reade
 		auditStore:    auditStore,
 		reader:        reader,
 		trustedAFSA:   BuildTrustedAFSA(podNamespace),
+		trustedROSA:   buildTrustedServiceAccount(podNamespace, remediationOrchestratorServiceAccountName),
 	}
 }
 
@@ -78,6 +91,12 @@ func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reade
 // This is the sole trusted intermediary for approval delegation (AC-6: Least Privilege).
 func (h *RemediationApprovalRequestAuthHandler) isAFServiceAccount(username string) bool {
 	return username == h.trustedAFSA
+}
+
+// isROServiceAccount returns true only for the deployed RO controller identity.
+// User-provided status fields are never sufficient to authorize cancellation.
+func (h *RemediationApprovalRequestAuthHandler) isROServiceAccount(username string) bool {
+	return username == h.trustedROSA
 }
 
 // Handle processes the admission request for RemediationApprovalRequest
@@ -99,7 +118,11 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		return resp
 	}
 
-	if earlyResp, earlyDone := earlyDecisionResponse(logger, rar, oldRAR); earlyDone {
+	trustedRO := h.isROServiceAccount(req.UserInfo.Username)
+	if isTrustedSystemRARCancellation(rar, oldRAR, trustedRO) {
+		h.emitSystemCancellationAudit(ctx, logger, rar, req.UserInfo.Username)
+	}
+	if earlyResp, earlyDone := earlyDecisionResponse(logger, rar, oldRAR, trustedRO); earlyDone {
 		return earlyResp
 	}
 
@@ -126,6 +149,21 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, isDelegation)
 
 	return finalizeRARResponse(logger, req, rar)
+}
+
+func isTrustedSystemRARCancellation(
+	rar *remediationv1.RemediationApprovalRequest,
+	oldRAR *remediationv1.RemediationApprovalRequest,
+	trustedRO bool,
+) bool {
+	if !trustedRO || rar == nil || rar.Status.Decision != remediationv1.ApprovalDecisionCancelled || rar.Status.DecidedBy != systemDecisionActor {
+		return false
+	}
+	oldDecision := remediationv1.ApprovalDecisionPending
+	if oldRAR != nil {
+		oldDecision = oldRAR.Status.Decision
+	}
+	return oldDecision == remediationv1.ApprovalDecisionPending || oldDecision == remediationv1.ApprovalDecisionCancelled
 }
 
 // decodeRARRequest decodes the new (and, if present, old) RemediationApprovalRequest
@@ -167,10 +205,26 @@ func (h *RemediationApprovalRequestAuthHandler) decodeRARRequest(logger logr.Log
 // earlyDecisionResponse handles the request states that terminate processing
 // before authentication is needed: no decision yet, an invalid decision,
 // true idempotency (decision already attributed), and system-initiated expiry.
-func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.RemediationApprovalRequest) (admission.Response, bool) {
+func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.RemediationApprovalRequest, trustedRO bool) (admission.Response, bool) {
 	if rar.Status.Decision == "" {
 		logger.Info("Skipping RAR (no decision made)")
 		return admission.Allowed("no decision made"), true
+	}
+
+	// ApprovalDecisionCancelled is system-only. The RO writes it through the
+	// status subresource with DecidedBy=system; user approval requests are still
+	// validated by ValidateApprovalDecision and cannot select this value.
+	if rar.Status.Decision == remediationv1.ApprovalDecisionCancelled {
+		oldDecision := remediationv1.ApprovalDecisionPending
+		if oldRAR != nil {
+			oldDecision = oldRAR.Status.Decision
+		}
+		if trustedRO && rar.Status.DecidedBy == systemDecisionActor &&
+			(oldDecision == remediationv1.ApprovalDecisionPending || oldDecision == remediationv1.ApprovalDecisionCancelled) {
+			logger.Info("System-initiated RAR cancellation detected")
+			return admission.Allowed("system-initiated cancellation"), true
+		}
+		return admission.Denied("ApprovalDecisionCancelled is system-only"), true
 	}
 
 	// REFACTOR-AW-001: Validate decision using extracted helper
@@ -199,7 +253,7 @@ func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.Remedi
 	// CRD spec (remediationapprovalrequest_types.go:197): DecidedBy = "system" for timeout.
 	// When the controller expires an RAR, it sets Decision=Expired and DecidedBy="system".
 	// The webhook must preserve this value rather than overwriting with the controller's SA.
-	if rar.Status.Decision == remediationv1.ApprovalDecisionExpired && rar.Status.DecidedBy == "system" {
+	if rar.Status.Decision == remediationv1.ApprovalDecisionExpired && rar.Status.DecidedBy == systemDecisionActor {
 		logger.Info("System-initiated expiry detected, preserving DecidedBy=system per CRD spec")
 		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec"), true
 	}
@@ -317,6 +371,45 @@ func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx conte
 		"rarName", rar.Name,
 		"eventAction", "approval_decided",
 	)
+}
+
+// emitSystemCancellationAudit records the admission-attribution event for the
+// RO-owned system cancellation path before earlyDecisionResponse returns. The
+// event uses the same typed webhook payload as ordinary RAR decisions and a
+// deterministic ID so repeated status observations remain idempotent.
+func (h *RemediationApprovalRequestAuthHandler) emitSystemCancellationAudit(
+	ctx context.Context,
+	logger logr.Logger,
+	rar *remediationv1.RemediationApprovalRequest,
+	caller string,
+) {
+	if h.auditStore == nil {
+		logger.Error(fmt.Errorf("audit store is nil"), "Cannot record system RAR cancellation audit")
+		return
+	}
+	forAudit := rar.DeepCopy()
+	if forAudit.Status.DecidedAt == nil {
+		now := metav1.Now()
+		forAudit.Status.DecidedAt = &now
+	}
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventID(auditEvent, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
+		"authwebhook/rar-cancellation/%s/%s/%s",
+		rar.Namespace, rar.Name, rar.UID,
+	))))
+	audit.SetEventType(auditEvent, EventTypeRARDecided)
+	audit.SetEventCategory(auditEvent, EventCategoryApproval)
+	audit.SetEventAction(auditEvent, "approval_decided")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "service", caller)
+	audit.SetResource(auditEvent, "RemediationApprovalRequest", string(rar.UID))
+	audit.SetCorrelationID(auditEvent, rar.Spec.RemediationRequestRef.Name)
+	audit.SetNamespace(auditEvent, rar.Namespace)
+	audit.SetClusterID(auditEvent, rar.Spec.ClusterID)
+	auditEvent.EventData = WrapRARApprovalPayloadWithDiscriminator(BuildRARApprovalAuditPayload(forAudit))
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		logger.Error(err, "System RAR cancellation audit storage failed", "eventType", auditEvent.EventType)
+	}
 }
 
 // finalizeRARResponse marshals the patched RAR and builds the admission

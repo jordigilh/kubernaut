@@ -35,6 +35,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -123,6 +124,19 @@ func (c *AIAnalysisCreator) Create(
 	existing := &aianalysisv1.AIAnalysis{}
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
 	if err == nil {
+		if err := validateExistingChildIdentity(
+			rr,
+			cancellation.ReferenceIdentity{
+				Name:      existing.Spec.RemediationRequestRef.Name,
+				Namespace: existing.Spec.RemediationRequestRef.Namespace,
+				UID:       existing.Spec.RemediationRequestRef.UID,
+			},
+			existing.OwnerReferences,
+			"AIAnalysis",
+		); err != nil {
+			logger.Error(err, "Refusing to reuse AIAnalysis from another RemediationRequest incarnation")
+			return "", err
+		}
 		// Already exists, return existing name
 		logger.Info("AIAnalysis already exists, reusing", "name", name)
 		return name, nil

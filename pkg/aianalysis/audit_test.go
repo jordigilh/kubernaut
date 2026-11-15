@@ -148,7 +148,7 @@ var _ = Describe("AuditClient RecordError", func() {
 				"Namespace should be 'default'")
 		})
 
-		It("should include error details in event payload", func() {
+		It("UT-AUDIT-2588-006: includes standardized error_details in the error payload", func() {
 			// Given: An error with specific message
 			testErr := errors.New("KA connection refused")
 
@@ -170,6 +170,10 @@ var _ = Describe("AuditClient RecordError", func() {
 				"Phase should match the provided phase")
 			Expect(payload.ErrorMessage).To(Equal("KA connection refused"),
 				"Error message should match the error text")
+			Expect(payload.ErrorDetails.Code).To(Equal("ERR_UPSTREAM_FAILURE"))
+			Expect(payload.ErrorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentAianalysis))
+			Expect(payload.ErrorDetails.Message).To(Equal("KA connection refused"))
+			Expect(payload.ErrorDetails.RetryPossible).To(BeTrue())
 		})
 
 		It("should use correlation_id from RemediationRequestRef.Name", func() {
@@ -252,6 +256,14 @@ var _ = Describe("AuditClient RecordError", func() {
 
 			payload, _ := mockStore.StoredEvents[0].EventData.GetAIAnalysisErrorPayload()
 			Expect(payload.ErrorMessage).To(ContainSubstring("invalid workflow parameter"))
+		})
+
+		It("UT-AUDIT-2588-007: classifies cancellation retry exhaustion as non-retryable", func() {
+			auditClient.RecordError(ctx, analysis, "Cancellation", errors.New("AgentSession cancellation retry budget exhausted; manual review required"))
+
+			payload, _ := mockStore.StoredEvents[0].EventData.GetAIAnalysisErrorPayload()
+			Expect(payload.ErrorDetails.Code).To(Equal("ERR_CANCELLATION_RETRY_EXHAUSTED"))
+			Expect(payload.ErrorDetails.RetryPossible).To(BeFalse())
 		})
 	})
 

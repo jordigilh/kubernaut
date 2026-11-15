@@ -5226,7 +5226,8 @@ type AIAnalysisErrorPayload struct {
 	// Phase in which error occurred.
 	Phase string `json:"phase"`
 	// Error message.
-	ErrorMessage string `json:"error_message"`
+	ErrorMessage string       `json:"error_message"`
+	ErrorDetails ErrorDetails `json:"error_details"`
 }
 
 // GetPhase returns the value of Phase.
@@ -5239,6 +5240,11 @@ func (s *AIAnalysisErrorPayload) GetErrorMessage() string {
 	return s.ErrorMessage
 }
 
+// GetErrorDetails returns the value of ErrorDetails.
+func (s *AIAnalysisErrorPayload) GetErrorDetails() ErrorDetails {
+	return s.ErrorDetails
+}
+
 // SetPhase sets the value of Phase.
 func (s *AIAnalysisErrorPayload) SetPhase(val string) {
 	s.Phase = val
@@ -5247,6 +5253,11 @@ func (s *AIAnalysisErrorPayload) SetPhase(val string) {
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *AIAnalysisErrorPayload) SetErrorMessage(val string) {
 	s.ErrorMessage = val
+}
+
+// SetErrorDetails sets the value of ErrorDetails.
+func (s *AIAnalysisErrorPayload) SetErrorDetails(val ErrorDetails) {
+	s.ErrorDetails = val
 }
 
 // Phase transition event payload (aianalysis.phase.transition).
@@ -10903,6 +10914,7 @@ const (
 	AuditEventEventDataGatewaySignalDeduplicatedAuditEventEventData                  AuditEventEventDataType = "gateway.signal.deduplicated"
 	AuditEventEventDataGatewaySignalReceivedAuditEventEventData                      AuditEventEventDataType = "gateway.signal.received"
 	AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData               AuditEventEventDataType = "orchestrator.approval.approved"
+	AuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData              AuditEventEventDataType = "orchestrator.approval.cancelled"
 	AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData               AuditEventEventDataType = "orchestrator.approval.rejected"
 	AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData              AuditEventEventDataType = "orchestrator.approval.requested"
 	AuditEventEventDataOrchestratorEaCreatedAuditEventEventData                      AuditEventEventDataType = "orchestrator.ea.created"
@@ -11077,7 +11089,7 @@ func (s AuditEventEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationTimedOutAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerifyingStartedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationTimedOutAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerifyingStartedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -11782,6 +11794,13 @@ func (s AuditEventEventData) GetRemediationOrchestratorAuditPayload() (v Remedia
 func NewAuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData, v)
 	return s
 }
 
@@ -15200,6 +15219,7 @@ const (
 	AuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData                  AuditEventRequestEventDataType = "gateway.signal.deduplicated"
 	AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData                      AuditEventRequestEventDataType = "gateway.signal.received"
 	AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData               AuditEventRequestEventDataType = "orchestrator.approval.approved"
+	AuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData              AuditEventRequestEventDataType = "orchestrator.approval.cancelled"
 	AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData               AuditEventRequestEventDataType = "orchestrator.approval.rejected"
 	AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData              AuditEventRequestEventDataType = "orchestrator.approval.requested"
 	AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData                      AuditEventRequestEventDataType = "orchestrator.ea.created"
@@ -15374,7 +15394,7 @@ func (s AuditEventRequestEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventRequestEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -16079,6 +16099,13 @@ func (s AuditEventRequestEventData) GetRemediationOrchestratorAuditPayload() (v 
 func NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData, v)
 	return s
 }
 
@@ -34015,9 +34042,10 @@ func (s *RemediationOrchestratorAuditPayload) SetIsCrd(val OptBool) {
 type RemediationOrchestratorAuditPayloadDecision string
 
 const (
-	RemediationOrchestratorAuditPayloadDecisionApproved RemediationOrchestratorAuditPayloadDecision = "Approved"
-	RemediationOrchestratorAuditPayloadDecisionRejected RemediationOrchestratorAuditPayloadDecision = "Rejected"
-	RemediationOrchestratorAuditPayloadDecisionPending  RemediationOrchestratorAuditPayloadDecision = "Pending"
+	RemediationOrchestratorAuditPayloadDecisionApproved  RemediationOrchestratorAuditPayloadDecision = "Approved"
+	RemediationOrchestratorAuditPayloadDecisionRejected  RemediationOrchestratorAuditPayloadDecision = "Rejected"
+	RemediationOrchestratorAuditPayloadDecisionPending   RemediationOrchestratorAuditPayloadDecision = "Pending"
+	RemediationOrchestratorAuditPayloadDecisionCancelled RemediationOrchestratorAuditPayloadDecision = "Cancelled"
 )
 
 // AllValues returns all RemediationOrchestratorAuditPayloadDecision values.
@@ -34026,6 +34054,7 @@ func (RemediationOrchestratorAuditPayloadDecision) AllValues() []RemediationOrch
 		RemediationOrchestratorAuditPayloadDecisionApproved,
 		RemediationOrchestratorAuditPayloadDecisionRejected,
 		RemediationOrchestratorAuditPayloadDecisionPending,
+		RemediationOrchestratorAuditPayloadDecisionCancelled,
 	}
 }
 
@@ -34037,6 +34066,8 @@ func (s RemediationOrchestratorAuditPayloadDecision) MarshalText() ([]byte, erro
 	case RemediationOrchestratorAuditPayloadDecisionRejected:
 		return []byte(s), nil
 	case RemediationOrchestratorAuditPayloadDecisionPending:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadDecisionCancelled:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -34054,6 +34085,9 @@ func (s *RemediationOrchestratorAuditPayloadDecision) UnmarshalText(data []byte)
 		return nil
 	case RemediationOrchestratorAuditPayloadDecisionPending:
 		*s = RemediationOrchestratorAuditPayloadDecisionPending
+		return nil
+	case RemediationOrchestratorAuditPayloadDecisionCancelled:
+		*s = RemediationOrchestratorAuditPayloadDecisionCancelled
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -34075,6 +34109,7 @@ const (
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested              RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.requested"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved               RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.approved"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected               RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.rejected"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled              RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.cancelled"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview        RemediationOrchestratorAuditPayloadEventType = "orchestrator.remediation.manual_review"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked                 RemediationOrchestratorAuditPayloadEventType = "orchestrator.routing.blocked"
 	RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated                 RemediationOrchestratorAuditPayloadEventType = "remediation.workflow_created"
@@ -34095,6 +34130,7 @@ func (RemediationOrchestratorAuditPayloadEventType) AllValues() []RemediationOrc
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
 		RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated,
@@ -34126,6 +34162,8 @@ func (s RemediationOrchestratorAuditPayloadEventType) MarshalText() ([]byte, err
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved:
 		return []byte(s), nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled:
 		return []byte(s), nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview:
 		return []byte(s), nil
@@ -34175,6 +34213,9 @@ func (s *RemediationOrchestratorAuditPayloadEventType) UnmarshalText(data []byte
 		return nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled
 		return nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview

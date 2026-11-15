@@ -319,10 +319,14 @@ const (
 	PhaseInvestigating = "Investigating"
 	// PhaseAnalyzing evaluates Rego policies for approval determination
 	PhaseAnalyzing = "Analyzing"
+	// PhaseCancelling indicates parent cancellation is being acknowledged.
+	PhaseCancelling = "Cancelling"
 	// PhaseCompleted indicates successful completion
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates a permanent failure
 	PhaseFailed = "Failed"
+	// PhaseCancelled indicates cancellation completed without remaining work.
+	PhaseCancelled = "Cancelled"
 )
 
 // AIAnalysis SubReason constants (subset of the full kubebuilder enum on
@@ -365,9 +369,14 @@ type AIAnalysisStatus struct {
 
 	// Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
 	// Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
-	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Cancelling;Completed;Failed;Cancelled
 	Phase   string `json:"phase"`
 	Message string `json:"message,omitempty"`
+
+	// CancellationRetryCount records persisted retries while waiting for
+	// AgentSession shutdown during parent cancellation.
+	// +optional
+	CancellationRetryCount int32 `json:"cancellationRetryCount,omitempty"`
 	// Reason provides the umbrella failure or completion category.
 	// +optional
 	Reason AIAnalysisReason `json:"reason,omitempty"`

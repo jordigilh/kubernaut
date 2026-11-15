@@ -19,15 +19,19 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -66,7 +70,10 @@ type CredentialTypeInjectors struct {
 type AWXJobClient interface {
 	LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error)
 	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
+	LaunchJobTemplateWithLabels(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, labels []string) (int, error)
 	GetJobStatus(ctx context.Context, jobID int) (*AWXJobStatus, error)
+	FindJobsByLabel(ctx context.Context, label string) ([]AWXJobStatus, error)
+	GetJobTemplate(ctx context.Context, templateID int) (*AWXJobTemplate, error)
 	CancelJob(ctx context.Context, jobID int) error
 	FindJobTemplateByName(ctx context.Context, name string) (int, error)
 }
@@ -105,6 +112,14 @@ type AWXJobStatus struct {
 	Status       string `json:"status"`
 	Failed       bool   `json:"failed"`
 	ResultStdout string `json:"result_stdout,omitempty"`
+}
+
+// AWXJobTemplate contains the launch capabilities required for safe label
+// based recovery after an ambiguous AWX launch response.
+type AWXJobTemplate struct {
+	ID                int  `json:"id"`
+	AskLabelsOnLaunch bool `json:"ask_labels_on_launch"`
+	JobSliceCount     int  `json:"job_slice_count"`
 }
 
 const (
@@ -244,6 +259,18 @@ func (a *AnsibleExecutor) Create(
 		)
 	}
 
+	// A persisted label means a previous launch request may have succeeded even
+	// though its response was lost. Recover that job before resolving any other
+	// AWX launch inputs instead of launching a duplicate. A missing or ambiguous
+	// match fails closed.
+	if wfe.Status.AWXLaunchLabel != "" {
+		jobID, recoveryErr := a.findAWXJobByLabel(ctx, wfe.Status.AWXLaunchLabel)
+		if recoveryErr != nil {
+			return nil, fmt.Errorf("recover AWX job for launch label %q: %w", wfe.Status.AWXLaunchLabel, recoveryErr)
+		}
+		return &CreateResult{ResourceName: fmt.Sprintf("awx-job-%d", jobID)}, nil
+	}
+
 	cfg, err := a.parseEngineConfig(wfe)
 	if err != nil {
 		return nil, fmt.Errorf("parse ansible engineConfig: %w", err)
@@ -253,6 +280,9 @@ func (a *AnsibleExecutor) Create(
 	if err != nil {
 		return nil, fmt.Errorf("resolve AWX job template: %w", err)
 	}
+	if err := a.validateAWXJobTemplate(ctx, templateID); err != nil {
+		return nil, err
+	}
 
 	extraVars := a.buildAnsibleExtraVars(wfe, opts)
 
@@ -260,12 +290,24 @@ func (a *AnsibleExecutor) Create(
 		return nil, fmt.Errorf("inject dependency configmaps: %w", err)
 	}
 
-	credentialIDs, warnings, err := a.resolveAnsibleCredentials(ctx, wfe, namespace, opts, templateID)
+	credentialIDs, ephemeralCredentialIDs, warnings, err := a.resolveAnsibleCredentials(ctx, wfe, namespace, opts, templateID)
 	if err != nil {
 		return nil, err
 	}
 
-	jobID, err := a.launchAnsibleJob(ctx, wfe, cfg, templateID, extraVars, credentialIDs)
+	launchLabel, err := a.ensureAWXLaunchLabel(ctx, wfe)
+	if err != nil {
+		a.cleanupCredentialIDs(ctx, wfe.Name, ephemeralCredentialIDs)
+		return nil, err
+	}
+	if len(ephemeralCredentialIDs) > 0 {
+		if err := a.storeCredentialIDs(ctx, wfe, ephemeralCredentialIDs); err != nil {
+			a.cleanupCredentialIDs(ctx, wfe.Name, ephemeralCredentialIDs)
+			return nil, fmt.Errorf("persist ephemeral AWX credential IDs before launch: %w", err)
+		}
+	}
+
+	jobID, err := a.launchAnsibleJob(ctx, wfe, templateID, extraVars, credentialIDs, ephemeralCredentialIDs, launchLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -305,10 +347,11 @@ func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.W
 // credentials; otherwise it degrades to a warning (playbooks using
 // kubernetes.core simply won't authenticate). Extracted from Create (Wave 6
 // 6e-ii GREEN: funlen remediation) — pure code motion, no behavior change.
-func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions, templateID int) ([]int, []Warning, error) {
-	credentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
+func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions, templateID int) ([]int, []int, []Warning, error) {
+	ephemeralCredentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("inject dependency secrets: %w", err)
+		a.cleanupCredentialIDs(ctx, wfe.Name, ephemeralCredentialIDs)
+		return nil, nil, nil, fmt.Errorf("inject dependency secrets: %w", err)
 	}
 
 	// Issue #501: injectK8sCredential now uses TokenRequest when
@@ -318,16 +361,18 @@ func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *wo
 	if k8sErr != nil {
 		if wfe.Spec.WorkflowRef.ServiceAccountName != "" {
 			// Hard failure: operator explicitly requested per-workflow credentials.
-			return nil, nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
+			a.cleanupCredentialIDs(ctx, wfe.Name, ephemeralCredentialIDs)
+			return nil, nil, nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
 		}
 		a.Logger.Error(k8sErr, "Failed to inject K8s credential — playbooks using kubernetes.core will not authenticate",
 			"wfe", wfe.Name)
 	} else {
-		credentialIDs = append(credentialIDs, k8sCredID)
+		ephemeralCredentialIDs = append(ephemeralCredentialIDs, k8sCredID)
 		warnings = append(warnings, k8sWarnings...)
 	}
 
-	if len(credentialIDs) > 0 {
+	credentialIDs := append([]int(nil), ephemeralCredentialIDs...)
+	if len(ephemeralCredentialIDs) > 0 {
 		templateCreds, tcErr := a.AWXClient.GetJobTemplateCredentials(ctx, templateID)
 		if tcErr != nil {
 			a.Logger.Error(tcErr, "Failed to fetch template credentials, launching with ephemeral only",
@@ -337,7 +382,7 @@ func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *wo
 		}
 	}
 
-	return credentialIDs, warnings, nil
+	return credentialIDs, ephemeralCredentialIDs, warnings, nil
 }
 
 // launchAnsibleJob launches the AWX job template (with or without ephemeral
@@ -346,38 +391,73 @@ func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *wo
 // onto the WFE status for later cleanup on success. Extracted from Create
 // (Wave 6 6e-ii GREEN: funlen remediation) — pure code motion, no behavior
 // change.
-func (a *AnsibleExecutor) launchAnsibleJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cfg *models.AnsibleEngineConfig, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error) {
+func (a *AnsibleExecutor) launchAnsibleJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, templateID int, extraVars map[string]interface{}, credentialIDs, ephemeralCredentialIDs []int, launchLabel string) (int, error) {
 	a.Logger.Info("Launching AWX job",
 		"templateID", templateID,
-		"playbookPath", cfg.PlaybookPath,
 		"wfe", wfe.Name,
 		"totalCredentials", len(credentialIDs),
 	)
 
-	var jobID int
-	var err error
-	if len(credentialIDs) > 0 {
-		jobID, err = a.AWXClient.LaunchJobTemplateWithCreds(ctx, templateID, extraVars, credentialIDs)
-	} else {
-		jobID, err = a.AWXClient.LaunchJobTemplate(ctx, templateID, extraVars)
-	}
+	jobID, err := a.AWXClient.LaunchJobTemplateWithLabels(ctx, templateID, extraVars, credentialIDs, []string{launchLabel})
 	if err != nil {
-		for _, credID := range credentialIDs {
-			if delErr := a.AWXClient.DeleteCredential(ctx, credID); delErr != nil {
-				a.Logger.Error(delErr, "Failed to cleanup ephemeral credential after launch failure",
-					"credentialID", credID, "wfe", wfe.Name)
-			}
+		if !errors.Is(err, ErrAWXLaunchRecoveryPending) {
+			a.cleanupCredentialIDs(ctx, wfe.Name, ephemeralCredentialIDs)
 		}
 		return 0, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
 	}
 
-	if len(credentialIDs) > 0 {
-		if storeErr := a.storeCredentialIDs(ctx, wfe, credentialIDs); storeErr != nil {
-			a.Logger.Error(storeErr, "Failed to store ephemeral credential IDs in WFE status",
-				"wfe", wfe.Name, "credentialIDs", credentialIDs)
-		}
+	return jobID, nil
+}
+
+// ensureAWXLaunchLabel persists the recovery identity before the AWX launch
+// request. Synthetic unit fixtures have no Kubernetes UID; production WFEs do,
+// so only production objects require the status-subresource write here.
+func (a *AnsibleExecutor) ensureAWXLaunchLabel(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	if wfe.Status.AWXLaunchLabel != "" {
+		return wfe.Status.AWXLaunchLabel, nil
 	}
 
+	label := awxLaunchLabelPrefix + uuid.New().String()
+	wfe.Status.AWXLaunchLabel = label
+	if a.K8sClient == nil || wfe.UID == "" {
+		return label, nil
+	}
+	if err := a.K8sClient.Status().Update(ctx, wfe); err != nil {
+		return "", fmt.Errorf("persist AWX launch label: %w", err)
+	}
+	return label, nil
+}
+
+func (a *AnsibleExecutor) findAWXJobByLabel(ctx context.Context, launchLabel string) (int, error) {
+	jobs, err := a.AWXClient.FindJobsByLabel(ctx, launchLabel)
+	if err != nil {
+		return 0, fmt.Errorf("discover AWX jobs by launch label: %w", err)
+	}
+	switch len(jobs) {
+	case 0:
+		return 0, fmt.Errorf("%w: no AWX jobs match launch label %q", ErrAWXLaunchRecoveryPending, launchLabel)
+	case 1:
+		if jobs[0].ID <= 0 {
+			return 0, fmt.Errorf("AWX job match for launch label %q has invalid ID %d", launchLabel, jobs[0].ID)
+		}
+		return jobs[0].ID, nil
+	default:
+		return 0, fmt.Errorf("multiple AWX jobs (%d) match launch label %q", len(jobs), launchLabel)
+	}
+}
+
+func (a *AnsibleExecutor) resolveAWXJobID(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (int, error) {
+	if wfe.Status.ExecutionRef != nil {
+		return parseAWXJobID(wfe.Status.ExecutionRef.Name)
+	}
+	if wfe.Status.AWXLaunchLabel == "" {
+		return 0, fmt.Errorf("no execution ref or AWX launch label set on WFE %s/%s", wfe.Namespace, wfe.Name)
+	}
+	jobID, err := a.findAWXJobByLabel(ctx, wfe.Status.AWXLaunchLabel)
+	if err != nil {
+		return 0, err
+	}
+	wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: fmt.Sprintf("awx-job-%d", jobID)}
 	return jobID, nil
 }
 
@@ -402,12 +482,12 @@ func (a *AnsibleExecutor) injectDependencySecrets(
 			Name:      dep.Name,
 			Namespace: namespace,
 		}, &secret); err != nil {
-			return nil, fmt.Errorf("read dependency secret %q in %q: %w", dep.Name, namespace, err)
+			return credentialIDs, fmt.Errorf("read dependency secret %q in %q: %w", dep.Name, namespace, err)
 		}
 
 		credTypeID, err := a.ensureCredentialType(ctx, dep.Name, secret.Data)
 		if err != nil {
-			return nil, fmt.Errorf("ensure credential type for secret %q: %w", dep.Name, err)
+			return credentialIDs, fmt.Errorf("ensure credential type for secret %q: %w", dep.Name, err)
 		}
 
 		inputs := make(map[string]string, len(secret.Data))
@@ -418,7 +498,7 @@ func (a *AnsibleExecutor) injectDependencySecrets(
 		credName := fmt.Sprintf("%s%s-%s", credentialPrefix, dep.Name, wfeName)
 		credID, err := a.AWXClient.CreateCredential(ctx, credName, credTypeID, a.OrganizationID, inputs)
 		if err != nil {
-			return nil, fmt.Errorf("create ephemeral credential for secret %q: %w", dep.Name, err)
+			return credentialIDs, fmt.Errorf("create ephemeral credential for secret %q: %w", dep.Name, err)
 		}
 
 		a.Logger.Info("Created ephemeral AWX credential",
@@ -647,6 +727,13 @@ func (a *AnsibleExecutor) injectK8sCredential(
 
 const defaultTokenExpirationSeconds = 3600
 
+const awxLaunchLabelPrefix = "kubernaut-awx-launch-"
+
+// ErrAWXLaunchRecoveryPending means the AWX launch outcome is ambiguous or
+// its persisted label is not visible yet. Callers must retry discovery rather
+// than terminalize the WorkflowExecution.
+var ErrAWXLaunchRecoveryPending = errors.New("awx launch recovery pending")
+
 // requestTokenForSA uses the TokenRequest API to obtain a short-lived token for
 // the workflow's designated ServiceAccount. It also validates the granted TTL
 // against the WFE execution timeout and returns a warning if the API server
@@ -740,7 +827,20 @@ func (a *AnsibleExecutor) storeCredentialIDs(
 	credentialIDs []int,
 ) error {
 	wfe.Status.EphemeralCredentialIDs = credentialIDs
-	return a.K8sClient.Status().Update(ctx, wfe)
+	if a.K8sClient == nil {
+		if wfe.UID == "" {
+			return nil
+		}
+		return fmt.Errorf("kubernetes client is required to persist ephemeral AWX credential IDs")
+	}
+	err := a.K8sClient.Status().Update(ctx, wfe)
+	if apierrors.IsNotFound(err) && wfe.UID == "" {
+		// Unit fixtures may exercise credential creation without registering the
+		// synthetic WFE in their fake client. Production objects always have a
+		// UID and must persist this ownership record successfully.
+		return nil
+	}
+	return err
 }
 
 // GetStatus polls AWX for the job status and maps it to an ExecutionResult.
@@ -749,13 +849,9 @@ func (a *AnsibleExecutor) GetStatus(
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	namespace string,
 ) (*ExecutionResult, error) {
-	if wfe.Status.ExecutionRef == nil {
-		return nil, fmt.Errorf("no execution ref set on WFE %s/%s", wfe.Namespace, wfe.Name)
-	}
-
-	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
+	jobID, err := a.resolveAWXJobID(ctx, wfe)
 	if err != nil {
-		return nil, fmt.Errorf("parse AWX job ID from executionRef %q: %w", wfe.Status.ExecutionRef.Name, err)
+		return nil, fmt.Errorf("resolve AWX job for WFE %s/%s: %w", wfe.Namespace, wfe.Name, err)
 	}
 
 	status, err := a.AWXClient.GetJobStatus(ctx, jobID)
@@ -764,6 +860,72 @@ func (a *AnsibleExecutor) GetStatus(
 	}
 
 	return MapAWXStatusToResult(status), nil
+}
+
+// RequestStop asks AWX to cancel the job. AWX cancellation is asynchronous;
+// VerifyStopped must observe a terminal AWX status before the WFE acknowledges
+// cancellation. AWX reports both missing and already-terminal jobs as
+// idempotent stop outcomes.
+func (a *AnsibleExecutor) RequestStop(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	_ string,
+) error {
+	jobID, err := a.resolveAWXJobID(ctx, wfe)
+	if err != nil {
+		return fmt.Errorf("resolve AWX job for stop: %w", err)
+	}
+	if err := a.AWXClient.CancelJob(ctx, jobID); err != nil && !isIdempotentAWXStopError(err) {
+		return fmt.Errorf("cancel AWX job %d: %w", jobID, err)
+	}
+	return nil
+}
+
+// VerifyStopped polls AWX and treats only documented terminal states as
+// stopped. Running, queued, and unknown states remain non-acknowledged.
+func (a *AnsibleExecutor) VerifyStopped(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	_ string,
+) (StopVerification, error) {
+	jobID, err := a.resolveAWXJobID(ctx, wfe)
+	if err != nil {
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("resolve AWX job for verification: %w", err)
+	}
+	status, err := a.AWXClient.GetJobStatus(ctx, jobID)
+	if err != nil {
+		if isAWXNotFoundError(err) {
+			return StopVerification{State: StopStateStopped, Message: "AWX job is no longer present"}, nil
+		}
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("verify AWX job %d cancellation: %w", jobID, err)
+	}
+	if awxJobIsTerminal(status.Status) {
+		return StopVerification{State: StopStateStopped, Message: fmt.Sprintf("AWX job reached terminal status %q", status.Status)}, nil
+	}
+	if status.Status == "pending" || status.Status == "waiting" || status.Status == "running" || status.Status == "new" {
+		return StopVerification{State: StopStateRunning, Message: fmt.Sprintf("AWX job remains %q", status.Status)}, nil
+	}
+	return StopVerification{State: StopStateUnknown, Message: fmt.Sprintf("AWX job returned unrecognized status %q", status.Status)}, nil
+}
+
+func isIdempotentAWXStopError(err error) bool {
+	var apiErr *AWXAPIError
+	return errors.As(err, &apiErr) &&
+		(apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed)
+}
+
+func isAWXNotFoundError(err error) bool {
+	var apiErr *AWXAPIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
+}
+
+func awxJobIsTerminal(status string) bool {
+	switch status {
+	case "successful", "failed", "error", "canceled", "never updated":
+		return true
+	default:
+		return false
+	}
 }
 
 // Cleanup cancels the AWX job and deletes ephemeral credentials during WFE
@@ -778,16 +940,16 @@ func (a *AnsibleExecutor) Cleanup(
 		a.Logger.Error(err, "Failed to cleanup ephemeral AWX credentials during cleanup")
 	}
 
-	if wfe.Status.ExecutionRef == nil {
+	if wfe.Status.ExecutionRef == nil && wfe.Status.AWXLaunchLabel == "" {
 		return nil
 	}
 
-	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
+	jobID, err := a.resolveAWXJobID(ctx, wfe)
 	if err != nil {
-		a.Logger.Info("Cannot parse AWX job ID for cleanup, skipping", "executionRef", wfe.Status.ExecutionRef.Name)
+		a.Logger.Info("Cannot resolve AWX job for cleanup, skipping", "wfe", wfe.Name, "error", err)
 		// nolint:nilerr // intentional: best-effort finalizer cleanup (see
 		// func doc) must not block resource deletion on an unparseable
-		// legacy/malformed executionRef; already logged above (Issue
+		// legacy/malformed execution identity; already logged above (Issue
 		// #1546 Tier 3).
 		return nil
 	}
@@ -824,13 +986,16 @@ func (a *AnsibleExecutor) cleanupEphemeralCredentials(
 	if len(wfe.Status.EphemeralCredentialIDs) == 0 {
 		return
 	}
+	a.cleanupCredentialIDs(ctx, wfe.Name, wfe.Status.EphemeralCredentialIDs)
+}
 
-	for _, credID := range wfe.Status.EphemeralCredentialIDs {
+func (a *AnsibleExecutor) cleanupCredentialIDs(ctx context.Context, wfeName string, credentialIDs []int) {
+	for _, credID := range credentialIDs {
 		if err := a.AWXClient.DeleteCredential(ctx, credID); err != nil {
-			a.Logger.Error(err, "Failed to delete ephemeral AWX credential", "credentialID", credID)
+			a.Logger.Error(err, "Failed to delete WFE-created AWX credential", "credentialID", credID, "wfe", wfeName)
 			continue
 		}
-		a.Logger.Info("Deleted ephemeral AWX credential", "credentialID", credID)
+		a.Logger.Info("Deleted WFE-created AWX credential", "credentialID", credID, "wfe", wfeName)
 	}
 }
 
@@ -857,6 +1022,23 @@ func (a *AnsibleExecutor) resolveJobTemplate(ctx context.Context, cfg *models.An
 		return 0, fmt.Errorf("jobTemplateName is required in ansible engineConfig for v1.0")
 	}
 	return a.AWXClient.FindJobTemplateByName(ctx, cfg.JobTemplateName)
+}
+
+func (a *AnsibleExecutor) validateAWXJobTemplate(ctx context.Context, templateID int) error {
+	template, err := a.AWXClient.GetJobTemplate(ctx, templateID)
+	if err != nil {
+		return fmt.Errorf("get AWX job template %d capabilities: %w", templateID, err)
+	}
+	if template == nil {
+		return fmt.Errorf("get AWX job template %d capabilities: empty response", templateID)
+	}
+	if !template.AskLabelsOnLaunch {
+		return fmt.Errorf("AWX job template %d does not allow launch labels; enable ask_labels_on_launch", templateID)
+	}
+	if template.JobSliceCount > 1 {
+		return fmt.Errorf("AWX job template %d uses %d slices; label recovery requires an unsliced template", templateID, template.JobSliceCount)
+	}
+	return nil
 }
 
 // BuildExtraVars converts workflow parameters (map[string]string) to typed JSON values

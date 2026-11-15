@@ -47,6 +47,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
@@ -67,8 +68,10 @@ const (
 	PhasePending       = aianalysispkg.PhasePending
 	PhaseInvestigating = aianalysispkg.PhaseInvestigating
 	PhaseAnalyzing     = aianalysispkg.PhaseAnalyzing
+	PhaseCancelling    = aianalysispkg.PhaseCancelling
 	PhaseCompleted     = aianalysispkg.PhaseCompleted
 	PhaseFailed        = aianalysispkg.PhaseFailed
+	PhaseCancelled     = aianalysispkg.PhaseCancelled
 
 	ActionabilityActionable    = aianalysispkg.ActionabilityActionable
 	ActionabilityNotActionable = aianalysispkg.ActionabilityNotActionable
@@ -147,6 +150,7 @@ type AIAnalysisReconciler struct {
 // introduced -- see DD-AA-KA-001's "three sources" lesson below.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
@@ -163,6 +167,12 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.Get(ctx, req.NamespacedName, analysis); err != nil {
 		// Category A: AIAnalysis Not Found (normal during deletion)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if result, handled, err := r.reconcileParentCancellation(ctx, analysis, log); err != nil {
+		return result, err
+	} else if handled {
+		return result, nil
 	}
 
 	// AA-KA-001: Log reconcile state for debugging duplicate call issues
@@ -259,6 +269,12 @@ func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aian
 		return r.reconcileInvestigating(ctx, analysis)
 	case PhaseAnalyzing:
 		return r.reconcileAnalyzing(ctx, analysis)
+	case PhaseCancelling, PhaseCancelled:
+		// Parent cancellation is handled before phase dispatch. These explicit
+		// cases keep the child state machine total if a status-only event arrives
+		// after the parent watch has been observed.
+		log.Info("AIAnalysis cancellation phase", "phase", currentPhase)
+		return ctrl.Result{}, nil
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
@@ -333,6 +349,9 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentR
 	}
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
+		WatchesRawSource(source.Kind(mgr.GetCache(), &remediationv1.RemediationRequest{},
+			handler.TypedEnqueueRequestsFromMapFunc(mapRemediationRequestToAIAnalysis),
+		)).
 		WatchesRawSource(source.Kind(mgr.GetCache(), &agentsessionv1.AgentSession{},
 			handler.TypedEnqueueRequestsFromMapFunc(r.mapAgentSessionToAIAnalysis),
 			AgentSessionEventPredicate(),
@@ -509,17 +528,16 @@ func (r *AIAnalysisReconciler) cascadeCancelAgentSession(ctx context.Context, an
 		return
 	}
 
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
+	if analysis.Spec.RemediationRequestRef.Name == "" {
 		return
 	}
 
-	if err := r.AgentSessionCreator.DeleteForCascadeCancel(ctx, rrName, analysis.Namespace); err != nil {
+	if err := r.AgentSessionCreator.DeleteForCascadeCancel(ctx, analysis); err != nil {
 		log.Error(err, "Failed to cascade cancel AgentSession (best-effort)",
-			"rrName", rrName)
+			"rrName", analysis.Spec.RemediationRequestRef.Name)
 	} else {
 		log.Info("Cascaded ParentCancelled by deleting AgentSession",
-			"rrName", rrName)
+			"rrName", analysis.Spec.RemediationRequestRef.Name)
 	}
 }
 

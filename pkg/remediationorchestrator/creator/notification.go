@@ -39,6 +39,7 @@ import (
 	emconditions "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 )
 
 // formatTargetResource formats a ResourceIdentifier for notification bodies.
@@ -376,6 +377,147 @@ func (c *NotificationCreator) CreateCompletionNotification(
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
+}
+
+// CreateCancellationNotification creates the durable human-in-the-loop
+// notification for an RR cancellation request (issue #2588). The deterministic
+// name makes retries idempotent, while the explicit retry policy keeps the
+// notification controller active until delivery reaches a terminal phase.
+func (c *NotificationCreator) CreateCancellationNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+) (string, error) {
+	if rr == nil {
+		return "", fmt.Errorf("remediationrequest cannot be nil")
+	}
+	requestID := rr.Status.GetCancellation().RequestID
+	if requestID == "" {
+		return "", fmt.Errorf("cancellation request ID is required")
+	}
+
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+	)
+	name := fmt.Sprintf("nr-cancellation-%s", rr.Name)
+	exists, err := c.existingCancellationNotification(ctx, logger, name, rr)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return name, nil
+	}
+
+	nr := buildCancellationNotificationRequest(name, rr)
+
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Cancellation")
+	if err != nil {
+		return "", err
+	}
+	// persistNotification tolerates an AlreadyExists race. Re-read and validate
+	// the object so a stale same-name object can never be reported as this RR's
+	// cancellation notification.
+	if _, err := c.existingCancellationNotification(ctx, logger, name, rr); err != nil {
+		return "", err
+	}
+	logger.Info("Created cancellation NotificationRequest", "name", result)
+	return result, nil
+}
+
+func (c *NotificationCreator) existingCancellationNotification(
+	ctx context.Context,
+	logger logr.Logger,
+	name string,
+	rr *remediationv1.RemediationRequest,
+) (bool, error) {
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		logger.Error(err, "Failed to check existing Cancellation notification")
+		return false, fmt.Errorf("failed to check existing Cancellation NotificationRequest: %w", err)
+	}
+	if err := validateCancellationNotificationIdentity(existing, rr); err != nil {
+		logger.Error(err, "Existing Cancellation notification identity mismatch", "name", name)
+		return false, fmt.Errorf("existing cancellation NotificationRequest identity mismatch: %w", err)
+	}
+	logger.Info("Cancellation notification already exists, reusing", "name", name)
+	return true, nil
+}
+
+func validateCancellationNotificationIdentity(
+	nr *notificationv1.NotificationRequest,
+	rr *remediationv1.RemediationRequest,
+) error {
+	if nr.Spec.Type != notificationv1.NotificationTypeCancellation {
+		return fmt.Errorf("notification type is %q, want %q", nr.Spec.Type, notificationv1.NotificationTypeCancellation)
+	}
+	ref := nr.Spec.RemediationRequestRef
+	if ref == nil || ref.Name != rr.Name || ref.Namespace != rr.Namespace || ref.UID != rr.UID {
+		return fmt.Errorf("remediationrequest reference does not match %s/%s uid %q", rr.Namespace, rr.Name, rr.UID)
+	}
+	requestID := rr.Status.GetCancellation().RequestID
+	if nr.Spec.Extensions == nil || nr.Spec.Extensions["cancellationRequestID"] != requestID {
+		return fmt.Errorf("cancellation request ID does not match %q", requestID)
+	}
+	var controllerOwner *metav1.OwnerReference
+	for i := range nr.OwnerReferences {
+		owner := &nr.OwnerReferences[i]
+		if owner.Controller != nil && *owner.Controller {
+			controllerOwner = owner
+			break
+		}
+	}
+	if controllerOwner == nil || controllerOwner.Kind != "RemediationRequest" || controllerOwner.Name != rr.Name || controllerOwner.UID != rr.UID {
+		return fmt.Errorf("controller owner reference does not match %s/%s uid %q", rr.Namespace, rr.Name, rr.UID)
+	}
+	return nil
+}
+
+func buildCancellationNotificationRequest(name string, rr *remediationv1.RemediationRequest) *notificationv1.NotificationRequest {
+	cancellation := rr.Status.GetCancellation()
+	reason := cancellation.Reason
+	if reason == "" {
+		reason = "Cancellation requested"
+	}
+	source := string(cancellation.Source)
+	if source == "" {
+		source = string(remediationv1.CancellationSourceSystem)
+	}
+	body := FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) +
+		fmt.Sprintf("Remediation cancellation requested\n\n%s**Signal**: %s\n**Severity**: %s\n**Source**: %s\n**Reason**: %s\n\nChild controllers are stopping active work and will report verified shutdown before cleanup.",
+			FormatStatusLine(string(remediationv1.PhaseCancelling)), rr.Spec.SignalName,
+			rr.Spec.Severity, source, reason)
+
+	return &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: rr.Namespace},
+		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(), Kind: "RemediationRequest",
+				Name: rr.Name, Namespace: rr.Namespace, UID: rr.UID,
+			},
+			ClusterID: rr.Spec.ClusterID,
+			Type:      notificationv1.NotificationTypeCancellation,
+			Priority:  notificationv1.NotificationPriorityHigh,
+			Severity:  rr.Spec.Severity,
+			Subject:   fmt.Sprintf("Remediation Cancellation: %s", rr.Spec.SignalName),
+			Body:      body,
+			Context: &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{RemediationRequest: rr.Name},
+			},
+			Extensions: map[string]string{
+				"cancellationRequestID": cancellation.RequestID,
+				"cancellationSource":    source,
+				"cancellationReason":    reason,
+			},
+			RetryPolicy: &notificationv1.RetryPolicy{
+				MaxAttempts: 5, InitialBackoffSeconds: 30,
+				BackoffMultiplier: 2, MaxBackoffSeconds: 480,
+			},
+		},
+	}
 }
 
 // completionContent holds the derived content fields for a completion notification,
@@ -901,13 +1043,25 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	// Generate deterministic name (single manual review per RR)
 	name := fmt.Sprintf("nr-manual-review-%s", rr.Name)
 
-	// Check if already exists (idempotency)
-	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Manual review")
-	if err != nil {
-		return "", err
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot reuse manual-review notification")
+		return "", fmt.Errorf("failed to validate existing manual-review notification: RemediationRequest UID is required but empty")
 	}
-	if exists {
+
+	// Check if already exists (idempotency)
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		if err := validateManualReviewNotificationIdentity(existing, rr); err != nil {
+			logger.Error(err, "Refusing to reuse manual-review notification from another RemediationRequest incarnation")
+			return "", fmt.Errorf("existing manual-review NotificationRequest identity mismatch: %w", err)
+		}
+		logger.Info("Manual review notification already exists, reusing", "name", name)
 		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing Manual review NotificationRequest")
+		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
 	}
 
 	// Determine priority based on source and reason (per BR-ORCH-036 priority mapping)
@@ -928,6 +1082,28 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
+}
+
+func validateManualReviewNotificationIdentity(
+	nr *notificationv1.NotificationRequest,
+	rr *remediationv1.RemediationRequest,
+) error {
+	if nr.Spec.Type != notificationv1.NotificationTypeManualReview {
+		return fmt.Errorf("notification type is %q, want %q", nr.Spec.Type, notificationv1.NotificationTypeManualReview)
+	}
+	if nr.Spec.RemediationRequestRef == nil {
+		return fmt.Errorf("remediationrequest reference is required")
+	}
+	ref := nr.Spec.RemediationRequestRef
+	if !cancellation.MatchesParentIdentity(
+		cancellation.ParentIdentity{Name: rr.Name, Namespace: rr.Namespace, UID: rr.UID},
+		cancellation.ReferenceIdentity{Name: ref.Name, Namespace: ref.Namespace, UID: ref.UID},
+		nr.OwnerReferences,
+		"RemediationRequest",
+	) {
+		return cancellation.ErrIdentityMismatch
+	}
+	return nil
 }
 
 // buildManualReviewNotificationRequest constructs the NotificationRequest object for a

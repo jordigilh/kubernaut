@@ -18,6 +18,7 @@ package audit_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -84,6 +85,8 @@ var _ = Describe("Audit Manager", func() {
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData:
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData:
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
@@ -113,6 +116,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred(), "Manager must be functional after construction")
 			Expect(event.Version).To(Equal("1.0"))
 		})
+
 	})
 
 	// ========================================
@@ -225,15 +229,33 @@ var _ = Describe("Audit Manager", func() {
 	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildPhaseTransitionEvent", func() {
+		It("UT-AUDIT-2588-008: assigns a stable event ID for repeated phase-transition builds", func() {
+			params := prodaudit.PhaseTransitionEventParams{
+				CorrelationID: "correlation-2588",
+				Namespace:     "default",
+				RRName:        "rr-transition-2588",
+				FromPhase:     "Executing",
+				ToPhase:       "Cancelling",
+				RRUID:         "rr-uid-2588",
+				RequestID:     "default/rr-transition-2588:cancellation",
+			}
+			first, err := manager.BuildPhaseTransitionEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			second, err := manager.BuildPhaseTransitionEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first.EventID.Set).To(BeTrue())
+			Expect(second.EventID.Set).To(BeTrue())
+			Expect(first.EventID.Value).To(Equal(second.EventID.Value))
+		})
+
 		It("should build complete orchestrator.lifecycle.transitioned event with all required fields", func() {
-			event, err := manager.BuildPhaseTransitionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"Analyzing",
-				"Executing",
-			)
+			event, err := manager.BuildPhaseTransitionEvent(prodaudit.PhaseTransitionEventParams{
+				CorrelationID: "correlation-123",
+				Namespace:     "default",
+				RRName:        "rr-test-001",
+				FromPhase:     "Analyzing",
+				ToPhase:       "Executing",
+			})
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
@@ -266,14 +288,13 @@ var _ = Describe("Audit Manager", func() {
 			}
 
 			for _, t := range transitions {
-				event, err := manager.BuildPhaseTransitionEvent(
-					"correlation-123",
-					"default",
-					"rr-test-001",
-					"",
-					t.from,
-					t.to,
-				)
+				event, err := manager.BuildPhaseTransitionEvent(prodaudit.PhaseTransitionEventParams{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					FromPhase:     t.from,
+					ToPhase:       t.to,
+				})
 				Expect(err).ToNot(HaveOccurred())
 
 				validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
@@ -288,6 +309,66 @@ var _ = Describe("Audit Manager", func() {
 					},
 				})
 			}
+		})
+	})
+
+	Describe("BuildCancellationLifecycleEvent", func() {
+		It("UT-AUDIT-2588-001: builds a correlated, deterministic typed event", func() {
+			params := prodaudit.CancellationLifecycleEventParams{
+				CorrelationID: "rr-cancel-audit",
+				Namespace:     "system",
+				RRName:        "rr-cancel-audit",
+				RRUID:         "rr-cancel-audit-uid-1",
+				Stage:         "backend.workflowexecution.termination_verified",
+				FromPhase:     "cancellation.workflowexecution.stop_requested",
+				ToPhase:       "cancellation.workflowexecution.termination_verified",
+				ActorType:     "service",
+				ActorID:       prodaudit.ServiceName,
+			}
+			first, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			second, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(first.EventID.Set).To(BeTrue())
+			Expect(first.EventID.Value).To(Equal(second.EventID.Value))
+			Expect(first.EventType).To(Equal(prodaudit.EventTypeLifecycleTransitioned))
+			Expect(first.CorrelationID).To(Equal(params.CorrelationID))
+			Expect(first.ActorType.Value).To(Equal("service"))
+			Expect(first.ActorID.Value).To(Equal(prodaudit.ServiceName))
+			Expect(string(first.EventData.Type)).To(Equal(first.EventType))
+
+			secondRequestIdentity := params
+			secondRequestIdentity.RRUID = "rr-cancel-audit-uid-2"
+			third, err := manager.BuildCancellationLifecycleEvent(secondRequestIdentity)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(third.EventID.Value).NotTo(Equal(first.EventID.Value))
+		})
+
+		It("UT-AUDIT-2588-002: builds a correlated failure event with standardized error details", func() {
+			event, err := manager.BuildCancellationLifecycleEvent(prodaudit.CancellationLifecycleEventParams{
+				CorrelationID: "rr-cancel-failure",
+				Namespace:     "system",
+				RRName:        "rr-cancel-failure",
+				RRUID:         "rr-cancel-failure-uid",
+				RequestID:     "system/rr-cancel-failure:cancellation",
+				Stage:         "cancellation.workflowexecution.stop.failed",
+				FromPhase:     "cancellation.workflowexecution.stop_requested",
+				ToPhase:       "cancellation.workflowexecution.failed",
+				FailurePhase:  "WorkflowExecution",
+				Failure:       errors.New("backend termination could not be verified"),
+				ActorType:     "service",
+				ActorID:       prodaudit.ServiceName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+			Expect(event.EventAction).To(Equal(prodaudit.ActionFailed))
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Outcome.Value).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadOutcomeFailed))
+			Expect(payload.ErrorDetails.Set).To(BeTrue())
+			Expect(payload.ErrorDetails.Value.Message).To(ContainSubstring("backend termination could not be verified"))
+			Expect(event.CorrelationID).To(Equal("rr-cancel-failure"))
 		})
 	})
 
@@ -657,6 +738,28 @@ var _ = Describe("Audit Manager", func() {
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
 		})
 
+		It("UT-AUDIT-2588-009: should build cancelled event with service actor and correlation", func() {
+			event, err := manager.BuildApprovalDecisionEvent(
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "rr-cancel-audit",
+					Namespace:     "default",
+					RRName:        "rr-cancel-audit",
+					ClusterID:     "prod-east-1",
+					RARName:       "rar-rr-cancel-audit",
+				},
+				"Cancelled",
+				"system",
+				"parent RemediationRequest cancellation",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeApprovalCancelled))
+			Expect(event.EventAction).To(Equal(prodaudit.ActionCancelled))
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
+			Expect(event.CorrelationID).To(Equal("rr-cancel-audit"))
+			Expect(event.ActorType.Value).To(Equal("service"))
+			Expect(event.ActorID.Value).To(Equal(prodaudit.ServiceName))
+		})
+
 		It("should build expired event with correct type", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
 				prodaudit.ApprovalEventContext{
@@ -983,7 +1086,13 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "PhaseTransition",
 					build: func() error {
-						_, err := manager.BuildPhaseTransitionEvent("corr", "ns", "rr", "", "Pending", "Processing")
+						_, err := manager.BuildPhaseTransitionEvent(prodaudit.PhaseTransitionEventParams{
+							CorrelationID: "corr",
+							Namespace:     "ns",
+							RRName:        "rr",
+							FromPhase:     "Pending",
+							ToPhase:       "Processing",
+						})
 						if err != nil {
 							return err
 						}

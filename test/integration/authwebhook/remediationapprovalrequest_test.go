@@ -176,6 +176,16 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 		),
 	)
 
+	It("IT-RAR-2588-001: rejects a user-supplied system cancellation", func() {
+		rar := createRAR("system-cancellation")
+		createAndWaitForCRD(ctx, k8sClient, rar)
+
+		rar.Status.Decision = remediationv1.ApprovalDecisionCancelled
+		err := k8sClient.Status().Update(ctx, rar)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("system-only"))
+	})
+
 	// ========================================
 	// Additional Business Behavior Tests
 	// (Not suitable for table-driven approach)

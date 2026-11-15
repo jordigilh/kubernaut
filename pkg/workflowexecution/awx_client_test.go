@@ -205,6 +205,22 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 	})
 
 	Context("LaunchJobTemplateWithCreds", func() {
+		It("UT-WE-2588-013: sends the persisted recovery label in the AWX launch payload", func() {
+			mux.HandleFunc("/api/v2/job_templates/10/launch/", func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				Expect(err).ToNot(HaveOccurred())
+				var payload map[string]interface{}
+				Expect(json.Unmarshal(body, &payload)).To(Succeed())
+				Expect(payload["labels"]).To(Equal([]interface{}{"kubernaut-awx-launch-2588"}))
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id": 79}`))
+			})
+
+			jobID, err := client.LaunchJobTemplateWithLabels(ctx, 10, nil, nil, []string{"kubernaut-awx-launch-2588"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(jobID).To(Equal(79))
+		})
+
 		It("UT-WE-015-018: should launch with extra_vars and credential IDs", func() {
 			mux.HandleFunc("/api/v2/job_templates/10/launch/", func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.Method).To(Equal(http.MethodPost))
@@ -267,6 +283,39 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 			_, err := client.LaunchJobTemplateWithCreds(ctx, 10, nil, []int{999})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("400"))
+		})
+	})
+
+	Context("FindJobsByLabel", func() {
+		It("UT-WE-2588-014: discovers one AWX job using the persisted launch label", func() {
+			mux.HandleFunc("/api/v2/jobs/", func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.Method).To(Equal(http.MethodGet))
+				Expect(r.URL.Query().Get("labels__name")).To(Equal("kubernaut-awx-launch-2588"))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"count":1,"results":[{"id":321,"status":"running"}]}`))
+			})
+
+			jobs, err := client.FindJobsByLabel(ctx, "kubernaut-awx-launch-2588")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(jobs).To(HaveLen(1))
+			Expect(jobs[0].ID).To(Equal(321))
+			Expect(jobs[0].Status).To(Equal("running"))
+		})
+	})
+
+	Context("GetJobTemplate", func() {
+		It("UT-WE-2588-019: reads the AWX launch-label capability and slice count", func() {
+			mux.HandleFunc("/api/v2/job_templates/10/", func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.Method).To(Equal(http.MethodGet))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id":10,"ask_labels_on_launch":true,"job_slice_count":1}`))
+			})
+
+			template, err := client.GetJobTemplate(ctx, 10)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(template.ID).To(Equal(10))
+			Expect(template.AskLabelsOnLaunch).To(BeTrue())
+			Expect(template.JobSliceCount).To(Equal(1))
 		})
 	})
 })

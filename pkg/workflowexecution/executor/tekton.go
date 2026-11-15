@@ -36,6 +36,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+const tektonWorkflowExecutionUIDLabel = "kubernaut.ai/workflow-execution-uid"
+
 // TektonExecutor implements the Executor interface for Tekton PipelineRuns.
 // DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
 // BR-FLEET-054: Uses ClientFactory for local/remote client routing.
@@ -165,7 +167,7 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 		return fmt.Errorf("failed to get PipelineRun %s/%s for ownership check: %w", namespace, prName, err)
 	}
 
-	if owner := existing.Labels["kubernaut.ai/workflow-execution"]; owner != wfe.Name {
+	if !pipelineRunOwnedByWFE(&existing, wfe) {
 		return nil // PipelineRun belongs to a different WFE; leave it alone
 	}
 
@@ -176,6 +178,97 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 		return fmt.Errorf("failed to delete PipelineRun %s/%s: %w", namespace, prName, err)
 	}
 	return nil
+}
+
+// RequestStop requests idempotent termination of the PipelineRun backing a
+// WFE. The controller verifies disappearance or a terminal PipelineRun status
+// separately through VerifyStopped.
+func (t *TektonExecutor) RequestStop(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
+	prName, err := pipelineRunNameForWFE(wfe)
+	if err != nil {
+		return err
+	}
+	var existing tektonv1.PipelineRun
+	existing.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := c.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("get PipelineRun %s/%s for cancellation: %w", namespace, prName, err)
+	}
+	if !pipelineRunOwnedByWFE(&existing, wfe) {
+		return fmt.Errorf("refusing to cancel PipelineRun %s/%s: %w", namespace, prName, ErrExecutionIdentityMismatch)
+	}
+	propagation := metav1.DeletePropagationBackground
+	if err := c.Delete(ctx, &existing, &client.DeleteOptions{PropagationPolicy: &propagation}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete PipelineRun %s/%s for cancellation: %w", namespace, prName, err)
+	}
+	return nil
+}
+
+// VerifyStopped reports positive evidence that a PipelineRun has terminated.
+// A pending deletion is Unknown until the resource disappears; this avoids
+// acknowledging cancellation while Tekton may still be running tasks.
+func (t *TektonExecutor) VerifyStopped(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (StopVerification, error) {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
+	prName, err := pipelineRunNameForWFE(wfe)
+	if err != nil {
+		return StopVerification{State: StopStateUnknown}, err
+	}
+	var existing tektonv1.PipelineRun
+	existing.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := c.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return StopVerification{State: StopStateStopped, Message: "PipelineRun is no longer present"}, nil
+		}
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("verify PipelineRun %s/%s cancellation: %w", namespace, prName, err)
+	}
+	if !pipelineRunOwnedByWFE(&existing, wfe) {
+		return StopVerification{State: StopStateUnknown}, fmt.Errorf("refusing to inspect PipelineRun %s/%s: %w", namespace, prName, ErrExecutionIdentityMismatch)
+	}
+	if condition := existing.Status.GetCondition(apis.ConditionSucceeded); condition != nil {
+		if condition.IsTrue() || condition.IsFalse() {
+			return StopVerification{State: StopStateStopped, Message: "PipelineRun reached a terminal condition"}, nil
+		}
+	}
+	if !existing.DeletionTimestamp.IsZero() {
+		return StopVerification{State: StopStateUnknown, Message: "PipelineRun deletion requested but not yet observed"}, nil
+	}
+	return StopVerification{State: StopStateRunning, Message: "PipelineRun is still active"}, nil
+}
+
+func pipelineRunNameForWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	if wfe.Status.ExecutionRef != nil && wfe.Status.ExecutionRef.Name != "" {
+		return wfe.Status.ExecutionRef.Name, nil
+	}
+	if wfe.Spec.TargetResource == "" {
+		return "", fmt.Errorf("WorkflowExecution %s/%s has no PipelineRun execution ref or target resource", wfe.Namespace, wfe.Name)
+	}
+	return ExecutionResourceName(wfe.Spec.TargetResource), nil
+}
+
+func pipelineRunOwnedByWFE(pr *tektonv1.PipelineRun, wfe *workflowexecutionv1alpha1.WorkflowExecution) bool {
+	if pr == nil || wfe == nil {
+		return false
+	}
+	ownerName := pr.Labels["kubernaut.ai/workflow-execution"]
+	ownerUID := pr.Labels[tektonWorkflowExecutionUIDLabel]
+	if wfe.UID == "" {
+		// Resources created before UID binding are still cleaned up by the
+		// historical name label. Once a WFE has a UID, the stronger identity
+		// check below prevents same-name ownership collisions.
+		return ownerName == wfe.Name && ownerUID == ""
+	}
+	return ownerName == wfe.Name && ownerUID == string(wfe.UID)
 }
 
 // BuildPipelineRun creates a PipelineRun with bundle resolver.
@@ -217,6 +310,7 @@ func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexec
 			Namespace: namespace,
 			Labels: map[string]string{
 				"kubernaut.ai/workflow-execution": wfe.Name,
+				tektonWorkflowExecutionUIDLabel:   string(wfe.UID),
 				"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
 				"kubernaut.ai/target-resource":    sanitizeLabelValue(wfe.Spec.TargetResource),
 				"kubernaut.ai/source-namespace":   wfe.Namespace,

@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -55,6 +56,7 @@ const (
 	EventTypeApprovalRequested     = "orchestrator.approval.requested"
 	EventTypeApprovalApproved      = "orchestrator.approval.approved"
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
+	EventTypeApprovalCancelled     = "orchestrator.approval.cancelled"
 	EventTypeManualReview          = "orchestrator.remediation.manual_review"
 	EventTypeRoutingBlocked        = "orchestrator.routing.blocked"
 
@@ -68,6 +70,25 @@ const (
 	EventTypeConfigReloaded = "orchestrator.config.reloaded"
 	EventTypeConfigRejected = "orchestrator.config.rejected"
 )
+
+// CancellationLifecycleEventParams describes one correlated cancellation
+// lifecycle observation. Cancellation stages reuse the typed lifecycle
+// transition payload so existing reconstruction queries remain compatible.
+type CancellationLifecycleEventParams struct {
+	CorrelationID string
+	Namespace     string
+	RRName        string
+	RRUID         string
+	RequestID     string
+	ClusterName   string
+	Stage         string
+	FromPhase     string
+	ToPhase       string
+	FailurePhase  string
+	Failure       error
+	ActorType     string
+	ActorID       string
+}
 
 // Event category constant (from OpenAPI spec)
 const (
@@ -84,6 +105,7 @@ const (
 	ActionApprovalRequested = "approval_requested"
 	ActionApproved          = "approved"
 	ActionRejected          = "rejected"
+	ActionCancelled         = "cancelled"
 	ActionExpired           = "expired"
 	ActionManualReview      = "manual_review_required"
 	ActionBlocked           = "blocked"   // Routing blocked (DD-RO-002)
@@ -337,42 +359,116 @@ type PhaseTransitionData struct {
 	RRName    string `json:"rr_name"`
 }
 
+// PhaseTransitionEventParams identifies a phase transition for audit
+// construction. RRUID and RequestID make cancellation retries idempotent while
+// remaining optional for historical non-cancellation transitions.
+type PhaseTransitionEventParams struct {
+	CorrelationID string
+	Namespace     string
+	RRName        string
+	ClusterName   string
+	FromPhase     string
+	ToPhase       string
+	RRUID         string
+	RequestID     string
+}
+
 // BuildPhaseTransitionEvent builds an audit event for phase transitions.
 // Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) BuildPhaseTransitionEvent(
-	correlationID string,
-	namespace string,
-	rrName string,
-	clusterName string,
-	fromPhase string,
-	toPhase string,
-) (*api.AuditEventRequest, error) {
+func (m *Manager) BuildPhaseTransitionEvent(params PhaseTransitionEventParams) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
+	audit.SetEventID(event, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
+		"remediationorchestrator/phase-transition/%s/%s/%s/%s/%s/%s/%s/%s",
+		params.Namespace, params.RRName, params.RRUID, params.RequestID, EventTypeLifecycleTransitioned, params.FromPhase, params.ToPhase, params.CorrelationID,
+	))))
 	audit.SetEventType(event, EventTypeLifecycleTransitioned)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionTransitioned)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
-	audit.SetResource(event, "RemediationRequest", rrName)
-	audit.SetCorrelationID(event, correlationID)
-	audit.SetNamespace(event, namespace)
+	audit.SetResource(event, "RemediationRequest", params.RRName)
+	audit.SetCorrelationID(event, params.CorrelationID)
+	audit.SetNamespace(event, params.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	if clusterName != "" {
-		audit.SetClusterID(event, clusterName)
+	if params.ClusterName != "" {
+		audit.SetClusterID(event, params.ClusterName)
 	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
-		FromPhase: api.OptString{Value: fromPhase, Set: true},
-		ToPhase:   api.OptString{Value: toPhase, Set: true},
-		Namespace: namespace,
-		RrName:    rrName,
+		FromPhase: api.OptString{Value: params.FromPhase, Set: true},
+		ToPhase:   api.OptString{Value: params.ToPhase, Set: true},
+		Namespace: params.Namespace,
+		RrName:    params.RRName,
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
 
+	return event, nil
+}
+
+// BuildCancellationLifecycleEvent builds an idempotent lifecycle transition
+// audit event for a cancellation stage. The stage is part of the deterministic
+// event ID, so controller retries do not create duplicate logical events.
+func (m *Manager) BuildCancellationLifecycleEvent(params CancellationLifecycleEventParams) (*api.AuditEventRequest, error) {
+	outcome := "success"
+	if params.Failure != nil {
+		outcome = "failure"
+	}
+	event := audit.NewAuditEventRequest()
+	audit.SetEventID(event, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
+		"remediationorchestrator/cancellation/%s/%s/%s/%s/%s/%s",
+		params.Namespace, params.RRName, params.RRUID, params.RequestID, params.Stage, outcome,
+	))))
+	audit.SetEventType(event, EventTypeLifecycleTransitioned)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionTransitioned)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	if params.Failure != nil {
+		audit.SetEventAction(event, ActionFailed)
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+	}
+	actorType, actorID := params.ActorType, params.ActorID
+	if actorType == "" {
+		actorType = "service"
+	}
+	if actorID == "" {
+		actorID = m.serviceName
+	}
+	audit.SetActor(event, actorType, actorID)
+	audit.SetResource(event, "RemediationRequest", params.RRName)
+	audit.SetCorrelationID(event, params.CorrelationID)
+	audit.SetNamespace(event, params.Namespace)
+	if params.ClusterName != "" {
+		audit.SetClusterID(event, params.ClusterName)
+	}
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		FromPhase: api.OptString{Value: params.FromPhase, Set: true},
+		ToPhase:   api.OptString{Value: params.ToPhase, Set: true},
+		Namespace: params.Namespace,
+		RrName:    params.RRName,
+	}
+	if params.Failure != nil {
+		classification := ClassifyError(params.Failure)
+		errorMessage := fmt.Sprintf("cancellation stage %q failed: %s", params.Stage, params.Failure.Error())
+		payload.Outcome = api.OptRemediationOrchestratorAuditPayloadOutcome{
+			Value: api.RemediationOrchestratorAuditPayloadOutcomeFailed,
+			Set:   true,
+		}
+		payload.FailurePhase = ToOptFailurePhase(params.FailurePhase)
+		payload.FailureReason = ToOptFailureReason("InfrastructureError")
+		payload.ErrorDetails = toOptErrorDetails(sharedaudit.NewErrorDetails(
+			"remediationorchestrator",
+			classification.Code,
+			errorMessage,
+			classification.RetryPossible,
+		))
+		payload.Message = api.OptString{Value: params.Failure.Error(), Set: true}
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
 	return event, nil
 }
 
@@ -937,6 +1033,8 @@ func ToOptDecision(decision string) api.OptRemediationOrchestratorAuditPayloadDe
 		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionRejected)
 	case "Pending":
 		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionPending)
+	case "Cancelled":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionCancelled)
 	}
 	return result
 }

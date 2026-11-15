@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -255,6 +256,26 @@ var _ = Describe("NotificationCreator", func() {
 			name2, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(name2).To(Equal(name1))
+		})
+
+		It("UT-ORCH-2588-018: refuses to reuse a manual-review notification with a stale parent UID", func() {
+			stale := &notificationv1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "nr-manual-review-" + rr.Name, Namespace: rr.Namespace},
+				Spec: notificationv1.NotificationRequestSpec{
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: rr.Name, Namespace: rr.Namespace, UID: types.UID("old-rr-uid"),
+					},
+					Type: notificationv1.NotificationTypeManualReview,
+				},
+			}
+			Expect(k8sClient.Create(ctx, stale)).To(Succeed())
+			nc := creator.NewNotificationCreator(k8sClient, scheme, m)
+
+			_, err := nc.CreateManualReviewNotification(ctx, rr, &creator.ManualReviewContext{
+				Source: notificationv1.ReviewSourceWorkflowExecution,
+				Reason: "CancellationFailed",
+			})
+			Expect(err).To(MatchError(ContainSubstring("identity mismatch")))
 		})
 	})
 
