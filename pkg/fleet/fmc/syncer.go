@@ -146,7 +146,7 @@ type Syncer struct {
 
 // Dependencies is the production composition boundary for the FMC writer.
 // The lifecycle dependencies are optional only for legacy unit callers; the
-// production command supplies both StatusStore and LeaseCoordinator.
+// production command supplies both StatusStore and writer coordinator.
 type Dependencies struct {
 	Registry    registry.ClusterRegistry
 	Readers     ObservedReaderFactory
@@ -238,7 +238,7 @@ func (s *Syncer) Ready() bool {
 func (s *Syncer) lifecycleEnabled() (bool, error) {
 	enabled := s.statusStore != nil || s.lease != nil || s.readiness != nil
 	if enabled && (s.statusStore == nil || s.lease == nil || s.readiness == nil) {
-		return false, fmt.Errorf("FMC lifecycle requires status store, lease coordinator, and readiness snapshot")
+		return false, fmt.Errorf("FMC lifecycle requires status store, writer coordinator, and readiness snapshot")
 	}
 	return enabled, nil
 }

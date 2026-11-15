@@ -1,12 +1,12 @@
 # PR #2637 Consolidated RCA
 
-**Reviewed source commit:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
+**Reviewed source baseline:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
 **Branch:** `work/2593-fmc-presence`
-**Documentation follow-up:** subsequent commits are documentation-only; no production or test implementation changes were made after the reviewed source commit.
+**Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
 **CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
 **Review date:** 2026-11-14
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
-**Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637), head `c9152b8`, adds FMC `POD_UID` and namespace-scoped writer-Lease RBAC.
+**Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
 
 ## Decision
 
@@ -59,11 +59,10 @@ evidence against the bounded FMC changes.
 
 ### Final CI result: run `43642008948`
 
-The current-head remote result does not authorize source expansion. The PR remains
-`BEHIND`, `MERGEABLE`, and `REVIEW_REQUIRED`; the required human review is still
-outstanding. The prior FMC E2E `POD_UID` startup defect is covered by the generated
-manifest fix and static contract test, but both current FMC E2E lanes fail earlier
-in infrastructure setup.
+The pre-amendment remote result did not authorize source expansion. The PR was
+`BEHIND`, `MERGEABLE`, and `REVIEW_REQUIRED` at that point. The prior FMC E2E
+`POD_UID` startup defect is removed by the current process-local coordinator wiring,
+and the raw E2E manifest no longer injects pod identity.
 
 ### Failed integration lanes
 
@@ -98,14 +97,14 @@ outside-diff minor finding. Each is classified below.
 |---|---|---|
 | `docs/tests/2593/TEST_PLAN.md`: publish the external active plan | **Fix** | `docs/tests/2593/TEST_PLAN.md` is now the repository-versioned active implementation/test authority; the developer-local OpenChamber plan is retained only as historical provenance. |
 | `pkg/fleet/fmc/syncer.go`: use `snapshot.Info` for repair collection | **Fix** | The repair reader must use the registration configuration matching the captured snapshot revision. |
-| `pkg/fleet/fmc/syncer.go`: empty registry never becomes ready | **Fix** | `FMCGlobalReadiness.ServiceReady` preserves the empty-registry exemption, while the production readiness path now publishes the registered-cluster count so a registered cluster without a lease or repair partition remains unavailable. |
+| `pkg/fleet/fmc/syncer.go`: empty registry never becomes ready | **Fix** | `FMCGlobalReadiness.ServiceReady` preserves the empty-registry exemption, while the production readiness path now publishes the registered-cluster count so a registered cluster without a writer coordinator or repair partition remains unavailable. |
 | `pkg/fleet/mcpclient/client.go`: strict-list integration fixture | **Fix** | The fixture is invalid under the already-approved structured observation contract. |
 | `pkg/fleet/mcpclient/client.go`: restore ordinary `Event` list behavior | **Fix** | `Client.List` now uses a generic structured-object path for ordinary reader calls; strict `ListObserved` retains the FMC observed-GVK allowlist. `UT-FLEET-MCP-012` covers both paths. |
 | `pkg/fleet/mcpclient/observation.go`: infer empty response without `structuredContent` | Hold | The digest-pinned producer behavior is not proven; fail-closed semantics remain required. |
 | `pkg/fleet/registry/delete.go`: resolve the current map under lock | **Fix** | This is a localized deletion consistency race with a clear lock-scoped correction. |
 | `pkg/fleet/registry/eaigw_registry.go`: fence `Probe` and `Start` publication | Hold | Requires EAIGW refresh/generation architecture and is not an FMC presence fix. |
 | `pkg/fleet/registry/eaigw_registry.go`: replace global repair fencing with per-registration revisions | Hold | Cross-registry repair-fencing redesign; outside #2593. |
-| FMC E2E manifest: inject `POD_UID` | **Fix** | The production entry point requires it and the generated manifest omits it. |
+| FMC E2E manifest: inject `POD_UID` | **Superseded** | The singleton deployment no longer constructs a Kubernetes Lease coordinator, so pod identity is not a production prerequisite. The generated manifest and static contract now omit it. |
 | `pkg/fleet/scopecache/readiness.go`: remove deregistered partitions | Hold | Readiness lifecycle/replacement semantics need an architectural decision and broader tests. The current fix does not claim stale-partition removal. |
 | `pkg/fleet/scopecache/readiness.go`: compare proofs with the active writer fence | Hold | Security/readiness lifecycle redesign; no change below the authorized boundary. |
 | `fmc_v2_atomic.lua`: cleanup-safe pagination | **Fix** | Positional cursors skip stale members after cleanup mutation. |
@@ -120,12 +119,12 @@ outside-diff minor finding. Each is classified below.
 | `pkg/fleet/scopecache/client.go`: nil reader in `IsManaged` | **Fix** | A valid public call must not panic on a status-store-only client. |
 | `pkg/fleet/fmc/syncer.go`: cleanup contexts start too early | **Fix** | Cleanup deadlines must begin when deferred cleanup starts. |
 | `pkg/fleet/fmc/syncer.go`: aggregate actual page counts | **Fix** | Validation must bound pages, not the number of configured resource kinds. |
-| `pkg/fleet/fmc/syncer.go`: fence `publishGlobal` against lease loss | Hold | Same readiness/security lifecycle boundary as the active-fence finding. |
+| `pkg/fleet/fmc/syncer.go`: fence `publishGlobal` against lease loss | Hold | The current singleton process-local coordinator has no external lease-loss signal. Revisit this with any future multi-process writer-fencing design. |
 | `TEST_PLAN.md`: typed-scope focus regex | **Fix** | The current pattern omits scenarios 020 and 021. |
 | `TEST_PLAN.md`: clarify RED/GREEN gate wording | **Fix** | Documentation must require authored RED contracts and recorded expected failures. |
 | `TEST_PLAN.md`: reconcile superseded pre-RED review gate | **Fix** | The text must agree with the approved fast-path boundary without adding another review cycle. |
 | `pkg/fleet/inventory/types.go`: RBAC identity-name validation | Hold | Inventory validation and #2584 are explicitly outside this PR closure. |
-| `pkg/fleet/scopecache/lease_coordinator.go`: reject expired leases in `Verify`/`Renew` | **Fix** | Expiry must force stale-fence loss and a new epoch. |
+| `pkg/fleet/scopecache/lease_coordinator.go`: reject expired leases in `Verify`/`Renew` | **Fix** | The optional Kubernetes coordinator still rejects expiry; it is retained for a future multi-replica deployment and is not wired into the current singleton startup. |
 
 ### Nitpicks and outside-diff finding
 
@@ -149,14 +148,15 @@ external-plan finding is already reflected below.
 | Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
 | Fence verification/reacquisition and dependency refresh can restore stale readiness | `ensureFence` clears local ownership before reacquisition, while `fmcDeps.Ready` and the syncer publish a previously read global snapshot. Both findings are valid concurrency/security concerns. | **Hold** for coordinated readiness/fence synchronization design and tests; no partial fix is authorized. |
 | Empty observations can never produce clean proof; missing `structuredContent` might be empty | `hasCleanRepairProof` correctly rejects zero TTL proof, and `extractObservationPage` correctly rejects missing `structuredContent`. No digest-pinned producer capture proves a reliable empty response. | **Hold** on the existing fail-closed protocol boundary; do not fabricate empty proof. |
-| FMC operator deployment lacks `POD_UID` and writer-Lease permissions | FMC is deployed by `kubernaut-operator`, not by deployment templates in this repository. The operator source lacked both the `metadata.uid` downward-API variable and namespace-scoped `coordination.k8s.io/leases` `get/create/update` access required by `fleetmetadatacache-writer`; operator PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) addresses both. | **Actionable follow-up opened**; operator CI/review is pending. This is outside #2637's 87-file source boundary, and the current Kubernaut E2E CI failed during remote Kind setup before FMC specs. |
+| FMC operator deployment lacks `POD_UID` and writer-Lease permissions | FMC is deployed by `kubernaut-operator`, but the current singleton startup no longer constructs a Kubernetes Lease coordinator. Operator PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as unnecessary. | **Out of scope / closed**; no operator deployment change is required for pod identity or writer-Lease RBAC. |
 | Controller-runtime fake, rendered-manifest test, integration no-mocks fixture, and `Syncer` state extraction | These are valid maintainability/test-harness suggestions, but each requires a production seam or broader fixture/refactor change beyond the bounded FMC A/B closure. | **Hold**; do not expand the 87-file boundary or introduce an untested refactor. |
 | Gateway HPA RBAC | The scope client is informer-backed, but the effective Gateway ServiceAccount binding is owned by `kubernaut-operator`, not this repository. | **Hold** for the deployment owner; no permission change is inferred from this checkout. |
 
-No additional implementation change is justified within the approved #2637 boundary.
+The singleton deployment amendment is intentionally limited to removing the Kubernetes Lease
+and POD_UID prerequisite while preserving the existing Valkey proof-bearing writer fence.
 Held findings remain explicit follow-up work, not silent approval or evidence that the
-current E2E/deployment contracts are qualified. The operator deployment gap is tracked
-separately in PR #637.
+current E2E/deployment contracts are qualified. Future multi-replica writer fencing must be
+tracked separately.
 
 ## Approved implementation boundary
 
@@ -167,7 +167,7 @@ The implementation changed only the following validated concerns:
 - deletion locking, cleanup context timing, aggregate page counts, and cleanup-safe pagination;
 - structured MCP integration fixture data;
 - generic ordinary MCP list behavior without weakening strict FMC observation validation;
-- FMC E2E `POD_UID` wiring;
+- process-local FMC writer coordination without Kubernetes Lease/POD_UID deployment wiring;
 - registered-cluster readiness fencing while preserving empty-registry readiness;
 - nil-reader safety and lease-expiry handling;
 - committed repair-token replay coverage and focused test-plan documentation.

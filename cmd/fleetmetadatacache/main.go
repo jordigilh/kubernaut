@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -129,8 +128,10 @@ func (d *fmcDeps) Ready() bool {
 // wireFMCDependencies connects to the MCP Gateway (with reloadable OAuth2
 // transport), the Kubernetes API (for the dynamic client used by the
 // cluster registry), and Valkey (read/write), then constructs and starts
-// the cluster registry and metadata syncer. MCP connectivity failures are
-// retained as a disconnected client so readiness and reconnect can recover.
+// the cluster registry and metadata syncer. The current singleton deployment
+// uses a process-local writer coordinator, so Kubernetes Lease RBAC is not
+// required. MCP connectivity failures are retained as a disconnected client
+// so readiness and reconnect can recover.
 // buildValkeyTLSConfig constructs the *tls.Config for FMC's Valkey client
 // connection (DD-PLATFORM-006 Decision Area 13 follow-up, round-16 RCA): the
 // chart's own Valkey is TLS-only (Decision Area 8), and unlike the
@@ -322,18 +323,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	writer, cacheReader, statusStore := buildFMCValkeyDependencies(ctx, cfg, logger)
 	clusterRegistry, registrationGuard, readinessSnapshot := buildFMCRegistryDependencies(ctx, cfg, dynClient, reg, statusStore, logger)
 
-	podUID := os.Getenv("POD_UID")
-	if podUID == "" {
-		logger.Error(fmt.Errorf("POD_UID is required"), "FMC writer fencing cannot start without pod identity")
-		os.Exit(1)
-	}
-	lease, err := scopecache.NewKubernetesLeaseCoordinator(
-		k8sClientset.CoordinationV1(), releaseNamespace, "fleetmetadatacache-writer",
-		types.UID(podUID), 60*time.Second, logger)
-	if err != nil {
-		logger.Error(err, "Failed to create FMC writer lease coordinator")
-		os.Exit(1)
-	}
+	writerCoordinator := scopecache.NewProcessWriterCoordinator()
 
 	deps := &fmcDeps{
 		reg:               reg,
@@ -343,7 +333,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		writer:            writer,
 		cacheReader:       cacheReader,
 		statusStore:       statusStore,
-		lease:             lease,
+		lease:             writerCoordinator,
 		readiness:         readinessSnapshot,
 		clusterRegistry:   clusterRegistry,
 		registrationGuard: registrationGuard,

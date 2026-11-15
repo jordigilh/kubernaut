@@ -2,12 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-2593-v0.9
+**Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 0.9
+**Version**: 1.0
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Fast-path implementation baseline — Step 0 complete; RED pending
+**Status**: Singleton implementation amendment — focused validation in progress
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -19,6 +19,20 @@
 > update, ACM Search qualification, or ACM Console inventory. The original dirty
 > worktree and all held paths remain preserved. Functional scenarios, denominators,
 > wiring rows, and public v1 boundaries are unchanged.
+
+### Singleton deployment amendment (2026-11-15)
+
+The current FMC deployment is intentionally single-replica. Kubernetes Lease
+coordination, `POD_UID` downward-API injection, and operator Lease RBAC are therefore
+out of scope. Operator PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637)
+was closed without implementation. FMC production wiring now uses a process-local writer
+coordinator that preserves the existing Valkey `WriterFence` and proof-bearing repair
+contracts but provides no cross-process or cross-pod fencing. The Kubernetes coordinator
+remains available only as a future multi-replica option.
+
+References below to Kubernetes Lease RBAC, holder Pod UID injection, Lease takeover, or
+multi-writer Lease integration are historical plan context unless explicitly marked as
+the current singleton contract. They are not required for this amendment or deployment.
 
 ### Fast-path execution boundary (2026-11-13)
 
@@ -240,7 +254,7 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 
 | Decision | Selected contract | Approval state |
 |---|---|---|
-| Cache writer | Fenced single writer using a Kubernetes Lease and monotonic fence | Approved internal replacement contract; Step 0 external design record pending |
+| Cache writer | Fenced singleton writer using a process-local coordinator and monotonic fence; Kubernetes Lease takeover is deferred | Approved singleton implementation amendment; multi-replica fencing remains future work |
 | Incarnation | Registered gateway object's `metadata.uid`; target UID is an additional field only if exposed | Approved internal replacement contract; external registry/architecture record pending |
 | Expiry time | Valkey server `TIME`, `PEXPIREAT`, and `PTTL`; no application-clock authority | Approved internal replacement contract; Step 0 external design record pending |
 | GVK | Explicit schema-propagated group/version; no remote `InferGVK` | Pending BR/ADR and schema approval |
@@ -262,8 +276,9 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 - A controlled Valkey test dependency or approved fixture for TTL, scripts, races, restart,
   failover, ACL, and server-time behavior. No result from this source-only plan is a
   production, cluster, ACM, or Valkey qualification claim.
-- `envtest` or an equivalent Kubernetes API harness for Lease, registration UID,
-  TokenReview/SAR, CRD schema, and RBAC wiring.
+- `envtest` or an equivalent Kubernetes API harness for registration UID,
+  TokenReview/SAR, CRD schema, and RBAC wiring. Kubernetes Lease coordinator tests
+  remain optional future multi-replica coverage, not current deployment wiring.
 - `httptest` plus the production router and middleware for FMC/GW/RO/AF HTTP paths.
 - No `testing.T` business tests, `XIt`, `PIt`, or `Skip()` placeholders.
 
@@ -277,7 +292,7 @@ PASS for this source-only amendment requires all of the following:
 4. The public contract remains the ADR-068 v1 route with ordinary `application/json` and
    `ScopeCheckResponse.Managed` / `managed`; no unapproved typed response extension or
    public v2 route/media is asserted.
-5. Internal typed scope, MCP completeness, status/TTL/fence, Lease/readiness/repair,
+5. Internal typed scope, MCP completeness, status/TTL/fence, writer-coordinator/readiness/repair,
    registry incarnation/revision, GVK, invalid-label, direct ACM and DD-AF-018 boundaries
    are proven through the applicable source and wiring tests.
 6. The approved BR/ADR/API-owner package and source/wiring evidence are present, with the
@@ -358,19 +373,18 @@ selector returning zero managed-label matches. These assertions are owned by
 `IT-FMC-PRES-001`, `IT-FMC-CACHE-010`, and `IT-FMC-CACHE-015`.
 
 **Durable Valkey fence and measurable expiry.** The exact writer identity is
-`WriterFence{HolderPodUID, HolderSessionUID, LeaseEpoch, Fence}`, where `LeaseEpoch` is
-the exact Kubernetes Lease `spec.leaseTransitions` value and `Fence` is exactly
-`uint64(LeaseEpoch)`, not a second counter. The holder Pod UID and a new opaque
-holder-session UID are both required; a renewal keeps them unchanged, while every
-takeover increments `spec.leaseTransitions` under resource-version CAS and creates a new
-session UID. Valkey status stores `holder_pod_uid`, `holder_session_uid`, `lease_epoch`
-and `fence`; `lease_epoch` and `fence` are equal decimal encodings of that Lease value.
-All status, record, index and commit guards compare registration UID, generation and all
-four writer-fence values. A Valkey restart, data loss, missing status hash,
-lower/mismatched fence, holder/session mismatch, or inability to advance the Lease leaves
-the partition `repairing`/`uncertain` and unavailable. No writer may reuse a prior fence or
-mark `clean` until the Lease-derived fence, registration UID, generation, status, records,
-and index reconcile successfully.
+`WriterFence{HolderPodUID, HolderSessionUID, LeaseEpoch, Fence}`, where the current
+process-local coordinator supplies the monotonic `LeaseEpoch` and `Fence` values. The
+holder identity is generated inside the FMC process; no Kubernetes Pod UID or Lease
+resource is required. Valkey status stores `holder_pod_uid`, `holder_session_uid`,
+`lease_epoch` and `fence`; `lease_epoch` and `fence` are equal decimal encodings of the
+process-local epoch. All status, record, index and commit guards compare registration UID,
+generation and all four writer-fence values. A Valkey restart, data loss, missing status
+hash, lower/mismatched fence, or holder/session mismatch leaves the partition
+`repairing`/`uncertain` and unavailable. No writer may reuse a prior fence or mark `clean`
+until the current fence, registration UID, generation, status, records, and index
+reconcile successfully. Kubernetes Lease-derived epochs remain a deferred multi-replica
+option.
 
 The selected internal atomic protocol is one server-side `fmc_v2_atomic.lua` script invoked only
 by `EVALSHA`; there is no `MULTI/EXEC`, client-side sequence, or alternate transaction
@@ -532,25 +546,26 @@ occurs unless `Complete=true`, scope/duplicate validation passes and every write
 verified. `IT-FMC-PRES-001`, `IT-FMC-CACHE-010` and `IT-FMC-CACHE-015` must exercise this
 production bridge.
 
-**Consistent Lease fence.** The exact shared value is:
+**Consistent writer fence.** The exact shared value is:
 
 ```go
 type WriterFence struct {
     HolderPodUID     string
     HolderSessionUID string
-    LeaseEpoch       int64  // exact Lease.spec.leaseTransitions value
+    LeaseEpoch       int64  // process-local monotonic epoch for the singleton
     Fence            uint64 // exact Valkey value; Fence == uint64(LeaseEpoch)
 }
 ```
 
 `LeaseEpoch` is the only monotonic source. `Fence` is its non-negative Valkey encoding,
-not an independent counter. `spec.holderIdentity` is the holder Pod UID. Each successful
-acquire creates a new opaque holder-session UID and increments `spec.leaseTransitions`
-under resource-version CAS; renewal changes neither the epoch nor either identity. The
-status hash stores `holder_pod_uid`, `holder_session_uid`, `lease_epoch` and `fence`, with
-the two numeric fields equal. `CycleToken` carries the complete `WriterFence`, and every
-status, record, index and commit guard compares registration UID, generation and all four
-fence fields. A stale holder/session cannot write, clean, repair or clear state.
+not an independent counter. Each successful process-local acquire creates a new opaque
+holder-session UID and increments the process epoch; renewal changes neither the epoch
+nor either identity. The status hash stores `holder_pod_uid`, `holder_session_uid`,
+`lease_epoch` and `fence`, with the two numeric fields equal. `CycleToken` carries the
+complete `WriterFence`, and every status, record, index and commit guard compares
+registration UID, generation and all four fence fields. A stale holder/session cannot
+write, clean, repair or clear state. Cross-pod takeover is intentionally not supported
+until a future Kubernetes Lease design is approved.
 
 **One atomic expiry protocol.** All record/index/status/generation mutation and all
 guarded read/repair/cleanup operations use the single server-side
@@ -570,16 +585,16 @@ or timeout/connection reset/lost reply after EVALSHA produces `ErrAmbiguousWrite
 the partition `uncertain`, and is never blindly retried; repair is required.
 
 **Deterministic repair reconciliation.** Authority is ordered as: (1) current Kubernetes
-registry entry and Lease for registration incarnation and writer ownership; (2) a complete
+registry entry and process-local writer coordinator for registration incarnation and writer ownership; (2) a complete
 unfiltered MCP observation for the live resource set and label states; (3) Valkey status,
 index and records as derived materialized state only. Status never authorizes from records,
 and an index never authorizes without its record/status predicates.
 
 `Repair` executes exactly: (1) resolve the current registry UID, acquire/verify the
-current `WriterFence`, and atomically set status `repairing` with a new generation; (2)
+current process-local `WriterFence`, and atomically set status `repairing` with a new generation; (2)
 run every qualified kind through `ListObserved` and require complete results; (3) sort and
 validate the complete source set by canonical resource ID and re-check registry UID and
-full Lease fence; (4) use `repair_reconcile` EVALSHA for each source item to create or
+full writer fence; (4) use `repair_reconcile` EVALSHA for each source item to create or
 replace the current-generation record, server-time TTL and index member; (5) enumerate
 the prior index in lexical order and use guarded `cleanup_member` EVALSHA to remove
 expired, malformed, wrong-incarnation, wrong-generation, wrong-fence or source-absent
@@ -587,7 +602,7 @@ pointers/records; (6) verify every expected record, index member, status field, 
 delta and observed count with `read_verified` EVALSHA; and (7) only after all predicates
 pass, use `commit` EVALSHA to set `clean`, clear the repair reason and publish the current
 generation/fence. Missing/inconsistent status, index or record is rebuilt from the source
-or remains unavailable. An incomplete source, lost reply, Lease/registry change, wrong
+or remains unavailable. An incomplete source, lost reply, writer-coordinator/registry change, wrong
 type or failed predicate leaves `repairing`/`uncertain` and restarts under a new fence;
 Valkey contents alone can never clear uncertainty.
 
@@ -636,7 +651,7 @@ var _ observation.ObservedReader = (*Client)(nil)
 func (c *Client) ListObserved(context.Context, observation.ListRequest) (observation.ListObservation, error)
 func (c *Client) listResources(context.Context, observation.ListRequest) (observation.ListObservation, error)
 
-// pkg/fleet/scopecache owns the internal partition, repair, read, and Lease
+// pkg/fleet/scopecache owns the internal partition, repair, read, and writer-fence
 // contracts. The normal observation cycle is not a repair compatibility API.
 type StatusStore interface {
     BeginRepair(context.Context, BeginRepairRequest) (RepairStartResult, error)
@@ -690,7 +705,8 @@ into the snapshot, but it is not a second readiness decision. The current source
 not yet define this field or shared flow; it remains a future implementation gap, not
 completion evidence. After successful MCP and registry initial sync, an empty registry
 may make `ServiceReady` true when global prerequisites and the configured process-wide
-Lease policy are satisfied; zero partitions do not require a per-partition Lease, and an
+writer-coordinator policy are satisfied; zero partitions do not require a per-partition
+writer coordinator, and an
 uncompleted registry sync is not an empty registry.
 Unknown targets/partitions remain typed unavailable and never become `managed:false`, a
 namespace fallback, an allow, or an inventory row.
@@ -703,8 +719,8 @@ mark-only repair, old `ReadVerified`, terminal `Lost`, or repair-through-cycle A
 The source currently has those superseded forms and is therefore a source gap, not
 completion evidence.
 
-The `wireFMCDependencies` production seam must construct the concrete Lease
-coordinator from the rendered Kubernetes Lease and Pod UID, the status store from the
+The `wireFMCDependencies` production seam must construct the process-local writer
+coordinator without Kubernetes Lease or Pod UID inputs, the status store from the
 qualified Valkey client and script manager, an `ObservedReaderFactory` that receives
 full `registry.ClusterInfo` including `RegistrationUID`, and pass the complete
 `Dependencies` contract to `fmc.NewSyncer`, including the shared `Readiness` pointer.
@@ -713,14 +729,14 @@ The callback may create
 registration's cluster ID/tool prefix, but it must never return a bare `client.Reader`
 or a local fallback for a fleet cluster. The existing `pkg/fleet.ReaderFactory` remains
 a separate adapter for GW/SP callers and is not accepted by the FMC constructor.
-`Syncer` acquires the Lease, begins repair before MCP collection, obtains one typed
+`Syncer` acquires the process-local writer fence, begins repair before MCP collection, obtains one typed
 complete observation per configured kind, validates the aggregate before writes,
 propagates every source/write error to the typed repair failure path, and publishes
 clean only through the current registry/revision and full-fence guard. These are the
 existing `IT-FMC-CACHE-004`, `IT-FMC-CACHE-005`, `IT-FMC-PRES-001`, and wiring rows,
 not new rows.
 
-**Approved internal repair, fenced-read, and Lease contract.** The public six-field
+**Approved internal repair, fenced-read, and writer-fence contract.** The public six-field
 canonical resource ID remains unchanged. Internal state uses a registration-scoped
 partition key:
 
@@ -1161,8 +1177,8 @@ and [V16](https://github.com/OWASP/ASVS/blob/180622b1329ee7ed349c9f5ce5e14fa91f4
 | `UT-FMC-PRES-005` | Resource record is missing/expired and namespace is verified managed | Scope is evaluated | Result is `unavailable`; no namespace fallback, no verified false, no allow |
 | `UT-FMC-PRES-006` | Exact resource lookup returns backend error and namespace is managed | Scope is evaluated | Typed unavailable/error is returned; no unmanaged message and no allow |
 | `IT-FMC-CACHE-013` | A true record is followed by an ambiguous true-to-false mutation | Writer loses reply or detects partial state | Partition becomes uncertain; scope/inventory return unavailable/no rows until repair |
-| `IT-FMC-CACHE-004` | Old holder, new holder, registry loss, and empty registry are exercised | Lease `spec.leaseTransitions` advances under CAS, or renewal is lost or registration UID changes | Old holder/session fence cannot write/clear state; affected target is unavailable; takeover obtains the Lease-derived fence and repairs before clean |
-| `IT-FMC-CACHE-005` | Two syncer candidates use the same Lease | Both attempt a cycle with distinct holder-session UIDs | Only the holder with the current Lease `leaseTransitions` fence can write; the stale holder receives a typed stale-fence outcome |
+| `IT-FMC-CACHE-004` | Process-local writer session, registry loss, and empty registry are exercised | The singleton coordinator acquires/releases a session or registration UID changes | The current session fence cannot write/clear state after loss; affected target is unavailable and the next local session repairs before clean |
+| `IT-FMC-CACHE-005` | Two syncer candidates use the same Kubernetes Lease | Both attempt a cycle with distinct holder-session UIDs | **Out of scope for the singleton amendment**; retain only as future multi-replica fencing coverage |
 | `IT-FMC-PRES-010` | Same Kind exists in two groups and APIVersion is explicit | Signal passes Gateway, SP, RO, AF, and FMC scope paths | Exact group/version survives every handoff; missing version is rejected before lookup |
 | `IT-FMC-PRES-009` | Fleet mode receives an empty or mismatched `ClusterID` while a local hub exists | GW/RO/AF scope dispatch is attempted | Missing/mismatched attribution is typed invalid/unavailable; no local fallback, lookup, allow, RR or WFE; explicit non-fleet local mode is tested separately |
 | `IT-FMC-PRES-001` | Unfiltered MCP source returns multiple pages with `limit=50`/`continue`, missing/malformed structured content, a table row, or a label-bearing item | Production reader factory calls `mcpclient.listResources` and `fmc.SyncCluster` | Exact continuation is followed at most 100 pages/5,000 items; metadata/label-less rows are rejected; all labels are preserved; incomplete/malformed content is unavailable and never an empty success or TTL refresh |
@@ -1190,7 +1206,7 @@ inflate the denominator; it makes the IEEE 829 acceptance assertions explicit.
 | `UT-FMC-CACHE-012` | Refresh and stale-index cleanup race on the same identity | Cleanup and refresh overlap | New valid generation survives; stale cleanup cannot delete or authorize the new record |
 | `UT-FMC-CACHE-014` | Same name/kind exists across clusters or groups, or identity tuple is malformed | Canonical lookup runs | Only the exact validated tuple/partition matches; collision and malformed IDs fail closed |
 | `IT-FMC-CACHE-010` | Source pagination, structured content, reader or write cycle is incomplete, including a table row without metadata/labels | Production sync/read path runs | Typed complete-scan state is false; cycle is unavailable/no rows, unobserved records do not refresh, and no allow is served |
-| `IT-FMC-CACHE-013` | Valkey write/reply is partial, wrong-type or ambiguous, or `abs((expires_at_ms-server_now_ms)-pttl_ms)>2ms` | Recovery/read path runs | Partition is uncertain and unavailable until Lease-fenced repair proves clean state; no stale positive or false absence is served |
+| `IT-FMC-CACHE-013` | Valkey write/reply is partial, wrong-type or ambiguous, or `abs((expires_at_ms-server_now_ms)-pttl_ms)>2ms` | Recovery/read path runs | Partition is uncertain and unavailable until writer-fenced repair proves clean state; no stale positive or false absence is served |
 | `IT-FMC-CACHE-015` | A bounded source scan, repeated/invalid continuation cursor, or page bound fails after some pages have been observed | Production inventory/scope read completes | The result is incomplete/unavailable with no rows or false absence; only a verified complete scan may refresh or establish emptiness |
 | `IT-FMC-MIGRATION-017` | Superseded v0.7 migration/cutover premise (historical only) | No public v2, rollout, compatibility, rollback, backfill, or migration evidence is authorized for this unreleased replacement | N/A / out of scope with zero credit; `#2593` coordinator owns disposition and FMC/API-owner approval is required before RED |
 
@@ -1242,7 +1258,7 @@ FMC/GW/RO/AF rows, four typed-scope contract seams, and one AIAnalysis/GVK hando
 | `IT-FMC-CACHE-002` | FMC writer/reader → controlled Valkey test dependency | FMC/platform owner | TTL, index, repair, restart, race behavior; no qualification claim |
 | `IT-FMC-CACHE-003` | Valkey test configuration → FMC clients | Platform owner | Internal protocol, TLS/ACL boundary and failure behavior; no deployment qualification claim |
 | `IT-FMC-CACHE-004` | Typed status store → syncer → handler/readers | FMC owner | Lifecycle, registry loss, repair, stale fence, readiness |
-| `IT-FMC-CACHE-005` | `wireFMCDependencies` → Lease client → `syncer.Run` | FMC/operator owner | Lease RBAC, holder Pod UID/session UID, Lease epoch-to-Valkey fence equality, renewal/loss/takeover |
+| `IT-FMC-CACHE-005` | `wireFMCDependencies` → process-local writer coordinator → `syncer.Run` | FMC owner | Generated process/session identity, epoch-to-Valkey fence equality, and singleton acquire/release; Kubernetes Lease RBAC and takeover are out of scope |
 | `IT-FMC-PRES-003` | `fmc.Handler.RegisterRoutes` → v1 scope client | FMC owner | `/api/v1/scope/check`, ordinary `application/json`, `ScopeCheckResponse.Managed` / `managed`; any typed unavailable/verified extension is gated by BR/ADR/API-owner approval and no public v2 route/media is allowed |
 | `IT-FMC-PRES-009` | HTTP validation → canonical identity → cache | Scope/API owner | Invalid, duplicate, unsupported, collision rejection |
 | `IT-FMC-PRES-010` | NormalizedSignal → RR → SP → RO/AF → FMC | SP/API owner | Schema, generated CRD, full GVK propagation |
@@ -1270,7 +1286,7 @@ inventory rows are listed separately in Section 9.2 and cannot be marked passed 
 | `IT-FMC-CACHE-002` | `test/integration/fleetmetadatacache/fmc_valkey_recovery_test.go` (planned) | `go test ./test/integration/fleetmetadatacache -ginkgo.v -ginkgo.focus='IT-FMC-CACHE-002'` | FMC/platform owner | 2/19 |
 | `IT-FMC-CACHE-003` | `test/infrastructure/fmc_valkey_contract_test.go` (planned) plus controlled test-dependency configuration | `go test ./test/infrastructure -ginkgo.v -ginkgo.focus='IT-FMC-CACHE-003'` | Platform owner | 3/19 |
 | `IT-FMC-CACHE-004` | `test/integration/fleetmetadatacache/fmc_lifecycle_wiring_test.go` (planned) | `go test ./test/integration/fleetmetadatacache -ginkgo.v -ginkgo.focus='IT-FMC-CACHE-004'` | FMC owner | 4/19 |
-| `IT-FMC-CACHE-005` | `test/integration/fleetmetadatacache/fmc_lease_wiring_test.go` (planned) | `go test ./test/integration/fleetmetadatacache -ginkgo.v -ginkgo.focus='IT-FMC-CACHE-005'` | FMC/operator owner | 5/19 |
+| `IT-FMC-CACHE-005` | `pkg/fleet/scopecache/process_writer_coordinator_test.go` + `cmd/fleetmetadatacache/main.go` production wiring | `go test ./pkg/fleet/scopecache -ginkgo.v -ginkgo.focus='UT-FMC-SINGLETON-001'` | FMC owner | 5/19; Kubernetes Lease/RBAC integration is out of scope |
 | `IT-FMC-PRES-003` | `test/integration/fleetmetadatacache/fmc_http_api_test.go` (extend) | `go test ./test/integration/fleetmetadatacache -ginkgo.v -ginkgo.focus='IT-FMC-PRES-003'` | FMC owner | 6/19 |
 | `IT-FMC-PRES-009` | `test/integration/fleetmetadatacache/fmc_http_api_test.go` (extend) | `go test ./test/integration/fleetmetadatacache -ginkgo.v -ginkgo.focus='IT-FMC-PRES-009'` | Scope/API owner | 7/19 |
 | `IT-FMC-PRES-010` | `test/integration/signalprocessing/fleet/sp_fleet_gvk_test.go` (planned) | `go test ./test/integration/signalprocessing/fleet -ginkgo.v -ginkgo.focus='IT-FMC-PRES-010'` | SignalProcessing API owner | 8/19 |
@@ -1603,11 +1619,13 @@ approved contract changes; all scenario IDs remain visible.
 | 0.7 | 2026-11-12 | R12 amendment: invalid labels are unavailable/non-inheriting, public six-field canonical IDs are separated from internal registration fencing, `WithCurrent` requires expected registry revision, and conditional server `0/2` is explicitly a subset of aggregate AF/FMC/Page `0/3`; denominators and fail-closed boundaries unchanged |
 | 0.8 | 2026-11-13 | **Historical draft amendment**: user-approved pre-GA v1/no-migration contract; public `/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed`; typed v1 extension approval gate; `IT-FMC-MIGRATION-017` retained as N/A/out-of-scope with zero credit; active denominators are 12 UT, 4 IT, 16 overall, 15 critical, and 19 wiring; R13 remains immutable historical evidence |
 | 0.9 | 2026-11-13 | **Fast-path implementation baseline**: user-approved internal `PartitionStateKey`/tokenized repair/epoch-scoped `LeaseSession` contract; `BeginRepair` precedes MCP collection; `Repair`/`CommitRepair`/proof-bearing `ReadVerified` replace old internal repair/read signatures with no compatibility shim; bounded EVALSHA guards and complete repair ordering are authoritative; public FMC remains v1/no-migration; denominators unchanged; R13 remains immutable; clean-worktree carry/hold boundary recorded |
+| 1.0 | 2026-11-15 | **Singleton deployment amendment**: remove Kubernetes Lease/POD_UID deployment prerequisites, wire a process-local writer coordinator, retain Valkey writer-fence proof contracts, close operator PR #637 as out of scope, and defer multi-replica takeover fencing |
 
 ## 17. Current status
 
-- RED: **Not started**
-- GREEN: **Pending RED and production-wiring proof**
+- RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
+- GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease
+- REFACTOR: **Pending focused validation and final evidence update**
 - ACM inventory: **Unavailable / no rows**
 - AF non-local Console list/policy scope: **Unavailable**
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
