@@ -27,8 +27,9 @@ release approval and does not authorize cluster activity, E2E qualification, #25
 ### Current-head checks
 
 Commit `93db7975b9fe999ee068068f55e9dffc78c9d3b5` is the final reviewed source
-head. The later `8d4fc4cc8` and `7ec90d893` commits only update RCA/review
-authority documentation; they do not change production or test implementation.
+head. The later `8d4fc4cc8`, `7ec90d893`, `0ed0ad286`, `787926437`, and
+`8fcb70307` commits only update RCA, review-authority, and deployment-ownership
+documentation; they do not change production or test implementation.
 CodeQL run `43642008872` and Gitleaks run `43642008918` passed. CI Pipeline run
 `43642008948` completed with all unit-test lanes, service builds, Go lint, license
 scan, CEL immutability regression, operator build/package, and unaffected
