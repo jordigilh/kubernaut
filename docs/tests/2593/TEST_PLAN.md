@@ -4,10 +4,10 @@
 
 **Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 1.3
+**Version**: 1.4
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; run `43728630518` passes all integration lanes, WorkflowExecution, and `apifrontend-fleet`, with three infrastructure/fixture-held E2E gates pending clean rerun
+**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; run `43735032208` passes build/lint/unit/security/operator/integration lanes and unaffected E2E lanes. Fleet, FMC EAIGW, FMC Kuadrant, and `apifrontend-fleet` E2E remain failed/held; the preserved-cluster Fleet replay is diagnostic evidence with no source regression proven, and final qualification remains pending.
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -29,6 +29,12 @@ was closed without implementation. FMC production wiring now uses a process-loca
 coordinator that preserves the existing Valkey `WriterFence` and proof-bearing repair
 contracts but provides no cross-process or cross-pod fencing. The Kubernetes coordinator
 remains available only as a future multi-replica option.
+
+The preserved-cluster qualification replay observed a brief two-pod
+`RollingUpdate` overlap despite one desired replica. Because the current
+coordinator is process-local, it does not fence separate pods during that
+deployment transition. This is recorded as deployment-owner qualification
+follow-up and does not change the approved singleton source boundary.
 
 References below to Kubernetes Lease RBAC, holder Pod UID injection, Lease takeover, or
 multi-writer Lease integration are historical plan context unless explicitly marked as
@@ -1623,6 +1629,7 @@ approved contract changes; all scenario IDs remain visible.
 | 1.1 | 2026-11-15 | CI run `43719091357` attributed affected integration failures to the approved explicit-remote-GVK and presence-aware cache contracts; align Gateway/SP/RO/FMC fixtures and preserve `CreateRRArgs.APIVersion` through the AF remote scope check. Local build, lint, affected unit suites, and integration-package compilation pass; affected integration execution remains environment-blocked. |
 | 1.2 | 2026-11-15 | CI run `43723420104` validated head `2ad936d17874d420c044045302fe6771559b74ff`: all affected integration lanes passed and `apifrontend-fleet` passed. Fleet, FMC EAIGW, FMC Kuadrant, and WorkflowExecution E2E remain held for infrastructure/dependency recovery and rerun; no source regression is attributed. |
 | 1.3 | 2026-11-15 | CI run `43728630518` validated PR head `d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`: all integration lanes, WorkflowExecution, `apifrontend-fleet`, and unaffected E2E lanes passed. Fleet, FMC EAIGW, and FMC Kuadrant remain held; artifacts classify the failures as fail-closed FMC/RBAC-fixture/remote-Kind conditions, with no source regression attributed. |
+| 1.4 | 2026-11-15 | CI run `43735032208` validated PR head `ec020153389bbe6c68fdbcea98b4aa964ba72dea`: all source/build/integration lanes and unaffected E2E lanes passed; Fleet, FMC EAIGW, FMC Kuadrant, and `apifrontend-fleet` failed. The preserved-cluster Fleet replay recorded a two-pod rollout overlap, fail-closed FMC proof/partition errors, and one MCP SSE transport failure; no source change is authorized. |
 
 ## 17. Current status
 
@@ -1634,7 +1641,7 @@ approved contract changes; all scenario IDs remain visible.
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
 - This v0.9 amendment invalidated the historical dirty-worktree clean-review eligibility; the fast-path carry/hold boundary is recorded in `docs/tests/2593/evidence/FAST_PATH_CARRY_HOLD.md` and the review README. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**
-- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; CI validation is complete for source/integration lanes, while three E2E gates and final qualification remain pending**
+- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; CI validation is complete for source/integration lanes, while four E2E lanes and final qualification remain pending. The preserved-cluster Fleet replay is diagnostic only and attributes the observed FMC unavailability to rollout overlap plus MCP/infrastructure conditions; no source regression is proven.**
 
 No public v2 route/media, deployment, cluster, ACM, Valkey qualification, GitHub, or release
 changes are authorized. Source changes are limited to the clean worktree and the bounded
