@@ -6,6 +6,7 @@
 **CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
 **Review date:** 2026-11-14
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
+**Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637), head `c9152b8`, adds FMC `POD_UID` and namespace-scoped writer-Lease RBAC.
 
 ## Decision
 
@@ -147,13 +148,14 @@ external-plan finding is already reflected below.
 | Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
 | Fence verification/reacquisition and dependency refresh can restore stale readiness | `ensureFence` clears local ownership before reacquisition, while `fmcDeps.Ready` and the syncer publish a previously read global snapshot. Both findings are valid concurrency/security concerns. | **Hold** for coordinated readiness/fence synchronization design and tests; no partial fix is authorized. |
 | Empty observations can never produce clean proof; missing `structuredContent` might be empty | `hasCleanRepairProof` correctly rejects zero TTL proof, and `extractObservationPage` correctly rejects missing `structuredContent`. No digest-pinned producer capture proves a reliable empty response. | **Hold** on the existing fail-closed protocol boundary; do not fabricate empty proof. |
-| FMC E2E ServiceAccount lacks Lease permissions; chart deployment lacks `POD_UID` | The raw E2E manifest emits `POD_UID`, but its `fmcGatewayRBACRules` do not grant Lease access. This is a valid deployment-fixture concern; this repository has no `charts/**` tree, and the Helm authority is the operator repository. | **Hold** for the deployment/E2E owner and explicit E2E qualification; current CI failed during remote Kind setup before FMC specs. |
+| FMC operator deployment lacks `POD_UID` and writer-Lease permissions | FMC is deployed by `kubernaut-operator`, not by an FMC Helm chart in this repository. The operator source lacked both the `metadata.uid` downward-API variable and namespace-scoped `coordination.k8s.io/leases` `get/create/update` access required by `fleetmetadatacache-writer`; operator PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) addresses both. | **Actionable follow-up opened**; operator CI/review is pending. This is outside #2637's 87-file source boundary, and the current Kubernaut E2E CI failed during remote Kind setup before FMC specs. |
 | Controller-runtime fake, rendered-manifest test, integration no-mocks fixture, and `Syncer` state extraction | These are valid maintainability/test-harness suggestions, but each requires a production seam or broader fixture/refactor change beyond the bounded FMC A/B closure. | **Hold**; do not expand the 87-file boundary or introduce an untested refactor. |
 | Gateway HPA RBAC | The scope client is informer-backed, but the effective Gateway ServiceAccount binding is owned by `kubernaut-operator`, not this repository. | **Hold** for the deployment owner; no permission change is inferred from this checkout. |
 
-No additional implementation change is justified within the approved boundary. Held
-findings remain explicit follow-up work, not silent approval or evidence that the
-current E2E/deployment contracts are qualified.
+No additional implementation change is justified within the approved #2637 boundary.
+Held findings remain explicit follow-up work, not silent approval or evidence that the
+current E2E/deployment contracts are qualified. The operator deployment gap is tracked
+separately in PR #637.
 
 ## Approved implementation boundary
 
