@@ -3,8 +3,9 @@
 **Reviewed source baseline:** `93db7975b` (`fix(ci): stabilize FMC repair contract test`)
 **Branch:** `work/2593-fmc-presence`
 **Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
-**CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
-**Review date:** 2026-11-14
+**Pre-amendment CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
+**Amended-head CI:** head `917ebfc61`; workflow run `43717310232` has passing build/lint/unit/security lanes while integration/E2E lanes remain pending at this evidence update. No final amended-head CI pass/fail claim is made.
+**Review date:** 2026-11-15
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 **Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
 
@@ -24,7 +25,7 @@ release approval and does not authorize cluster activity, E2E qualification, #25
 
 ## CI evidence and attribution
 
-### Current-head checks
+### Pre-amendment CI baseline
 
 Commit `93db7975b9fe999ee068068f55e9dffc78c9d3b5` is the final reviewed source
 head. The later `8d4fc4cc8`, `7ec90d893`, `0ed0ad286`, `787926437`, and
@@ -57,12 +58,19 @@ blocked before the EAIGW E2E specs by the container image build: `dnf` reported 
 malformed package database and `No space left on device`. Neither is source
 evidence against the bounded FMC changes.
 
-### Final CI result: run `43642008948`
+### Pre-amendment CI disposition: run `43642008948`
 
 The pre-amendment remote result did not authorize source expansion. The PR was
 `BEHIND`, `MERGEABLE`, and `REVIEW_REQUIRED` at that point. The prior FMC E2E
 `POD_UID` startup defect is removed by the current process-local coordinator wiring,
 and the raw E2E manifest no longer injects pod identity.
+
+### Amended-head CI disposition
+
+The singleton amendment is at `917ebfc61`. Workflow run `43717310232` has passed
+the build, lint, unit, security, CodeQL, license, and operator-artifact lanes; its
+integration and E2E lanes are still pending. The amended head therefore has no
+final remote CI result yet; this RCA does not claim one.
 
 ### Failed integration lanes
 

@@ -294,6 +294,19 @@ var _ = Describe("FMC readiness production wiring (BR-SCOPE-001)", func() {
 	})
 })
 
+var _ = Describe("FMC writer production composition (BR-SCOPE-001)", func() {
+	It("IT-FMC-CACHE-005 [BR-SCOPE-001]: passes the process-local coordinator through the production syncer dependency seam", func() {
+		// wireFMCDependencies uses buildFMCWriterCoordinator and then
+		// buildFMCSyncer uses this exact dependency composition helper.
+		coordinator := buildFMCWriterCoordinator()
+		deps := &fmcDeps{lease: coordinator}
+
+		syncerDeps := buildFMCSyncerDependencies(deps)
+		Expect(coordinator).To(BeAssignableToTypeOf(&scopecache.ProcessWriterCoordinator{}))
+		Expect(syncerDeps.Lease).To(BeIdenticalTo(coordinator))
+	})
+})
+
 var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065)", func() {
 	var (
 		certDir string

@@ -287,6 +287,21 @@ func buildFMCRegistryDependencies(
 	return clusterRegistry, registrationGuard, readinessSnapshot
 }
 
+func buildFMCWriterCoordinator() scopecache.LeaseCoordinator {
+	return scopecache.NewProcessWriterCoordinator()
+}
+
+func buildFMCSyncerDependencies(deps *fmcDeps) fmc.Dependencies {
+	return fmc.Dependencies{
+		Registry:    deps.clusterRegistry,
+		Readers:     nil,
+		Writer:      deps.writer,
+		StatusStore: deps.statusStore,
+		Lease:       deps.lease,
+		Readiness:   deps.readiness,
+	}
+}
+
 func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) *fmc.Syncer {
 	syncerConfig := fmc.Config{
 		SyncInterval:       cfg.Sync.Interval,
@@ -305,14 +320,9 @@ func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Log
 		}
 		return mcpclient.NewFromSessionProvider(sessionProvider, cluster.ID, opts...), nil
 	})
-	return fmc.NewSyncer(fmc.Dependencies{
-		Registry:    deps.clusterRegistry,
-		Readers:     readerFactory,
-		Writer:      deps.writer,
-		StatusStore: deps.statusStore,
-		Lease:       deps.lease,
-		Readiness:   deps.readiness,
-	}, syncerConfig, logger, deps.metrics)
+	syncerDeps := buildFMCSyncerDependencies(deps)
+	syncerDeps.Readers = readerFactory
+	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics)
 }
 
 func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
@@ -323,7 +333,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	writer, cacheReader, statusStore := buildFMCValkeyDependencies(ctx, cfg, logger)
 	clusterRegistry, registrationGuard, readinessSnapshot := buildFMCRegistryDependencies(ctx, cfg, dynClient, reg, statusStore, logger)
 
-	writerCoordinator := scopecache.NewProcessWriterCoordinator()
+	writerCoordinator := buildFMCWriterCoordinator()
 
 	deps := &fmcDeps{
 		reg:               reg,
