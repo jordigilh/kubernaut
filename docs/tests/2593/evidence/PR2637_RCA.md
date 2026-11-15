@@ -5,6 +5,7 @@
 **Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
 **Pre-amendment CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
 **Amended-head CI:** head `6a41d4c7d`; workflow run `43719091357` passed the build/lint/unit/security lanes and exposed five affected integration-lane failures before the bounded fixture/source alignment below. Follow-up run `43723420104` tested head `2ad936d17874d420c044045302fe6771559b74ff`; all affected integration lanes passed, while four E2E lanes remained held as documented below.
+**Latest CI:** workflow run `43728630518` tested PR head `d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`; all build, lint, unit, security, operator-artifact, and integration lanes passed, as did `WorkflowExecution`, `apifrontend-fleet`, and the unaffected E2E lanes. Three E2E jobs remained failed: Fleet (`132862166486`), FMC EAIGW (`132862166477`), and FMC Kuadrant (`132862166466`).
 **Review date:** 2026-11-15
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 **Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
@@ -92,16 +93,31 @@ resolved; its current unit, integration, and E2E lanes passed.
 
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
-| `fleet` | 19 specs failed after repeated Gateway 500 responses. FMC diagnostics show readiness 503, `fenced-read proof changed`, and `partition_unavailable`; teardown also reports rootless Podman cleanup failures | Hold pending a clean rerun; mixed FMC dependency/infrastructure symptoms provide no introduced-versus-inherited proof | <90% |
-| `fleetmetadatacache-eaigw` | Setup fails before specs: the FMC rollout remains `0/1`, the remote Kind kube-apiserver/API VIP is unavailable, and `10.96.0.1:443` returns `connection refused`; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
-| `fleetmetadatacache-kuadrant` | Setup fails before specs: the FMC rollout remains `0/1` while the remote API server is pending and the API VIP is unavailable; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
-| `workflowexecution` | Setup fails before specs because AWX project sync does not complete within five minutes; 0 specs ran | Hold AWX dependency readiness; no FMC source attribution | 99% |
+| `fleet` (`132862166486`) | 19 specs failed after repeated Gateway 500 responses. FMC diagnostics show readiness 503, `fenced-read proof changed`, and `partition_unavailable`; Gateway logs also show the intentional strict-GVK rejection for a Deployment fixture without explicit `apps/v1`; teardown reports rootless Podman cleanup failures | Hold pending a clean rerun. The aligned integration fixtures and fail-closed behavior pass; the E2E artifact mixes unavailable-FMC and invalid-input symptoms, so it is not source-regression proof | <90% |
+| `fleetmetadatacache-eaigw` (`132862166477`) | Setup fails before specs: FMC rollout remains `0/1` and 0/16 specs run. FMC logs show exchanged identity `keycloak:service-account-kubernaut-fleet-read` forbidden from listing `deployments.apps`, leaving `syncReady=false` and `/readyz` at 503; remote Kind teardown also reports Podman cleanup failure | Hold the E2E fixture/RBAC ordering and runner cleanup. `applyExchangedIdentityRBAC` is invoked after the FMC rollout wait, while the least-privilege contract intentionally denies the FMC ServiceAccount direct `deployments.apps` access; no production RBAC expansion or FMC source attribution | 99% |
+| `fleetmetadatacache-kuadrant` (`132862166466`) | Setup fails before specs: FMC rollout remains `0/1` and 0/16 specs run; the remote kube-apiserver is `Pending`, `10.96.0.1:443` refuses connections while direct backend `10.89.0.3:6443` is reachable, and remote Kind deletion reports Podman cleanup failure | Hold remote Kind/API-VIP/Podman infrastructure; no FMC source attribution | 99% |
 
-`apifrontend-fleet` passed in `43723420104` and is no longer a failed lane.
+`WorkflowExecution` and `apifrontend-fleet` passed in `43728630518` and are no longer failed lanes.
 
-Run `43723420104` also passed the build, lint, unit, security, operator-artifact,
+Run `43728630518` also passed the build, lint, unit, security, operator-artifact,
 integration, and unaffected E2E lanes. `Test Suite Summary` and `Merge Gate` failed
-only as downstream rollups of the four E2E failures above.
+only as downstream rollups of the three E2E failures above.
+
+### Attempt-2 RBAC and fixture analysis
+
+The dedicated FMC lanes do not justify adding direct `deployments.apps` access to
+FMC. The production FMC ServiceAccount and the shared least-privilege E2E contract
+intentionally keep that permission denied because remote discovery is performed by
+`kube-mcp-server` under the exchanged identity.
+
+The dedicated-lane setup applies the exchanged identity binding in
+`runFMCFleetCorePhase` only after `deployValkeyAndFMC` has waited for the FMC
+Deployment rollout. The current readiness contract requires a successful initial
+sync, so an exchanged identity that has not yet received its `view` binding can
+produce the observed `deployments.apps is forbidden` response and keep readiness at
+503. This is an E2E fixture-ordering failure, not evidence that the production FMC
+RBAC or strict-GVK validation should be weakened. A clean rerun is required before
+changing either source or test setup.
 
 ## CodeRabbit disposition
 
@@ -159,7 +175,7 @@ external-plan finding is already reflected below.
 
 | Finding | Current evidence | Disposition |
 |---|---|---|
-| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `ac0d8273c45cd33d9a8a1a7fdaed58660c34973ae43a8a6900f97d4dbacde910`. | **Addressed** in `7ec90d893`; current plan amendment is included in this evidence update. |
+| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `5bc02a45c9d0baeacfca40174e97fa809cdd12a18e2aa5c45cef03bd31b9f379`. | **Addressed** in `7ec90d893`; current plan amendment is included in this evidence update. |
 | Gateway GVK rejection was classified as inherited | The gateway row now records the rejection as introduced by the explicit remote-GVK validation and identifies the current fixture omission of `apiVersion`; fail-closed behavior remains intentional. | **Addressed** in `7ec90d893`; producer/fixture alignment remains a held GVK follow-up. |
 | Successful repair test needs deterministic server time | `status_store_red_test.go:233` calls `server.SetTime(...)` before the cleanup lifecycle; CodeRabbit confirmed this finding as addressed in `93db7975b`. | **Addressed**. |
 | Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
@@ -227,10 +243,12 @@ failed in DNF with `util-linux ... cpio: chown failed - No data available`.
 
 CI run `43723420104` then validated the aligned head
 `2ad936d17874d420c044045302fe6771559b74ff`: all integration lanes passed, including
-the affected Gateway, SignalProcessing, FMC, AF, and RO paths. The remaining E2E
-evidence is bounded to four held jobs: Fleet (19 Gateway/FMC readiness failures with
-additional Podman teardown errors), FMC EAIGW (rollout/API VIP setup failure), FMC
-Kuadrant (rollout/remote API setup failure), and WorkflowExecution (AWX project-sync
-timeout before specs). `apifrontend-fleet` passed. No additional source change is
-authorized from this run; rerun the four failed E2E jobs after runner, remote-Kind,
-and AWX dependency recovery.
+the affected Gateway, SignalProcessing, FMC, AF, and RO paths. Latest run
+`43728630518` validated the documentation-only follow-up head
+`d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`: all integration lanes, WorkflowExecution,
+`apifrontend-fleet`, and unaffected E2E lanes passed. The remaining E2E evidence is
+bounded to three held jobs: Fleet (FMC unavailable/strict-GVK fixture symptoms with
+Podman teardown errors), FMC EAIGW (readiness blocked by exchanged-identity RBAC
+fixture ordering), and FMC Kuadrant (remote Kind/API-VIP setup failure). No
+additional production or test source change is authorized from this evidence;
+rerun only these three E2E jobs after clean runner/Kind/Podman recovery.

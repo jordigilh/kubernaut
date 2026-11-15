@@ -4,10 +4,10 @@
 
 **Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; run `43723420104` passes all integration lanes, with four infrastructure/dependency-held E2E gates pending rerun
+**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; run `43728630518` passes all integration lanes, WorkflowExecution, and `apifrontend-fleet`, with three infrastructure/fixture-held E2E gates pending clean rerun
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -1622,6 +1622,7 @@ approved contract changes; all scenario IDs remain visible.
 | 1.0 | 2026-11-15 | **Singleton deployment amendment**: remove Kubernetes Lease/POD_UID deployment prerequisites, wire a process-local writer coordinator, retain Valkey writer-fence proof contracts, close operator PR #637 as out of scope, and defer multi-replica takeover fencing |
 | 1.1 | 2026-11-15 | CI run `43719091357` attributed affected integration failures to the approved explicit-remote-GVK and presence-aware cache contracts; align Gateway/SP/RO/FMC fixtures and preserve `CreateRRArgs.APIVersion` through the AF remote scope check. Local build, lint, affected unit suites, and integration-package compilation pass; affected integration execution remains environment-blocked. |
 | 1.2 | 2026-11-15 | CI run `43723420104` validated head `2ad936d17874d420c044045302fe6771559b74ff`: all affected integration lanes passed and `apifrontend-fleet` passed. Fleet, FMC EAIGW, FMC Kuadrant, and WorkflowExecution E2E remain held for infrastructure/dependency recovery and rerun; no source regression is attributed. |
+| 1.3 | 2026-11-15 | CI run `43728630518` validated PR head `d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`: all integration lanes, WorkflowExecution, `apifrontend-fleet`, and unaffected E2E lanes passed. Fleet, FMC EAIGW, and FMC Kuadrant remain held; artifacts classify the failures as fail-closed FMC/RBAC-fixture/remote-Kind conditions, with no source regression attributed. |
 
 ## 17. Current status
 
@@ -1633,7 +1634,7 @@ approved contract changes; all scenario IDs remain visible.
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
 - This v0.9 amendment invalidated the historical dirty-worktree clean-review eligibility; the fast-path carry/hold boundary is recorded in `docs/tests/2593/evidence/FAST_PATH_CARRY_HOLD.md` and the review README. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**
-- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; CI validation is complete for source/integration lanes, while four E2E gates and final qualification remain pending**
+- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; CI validation is complete for source/integration lanes, while three E2E gates and final qualification remain pending**
 
 No public v2 route/media, deployment, cluster, ACM, Valkey qualification, GitHub, or release
 changes are authorized. Source changes are limited to the clean worktree and the bounded
