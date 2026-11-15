@@ -186,6 +186,7 @@ Objectives:
 | UT-ORCH-2588-025 | Parent phases requiring child stop are classified correctly | PASS — `go test ./pkg/shared/cancellation` |
 | UT-ORCH-2588-026 | Parent deletion is an authoritative child stop request | PASS — `go test ./pkg/shared/cancellation` |
 | UT-ORCH-2588-027 | Shared cancellation identity rejects fully UID-less acknowledgement identities | PASS — `go test ./pkg/shared/cancellation` |
+| UT-ORCH-2588-028 | A normally pending child stop does not consume the RemediationRequest aggregate retry budget | PASS — `go test ./internal/controller/remediationorchestrator` |
 | UT-NT-2588-004 | User-deleted cancellation notifications are treated as terminal notification handling and are not recreated | PASS — focused RO cancellation suite |
 | UT-RO-2588-002 | Cancellation notification creation is idempotent and remains retryable | PASS — `go test ./pkg/remediationorchestrator/creator` |
 | UT-RO-2588-006 | A same-name notification with a different owner/RR UID, type, or cancellation request ID is rejected instead of reused | PASS — creator cancellation suite |

@@ -395,7 +395,7 @@ func (r *Reconciler) recordCancellationProgress(
 		rr.Status.Message = "Cancellation acknowledged by children; waiting for notification delivery"
 		return
 	}
-	if status.State != remediationv1.CancellationStateFailed {
+	if firstFailure != "" && status.State != remediationv1.CancellationStateFailed {
 		status.RetryCount++
 	}
 	if firstFailure != "" {
@@ -695,7 +695,7 @@ func childCancellationState(conditions []metav1.Condition) (bool, string) {
 	if condition != nil && cancellation.IsFailed(conditions) {
 		return false, condition.Message
 	}
-	return false, "child cancellation acknowledgement is pending"
+	return false, ""
 }
 
 func firstFailureOr(existing, candidate string) string {

@@ -385,7 +385,7 @@ var _ = Describe("RemediationRequest cancellation coordination", func() {
 		acknowledged, failure, err := reconciler.cancellationChildrenState(context.Background(), rr)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(acknowledged).To(BeFalse())
-		Expect(failure).To(ContainSubstring("pending"))
+		Expect(failure).To(BeEmpty())
 	})
 
 	It("UT-ORCH-2588-014: refuses to aggregate acknowledgement from a stale same-name child", func() {
@@ -456,6 +456,33 @@ var _ = Describe("RemediationRequest cancellation coordination", func() {
 		acknowledged, _, err := reconciler.cancellationChildrenState(context.Background(), rr)
 		Expect(acknowledged).To(BeFalse())
 		Expect(err).To(MatchError(ContainSubstring("identity mismatch")))
+	})
+
+	It("UT-ORCH-2588-028: does not consume the aggregate retry budget while a child stop is pending", func() {
+		conditions := []metav1.Condition{}
+		cancellation.SetRequested(&conditions, 1, "backend stop is still pending")
+
+		acknowledged, failure := childCancellationState(conditions)
+		Expect(acknowledged).To(BeFalse())
+		Expect(failure).To(BeEmpty())
+
+		rr := &remediationv1.RemediationRequest{
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					State: remediationv1.CancellationStateInProgress,
+				},
+			},
+		}
+		reconciler := &Reconciler{}
+
+		reconciler.recordCancellationProgress(
+			context.Background(), rr, false, "", false, failure, logr.Discard(),
+		)
+
+		Expect(rr.Status.Cancellation.RetryCount).To(BeZero())
+		Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateInProgress))
+		Expect(rr.Status.Message).To(Equal("Cancellation requested; waiting for child acknowledgements"))
 	})
 
 	It("UT-NT-2588-003: records PartiallySent as terminal but not fully delivered", func() {
