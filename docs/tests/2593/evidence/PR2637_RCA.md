@@ -4,7 +4,7 @@
 **Branch:** `work/2593-fmc-presence`
 **Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
 **Pre-amendment CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
-**Amended-head CI:** head `6a41d4c7d`; workflow run `43719091357` passed the build/lint/unit/security lanes and exposed five affected integration-lane failures before the bounded fixture/source alignment below. Affected E2E failures remain separately attributed to infrastructure or dependent fleet paths; the follow-up CI rerun is pending.
+**Amended-head CI:** head `6a41d4c7d`; workflow run `43719091357` passed the build/lint/unit/security lanes and exposed five affected integration-lane failures before the bounded fixture/source alignment below. Follow-up run `43723420104` tested head `2ad936d17874d420c044045302fe6771559b74ff`; all affected integration lanes passed, while four E2E lanes remained held as documented below.
 **Review date:** 2026-11-15
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 **Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
@@ -92,10 +92,16 @@ resolved; its current unit, integration, and E2E lanes passed.
 
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
-| `fleetmetadatacache-eaigw` | Setup fails before specs: the remote Kind kube-apiserver is `Pending`, and in-cluster `10.96.0.1:443` returns `connection refused`; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
-| `fleetmetadatacache-kuadrant` | Setup fails before specs with the same remote kube-apiserver/API VIP failure; the `mcp-gateway` rollout also has an old replica pending termination; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
-| `fleet` | Setup fails before specs because of independent infrastructure/resource/Podman conditions | Hold; no introduced-versus-inherited proof | <90% |
-| `apifrontend-fleet` | Setup fails before specs because of independent infrastructure/resource conditions | Hold; no introduced-versus-inherited proof | <90% |
+| `fleet` | 19 specs failed after repeated Gateway 500 responses. FMC diagnostics show readiness 503, `fenced-read proof changed`, and `partition_unavailable`; teardown also reports rootless Podman cleanup failures | Hold pending a clean rerun; mixed FMC dependency/infrastructure symptoms provide no introduced-versus-inherited proof | <90% |
+| `fleetmetadatacache-eaigw` | Setup fails before specs: the FMC rollout remains `0/1`, the remote Kind kube-apiserver/API VIP is unavailable, and `10.96.0.1:443` returns `connection refused`; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
+| `fleetmetadatacache-kuadrant` | Setup fails before specs: the FMC rollout remains `0/1` while the remote API server is pending and the API VIP is unavailable; 0/16 specs ran | Hold remote Kind/Podman infrastructure; no FMC source attribution | 99% |
+| `workflowexecution` | Setup fails before specs because AWX project sync does not complete within five minutes; 0 specs ran | Hold AWX dependency readiness; no FMC source attribution | 99% |
+
+`apifrontend-fleet` passed in `43723420104` and is no longer a failed lane.
+
+Run `43723420104` also passed the build, lint, unit, security, operator-artifact,
+integration, and unaffected E2E lanes. `Test Suite Summary` and `Merge Gate` failed
+only as downstream rollups of the four E2E failures above.
 
 ## CodeRabbit disposition
 
@@ -153,7 +159,7 @@ external-plan finding is already reflected below.
 
 | Finding | Current evidence | Disposition |
 |---|---|---|
-| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `0a576b88c621364d35962b5e02585a6c2dd4c271eeef66036527279c752dc790`. | **Addressed** in `7ec90d893`; current plan amendment is included in this evidence update. |
+| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `ac0d8273c45cd33d9a8a1a7fdaed58660c34973ae43a8a6900f97d4dbacde910`. | **Addressed** in `7ec90d893`; current plan amendment is included in this evidence update. |
 | Gateway GVK rejection was classified as inherited | The gateway row now records the rejection as introduced by the explicit remote-GVK validation and identifies the current fixture omission of `apiVersion`; fail-closed behavior remains intentional. | **Addressed** in `7ec90d893`; producer/fixture alignment remains a held GVK follow-up. |
 | Successful repair test needs deterministic server time | `status_store_red_test.go:233` calls `server.SetTime(...)` before the cleanup lifecycle; CodeRabbit confirmed this finding as addressed in `93db7975b`. | **Addressed**. |
 | Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
@@ -218,4 +224,13 @@ The post-alignment local gates passed: `go build ./...`,
 execution reached environment setup but could not run locally: the initial Gateway
 attempt lacked envtest `etcd`; with a valid envtest bundle, DataStorage image build
 failed in DNF with `util-linux ... cpio: chown failed - No data available`.
-The next CI run is the required execution evidence for these aligned fixtures.
+
+CI run `43723420104` then validated the aligned head
+`2ad936d17874d420c044045302fe6771559b74ff`: all integration lanes passed, including
+the affected Gateway, SignalProcessing, FMC, AF, and RO paths. The remaining E2E
+evidence is bounded to four held jobs: Fleet (19 Gateway/FMC readiness failures with
+additional Podman teardown errors), FMC EAIGW (rollout/API VIP setup failure), FMC
+Kuadrant (rollout/remote API setup failure), and WorkflowExecution (AWX project-sync
+timeout before specs). `apifrontend-fleet` passed. No additional source change is
+authorized from this run; rerun the four failed E2E jobs after runner, remote-Kind,
+and AWX dependency recovery.
