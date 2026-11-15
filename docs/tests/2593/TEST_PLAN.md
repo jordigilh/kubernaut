@@ -7,7 +7,7 @@
 **Version**: 1.0
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — focused validation in progress
+**Status**: Singleton implementation amendment — local validation complete; PR CI pending
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -1625,7 +1625,7 @@ approved contract changes; all scenario IDs remain visible.
 
 - RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
 - GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease
-- REFACTOR: **Pending focused validation and final evidence update**
+- REFACTOR: **Complete** — singleton deployment wording and review evidence aligned; local validation passed
 - ACM inventory: **Unavailable / no rows**
 - AF non-local Console list/policy scope: **Unavailable**
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`

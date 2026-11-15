@@ -97,10 +97,10 @@ not create a second three-review cycle.
 - Historical test-plan snapshot: `TP-2593-v0.9`, repository-versioned fast-path SHA-256
   `363f36c3a59c7fc46c72a37347479cb5e2df775d8b6770f8854eda1e405eb482`.
 - Current repository-versioned authority SHA-256 for new review captures:
-  `5a2e2a19c96e70d77a9f738040b7a6b2533f2241abb4f55c9b7809353713165d`.
+  `47265f77266cf43d3abb6afd5de8217058e9e8b50bda973af3aca78539bf2fe9`.
 - Source checkout `HEAD`: `7a4ed304580298802520e292cad0a7c4efccd17b`.
 - Source checkout `origin/main`: `18870e92d58b83c1c061841130bc73fde62abc70`.
-- Test-plan identity: `TP-2593-v1.0`, Singleton implementation amendment — focused validation in progress.
+- Test-plan identity: `TP-2593-v1.0`, Singleton implementation amendment — local validation complete; PR CI pending.
 - Reset reason: user-approved internal repair/Lease contract supersedes the old internal
   StatusStore/Lease/read/repair signatures without a compatibility shim; `BeginRepair`
   precedes MCP collection; `CommitRepair`/proof-bearing `ReadVerified` and the exact
