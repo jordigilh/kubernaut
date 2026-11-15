@@ -1,7 +1,6 @@
 package notification
 
 import (
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,11 +9,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 )
-
-func TestCancellationNotificationController(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Notification cancellation delivery suite")
-}
 
 var _ = Describe("Cancellation NotificationRequest delivery policy", func() {
 	It("UT-NT-2588-001: uses the explicit retry policy for cancellation delivery", func() {
