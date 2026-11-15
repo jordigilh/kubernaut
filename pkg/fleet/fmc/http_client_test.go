@@ -93,7 +93,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		Expect(managed).To(BeFalse())
 	})
 
-	DescribeTable("UT-FMC-HC-003..005 [SC-7]: fail-safe returns managed=false on backend errors",
+	DescribeTable("UT-FMC-HC-003..005 [SC-7]: surfaces backend errors from the canonical scope check",
 		func(setupServer func() string) {
 			client = fmc.NewHTTPClient(setupServer())
 
@@ -101,8 +101,8 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
-			Expect(err).ToNot(HaveOccurred(),
-				"errors must be absorbed (fail-safe), not propagated")
+			Expect(err).To(HaveOccurred(),
+				"canonical scope checks must preserve backend failures")
 			Expect(managed).To(BeFalse())
 		},
 		Entry("connection refused", func() string {
@@ -164,7 +164,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient("http://127.0.0.1:1")
 			err := client.Ping(context.Background())
 			Expect(err).To(HaveOccurred(),
-				"unlike IsManagedResource, Ping must surface the transport error for the readiness gate")
+				"Ping must surface the transport error for the readiness gate")
 		})
 
 		It("UT-FMC-HC-010: returns an error when /readyz responds with a non-200 status", func() {
@@ -304,7 +304,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred())
 			Expect(managed).To(BeFalse())
 			Expect(atomic.LoadInt32(&requestCount)).To(Equal(int32(1)),
 				"a 4xx is a client-side problem, not a transient backend failure -- must fail fast, not retry")
@@ -322,8 +322,8 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			})
 			elapsed := time.Since(start)
 
-			Expect(err).ToNot(HaveOccurred(),
-				"exhausted retries must still fail safe (SC-7), never propagate an error")
+			Expect(err).To(HaveOccurred(),
+				"exhausted retries must preserve the backend failure")
 			Expect(managed).To(BeFalse())
 			finalCount := atomic.LoadInt32(&requestCount)
 			Expect(finalCount).To(BeNumerically(">", 1),
@@ -349,7 +349,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			})
 			elapsed := time.Since(start)
 
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred())
 			Expect(managed).To(BeFalse())
 			Expect(elapsed).To(BeNumerically("<", 1*time.Second),
 				"a short caller-provided context deadline must cut the retry loop short, not run to its own internal ceiling")

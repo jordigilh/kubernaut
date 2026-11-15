@@ -179,7 +179,7 @@ func buildFactsSection(notification *notificationv1alpha1.NotificationRequest) [
 		facts = append(facts, CardFact{Title: "Root Cause", Value: ctx.Analysis.RootCause})
 	}
 	if ctx.Workflow != nil && ctx.Workflow.Confidence != "" {
-		facts = append(facts, CardFact{Title: "Confidence", Value: ctx.Workflow.Confidence})
+		facts = append(facts, CardFact{Title: "Workflow confidence", Value: ctx.Workflow.Confidence})
 	}
 	if ctx.Target != nil && ctx.Target.TargetResource != "" {
 		facts = append(facts, CardFact{Title: "Affected Resource", Value: ctx.Target.TargetResource})

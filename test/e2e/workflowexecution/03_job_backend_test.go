@@ -74,7 +74,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WorkflowExecution with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for transition to Running (Job created)")
 			Eventually(func() string {
@@ -181,9 +181,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E test simulated Job failure",
-					},
+					}),
 				},
 			}
 
@@ -191,7 +192,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job WFE to fail")
 			Eventually(func() string {
@@ -274,9 +275,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E-WE-019-001 simulated OOM-kill",
-					},
+					}),
 				},
 			}
 
@@ -284,7 +286,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for the WFE to transition to Running (Job created)")
 			Eventually(func() string {
@@ -397,9 +399,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E-WE-019-002 genuine failure regression guard",
-					},
+					}),
 				},
 			}
 
@@ -407,7 +410,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for the WFE to reach Failed")
 			Eventually(func() string {
@@ -442,7 +445,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Verifying WFE tracks execution reference after Running")
 			Eventually(func() bool {
@@ -497,7 +500,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job creation (Running phase)")
 			Eventually(func() string {
@@ -591,7 +594,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with a known targetResource")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Job creation (Running phase)")
 			Eventually(func() string {
@@ -648,7 +651,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Running phase (Job created)")
 			Eventually(func() string {
@@ -742,7 +745,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}
 			wfe.Spec.WorkflowRef.WorkflowID = infrastructure.RegisteredWorkflowUUIDs["test-job-oomkill"]
 			wfe.Spec.WorkflowRef.ExecutionBundle = infrastructure.TestJobOomkillExecutionBundle
-			wfe.Spec.Parameters = map[string]string{"FAILURE_MESSAGE": "E2E-WE-2588 cancellation"}
+			wfe.Spec.Parameters = typedStringParameters(map[string]string{"FAILURE_MESSAGE": "E2E-WE-2588 cancellation"})
 			Expect(wfe.Spec.WorkflowRef.WorkflowID).NotTo(BeEmpty(), "OOM-kill workflow must be registered")
 			defer func() { _ = deleteWFE(wfe) }()
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -847,9 +850,10 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: map[string]string{
-				"MESSAGE": "E2E Job test message",
-			},
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"MESSAGE":         "E2E Job test message",
+			}),
 		},
 	}
 }

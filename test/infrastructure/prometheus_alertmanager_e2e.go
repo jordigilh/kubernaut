@@ -619,18 +619,35 @@ spec:
 // Routing: every alert is forwarded to Gateway's real webhook EXCEPT one
 // carrying label SkipGatewayRouteLabelKey=SkipGatewayRouteLabelValue, which
 // AlertManager instead routes to a null receiver (see route config below).
+type alertManagerManifestOptions struct {
+	tlsEnabled        bool
+	separateWebConfig bool
+	reloadSecretName  string
+}
+
 func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
-	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, false)
+	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, alertManagerManifestOptions{})
 }
 
 func DeployAlertManagerTLS(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
-	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, true)
+	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, alertManagerManifestOptions{tlsEnabled: true})
 }
 
-func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer, tlsEnabled bool) error {
+// DeployAlertManagerDemoTLS is the long-lived fleet demo variant. Its
+// cert-manager-managed TLS Secret is kept separate from the static web config,
+// and Reloader restarts the pod when the leaf Secret is renewed.
+func DeployAlertManagerDemoTLS(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+	return deployAlertManager(ctx, namespace, gatewayNamespace, kubeconfigPath, gatewayToken, writer, alertManagerManifestOptions{
+		tlsEnabled:        true,
+		separateWebConfig: true,
+		reloadSecretName:  monitoringTLSSecretName,
+	})
+}
+
+func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer, options alertManagerManifestOptions) error {
 	_, _ = fmt.Fprintf(writer, "  🔔 Deploying AlertManager in namespace %s...\n", namespace)
 
-	manifest := buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken, tlsEnabled)
+	manifest := buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayToken, options)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewBufferString(manifest)
@@ -640,7 +657,7 @@ func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
-	if tlsEnabled {
+	if options.tlsEnabled {
 		if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/alertmanager", "-n", namespace); err != nil {
 			return fmt.Errorf("restart TLS AlertManager after Secret update: %w", err)
 		}
@@ -657,17 +674,32 @@ func deployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 // uses gatewayNamespace and not namespace even when they differ (the fleet
 // case this bug was found in). See DeployAlertManager's doc comment for the
 // namespace/gatewayNamespace distinction.
+//
+//nolint:unparam // gatewayNamespace is intentionally retained to keep the manifest helper's namespace contract explicit; the demo topology always uses kubernaut-system for the gateway.
 func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string, tlsEnabled ...bool) string {
-	monitoringTLSArgs := ""
-	monitoringTLSMount := ""
-	monitoringTLSVolume := ""
-	monitoringProbeScheme := ""
-	gatewayWebhookURL := fmt.Sprintf("http://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
 	useTLS := true
 	if len(tlsEnabled) > 0 {
 		useTLS = tlsEnabled[0]
 	}
-	if useTLS {
+	return buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayToken, alertManagerManifestOptions{tlsEnabled: useTLS})
+}
+
+func buildDemoAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string) string {
+	return buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayToken, alertManagerManifestOptions{
+		tlsEnabled:        true,
+		separateWebConfig: true,
+		reloadSecretName:  monitoringTLSSecretName,
+	})
+}
+
+func buildAlertManagerManifestWithOptions(namespace, gatewayNamespace, gatewayToken string, options alertManagerManifestOptions) string {
+	monitoringTLSArgs := ""
+	monitoringTLSMount := ""
+	monitoringTLSVolume := ""
+	monitoringProbeScheme := ""
+	monitoringReloadAnnotation := ""
+	gatewayWebhookURL := fmt.Sprintf("http://gateway-service.%s.svc.cluster.local:8080/api/v1/signals/prometheus", gatewayNamespace)
+	if options.tlsEnabled {
 		monitoringTLSArgs = "\n        - \"--web.config.file=/etc/monitoring-tls/web-config.yml\""
 		monitoringTLSMount = `
         - name: monitoring-tls
@@ -678,6 +710,22 @@ func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string,
         secret:
           secretName: monitoring-tls`
 		monitoringProbeScheme = "\n             scheme: HTTPS"
+		if options.separateWebConfig {
+			monitoringTLSArgs = "\n        - \"--web.config.file=/etc/monitoring-web-config/web-config.yml\""
+			monitoringTLSMount += `
+        - name: monitoring-web-config
+          mountPath: /etc/monitoring-web-config
+          readOnly: true`
+			monitoringTLSVolume += `
+      - name: monitoring-web-config
+        secret:
+          secretName: monitoring-web-config`
+		}
+		if options.reloadSecretName != "" {
+			monitoringReloadAnnotation = `  annotations:
+    secret.reloader.stakater.com/reload: "` + options.reloadSecretName + `"
+`
+		}
 		// Operator-managed Gateway serves the application webhook on its
 		// dedicated HTTPS Service port 8443. Port 8080 is the legacy plaintext
 		// application-Helm endpoint and cannot carry the operator TLS listener.
@@ -739,7 +787,7 @@ metadata:
   namespace: %[1]s
   labels:
     app: alertmanager
-spec:
+%[10]sspec:
   replicas: 1
   selector:
     matchLabels:
@@ -812,7 +860,7 @@ spec:
     targetPort: 9093
     nodePort: %[3]d
     protocol: TCP
-`, namespace, AlertManagerImage, AlertManagerNodePort, gatewayNamespace, monitoringTLSArgs, monitoringTLSMount, monitoringTLSVolume, monitoringProbeScheme, gatewayWebhookURL)
+`, namespace, AlertManagerImage, AlertManagerNodePort, gatewayNamespace, monitoringTLSArgs, monitoringTLSMount, monitoringTLSVolume, monitoringProbeScheme, gatewayWebhookURL, monitoringReloadAnnotation)
 }
 
 // dumpNodePortAllocations lists every Service (all namespaces) with its

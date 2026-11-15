@@ -19,6 +19,7 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -133,6 +134,17 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			}
 		}
 
+		targetResourceName := strings.TrimPrefix(targetResource, "default/deployment/")
+		parameters, _, parameterErr := sharedtypes.TypedParameterMapFromValues(map[string]interface{}{
+			"TARGET_RESOURCE_NAME":      targetResourceName,
+			"TARGET_RESOURCE_KIND":      "Deployment",
+			"TARGET_RESOURCE_NAMESPACE": "default",
+			"CONFIGMAP_NAME":            infrastructure.CrashLoopAppConfigMapName,
+			"CONFIGMAP_KEY":             infrastructure.CrashLoopAppConfigKey,
+			"CONFIGMAP_VALUE":           infrastructure.CrashLoopAppGoodValue,
+		})
+		Expect(parameterErr).NotTo(HaveOccurred())
+
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: wfeName, Namespace: namespace},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -148,6 +160,7 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 					},
 				},
 				TargetResource: targetResource,
+				Parameters:     parameters,
 				ClusterID:      "remote-cluster",
 			},
 		}

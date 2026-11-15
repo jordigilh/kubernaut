@@ -121,15 +121,37 @@ var _ = Describe("Marshal RCA Subset — TP-1395-1396 (#1396)", func() {
 			Expect(projected).To(HaveKey("selected_workflow"))
 			Expect(projected["selected_workflow"]).NotTo(HaveKey("workflow_selection_confidence"))
 		})
+
+		It("UT-KA-2586-006: interactive event represents unknown and explicit zero independently (BR-AI-012, AU-3)", func() {
+			result := &katypes.InvestigationResult{WorkflowID: "selected", Confidence: .95}
+			var missing map[string]interface{}
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &missing)).To(Succeed())
+			Expect(missing).NotTo(HaveKey("confidence"))
+			zero := 0.0
+			result.RCAConfidence = &zero
+			var present map[string]interface{}
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &present)).To(Succeed())
+			Expect(present).To(HaveKeyWithValue("confidence", 0.0))
+		})
+
+		It("UT-KA-2586-034: legacy confidence does not create an RCA event score (BR-AI-012, AU-3)", func() {
+			result := &katypes.InvestigationResult{Confidence: .95, ConfidenceSet: true}
+			var payload map[string]interface{}
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &payload)).To(Succeed())
+			Expect(payload).NotTo(HaveKey("confidence"))
+		})
 	})
 
 	Describe("UT-KA-1396-004: marshalRCASubset produces valid JSON with bounded fields", func() {
 		It("should marshal severity, confidence, causal_chain, target, and metrics", func() {
+			confidence := 0.92
 			result := &katypes.InvestigationResult{
-				Severity:    "critical",
-				Confidence:  0.92,
-				CausalChain: []string{"Memory leak in data-processor", "Container hit 512Mi limit", "OOMKill signal"},
-				RCASummary:  "OOMKill caused by memory leak in worker pod",
+				Severity:      "critical",
+				Confidence:    0.92,
+				ConfidenceSet: true,
+				RCAConfidence: &confidence,
+				CausalChain:   []string{"Memory leak in data-processor", "Container hit 512Mi limit", "OOMKill signal"},
+				RCASummary:    "OOMKill caused by memory leak in worker pod",
 				RemediationTarget: katypes.RemediationTarget{
 					Kind:      "Deployment",
 					Name:      "data-processor",

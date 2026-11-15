@@ -192,6 +192,14 @@ type AgentSessionExistenceChecker interface {
 	AgentSessionExists(ctx context.Context, rrID string) (bool, error)
 }
 
+// runningSessionFinder reports whether KA has registered a running
+// investigation for a remediation request. It is intentionally narrower than
+// AutonomousSessionQuerier so completion guards can use the session.Manager
+// lookup without expanding the HTTPSessionCompleter contract.
+type runningSessionFinder interface {
+	FindByRemediationID(rrID string) (string, bool)
+}
+
 // MessageRateLimiter enforces per-session rate limits on tool messages.
 // Implemented by *mcp.SessionRateLimiter.
 type MessageRateLimiter interface {

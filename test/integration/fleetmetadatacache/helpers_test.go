@@ -61,7 +61,7 @@ func createMCPServerRegistration(ctx context.Context, name string) {
 	GinkgoHelper()
 	reg := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "mcp.kuadrant.io/v1alpha1",
+			"apiVersion": "mcp.kuadrant.io/v1",
 			"kind":       "MCPServerRegistration",
 			"metadata": map[string]interface{}{
 				"name":      name,
@@ -72,6 +72,12 @@ func createMCPServerRegistration(ctx context.Context, name string) {
 			},
 			"spec": map[string]interface{}{
 				"prefix": name + "_",
+				"targetRef": map[string]interface{}{
+					"group":     "gateway.networking.k8s.io",
+					"kind":      "HTTPRoute",
+					"name":      "kube-mcp-server-route",
+					"namespace": "default",
+				},
 			},
 		},
 	}

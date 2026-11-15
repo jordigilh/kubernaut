@@ -601,17 +601,28 @@ func mcpPOST(token, sessionID, jsonBody string) (body []byte, statusCode int, er
 }
 
 // parseMCPToolPayload extracts tool result text from a JSON-RPC MCP response.
-func parseMCPToolPayload(payload string) (text string, toolIsError bool, err error) {
+// The response must belong to the request identified by expectedRPCID.
+func parseMCPToolPayload(payload, expectedRPCID string) (text string, toolIsError bool, err error) {
 	var root map[string]interface{}
 	if err := json.Unmarshal([]byte(payload), &root); err != nil {
-		return "", false, fmt.Errorf("parse MCP JSON: %w", err)
+		return "", false, fmt.Errorf("parse mcp json: %w", err)
 	}
 	if e, ok := root["error"]; ok && e != nil {
 		return "", false, fmt.Errorf("json-rpc error: %v", e)
 	}
+	if _, ok := root["result"]; !ok {
+		return "", false, fmt.Errorf("mcp response missing result")
+	}
+	responseID, ok := root["id"].(string)
+	if !ok || responseID == "" {
+		return "", false, fmt.Errorf("mcp response missing request id")
+	}
+	if responseID != expectedRPCID {
+		return "", false, fmt.Errorf("mcp response id %q does not match request id %q", responseID, expectedRPCID)
+	}
 	res, ok := root["result"].(map[string]interface{})
 	if !ok {
-		return payload, false, nil
+		return "", false, fmt.Errorf("mcp response result is not an object")
 	}
 	toolIsError, _ = res["isError"].(bool)
 	text = extractMCPResultText(root)

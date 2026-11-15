@@ -419,11 +419,12 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 				RCAResult: &aianalysisv1.RCAResult{
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:   "restart-pod-v1",
-							WorkflowName: "restart-pod-v1",
+							WorkflowID:   trustedRestartWorkflowID,
+							WorkflowName: trustedRestartWorkflowName,
 							ActionType:   "RestartPod",
 						},
 						Confidence: 0.55,
+						Parameters: trustedTargetParameters(testNamespace, "test-app"),
 					},
 				},
 			}

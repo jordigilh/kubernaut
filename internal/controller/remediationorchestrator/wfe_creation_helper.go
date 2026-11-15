@@ -65,6 +65,9 @@ func CreateWFEAndTransition(
 	weName, created, err := cbs.CreateWFE(ctx, rr, ai)
 	if err != nil {
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
+		if isWorkflowVerificationError(err) {
+			return phase.Fail(remediationv1.FailurePhaseWorkflowExecution, err, "workflow verification failed"), nil
+		}
 		return phase.Requeue(config.RequeueGenericError, "WFE creation failed"), nil
 	}
 	logger.Info("Created WorkflowExecution CRD", "weName", weName)

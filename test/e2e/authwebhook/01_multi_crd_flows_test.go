@@ -124,6 +124,12 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 		Expect(wfe.Status.BlockClearance.ClearMethod).To(Equal("StatusField"))
 
 		By("Step 2: Create and approve RemediationApprovalRequest")
+		workflow := buildRemediationWorkflowCRD(testNamespace, "E2E approval attribution workflow")
+		Expect(k8sClient.Create(testCtx, workflow)).To(Succeed())
+		DeferCleanup(func() { deleteCRDAndWait(workflow.Name) })
+		workflow = waitForCRDStatus(workflow.Name)
+		parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"TARGET_RESOURCE":"default/pod/test-pod"}`))
+		Expect(err).NotTo(HaveOccurred())
 		rar = &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-multi-rar",
@@ -143,10 +149,22 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				ConfidenceLevel: "medium",
 				Reason:          "E2E test: Testing approval flow",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:      "test-workflow",
+					WorkflowID:      workflow.Status.WorkflowID,
 					Version:         "v1",
 					ExecutionBundle: "test/image:latest",
 					Rationale:       "Test remediation plan for E2E validation",
+				},
+				Workflow: &sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflow.Status.WorkflowID,
+					WorkflowName:    workflow.Name,
+					ActionType:      "RestartPod",
+					Version:         "v1",
+					ExecutionBundle: "test/image:latest",
+				},
+				Parameters:        parameters,
+				ParameterEvidence: evidence,
+				TargetContext: &remediationv1.ApprovalTargetContext{
+					SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "test-pod", Namespace: "default"},
 				},
 				// REQUIRED FIELDS (CRD validation)
 				InvestigationSummary: "E2E test investigation: Simulating approval request flow for SOC2 attribution verification",

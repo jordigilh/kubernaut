@@ -96,14 +96,15 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) *prodcontroller.Reconciler {
 	recorder := record.NewFakeRecorder(20)
 	return prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-		Client:        c,
-		APIReader:     apiReader,
-		Scheme:        scheme,
-		AuditStore:    nil,
-		Recorder:      recorder,
-		Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-		Timeouts:      newCharTimeouts(),
-		RoutingEngine: routingEngine,
+		Client:           c,
+		APIReader:        apiReader,
+		Scheme:           scheme,
+		AuditStore:       nil,
+		Recorder:         recorder,
+		Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		Timeouts:         newCharTimeouts(),
+		CatalogNamespace: defaultFixture,
+		RoutingEngine:    routingEngine,
 	})
 }
 
@@ -421,10 +422,11 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				remediationv1.PhaseAnalyzing, "sp-anz005", "ai-anz005", "")
 
 			ai := newAIAnalysisCompleted("ai-anz005", defaultFixture, "anz005", 0.95, "wf-test")
+			catalogWorkflow := verifiedWorkflowForSelection(ai.Status.GetRCAResult().SelectedWorkflow)
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, ai).
+				WithObjects(rr, ai, catalogWorkflow).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
@@ -490,15 +492,18 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(err.Error()).To(ContainSubstring("simulated API server failure"))
 		})
 
-		It("UT-RO-CHAR-APR-002: AIAnalysisRef nil after approval returns 5s requeue", func() {
+		It("UT-RO-CHAR-APR-002: BR-ORCH-025 approved snapshot executes without AIAnalysisRef", func() {
 			rr := newRemediationRequestWithChildRefs("apr002", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr002", "", "")
 
 			rar := newRemediationApprovalRequestApproved("rar-apr002", "apr002", "admin")
+			selected := &aianalysisv1.SelectedWorkflow{WorkflowSnapshot: *rar.Spec.Workflow, Parameters: rar.Spec.Parameters}
+			workflow := verifiedWorkflowForSelection(selected)
+			rar.Spec.Workflow = &selected.WorkflowSnapshot
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, rar).
+				WithObjects(rr, rar, workflow).
 				WithStatusSubresource(
 					&remediationv1.RemediationRequest{},
 					&remediationv1.RemediationApprovalRequest{},
@@ -512,13 +517,14 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5*time.Second),
-				"AIAnalysisRef nil should requeue at RequeueGenericError (5s)")
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
 			var finalRR remediationv1.RemediationRequest
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "apr002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
-			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval),
-				"should remain AwaitingApproval")
+			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting))
+			we := &workflowexecutionv1.WorkflowExecution{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "we-apr002", Namespace: defaultFixture}, we)).To(Succeed())
+			Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(rar.Spec.Workflow.WorkflowID))
 		})
 
 		It("UT-RO-CHAR-APR-003: WE create failure after approval returns 5s requeue and remains AwaitingApproval", func() {
@@ -527,10 +533,12 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 
 			rar := newRemediationApprovalRequestApproved("rar-apr003", "apr003", "admin")
 			ai := newAIAnalysisCompleted("ai-apr003", defaultFixture, "apr003", 0.95, "wf-test")
+			workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
+			rar.Spec.Workflow.WorkflowID = workflow.Status.WorkflowID
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(rr, rar, ai).
+				WithObjects(rr, rar, ai, workflow).
 				WithStatusSubresource(
 					&remediationv1.RemediationRequest{},
 					&remediationv1.RemediationApprovalRequest{},

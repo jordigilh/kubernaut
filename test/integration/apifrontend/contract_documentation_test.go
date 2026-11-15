@@ -61,7 +61,7 @@ var _ = Describe("API Frontend backend-incarnation documentation (#2614)", func(
 			Expect(content).To(ContainSubstring("X-Kubernaut-Backend-Incarnation"))
 			Expect(content).To(ContainSubstring("#2606"))
 		}
-		Expect(architecture).To(ContainSubstring("single AF replica"))
+		Expect(architecture).To(ContainSubstring("one AF replica"))
 		Expect(architecture).To(ContainSubstring("OAuth2 Proxy"))
 		Expect(boundary).To(ContainSubstring("POST /a2a/status"))
 		Expect(authentication).To(ContainSubstring("public health, readiness, metrics, agent-card"))

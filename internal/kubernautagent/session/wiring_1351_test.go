@@ -88,5 +88,24 @@ var _ = Describe("IT-KA-1351: Session wiring for user_driving guards", func() {
 			Expect(result.RCASummary).To(Equal("good RCA"),
 				"GetLatestRCAResultByRemediationID must filter cancelled sessions (KA-HIGH-5)")
 		})
+
+		It("IT-KA-2586-042: excludes cancelled partial RCA snapshots from user-driving sessions", func() {
+			store := session.NewStore(1 * time.Hour)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			store.SetMetadata(id, map[string]string{"remediation_id": "rr-partial-2586"})
+			partial := &katypes.InvestigationResult{
+				Cancelled:      true,
+				CancelledPhase: string(katypes.PhaseRCA),
+			}
+			Expect(store.Update(id, session.StatusUserDriving, partial, nil)).To(Succeed())
+
+			result, found := mgr.GetLatestRCAResultByRemediationID("rr-partial-2586")
+			Expect(found).To(BeFalse(),
+				"a cancelled partial RCA must not be reused for interactive workflow discovery")
+			Expect(result).To(BeNil())
+		})
 	})
 })

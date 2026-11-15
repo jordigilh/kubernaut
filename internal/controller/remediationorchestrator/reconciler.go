@@ -34,6 +34,8 @@ limitations under the License.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/finalizers,verbs=update
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationworkflows,verbs=get;list;watch
 package controller
 
 import (
@@ -52,6 +54,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -103,6 +106,11 @@ type Reconciler struct {
 	restMapper meta.RESTMapper
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
+
+	// CatalogNamespace is the trusted namespace containing admitted
+	// RemediationWorkflow objects. RO uses it for direct live identity/schema
+	// verification before creating approval or execution CRDs.
+	catalogNamespace string
 
 	// BR-FLEET-054: Fleet reader factory for remote cluster reads.
 	// nil = local-only mode (all reads go through apiReader).
@@ -156,6 +164,10 @@ type Reconciler struct {
 
 	// Issue #666: Phase Handler Registry for incremental handler extraction
 	phaseRegistry *phase.Registry
+
+	// Clock used for approval deadlines and expiry decisions. Production uses
+	// the real clock; tests inject a fixed clock for boundary coverage.
+	clock sharedclock.Clock
 }
 
 // TimeoutConfig holds all timeout configuration for the controller.
@@ -175,14 +187,16 @@ type TimeoutConfig struct {
 // separate from the variadic optional eaCreator argument. Extracted per
 // AGENTS.md's 8+-param Options-pattern rule.
 type ReconcilerDeps struct {
-	Client        client.Client
-	APIReader     client.Reader
-	Scheme        *runtime.Scheme
-	AuditStore    audit.AuditStore
-	Recorder      record.EventRecorder
-	Metrics       *metrics.Metrics
-	Timeouts      TimeoutConfig
-	RoutingEngine routing.Engine
+	Client           client.Client
+	APIReader        client.Reader
+	Scheme           *runtime.Scheme
+	CatalogNamespace string
+	AuditStore       audit.AuditStore
+	Recorder         record.EventRecorder
+	Metrics          *metrics.Metrics
+	Timeouts         TimeoutConfig
+	RoutingEngine    routing.Engine
+	Clock            sharedclock.Clock
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -203,6 +217,10 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 
 	// Set default timeouts if not specified (BR-ORCH-027/028)
 	applyTimeoutDefaults(&timeouts)
+	roClock := deps.Clock
+	if roClock == nil {
+		roClock = sharedclock.RealClock{}
+	}
 
 	nc := creator.NewNotificationCreator(c, s, m)
 
@@ -235,11 +253,14 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 		routingEngine:       routingEngine, // Use provided or default routing engine
 		Metrics:             m,
 		Recorder:            recorder,
-		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
-		apiReader:           apiReader,           // DD-EM-002: Uncached reader for pre-remediation hash
+		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+		apiReader:           apiReader,     // DD-EM-002: Uncached reader for pre-remediation hash
+		catalogNamespace:    deps.CatalogNamespace,
 		retentionPeriod:     24 * time.Hour,      // #265: Default CRD TTL
 		phaseRegistry:       phase.NewRegistry(), // Issue #666: Phase handler registry
+		clock:               roClock,
 	}
+	r.approvalCreator.SetClock(roClock)
 
 	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
 	if len(eaCreator) > 0 && eaCreator[0] != nil {
@@ -323,6 +344,9 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 	wfeCallbacks := WFECreationCallbacks{
 		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
 		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error) {
+			if err := r.verifySelectedWorkflowForExecution(ctx, ai); err != nil {
+				return "", false, err
+			}
 			return r.weCreator.CreateWithResult(ctx, rr, ai)
 		},
 	}
@@ -333,24 +357,28 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		IsWorkflowNotNeeded:     handler.IsWorkflowNotNeeded,
 		HandleWorkflowNotNeeded: r.aiAnalysisHandler.HandleAIAnalysisStatus,
 		CreateApproval: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
+			if err := r.verifySelectedWorkflowForExecution(ctx, ai); err != nil {
+				return "", err
+			}
 			return r.approvalCreator.Create(ctx, rr, ai)
 		},
-		HandleAIAnalysisStatus:         r.aiAnalysisHandler.HandleAIAnalysisStatus,
-		HandleRemediationTargetMissing: r.aiAnalysisHandler.HandleRemediationTargetMissing,
-		EmitApprovalRequestedAudit:     r.emitApprovalRequestedAudit,
-		RecordEvent:                    r.recordEvent,
-		FetchFreshRR:                   r.fetchFreshRR,
-		CheckPostAnalysisConditions:    r.routingEngine.CheckPostAnalysisConditions,
-		HandleBlocked:                  r.handleBlocked,
-		AcquireLock:                    r.acquireLock,
-		ReleaseLock:                    r.releaseLock,
-		CapturePreRemediationHash:      r.capturePreRemediationHashForCallback,
-		ResolveDualTargets:             resolveDualTargetsForCallback,
-		PersistPreHash:                 r.persistPreRemediationHash,
-		IsDryRun:                       r.isDryRun,
-		WFECallbacks:                   wfeCallbacks,
+		TransitionApprovalCreationFailure: r.transitionApprovalCreationFailure,
+		HandleAIAnalysisStatus:            r.aiAnalysisHandler.HandleAIAnalysisStatus,
+		HandleRemediationTargetMissing:    r.aiAnalysisHandler.HandleRemediationTargetMissing,
+		EmitApprovalRequestedAudit:        r.emitApprovalRequestedAudit,
+		RecordEvent:                       r.recordEvent,
+		FetchFreshRR:                      r.fetchFreshRR,
+		CheckPostAnalysisConditions:       r.routingEngine.CheckPostAnalysisConditions,
+		HandleBlocked:                     r.handleBlocked,
+		AcquireLock:                       r.acquireLock,
+		ReleaseLock:                       r.releaseLock,
+		CapturePreRemediationHash:         r.capturePreRemediationHashForCallback,
+		ResolveDualTargets:                resolveDualTargetsForCallback,
+		PersistPreHash:                    r.persistPreRemediationHash,
+		IsDryRun:                          r.isDryRun,
+		WFECallbacks:                      wfeCallbacks,
 	}))
-	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
+	awaitingApprovalHandler := NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
 		RecordEvent:               r.recordEvent,
 		UpdateRARConditions:       r.updateRARConditionsOnDecision,
 		ResolveWorkflow:           r.resolveWorkflowOverride,
@@ -365,7 +393,11 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		ExpireRAR:                 r.expireRARWithoutDecision,
 		UpdateRARTimeRemaining:    r.updateRARTimeRemaining,
 		WFECallbacks:              wfeCallbacks,
-	}))
+	})
+	awaitingApprovalHandler.SetAPIReader(r.apiReader)
+	awaitingApprovalHandler.SetCatalogNamespace(r.catalogNamespace)
+	awaitingApprovalHandler.SetClock(r.clock)
+	r.phaseRegistry.MustRegister(awaitingApprovalHandler)
 }
 
 // applyTimeoutDefaults populates zero-valued timeout fields with controller

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -90,9 +91,10 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 // DD-KA-2496: RCA and selection confidence remain separate. Neither an
 // explicit selected zero nor a missing selected score may borrow RCA's.
 func mergePhase1Confidence(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
-	rcaConfidence := p1.Confidence
-	result.RCAConfidence = &rcaConfidence
-	if result.WorkflowID == "" && result.ProposedWorkflowID == "" && result.WorkflowSelectionConfidence == nil && result.Confidence == 0 && p1.Confidence > 0 {
+	if result.RCAConfidence == nil {
+		result.RCAConfidence = p1.RCAConfidence
+	}
+	if result.WorkflowID == "" && result.ProposedWorkflowID == "" && result.WorkflowSelectionConfidence == nil && !result.ConfidenceSet && result.Confidence == 0 && p1.Confidence > 0 {
 		result.Confidence = p1.Confidence
 	}
 }
@@ -182,7 +184,7 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 //
 // Parity with the autonomous path at investigator.go L492-509:
 //   - Kind, Name, Namespace are always synced from a non-empty RCA target
-//   - APIVersion from RCA target is authoritative (overrides signal)
+//   - APIVersion from a validated RCA target is authoritative (overrides signal)
 //   - Stale GVK guard: when Kind changes but RCA has no apiVersion,
 //     the signal's apiVersion is cleared to prevent invalid combinations
 //     (e.g. "security.istio.io/v1/Deployment")
@@ -226,15 +228,18 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 		return
 	}
 	if rcaResult != nil {
-		rcaConfidence := rcaResult.Confidence
-		result.RCAConfidence = &rcaConfidence
+		// BR-AI-086: the Phase 1 RCA summary remains part of the final
+		// interactive result when Phase 3 only returns workflow-selection
+		// fields. This mirrors mergeAndFinalizeWorkflowResult's autonomous
+		// handoff and preserves corrected interactive extraction output.
+		if result.RCASummary == "" {
+			result.RCASummary = rcaResult.RCASummary
+		}
+		result.RCAConfidence = rcaResult.RCAConfidence
 	}
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
-	InjectRemediationTarget(result, signal, enrichData)
-	if result.RemediationTarget.APIVersion == "" && rcaResult != nil && rcaResult.RemediationTarget.APIVersion != "" {
-		result.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
-	}
+	injectFinalizedRemediationTarget(result, signal, rcaResult, enrichData)
 	// BR-AI-086 AC6 / IT-KA-1578-002: RCA reasoning is Phase-1-specific
 	// forensic metadata (mirrors mergeAndFinalizeWorkflowResult's autonomous
 	// path). Copied by reference, never fed back into a Phase 3 prompt.
@@ -242,6 +247,54 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 		result.Reasoning = rcaResult.Reasoning
 	}
 	InjectTargetResourceParameters(result)
+}
+
+// enforceVerifiedWorkflowTarget prevents a workflow selected before final
+// target enrichment from remaining executable when finalization changes or
+// invalidates the target identity (BR-KA-212, SI-10).
+func (inv *Investigator) enforceVerifiedWorkflowTarget(ctx context.Context, result *katypes.InvestigationResult) {
+	if result == nil || result.WorkflowID == "" || result.RemediationTarget.Kind == "" {
+		return
+	}
+	clusterID, _ := audit.ClusterIDFromContext(ctx)
+	correlationID, _ := audit.CorrelationIDFromContext(ctx)
+	if TargetAPIVersionValidationMatches(result, clusterID) {
+		return
+	}
+	ClearWorkflowSelectionFields(result)
+	result.HumanReviewNeeded = true
+	if result.HumanReviewReason == "" {
+		result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+	}
+	result.Warnings = append(result.Warnings,
+		"workflow selection cleared because the finalized remediation target lacks valid target-cluster GVK verification")
+	inv.logger.Info("workflow selection cleared after target provenance validation failed",
+		"correlation_id", correlationID,
+		"cluster_id", clusterID,
+		"target_kind", result.RemediationTarget.Kind,
+		"target_api_version", result.RemediationTarget.APIVersion)
+}
+
+// injectFinalizedRemediationTarget carries a validated RCA API version into
+// the finalization boundary without treating an arbitrary model value as
+// authoritative. Signal API versions are already server-owned; owner-chain
+// versions still take precedence inside InjectRemediationTarget.
+func injectFinalizedRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
+	validation := (*katypes.APIVersionValidation)(nil)
+	if rcaResult != nil && completeAPIVersionValidation(rcaResult) {
+		validation = cloneAPIVersionValidation(rcaResult.APIVersionValidation)
+		signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
+	}
+	InjectRemediationTarget(result, signal, enrichData)
+	clearTargetAPIVersionValidation(result)
+	if validation == nil {
+		return
+	}
+	result.RemediationTarget.APIVersionValidated = true
+	result.APIVersionValidation = validation
+	if !TargetAPIVersionValidationMatches(result, validation.ClusterID) {
+		clearTargetAPIVersionValidation(result)
+	}
 }
 
 // ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
@@ -434,6 +487,7 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 //
 // LLM target handling:
 //   - Kind == "" or same as root: override with K8s-verified root identity
+//     and authoritative apiVersion
 //   - Different Kind (cross-type): preserve the LLM's target
 func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
@@ -442,30 +496,33 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	rootKind := signal.ResourceKind
 	rootName := signal.ResourceName
 	rootNS := signal.Namespace
+	rootAPIVersion := signal.ResourceAPIVersion
 	if enrichData != nil && len(enrichData.OwnerChain) > 0 {
 		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
 		rootKind = root.Kind
 		rootName = root.Name
 		rootNS = root.Namespace
+		rootAPIVersion = root.APIVersion
 	} else if enrichData != nil && enrichData.ResourceKind != "" {
 		rootKind = enrichData.ResourceKind
 		rootName = enrichData.ResourceName
 		rootNS = enrichData.ResourceNamespace
+		// Enrichment source identity is authoritative for the target identity.
+		// When it carries no API version, retain only a server-owned signal
+		// version for the same resource; never retain the model's value.
+		rootAPIVersion = ""
+		if rootKind == signal.ResourceKind && rootName == signal.ResourceName && rootNS == signal.Namespace {
+			rootAPIVersion = signal.ResourceAPIVersion
+		}
 	}
 
 	llmKind := result.RemediationTarget.Kind
-	llmAPIVersion := result.RemediationTarget.APIVersion
 	if llmKind == "" || llmKind == rootKind {
-		// Same kind as root: preserve LLM's apiVersion (same kind = same API group). #1040
-		apiVersion := llmAPIVersion
-		if apiVersion == "" && enrichData != nil && len(enrichData.OwnerChain) > 0 {
-			apiVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
-		}
 		result.RemediationTarget = katypes.RemediationTarget{
 			Kind:       rootKind,
 			Name:       rootName,
 			Namespace:  rootNS,
-			APIVersion: apiVersion,
+			APIVersion: rootAPIVersion,
 		}
 		return
 	}
@@ -476,11 +533,6 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	// the LLM's target when its kind is genuinely cross-type (not in
 	// the owner chain at all, e.g. Node vs Deployment).
 	if enrichData != nil && isKindInOwnerChain(llmKind, signal.ResourceKind, enrichData.OwnerChain) {
-		// Use root owner's APIVersion from the chain if available. #1040
-		rootAPIVersion := ""
-		if len(enrichData.OwnerChain) > 0 {
-			rootAPIVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
-		}
 		result.RemediationTarget = katypes.RemediationTarget{
 			Kind:       rootKind,
 			Name:       rootName,
@@ -518,6 +570,8 @@ func InjectTargetResourceParameters(result *katypes.InvestigationResult) {
 	result.Parameters["TARGET_RESOURCE_NAMESPACE"] = result.RemediationTarget.Namespace
 	if result.RemediationTarget.APIVersion != "" {
 		result.Parameters["TARGET_RESOURCE_API_VERSION"] = result.RemediationTarget.APIVersion
+	} else {
+		delete(result.Parameters, "TARGET_RESOURCE_API_VERSION")
 	}
 }
 

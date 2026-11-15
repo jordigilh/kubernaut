@@ -58,7 +58,7 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 				"RCA schema must NOT include human_review_reason")
 		})
 
-		It("should require root_cause_analysis and confidence", func() {
+		It("UT-KA-2586-025: allows missing RCA confidence without making zero absent (BR-AI-012, SI-10)", func() {
 			schema := parser.RCAResultSchema()
 			var parsed map[string]interface{}
 			err := json.Unmarshal(schema, &parsed)
@@ -71,7 +71,12 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 				requiredStrings[i] = r.(string)
 			}
 			Expect(requiredStrings).To(ContainElement("root_cause_analysis"))
-			Expect(requiredStrings).To(ContainElement("confidence"))
+			Expect(requiredStrings).NotTo(ContainElement("confidence"))
+			props := parsed["properties"].(map[string]interface{})
+			confidence := props["confidence"].(map[string]interface{})
+			Expect(confidence["type"]).To(Equal("number"))
+			Expect(confidence["minimum"]).To(Equal(float64(0)))
+			Expect(confidence["maximum"]).To(Equal(float64(1)))
 		})
 	})
 

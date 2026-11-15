@@ -34,7 +34,11 @@ func oomkilledConfig() MockScenarioConfig {
 		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
 		Contributing: []string{"traffic_spike", "insufficient_memory_limits", "no_HPA_configured"},
 		Alternatives: []MockAlternativeWorkflow{
-			{WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"), Confidence: 0.60, Rationale: "Restart would temporarily resolve the OOM but doesn't address the underlying memory limit issue", Parameters: map[string]string{"REPLICA_COUNT": "3"}},
+			{WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"), Confidence: 0.60, Rationale: "Restart would temporarily resolve the OOM but doesn't address the underlying memory limit issue", Parameters: map[string]interface{}{
+				"NAMESPACE":     "production",
+				"POD_NAME":      "api-server",
+				"REPLICA_COUNT": int64(3),
+			}},
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),

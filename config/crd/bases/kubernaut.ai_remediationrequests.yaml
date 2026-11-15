@@ -316,6 +316,7 @@ spec:
                       - AIAnalysis
                       - Approval
                       - WorkflowExecution
+                      - EffectivenessAssessment
                       - Blocked
                       - Deduplicated
                     - enum:
@@ -324,6 +325,7 @@ spec:
                       - AIAnalysis
                       - Approval
                       - WorkflowExecution
+                      - EffectivenessAssessment
                       - Blocked
                       - Deduplicated
                     description: |-

@@ -55,6 +55,7 @@ type CompleteNoActionOutput struct {
 type CompleteNoActionTool struct {
 	sessions           mcpinternal.SessionManager
 	httpCompleter      HTTPSessionCompleter
+	agentSessionExists AgentSessionExistenceChecker
 	mutexProvider      SessionMutexProvider
 	timeoutTracker     TimeoutTracker
 	autoCloseTombstone AutoCloseTombstone
@@ -91,6 +92,19 @@ func WithCompleteNoActionHTTPCompleter(completer HTTPSessionCompleter) CompleteN
 	return func(t *CompleteNoActionTool) {
 		if completer != nil {
 			t.httpCompleter = completer
+		}
+	}
+}
+
+// WithCompleteNoActionAgentSessionExistenceChecker enables the bounded guard
+// that waits for KA to register an AgentSession created just before
+// complete_no_action. Without it, ForceCompleteByRemediationID can run before
+// the dispatcher creates the in-memory session and the late investigation can
+// overwrite the escalation result.
+func WithCompleteNoActionAgentSessionExistenceChecker(checker AgentSessionExistenceChecker) CompleteNoActionOption {
+	return func(t *CompleteNoActionTool) {
+		if checker != nil {
+			t.agentSessionExists = checker
 		}
 	}
 }
@@ -206,6 +220,12 @@ func buildNoActionResult(driver *mcpinternal.InteractiveSession, input CompleteN
 			RCASummary: "Investigation completed without workflow selection",
 		}
 	}
+	// A no-action completion is a terminal dismissal/escalation boundary, not
+	// workflow selection. The driver RCA may contain the Phase 3 recommendation;
+	// never carry that executable proposal into the completed result.
+	confidence := finalResult.Confidence
+	investigator.ClearWorkflowSelectionFields(finalResult)
+	finalResult.Confidence = confidence
 
 	if input.EscalationReason != "" {
 		finalResult.HumanReviewNeeded = true
@@ -258,6 +278,7 @@ func (t *CompleteNoActionTool) Handle(ctx context.Context, input CompleteNoActio
 		t.timeoutTracker.StopTracking(driver.SessionID)
 	}
 
+	t.waitForLateAgentSessionDispatch(ctx, input.RRID)
 	CompleteHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete_no_action")
 
 	// Release the MCP interactive lease.
@@ -278,4 +299,15 @@ func (t *CompleteNoActionTool) Handle(ctx context.Context, input CompleteNoActio
 		Reason:           input.Reason,
 		EscalationReason: input.EscalationReason,
 	}, nil
+}
+
+func (t *CompleteNoActionTool) waitForLateAgentSessionDispatch(ctx context.Context, rrID string) {
+	finder, ok := t.httpCompleter.(runningSessionFinder)
+	if !ok {
+		return
+	}
+	// Do not skip this guard when a fallback user-driving session already
+	// exists: the AgentSession for the same RR may still be created or claimed
+	// by KA, and CompleteHTTPSession deliberately resolves both siblings.
+	waitForAgentSessionDispatch(ctx, rrID, t.agentSessionExists, finder, t.logger, "complete_no_action", true)
 }

@@ -221,7 +221,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 					"severity": "critical",
 					"signal_name": "OOMKilled",
 					"contributing_factors": ["memory_leak", "connection_pool_exhaustion"],
-					"remediation_target": {"kind": "Deployment", "name": "payment-svc", "namespace": "production"}
+					"remediation_target": {"kind": "Deployment", "name": "payment-svc", "namespace": "production", "api_version": "apps/v1"}
 				}
 			}`
 			workflowJSON := `{
@@ -259,6 +259,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 				Logger:       logr.Discard(),
 				MaxTurns:     5,
 				ModelName:    "test-model",
+				Registry:     newGateDiscoveryRegistry(),
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)

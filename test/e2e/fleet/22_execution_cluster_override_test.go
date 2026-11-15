@@ -33,6 +33,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -169,7 +170,13 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 				types.WorkflowResourceDependency{Name: "e2e-2390-snapshot-secret"}))
 			g.Expect(owned.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
 			g.Expect(owned.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
-			g.Expect(owned.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{
+			live, err := workflowidentity.GetVerified(ctx, k8sClient, namespace, owned.Spec.WorkflowRef.WorkflowID)
+			g.Expect(err).NotTo(HaveOccurred())
+			declared := make(map[string]bool, len(live.Spec.Parameters))
+			for _, parameter := range live.Spec.Parameters {
+				declared[parameter.Name] = true
+			}
+			g.Expect(declared).To(Equal(map[string]bool{
 				"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
 				"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
 			}))

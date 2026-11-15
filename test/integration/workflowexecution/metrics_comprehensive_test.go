@@ -57,6 +57,13 @@ import (
 // - Business value: SRE observability, SLO tracking, failure rate monitoring
 
 var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Metrics fixture", "tekton") })
+	metricsWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := createUniqueWFE(testID, target)
+		wfe.Spec.WorkflowRef.WorkflowID = workflowID
+		return wfe
+	}
 	Context("BR-WE-008: Execution Total Counter", func() {
 		// ========================================
 		// Test 1: Completed Outcome Counter
@@ -69,7 +76,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Creating WorkflowExecution")
 			targetResource := "test-namespace/deployment/metrics-completed"
-			wfe := createUniqueWFE("metrics-completed", targetResource)
+			wfe := metricsWFE("metrics-completed", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -120,7 +127,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Creating WorkflowExecution")
 			targetResource := "test-namespace/deployment/metrics-failed"
-			wfe := createUniqueWFE("metrics-failed", targetResource)
+			wfe := metricsWFE("metrics-failed", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -167,7 +174,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 		It("should record execution duration in histogram for both success and failure", func() {
 			By("Test Case 1: Recording duration for successful completion")
 			targetResourceSuccess := "test-namespace/deployment/metrics-duration-success"
-			wfeSuccess := createUniqueWFE("metrics-duration-success", targetResourceSuccess)
+			wfeSuccess := metricsWFE("metrics-duration-success", targetResourceSuccess)
 			Expect(k8sClient.Create(ctx, wfeSuccess)).To(Succeed())
 
 			// Wait for Running state — controller sets StartTime
@@ -201,7 +208,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Test Case 2: Recording duration for failed execution")
 			targetResourceFailed := "test-namespace/deployment/metrics-duration-failed"
-			wfeFailed := createUniqueWFE("metrics-duration-failed", targetResourceFailed)
+			wfeFailed := metricsWFE("metrics-duration-failed", targetResourceFailed)
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
 			// Wait for PipelineRun creation
@@ -246,7 +253,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Creating workflow that transitions through lifecycle")
 			targetResource := "test-namespace/deployment/metrics-labels"
-			wfe := createUniqueWFE("metrics-labels", targetResource)
+			wfe := metricsWFE("metrics-labels", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -292,7 +299,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Creating successful workflow")
 			targetSuccess := "test-namespace/deployment/slo-success"
-			wfeSuccess := createUniqueWFE("slo-success", targetSuccess)
+			wfeSuccess := metricsWFE("slo-success", targetSuccess)
 			Expect(k8sClient.Create(ctx, wfeSuccess)).To(Succeed())
 
 			prSuccess, err := waitForPipelineRunCreation(wfeSuccess.Name, 10*time.Second)
@@ -310,7 +317,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			By("Creating failed workflow")
 			targetFailed := "test-namespace/deployment/slo-failed"
-			wfeFailed := createUniqueWFE("slo-failed", targetFailed)
+			wfeFailed := metricsWFE("slo-failed", targetFailed)
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
 			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, 10*time.Second)

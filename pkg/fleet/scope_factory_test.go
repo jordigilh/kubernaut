@@ -189,7 +189,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 		})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
 
 		Expect(gotAuthHeader).To(Equal("Bearer test-acm-token"),
 			"SC-7/IA-5: factory-composed ACM client must authenticate every request "+
@@ -198,10 +198,9 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 
 	// #1556 defense-in-depth: FleetConfig.Validate() hard-requires TokenPath for
 	// BackendACM (UT-FLEET-CFG-070), so this state is unreachable through normal
-	// config loading. This test locks in the factory's own fail-safe behavior
-	// for direct struct construction that bypasses Validate() (e.g. a future
-	// caller or test helper) — it must never send a partial/malformed
-	// Authorization header, only either a correct one or none at all.
+	// config loading. This test verifies the factory's direct-struct behavior when
+	// validation is bypassed: it must never send a partial/malformed Authorization
+	// header, only either a correct one or none at all.
 	It("UT-FLEET-FAC-009 [AC-4]: BackendACM without TokenPath (Validate bypassed) sends no Authorization header", func() {
 		var gotAuthHeader string
 		sawRequest := false
@@ -220,7 +219,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 		})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
 
 		Expect(sawRequest).To(BeTrue(), "request must still reach the ACM endpoint")
 		Expect(gotAuthHeader).To(BeEmpty(),
@@ -273,9 +272,8 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			// MITM rejection: a server presenting a cert NOT signed by the
 			// configured CA -- even though it returns the identical
 			// managed:true JSON body -- must be rejected at the TLS layer.
-			// Since IsManagedResource fails safe (swallows transport errors,
-			// UT-FMC-HC-003..005), a false result here can only be explained
-			// by the CA verification correctly rejecting the untrusted cert
+			// Since IsManagedResource preserves transport errors, the error here
+			// proves that CA verification rejected the untrusted certificate
 			// (the happy-path assertion above proves the JSON-decode path
 			// would otherwise return true for this exact body).
 			untrustedServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -297,7 +295,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			managedUntrusted, err := checkerUntrusted.IsManagedResource(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
-			Expect(err).ToNot(HaveOccurred(), "fail-safe: transport/cert errors must not propagate")
+			Expect(err).To(HaveOccurred(), "transport/cert errors must propagate")
 			Expect(managedUntrusted).To(BeFalse(),
 				"SC-8/IA-5: a server cert not signed by the configured CA must be rejected "+
 					"(MITM protection), even though the response body is identical to the trusted case")
@@ -370,7 +368,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 					"request with GW/RO's ServiceAccount bearer token")
 		})
 
-		It("IT-FLEET-1993-011 [IA-2,AC-3]: BackendFMC without a readable SA token never sends an unauthenticated request (fails safe)", func() {
+		It("IT-FLEET-1993-011 [IA-2,AC-3]: BackendFMC without a readable SA token returns an error and never sends an unauthenticated request", func() {
 			sawRequest := false
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				sawRequest = true
@@ -393,7 +391,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
-			Expect(err).ToNot(HaveOccurred(), "fail-safe: transport/auth errors must not propagate to the caller")
+			Expect(err).To(HaveOccurred(), "transport/auth errors must propagate to the caller")
 			Expect(managed).To(BeFalse(),
 				"IA-2/AC-3: a missing/unreadable SA token must fail safe to unmanaged, never fall back to an unauthenticated request")
 			Expect(sawRequest).To(BeFalse(),

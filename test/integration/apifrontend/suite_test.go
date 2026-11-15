@@ -39,6 +39,7 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
@@ -516,9 +517,10 @@ timeoutSeconds: 120
 		Name:  "apifrontend_ka_test",
 		Image: kaImageName,
 		Env: map[string]string{
-			"KUBECONFIG":    "/tmp/kubeconfig",
-			"POD_NAMESPACE": defaultFixture,
-			"TLS_CA_FILE":   "/etc/tls-ca/ca.crt",
+			"KUBECONFIG":                "/tmp/kubeconfig",
+			"POD_NAMESPACE":             defaultFixture,
+			"KUBERNAUT_AGENT_NAMESPACE": defaultFixture,
+			"TLS_CA_FILE":               "/etc/tls-ca/ca.crt",
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
@@ -578,6 +580,7 @@ timeoutSeconds: 120
 	scheme = runtime.NewScheme()
 	Expect(isv1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+	Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
 	Expect(eav1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())

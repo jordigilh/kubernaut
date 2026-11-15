@@ -28,6 +28,25 @@ import (
 )
 
 var _ = Describe("Response Builders", func() {
+	It("UT-MOCK-2570-001: default workflow fixture emits its required parameters (BR-KA-191)", func() {
+		scenario, found := scenarios.DefaultRegistry().Get("default")
+		Expect(found).To(BeTrue(), "the default fallback fixture must be registered")
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue(), "the default fallback fixture must expose its response config")
+
+		resp := response.BuildToolCallResponse(
+			"mock-model", openai.ToolSubmitResultWithWorkflow, configured.Config(),
+		)
+		var payload map[string]interface{}
+		Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &payload)).To(Succeed())
+		selected, ok := payload["selected_workflow"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		parameters, ok := selected["parameters"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "generic-restart-v1 must satisfy its catalog schema")
+		Expect(parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(parameters).To(HaveKeyWithValue("POD_NAME", "test-pod"))
+	})
+
 	It("UT-MOCK-2496-004: live AF fixture scopes an existing RR to the current user turn without inventing a selection (BR-KA-016)", func() {
 		registry := scenarios.DefaultRegistry()
 		for _, id := range []string{"rr-history-2496-one", "rr-history-2496-two"} {

@@ -35,6 +35,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ServiceName is the canonical service identifier for audit events.
@@ -612,11 +613,16 @@ type ApprovalData struct {
 // approval-related Build*Event builders (correlation, resource scoping, and
 // RAR identity). Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type ApprovalEventContext struct {
-	CorrelationID string
-	Namespace     string
-	RRName        string
-	ClusterID     string
-	RARName       string
+	CorrelationID      string
+	Namespace          string
+	RRName             string
+	ClusterID          string
+	RARName            string
+	WorkflowID         string
+	OriginalParameters sharedtypes.TypedParameterMap
+	OverrideParameters sharedtypes.TypedParameterMap
+	ParameterEvidence  string
+	OverrideRationale  *string
 }
 
 // BuildApprovalRequestedEvent builds an audit event for approval requested.
@@ -654,6 +660,16 @@ func (m *Manager) BuildApprovalRequestedEvent(
 		RequiredBy:    api.OptDateTime{Value: requiredBy, Set: true},
 		WorkflowID:    api.OptString{Value: workflowID, Set: true},
 		ConfidenceStr: api.OptString{Value: confidence, Set: true},
+	}
+	if evtCtx.OverrideParameters != nil {
+		values, err := audit.ToOgenParameterMap(evtCtx.OverrideParameters)
+		if err != nil {
+			return nil, fmt.Errorf("convert approval override parameters: %w", err)
+		}
+		payload.OverrideParameters = api.NewOptRemediationOrchestratorAuditPayloadOverrideParameters(api.RemediationOrchestratorAuditPayloadOverrideParameters(values))
+	}
+	if evtCtx.ParameterEvidence != "" {
+		payload.ParameterEvidence = api.NewOptString(evtCtx.ParameterEvidence)
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData(payload)
 
@@ -707,11 +723,62 @@ func (m *Manager) BuildApprovalDecisionEvent(
 		// Two-Event Pattern: DecidedBy is captured by AuthWebhook (webhook category event)
 		// Orchestration event focuses on WHAT/WHY (business context), not WHO (attribution)
 	}
+	if evtCtx.WorkflowID != "" {
+		payload.WorkflowID = api.NewOptString(evtCtx.WorkflowID)
+	}
+	if err := addApprovalDecisionParameters(&payload, evtCtx); err != nil {
+		return nil, err
+	}
+	if evtCtx.ParameterEvidence != "" {
+		payload.ParameterEvidence = api.NewOptString(evtCtx.ParameterEvidence)
+	}
+	if evtCtx.OverrideRationale != nil {
+		payload.OverrideRationale = api.NewOptString(*evtCtx.OverrideRationale)
+	}
 
 	// REFACTOR-RO-AUD-001: Use mapping discriminator wrapper (replaces switch statement)
 	event.EventData = mapping.DiscriminatorWrapper(payload)
 
 	return event, nil
+}
+
+func addApprovalDecisionParameters(payload *api.RemediationOrchestratorAuditPayload, evtCtx ApprovalEventContext) error {
+	if evtCtx.OriginalParameters != nil {
+		originalValues, err := audit.ToOgenParameterMap(evtCtx.OriginalParameters)
+		if err != nil {
+			return fmt.Errorf("convert original approval parameters: %w", err)
+		}
+		original := make(api.RemediationOrchestratorAuditPayloadOriginalParameters, len(evtCtx.OriginalParameters))
+		effective := make(api.RemediationOrchestratorAuditPayloadEffectiveParameters, len(evtCtx.OriginalParameters))
+		for name, value := range originalValues {
+			original[name] = value
+			effective[name] = value
+		}
+		if evtCtx.OverrideParameters != nil {
+			overrideValues, err := audit.ToOgenParameterMap(evtCtx.OverrideParameters)
+			if err != nil {
+				return fmt.Errorf("convert approval override parameters: %w", err)
+			}
+			for name, value := range overrideValues {
+				effective[name] = value
+			}
+		}
+		payload.OriginalParameters = api.NewOptRemediationOrchestratorAuditPayloadOriginalParameters(original)
+		payload.EffectiveParameters = api.NewOptRemediationOrchestratorAuditPayloadEffectiveParameters(effective)
+	}
+	if evtCtx.OverrideParameters == nil {
+		return nil
+	}
+	values, err := audit.ToOgenParameterMap(evtCtx.OverrideParameters)
+	if err != nil {
+		return fmt.Errorf("convert approval override parameters: %w", err)
+	}
+	changes := make(api.RemediationOrchestratorAuditPayloadOverrideParameters, len(evtCtx.OverrideParameters))
+	for name, value := range values {
+		changes[name] = value
+	}
+	payload.OverrideParameters = api.NewOptRemediationOrchestratorAuditPayloadOverrideParameters(changes)
+	return nil
 }
 
 // ManualReviewData is the event_data for manual review required events.

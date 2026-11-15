@@ -55,24 +55,25 @@ type DualTargetResult struct {
 //
 // Reference: Issue #666, TP-666-v1 §8.4
 type AnalyzingCallbacks struct {
-	AtomicStatusUpdate             func(ctx context.Context, rr *remediationv1.RemediationRequest, fn func() error) error
-	IsWorkflowNotNeeded            func(ai *aianalysisv1.AIAnalysis) bool
-	HandleWorkflowNotNeeded        func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
-	CreateApproval                 func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error)
-	HandleAIAnalysisStatus         func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
-	HandleRemediationTargetMissing func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
-	EmitApprovalRequestedAudit     func(ctx context.Context, rr *remediationv1.RemediationRequest, confidence float64, workflowID string)
-	RecordEvent                    func(rr *remediationv1.RemediationRequest, eventType string, reason string, message string)
-	FetchFreshRR                   func(ctx context.Context, key client.ObjectKey) (*remediationv1.RemediationRequest, error)
-	CheckPostAnalysisConditions    func(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID, targetResource, preHash, actionType, executionClusterID string) (*routing.BlockingCondition, error)
-	HandleBlocked                  func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
-	AcquireLock                    func(ctx context.Context, target string) (bool, error)
-	ReleaseLock                    func(ctx context.Context, target string) error
-	CapturePreRemediationHash      func(ctx context.Context, kind, name, namespace, clusterID string) (hash string, degradedReason string, err error)
-	ResolveDualTargets             func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
-	PersistPreHash                 func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
-	IsDryRun                       func() bool // #712, #736: returns true when dry-run mode is enabled
-	WFECallbacks                   WFECreationCallbacks
+	AtomicStatusUpdate                func(ctx context.Context, rr *remediationv1.RemediationRequest, fn func() error) error
+	IsWorkflowNotNeeded               func(ai *aianalysisv1.AIAnalysis) bool
+	HandleWorkflowNotNeeded           func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
+	CreateApproval                    func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error)
+	TransitionApprovalCreationFailure func(ctx context.Context, rr *remediationv1.RemediationRequest, creationErr *creator.ApprovalCreationError) (ctrl.Result, error)
+	HandleAIAnalysisStatus            func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
+	HandleRemediationTargetMissing    func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (ctrl.Result, error)
+	EmitApprovalRequestedAudit        func(ctx context.Context, rr *remediationv1.RemediationRequest, confidence float64, workflowID string)
+	RecordEvent                       func(rr *remediationv1.RemediationRequest, eventType string, reason string, message string)
+	FetchFreshRR                      func(ctx context.Context, key client.ObjectKey) (*remediationv1.RemediationRequest, error)
+	CheckPostAnalysisConditions       func(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID, targetResource, preHash, actionType, executionClusterID string) (*routing.BlockingCondition, error)
+	HandleBlocked                     func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
+	AcquireLock                       func(ctx context.Context, target string) (bool, error)
+	ReleaseLock                       func(ctx context.Context, target string) error
+	CapturePreRemediationHash         func(ctx context.Context, kind, name, namespace, clusterID string) (hash string, degradedReason string, err error)
+	ResolveDualTargets                func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
+	PersistPreHash                    func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
+	IsDryRun                          func() bool // #712, #736: returns true when dry-run mode is enabled
+	WFECallbacks                      WFECreationCallbacks
 }
 
 // AnalyzingHandler encapsulates the reconcile logic for the Analyzing phase.
@@ -188,7 +189,22 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 
 	rarName, err := h.callbacks.CreateApproval(ctx, rr, ai)
 	if err != nil {
+		var creationErr *creator.ApprovalCreationError
+		if errors.As(err, &creationErr) && h.callbacks.TransitionApprovalCreationFailure != nil {
+			result, transitionErr := h.callbacks.TransitionApprovalCreationFailure(ctx, rr, creationErr)
+			if transitionErr != nil {
+				return phase.TransitionIntent{}, transitionErr
+			}
+			logger.Error(creationErr.Err, "RAR creation reached a terminal safety outcome",
+				"outcome", creationErr.Outcome,
+				"reason", creationErr.ReasonCode,
+			)
+			return resultToIntent(result, "approval creation safety outcome"), nil
+		}
 		logger.Error(err, "Failed to create RemediationApprovalRequest")
+		if isWorkflowVerificationError(err) {
+			return phase.Fail(remediationv1.FailurePhaseApproval, err, "workflow verification failed"), nil
+		}
 		return phase.Requeue(config.RequeueGenericError, "RAR creation failed"), nil
 	}
 	logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
@@ -200,13 +216,12 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 				sw.Confidence*100, ai.Status.GetApproval().ApprovalReason))
 	}
 
+	oldPhase := rr.Status.OverallPhase
 	result, err := h.callbacks.HandleAIAnalysisStatus(ctx, rr, ai)
 	if err != nil {
 		return phase.TransitionIntent{}, err
 	}
 	_ = result
-
-	oldPhase := rr.Status.OverallPhase
 
 	intent := phase.Advance(phase.AwaitingApproval, "approval required")
 

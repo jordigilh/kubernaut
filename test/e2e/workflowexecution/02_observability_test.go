@@ -75,7 +75,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			}()
 
 			// Create WorkflowExecution
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Wait for completion (success or failure)
 			Eventually(func() bool {
@@ -134,7 +134,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			}()
 
 			// Create WorkflowExecution
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Wait for Running phase (PipelineRun created)
 			Eventually(func() string {
@@ -210,7 +210,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Wait for completion to generate metrics
 			Eventually(func() bool {
@@ -309,7 +309,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Wait for completion
 			Eventually(func() bool {
@@ -401,10 +401,10 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
-						"FAILURE_MODE":    "exit",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E metrics failure test",
-					},
+					}),
 				},
 			}
 
@@ -412,7 +412,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Wait for failure
 			Eventually(func() bool {
@@ -484,7 +484,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for workflow to complete")
 			Eventually(func() bool {
@@ -607,11 +607,10 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
-						// Per test/fixtures/tekton/failing-pipeline.yaml
-						"FAILURE_MODE":    "exit",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E audit failure validation",
-					},
+					}),
 				},
 			}
 
@@ -619,7 +618,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for Failed phase")
 			Eventually(func() string {
@@ -750,7 +749,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for workflow to complete")
 			Eventually(func() string {
@@ -923,7 +922,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			// Business Behavior: WFE should have ExecutionRef after Running
 			Eventually(func() bool {

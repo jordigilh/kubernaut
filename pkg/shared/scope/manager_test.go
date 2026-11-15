@@ -309,10 +309,8 @@ var _ = Describe("Scope Manager", func() {
 			Expect(managed).To(BeTrue(), "Invalid resource label should be ignored, inheriting from namespace")
 		})
 
-		// UT-SCOPE-001-016: Resource lookup non-NotFound error — graceful fallthrough (ADR-053)
-		// UPDATED: Non-NotFound resource errors now fall through to namespace check
-		// (previously propagated as error). This aligns with ADR-053 Decision #5.
-		It("UT-SCOPE-001-016: should fall through to namespace when resource lookup fails with non-NotFound error", func() {
+		// UT-SCOPE-001-016: Resource lookup non-NotFound error — fail closed.
+		It("UT-SCOPE-001-016: should return an error when resource lookup fails with non-NotFound error", func() {
 			ns := makeNamespace("error-ns", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
 			})
@@ -329,8 +327,8 @@ var _ = Describe("Scope Manager", func() {
 			}, ns, pod)
 
 			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "error-ns", Kind: "Pod", Name: "error-pod"})
-			Expect(err).ToNot(HaveOccurred(), "Non-NotFound resource error should gracefully fall through (ADR-053)")
-			Expect(managed).To(BeTrue(), "Should inherit from namespace when resource check fails")
+			Expect(err).To(HaveOccurred(), "Non-NotFound resource error must fail closed")
+			Expect(managed).To(BeFalse())
 		})
 
 		// UT-SCOPE-001-017: Namespace lookup non-NotFound error
@@ -387,8 +385,8 @@ var _ = Describe("Scope Manager", func() {
 			Expect(managed).To(BeTrue(), "Unknown kind should skip resource check and inherit from namespace")
 		})
 
-		// UT-SCOPE-001-020: Forbidden error on resource lookup — graceful fallthrough
-		It("UT-SCOPE-001-020: should fall through to namespace when resource lookup returns Forbidden", func() {
+		// UT-SCOPE-001-020: Forbidden error on resource lookup — fail closed.
+		It("UT-SCOPE-001-020: should return an error when resource lookup returns Forbidden", func() {
 			ns := makeNamespace("rbac-ns", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
 			})
@@ -407,8 +405,8 @@ var _ = Describe("Scope Manager", func() {
 			}, ns)
 
 			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "rbac-ns", Kind: "Pod", Name: "restricted-pod"})
-			Expect(err).ToNot(HaveOccurred(), "Forbidden error should NOT propagate — graceful fallthrough")
-			Expect(managed).To(BeTrue(), "Should inherit from namespace when resource check is Forbidden")
+			Expect(err).To(HaveOccurred(), "Forbidden error must fail closed")
+			Expect(managed).To(BeFalse())
 		})
 
 		// UT-SCOPE-001-021: "No matches for kind" error — graceful fallthrough

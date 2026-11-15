@@ -35,7 +35,18 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName string) {
+const (
+	// Autonomous completion keeps its historical turn identity so retries of
+	// the same autonomous investigation remain idempotent.
+	investigationCompletionAutonomousTurnID = "investigation:complete"
+	// Autonomous completion and interactive takeover are distinct logical
+	// terminal decisions even when they share a correlation and session. Keep
+	// their deterministic ledger identities separate per DD-KA-2520-2521 and
+	// DD-AUDIT-010 (#2586).
+	investigationCompletionInteractiveTurnID = "investigation:complete:interactive"
+)
+
+func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName, completionTurnID string) {
 	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
 	completeEvent.EventAction = audit.ActionResponseSent
 	completeEvent.EventOutcome = audit.OutcomeSuccess
@@ -48,7 +59,7 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 		CorrelationID:      correlationID,
 		Phase:              terminalDecisionPhase(result),
 		TurnKind:           investigationDecisionTurnTerminal,
-		TurnID:             "investigation:complete",
+		TurnID:             completionTurnID,
 		Model:              firstNonEmpty(modelName, inv.modelName),
 		Tokens:             tokens,
 		Result:             result,
@@ -377,17 +388,30 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		"confidence":         r.Confidence,
 		"needs_human_review": r.HumanReviewNeeded,
 	}
+	if r.RCAConfidence != nil {
+		m["rca_confidence"] = *r.RCAConfidence
+	}
 	applyWorkflowIdentityFields(m, r)
 	applySelectionAuditFields(m, r)
 	applyReviewReasonFields(m, r)
 	applyCollectionFields(m, r)
 
 	if r.RemediationTarget.Kind != "" {
-		m["remediation_target"] = map[string]interface{}{
-			"kind":      r.RemediationTarget.Kind,
-			"name":      r.RemediationTarget.Name,
-			"namespace": r.RemediationTarget.Namespace,
+		target := map[string]interface{}{
+			"kind":                  r.RemediationTarget.Kind,
+			"name":                  r.RemediationTarget.Name,
+			"namespace":             r.RemediationTarget.Namespace,
+			"api_version":           r.RemediationTarget.APIVersion,
+			"api_version_validated": r.RemediationTarget.APIVersionValidated,
 		}
+		if r.APIVersionValidation != nil {
+			target["api_version_validation"] = map[string]interface{}{
+				"cluster_id":  r.APIVersionValidation.ClusterID,
+				"api_version": r.APIVersionValidation.APIVersion,
+				"source":      r.APIVersionValidation.Source,
+			}
+		}
+		m["remediation_target"] = target
 	}
 	if len(r.AlternativeWorkflows) > 0 {
 		m["alternative_workflows"] = alternativeWorkflowsToAuditJSON(r.AlternativeWorkflows)

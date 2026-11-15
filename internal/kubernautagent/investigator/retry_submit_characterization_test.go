@@ -195,10 +195,19 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 	})
 
 	Describe("UT-KA-WAVE5-R04: retryRCASubmit — submit_result tool-call succeeds on the single retry attempt", func() {
-		It("parses the retry's tool-call arguments and returns the corrected result (maxRCAParseRetries=1)", func() {
+		It("parses the retry's tool-call arguments and preserves redacted reasoning plus tool-call state (maxRCAParseRetries=1)", func() {
 			mockClient := &scriptedMockClient{
 				steps: []scriptedStep{
-					{resp: llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: "not valid json at all"}}},
+					{resp: llm.ChatResponse{
+						Message: llm.Message{
+							Role:      "assistant",
+							Reasoning: &llm.ReasoningBlock{Signature: "opaque-replay-signature", Redacted: true},
+						},
+						ToolCalls: []llm.ToolCall{
+							{ID: "tc_rca_unexecuted", Name: "kubectl_describe", Arguments: `{}`},
+							{ID: "tc_rca_invalid", Name: "submit_result", Arguments: `{"rca_summary":"invalid","confidence":1.1}`},
+						},
+					}},
 					{resp: llm.ChatResponse{
 						Message:   llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{{ID: "tc_rca_retry", Name: "submit_result", Arguments: `{"rca_summary":"OOMKilled (corrected)","confidence":0.9}`}},
@@ -215,6 +224,35 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RCASummary).To(Equal("OOMKilled (corrected)"))
+			var replayedAssistant llm.Message
+			var foundAssistant bool
+			for _, message := range mockClient.calls[1].Messages {
+				if message.Role == "assistant" {
+					replayedAssistant = message
+					foundAssistant = true
+					break
+				}
+			}
+			Expect(foundAssistant).To(BeTrue(), "the correction request must replay the rejected assistant turn")
+			Expect(replayedAssistant.Reasoning).NotTo(BeNil())
+			Expect(replayedAssistant.Reasoning.Signature).To(Equal("opaque-replay-signature"))
+			Expect(replayedAssistant.Reasoning.Redacted).To(BeTrue())
+			Expect(replayedAssistant.ToolCalls).To(ConsistOf(
+				llm.ToolCall{ID: "tc_rca_unexecuted", Name: "kubectl_describe", Arguments: `{}`},
+				llm.ToolCall{ID: "tc_rca_invalid", Name: "submit_result", Arguments: `{"rca_summary":"invalid","confidence":1.1}`},
+			))
+			Expect(mockClient.calls[1].Messages).To(ContainElement(And(
+				HaveField("Role", Equal("tool")),
+				HaveField("ToolCallID", Equal("tc_rca_unexecuted")),
+				HaveField("ToolName", Equal("kubectl_describe")),
+				HaveField("Content", ContainSubstring("not executed")),
+			)))
+			Expect(mockClient.calls[1].Messages).To(ContainElement(And(
+				HaveField("Role", Equal("tool")),
+				HaveField("ToolCallID", Equal("tc_rca_invalid")),
+				HaveField("ToolName", Equal("submit_result")),
+				HaveField("Content", ContainSubstring("not executed")),
+			)))
 			Expect(mockClient.callIdx).To(Equal(2))
 		})
 	})

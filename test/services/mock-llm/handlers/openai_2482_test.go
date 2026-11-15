@@ -159,6 +159,50 @@ var _ = Describe("OpenAI-compatible provider tool-result contract — #2482", fu
 		Expect(final.Choices[0].Message.ToolCalls).To(HaveLen(1))
 		Expect(final.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolSubmitResultWithWorkflow))
 	})
+
+	It("IT-MOCK-2586-044 [BR-KA-017, BR-AI-086]: final discovery submit uses the configured workflow ID", func() {
+		registry := scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"gitops_drift_2390": {
+					ToolCall: &config.ToolCallOverride{
+						Name:      openai.ToolListAvailableActions,
+						Arguments: map[string]interface{}{"limit": 100},
+					},
+				},
+			},
+		})
+		scenario, found := registry.Get("gitops_drift_2390")
+		Expect(found).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		expectedWorkflowID := configured.Config().WorkflowID
+		server := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+		defer server.Close()
+
+		messages := []openai.Message{{Role: "user", Content: issue2482StringPtr("Signal Name: GitOpsDrift2390")}}
+		discoveryTools := issue2482DiscoveryTools()
+		for _, step := range []struct{ tool, result string }{
+			{openai.ToolListAvailableActions, `{"actions":[]}`},
+			{openai.ToolListWorkflows, `{"workflows":[{"workflow_id":"` + expectedWorkflowID + `"}]}`},
+			{openai.ToolGetWorkflow, `{"workflow_id":"` + expectedWorkflowID + `"}`},
+		} {
+			response := postIssue2482OpenAI(server.URL, openai.ChatCompletionRequest{Model: "mock-model", Messages: messages, Tools: discoveryTools})
+			Expect(response.Choices[0].Message.ToolCalls).To(HaveLen(1))
+			Expect(response.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(step.tool))
+			appendIssue2482ToolResult(&messages, response, step.result)
+		}
+
+		final := postIssue2482OpenAI(server.URL, openai.ChatCompletionRequest{Model: "mock-model", Messages: messages, Tools: discoveryTools})
+		Expect(final.Choices[0].Message.ToolCalls).To(HaveLen(1))
+		call := final.Choices[0].Message.ToolCalls[0]
+		Expect(call.Function.Name).To(Equal(openai.ToolSubmitResultWithWorkflow))
+
+		var payload map[string]interface{}
+		Expect(json.Unmarshal([]byte(call.Function.Arguments), &payload)).To(Succeed())
+		selected, ok := payload["selected_workflow"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(selected).To(HaveKeyWithValue("workflow_id", expectedWorkflowID))
+	})
 })
 
 func issue2482StringPtr(value string) *string {

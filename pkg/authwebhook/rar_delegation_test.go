@@ -19,11 +19,13 @@ package authwebhook_test
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -47,11 +49,11 @@ import (
 // Same model as AF-to-KA acting_user injection.
 
 const (
-	testAFSA        = "system:serviceaccount:kubernaut-system:apifrontend"
-	testHumanUser   = "alice@example.com"
-	testAttackerSA  = "system:serviceaccount:evil-ns:attacker"
-	testDirectUser  = "operator@kubernaut.ai"
-	testPodNS       = "kubernaut-system"
+	testAFSA       = "system:serviceaccount:kubernaut-system:apifrontend"
+	testHumanUser  = "alice@example.com"
+	testAttackerSA = "system:serviceaccount:evil-ns:attacker"
+	testDirectUser = "operator@kubernaut.ai"
+	testPodNS      = "kubernaut-system"
 )
 
 var _ = Describe("Trusted Intermediary Delegation (DD-AUTH-MCP-001 v3.0)", func() {
@@ -65,10 +67,11 @@ var _ = Describe("Trusted Intermediary Delegation (DD-AUTH-MCP-001 v3.0)", func(
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockStore = &MockAuditStore{}
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, nil, testPodNS)
 
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, completeSafetyWorkflowReader(scheme), testPodNS)
 		decoder = admission.NewDecoder(scheme)
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 	})
@@ -311,6 +314,7 @@ func handleApprovalWithDecidedVia(
 			AIAnalysisRef: remediationv1.ObjectRef{
 				Name: "aia-delegation",
 			},
+			RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{
 			Decision:        remediationv1.ApprovalDecision(decision),
@@ -320,6 +324,7 @@ func handleApprovalWithDecidedVia(
 		},
 	}
 
+	completeSafetySnapshot(&rar.Spec)
 	rawRAR, err := json.Marshal(rar)
 	Expect(err).NotTo(HaveOccurred())
 

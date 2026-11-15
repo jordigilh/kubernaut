@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -32,6 +33,21 @@ import (
 // JSON (PreserveUnknownFields), so this is a mapping-only change — no CRD
 // alteration. BR-KA-OBSERVABILITY-001, FedRAMP AU-3.
 var _ = Describe("AgentSession result call-level counts — #2387 Gap 1", func() {
+	It("UT-KA-2570-111: BR-KA-191 carries parameter constraints through AgentSession result", func() {
+		minimum := float64(1)
+		result := &katypes.InvestigationResult{WorkflowID: "wf-schema", ParameterSchema: []models.WorkflowParameter{{Name: "REPLICAS", Type: "integer", Required: true, Description: "count", Minimum: &minimum}}}
+		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), result, "incident-schema")
+		Expect(res.SelectedWorkflow).NotTo(BeNil())
+		Expect(res.SelectedWorkflow.Parameters).To(BeNil())
+		Expect(res.SelectedWorkflow.ParameterEvidence).To(BeEmpty())
+	})
+
+	It("UT-KA-2570-117: BR-KA-191 preserves an explicitly empty catalog schema", func() {
+		result := &katypes.InvestigationResult{WorkflowID: "wf-no-params", ParameterSchema: []models.WorkflowParameter{}}
+		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), result, "incident-schema-empty")
+		Expect(res.SelectedWorkflow.Parameters).To(BeNil())
+		Expect(res.SelectedWorkflow.ParameterEvidence).To(BeEmpty())
+	})
 
 	Describe("UT-KA-2387-011: mapping copies totals into rootCauseAnalysis when non-zero", func() {
 		It("emits total_llm_turns/total_tool_calls alongside the RCA narrative", func() {

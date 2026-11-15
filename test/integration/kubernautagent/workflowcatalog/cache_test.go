@@ -23,7 +23,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -98,8 +100,36 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 		Expect(schemeErr).ToNot(HaveOccurred())
 
 		var err error
-		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, logger)
+		wfCache, cacheCancel, err = workflowcatalog.NewInformerCache(k8sConfig, scheme, workflowCatalogNamespace, logger)
 		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache should build and sync against the shared envtest")
+	})
+
+	It("IT-KA-2598-001: scopes the workflow catalog cache to the controller namespace", func() {
+		outsideNamespace := uniqueName("it-2598-outside-ns")
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: outsideNamespace}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		insideName := uniqueName("it-2598-inside")
+		outsideName := uniqueName("it-2598-outside")
+		inside := validRW(insideName, "ScopedAction")
+		outside := validRW(outsideName, "ScopedAction")
+		outside.Namespace = outsideNamespace
+		Expect(k8sClient.Create(ctx, inside)).To(Succeed())
+		Expect(k8sClient.Create(ctx, outside)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, inside) })
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, outside) })
+
+		Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+			return wfCache.GetWorkflow(ctx, insideName)
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(),
+			"the controller namespace workflow must be visible through the scoped cache")
+
+		Consistently(func(g Gomega) {
+			got, err := wfCache.GetWorkflow(ctx, outsideName)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(BeNil(), "workflows outside the controller namespace must not enter the catalog cache")
+		}, 2*time.Second, 100*time.Millisecond).Should(Succeed())
 	})
 
 	AfterEach(func() {
@@ -123,6 +153,58 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 		}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "cache should observe the workflow via its informer")
 
 		Expect(got.Spec.ActionType).To(Equal("ScaleReplicas"))
+	})
+
+	It("IT-KA-2570-008: BR-WORKFLOW-006 selects workflows by ID through the Kubernetes API", func() {
+		first := validRW(uniqueName("it-2570-first"), "ScaleReplicas")
+		second := validRW(uniqueName("it-2570-second"), "ScaleReplicas")
+		Expect(k8sClient.Create(ctx, first)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, first))).To(Succeed()) })
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, second))).To(Succeed()) })
+
+		firstID := uniqueName("workflow-id-first")
+		secondID := uniqueName("workflow-id-second")
+		first.Status.WorkflowID = firstID
+		second.Status.WorkflowID = secondID
+		Expect(k8sClient.Status().Update(ctx, first)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, second)).To(Succeed())
+
+		var matches rwv1alpha1.RemediationWorkflowList
+		Expect(k8sClient.List(ctx, &matches, client.InNamespace("default"), client.MatchingFields{"status.workflowId": firstID})).To(Succeed())
+		Expect(matches.Items).To(HaveLen(1))
+		Expect(matches.Items[0].Name).To(Equal(first.Name))
+
+		var missing rwv1alpha1.RemediationWorkflowList
+		Expect(k8sClient.List(ctx, &missing, client.InNamespace("default"), client.MatchingFields{"status.workflowId": uniqueName("workflow-id-missing")})).To(Succeed())
+		Expect(missing.Items).To(BeEmpty())
+	})
+
+	It("IT-KA-2570-029: BR-WORKFLOW-006 excludes foreign-namespace workflows and action types", func() {
+		foreignNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: uniqueName("foreign-catalog")}}
+		Expect(k8sClient.Create(ctx, foreignNS)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, foreignNS))).To(Succeed()) })
+		trusted := validRW(uniqueName("trusted-catalog"), "ScaleReplicas")
+		foreign := validRW(uniqueName("foreign-catalog"), "ScaleReplicas")
+		foreign.Namespace = foreignNS.Name
+		foreignAT := validAT(uniqueName("foreign-action"), uniquePascalName("ForeignAction"))
+		foreignAT.Namespace = foreignNS.Name
+		Expect(k8sClient.Create(ctx, trusted)).To(Succeed())
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		Expect(k8sClient.Create(ctx, foreignAT)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, trusted))).To(Succeed()) })
+		Eventually(func() bool {
+			workflow, err := wfCache.GetWorkflow(ctx, trusted.Name)
+			Expect(err).NotTo(HaveOccurred())
+			return workflow != nil
+		}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+		Consistently(func() bool {
+			workflow, err := wfCache.GetWorkflow(ctx, foreign.Name)
+			Expect(err).NotTo(HaveOccurred())
+			action, err := wfCache.GetActionType(ctx, foreignAT.Spec.Name)
+			Expect(err).NotTo(HaveOccurred())
+			return workflow == nil && action == nil
+		}, 2*time.Second, 100*time.Millisecond).Should(BeTrue())
 	})
 
 	It("IT-KA-1677-CACHE-002: GetWorkflow returns (nil, nil) for a name that does not exist", func() {
@@ -260,7 +342,7 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 		By("constructing a brand new cache -- exactly what a replacement KA pod does on startup")
 		scheme, err := workflowcatalog.NewScheme()
 		Expect(err).ToNot(HaveOccurred())
-		restarted, restartedCancel, err := workflowcatalog.NewInformerCache(k8sConfig, scheme, logger)
+		restarted, restartedCancel, err := workflowcatalog.NewInformerCache(k8sConfig, scheme, workflowCatalogNamespace, logger)
 		Expect(err).ToNot(HaveOccurred(), "replacement cache must build and sync from etcd with no manual re-seeding step")
 		DeferCleanup(restartedCancel)
 

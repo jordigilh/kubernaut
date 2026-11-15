@@ -79,8 +79,9 @@ type ClassificationInput struct {
 // investigation/RCA response. Grouped out of PolicyInput (Go Anti-Pattern
 // Checklist "God struct" remediation, #247 follow-up).
 type KAResponseInput struct {
-	Confidence float64  `json:"confidence"`
-	Warnings   []string `json:"warnings,omitempty"`
+	Confidence    float64  `json:"confidence"`
+	RCAConfidence *float64 `json:"rca_confidence,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 
 	// FailedDetections (DD-WORKFLOW-001 v2.1)
 	FailedDetections []string `json:"failed_detections,omitempty"`
@@ -115,7 +116,7 @@ type PolicyInput struct {
 	RemediationTarget *RemediationTargetInput `json:"remediation_target,omitempty"`
 
 	// #225: Operator-configurable confidence threshold for auto-approval.
-	// When nil, the Rego policy uses its built-in default (0.8).
+	// When nil, the input key is omitted; user policy decides how to handle it.
 	// Stepping stone toward BR-AI-088 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `json:"confidence_threshold,omitempty"`
 
@@ -294,8 +295,9 @@ func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 		// Business classification (BR-SP-002)
 		"business_classification": input.Classification.BusinessClassification,
 		// KA response data
-		"confidence": input.KAResponse.Confidence,
-		"warnings":   input.KAResponse.Warnings,
+		"confidence":          input.KAResponse.Confidence,
+		"workflow_confidence": input.KAResponse.Confidence,
+		"warnings":            input.KAResponse.Warnings,
 		// ADR-055: Remediation target for granular per-kind policies
 		"remediation_target": input.RemediationTarget,
 		// FailedDetections
@@ -303,9 +305,12 @@ func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 		// #247: Catalog-authoritative action type for infrastructure-action gating
 		"action_type": input.ActionType,
 	}
+	if input.KAResponse.RCAConfidence != nil {
+		inputMap["rca_confidence"] = *input.KAResponse.RCAConfidence
+	}
 
 	// #225: Only include confidence_threshold when explicitly configured.
-	// Omitting it lets the Rego policy's default (0.8) apply.
+	// Omitting it leaves missing-threshold handling to the user policy.
 	if input.ConfidenceThreshold != nil {
 		inputMap["confidence_threshold"] = *input.ConfidenceThreshold
 	}

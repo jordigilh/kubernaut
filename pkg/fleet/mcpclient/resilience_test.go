@@ -19,9 +19,11 @@ package mcpclient_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,6 +39,13 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+)
+
+const (
+	mcpServerDiscoverMethod    = "server/discover"
+	mcpInitializeMethod        = "initialize"
+	mcpInitializedNotification = "notifications/initialized"
+	mcpCancelledNotification   = "notifications/cancelled"
 )
 
 // newFakeMCPServer starts an httptest.Server implementing just enough of the
@@ -82,16 +91,16 @@ func newFakeMCPServerWithDiscover(
 		_ = json.Unmarshal(body, &req)
 
 		switch req.Method {
-		case "server/discover":
+		case mcpServerDiscoverMethod:
 			if onDiscover != nil {
 				onDiscover(w, r, req.ID)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"method not found"}}`, req.ID)
-		case "notifications/initialized", "notifications/cancelled":
+		case mcpInitializedNotification, mcpCancelledNotification:
 			w.WriteHeader(http.StatusAccepted)
-		case "initialize":
+		case mcpInitializeMethod:
 			onInitialize(w, r, req.ID)
 		default:
 			w.WriteHeader(http.StatusNotImplemented)
@@ -525,6 +534,104 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 			rc, err := mcpclient.NewResilient(context.Background(), server.URL+"/mcp", cfg, logger)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rc.Ready()).To(BeTrue())
+		})
+	})
+
+	Context("UT-FLEET-RES-015 [CC7.2]: failed reconnects release transport resources", func() {
+		It("does not accumulate idle gateway connections across repeated failed MCP reconnects", func() {
+			var initializeAttempts atomic.Int32
+			var openConnections atomic.Int32
+
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet || r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				body, readErr := io.ReadAll(r.Body)
+				Expect(readErr).ToNot(HaveOccurred())
+				var request struct {
+					ID     json.RawMessage `json:"id"`
+					Method string          `json:"method"`
+				}
+				Expect(json.Unmarshal(body, &request)).To(Succeed())
+
+				switch request.Method {
+				case mcpServerDiscoverMethod:
+					w.WriteHeader(http.StatusServiceUnavailable)
+				case mcpInitializeMethod:
+					if initializeAttempts.Add(1) == 1 {
+						writeMCPInitializeResult(w, request.ID)
+						return
+					}
+					w.WriteHeader(http.StatusServiceUnavailable)
+				case mcpInitializedNotification, mcpCancelledNotification:
+					w.WriteHeader(http.StatusAccepted)
+				default:
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}
+			}))
+			server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				switch state {
+				case http.StateNew:
+					openConnections.Add(1)
+				case http.StateClosed:
+					openConnections.Add(-1)
+				}
+			}
+			certificate, caPEM := generateMCPGatewayCertificate()
+			server.TLS = &tls.Config{
+				Certificates: []tls.Certificate{certificate},
+				MinVersion:   tls.VersionTLS12,
+			}
+			server.StartTLS()
+			DeferCleanup(server.Close)
+
+			tmpDir, err := os.MkdirTemp("", "mcp-reconnect-resources-2612-")
+			Expect(err).ToNot(HaveOccurred())
+			caPath := filepath.Join(tmpDir, "gateway-ca.crt")
+			Expect(os.WriteFile(caPath, caPEM, 0o600)).To(Succeed())
+			DeferCleanup(func() { Expect(os.RemoveAll(tmpDir)).To(Succeed()) })
+			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("test-client"), 0o600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(tmpDir, "client-secret"), []byte("test-secret"), 0o600)).To(Succeed())
+
+			tokenServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, writeErr := io.WriteString(w, `{"access_token":"test-token","token_type":"Bearer","expires_in":3600}`)
+				Expect(writeErr).ToNot(HaveOccurred())
+			}))
+			tokenServer.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				switch state {
+				case http.StateNew:
+					openConnections.Add(1)
+				case http.StateClosed:
+					openConnections.Add(-1)
+				}
+			}
+			tokenServer.Start()
+			DeferCleanup(tokenServer.Close)
+
+			cfg := mcpclient.ConnectConfig{
+				Endpoint:            server.URL + "/mcp",
+				MCPGatewayTLSCAFile: caPath,
+				OAuth2: fleet.FleetOAuth2Config{
+					Enabled:  true,
+					TokenURL: tokenServer.URL,
+				},
+				CredentialsBasePath: tmpDir,
+				Resilience:          fastGatewayResilience(),
+			}
+			rc, err := mcpclient.Connect(context.Background(), cfg, logger)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rc.Ready()).To(BeTrue())
+			DeferCleanup(func() { Expect(rc.Close()).To(Succeed()) })
+
+			for i := 0; i < 8; i++ {
+				Expect(rc.Reconnect(context.Background())).To(HaveOccurred())
+			}
+
+			Eventually(openConnections.Load, 2*time.Second, 20*time.Millisecond).
+				Should(Equal(int32(0)), "failed reconnects must not leave idle gateway connections open")
 		})
 	})
 

@@ -96,12 +96,14 @@ type rcaLoopBudget struct {
 
 // SubmitResult is returned when the LLM calls the generic submit_result tool
 // in the RCA phase. Messages carries the paired conversation turns accumulated
-// before the sentinel call; the sentinel itself is intentionally not replayed.
+// before the sentinel call; ToolCalls preserves the provider response state
+// needed when a malformed RCA is corrected on the next turn.
 
 type SubmitResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
 	Messages  []llm.Message
+	ToolCalls []llm.ToolCall
 }
 
 func (*SubmitResult) loopResult() {}
@@ -181,20 +183,31 @@ func loopResultMessages(r LoopResult) []llm.Message {
 	}
 }
 
+// loopResultToolCalls extracts the provider tool-call batch associated with an
+// RCA submit sentinel. The general conversation history deliberately excludes
+// the unexecuted sentinel, but provider-specific reasoning state (for example
+// Gemini thought signatures) must replay alongside the original tool call on a
+// bounded parse correction retry.
+func loopResultToolCalls(r LoopResult) []llm.ToolCall {
+	if submitted, ok := r.(*SubmitResult); ok {
+		return submitted.ToolCalls
+	}
+	return nil
+}
+
 // sentinelResult maps a sentinel tool call to its LoopResult type, attaching
 // the reasoning block (if any) from the turn whose response produced tc, so
 // reasoning captured at the LLM-client layer (BR-AI-086 AC1-3) reaches the
 // InvestigationResult that gets built from the sentinel's Content. messages
 // is the history accumulated so far — i.e. every PRIOR, fully-paired
 // assistant(tool_use)/tool(tool_result) turn, NOT including the sentinel
-// call itself (tc). Deliberately excluding the sentinel call avoids ever
-// replaying a dangling, unpaired tool_use block to the LLM on a later
-// retry — the sentinel is consumed here, never executed as a real tool, so
-// it has no matching tool_result (#1935/#1936 root cause #2).
-func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
+// call itself (tc). The full tool-call batch is retained only on SubmitResult
+// so a provider-specific correction retry can replay required protocol state
+// without adding the unexecuted sentinel to general history.
+func sentinelResult(tc llm.ToolCall, toolCalls []llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
+		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages, ToolCalls: append([]llm.ToolCall(nil), toolCalls...)}
 	case SubmitResultWithWorkflowToolName:
 		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	case SubmitResultNoWorkflowToolName:
@@ -468,11 +481,11 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 }
 
 // RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
-// conversation and runs a single LLM call with only submit_result as the
-// available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
+// conversation and extracts RCA with submit_result, retrying malformed output
+// once via the standard RCA correction path. Returns RCA only, no workflow.
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
-	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
 		{
@@ -503,6 +516,9 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	if err != nil {
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
 	}
+	// Account for the initial call even if it needs correction.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 
 	var content string
 	if len(resp.ToolCalls) > 0 && resp.ToolCalls[0].Name == SubmitResultToolName {
@@ -511,18 +527,40 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 		content = resp.Message.Content
 	}
 
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
+	result, parseErr := inv.parseRCA(content)
+	if parseErr == nil {
+		result.Reasoning = toReasoningSummary(resp.Message.Reasoning)
 	}
-	// #2387: this single submit-only extraction call is one LLM turn with no
-	// real tool dispatches. Recorded into the per-RR scope (the single source
-	// of truth — results never pre-carry counts), so later legs accumulate on
-	// top without double-counting. Token usage likewise joins the cumulative
-	// per-RR scope; this leg carries no TokenAccumulator of its own.
-	inv.metricsFor(correlationID).IncLLMTurns()
-	inv.recordTokenUsage(correlationID, resp.Usage)
+	if parseErr != nil {
+		var retriedReasoning *llm.ReasoningBlock
+		result, retriedReasoning = inv.retryRCASubmit(ctx, content, resp.Message.Reasoning, resp.ToolCalls, messages, LLMInvocationContext{
+			CorrelationID: correlationID, Client: client, ModelName: modelName, RuntimeParams: runtimeParams,
+		})
+		if result == nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("RCA extraction correction: %w", ctx.Err())
+			}
+			return nil, fmt.Errorf("RCA extraction parse after correction: %w", parseErr)
+		}
+		result.Reasoning = toReasoningSummary(retriedReasoning)
+	}
+	clearParserDerivedRCAReview(result)
 	return result, nil
+}
+
+// clearParserDerivedRCAReview removes the parser's provisional review marker
+// when RCA extraction has not yet reached workflow discovery. The parser uses
+// investigation_inconclusive as a safe default for an RCA-only payload with no
+// workflow; an explicit LLM inconclusive outcome remains authoritative and is
+// not cleared.
+func clearParserDerivedRCAReview(result *katypes.InvestigationResult) {
+	if result == nil || !result.HumanReviewNeeded ||
+		result.HumanReviewReason != humanReviewReasonInvestigationInconclusive ||
+		result.InvestigationOutcome == "inconclusive" {
+		return
+	}
+	result.HumanReviewNeeded = false
+	result.HumanReviewReason = ""
 }
 
 // Investigate runs the two-invocation investigation and returns the result.
@@ -592,6 +630,9 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 	if merged.DueDiligence == nil {
 		merged.DueDiligence = previous.DueDiligence
 	}
+	if merged.Reasoning == nil {
+		merged.Reasoning = previous.Reasoning
+	}
 	if merged.RCAConfidence == nil {
 		merged.RCAConfidence = previous.RCAConfidence
 	}
@@ -614,10 +655,12 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 func mergeRCAContinuationTarget(previous, merged *katypes.InvestigationResult) {
 	if merged.RemediationTarget.Kind == "" && merged.RemediationTarget.Name == "" {
 		merged.RemediationTarget = previous.RemediationTarget
+		merged.APIVersionValidation = cloneAPIVersionValidation(previous.APIVersionValidation)
 		return
 	}
 	if merged.RemediationTarget.Kind != previous.RemediationTarget.Kind ||
 		merged.RemediationTarget.Name != previous.RemediationTarget.Name {
+		clearTargetAPIVersionValidation(merged)
 		return
 	}
 	if merged.RemediationTarget.Namespace == "" {
@@ -625,6 +668,19 @@ func mergeRCAContinuationTarget(previous, merged *katypes.InvestigationResult) {
 	}
 	if merged.RemediationTarget.APIVersion == "" {
 		merged.RemediationTarget.APIVersion = previous.RemediationTarget.APIVersion
+	}
+	if merged.RemediationTarget.APIVersion == previous.RemediationTarget.APIVersion &&
+		completeAPIVersionValidation(previous) &&
+		merged.RemediationTarget.Namespace == previous.RemediationTarget.Namespace {
+		// Preserve trusted provenance when a continuation repeats the same
+		// complete target identity without carrying the internal marker itself.
+		merged.RemediationTarget.APIVersionValidated = true
+		merged.APIVersionValidation = cloneAPIVersionValidation(previous.APIVersionValidation)
+	} else {
+		// A changed namespace, version, or incomplete source marker invalidates
+		// the prior cluster-scoped verification. The API-version gate must
+		// independently verify the new target before workflow selection.
+		clearTargetAPIVersionValidation(merged)
 	}
 }
 
@@ -638,6 +694,7 @@ func mergeRCAContinuationResult(previous, updated *katypes.InvestigationResult) 
 	merged := *updated
 	preserveRCAContinuationEvidence(previous, &merged)
 	mergeRCAContinuationTarget(previous, &merged)
+	merged.APIVersionValidation = cloneAPIVersionValidation(merged.APIVersionValidation)
 	return &merged
 }
 
@@ -680,9 +737,9 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 	if done {
 		return mergeRCAContinuationResult(result, finalized), messages, true, nil
 	}
-	updated, parseErr := inv.resultParser.Parse(content)
+	updated, parseErr := inv.parseRCA(content)
 	if parseErr != nil {
-		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, p.LLMContext); retried != nil {
+		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, reasoning, loopResultToolCalls(loopRes), messages, p.LLMContext); retried != nil {
 			updated = retried
 			reasoning = retriedReasoning
 			parseErr = nil
@@ -700,8 +757,8 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 		return result, messages, true, nil
 	}
 
-	updated = mergeRCAContinuationResult(result, updated)
 	updated.Reasoning = toReasoningSummary(reasoning)
+	updated = mergeRCAContinuationResult(result, updated)
 	applySignalSeverity(updated, p.Signal)
 	accepted := updated
 	updated = inv.sameKindValidationGate(ctx, updated, p.Signal, messages, p.LLMContext)
@@ -961,11 +1018,12 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	p1Ctx := BuildPhase1Context(p.RCAResult)
 
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, p.RCAResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
-		Tokens:        p.Tokens,
-		CorrelationID: p.CorrelationID,
-		Client:        wfClient,
-		ModelName:     wfModelName,
-		RuntimeParams: wfRuntimeParams,
+		Tokens:             p.Tokens,
+		CorrelationID:      p.CorrelationID,
+		Client:             wfClient,
+		ModelName:          wfModelName,
+		RuntimeParams:      wfRuntimeParams,
+		workflowEnrichment: enrichData,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
@@ -973,6 +1031,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	applyWorkflowDiscoveryTypedStatus(workflowResult, p.RCAResult, enrichData)
 
 	if workflowResult.Cancelled {
+		mergeCancelledWorkflowTarget(workflowResult, p.RCAResult)
 		applySignalSeverity(workflowResult, p.Signal)
 		workflowResult.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
 		// #2387: see the RCA-cancelled path above — partial counts apply here too.
@@ -985,7 +1044,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
 		WorkflowResult: workflowResult, RCAResult: p.RCAResult, Signal: p.Signal, WorkflowSignal: workflowSignal,
 		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: p.Tokens, CorrelationID: p.CorrelationID,
-		ModelName: wfModelName,
+		ModelName: wfModelName, Client: wfClient, RuntimeParams: wfRuntimeParams,
 	}), nil
 }
 
@@ -1061,7 +1120,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	})
 	applySignalSeverity(rcaResult, signal)
 	attachDetectedLabels(rcaResult, enrichData)
-	InjectRemediationTarget(rcaResult, signal, enrichData)
+	injectFinalizedRemediationTarget(rcaResult, signal, rcaResult, enrichData)
 	InjectTargetResourceParameters(rcaResult)
 	// #2387 (BR-KA-OBSERVABILITY-001): inject server-computed call-level
 	// counts before the result leaves KA — the LLM is never asked to supply
@@ -1071,7 +1130,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	// counts, never costs) so completed investigations report tokens exactly
 	// like cancelled ones already do via TokenUsage.
 	inv.setTokenUsageFromScope(rcaResult, correlationID)
-	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName, investigationCompletionAutonomousTurnID)
 	return rcaResult
 }
 
@@ -1202,7 +1261,7 @@ func (inv *Investigator) enrichWorkflowSignalForDiscovery(workflowSignal, signal
 	// When APIVersion is empty but the RCA changed the target kind, clear any
 	// stale ResourceAPIVersion to prevent an invalid GVK combination (old
 	// apiVersion + new kind).
-	if rcaResult.RemediationTarget.APIVersion != "" {
+	if rcaResult.RemediationTarget.APIVersionValidated && rcaResult.RemediationTarget.APIVersion != "" {
 		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 	} else if workflowSignal.ResourceKind != signal.ResourceKind {
 		workflowSignal.ResourceAPIVersion = ""
@@ -1237,6 +1296,8 @@ type mergeAndFinalizeWorkflowResultParams struct {
 	Tokens                    *TokenAccumulator
 	CorrelationID             string
 	ModelName                 string
+	Client                    llm.Client
+	RuntimeParams             llm.RuntimeParams
 }
 
 // mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
@@ -1279,20 +1340,34 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 
 	applySignalSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
-	// Issue #1044: propagate RCA-identified api_version to the workflow result
-	// when the workflow selection didn't produce one. The RCA gate ensures
-	// api_version is set for ambiguous kinds; this must survive through Phase 3.
-	if workflowResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.APIVersion != "" {
-		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
-	}
+	injectFinalizedRemediationTarget(workflowResult, workflowSignal, rcaResult, enrichData)
 	InjectTargetResourceParameters(workflowResult)
+	if rcaResult.RemediationTarget.Kind != "" {
+		workflowResult = inv.revalidateFinalizedWorkflowTarget(ctx, workflowResult, rcaResult, p.Client, p.RuntimeParams, correlationID)
+		inv.enforceVerifiedWorkflowTarget(ctx, workflowResult)
+	}
 	// #2387 (BR-KA-OBSERVABILITY-001): see finalizeAndEmitRCAOnlyResult —
 	// the full-path result gets the same server-side injection.
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
-	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName)
+	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName, investigationCompletionAutonomousTurnID)
 	return workflowResult
+}
+
+// mergeCancelledWorkflowTarget preserves the complete, server-validated
+// Phase-1 target when Phase 3 is cancelled before it can produce a result of
+// its own. Incomplete or mismatched provenance is deliberately not copied so
+// cancellation cannot weaken the fail-closed GVK gate at an interactive
+// handoff boundary.
+func mergeCancelledWorkflowTarget(workflowResult, rcaResult *katypes.InvestigationResult) {
+	if workflowResult == nil || rcaResult == nil || workflowResult.RemediationTarget.Kind != "" {
+		return
+	}
+	if !completeAPIVersionValidation(rcaResult) {
+		return
+	}
+	workflowResult.RemediationTarget = rcaResult.RemediationTarget
+	workflowResult.APIVersionValidation = cloneAPIVersionValidation(rcaResult.APIVersionValidation)
 }
 
 func deletedResourceWarning(kind, name, ns string) string {
@@ -1410,6 +1485,11 @@ type LLMInvocationContext struct {
 	RepeatSelection   *parser.RepeatSelectionContext
 	decisionLoopID    string
 	rcaBudget         *rcaLoopBudget
+	// workflowEnrichment carries the authoritative target enrichment into
+	// Phase 3 validation. Managed TARGET_RESOURCE_* parameters must be present
+	// before dependency checks run, not only during finalization.
+	workflowEnrichment *enrichment.EnrichmentResult
+	workflowSignal     katypes.SignalContext
 }
 
 // workflowDiscoveryAuditContext is the safe provenance summary persisted on

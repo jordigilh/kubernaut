@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -48,6 +49,8 @@ var (
 	ctx       context.Context
 	cancelCtx context.CancelFunc
 )
+
+const workflowCatalogNamespace = "default"
 
 func TestWorkflowCatalogIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -75,6 +78,7 @@ var _ = BeforeSuite(func() {
 
 	scheme, err := workflowcatalog.NewScheme()
 	Expect(err).ToNot(HaveOccurred(), "workflowcatalog scheme should register RemediationWorkflow/ActionType")
+	Expect(corev1.AddToScheme(scheme)).To(Succeed(), "workflowcatalog integration tests need Namespace fixtures")
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")

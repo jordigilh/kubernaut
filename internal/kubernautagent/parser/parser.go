@@ -17,7 +17,10 @@ limitations under the License.
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/go-logr/logr"
 
@@ -47,24 +50,36 @@ func NewResultParser(logger ...logr.Logger) *ResultParser {
 //     produced when structured output is unavailable (e.g. Vertex AI)
 //  3. JSON embedded in markdown code blocks or prose
 func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, error) {
+	return p.parse(content, false)
+}
+
+// ParseRCA rejects malformed top-level confidence instead of treating it as absent.
+func (p *ResultParser) ParseRCA(content string) (*katypes.InvestigationResult, error) {
+	return p.parse(content, true)
+}
+
+func (p *ResultParser) parse(content string, strictRCA bool) (*katypes.InvestigationResult, error) {
 	if content == "" {
 		return nil, &ErrEmptyContent{}
 	}
 
 	jsonStr := extractJSON(content)
+	if strictRCA && hasNullRCAConfidence(content, jsonStr) {
+		return nil, errors.New("rca confidence must be a number when present")
+	}
 	if jsonStr != "" {
-		if parsed := p.parseFlatResult(coerceKnownFields(jsonStr)); parsed != nil {
+		if parsed := p.parseFlatResult(coerceKnownFields(jsonStr, strictRCA)); parsed != nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 
-		if parsed, err := parseLLMFormat(jsonStr, p.logger); err == nil {
+		if parsed, err := parseLLMFormat(jsonStr, p.logger, strictRCA); err == nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 	}
 
-	if parsed, err := parseSectionHeaders(content, p.logger); err == nil {
+	if parsed, err := parseSectionHeaders(content, p.logger, strictRCA); err == nil {
 		applyOutcomeRouting(parsed)
 		return parsed, nil
 	}
@@ -75,6 +90,25 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 	return nil, &ErrNoRecognizedFields{Raw: jsonStr}
 }
 
+// hasNullRCAConfidence distinguishes an explicitly null score from omission
+// before JSON decoding collapses both into the same nil pointer.
+func hasNullRCAConfidence(content, jsonStr string) bool {
+	const jsonNull = "null"
+	if section, ok := extractSections(content)["confidence"]; ok && strings.TrimSpace(section) == jsonNull {
+		return true
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(jsonStr), &fields) != nil {
+		return false
+	}
+	for key, value := range fields {
+		if strings.EqualFold(key, "confidence") && bytes.Equal(bytes.TrimSpace(value), []byte(jsonNull)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Flat intake owns its provenance clearing/coercion. Nested and section-header
 // fallbacks remain in Parse and retain the same priority and outcome routing.
 func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationResult {
@@ -83,7 +117,23 @@ func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationRes
 	if err := json.Unmarshal([]byte(coerced), &intake); err != nil || (result.RCASummary == "" && result.WorkflowID == "") {
 		return nil
 	}
+	var raw struct {
+		Parameters json.RawMessage `json:"parameters"`
+	}
+	if err := json.Unmarshal([]byte(coerced), &raw); err != nil {
+		p.logger.Error(err, "Failed to decode workflow parameter envelope")
+		return nil
+	}
+	if len(raw.Parameters) > 0 {
+		decoder := json.NewDecoder(bytes.NewReader(raw.Parameters))
+		decoder.UseNumber()
+		if err := decoder.Decode(&result.Parameters); err != nil {
+			p.logger.Error(err, "Failed to preserve workflow parameter values")
+			return nil
+		}
+	}
 	clearModelSelectionMetadata(&result)
+	result.ParsedTopLevelConfidence = intake.Confidence
 	if intake.Confidence != nil {
 		result.Confidence = *intake.Confidence
 		result.ConfidenceSet = true

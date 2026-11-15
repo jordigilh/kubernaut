@@ -34,13 +34,18 @@ Two interchangeable gateway options sit in the same slot:
 
 | Gateway | Status | Broker component | Registration CRD |
 |---|---|---|---|
-| **Kuadrant MCP Gateway** | Fully automated (`make test-e2e-fleetmetadatacache-kuadrant`) | `mcp-gateway-controller` + `mcp-gateway` (broker) Deployments | `MCPServerRegistration` (`mcp.kuadrant.io/v1alpha1`) |
+| **Kuadrant MCP Gateway** | Fully automated (`make test-e2e-fleetmetadatacache-kuadrant`) | `mcp-gateway-controller` + `mcp-gateway` (broker) Deployments | `MCPServerRegistration` (`mcp.kuadrant.io/v1`) |
 | **Envoy AI Gateway (EAIGW)** | Fully automated (`make test-e2e-fleetmetadatacache-eaigw`, Spike S18) | None — `MCPRoute.spec.backendRefs` aggregates natively | `Backend` (`gateway.envoyproxy.io/v1alpha1`) + `MCPRoute` (`aigateway.envoyproxy.io/v1beta1`) |
 
 Both variants reuse the **same Keycloak realm** and the **same kube-mcp-server
 passthrough+STS token-exchange config** — the RFC 8693 exchange lives inside
 kube-mcp-server itself, not in the gateway (see "Key design decision" in the
 EAIGW plan doc). Only the edge auth/routing layer differs.
+
+The Kuadrant lane pins MCP Gateway `v0.8.0`, whose CRDs serve
+`mcp.kuadrant.io/v1`. Kubernaut does not fall back to v1alpha1; use the
+[#2594 migration note](../../issues/2594-kuadrant-mcpserverregistration-v1-migration.md)
+when upgrading an older installation.
 
 ---
 
@@ -402,8 +407,8 @@ spec:
 EOF
 
 # Kuadrant controller + broker (creates its own mcp-gateway Deployment)
-kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
-kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
+kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
+kubectl apply -k "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
 
 kubectl apply -f - <<'EOF'
 apiVersion: gateway.networking.k8s.io/v1beta1
@@ -444,7 +449,7 @@ spec:
   parentRefs: [{name: mcp-gateway, namespace: gateway-system, sectionName: mcp}]
   rules: [{backendRefs: [{name: kube-mcp-server, port: 8080}]}]
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata: {name: loopback-cluster, labels: {kubernaut.ai/managed: "true"}}
 spec:

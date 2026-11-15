@@ -20,16 +20,15 @@ updates:
       - dependency-name: "sigs.k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # Tekton v1.17+ requires Go 1.27; keep the main branch on the
-      # Go 1.26.10 security floor until the v1.6.0 toolchain migration.
+      # Go 1.26.11 security floor until the v1.6.0 toolchain migration.
       - dependency-name: "github.com/tektoncd/pipeline"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
       # fixes it. Remove this ignore rule once a fixed release is out.
       - dependency-name: "google.golang.org/adk/v2"
         versions: [">= 2.1.0"]
-      # Same google/adk-go#1356 regression, v1 module line (no "/v2" suffix
-      # -- only an indirect dep on main today, but pinned here too for
-      # symmetry with release/v1.5's direct dep on this module below).
+      # Same google/adk-go#1356 regression on the v1 module line (no "/v2"
+      # suffix). Keep it pinned until upstream fixes it.
       - dependency-name: "google.golang.org/adk"
         versions: [">= 1.6.0"]
     groups:
@@ -72,97 +71,6 @@ updates:
       - docker
     commit-message:
       prefix: "docker"
-    groups:
-      all-docker:
-        patterns:
-          - "*"
-
-  # ============================================================
-  # release/v1.5 (active maintenance branch)
-  #
-  # Dependabot's `target-branch` does not support wildcards/globs
-  # (https://github.com/dependabot/dependabot-core/issues/6890 -- still
-  # open), so each actively maintained release/* branch needs its own
-  # explicit block per ecosystem; it cannot be expressed as a single
-  # `release/**` pattern like the CI workflows use. Also note: any
-  # ecosystem block with a non-default target-branch is excluded from
-  # Dependabot's security-update PRs -- those always target the default
-  # branch (main) regardless of this config.
-  #
-  # Process: see "Dependabot on Maintenance Branches" in
-  # docs/development/release/RELEASE_GUIDE.md for adding/removing these
-  # blocks as release branches are cut/retired.
-  # ============================================================
-  - package-ecosystem: gomod
-    target-branch: release/v1.5
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - security
-    commit-message:
-      prefix: "deps(v1.5)"
-    ignore:
-      - dependency-name: "k8s.io/*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "sigs.k8s.io/*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      # Tekton v1.17+ requires Go 1.27; keep the maintenance branch on its
-      # patched Go 1.26 toolchain until the v1.6.0 toolchain migration.
-      - dependency-name: "github.com/tektoncd/pipeline"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
-      # fixes it. Remove this ignore rule once a fixed release is out.
-      - dependency-name: "google.golang.org/adk/v2"
-        versions: [">= 2.1.0"]
-      # release/v1.5 predates the v2 module migration and still depends
-      # directly on the v1 line, which carries the same google/adk-go#1356
-      # regression starting v1.6.0 (confirmed clean on v1.5.1 -- see
-      # google/adk-go#1354's repro). Caught when PR #2179 tried to bump
-      # straight into the regressed version.
-      - dependency-name: "google.golang.org/adk"
-        versions: [">= 1.6.0"]
-    groups:
-      all-go-deps:
-        patterns:
-          - "*"
-
-  - package-ecosystem: github-actions
-    target-branch: release/v1.5
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - ci
-    commit-message:
-      prefix: "ci(v1.5)"
-    groups:
-      all-actions:
-        patterns:
-          - "*"
-
-  - package-ecosystem: docker
-    target-branch: release/v1.5
-    directories:
-      - "/docker"
-      - "/cmd/**"
-      - "/test/**"
-      - "/docs/architecture/spikes/**"
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - docker
-    commit-message:
-      prefix: "docker(v1.5)"
     groups:
       all-docker:
         patterns:

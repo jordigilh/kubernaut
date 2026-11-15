@@ -64,7 +64,7 @@ var _ = Describe("IT-KA-1826-001: confidence bands wired from investigator.Confi
 		rcaResult := &katypes.InvestigationResult{
 			RCASummary: "root cause identified",
 			RemediationTarget: katypes.RemediationTarget{
-				Kind: "Pod", Name: "web-pod", Namespace: "default",
+				Kind: "Pod", Name: "web-pod", Namespace: "default", APIVersion: "v1",
 			},
 		}
 

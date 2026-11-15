@@ -45,6 +45,53 @@ const (
 )
 
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
+	DescribeTable("UT-KA-2586-030: KA durable completion audits preserve independent confidence presence (BR-AUDIT-005, AU-3, CC7.2)",
+		func(eventType string, score *float64) {
+			workflow := 0.95
+			result := &katypes.InvestigationResult{RCASummary: "RCA", Severity: "high", Confidence: workflow, RCAConfidence: score, WorkflowID: "workflow", WorkflowName: "workflow", WorkflowSelectionConfidence: &workflow}
+			if eventType == audit.EventTypeRCAComplete {
+				result.WorkflowID, result.WorkflowName, result.WorkflowSelectionConfidence = "", "", nil
+				result.Confidence = 0
+				if score != nil {
+					result.Confidence = *score
+				}
+			}
+			raw, err := json.Marshal(investigator.ResultToAuditJSON(result))
+			Expect(err).NotTo(HaveOccurred())
+			event := audit.NewEvent(eventType, "rr-audit-2586")
+			event.EventAction, event.EventOutcome = audit.ActionResponseSent, audit.OutcomeSuccess
+			event.Data["response_data"] = string(raw)
+			recorder := &fakeOgenClient{}
+			Expect(audit.NewDSAuditStore(recorder).StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(recorder.calls).To(HaveLen(1))
+			payload, err := json.Marshal(recorder.calls[0].EventData)
+			Expect(err).NotTo(HaveOccurred())
+			var body struct {
+				Response map[string]json.RawMessage `json:"response_data"`
+			}
+			Expect(json.Unmarshal(payload, &body)).To(Succeed())
+			if score == nil {
+				Expect(body.Response).NotTo(HaveKey("rca_confidence"))
+			} else {
+				var actual float64
+				Expect(json.Unmarshal(body.Response["rca_confidence"], &actual)).To(Succeed())
+				Expect(actual).To(Equal(*score))
+			}
+			if eventType == audit.EventTypeRCAComplete {
+				Expect(body.Response).NotTo(HaveKey("selectedWorkflow"))
+			} else {
+				var selection map[string]json.RawMessage
+				Expect(json.Unmarshal(body.Response["selectedWorkflow"], &selection)).To(Succeed())
+				Expect(string(selection["workflow_selection_confidence"])).To(MatchJSON("0.95"))
+			}
+		},
+		Entry("RCA event missing", audit.EventTypeRCAComplete, (*float64)(nil)),
+		Entry("RCA event zero", audit.EventTypeRCAComplete, func() *float64 { v := 0.0; return &v }()),
+		Entry("response event missing", audit.EventTypeResponseComplete, (*float64)(nil)),
+		Entry("response event zero", audit.EventTypeResponseComplete, func() *float64 { v := 0.0; return &v }()),
+		Entry("response event nonzero", audit.EventTypeResponseComplete, func() *float64 { v := 0.65; return &v }()),
+	)
+
 	DescribeTable("UT-KA-2496-009: production result and typed DS audit preserve selection/review context (BR-KA-016, BR-AUDIT-005, AU-3, CC7.2)",
 		func(confidence float64, mode string) {
 			required, matched, rcaConfidence := true, true, .93

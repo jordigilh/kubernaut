@@ -61,7 +61,7 @@ spec:
           port: 443
 ---
 # MCPServerRegistration for the external cluster
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata:
   name: cluster-b

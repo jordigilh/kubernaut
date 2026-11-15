@@ -73,6 +73,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -112,6 +113,9 @@ type WorkflowExecutionReconciler struct {
 	// - Prevents duplicate audit events (cache lag between concurrent reconciles)
 	// - Ensures ExecutionRef is fresh for external deletion detection
 	APIReader client.Reader
+
+	// CatalogNamespace is the trusted controller namespace for workflow-ID lookups.
+	CatalogNamespace string
 
 	// ========================================
 	// V1.0 MATURITY REQUIREMENTS (SERVICE_MATURITY_REQUIREMENTS.md)
@@ -192,6 +196,7 @@ type WorkflowExecutionReconciler struct {
 // APIReader, Scheme, Recorder) are populated automatically by NewReconciler.
 type ReconcilerOptions struct {
 	ExecutionNamespace       string
+	CatalogNamespace         string
 	CooldownPeriod           time.Duration
 	RetainFailedExecutions   bool
 	FailedExecutionRetention time.Duration
@@ -220,6 +225,7 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		Metrics:                  opts.Metrics,
 		StatusManager:            opts.StatusManager,
 		ExecutionNamespace:       opts.ExecutionNamespace,
+		CatalogNamespace:         opts.CatalogNamespace,
 		CooldownPeriod:           opts.CooldownPeriod,
 		retainFailedExecutions:   opts.RetainFailedExecutions,
 		failedExecutionRetention: opts.FailedExecutionRetention,
@@ -309,6 +315,11 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.ReconcileDelete(ctx, &wfe)
 	}
 
+	if err := r.verifyPendingWorkflowIdentity(ctx, &wfe); err != nil {
+		logger.Error(err, "Workflow identity verification failed before reconciliation")
+		return ctrl.Result{}, err
+	}
+
 	// ========================================
 	// DD-CONTROLLER-001 v4.0: Pending-phase ObservedGeneration skip REMOVED.
 	// Cooldown (BR-WE-009) uses RequeueAfter during Pending; the skip was
@@ -364,6 +375,22 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Should never reach here
 	return ctrl.Result{}, nil
+}
+
+// verifyPendingWorkflowIdentity protects the first reconciliation of an
+// unfinalized WFE from a stale or missing catalog object. Once the finalizer is
+// present, reconcilePending performs the full verified lookup on each retry.
+func (r *WorkflowExecutionReconciler) verifyPendingWorkflowIdentity(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if wfe.Status.Phase != "" && wfe.Status.Phase != workflowexecutionv1alpha1.PhasePending {
+		return nil
+	}
+	if controllerutil.ContainsFinalizer(wfe, FinalizerName) {
+		return nil
+	}
+	if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
+		return fmt.Errorf("verify workflow before reconciliation: %w", err)
+	}
+	return nil
 }
 
 // ========================================

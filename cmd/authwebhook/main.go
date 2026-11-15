@@ -24,7 +24,9 @@ import (
 	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -256,13 +258,22 @@ func registerAuthWebhookCRUDHandlers(mgr ctrl.Manager, auditStore audit.AuditSto
 	// DD-AUTH-MCP-001 v3.0: Derive trusted AF SA from POD_NAMESPACE (K8s downward API)
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" {
-		podNamespace = "kubernaut-system"
+		var err error
+		podNamespace, err = scope.GetControllerNamespace()
+		if err != nil {
+			setupLog.Error(err, "unable to determine trusted workflow catalog namespace")
+			os.Exit(1)
+		}
+	}
+	if err := workflowidentity.ValidateNamespace(podNamespace); err != nil {
+		setupLog.Error(err, "invalid trusted workflow catalog namespace")
+		os.Exit(1)
 	}
 	setupLog.Info("Trusted intermediary configured",
 		"afSA", authwebhook.BuildTrustedAFSA(podNamespace),
 		"derivedFrom", "POD_NAMESPACE",
 	)
-	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, mgr.GetClient(), podNamespace)
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, mgr.GetAPIReader(), podNamespace)
 	if err := rarHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationApprovalRequest handler")
 		os.Exit(1)

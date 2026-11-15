@@ -1045,8 +1045,9 @@ func renderAFMockLLMManifest(data []byte, mockLLMImage, clusterID string, workfl
 	manifest = strings.ReplaceAll(manifest, "imagePullPolicy: Always", "imagePullPolicy: IfNotPresent")
 	manifest = strings.ReplaceAll(manifest, "__HUB_CLUSTER_ID__", clusterID)
 	// The CRD seeder assigns the catalog UUID after admission. Keep the AF
-	// selector manifest, but point its direct selection call at that UUID.
+	// selector manifest and default Mock LLM scenario at those UUIDs.
 	workflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")
+	manifest = strings.ReplaceAll(manifest, `workflow_id: "__DEFAULT_WORKFLOW_ID__"`, fmt.Sprintf(`workflow_id: "%s"`, workflowID))
 	manifest = strings.ReplaceAll(manifest, `workflow_id: "restart-v1"`, fmt.Sprintf(`workflow_id: "%s"`, workflowID))
 	manifest = strings.ReplaceAll(manifest, `            remediation_id: "rr-001"`, `            rr_id: "rr-001"`)
 	return manifest

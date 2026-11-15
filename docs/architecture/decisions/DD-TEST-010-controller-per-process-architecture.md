@@ -557,10 +557,13 @@ Phase 1 of `SynchronizedBeforeSuite` (not once per process in Phase 2), with per
 scoping** substituting for per-process **API-server** isolation:
 
 - Phase 1 (process 1 only) starts the one shared `envtest.Environment`, creates the static
-  `kubernaut-system` namespace and its shared fixtures (`createITAAEnrichmentFixtures`, workflow
-  catalog seeding -- both fixed-name/idempotent, so safe to run exactly once), serializes the shared
-  kubeconfig to a temp file (`infrastructure.WriteEnvtestKubeconfigToFile`), and passes its path to
-  all processes via the `SynchronizedBeforeSuite` byte payload.
+  `kubernaut-system` namespace and shared enrichment fixtures (`createITAAEnrichmentFixtures`),
+  seeds the default-namespace workflow catalog used by the shared DataStorage/Mock LLM setup,
+  serializes the shared kubeconfig to a temp file (`infrastructure.WriteEnvtestKubeconfigToFile`),
+  and passes its path to all processes via the `SynchronizedBeforeSuite` byte payload. Because KA's
+  workflow catalog informer is now intentionally scoped to each process's controller namespace,
+  Phase 2 mirrors the ActionType and RemediationWorkflow fixtures into that namespace before
+  starting KA.
 - Phase 2 (all processes) reconstructs `cfg` from that shared kubeconfig
   (`clientcmd.BuildConfigFromFlags`) instead of calling `testEnv.Start()` itself, computes a
   per-process-unique namespace (`kubernaut-system-p<N>`), and:
@@ -648,4 +651,3 @@ be hit). Do not assume a suite that passes at `TEST_PROCS=1` in isolation is una
 `TEST_PROCS=4` (matching CI) before declaring a per-service migration done, and treat unexplained
 failures under contention as a signal to keep root-causing rather than reach for a longer timeout
 first.
-

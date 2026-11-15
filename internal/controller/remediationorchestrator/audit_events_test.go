@@ -131,7 +131,8 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			RoutingEngine: mockRoutingEngine, // Use mock routing engine
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    mockRoutingEngine, // Use mock routing engine
 		})
 	})
 
@@ -253,6 +254,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
+			Expect(fakeClient.Create(ctx, verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow))).To(Succeed())
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
 			mockAuditStore.Reset()
@@ -282,9 +284,12 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
+			workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
+			Expect(fakeClient.Create(ctx, workflow)).To(Succeed())
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
 			rar := newRemediationApprovalRequestApproved("rar-test-rr", "test-rr", "admin@example.com")
+			rar.Spec.Workflow.WorkflowID = workflow.Status.WorkflowID
 			Expect(fakeClient.Create(ctx, rar)).To(Succeed())
 
 			mockAuditStore.Reset()

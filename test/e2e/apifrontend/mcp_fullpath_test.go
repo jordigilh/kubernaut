@@ -45,7 +45,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 			return "", fmt.Errorf("HTTP %d: %s", code, string(raw))
 		}
 		payload := unwrapSSEDataLine(raw)
-		text, toolErr, parseErr := parseMCPToolPayload(payload)
+		text, toolErr, parseErr := parseMCPToolPayload(payload, rpcID)
 		if parseErr != nil {
 			return text, parseErr
 		}
@@ -115,7 +115,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		araw, acode, err := mcpPOST(approverTok, approverSession, apBody)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(acode).To(BeNumerically("<", http.StatusBadRequest))
-		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw))
+		atext, toolErr, aperr := parseMCPToolPayload(unwrapSSEDataLine(araw), "mcp-full-04-approve")
 		Expect(aperr).NotTo(HaveOccurred())
 		Expect(toolErr).To(BeFalse(), "kubernaut_approve should succeed: %s", atext)
 		Expect(strings.ToLower(atext)).To(Or(
@@ -170,7 +170,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 			return
 		}
 
-		text, toolIsErr, perr := parseMCPToolPayload(payload)
+		text, toolIsErr, perr := parseMCPToolPayload(payload, "mcp-full-06")
 		Expect(perr).NotTo(HaveOccurred())
 		Expect(toolIsErr).To(BeTrue(), "expected tool error for unknown tool; text=%q", text)
 	})

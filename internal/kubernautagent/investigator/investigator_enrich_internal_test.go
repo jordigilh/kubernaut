@@ -24,6 +24,7 @@ limitations under the License.
 package investigator
 
 import (
+	"encoding/json"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -50,6 +51,19 @@ import (
 // fields yet -- this file must fail to compile.
 // ========================================
 var _ = Describe("enrichFromCatalog — Issue #1661 Change 11a", func() {
+	It("UT-KA-2570-110: BR-KA-191 carries the catalog parameter schema into the investigation result", func() {
+		minimum := float64(1)
+		v := parser.NewValidator([]string{"wf-schema"})
+		v.SetWorkflowMeta("wf-schema", parser.WorkflowMeta{DeclaredParameterNames: map[string]bool{"REPLICAS": true}, Parameters: []models.WorkflowParameter{{Name: "REPLICAS", Type: "integer", Required: true, Description: "count", Minimum: &minimum}}})
+		result := &katypes.InvestigationResult{WorkflowID: "wf-schema"}
+		enrichFromCatalog(result, v)
+		raw, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		var payload map[string]json.RawMessage
+		Expect(json.Unmarshal(raw, &payload)).To(Succeed())
+		Expect(payload).To(HaveKey("parameter_schema"))
+		Expect(string(payload["parameter_schema"])).To(MatchJSON(`[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1}]`))
+	})
 	It("UT-KA-2390-001/002: copies Dependencies/Resources/DeclaredParameterNames from WorkflowMeta onto the result", func() {
 		v := parser.NewValidator([]string{"wf-with-schema"})
 		deps := &models.WorkflowDependencies{

@@ -658,6 +658,34 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 	})
 
 	Describe("IT-KA-FLEET-023 [AC-6]: interactive turn tool calls resolve via the overlay ahead of the local registry", func() {
+		DescribeTable("IT-KA-FLEET-023-HUB: explicit hub identity uses its overlay; empty identity uses local tools (BR-INTEGRATION-1489, AC-4/AC-6)",
+			func(clusterID, expectedSource, excludedSource string, expectedCalls []string) {
+				spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+					"kubectl_get_by_name": &fakeTool{name: "kubectl_get_by_name", result: `{"source":"hub-overlay"}`},
+				}}
+				reg := registry.New()
+				reg.Register(&fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-registry"}`})
+				mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+					{Message: llm.Message{Role: "assistant"}, ToolCalls: []llm.ToolCall{{ID: "tc_get", Name: "kubectl_get_by_name", Arguments: `{}`}}},
+					{Message: llm.Message{Role: "assistant", Content: "checked"}},
+				}}
+				enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+				inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: parser.NewResultParser(), Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg, FleetOverlayResolver: spy})
+				ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{ClusterID: clusterID})
+				_, err = inv.RunInteractiveTurn(ctx, []llm.Message{{Role: "user", Content: "check deployment"}}, "rem-interactive-explicit-hub")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(spy.calls).To(Equal(expectedCalls))
+				Expect(mockClient.calls).To(HaveLen(2))
+				content := allMessageContent(mockClient.calls[1].Messages)
+				Expect(content).To(ContainSubstring(expectedSource))
+				Expect(content).NotTo(ContainSubstring(excludedSource))
+			},
+			Entry("explicit hub", "hub", "hub-overlay", "local-registry", []string{"hub"}),
+			Entry("empty cluster ID", "", "local-registry", "hub-overlay", []string(nil)),
+		)
+
 		It("routes a tool call to the overlay's BridgeTool stand-in, under the exact same name the local registry uses", func() {
 			overlayTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"remote-cluster-east"}`}
 			localTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub"}`}

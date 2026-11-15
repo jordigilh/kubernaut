@@ -17,7 +17,6 @@ limitations under the License.
 package kubernautagent
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -71,26 +70,18 @@ var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "ll
 		Expect(*result.IsActionable).To(BeTrue())
 		Expect(result.SelectedWorkflow).NotTo(BeNil())
 
-		var selectedWorkflow struct {
-			WorkflowID      string            `json:"workflow_id"`
-			WorkflowName    string            `json:"workflow_name"`
-			ActionType      string            `json:"action_type"`
-			ExecutionEngine string            `json:"execution_engine"`
-			Confidence      float64           `json:"confidence"`
-			Parameters      map[string]string `json:"parameters"`
-		}
-		Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selectedWorkflow)).To(Succeed())
+		selectedWorkflow := result.SelectedWorkflow
 		Expect(selectedWorkflow.WorkflowID).To(Equal("35665f23-e550-5684-a6c9-c0f7b727b068"))
 		Expect(selectedWorkflow.WorkflowName).To(Equal("oomkill-increase-memory-v1"))
 		Expect(selectedWorkflow.ActionType).To(Equal("IncreaseMemoryLimits"))
 		Expect(selectedWorkflow.ExecutionEngine).To(Equal("tekton"))
 		Expect(selectedWorkflow.Confidence).To(Equal(0.9))
 		Expect(selectedWorkflow.Parameters).To(HaveLen(5), "selected workflow parameter count")
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"), "MEMORY_LIMIT_NEW")
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "v1"), "TARGET_RESOURCE_API_VERSION")
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Pod"), "TARGET_RESOURCE_KIND")
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "test-pod"), "TARGET_RESOURCE_NAME")
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "default"), "TARGET_RESOURCE_NAMESPACE")
+		expectSelectedWorkflowStringParameter(selectedWorkflow, "MEMORY_LIMIT_NEW", "512Mi")
+		expectSelectedWorkflowStringParameter(selectedWorkflow, "TARGET_RESOURCE_API_VERSION", "v1")
+		expectSelectedWorkflowStringParameter(selectedWorkflow, "TARGET_RESOURCE_KIND", "Pod")
+		expectSelectedWorkflowStringParameter(selectedWorkflow, "TARGET_RESOURCE_NAME", "test-pod")
+		expectSelectedWorkflowStringParameter(selectedWorkflow, "TARGET_RESOURCE_NAMESPACE", "default")
 		Expect(result.Confidence).To(Equal(0.9))
 	})
 })

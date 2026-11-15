@@ -331,8 +331,7 @@ type AgentSessionResult struct {
 	// execution_bundle, confidence, parameters), free-form per KA's schema.
 	// Absent (nil) means no workflow was selected.
 	// +optional
-	// +kubebuilder:pruning:PreserveUnknownFields
-	SelectedWorkflow *apiextensionsv1.JSON `json:"selectedWorkflow,omitempty"`
+	SelectedWorkflow *AgentSessionSelectedWorkflow `json:"selectedWorkflow,omitempty"`
 	// SelectionAssessment retains curated rejected-proposal reasoning, never
 	// executable workflow configuration (DD-KA-2496 / BR-KA-016). Nested fields
 	// use the KA snake_case wire contract, matching SelectedWorkflow above.
@@ -341,6 +340,11 @@ type AgentSessionResult struct {
 	SelectionAssessment *apiextensionsv1.JSON `json:"selectionAssessment,omitempty"`
 	// Confidence is KA's overall confidence in the analysis (0.0-1.0).
 	Confidence float64 `json:"confidence,omitempty"`
+	// RCAConfidence is the independent RCA score; nil means unknown.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// Timestamp is the ISO timestamp of analysis completion.
 	Timestamp string `json:"timestamp,omitempty"`
 	// NeedsHumanReview is true when KA could not produce a reliable result.

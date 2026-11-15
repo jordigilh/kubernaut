@@ -30,6 +30,7 @@ import (
 // watcher/informer.
 type stubClusterRegistry struct {
 	clusters map[string]registry.ClusterInfo
+	unready  bool
 }
 
 var _ registry.ClusterRegistry = (*stubClusterRegistry)(nil)
@@ -48,9 +49,9 @@ func (s *stubClusterRegistry) Get(id string) (registry.ClusterInfo, bool) {
 }
 
 func (s *stubClusterRegistry) WatchClusters() <-chan registry.ClusterEvent { return nil }
-func (s *stubClusterRegistry) Ready() bool                                { return true }
-func (s *stubClusterRegistry) Start(_ context.Context) error              { return nil }
-func (s *stubClusterRegistry) Stop()                                      {}
+func (s *stubClusterRegistry) Ready() bool                                 { return !s.unready }
+func (s *stubClusterRegistry) Start(_ context.Context) error               { return nil }
+func (s *stubClusterRegistry) Stop()                                       {}
 
 // #2300 Gap 3: scope_adapter.go's adapters had 0% UT coverage despite being
 // the server-side access-enforcement point for cluster-scoped tool calls
@@ -74,6 +75,15 @@ var _ = Describe("ClusterLookupAdapter (BR-INTEGRATION-065)", func() {
 	It("UT-REG-ADAPT-002 [V4.1.3, AC-3]: IsKnownCluster returns false (deny-by-default) for an unknown cluster", func() {
 		adapter := registry.NewClusterLookupAdapter(reg)
 		Expect(adapter.IsKnownCluster("no-such-cluster")).To(BeFalse())
+	})
+
+	It("UT-REG-2593-001 [BR-SECURITY-016]: denies cached cluster identities when the registry is not ready", func() {
+		reg.unready = true
+		Expect(registry.NewClusterLookupAdapter(reg).IsKnownCluster("prod-east")).To(BeFalse())
+	})
+
+	It("UT-REG-2593-002 [BR-SECURITY-016]: denies cluster identities when the registry is absent", func() {
+		Expect(registry.NewClusterLookupAdapter(nil).IsKnownCluster("prod-east")).To(BeFalse())
 	})
 })
 

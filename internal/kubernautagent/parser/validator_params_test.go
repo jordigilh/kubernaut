@@ -17,10 +17,13 @@ limitations under the License.
 package parser_test
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -34,6 +37,72 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 
 	BeforeEach(func() {
 		v = parser.NewValidator([]string{"test-workflow"})
+	})
+
+	It("UT-VAL-2570-041: BR-KA-191 preserves a large integer and compares its bound without rounding", func() {
+		maximum := float64(9007199254740992)
+		schema := []models.WorkflowParameter{{Name: "P", Type: "integer", Maximum: &maximum}}
+		valid := map[string]interface{}{"P": json.Number("9007199254740992")}
+		Expect(v.ValidateParameters(valid, schema).IsValid).To(BeTrue(), "an exact in-bound integer must be accepted")
+		params := map[string]interface{}{"P": json.Number("9007199254740993")}
+		result := v.ValidateParameters(params, schema)
+		Expect(result.IsValid).To(BeFalse())
+		Expect(result.Errors).To(ContainElement(ContainSubstring("P")))
+		Expect(params["P"]).To(Equal(json.Number("9007199254740993")))
+	})
+
+	DescribeTable("UT-KA-2570-120: BR-KA-191 validates typed integer tokens without rounding", func(value json.Number, valid bool) {
+		result := v.ValidateParameters(map[string]interface{}{"P": value}, []models.WorkflowParameter{{Name: "P", Type: "integer"}})
+		Expect(result.IsValid).To(Equal(valid), "%s: %v", value, result.Errors)
+	},
+		Entry("integral decimal is not integer JSON text", json.Number("3.0"), false),
+		Entry("integral exponent is not integer JSON text", json.Number("1e3"), false),
+		Entry("large exact integer", json.Number("9007199254740993"), true),
+		Entry("fractional decimal", json.Number("3.1"), false),
+		Entry("above int64", json.Number("9223372036854775808"), false),
+		Entry("below int64", json.Number("-9223372036854775809"), false),
+		Entry("large positive exponent", json.Number("1e999999999999999999999"), false),
+		Entry("large negative exponent", json.Number("1e-999999999999999999999"), false),
+	)
+
+	It("UT-KA-2570-015: BR-KA-191 rejects malformed patterns rather than skipping validation", func() {
+		schema := []models.WorkflowParameter{{Name: "P", Type: "string", Pattern: "["}}
+		result := v.ValidateParameters(map[string]interface{}{"P": "value"}, schema)
+		Expect(result.IsValid).To(BeFalse())
+		Expect(result.Errors).To(ContainElement(ContainSubstring("P")))
+	})
+
+	DescribeTable("UT-KA-2570-123: BR-KA-191 validates shared schema vectors through KA selection", func(schema []models.WorkflowParameter, values map[string]interface{}, valid bool) {
+		originalSize := len(values)
+		result := v.ValidateParameters(values, schema)
+		Expect(result.IsValid).To(Equal(valid), "%v", result.Errors)
+		Expect(values).To(HaveLen(originalSize), "validation must not insert schema defaults")
+	},
+		Entry("V-01 effective values", []models.WorkflowParameter{{Name: "P", Type: "string"}, {Name: "Q", Type: "string", Required: true}}, map[string]interface{}{"P": "new", "Q": "keep"}, true),
+		Entry("V-03 decimal integer", []models.WorkflowParameter{{Name: "P", Type: "integer"}}, map[string]interface{}{"P": json.Number("1.0")}, false),
+		Entry("V-04 exact float", []models.WorkflowParameter{{Name: "P", Type: "float"}}, map[string]interface{}{"P": json.Number("1.0")}, true),
+		Entry("V-05 exact integer bound", []models.WorkflowParameter{{Name: "P", Type: "integer", Maximum: ptr.To(float64(9007199254740992))}}, map[string]interface{}{"P": json.Number("9007199254740993")}, false),
+		Entry("V-06 integer overflow", []models.WorkflowParameter{{Name: "P", Type: "integer"}}, map[string]interface{}{"P": json.Number("9223372036854775808")}, false),
+		Entry("V-07 nonfinite float", []models.WorkflowParameter{{Name: "P", Type: "float"}}, map[string]interface{}{"P": math.NaN()}, false),
+		Entry("V-07 float overflow", []models.WorkflowParameter{{Name: "P", Type: "float"}}, map[string]interface{}{"P": json.Number("1e400")}, false),
+		Entry("V-07 float underflow", []models.WorkflowParameter{{Name: "P", Type: "float"}}, map[string]interface{}{"P": json.Number("1e-4000")}, false),
+		Entry("V-08 boolean", []models.WorkflowParameter{{Name: "P", Type: "boolean"}}, map[string]interface{}{"P": true}, true),
+		Entry("V-08 invalid boolean", []models.WorkflowParameter{{Name: "P", Type: "boolean"}}, map[string]interface{}{"P": "notbool"}, false),
+		Entry("V-09 array", []models.WorkflowParameter{{Name: "P", Type: "array"}}, map[string]interface{}{"P": []interface{}{"a", "b"}}, true),
+		Entry("V-09 null array", []models.WorkflowParameter{{Name: "P", Type: "array"}}, map[string]interface{}{"P": nil}, false),
+		Entry("V-10 enum violation", []models.WorkflowParameter{{Name: "P", Type: "string", Enum: []string{"safe", "fast"}}}, map[string]interface{}{"P": "other"}, false),
+		Entry("V-11 required missing", []models.WorkflowParameter{{Name: "P", Type: "string", Required: true}}, map[string]interface{}{}, false),
+		Entry("V-12 omitted optional default", []models.WorkflowParameter{{Name: "P", Type: "string", Default: "auto"}}, map[string]interface{}{}, true),
+		Entry("V-13 missing dependency", []models.WorkflowParameter{{Name: "P", Type: "string", DependsOn: []string{"Q"}}, {Name: "Q", Type: "string"}}, map[string]interface{}{"P": "x"}, false),
+		Entry("V-13 present dependency", []models.WorkflowParameter{{Name: "P", Type: "string", DependsOn: []string{"Q"}}, {Name: "Q", Type: "string"}}, map[string]interface{}{"P": "x", "Q": "y"}, true),
+		Entry("V-14 malformed schema", []models.WorkflowParameter{{Name: "P", Type: "string", Pattern: "["}}, map[string]interface{}{"P": "x"}, false),
+		Entry("V-17 pattern violation", []models.WorkflowParameter{{Name: "P", Type: "string", Pattern: "^[a-z]+$"}}, map[string]interface{}{"P": "FAST"}, false),
+	)
+
+	It("UT-KA-2570-124: BR-KA-191 retains the original valid float token", func() {
+		values := map[string]interface{}{"P": json.Number("1.0")}
+		Expect(v.ValidateParameters(values, []models.WorkflowParameter{{Name: "P", Type: "float"}}).IsValid).To(BeTrue())
+		Expect(values["P"]).To(Equal(json.Number("1.0")))
 	})
 
 	// ========================================
@@ -276,16 +345,16 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 		})
 	})
 
-	Context("UT-KA-1170-019: Pattern — invalid regex pattern is skipped with warning", func() {
-		It("should not error on an invalid regex pattern (graceful degradation)", func() {
+	Context("UT-KA-1170-019: Pattern — invalid regex pattern is rejected", func() {
+		It("should fail closed on an invalid regex pattern", func() {
 			schema := []models.WorkflowParameter{
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Pod name", Pattern: `[invalid`},
 			}
 			params := map[string]interface{}{"POD_NAME": "anything"}
 
 			result := v.ValidateParameters(params, schema)
-			Expect(result.IsValid).To(BeTrue())
-			Expect(result.Warnings).To(ContainElement(ContainSubstring("POD_NAME")))
+			Expect(result.IsValid).To(BeFalse())
+			Expect(result.Errors).To(ContainElement(ContainSubstring("POD_NAME")))
 		})
 	})
 
@@ -334,7 +403,7 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 				"Normal-length patterns should still be pre-compiled")
 		})
 
-		It("should emit a warning when validating against an oversized pattern", func() {
+		It("should reject an oversized pattern", func() {
 			longPattern := "^" + strings.Repeat("a", 1025) + "$"
 			schema := []models.WorkflowParameter{
 				{Name: "OVERSIZED", Type: "string", Required: true, Description: "Oversized", Pattern: longPattern},
@@ -343,9 +412,9 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 				"OVERSIZED": "test-value",
 			}
 			result := v.ValidateParameters(params, schema)
-			Expect(result.IsValid).To(BeTrue(), "oversized pattern should not cause an error, only a warning")
-			Expect(result.Warnings).To(ContainElement(ContainSubstring("exceeds")))
-			Expect(result.Warnings).To(ContainElement(ContainSubstring("OVERSIZED")))
+			Expect(result.IsValid).To(BeFalse())
+			Expect(result.Errors).To(ContainElement(ContainSubstring("exceeds")))
+			Expect(result.Errors).To(ContainElement(ContainSubstring("OVERSIZED")))
 		})
 	})
 
@@ -392,7 +461,7 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas"},
 			}
 			params := map[string]interface{}{
-				"REPLICA_COUNT":     float64(3),
+				"REPLICA_COUNT":      float64(3),
 				"HALLUCINATED_PARAM": "evil-value",
 			}
 
@@ -427,11 +496,11 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas"},
 			}
 			params := map[string]interface{}{
-				"REPLICA_COUNT":                float64(3),
-				"TARGET_RESOURCE_NAME":         "my-pod",
-				"TARGET_RESOURCE_KIND":         "Pod",
-				"TARGET_RESOURCE_NAMESPACE":    "default",
-				"TARGET_RESOURCE_API_VERSION":  "v1",
+				"REPLICA_COUNT":               float64(3),
+				"TARGET_RESOURCE_NAME":        "my-pod",
+				"TARGET_RESOURCE_KIND":        "Pod",
+				"TARGET_RESOURCE_NAMESPACE":   "default",
+				"TARGET_RESOURCE_API_VERSION": "v1",
 			}
 
 			result := v.ValidateParameters(params, schema)
@@ -449,10 +518,10 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 	Context("UT-KA-1170-033: No schema (nil Parameters) strips ALL LLM params", func() {
 		It("should strip all non-KA-managed params when schema is nil", func() {
 			params := map[string]interface{}{
-				"REPLICA_COUNT":            float64(3),
-				"TARGET_RESOURCE_NAME":     "my-pod",
-				"TARGET_RESOURCE_KIND":     "Pod",
-				"TARGET_RESOURCE_NAMESPACE": "default",
+				"REPLICA_COUNT":               float64(3),
+				"TARGET_RESOURCE_NAME":        "my-pod",
+				"TARGET_RESOURCE_KIND":        "Pod",
+				"TARGET_RESOURCE_NAMESPACE":   "default",
 				"TARGET_RESOURCE_API_VERSION": "v1",
 			}
 
@@ -470,8 +539,8 @@ var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 		It("should strip all non-KA-managed params when schema is empty slice", func() {
 			schema := []models.WorkflowParameter{}
 			params := map[string]interface{}{
-				"SOME_PARAM":               "value",
-				"TARGET_RESOURCE_NAME":     "my-pod",
+				"SOME_PARAM":           "value",
+				"TARGET_RESOURCE_NAME": "my-pod",
 			}
 
 			result := v.ValidateParameters(params, schema)

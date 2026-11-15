@@ -88,9 +88,13 @@ func (r *CAReloader) ReloadCallback(newContent string) error {
 	t := buildCATransport(pool)
 
 	r.mu.Lock()
+	previousTransport := r.transport
 	r.transport = t
 	r.pool = pool
 	r.mu.Unlock()
+	if previousTransport != nil {
+		previousTransport.CloseIdleConnections()
+	}
 	return nil
 }
 
@@ -102,6 +106,18 @@ func (r *CAReloader) RoundTrip(req *http.Request) (*http.Response, error) {
 	t := r.transport
 	r.mu.RUnlock()
 	return t.RoundTrip(req)
+}
+
+// CloseIdleConnections closes idle connections on the active transport. This
+// lets an owning http.Client release connections when a short-lived client
+// attempt fails or a session is closed.
+func (r *CAReloader) CloseIdleConnections() {
+	r.mu.RLock()
+	t := r.transport
+	r.mu.RUnlock()
+	if t != nil {
+		t.CloseIdleConnections()
+	}
 }
 
 // GetCertPool returns the currently active certificate pool (snapshot).

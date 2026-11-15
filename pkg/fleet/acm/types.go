@@ -16,6 +16,8 @@ limitations under the License.
 
 package acm
 
+import "encoding/json"
+
 // graphQLRequest is the POST body sent to ACM Search's /searchapi/graphql endpoint.
 type graphQLRequest struct {
 	Query     string                 `json:"query"`
@@ -33,7 +35,8 @@ type searchData struct {
 }
 
 type searchResultItem struct {
-	Count int `json:"count"`
+	Count int                          `json:"count"`
+	Items []map[string]json.RawMessage `json:"items"`
 }
 
 type graphQLError struct {
@@ -49,8 +52,9 @@ type searchFilter struct {
 // searchInput wraps filters for a single search query.
 type searchInput struct {
 	Filters []searchFilter `json:"filters"`
+	Limit   int            `json:"limit,omitempty"`
 }
 
 // SearchQuery is the GraphQL query sent to ACM Search. Exported so the
 // contract test (UT-ACM-054-009) can validate it against the vendored SDL schema.
-const SearchQuery = `query($input: [SearchInput]) { searchResult: search(input: $input) { count } }`
+const SearchQuery = `query($input: [SearchInput]) { searchResult: search(input: $input) { count items } }`

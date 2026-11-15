@@ -191,11 +191,11 @@ var _ = Describe("FullPipeline event exporter resilience", func() {
 
 var _ = Describe("kube-mcp-server E2E configuration", func() {
 	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
-		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:c289505b06079d7f265a6fef977ce1abbfbbb4271772db17db5b58edbf44c255"))
 	})
 
 	It("UT-INFRA-FLEET-032: gives preloaded MCP images a deterministic local tag", func() {
-		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+		Expect(preloadedExternalImageReference(KubeMCPServerImage)).To(Equal("localhost/kind-preload:sha256-c289505b06079d7f265a6fef977ce1abbfbbb4271772db17db5b58edbf44c255"))
 	})
 
 	It("UT-INFRA-FLEET-033: uses the preloaded reference only when supplied", func() {
@@ -227,6 +227,38 @@ var _ = Describe("kube-mcp-server E2E configuration", func() {
 		Expect(toml).To(ContainSubstring("client_secret = \"secret\""))
 		Expect(toml).NotTo(ContainSubstring("sts_client_id"))
 		Expect(toml).NotTo(ContainSubstring("sts_audience"))
+	})
+
+	It("UT-INFRA-FLEET-034 [BR-INTEGRATION-065]: renders v0.1.2 runtime settings in TOML", func() {
+		config := KubeMCPServerAuthConfig{Mode: KubeMCPServerAuthModePassthrough}
+
+		toml := config.tomlString()
+		Expect(toml).To(ContainSubstring(`port = "8080"`))
+		Expect(toml).To(ContainSubstring(`cluster_provider_strategy = "in-cluster"`))
+		Expect(toml).To(ContainSubstring(`toolsets = ["core"]`))
+		Expect(toml).To(ContainSubstring("stateless = true"))
+		Expect(toml).To(ContainSubstring(`list_output = "yaml"`))
+		Expect(toml).To(ContainSubstring("log_level = 6"))
+	})
+
+	It("UT-INFRA-FLEET-035 [BR-INTEGRATION-065]: uses only the config bootstrap flag for v0.1.2", func() {
+		manifest := captureKubeMCPServerManifest(func() error {
+			return deployKubeMCPServer(
+				context.Background(),
+				"mcp-system",
+				"test-kubeconfig",
+				KubeMCPServerAuthConfig{Mode: KubeMCPServerAuthModePassthrough},
+				io.Discard,
+			)
+		})
+
+		Expect(manifest).To(ContainSubstring(`- "--config=/etc/kubernetes-mcp-server/config.toml"`))
+		Expect(manifest).NotTo(ContainSubstring("--port="))
+		Expect(manifest).NotTo(ContainSubstring("--cluster-provider="))
+		Expect(manifest).NotTo(ContainSubstring("--toolsets="))
+		Expect(manifest).NotTo(ContainSubstring("--stateless"))
+		Expect(manifest).NotTo(ContainSubstring("--list-output="))
+		Expect(manifest).NotTo(ContainSubstring("--log-level="))
 	})
 })
 
@@ -586,6 +618,35 @@ func captureKubectlManifest(run func() error) string {
 	manifestPath := filepath.Join(dir, "manifest.yaml")
 	kubectlPath := filepath.Join(dir, "kubectl")
 	script := "#!/bin/sh\ncat > \"$FLEET_TEST_MANIFEST\"\n"
+	Expect(os.WriteFile(kubectlPath, []byte(script), 0o755)).To(Succeed())
+
+	previousPath := os.Getenv("PATH")
+	previousManifest := os.Getenv("FLEET_TEST_MANIFEST")
+	Expect(os.Setenv("PATH", dir+string(os.PathListSeparator)+previousPath)).To(Succeed())
+	Expect(os.Setenv("FLEET_TEST_MANIFEST", manifestPath)).To(Succeed())
+	DeferCleanup(func() {
+		_ = os.Setenv("PATH", previousPath)
+		_ = os.Setenv("FLEET_TEST_MANIFEST", previousManifest)
+	})
+
+	Expect(run()).To(Succeed())
+	manifest, err := os.ReadFile(manifestPath)
+	Expect(err).NotTo(HaveOccurred())
+	return string(manifest)
+}
+
+func captureKubeMCPServerManifest(run func() error) string {
+	dir, err := os.MkdirTemp("", "fleet-kube-mcp-server-test-")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { _ = os.RemoveAll(dir) })
+
+	manifestPath := filepath.Join(dir, "manifest.yaml")
+	kubectlPath := filepath.Join(dir, "kubectl")
+	script := `#!/bin/sh
+if [ "$1" = "apply" ]; then
+  cat > "$FLEET_TEST_MANIFEST"
+fi
+`
 	Expect(os.WriteFile(kubectlPath, []byte(script), 0o755)).To(Succeed())
 
 	previousPath := os.Getenv("PATH")

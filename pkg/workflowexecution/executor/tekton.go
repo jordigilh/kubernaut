@@ -74,6 +74,9 @@ func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alp
 	if err != nil {
 		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
 	}
+	if _, err := FilterDeclaredTypedParameterStrings(wfe.Spec.Parameters, opts.DeclaredParameterNames, log.FromContext(ctx)); err != nil {
+		return nil, fmt.Errorf("convert workflow parameters for Tekton: %w", err)
+	}
 
 	pr := t.BuildPipelineRun(ctx, wfe, namespace, opts)
 
@@ -280,11 +283,18 @@ func pipelineRunOwnedByWFE(pr *tektonv1.PipelineRun, wfe *workflowexecutionv1alp
 // rationale vs. the Job backend).
 func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	filteredParams, err := FilterDeclaredTypedParameterStrings(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	if err != nil {
+		logger.Error(err, "Failed to convert typed workflow parameters for Tekton")
+		filteredParams = map[string]string{}
+	}
+	// TARGET_RESOURCE is reserved for the immutable execution identity below.
+	// Do not allow a stale typed parameter to produce a duplicate or override it.
+	delete(filteredParams, targetResourceParameterName)
 	params := ConvertParameters(filteredParams)
 
 	params = append(params, tektonv1.Param{
-		Name:  "TARGET_RESOURCE",
+		Name:  targetResourceParameterName,
 		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
 	})
 

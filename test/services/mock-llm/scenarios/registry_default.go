@@ -166,6 +166,7 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ScenarioName:      ks.Name,
 				WorkflowID:        ks.WorkflowID,
 				ActionType:        ks.ActionType,
+				Parameters:        ks.Parameters,
 				ToolCallName:      ks.ToolCall.Name,
 				ToolCallArgs:      ks.ToolCall.Arguments,
 				FallbackArguments: ks.ToolCall.FallbackArguments,
@@ -317,6 +318,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
+
+	// Issue #2586: interactive RCA extraction must retain the correction turn's
+	// reasoning and independent confidence through the real MCP discovery path.
+	r.Register(interactiveRCARetry2586ScenarioFactory())
 
 	// Issue #1332: AF A2A tests need the mock LLM to call kubernaut_remediate
 	// when the user message contains "create a remediation request" (priority 0.9).

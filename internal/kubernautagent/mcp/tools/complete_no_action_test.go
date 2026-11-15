@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -25,6 +26,24 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 )
+
+type fakeAgentSessionExistenceChecker struct {
+	exists      bool
+	existsAfter int
+	lookupCount int
+	err         error
+}
+
+func (f *fakeAgentSessionExistenceChecker) AgentSessionExists(context.Context, string) (bool, error) {
+	f.lookupCount++
+	if f.err != nil {
+		return false, f.err
+	}
+	if f.existsAfter > 0 && f.lookupCount < f.existsAfter {
+		return false, nil
+	}
+	return f.exists, nil
+}
 
 // fakeAutoCloseTombstone implements mcptools.AutoCloseTombstone for unit
 // tests, decoupled from the real mcp.AutoCloseTombstone's TTL/goroutine
@@ -135,5 +154,64 @@ var _ = Describe("kubernaut_complete_no_action tool — #2076 (v1.6 clone of #20
 			mcpinternal.UserInfo{Username: "alice"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("no active interactive session"))
+	})
+
+	It("UT-KA-2604-001 [BR-AA-KA-065]: waits for late AgentSession dispatch before escalating", func() {
+		sessions := &mockSessionManager{
+			isActive: true,
+			getDriverResult: &mcpinternal.InteractiveSession{
+				SessionID:     "mcp-sess-2604",
+				CorrelationID: "rr-2604",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			},
+		}
+		completer := &mockHTTPCompleter{
+			foundID:      "fallback-sess-2604",
+			found:        true,
+			runningID:    "ka-sess-2604",
+			runningAfter: 3,
+		}
+		checker := &fakeAgentSessionExistenceChecker{exists: true, existsAfter: 2}
+
+		tool := mcptools.NewCompleteNoActionTool(sessions,
+			mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			mcptools.WithCompleteNoActionAgentSessionExistenceChecker(checker),
+		)
+
+		output, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+			RRID:             "rr-2604",
+			EscalationReason: "operator_escalation",
+		}, mcpinternal.UserInfo{Username: "alice"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(output.Status).To(Equal("escalated"))
+		Expect(completer.runningLookups).To(BeNumerically(">=", 2),
+			"completion must wait for the late AgentSession/KA dispatch handoff before forcing completion")
+		Expect(checker.lookupCount).To(BeNumerically(">=", 2),
+			"completion must keep checking while the AgentSession is being created")
+		Expect(completer.forceCompletions).To(Equal(1),
+			"the registered KA session must be force-completed exactly once")
+	})
+
+	It("UT-KA-2604-002 [BR-AA-KA-065]: continues safely when the AgentSession existence check fails", func() {
+		sessions := &mockSessionManager{
+			isActive: true,
+			getDriverResult: &mcpinternal.InteractiveSession{
+				SessionID:     "mcp-sess-2604-error",
+				CorrelationID: "rr-2604-error",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			},
+		}
+		completer := &mockHTTPCompleter{}
+
+		tool := mcptools.NewCompleteNoActionTool(sessions,
+			mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			mcptools.WithCompleteNoActionAgentSessionExistenceChecker(&fakeAgentSessionExistenceChecker{err: errors.New("api unavailable")}),
+		)
+
+		_, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{RRID: "rr-2604-error"},
+			mcpinternal.UserInfo{Username: "alice"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(completer.runningLookups).To(Equal(1),
+			"a failed existence check must fail open after the immediate dispatch lookup, without polling")
 	})
 })

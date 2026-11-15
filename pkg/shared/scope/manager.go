@@ -135,6 +135,139 @@ type Manager struct {
 	client client.Reader
 }
 
+// LabelState is the bounded representation of the managed-scope label.
+// Invalid values are retained for provenance but never count as opt-in.
+type LabelState string
+
+const (
+	LabelStateTrue    LabelState = "true"
+	LabelStateFalse   LabelState = "false"
+	LabelStateAbsent  LabelState = "absent"
+	LabelStateInvalid LabelState = "invalid"
+)
+
+// ScopeSource identifies the label that determined the effective scope.
+type ScopeSource string
+
+const (
+	ScopeSourceResourceLabel  ScopeSource = "resource-label"
+	ScopeSourceNamespaceLabel ScopeSource = "namespace-label"
+	ScopeSourceNone           ScopeSource = "none"
+	ScopeSourceUnavailable    ScopeSource = "unavailable"
+)
+
+// Resolution is the structured scope decision used by sanitized projections.
+// Reason is for internal diagnostics and must not be serialized to Console
+// responses or audit payloads.
+type Resolution struct {
+	Included       bool
+	ResourceLabel  LabelState
+	NamespaceLabel LabelState
+	Source         ScopeSource
+	ClusterScoped  bool
+	Reason         string
+}
+
+// ResolveLabels applies the single ADR-053 precedence algorithm to already
+// fetched metadata. Local inventory readers use this function so they do not
+// maintain a second scope implementation.
+func ResolveLabels(resourceLabels, namespaceLabels map[string]string, clusterScoped bool) Resolution {
+	return resolveLabelStates(labelState(resourceLabels), labelState(namespaceLabels), clusterScoped)
+}
+
+func resolveLabelStates(resourceState, namespaceState LabelState, clusterScoped bool) Resolution {
+	resolution := Resolution{
+		ResourceLabel:  resourceState,
+		NamespaceLabel: namespaceState,
+		ClusterScoped:  clusterScoped,
+		Source:         ScopeSourceNone,
+	}
+	if resourceState == LabelStateTrue || resourceState == LabelStateFalse {
+		resolution.Included = resourceState == LabelStateTrue
+		resolution.Source = ScopeSourceResourceLabel
+		return resolution
+	}
+	if !clusterScoped && namespaceState != LabelStateAbsent && namespaceState != LabelStateInvalid {
+		resolution.Included = namespaceState == LabelStateTrue
+		resolution.Source = ScopeSourceNamespaceLabel
+		return resolution
+	}
+	return resolution
+}
+
+func labelState(labels map[string]string) LabelState {
+	value, ok := labels[ManagedLabelKey]
+	if !ok || value == "" {
+		return LabelStateAbsent
+	}
+	switch value {
+	case ManagedLabelValueTrue:
+		return LabelStateTrue
+	case ManagedLabelValueFalse:
+		return LabelStateFalse
+	default:
+		return LabelStateInvalid
+	}
+}
+
+// Resolve reads the local resource and namespace metadata and returns the
+// effective managed-scope decision with provenance. Remote identities are
+// rejected because the local Manager cannot inspect another cluster.
+func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resolution, error) {
+	if resource.ClusterID != "" {
+		return Resolution{}, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
+	}
+	clusterScoped := isClusterScoped(resource.Kind) || resource.Namespace == ""
+	if _, known := kindToGroup[resource.Kind]; known {
+		obj := &metav1.PartialObjectMetadata{}
+		obj.SetGroupVersionKind(InferGVK(resource.Kind))
+		lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
+		err := m.client.Get(lookupCtx, client.ObjectKey{Namespace: resource.Namespace, Name: resource.Name}, obj)
+		cancel()
+		if err == nil {
+			return m.ResolveWithResourceLabels(ctx, resource, obj.GetLabels())
+		}
+		if !apierrors.IsNotFound(err) {
+			log.FromContext(ctx).WithName("scope").Error(err, "Resource label check failed")
+			return Resolution{}, fmt.Errorf("scope: resolve resource metadata: %w", err)
+		}
+	}
+	return m.resolveWithResourceLabels(ctx, resource, nil, clusterScoped)
+}
+
+// ResolveWithResourceLabels resolves scope using metadata already fetched for
+// the resource. A valid resource label is decisive, so Namespace metadata is
+// read only when inheritance is required. This is used by bounded inventory
+// readers to avoid a second resource read and to preserve explicit-label
+// precedence when Namespace access is unavailable.
+func (m *Manager) ResolveWithResourceLabels(ctx context.Context, resource ResourceIdentity, resourceLabels map[string]string) (Resolution, error) {
+	if resource.ClusterID != "" {
+		return Resolution{}, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
+	}
+	return m.resolveWithResourceLabels(ctx, resource, resourceLabels, isClusterScoped(resource.Kind) || resource.Namespace == "")
+}
+
+func (m *Manager) resolveWithResourceLabels(ctx context.Context, resource ResourceIdentity, resourceLabels map[string]string, clusterScoped bool) (Resolution, error) {
+	resourceState := labelState(resourceLabels)
+	if resourceState == LabelStateTrue || resourceState == LabelStateFalse || clusterScoped {
+		return resolveLabelStates(resourceState, LabelStateAbsent, clusterScoped), nil
+	}
+
+	namespaceState := LabelStateAbsent
+	ns := &metav1.PartialObjectMetadata{}
+	ns.SetGroupVersionKind(namespaceGVK)
+	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
+	err := m.client.Get(lookupCtx, client.ObjectKey{Name: resource.Namespace}, ns)
+	cancel()
+	if err == nil {
+		namespaceState = labelState(ns.GetLabels())
+	} else if !apierrors.IsNotFound(err) {
+		return Resolution{}, fmt.Errorf("scope: resolve Namespace metadata: %w", err)
+	}
+
+	return resolveLabelStates(resourceState, namespaceState, clusterScoped), nil
+}
+
 // NewManager creates a new scope Manager with the given client reader.
 // Both Gateway and RO pass their cached client (ctrlClient / mgr.GetClient()),
 // which creates metadata-only informers for PartialObjectMetadata lookups.
@@ -155,130 +288,12 @@ func NewManager(c client.Reader) *Manager {
 // ClusterID must be empty — the local Manager cannot resolve remote clusters.
 // For remote checks, use a fleet adapter (e.g., FederatedScopeChecker).
 func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
-	if resource.ClusterID != "" {
-		return false, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
-	}
-
-	namespace, kind, name := resource.Namespace, resource.Kind, resource.Name
-	logger := log.FromContext(ctx).WithName("scope").WithValues(
-		"namespace", namespace, "kind", kind, "name", name,
-	)
-
-	resourceManaged, found, err := m.checkResourceLabel(ctx, namespace, kind, name)
+	resolution, err := m.Resolve(ctx, resource)
 	if err != nil {
-		logger.Error(err, "Failed to check resource label")
+		log.FromContext(ctx).WithName("scope").Error(err, "Failed to resolve resource scope")
 		return false, err
 	}
-	if found {
-		logger.V(1).Info("Scope resolved from resource label", "managed", resourceManaged)
-		return resourceManaged, nil
-	}
-
-	if isClusterScoped(kind) || namespace == "" {
-		logger.V(1).Info("Cluster-scoped resource without label — unmanaged (safe default)")
-		return false, nil
-	}
-
-	nsManaged, found, err := m.checkNamespaceLabel(ctx, namespace)
-	if err != nil {
-		logger.Error(err, "Failed to check namespace label")
-		return false, err
-	}
-	if found {
-		logger.V(1).Info("Scope inherited from namespace label", "managed", nsManaged)
-		return nsManaged, nil
-	}
-
-	logger.V(1).Info("No scope labels found — unmanaged (safe default)")
-	return false, nil
-}
-
-// checkResourceLabel fetches the resource metadata and checks its managed label.
-// Returns (managed, found, error) where found=true means a valid label value was present.
-//
-// Resilience behavior (ADR-053):
-//   - Unknown kind (not in kindToGroup): skips resource check entirely, falls through to namespace.
-//   - Resource not found: falls through to namespace check (not an error).
-//   - Non-NotFound errors (Forbidden, "no matches for kind", etc.): graceful fallthrough to
-//     namespace check with Info-level log. This ensures scope validation degrades to namespace-level
-//     when resource-level validation is not possible (e.g., RBAC limitations, unknown CRDs).
-func (m *Manager) checkResourceLabel(ctx context.Context, namespace, kind, name string) (bool, bool, error) {
-	// Skip resource check for unknown kinds — fall through to namespace
-	if _, known := kindToGroup[kind]; !known {
-		log.FromContext(ctx).WithName("scope").V(1).Info(
-			"Unknown resource kind — skipping resource label check",
-			"kind", kind)
-		return false, false, nil
-	}
-
-	gvk := InferGVK(kind)
-
-	obj := &metav1.PartialObjectMetadata{}
-	obj.SetGroupVersionKind(gvk)
-
-	// Defensive timeout: prevents indefinite blocking if the informer cache
-	// cannot sync for this resource kind (e.g., missing RBAC for list/watch).
-	// Controller-runtime's cached client blocks Get() until the cache is synced;
-	// without RBAC the sync never completes, hanging the request forever.
-	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
-	defer cancel()
-
-	key := client.ObjectKey{Namespace: namespace, Name: name}
-	if err := m.client.Get(lookupCtx, key, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, false, nil // resource not found — fall through
-		}
-		// Graceful degradation for non-NotFound errors (Forbidden, timeout, connection errors, etc.)
-		// Info-level (not V(1)) so operators notice RBAC/infra degradation in production
-		log.FromContext(ctx).WithName("scope").Info(
-			"Resource label check failed — falling through to namespace check. "+
-				"This may indicate missing RBAC permissions for scope validation.",
-			"kind", kind, "name", name, "error", err)
-		return false, false, nil
-	}
-
-	return checkLabelValue(obj.Labels)
-}
-
-// checkNamespaceLabel fetches the namespace metadata and checks its managed label.
-// Returns (managed, found, error) where found=true means a valid label value was present.
-// Namespace not found is NOT an error — returns (false, false, nil) to fall through.
-func (m *Manager) checkNamespaceLabel(ctx context.Context, namespace string) (bool, bool, error) {
-	obj := &metav1.PartialObjectMetadata{}
-	obj.SetGroupVersionKind(namespaceGVK)
-
-	// Same defensive timeout as checkResourceLabel — see scopeLookupTimeout docs.
-	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
-	defer cancel()
-
-	key := client.ObjectKey{Name: namespace}
-	if err := m.client.Get(lookupCtx, key, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, false, nil // namespace not found — fall through to default
-		}
-		return false, false, err
-	}
-
-	return checkLabelValue(obj.Labels)
-}
-
-// checkLabelValue inspects the kubernaut.ai/managed label and returns (managed, found).
-// "true" → (true, true), "false" → (false, true), missing or invalid → (false, false).
-//
-//nolint:unparam // error is always nil here; kept so checkResourceLabel/checkNamespaceLabel (which do return real client.Get errors) can `return checkLabelValue(obj.Labels)` as a direct tail call (Issue #1546 Tier 4)
-func checkLabelValue(labels map[string]string) (bool, bool, error) {
-	val, exists := labels[ManagedLabelKey]
-	if !exists {
-		return false, false, nil // no label — fall through
-	}
-	switch val {
-	case ManagedLabelValueTrue:
-		return true, true, nil
-	case ManagedLabelValueFalse:
-		return false, true, nil
-	default:
-		return false, false, nil // invalid value — treat as unset
-	}
+	return resolution.Included, nil
 }
 
 // InferGVK resolves a Kubernetes resource kind string to its GroupVersionKind

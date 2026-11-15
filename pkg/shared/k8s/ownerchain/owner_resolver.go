@@ -167,6 +167,16 @@ type K8sOwnerResolver struct {
 	logger         logr.Logger
 }
 
+// OwnerResolution is the top-level controller resolved from a Kubernetes
+// resource, including the API version carried by its ownerReference. The API
+// version is needed by consumers that carry resource provenance across service
+// boundaries (for example, fleet-target enrichment).
+type OwnerResolution struct {
+	Kind       string
+	Name       string
+	APIVersion string
+}
+
 // NewK8sOwnerResolver creates a new owner resolver backed by the metadata-only
 // informer cache. Pass the same ctrlClient used by scope.NewManager().
 // A logr.Logger is required for diagnostics (the gateway does not use
@@ -220,6 +230,18 @@ func WithRegistry(reg KindResolver) OwnerResolverOption {
 //   - No ownerReferences: returns the resource itself (standalone pod, bare deployment)
 //   - Max depth reached: returns deepest owner found (prevents infinite loops)
 func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error) {
+	resolution, err := r.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
+	if err != nil {
+		return "", "", err
+	}
+	return resolution.Kind, resolution.Name, nil
+}
+
+// ResolveTopLevelOwnerWithAPIVersion traverses ownerReferences to find the
+// top-level controller and preserves the API version from the ownerReference
+// that selected it. ResolveTopLevelOwner remains the compatibility wrapper for
+// callers that only need kind and name.
+func (r *K8sOwnerResolver) ResolveTopLevelOwnerWithAPIVersion(ctx context.Context, namespace, kind, name string) (OwnerResolution, error) {
 	logger := r.logger
 
 	currentNamespace := namespace
@@ -235,22 +257,32 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 			currentKind = podKind
 			currentName = podName
 		} else {
-			return currentKind, currentName, nil
+			return OwnerResolution{Kind: currentKind, Name: currentName, APIVersion: "v1"}, nil
 		}
 	}
 
-	// Track the most recent owner found (starts as the resource itself)
-	topKind := currentKind
-	topName := currentName
+	// Track the most recent owner found (starts as the resource itself). The
+	// initial version comes from the resolver's authoritative GVK mapping; an
+	// ownerReference's explicit version replaces it as traversal advances.
+	resolution := OwnerResolution{Kind: currentKind, Name: currentName}
+	if gvk, known := r.resolveGVK(currentKind); known {
+		resolution.APIVersion = gvk.GroupVersion().String()
+	}
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
 		step := r.traverseOneOwnerLevel(ctx, currentNamespace, currentKind, currentName, foundOwner, i)
 		if step.err != nil {
-			return "", "", step.err
+			return OwnerResolution{}, step.err
 		}
 		if step.advanced {
-			topKind, topName = step.nextKind, step.nextName
+			resolution.Kind, resolution.Name = step.nextKind, step.nextName
+			resolution.APIVersion = step.nextAPIVersion
+			if resolution.APIVersion == "" {
+				if gvk, known := r.resolveGVK(step.nextKind); known {
+					resolution.APIVersion = gvk.GroupVersion().String()
+				}
+			}
 			foundOwner = true
 			currentKind, currentName = step.nextKind, step.nextName
 		}
@@ -261,20 +293,22 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 
 	logger.V(1).Info("Owner resolution complete",
 		"inputKind", kind, "inputName", name,
-		"resolvedKind", topKind, "resolvedName", topName,
+		"resolvedKind", resolution.Kind, "resolvedName", resolution.Name,
+		"resolvedAPIVersion", resolution.APIVersion,
 		"foundOwner", foundOwner)
-	return topKind, topName, nil
+	return resolution, nil
 }
 
 // ownerStepResult captures the outcome of a single ResolveTopLevelOwner
 // traversal step (extracted to keep the driving loop's cognitive complexity
 // low — see Go Anti-Pattern Checklist, unnecessary nesting).
 type ownerStepResult struct {
-	stop     bool  // true: caller must break out of the traversal loop
-	advanced bool  // true: nextKind/nextName represent a new, resolved owner
-	nextKind string
-	nextName string
-	err      error // non-nil: caller must abort and propagate this error
+	stop           bool // true: caller must break out of the traversal loop
+	advanced       bool // true: nextKind/nextName represent a new, resolved owner
+	nextKind       string
+	nextName       string
+	nextAPIVersion string
+	err            error // non-nil: caller must abort and propagate this error
 }
 
 // traverseOneOwnerLevel performs one level of owner-chain traversal: resolve
@@ -341,7 +375,12 @@ func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 		"from", fmt.Sprintf("%s/%s", currentKind, currentName),
 		"to", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name))
 
-	return ownerStepResult{advanced: true, nextKind: controllerRef.Kind, nextName: controllerRef.Name}
+	return ownerStepResult{
+		advanced:       true,
+		nextKind:       controllerRef.Kind,
+		nextName:       controllerRef.Name,
+		nextAPIVersion: controllerRef.APIVersion,
+	}
 }
 
 // resolveMissingControllerRef handles the case where the cached lookup found
@@ -369,7 +408,12 @@ func (r *K8sOwnerResolver) resolveMissingControllerRef(
 		return ownerStepResult{err: verifyErr}
 	}
 	if verifiedRef != nil {
-		return ownerStepResult{advanced: true, nextKind: verifiedRef.Kind, nextName: verifiedRef.Name}
+		return ownerStepResult{
+			advanced:       true,
+			nextKind:       verifiedRef.Kind,
+			nextName:       verifiedRef.Name,
+			nextAPIVersion: verifiedRef.APIVersion,
+		}
 	}
 	return ownerStepResult{stop: true}
 }

@@ -239,6 +239,7 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 						},
 						Confidence: 0.85,
 						Rationale:  "Pod restart recommended for high latency",
+						Parameters: sharedtypes.TypedParameterMap{},
 					},
 					RootCause: "Memory leak detected",
 				},

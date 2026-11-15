@@ -64,7 +64,8 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 	})
 
 	mcpToolCall := func(toolName string, args map[string]interface{}) (string, error) {
-		callBody := buildJSONRPC(fmt.Sprintf("g8-%s-%d", toolName, time.Now().UnixNano()),
+		rpcID := fmt.Sprintf("g8-%s-%d", toolName, time.Now().UnixNano())
+		callBody := buildJSONRPC(rpcID,
 			"tools/call", map[string]interface{}{
 				"name":      toolName,
 				"arguments": args,
@@ -77,7 +78,7 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 			return "", fmt.Errorf("HTTP %d: %s", code, string(raw))
 		}
 		payload := unwrapSSEDataLine(raw)
-		text, toolErr, parseErr := parseMCPToolPayload(payload)
+		text, toolErr, parseErr := parseMCPToolPayload(payload, rpcID)
 		if parseErr != nil {
 			return text, parseErr
 		}

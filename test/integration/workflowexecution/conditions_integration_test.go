@@ -42,6 +42,8 @@ import (
 // ========================================
 
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
+	var workflowID string
+	BeforeEach(func() { workflowID = trustedWorkflowFixture("Conditions fixture", "tekton") })
 	Context("ExecutionCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
@@ -59,7 +61,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
+							WorkflowID:      workflowID,
 							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
@@ -68,9 +70,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/condition-test-app",
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
-					},
+					}),
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -129,7 +131,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
+							WorkflowID:      workflowID,
 							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
@@ -138,6 +140,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/running-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -197,7 +200,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
+							WorkflowID:      workflowID,
 							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
@@ -206,6 +209,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/complete-success-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -285,7 +289,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
+							WorkflowID:      workflowID,
 							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
@@ -294,6 +298,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/audit-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -344,7 +349,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "test-workflow",
+							WorkflowID:      workflowID,
 							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
@@ -353,6 +358,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						},
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

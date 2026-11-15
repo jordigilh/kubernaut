@@ -411,9 +411,9 @@ spec:
     requests:
       storage: 1Gi
 `, namespace)
-		annotationsBlock = `
-      annotations:
-        secret.reloader.stakater.com/reload: "keycloak-tls"`
+		annotationsBlock = `  annotations:
+    secret.reloader.stakater.com/reload: "keycloak-tls"
+`
 		dataVolumeMount = `
         - name: keycloak-data
           mountPath: /opt/keycloak/data/h2`
@@ -438,7 +438,7 @@ kind: Deployment
 metadata:
   name: keycloak
   namespace: %[2]s
-spec:
+%[4]sspec:
   replicas: 1
   selector:
     matchLabels:
@@ -446,7 +446,7 @@ spec:
   template:
     metadata:
       labels:
-        app: keycloak%[4]s
+        app: keycloak
     spec:
       containers:
       - name: keycloak

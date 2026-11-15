@@ -17,6 +17,8 @@ limitations under the License.
 package datastorage_test
 
 import (
+	"maps"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -90,6 +92,65 @@ var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 	})
 
 	Context("parameter value validation", func() {
+		DescribeTable("BR-KA-191 validates complete effective parameter maps without rewriting", func(parameter models.WorkflowParameter, values map[string]string, valid bool) {
+			original := maps.Clone(values)
+			err := models.ValidateParameterSet([]models.WorkflowParameter{parameter}, values)
+			Expect(values).To(Equal(original))
+			if valid {
+				Expect(err).NotTo(HaveOccurred())
+			} else {
+				Expect(err).To(HaveOccurred())
+			}
+		},
+			Entry("UT-VAL-2570-080: exact string", models.WorkflowParameter{Name: "P", Type: "string", Pattern: "^[a-z ]+$"}, map[string]string{"P": "keep text"}, true),
+			Entry("integer exact", models.WorkflowParameter{Name: "P", Type: "integer"}, map[string]string{"P": "9007199254740993"}, true),
+			Entry("integer decimal", models.WorkflowParameter{Name: "P", Type: "integer"}, map[string]string{"P": "1.0"}, false),
+			Entry("UT-VAL-2570-082: integer over bound", models.WorkflowParameter{Name: "P", Type: "integer", Maximum: ptrFloat64(9007199254740992)}, map[string]string{"P": "9007199254740993"}, false),
+			Entry("float exact text", models.WorkflowParameter{Name: "P", Type: "float"}, map[string]string{"P": "1.0"}, true),
+			Entry("UT-VAL-2570-090: float non-finite", models.WorkflowParameter{Name: "P", Type: "float"}, map[string]string{"P": "NaN"}, false),
+			Entry("UT-VAL-2570-091: float overflow", models.WorkflowParameter{Name: "P", Type: "float"}, map[string]string{"P": "1e400"}, false),
+			Entry("UT-VAL-2570-092: float underflow", models.WorkflowParameter{Name: "P", Type: "float"}, map[string]string{"P": "1e-4000"}, false),
+			Entry("UT-VAL-2570-093: integer above int64", models.WorkflowParameter{Name: "P", Type: "integer"}, map[string]string{"P": "9223372036854775808"}, false),
+			Entry("UT-VAL-2570-093: integer below int64", models.WorkflowParameter{Name: "P", Type: "integer"}, map[string]string{"P": "-9223372036854775809"}, false),
+			Entry("UT-VAL-2570-081: array", models.WorkflowParameter{Name: "P", Type: "array"}, map[string]string{"P": `["a"]`}, true),
+			Entry("UT-VAL-2570-081: array null", models.WorkflowParameter{Name: "P", Type: "array"}, map[string]string{"P": "null"}, false),
+			Entry("missing required", models.WorkflowParameter{Name: "P", Type: "string", Required: true}, map[string]string{}, false),
+			Entry("UT-VAL-2570-088: default remains omitted", models.WorkflowParameter{Name: "P", Type: "string", Default: "auto"}, map[string]string{}, true),
+			Entry("UT-VAL-2570-085: missing dependency", models.WorkflowParameter{Name: "P", Type: "string", DependsOn: []string{"Q"}}, map[string]string{"P": "x"}, false),
+			Entry("malformed pattern absent value", models.WorkflowParameter{Name: "P", Type: "string", Pattern: "["}, map[string]string{}, false),
+			Entry("UT-VAL-2570-084: pattern mismatch", models.WorkflowParameter{Name: "P", Type: "string", Pattern: "^[a-z]+$"}, map[string]string{"P": "FAST"}, false),
+			Entry("UT-VAL-2570-083: enum mismatch", models.WorkflowParameter{Name: "P", Type: "string", Enum: []string{"safe"}}, map[string]string{"P": "fast"}, false),
+			Entry("unknown parameter", models.WorkflowParameter{Name: "P", Type: "string"}, map[string]string{"NEW": "x"}, false),
+		)
+		It("UT-DS-2578-001: BR-KA-191 rejects malformed typed parameter values", func() {
+			integer := models.WorkflowParameter{Name: "REPLICAS", Type: "integer"}
+			for _, value := range []string{"1.0", "1e3", "9223372036854775808"} {
+				Expect(models.ValidateParameterValue(integer, value)).To(HaveOccurred(), "integer %q", value)
+			}
+			Expect(models.ValidateParameterValue(integer, "9007199254740993")).To(Succeed())
+			integer.Maximum = ptrFloat64(9007199254740992)
+			Expect(models.ValidateParameterValue(integer, "9007199254740993")).To(HaveOccurred())
+
+			floating := models.WorkflowParameter{Name: "THRESHOLD", Type: "float"}
+			for _, value := range []string{"NaN", "Inf", "1e400", "1e-4000"} {
+				Expect(models.ValidateParameterValue(floating, value)).To(HaveOccurred(), "float %q", value)
+			}
+			Expect(models.ValidateParameterValue(floating, "1.0")).To(Succeed())
+		})
+
+		It("UT-DS-2578-002: BR-KA-191 validates boolean and array representations", func() {
+			boolean := models.WorkflowParameter{Name: "ENABLED", Type: "boolean"}
+			Expect(models.ValidateParameterValue(boolean, "true")).To(Succeed())
+			Expect(models.ValidateParameterValue(boolean, "false")).To(Succeed())
+			Expect(models.ValidateParameterValue(boolean, "notbool")).To(HaveOccurred())
+
+			array := models.WorkflowParameter{Name: "ITEMS", Type: "array"}
+			Expect(models.ValidateParameterValue(array, `["a","b"]`)).To(Succeed())
+			Expect(models.ValidateParameterValue(array, "garbage")).To(HaveOccurred())
+			Expect(models.ValidateParameterValue(array, "null")).To(HaveOccurred())
+			Expect(models.ValidateParameterValue(models.WorkflowParameter{Name: "UNKNOWN", Type: "unknown"}, "value")).To(HaveOccurred())
+		})
+
 		It("UT-WF-005-003: should reject float value outside min/max bounds", func() {
 			param := models.WorkflowParameter{
 				Name:    "THRESHOLD",

@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -234,6 +235,8 @@ var _ = SynchronizedBeforeSuite(
 		// Register CRD schemes
 		err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
+		err = rwv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
 		err = tektonv1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
 		// Note: batch/v1 is already registered by k8s.io/client-go/kubernetes/scheme (BR-WE-014)
@@ -251,6 +254,18 @@ var _ = SynchronizedBeforeSuite(
 			"ginkgoProcess", GinkgoParallelProcess())
 	},
 )
+
+// createWFEFromCatalog requires a unique live workflow before fixture creation.
+func createWFEFromCatalog(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	var workflows rwv1alpha1.RemediationWorkflowList
+	if err := apiReader.List(ctx, &workflows, client.InNamespace(controllerNamespace), client.MatchingFields{"status.workflowId": wfe.Spec.WorkflowRef.WorkflowID}); err != nil {
+		return fmt.Errorf("list trusted workflow for fixture: %w", err)
+	}
+	if len(workflows.Items) != 1 {
+		return fmt.Errorf("expected one trusted workflow for fixture %q, got %d", wfe.Spec.WorkflowRef.WorkflowID, len(workflows.Items))
+	}
+	return k8sClient.Create(ctx, wfe)
+}
 
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes after their tests complete
@@ -452,9 +467,10 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: map[string]string{
-				"MESSAGE": "E2E test message",
-			},
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"MESSAGE":         "E2E test message",
+			}),
 		},
 	}
 }

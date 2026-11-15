@@ -385,6 +385,10 @@ Back on the hub, bridge a local Service to the spoke's `kube-mcp-server` NodePor
 register it with Kuadrant under the identity every fleet test (and, once you install
 the chart, every fleet-tagged `RemediationRequest`) expects: `remote-cluster`.
 
+This guide requires a Kuadrant release that serves `mcp.kuadrant.io/v1`. Kubernaut's
+registry no longer watches v1alpha1; see [the #2594 migration note](../../issues/2594-kuadrant-mcpserverregistration-v1-migration.md)
+before upgrading an installation that only exposes v1alpha1.
+
 ```bash
 kubectl --kubeconfig "$KUBECONFIG" apply -f - <<EOF
 apiVersion: v1
@@ -432,7 +436,7 @@ spec:
   parentRefs: [{name: mcp-gateway, namespace: gateway-system, sectionName: mcp}]
   rules: [{backendRefs: [{name: kube-mcp-server-remote, port: 8080}]}]
 ---
-apiVersion: mcp.kuadrant.io/v1alpha1
+apiVersion: mcp.kuadrant.io/v1
 kind: MCPServerRegistration
 metadata: {name: remote-cluster, labels: {kubernaut.ai/managed: "true"}}
 spec:

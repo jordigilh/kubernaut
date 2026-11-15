@@ -37,7 +37,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
@@ -189,22 +191,41 @@ func (r *WorkflowExecutionReconciler) replaceFailedPipelineRun(ctx context.Conte
 	if r.ExecutorRegistry == nil {
 		return ctrl.Result{}, false, fmt.Errorf("executor registry is required to replace terminal retained PipelineRun")
 	}
-	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
+	createOpts, optsErr := r.replacementCreateOptions(ctx, wfe)
+	if optsErr != nil {
+		return ctrl.Result{}, false, optsErr
+	}
 	exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if execErr != nil {
 		return ctrl.Result{}, false, fmt.Errorf("get executor for terminal PipelineRun replacement: %w", execErr)
 	}
-	if _, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, weexecutor.CreateOptions{
-		Dependencies:           convertWorkflowDependencies(wfe.Spec.WorkflowRef.Dependencies),
-		DeclaredParameterNames: wfe.Spec.WorkflowRef.DeclaredParameterNames,
-		RetainFailedExecutions: retainFailedExecutions,
-	}); createErr != nil {
+	if _, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts); createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
 			return ctrl.Result{RequeueAfter: time.Second}, true, nil
 		}
 		return ctrl.Result{}, false, fmt.Errorf("create replacement PipelineRun: %w", createErr)
 	}
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, true, nil
+}
+
+func (r *WorkflowExecutionReconciler) replacementCreateOptions(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (weexecutor.CreateOptions, error) {
+	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
+	createOpts := weexecutor.CreateOptions{RetainFailedExecutions: retainFailedExecutions}
+	if r.CatalogNamespace == "" {
+		return createOpts, nil
+	}
+	workflow, err := workflowidentity.GetVerified(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
+		return weexecutor.CreateOptions{}, fmt.Errorf("verify workflow before PipelineRun replacement: %w", err)
+	}
+	if err := remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(workflow, wfe.Spec.Parameters); err != nil {
+		return weexecutor.CreateOptions{}, fmt.Errorf("validate workflow parameters before PipelineRun replacement: %w", err)
+	}
+	_, createOpts, err = r.resolveSchemaMetadataFromWorkflow(workflow)
+	if err != nil {
+		return weexecutor.CreateOptions{}, fmt.Errorf("resolve live workflow metadata before PipelineRun replacement: %w", err)
+	}
+	return createOpts, nil
 }
 
 func pipelineRunFailed(pr *tektonv1.PipelineRun) bool {

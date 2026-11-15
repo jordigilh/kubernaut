@@ -64,24 +64,26 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		// would resolve -- proves RO reads it verbatim, not from a live lookup.
 		ai.Status.RCAResult.SelectedWorkflow.WorkflowName = workflowName
 		ai.Status.RCAResult.SelectedWorkflow.ActionType = actionType
+		workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
 		sp := newSignalProcessingCompleted("sp-test-rr-643", "test-rr-643")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, ai, sp).
+			WithObjects(rr, ai, sp, workflow).
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
 		recorder := record.NewFakeRecorder(20)
 		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-			Client:        fakeClient,
-			APIReader:     fakeClient,
-			Scheme:        scheme,
-			AuditStore:    nil,
-			Recorder:      recorder,
-			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			Timeouts:      prodcontroller.TimeoutConfig{},
-			RoutingEngine: &MockRoutingEngine{},
+			Client:           fakeClient,
+			APIReader:        fakeClient,
+			Scheme:           scheme,
+			AuditStore:       nil,
+			Recorder:         recorder,
+			Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:         prodcontroller.TimeoutConfig{},
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    &MockRoutingEngine{},
 		})
 		// No workflow-display resolver to wire -- Issue #1677 Phase 1 removed
 		// the live DataStorage lookup mechanism entirely.
@@ -113,24 +115,26 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		// newAIAnalysisCompleted's default fixture sets WorkflowName=workflowID
 		// and ActionType="RestartPod" -- unmodified here.
 		ai := newAIAnalysisCompleted("ai-test-rr-643b", defaultFixture, "test-rr-643b", 0.95, workflowUUID)
+		workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
 		sp := newSignalProcessingCompleted("sp-test-rr-643b", "test-rr-643b")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, ai, sp).
+			WithObjects(rr, ai, sp, workflow).
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
 		recorder := record.NewFakeRecorder(20)
 		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-			Client:        fakeClient,
-			APIReader:     fakeClient,
-			Scheme:        scheme,
-			AuditStore:    nil,
-			Recorder:      recorder,
-			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			Timeouts:      prodcontroller.TimeoutConfig{},
-			RoutingEngine: &MockRoutingEngine{},
+			Client:           fakeClient,
+			APIReader:        fakeClient,
+			Scheme:           scheme,
+			AuditStore:       nil,
+			Recorder:         recorder,
+			Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:         prodcontroller.TimeoutConfig{},
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    &MockRoutingEngine{},
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

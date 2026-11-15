@@ -30,7 +30,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -240,6 +246,50 @@ var _ = Describe("buildMCPHandler — construction-path characterization", func(
 
 		Expect(handler).To(BeNil(), "expected nil handler when controller-runtime client construction fails")
 		Expect(drainer).To(BeNil(), "expected nil session drainer when controller-runtime client construction fails")
+	})
+})
+
+// BR-INTERACTIVE-005: startup construction must reclaim expired interactive
+// Leases so a restarted KA does not inherit stale capacity or ownership.
+var _ = Describe("buildMCPLeaseManager — startup reconciliation wiring", func() {
+	It("IT-KA-2597-004: startup construction reclaims an expired interactive Lease", func() {
+		const (
+			namespace = "mcp-wiring-2597"
+			rrID      = "rr-startup-reclaim-2597"
+		)
+		scheme := runtime.NewScheme()
+		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
+
+		leaseDuration := int32(1800)
+		acquired := metav1.NewMicroTime(time.Now().Add(-2 * time.Hour))
+		lease := &coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kubernaut-interactive-" + rrID,
+				Namespace: namespace,
+			},
+			Spec: coordinationv1.LeaseSpec{
+				HolderIdentity:       strPtr("dead-session-2597"),
+				LeaseDurationSeconds: &leaseDuration,
+				AcquireTime:          &acquired,
+			},
+		}
+		ctrlCli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build()
+
+		manager := buildMCPLeaseManager(mcpLeaseManagerDeps{
+			ctrlCli:        ctrlCli,
+			namespace:      namespace,
+			cfg:            validMCPInteractiveConfig(),
+			autoMgr:        newMCPTestAutoMgr(),
+			agentMetrics:   newMCPTestAgentMetrics(),
+			logger:         logr.Discard(),
+			sessionJanitor: nil,
+		})
+		Expect(manager).NotTo(BeNil())
+
+		var remaining coordinationv1.Lease
+		Expect(ctrlCli.Get(context.Background(), crclient.ObjectKey{Namespace: namespace, Name: lease.Name}, &remaining)).To(
+			MatchError(apierrors.IsNotFound, "startup wiring must reclaim the expired interactive Lease"),
+		)
 	})
 })
 

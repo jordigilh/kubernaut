@@ -30,7 +30,7 @@ import (
 type rcaEventPayload struct {
 	katypes.LiveSelectionContext
 	Severity              string   `json:"severity,omitempty"`
-	Confidence            float64  `json:"confidence,omitempty"`
+	Confidence            *float64 `json:"confidence,omitempty"`
 	CausalChain           []string `json:"causal_chain,omitempty"`
 	CausalMechanismStatus string   `json:"causal_mechanism_status,omitempty"`
 	Target                string   `json:"target,omitempty"`
@@ -75,7 +75,7 @@ func MarshalRCASubset(result *katypes.InvestigationResult) json.RawMessage {
 	payload := rcaEventPayload{
 		LiveSelectionContext:  katypes.LiveSelectionFromResult(result),
 		Severity:              result.Severity,
-		Confidence:            result.Confidence,
+		Confidence:            result.RCAConfidence,
 		CausalChain:           result.CausalChain,
 		CausalMechanismStatus: result.CausalMechanismStatus,
 		Target:                formatTarget(result.RemediationTarget),
@@ -84,10 +84,6 @@ func MarshalRCASubset(result *katypes.InvestigationResult) json.RawMessage {
 		TotalToolCalls:        result.TotalToolCalls,
 		IsActionable:          result.IsActionable,
 		HasWorkflow:           result.WorkflowID != "",
-	}
-	// DD-KA-2496: RCA provenance is independent of the current selection score.
-	if result.RCAConfidence != nil {
-		payload.Confidence = *result.RCAConfidence
 	}
 	// #2387 tokens: TokenUsage nil (never recorded, e.g. pre-fix results or
 	// pure-sentinel flows) leaves all three keys absent.

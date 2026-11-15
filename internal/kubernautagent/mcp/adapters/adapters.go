@@ -188,6 +188,9 @@ func (a *WorkflowCatalogAdapter) GetWorkflowByID(ctx context.Context, workflowID
 	catalogWorkflow.Dependencies = meta.Dependencies
 	catalogWorkflow.Resources = meta.Resources
 	catalogWorkflow.DeclaredParameterNames = meta.DeclaredParameterNames
+	if meta.DeclaredParameterNames != nil {
+		catalogWorkflow.ParameterSchema = append([]models.WorkflowParameter{}, meta.Parameters...)
+	}
 	if wf.ExecutionBundle != nil {
 		catalogWorkflow.ExecutionBundle = *wf.ExecutionBundle
 	}

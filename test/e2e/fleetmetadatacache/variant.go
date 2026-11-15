@@ -37,12 +37,12 @@ func (kuadrantVariant) DiscoveryLabel() string      { return "Kuadrant" }
 func (kuadrantVariant) DynamicResourceKind() string { return "MCPServerRegistration" }
 
 // mcpServerRegistrationGVK matches pkg/fleet/registry.MCPServerRegistrationGVR
-// (mcp.kuadrant.io/v1alpha1, Kind MCPServerRegistration). Declared locally
+// (mcp.kuadrant.io/v1, Kind MCPServerRegistration). Declared locally
 // (not imported from pkg/fleet/registry) since this test only needs it to
 // build an unstructured.Unstructured for k8sClient CRUD -- pulling in the
 // registry package for one GVK constant isn't warranted.
 func mcpServerRegistrationGVK() schema.GroupVersionKind {
-	return schema.GroupVersionKind{Group: "mcp.kuadrant.io", Version: "v1alpha1", Kind: "MCPServerRegistration"}
+	return schema.GroupVersionKind{Group: "mcp.kuadrant.io", Version: "v1", Kind: "MCPServerRegistration"}
 }
 
 // NewDynamicClusterResource builds an unstructured MCPServerRegistration

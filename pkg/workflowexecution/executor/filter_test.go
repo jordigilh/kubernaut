@@ -58,4 +58,31 @@ var _ = Describe("UT-WE-054-FILTER: FilterDeclaredParameters", func() {
 		result := executor.FilterDeclaredParameters(params, declared, logger)
 		Expect(result).To(BeEmpty())
 	})
+
+	It("UT-WE-2575-015: converts mixed typed values to engine strings without type inference", func() {
+		params := typedParametersFromStrings(map[string]string{
+			"TEXT":       `"safe"`,
+			"COUNT":      `3`,
+			"RATIO":      `1.25`,
+			"ENABLED":    `false`,
+			"ITEMS":      `["x",2,false]`,
+			"UNDECLARED": `"must-not-reach-engine"`,
+		})
+
+		result, err := executor.FilterDeclaredTypedParameterStrings(params, map[string]bool{
+			"TEXT":    true,
+			"COUNT":   true,
+			"RATIO":   true,
+			"ENABLED": true,
+			"ITEMS":   true,
+		}, logger)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(map[string]string{
+			"TEXT":    "safe",
+			"COUNT":   "3",
+			"RATIO":   "1.25",
+			"ENABLED": "false",
+			"ITEMS":   `["x",2,false]`,
+		}))
+	})
 })

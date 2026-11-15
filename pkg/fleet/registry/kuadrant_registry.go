@@ -31,7 +31,7 @@ import (
 // MCPServerRegistrationGVR is the GroupVersionResource for Kuadrant's MCPServerRegistration CRD.
 var MCPServerRegistrationGVR = schema.GroupVersionResource{
 	Group:    "mcp.kuadrant.io",
-	Version:  "v1alpha1",
+	Version:  "v1",
 	Resource: "mcpserverregistrations",
 }
 

@@ -54,6 +54,7 @@ func normalizePath(p string) string {
 	}
 }
 
+// backendIncarnationMiddleware adds the process identity to authenticated lifecycle responses.
 func backendIncarnationMiddleware(incarnation string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(backendIncarnationHeader, incarnation)

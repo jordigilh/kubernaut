@@ -259,11 +259,12 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		// Low confidence (0.4 < 0.8) triggers approval
 		ai := newAIAnalysisCompleted("ai-test-rr-approval", defaultFixture, "test-rr-approval", 0.4, "restart-pod")
+		workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
 		sp := newSignalProcessingCompleted("sp-test-rr-approval", "test-rr-approval")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, ai, sp).
+			WithObjects(rr, ai, sp, workflow).
 			WithStatusSubresource(
 				&remediationv1.RemediationRequest{},
 				&remediationv1.RemediationApprovalRequest{},
@@ -271,14 +272,15 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			Build()
 
 		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-			Client:        fakeClient,
-			APIReader:     fakeClient,
-			Scheme:        scheme,
-			AuditStore:    nil,
-			Recorder:      recorder,
-			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			Timeouts:      prodcontroller.TimeoutConfig{},
-			RoutingEngine: &MockRoutingEngine{},
+			Client:           fakeClient,
+			APIReader:        fakeClient,
+			Scheme:           scheme,
+			AuditStore:       nil,
+			Recorder:         recorder,
+			Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:         prodcontroller.TimeoutConfig{},
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    &MockRoutingEngine{},
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -307,10 +309,12 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		ai := newAIAnalysisCompleted("ai-test-rr-granted", defaultFixture, "test-rr-granted", 0.4, "restart-pod")
 		sp := newSignalProcessingCompleted("sp-test-rr-granted", "test-rr-granted")
 		rar := newRemediationApprovalRequestApproved("rar-test-rr-granted", "test-rr-granted", "admin@example.com")
+		workflow := verifiedWorkflowForSelection(ai.Status.RCAResult.SelectedWorkflow)
+		rar.Spec.Workflow.WorkflowID = workflow.Status.WorkflowID
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, ai, sp, rar).
+			WithObjects(rr, ai, sp, rar, workflow).
 			WithStatusSubresource(
 				&remediationv1.RemediationRequest{},
 				&remediationv1.RemediationApprovalRequest{},
@@ -318,14 +322,15 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			Build()
 
 		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
-			Client:        fakeClient,
-			APIReader:     fakeClient,
-			Scheme:        scheme,
-			AuditStore:    nil,
-			Recorder:      recorder,
-			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			Timeouts:      prodcontroller.TimeoutConfig{},
-			RoutingEngine: &MockRoutingEngine{},
+			Client:           fakeClient,
+			APIReader:        fakeClient,
+			Scheme:           scheme,
+			AuditStore:       nil,
+			Recorder:         recorder,
+			Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:         prodcontroller.TimeoutConfig{},
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    &MockRoutingEngine{},
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

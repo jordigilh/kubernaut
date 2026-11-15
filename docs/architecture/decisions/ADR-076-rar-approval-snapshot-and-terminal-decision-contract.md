@@ -64,19 +64,21 @@ explicitly expand their scope.
 
 **Approach**: AIAnalysis produces a shared selection snapshot. When RO creates
 the RAR, it copies that snapshot into the immutable RAR spec. The RAR status
-stores the terminal decision and complete parameter replacement override.
+stores the terminal decision and the operator's partial parameter override.
 
 **Pros**:
 
 - RAR can be reviewed independently of an investigation session.
 - RO consumes one approval-scoped source of truth.
-- Original parameters and selection revision cannot drift after request creation.
+- Original parameters cannot drift after request creation.
 - Audit reconstruction can distinguish original, override and effective values.
 
 **Cons**:
 
 - The RAR CRD schema stores a second copy of selection data.
-- Sensitive-value storage and redaction rules must be explicit.
+- User-input storage and access rules must be explicit.
+- A shared schema-validation core and service-specific adapters must be wired and
+  proven across KA, AF and AuthWebhook.
 
 **Confidence**: 95% (chosen)
 
@@ -130,13 +132,10 @@ AIAnalysis and RAR use the same logical selection snapshot contract:
 workflowId: oom-recovery
 workflowName: oom-recovery-v1
 workflowVersion: 1.2.0
-workflowRevision: sha256:...
 executionBundle: registry.example/oom-recovery@sha256:...
 parameters:
   MEMORY_LIMIT: "512Mi"
   REPLICAS: "3"
-selectionRevision: rar-selection-v1
-selectionDigest: sha256:...
 ```
 
 The canonical typed execution portion of this snapshot is the existing
@@ -146,25 +145,121 @@ It carries the catalog-authoritative workflow identity and execution fields:
 `ExecutionBundleDigest`, `ExecutionEngine`, `EngineConfig`,
 `ServiceAccountName`, `ExecutionClusterID`, `Dependencies`, `Resources` and
 `DeclaredParameterNames`. The selection contract accompanies that type with
-`Parameters`, `SelectionRevision` and `SelectionDigest`.
+`Parameters` and the selected workflow's parameter schema.
+The RAR also freezes the target context needed for
+locking, resource checks, hashing and WorkflowExecution creation.
+
+Keep selected-workflow `confidence` in the existing immutable RAR
+`spec.confidence` field and selected-workflow `rationale` in
+`spec.recommendedWorkflow.rationale`. Selection provenance uses the existing
+immutable `spec.remediationRequestRef` and `spec.aiAnalysisRef` plus workflow
+ID, name and version in the frozen execution snapshot; do not add a separate
+reviewer-facing UID, selection revision or selection digest. RO uses these
+frozen RAR values for WE confidence/rationale and approval audit context.
 
 The YAML above is illustrative; the shared Go type and generated CRD schemas
 are canonical.
 
-`SelectionDigest` is the SHA-256 digest of a canonical JSON preimage containing
-the complete original selection snapshot, excluding the digest field itself.
-The canonicalizer MUST use the fixed struct field order, lexicographically
-sorted map keys, UTF-8 JSON without insignificant whitespace, and explicit
-presence markers for nil versus empty maps. This preserves the distinction
-between an absent parameter map and an explicit empty map. A shared helper and
-fixed test vectors will be required by implementation.
+The RAR spec is immutable and is the review source of truth; no separate
+selection digest is required. Missing original parameter data fails closed; an
+explicitly empty map means data was provided with no values and remains subject
+to schema validation. Correct AIA's existing `omitempty` parameter representation
+and verify it through the generated CRD. Integer parameter text remains exact
+and must not be converted to float64. General numeric normalization of
+workflow-author configuration is outside the agreed scope.
+
+RO is the authorized creator of the single RAR per RR. If RO's create returns
+`AlreadyExists`, never reuse the existing RAR: treat it as suspected tampering,
+fail the investigation and RR, and route to manual review. This also applies to
+a retry following an earlier successful create whose next step was not recorded;
+the safety decision deliberately favors manual review over automatic recovery.
+If the RAR is missing after the RR entered approval, fail and route to manual
+review rather than creating a replacement. This detects and escalates a collision;
+it does not prevent CR creation or guarantee that an independent controller has
+not acted. Test the RO outcome through the production path. A separate
+reviewer-facing RAR UID or reuse-provenance marker is not part of this contract.
+
+For #2570 the workflow already stored in etcd is the catalog source. Preserve
+the execution snapshot through approval; original author input precision before
+catalog storage is outside this effort. Reviewer parameter processing must
+retain both the original length and exact string value, in addition to passing
+schema validation.
 
 The current execution contract remains `map[string]string`. “Generic” means
 that the parameter names are not hard-coded by AF or RAR; it does not introduce
 typed JSON values into WorkflowExecution.
 
+For schema-directed validation, a `string` value remains exact text; non-string
+values are carried as JSON text representing the schema type, such as `3`,
+`true` or `["a","b"]`. Invalid type representations are rejected. This is
+decoding of string-valued transport, not typed transport (#2575).
+Integer numeric text must be preserved without float64 conversion across the
+selection handoff. The input contract accepts integer JSON text such as `3`,
+not decimal or exponent notation such as `3.0` or `1e3`, even if a generic
+parser considers those values mathematically integral. An omitted optional parameter remains omitted in the RAR;
+review shows the omission. AW and RO do not insert schema defaults into the
+effective parameter map, WE or audit evidence. A workflow may supply its own
+runtime default; this contract does not assert that it does. The AF-to-API and
+execution/audit integration paths must test omission.
+Integer validation uses signed `int64`. Float validation uses finite `float64`
+and rejects overflow and nonzero input that underflows to zero. Numeric schema
+bounds must be compared without rounding an integer to float64.
+The user states that workflow parameters contain no secrets. BR-AUDIT-011
+describes KA Secret read permissions and sanitization before LLM output;
+runtime isolation must be verified rather than assumed. WorkflowExecution delivers secret dependencies
+through backend-specific mechanisms. This contract does not by itself establish
+protection of rationale or error text.
+
+Clarification: redacted Secret information may be presented as LLM investigation
+context; workflow parameters are operational inputs defined by the discovery
+agent, not a channel for consuming secrets. Execution secret dependencies are
+delivered separately through WorkflowExecution.
+
+For a new approval snapshot, absent schema-derived declared-parameter metadata
+must prevent execution: the executor's nil allowlist otherwise passes all
+parameters. An explicitly empty declared map means no parameters are declared.
+The existing declaration filter remains authoritative for all executors;
+undeclared managed target keys are not passed as executor inputs. The frozen
+target safety context remains separately available to RO. This is a fail-closed
+safety rule, not legacy RAR compatibility; migration is outside #2570.
+
+### Shared parameter validation
+
+KA, AF and AuthWebhook use one shared, side-effect-free workflow parameter
+validation core for the complete effective map and the same schema constraints.
+KA and AF adapt their typed inputs; AuthWebhook decodes the string-valued RAR
+transport according to the reviewed schema before calling the core. The
+transport remains `map[string]string`; typed transport is deferred to #2575.
+The core must have one approved specification and common vectors for supported
+types, required values, bounds, enum, pattern, defaults, dependencies and
+malformed schemas. Exact decoding and edge semantics remain design-review
+questions, not implied by an existing validator.
+
+AF must receive the **full** selected workflow parameter schema, including
+pattern, minimum, maximum and dependencies as well as type, required, default
+and enum. Its current discovery projection omits some constraints. KA retains
+its self-correction and managed-key handling; AF supplies preflight feedback;
+AuthWebhook retains authoritative admission, overlay, locked-target and
+identity checks. The core does not confer authorization or modify parameters.
+Its callers must be connected to production paths and independently integration
+tested. #2578 addresses the defective existing DataStorage helper without
+asserting it currently has production callers.
+
 AIAnalysis is the producer of the original selection. RAR is the approval-time
 source of truth after the snapshot is copied into its immutable spec.
+
+The user subsequently clarified that WE must fail closed if the workflow is
+not found at runtime, even when the snapshot is complete. This changes the
+snapshot-only execution/deletion behavior of DD-WORKFLOW-018 and requires a
+trusted-namespace catalog lookup before WE dispatch. AW override identity
+checking and WE lookup are point-in-time checks, not an atomic guarantee that
+the catalog remains unchanged until a later write or external dispatch. The
+proposed trusted-namespace `status.workflowId` selector requires exactly one
+matching recomputed content ID. A successful no-match, ambiguity or mismatch
+fails closed immediately; transient API/network failures receive at most three
+total cancellable attempts, then fail closed. These checks remain subject to
+design review. A selector miss alone does not establish why the ID was absent.
+External bundle and dependency availability remain execution-time concerns.
 
 ### 2. RAR status override semantics
 
@@ -179,23 +274,23 @@ workflowOverride:
   rationale: Increase memory for the observed workload
 ```
 
-Effective parameter selection is not a per-key merge:
+Effective parameters are the original map overlaid with the submitted changes:
 
 - `workflowOverride == nil` or `parameters == nil`: use the original RAR spec
   parameter map.
-- For a non-nil replacement map, AuthWebhook requires every locked
-  `TARGET_RESOURCE_*` key from the original RAR snapshot to be present with
-  its original value. Missing or changed locked keys are rejected. Any new
-  `TARGET_RESOURCE_*` key absent from the original snapshot is also rejected.
-- After locked-key validation, use the non-nil map as the complete replacement
-  map.
-- Reject an explicit empty map when the original snapshot contains a locked
-  `TARGET_RESOURCE_*` key; otherwise execute with no parameters.
+- Submitted keys must already exist in the original map. A submitted
+  `TARGET_RESOURCE_*` key must have its original value; new keys are rejected.
+- Omitted keys retain their original values. An explicit empty map changes
+  nothing, including when locked keys exist.
+- AuthWebhook validates the complete effective map against the frozen workflow
+  schema, after confirming the current catalog object matches the reviewed
+  workflow ID. Missing or changed workflows fail closed; transient network
+  errors may be retried with bounded backoff.
 
 The wire contract must preserve those states: omitted `parameters` decodes as
 nil, while `parameters: {}` decodes as an explicit empty map. The AF patch
 builder and CRD serialization must not use an `omitempty` path that drops an
-explicit empty replacement.
+explicit empty override.
 
 For the current parameter-only AF contract, a non-empty `workflowName` in the
 RAR status override is rejected rather than stripped. The existing #594
@@ -220,7 +315,9 @@ The Kubernetes API server is the first-line immutability guard. The RAR CRD
 schema MUST use CEL transition validation with explicit field-preservation
 guards: once `status.decision` is first set, the frozen business fields above
 must equal their previous values; once `status.workflowOverride` is first set,
-it must not change. This follows the existing field-by-field transition pattern
+  it must not change, and it cannot be added after a terminal decision. Root-level
+  guards must prevent removing the optional status parent after a decision or
+  an override is set. This follows the existing field-by-field transition pattern
 used by `AIAnalysis.status.selectedWorkflow` after `selectedAt` and by
 WorkflowExecution spec immutability. A whole-status equality rule is not used,
 because controller-owned observations must remain mutable and nullable fields
@@ -230,7 +327,8 @@ Controller-owned observations may still mutate under an explicit allowlist:
 
 - Conditions required by DD-CRD-002
 - `ObservedGeneration` accompanying condition updates
-- `AuditRecorded` condition transitions while audit persistence retries
+- `AuditRecorded` condition transitions for enqueue bookkeeping; it does not
+  certify DataStorage persistence
 
 `TimeRemaining` may update while pending and stops changing after a terminal
 decision. A later status update may not alter any business field.
@@ -258,10 +356,10 @@ The audit roles are distinct:
   must not produce a successful event. It is not a transactionally durable
   proof that the API server has persisted the object.
 - RO observes the persisted terminal RAR and owns the committed business
-  decision event and downstream orchestration context. If a control objective
-  later requires atomic audit persistence with the CRD write, the implementation
-  plan must add an outbox/reconciliation mechanism; this ADR does not claim
-  synchronous audit storage.
+  decision event and downstream orchestration context. Emission uses the
+  existing fire-and-forget in-memory buffer. Enqueue is not durable persistence;
+  this ADR adds no synchronous Flush gate, audit finalizer or outbox. Persistent
+  Valkey-backed buffering is a future design, outside #2570.
 
 These events are correlated but must not be treated as duplicate committed
 decisions.
@@ -276,14 +374,17 @@ must support, subject to SOC2/FedRAMP control mapping:
 - complete override parameters and rationale
 - effective execution selection
 - authenticated human actor and AF delegation identity
-- selection/review revision references
-- sensitive-value redaction or references
 
-The AF review read returns the RAR UID, immutable `selectionRevision` and
-canonical `selectionDigest`. The approval input echoes those values. AuthWebhook
-rejects the mutation when any binding differs from the current pending RAR.
-`resourceVersion` remains the Kubernetes API concurrency guard; it is not the
-business review revision.
+User-entered text is not sanitized or redacted; preserve it exactly in the RAR
+and in any audit fields that include it. Limit RAR and audit readback to
+authorized callers and test denial for unauthorized callers. Workflow parameters
+are not a secret-consumption channel; this contract does not detect or prevent
+accidental secret input. KA's tool-output sanitizer is not a protection for RAR
+user input or approval audit fields.
+
+The AF review read and approval input use the RR-derived unique RAR name. The
+immutable RAR spec is the reviewed selection, and Kubernetes `resourceVersion`
+guards concurrent status updates. No separate selection revision is required.
 
 The final field set is derived from ADR-034, DD-AUDIT-003, BR-AUDIT-005,
 BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
@@ -295,8 +396,10 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 ### Positive Consequences
 
 1. RO executes exactly the approval-scoped RAR proposal.
-2. Original and overridden values remain attributable without a live catalog
-   dependency.
+2. Original, changed and effective values remain attributable. Override
+   admission requires catalog availability; ordinary AuthWebhook decisions
+   without overrides do not. Every WE dispatch, including automatic execution,
+   still requires the trusted catalog identity check.
 3. Terminal approval decisions cannot be rewritten through later status writes.
 4. AF/AuthWebhook/RO responsibilities remain separated.
 
@@ -305,7 +408,7 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 1. AIA, RAR, AF, AuthWebhook and RO share a larger contract.
    - **Mitigation**: use one shared snapshot type and generated CRD artifacts.
 2. RAR stores original selection data in addition to AIA.
-   - **Mitigation**: define field-level sensitivity and redaction rules.
+   - **Mitigation**: enforce and test the existing RAR and audit authorization boundaries.
 3. Existing workflow-name override behavior from #594 is not exposed by the
    current #2570 AF contract.
    - **Mitigation**: keep workflow switching deferred to #2572.
@@ -315,7 +418,7 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | AuthWebhook admits a post-terminal business-field mutation | Medium | High | Compare old/new objects and enforce a frozen-field allowlist. |
-| Original and override parameter evidence leaks sensitive values | Medium | High | Control-mapped redaction/reference policy and audit tests. |
+| Original or override user input contains sensitive values | Medium | High | Restrict RAR/audit access and test unauthorized read denial; input is not redacted or automatically classified. |
 | AIA/RAR snapshot shapes diverge | Medium | Medium | Shared type and serialization tests across both CRDs. |
 | Editable metadata is missing before #2571 lands | High | Medium | Default catalog fields editable; keep KA-owned target parameters locked. |
 
@@ -323,21 +426,27 @@ BR-AUDIT-006 and the applicable AU/AC/SI control objectives.
 
 ## Validation Strategy
 
-1. **UT-AF-2570-001 / BR-ORCH-025**: validate AIA-to-RAR snapshot
-   serialization and nil/empty parameter semantics.
-2. **UT-AW-2570-002 / BR-AUTH-001, SI-10**: validate AuthWebhook accepts one
-   terminal business update and rejects later business-field mutations.
-3. **IT-AW-2570-003 / BR-ORCH-026**: validate controller-only condition and
-   audit bookkeeping remains possible.
-4. **IT-AF-2570-004 / BR-AUTH-001, AU-3**: validate AF human audit plus
-   AuthWebhook delegation attribution.
-5. **IT-RO-2570-005 / BR-ORCH-025/026**: validate RO creates WE from RAR only
-   and passes the complete effective map.
-6. **E2E-AUD-2570-006 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
-   payload reconstruction and control-objective coverage.
+1. **UT-AA-2570-067/068; IT-AA-2570-001; IT-AF-2570-003 / BR-ORCH-025**:
+   validate AIA-to-RAR nil/empty original maps and AF-to-API-server omitted,
+   empty and partial override serialization without clearing omitted values;
+   round-trip confidence, rationale and provenance through RAR, then verify WE
+   confidence/rationale and audit provenance use the frozen values.
+2. **UT-AW-2570-021/087; IT-AW-2570-004/005/011 / BR-AUTH-001, SI-10**:
+   validate one terminal business update, rejection of later business-field
+   mutations and rejection of a non-empty legacy workflow name before approval.
+3. **IT-AW-2570-005 / BR-ORCH-026**: validate controller observation updates
+   remain possible after a decision.
+4. **IT-AF-2570-003; E2E-AUD-2570-008 / BR-AUTH-001, AU-3**: validate AF
+   authorization, human audit and AuthWebhook delegation attribution.
+5. **IT-RO-2570-006 / BR-ORCH-025/026**: validate RO creates WE from RAR only
+   and passes the complete effective map to actual executors.
+6. **E2E-AUD-2570-008 / BR-AUDIT-005/006, CC7.2, AU-3**: validate audit
+   payload reconstruction and applicable control-objective coverage.
+7. **CHECKPOINT W — IT-2570-020/021/022**: validate trusted namespace/RBAC,
+   pre-change RAR failure handling and RAR creation conflict handling.
 
-Implementation planning and TDD scenarios are intentionally deferred until
-this ADR/DD set is merged.
+The implementation and TDD plans are proposed in `docs/tests/2570/`; feature
+implementation remains deferred until the documents are reviewed and approved.
 
 ---
 

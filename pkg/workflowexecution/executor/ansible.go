@@ -18,7 +18,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -39,6 +38,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // CredentialTypeField represents a single input field definition for an AWX credential type.
@@ -284,7 +284,10 @@ func (a *AnsibleExecutor) Create(
 		return nil, err
 	}
 
-	extraVars := a.buildAnsibleExtraVars(wfe, opts)
+	extraVars, err := a.buildAnsibleExtraVars(wfe, opts)
+	if err != nil {
+		return nil, fmt.Errorf("build ansible extra_vars: %w", err)
+	}
 
 	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
 		return nil, fmt.Errorf("inject dependency configmaps: %w", err)
@@ -324,10 +327,13 @@ func (a *AnsibleExecutor) Create(
 // user-supplied values with the same keys to prevent spoofing of execution
 // context metadata via schema params. Extracted from Create (Wave 6 6e-ii
 // GREEN: funlen remediation) — pure code motion, no behavior change.
-func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.WorkflowExecution, opts CreateOptions) map[string]interface{} {
+func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.WorkflowExecution, opts CreateOptions) (map[string]interface{}, error) {
 	filterLogger := a.Logger.WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, filterLogger)
-	extraVars := BuildExtraVars(filteredParams)
+	filteredParams := FilterDeclaredTypedParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, filterLogger)
+	extraVars, err := BuildExtraVars(filteredParams)
+	if err != nil {
+		return nil, err
+	}
 	if extraVars == nil {
 		extraVars = make(map[string]interface{})
 	}
@@ -335,7 +341,7 @@ func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.W
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
 	extraVars["RR_NAME"] = wfe.Spec.RemediationRequestRef.Name
 	extraVars["RR_NAMESPACE"] = wfe.Spec.RemediationRequestRef.Namespace
-	return extraVars
+	return extraVars, nil
 }
 
 // resolveAnsibleCredentials injects dependency secrets and the per-workflow
@@ -1041,39 +1047,14 @@ func (a *AnsibleExecutor) validateAWXJobTemplate(ctx context.Context, templateID
 	return nil
 }
 
-// BuildExtraVars converts workflow parameters (map[string]string) to typed JSON values
-// for AWX extra_vars. Attempts type coercion: integers, booleans, floats, JSON arrays/objects
-// are converted to their native types. Plain strings remain strings.
-func BuildExtraVars(params map[string]string) map[string]interface{} {
+// BuildExtraVars converts the already-typed workflow parameters to ordinary
+// JSON values for AWX extra_vars. It never guesses a type from string content.
+func BuildExtraVars(params sharedtypes.TypedParameterMap) (map[string]interface{}, error) {
 	if len(params) == 0 {
-		return nil
+		//nolint:nilnil // empty parameters intentionally produce no extra_vars.
+		return nil, nil
 	}
-
-	extraVars := make(map[string]interface{}, len(params))
-	for k, v := range params {
-		extraVars[k] = coerceValue(v)
-	}
-	return extraVars
-}
-
-func coerceValue(s string) interface{} {
-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f
-	}
-	if b, err := strconv.ParseBool(s); err == nil {
-		return b
-	}
-	if (strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) ||
-		(strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) {
-		var parsed interface{}
-		if err := json.Unmarshal([]byte(s), &parsed); err == nil {
-			return parsed
-		}
-	}
-	return s
+	return sharedtypes.TypedParameterMapToJSONValues(params)
 }
 
 // MapAWXStatusToResult maps an AWX job status to an ExecutionResult.

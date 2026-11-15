@@ -55,6 +55,29 @@ var _ = Describe("BR-KA-191: Parameter Validation Self-Correction Integration (#
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
+	It("IT-KA-2570-009: BR-KA-191 corrects a decimal integer token through the investigation pipeline", func() {
+		validator := parser.NewValidator([]string{"scale-deployment"})
+		validator.SetWorkflowMeta("scale-deployment", parser.WorkflowMeta{
+			ExecutionEngine: "tekton", ExecutionBundle: "quay.io/test/scale:v1",
+			Parameters: []models.WorkflowParameter{{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas"}},
+		})
+		mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOM kills detected","confidence":0.9}`}},
+			wfToolResp(`{"workflow_id":"scale-deployment","confidence":0.85,"parameters":{"REPLICA_COUNT":3.0}}`),
+			wfToolResp(`{"workflow_id":"scale-deployment","confidence":0.85,"parameters":{"REPLICA_COUNT":3}}`),
+		}}
+		inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
+			Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
+		result, err := inv.Investigate(context.Background(), katypes.SignalContext{Name: "oom-alert", Namespace: "production", Severity: "critical", Message: "OOM Kill", Environment: "Production", Priority: "P0"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.WorkflowID).To(Equal("scale-deployment"))
+		Expect(result.HumanReviewNeeded).To(BeFalse())
+		Expect(result.ValidationAttemptsHistory).To(HaveLen(2))
+		Expect(result.ValidationAttemptsHistory[0].IsValid).To(BeFalse())
+		Expect(result.ValidationAttemptsHistory[0].Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")))
+		Expect(result.ValidationAttemptsHistory[1].IsValid).To(BeTrue())
+	})
+
 	Describe("IT-KA-1170-001: Invalid params trigger self-correction with schema hint", func() {
 		It("should self-correct from bad params to valid params", func() {
 			minReplicas := float64(1)

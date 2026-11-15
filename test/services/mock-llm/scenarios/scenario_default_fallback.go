@@ -26,6 +26,7 @@ func defaultConfig() MockScenarioConfig {
 		RootCause:    "Unable to determine specific root cause",
 		ResourceKind: "Pod", ResourceNS: "default", ResourceName: "test-pod",
 		APIVersion:           "v1",
+		Parameters:           map[string]string{"NAMESPACE": "default", "POD_NAME": "test-pod"},
 		Contributing:         []string{"traffic_spike", "resource_limits"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),

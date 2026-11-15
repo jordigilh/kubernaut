@@ -42,7 +42,7 @@ func newTestKuadrantWatcher() *KuadrantRegistry {
 
 func newMCPServerRegistrationUnstructured(name, prefix string, labels map[string]interface{}) *unstructured.Unstructured {
 	obj := map[string]interface{}{
-		"apiVersion": "mcp.kuadrant.io/v1alpha1",
+		"apiVersion": "mcp.kuadrant.io/v1",
 		"kind":       "MCPServerRegistration",
 		"metadata": map[string]interface{}{
 			"name":      name,

@@ -35,6 +35,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -50,6 +52,53 @@ func newITAmbiguousMapper() *meta.DefaultRESTMapper {
 	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
 	mapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
 	return mapper
+}
+
+func registerITTargetScopedDiscoveryTools(reg *registry.Registry) {
+	reg.Register(&fakeTool{
+		name: "api_resources_list",
+		result: `{"resources":[` +
+			`{"apiVersion":"apps/v1","kind":"Deployment"},` +
+			`{"apiVersion":"apps/v1","kind":"ReplicaSet"},` +
+			`{"apiVersion":"apps/v1","kind":"StatefulSet"},` +
+			`{"apiVersion":"v1","kind":"Pod"},` +
+			`{"apiVersion":"v1","kind":"ConfigMap"},` +
+			`{"apiVersion":"v1","kind":"Namespace"},` +
+			`{"apiVersion":"v1","kind":"PersistentVolumeClaim"},` +
+			`{"apiVersion":"v1","kind":"ResourceQuota"},` +
+			`{"apiVersion":"v1","kind":"StorageClass"},` +
+			`{"apiVersion":"autoscaling/v2","kind":"HorizontalPodAutoscaler"},` +
+			`{"apiVersion":"policy/v1","kind":"PodDisruptionBudget"},` +
+			`{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy"},` +
+			`{"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine"},` +
+			`{"apiVersion":"security.istio.io/v1","kind":"AuthorizationPolicy"},` +
+			`{"apiVersion":"operators.coreos.com/v1alpha1","kind":"Subscription"},` +
+			`{"apiVersion":"messaging.knative.dev/v1","kind":"Subscription"}` +
+			`]}`,
+	})
+	reg.Register(&fakeTool{
+		name:   "resources_list",
+		result: `{"apiVersion":"apps/v1","kind":"DeploymentList","items":[]}`,
+	})
+}
+
+func newITTargetScopedDiscoveryRegistry() *registry.Registry {
+	reg := registry.New()
+	registerITTargetScopedDiscoveryTools(reg)
+	return reg
+}
+
+func newITTargetScopedDiscoveryOverlay(apiVersion, kind string) map[string]tools.Tool {
+	return map[string]tools.Tool{
+		"api_resources_list": &fakeTool{
+			name:   "api_resources_list",
+			result: `{"resources":[{"apiVersion":"` + apiVersion + `","kind":"` + kind + `"}]}`,
+		},
+		"resources_list": &fakeTool{
+			name:   "resources_list",
+			result: `{"apiVersion":"` + apiVersion + `","kind":"` + kind + `List","items":[]}`,
+		},
+	}
 }
 
 var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investigate() Pipeline", func() {
@@ -110,6 +159,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-operator"})}},
 			})
 
@@ -152,6 +202,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)
@@ -170,7 +221,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 		It("should proceed normally for Deployment without gate intervention (BR-AI-1044 AC4)", func() {
 			k8s := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
-					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
 				},
 			}
 			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
@@ -180,7 +231,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment api-server needs more replicas",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}
+					"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}
 				}`}},
 				wfToolResp(`{"workflow_id":"scale-up","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
@@ -189,6 +240,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"scale-up"})}},
 			})
 
@@ -245,6 +297,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-sub"})}},
 			})
 
@@ -291,6 +344,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)

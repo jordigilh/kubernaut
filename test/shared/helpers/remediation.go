@@ -314,8 +314,8 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 			},
 			Confidence: 0.95,
 			Rationale:  "High confidence match for pod restart scenario",
-			Parameters: map[string]string{
-				"TARGET_POD": "test-pod",
+			Parameters: sharedtypes.TypedParameterMap{
+				"TARGET_POD": typedStringParameter("test-pod"),
 			},
 		},
 	})
@@ -340,8 +340,8 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 			Confidence: 0.65,
 			// Low confidence triggers approval
 			Rationale: "Moderate confidence - human review recommended",
-			Parameters: map[string]string{
-				"TARGET_DEPLOYMENT": "test-deployment",
+			Parameters: sharedtypes.TypedParameterMap{
+				"TARGET_DEPLOYMENT": typedStringParameter("test-deployment"),
 			},
 		},
 	})
@@ -397,8 +397,8 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 				},
 			},
 			TargetResource: fmt.Sprintf("%s/Pod/test-pod", namespace),
-			Parameters: map[string]string{
-				"TARGET_POD": "test-pod",
+			Parameters: sharedtypes.TypedParameterMap{
+				"TARGET_POD": typedStringParameter("test-pod"),
 			},
 			Confidence: 0.95,
 			Rationale:  "High confidence match for pod restart scenario",
@@ -417,6 +417,10 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 	}
 
 	return we
+}
+
+func typedStringParameter(value string) sharedtypes.TypedParameterValue {
+	return sharedtypes.TypedParameterValue{Kind: "string", StringValue: &value}
 }
 
 // NewCompletedWorkflowExecution creates a WorkflowExecution in Completed phase.

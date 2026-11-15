@@ -59,6 +59,7 @@ type ReconcileScenario struct {
 	businessReq       string                                  // BR-XXX-XXX reference
 	initialObjects    []client.Object                         // Objects to seed the fake client
 	rrName            types.NamespacedName                    // RemediationRequest to reconcile
+	omitCatalog       bool                                    // Leave the selected workflow absent from the live catalog
 	expectedPhase     remediationv1.RemediationPhase          // Expected final phase
 	expectedResult    ctrl.Result                             // Expected reconcile result
 	expectError       bool                                    // Whether to expect an error
@@ -87,10 +88,33 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 
 	DescribeTable("Phase Transitions",
 		func(scenario ReconcileScenario) {
-			// Given: Create fake client with initial objects
+			// Given: Create fake client with initial objects and a live catalog
+			// workflow for every AI-selected workflow used by a creation path.
+			catalogObjects := append([]client.Object(nil), scenario.initialObjects...)
+			var selected *aianalysisv1.SelectedWorkflow
+			for _, object := range scenario.initialObjects {
+				if ai, ok := object.(*aianalysisv1.AIAnalysis); ok && ai.Status.GetRCAResult().SelectedWorkflow != nil {
+					selected = ai.Status.GetRCAResult().SelectedWorkflow
+					if !scenario.omitCatalog {
+						catalogObjects = append(catalogObjects, verifiedWorkflowForSelection(selected))
+					}
+				}
+			}
+			if selected != nil {
+				for _, object := range scenario.initialObjects {
+					if rar, ok := object.(*remediationv1.RemediationApprovalRequest); ok && rar.Spec.Workflow != nil {
+						rar.Spec.Workflow.WorkflowID = selected.WorkflowID
+						rar.Spec.Workflow.WorkflowName = selected.WorkflowName
+						rar.Spec.Workflow.ActionType = selected.ActionType
+						rar.Spec.Workflow.Version = selected.Version
+						rar.Spec.Workflow.ExecutionBundle = selected.ExecutionBundle
+						rar.Spec.Workflow.ExecutionEngine = selected.ExecutionEngine
+					}
+				}
+			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(scenario.initialObjects...).
+				WithObjects(catalogObjects...).
 				WithStatusSubresource(
 					&remediationv1.RemediationRequest{},
 					&remediationv1.RemediationApprovalRequest{},
@@ -118,7 +142,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 					Analyzing:  10 * time.Minute,
 					Executing:  30 * time.Minute,
 				},
-				RoutingEngine: mockRouting, // Mock routing engine for unit tests
+				CatalogNamespace: defaultFixture,
+				RoutingEngine:    mockRouting, // Mock routing engine for unit tests
 			})
 
 			// When: Reconcile the RemediationRequest
@@ -452,6 +477,48 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			},
 		}),
 
+		Entry("3.6: Analyzing→Failed - Missing live catalog blocks direct execution (BR-WORKFLOW-004)", ReconcileScenario{
+			name:        "analyzing_missing_catalog_direct_execution",
+			description: "A selected workflow absent from the trusted live catalog must fail closed instead of requeueing forever",
+			businessReq: "BR-WORKFLOW-004",
+			initialObjects: []client.Object{
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "missing-workflow"),
+			},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
+			omitCatalog:   true,
+			expectedPhase: remediationv1.PhaseFailed,
+			expectedChildren: map[string]bool{
+				"WE": false,
+			},
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				Expect(rr.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseWorkflowExecution)))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("verify selected workflow")))
+			},
+		}),
+
+		Entry("3.7: Analyzing→Failed - Missing live catalog blocks approval (BR-WORKFLOW-004)", ReconcileScenario{
+			name:        "analyzing_missing_catalog_approval",
+			description: "A selected workflow absent from the trusted live catalog must fail closed before approval creation",
+			businessReq: "BR-WORKFLOW-004",
+			initialObjects: []client.Object{
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "missing-workflow"),
+			},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
+			omitCatalog:   true,
+			expectedPhase: remediationv1.PhaseFailed,
+			expectedChildren: map[string]bool{
+				"RAR": false,
+			},
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				Expect(rr.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseApproval)))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("verify selected workflow")))
+			},
+		}),
+
 		// ========================================
 		// Category 4: Executing → Verifying/Failed (5 scenarios)
 		// ========================================
@@ -561,9 +628,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:    remediationv1.PhaseExecuting,
 			expectedResult:   ctrl.Result{RequeueAfter: 5 * time.Second},
 			expectedChildren: map[string]bool{"WE": true},
-			// UT-RR-387-003: RemediationTarget populated from AIAnalysis AffectedResource (post-approval path)
+			// UT-RR-387-003: the approved snapshot carries the remediation target.
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from the approved snapshot")
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Kind).To(Equal("Deployment"))
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Name).To(Equal("test-deployment"))
 				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Namespace).To(Equal(defaultFixture))
@@ -606,19 +673,25 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			},
 		}),
 
-		Entry("5.4: AwaitingApproval - RAR Not Found (Error Handling)", ReconcileScenario{
+		Entry("5.4: BR-ORCH-026 missing RAR requires manual review", ReconcileScenario{
 			name:        "awaiting_approval_rar_not_found",
-			description: "When RAR doesn't exist, should requeue gracefully",
-			businessReq: "BR-ORCH-001 (error recovery)",
+			description: "When the RAR is authoritatively absent, fail safely for manual review",
+			businessReq: "BR-ORCH-026 (approval safety)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
 				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-				// RAR not created yet
+				// The previously created RAR is absent.
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
-			expectedPhase:  remediationv1.PhaseAwaitingApproval,        // Stay in same phase
-			expectedResult: ctrl.Result{RequeueAfter: 5 * time.Second}, // RequeueGenericError
+			expectedPhase:  remediationv1.PhaseFailed,
+			expectedResult: ctrl.Result{},
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				completion := rr.Status.GetCompletionStatus()
+				Expect(completion.RequiresManualReview).To(BeTrue())
+				Expect(completion.Outcome).To(Equal(remediationv1.OutcomeManualReviewRequired))
+				Expect(completion.FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseApproval)))
+			},
 		}),
 
 		Entry("5.5: AwaitingApproval - RAR Pending (Still Waiting)", ReconcileScenario{
@@ -780,10 +853,12 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 			newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 			newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 		}
+		selectedAI := initialObjects[2].(*aianalysisv1.AIAnalysis)
+		catalogWorkflow := verifiedWorkflowForSelection(selectedAI.Status.GetRCAResult().SelectedWorkflow)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(initialObjects...).
+			WithObjects(append(initialObjects, catalogWorkflow)...).
 			WithStatusSubresource(
 				&remediationv1.RemediationRequest{},
 				&remediationv1.RemediationApprovalRequest{},
@@ -797,7 +872,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 		// (simulates RBAC failure or API server error during pre-remediation hash capture)
 		apiReader := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(initialObjects...).
+			WithObjects(append(initialObjects, catalogWorkflow)...).
 			WithStatusSubresource(
 				&remediationv1.RemediationRequest{},
 			).
@@ -826,7 +901,8 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			RoutingEngine: mockRouting,
+			CatalogNamespace: defaultFixture,
+			RoutingEngine:    mockRouting,
 		})
 		reconciler.SetRESTMapper(newTestRESTMapper())
 

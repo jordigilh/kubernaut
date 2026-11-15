@@ -34,6 +34,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -89,11 +90,14 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			"inventoryName":   "production",
 		})
 		Expect(err).ToNot(HaveOccurred())
+		workflow := registerTestWorkflow("ansible-config-"+rr.Name, []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "TARGET_NAMESPACE", Type: "string"}, {Name: "MEMORY_LIMIT_NEW", Type: "string"},
+		})
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:         "wf-ansible-restart",
+				WorkflowID:         workflow.Status.WorkflowID,
 				WorkflowName:       "wf-ansible-restart",
 				ActionType:         "RestartPod",
 				Version:            "v2.0.0",
@@ -109,11 +113,11 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 					Requests: corev1.ResourceList{"cpu": resource.MustParse("100m")},
 					Limits:   corev1.ResourceList{"memory": resource.MustParse("256Mi")},
 				},
-				DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "MEMORY_LIMIT_NEW": true},
 				EngineConfig: &apiextensionsv1.JSON{
 					Raw: ansibleConfig,
 				},
 			},
+			Parameters: sharedtypes.TypedParameterMap{},
 			Confidence: 0.92,
 			Rationale:  "Ansible playbook for deployment restart",
 		}
@@ -162,7 +166,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Expect(parsedConfig["inventoryName"]).To(Equal("production"),
 			"inventoryName should pass through from AI to WFE")
 
-		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ansible-restart"))
+		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(workflow.Status.WorkflowID))
 		Expect(we.Spec.WorkflowRef.Version).To(Equal("v2.0.0"))
 		Expect(we.Spec.WorkflowRef.ExecutionBundle).To(Equal("https://github.com/kubernaut/playbooks.git"))
 		Expect(we.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-ansible"))
@@ -171,7 +175,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Expect(we.Spec.WorkflowRef.Dependencies.ConfigMaps).To(ConsistOf(sharedtypes.WorkflowResourceDependency{Name: "workflow-config"}))
 		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 		Expect(we.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("256Mi")))
-		Expect(we.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "MEMORY_LIMIT_NEW": true}))
+		Expect(workflow.Spec.Parameters).To(HaveLen(2))
 
 		GinkgoWriter.Printf("✅ IT-WE-016-003: engineConfig passed through from AI to WFE\n")
 	})

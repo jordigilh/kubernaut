@@ -76,7 +76,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			}()
 
 			By("Creating WorkflowExecution with engine=ansible")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Verifying WFE transitions to Running (AWX job launched)")
 			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
@@ -129,7 +129,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			}()
 
 			By("Creating WFE with intentionally-failing ansible playbook")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Failed via AWX")
 			Eventually(func() string {
@@ -173,7 +173,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Verifying WFE tracks AWX execution reference after Running")
 			Eventually(func() (bool, error) {
@@ -246,7 +246,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				_ = deleteWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("Waiting for WFE to reach Running (AWX job launched)")
 			Eventually(func() (bool, error) {
@@ -345,18 +345,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "dep-secret-test",
 						"target_namespace": "default",
-					},
+					}),
 				},
 			}
 
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("E2E-WE-015-005: Creating WFE with ansible engine and secret dependency")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("E2E-WE-015-005: Verifying WFE transitions to Running")
 			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
@@ -425,18 +425,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "dep-configmap-test",
 						"target_namespace": "default",
-					},
+					}),
 				},
 			}
 
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("E2E-WE-2390-006: Creating WFE with ansible engine and Secret + ConfigMap dependencies")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("E2E-WE-2390-006: Verifying WFE transitions to Running")
 			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
@@ -505,18 +505,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
 						"target_kind":      "Deployment",
 						"target_name":      "cred-merge-test",
 						"target_namespace": "default",
-					},
+					}),
 				},
 			}
 
 			defer func() { _ = deleteWFE(wfe) }()
 
 			By("E2E-WE-365-001: Creating WFE with ansible engine, secret dependency, and template with pre-configured credential")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWFEFromCatalog(wfe)).To(Succeed())
 
 			By("E2E-WE-365-001: Verifying WFE transitions to Running (AWX accepted the merged credential list)")
 			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
@@ -585,11 +585,11 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: map[string]string{
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
 				"target_kind":      "Deployment",
 				"target_name":      "ansible-target",
 				"target_namespace": "default",
-			},
+			}),
 		},
 	}
 }

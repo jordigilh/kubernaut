@@ -19,8 +19,6 @@ package remediationorchestrator
 import (
 	"time"
 
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -306,19 +304,13 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.EnsureReview().NeedsHumanReview = false
 			analysis.Status.Review.HumanReviewReason = ""
-			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
+			analysis.Status.Message = "Workflow recommended: " + trustedWorkflowName
 			analysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "restart-pod-v1",
-					WorkflowName:    "restart-pod-v1",
-					ActionType:      "RestartPod",
-					Version:         "1.0.0",
-					ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
-					ExecutionEngine: "job",
-				},
+				WorkflowSnapshot: trustedWorkflowSnapshot(),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence: 0.95,
 				Rationale:  "High confidence workflow match for pod restart scenario",
+				Parameters: trustedWorkflowParameters("Pod", "test-pod-oomkilled", testNS),
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

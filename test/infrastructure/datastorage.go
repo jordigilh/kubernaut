@@ -2134,36 +2134,65 @@ func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer 
 	return nil
 }
 
-// ApplyCertManagerIssuer creates the ClusterIssuer for self-signed certificate generation.
-// This is used by DataStorage Certificate resources to request TLS certificates.
+// waitForCertManagerRetry sleeps until the next retry or returns when ctx is canceled.
+func waitForCertManagerRetry(ctx context.Context, backoff time.Duration) error {
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// applyCertManagerManifestWithRetry applies a cert-manager resource manifest
+// with bounded, cancellation-aware retries for webhook propagation races.
+func applyCertManagerManifestWithRetry(ctx context.Context, kubeconfigPath string, writer io.Writer, manifest, description string) error {
+	const maxRetries = 8
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("apply %s: %w", description, err)
+		}
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err == nil {
+			if attempt > 1 {
+				_, _ = fmt.Fprintf(writer, "   ✅ %s apply succeeded on attempt %d/%d\n", description, attempt, maxRetries)
+			}
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		if attempt == maxRetries {
+			break
+		}
+		backoff := time.Duration(attempt) * 3 * time.Second
+		_, _ = fmt.Fprintf(writer, "   ⚠️  %s apply failed (attempt %d/%d, likely webhook endpoint not yet propagated), retrying in %v: %v\n",
+			description, attempt, maxRetries, backoff, lastErr)
+		if err := waitForCertManagerRetry(ctx, backoff); err != nil {
+			return fmt.Errorf("wait for %s retry: %w", description, err)
+		}
+	}
+
+	return fmt.Errorf("failed to apply %s after %d attempts: %w", description, maxRetries, lastErr)
+}
+
+// ApplyCertManagerIssuer creates the self-signed ClusterIssuer used by demo
+// DataStorage Certificate resources. For production, this would be replaced
+// with Let's Encrypt or an organizational CA.
 //
-// Creates:
-// - ClusterIssuer "selfsigned-issuer" (self-signed CA)
-//
-// Note: For production, this would be replaced with Let's Encrypt or organizational CA.
-//
-// Issue #1765: kubectl wait --for=condition=available on deployment/cert-manager-webhook
-// (in WaitForCertManagerReady) only proves the Deployment's own readiness probe passed --
-// it does NOT prove the webhook Service's Endpoints have propagated through kube-proxy/CNI,
-// nor that cainjector has finished injecting the CA bundle into the
-// ValidatingWebhookConfiguration/MutatingWebhookConfiguration. cert-manager's own webhook
-// troubleshooting guide (https://cert-manager.io/docs/troubleshooting/webhook/) documents
-// "connection refused" errors immediately after install as this exact transient race and
-// recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
-// used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
-// failing the whole SOC2 E2E suite on a one-shot apply.
-func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
+// Issue #1765: cert-manager's webhook Service and cainjector may not be ready
+// immediately after their Deployments report available, so this function uses
+// bounded exponential-backoff retries instead of a one-shot apply.
+func ApplyCertManagerIssuer(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
 
 	// Get workspace root to find the issuer manifest
 	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
 	if workspaceRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		// Navigate up from test/e2e/datastorage or test/infrastructure to repo root
-		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+		workspaceRoot = getProjectRoot()
 	}
 
 	issuerPath := filepath.Join(workspaceRoot, "test", "fixtures", "kubernetes", "cert-manager", "selfsigned-issuer.yaml")
@@ -2176,7 +2205,10 @@ func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 	const maxRetries = 8
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("apply clusterissuer: %w", err)
+		}
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", issuerPath)
 		cmd.Stdout = writer
@@ -2188,7 +2220,9 @@ func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 				backoff := time.Duration(attempt) * 3 * time.Second // 3s, 6s, 9s... capped total ~108s
 				_, _ = fmt.Fprintf(writer, "   ⚠️  ClusterIssuer apply failed (attempt %d/%d, likely webhook endpoint not yet propagated), retrying in %v: %v\n",
 					attempt, maxRetries, backoff, err)
-				time.Sleep(backoff)
+				if waitErr := waitForCertManagerRetry(ctx, backoff); waitErr != nil {
+					return fmt.Errorf("wait for ClusterIssuer retry: %w", waitErr)
+				}
 			}
 			continue
 		}
@@ -2222,11 +2256,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	// Get workspace root
 	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
 	if workspaceRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+		workspaceRoot = getProjectRoot()
 	}
 
 	// Apply Certificate resource first (cert-manager will create Secret)
@@ -2285,6 +2315,70 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 
 	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// BuildDemoDataStorageCertificateManifest renders the cert-manager-owned
+// signing Certificate required before the operator reconciles DataStorage in
+// the long-lived demo. DD-PLATFORM-012 makes private-key rotation explicit.
+func BuildDemoDataStorageCertificateManifest(namespace string) string {
+	return fmt.Sprintf(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-signing-cert
+  namespace: %s
+  labels:
+    app.kubernetes.io/name: data-storage
+    app.kubernetes.io/component: audit-export
+    app.kubernetes.io/managed-by: cert-manager
+    kubernaut.ai/demo-owner: setup-demo-infra
+spec:
+  secretName: datastorage-signing-cert
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: data-storage-service
+  dnsNames:
+    - data-storage-service
+    - data-storage-service.%s
+    - data-storage-service.%s.svc
+    - data-storage-service.%s.svc.cluster.local
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS1
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  subject:
+    organizations:
+      - Kubernaut
+`, namespace, namespace, namespace, namespace)
+}
+
+// EnsureDemoDataStorageSigningCertificate creates and waits for the
+// cert-manager-managed DataStorage signing Certificate before operator CR
+// reconciliation. The self-signed ClusterIssuer is demo/test infrastructure;
+// production ownership remains with the operator contract.
+func EnsureDemoDataStorageSigningCertificate(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	if err := ApplyCertManagerIssuer(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("prepare DataStorage cert-manager issuer: %w", err)
+	}
+	if err := applyCertManagerManifestWithRetry(ctx, kubeconfigPath, writer,
+		BuildDemoDataStorageCertificateManifest(namespace),
+		"demo DataStorage Certificate",
+	); err != nil {
+		return fmt.Errorf("apply demo DataStorage Certificate: %w", err)
+	}
+	if err := runKubectl(ctx, kubeconfigPath, writer, "wait", "--for=condition=Ready", "certificate/datastorage-signing-cert", "-n", namespace, "--timeout=120s"); err != nil {
+		return fmt.Errorf("wait for demo DataStorage Certificate: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ demo DataStorage signing Certificate ready (RSA 2048, rotationPolicy=Always)")
 	return nil
 }
 

@@ -3,12 +3,15 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -87,6 +90,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 								},
 								Confidence: 0.75,
 								Rationale:  "Pod restart recommended based on OOM patterns",
+								Parameters: typedParametersFromStrings(map[string]string{}),
 							},
 							RootCause: "Memory leak causing OOM kills",
 						},
@@ -96,6 +100,162 @@ var _ = Describe("ApprovalOrchestration", func() {
 					},
 				}
 				Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+			})
+
+			It("UT-AA-2570-067: BR-ORCH-025 rejects approval creation when original parameter data is missing", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = nil
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).To(BeNil())
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("parameter"))
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(apierrors.IsNotFound(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: rr.Namespace}, rar))).To(BeTrue())
+			})
+
+			It("UT-RO-2570-101: BR-ORCH-025 does not require persisted declaration metadata", func() {
+				Expect(ai.Status.RCAResult.SelectedWorkflow.Parameters).NotTo(BeNil())
+				encoded, err := json.Marshal(ai.Status.RCAResult.SelectedWorkflow)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(encoded).NotTo(ContainSubstring("declaredParameterNames"))
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("UT-RO-2570-114: BR-ORCH-025 does not require a persisted parameter schema", func() {
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(raw).NotTo(ContainSubstring("parameterSchema"))
+			})
+
+			It("UT-RO-2570-115: BR-ORCH-025 omits an explicitly empty parameter schema from persistence", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				encoded, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec map[string]json.RawMessage
+				Expect(json.Unmarshal(encoded, &spec)).To(Succeed())
+				Expect(spec).NotTo(HaveKey("parameterSchema"))
+			})
+
+			It("UT-RO-2570-102: BR-ORCH-025 permits explicitly empty declarations after serialization", func() {
+				selected := ai.Status.RCAResult.SelectedWorkflow
+				encoded, err := json.Marshal(selected)
+				Expect(err).NotTo(HaveOccurred())
+				var restored aianalysisv1.SelectedWorkflow
+				Expect(json.Unmarshal(encoded, &restored)).To(Succeed())
+				Expect(encoded).NotTo(ContainSubstring("declaredParameterNames"))
+				ai.Status.RCAResult.SelectedWorkflow = &restored
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("UT-AA-2570-068: BR-ORCH-025 preserves an explicitly empty original parameter map on the wire", func() {
+				selected := ai.Status.RCAResult.SelectedWorkflow
+				selected.Parameters = typedParametersFromStrings(map[string]string{})
+				encoded, err := json.Marshal(selected)
+				Expect(err).NotTo(HaveOccurred())
+				var restored aianalysisv1.SelectedWorkflow
+				Expect(json.Unmarshal(encoded, &restored)).To(Succeed())
+				Expect(restored.Parameters).NotTo(BeNil())
+				Expect(restored.Parameters).To(BeEmpty())
+			})
+
+			It("UT-AA-2570-068: BR-ORCH-025 permits an explicitly empty original parameter map at creation", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = typedParametersFromStrings(map[string]string{})
+				_, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("UT-RO-2570-076: BR-ORCH-025 freezes workflow identity and original parameter values in the RAR", func() {
+				ai.Status.RCAResult.SelectedWorkflow.Parameters = typedParametersFromStrings(map[string]string{"REPLICAS": "3", "MODE": "safe"})
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				ai.Status.RCAResult.SelectedWorkflow.WorkflowID = "changed-after-creation"
+				ai.Status.RCAResult.SelectedWorkflow.Parameters["REPLICAS"] = typedParameterValue("9")
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec map[string]json.RawMessage
+				Expect(json.Unmarshal(raw, &spec)).To(Succeed())
+				Expect(spec).To(HaveKey("workflow"))
+				Expect(spec).To(HaveKey("parameters"))
+				var workflow struct {
+					WorkflowID string `json:"workflowId"`
+				}
+				var params sharedtypes.TypedParameterMap
+				Expect(json.Unmarshal(spec["workflow"], &workflow)).To(Succeed())
+				Expect(json.Unmarshal(spec["parameters"], &params)).To(Succeed())
+				Expect(workflow.WorkflowID).To(Equal("wf-restart-pods"))
+				Expect(params).To(Equal(typedParametersFromStrings(map[string]string{"REPLICAS": "3", "MODE": "safe"})))
+			})
+
+			It("UT-RO-2570-109: BR-ORCH-025 does not persist the selected workflow parameter schema", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(raw).NotTo(ContainSubstring("parameterSchema"))
+			})
+
+			It("UT-RO-2570-028: BR-ORCH-026 freezes remediation and signal target context", func() {
+				rr.Spec.ClusterID = "cluster-a"
+				rr.Spec.TargetResource = remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Namespace: "ns", Name: "pod-a"}
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					RemediationTarget: &aianalysisv1.RemediationTarget{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "ns", Name: "app-a"},
+				}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Name = "changed"
+				rr.Spec.TargetResource.Name = "changed"
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				raw, err := json.Marshal(rar.Spec)
+				Expect(err).NotTo(HaveOccurred())
+				var spec struct {
+					TargetContext struct {
+						RemediationTarget *remediationv1.ResourceIdentifier `json:"remediationTarget"`
+						SignalTarget      remediationv1.ResourceIdentifier  `json:"signalTarget"`
+						SignalClusterID   string                            `json:"signalClusterId"`
+					} `json:"targetContext"`
+				}
+				Expect(json.Unmarshal(raw, &spec)).To(Succeed())
+				Expect(spec.TargetContext.RemediationTarget).NotTo(BeNil())
+				Expect(spec.TargetContext.RemediationTarget.Name).To(Equal("app-a"))
+				Expect(spec.TargetContext.RemediationTarget.APIVersion).To(Equal("apps/v1"))
+				Expect(spec.TargetContext.SignalTarget.Name).To(Equal("pod-a"))
+				Expect(spec.TargetContext.SignalClusterID).To(Equal("cluster-a"))
+			})
+
+			It("UT-RO-2570-099: BR-ORCH-026 preserves an absent remediation target for later fallback", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				Expect(rar.Spec.TargetContext).NotTo(BeNil())
+				Expect(rar.Spec.TargetContext.RemediationTarget).To(BeNil())
+				Expect(rar.Spec.TargetContext.SignalTarget).To(Equal(rr.Spec.TargetResource))
+			})
+
+			It("UT-RO-2570-100: BR-ORCH-026 preserves an invalid supplied target rather than inferring a replacement", func() {
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					RemediationTarget: &aianalysisv1.RemediationTarget{Kind: "Deployment", Name: "", Namespace: "ns"},
+				}
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, rar)).To(Succeed())
+				Expect(rar.Spec.TargetContext.RemediationTarget).NotTo(BeNil())
+				Expect(rar.Spec.TargetContext.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rar.Spec.TargetContext.RemediationTarget.Name).To(BeEmpty())
 			})
 
 			It("should generate deterministic name rar-{rr.Name}", func() {
@@ -127,17 +287,45 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(rar.OwnerReferences).To(HaveLen(1))
 				Expect(rar.OwnerReferences[0].Name).To(Equal("test-rr"))
 				Expect(rar.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+				Expect(rar.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName),
+					"UT-RO-2564-001: the RAR finalizer must be present before the create is persisted")
 			})
 
-			It("should be idempotent - return existing name without error", func() {
+			It("UT-RO-2564-001: fails closed on any deterministic RAR collision", func() {
 				// First creation
 				name1, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Second creation - should return same name
+				// A retry after a successful create must not reuse the existing review.
 				name2, err := ac.Create(ctx, rr, ai)
-				Expect(err).ToNot(HaveOccurred())
 				Expect(name2).To(Equal(name1))
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
+
+				existing := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name1, Namespace: rr.Namespace}, existing)).To(Succeed())
+				Expect(existing.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
+				Expect(existing.Finalizers).To(ContainElement(creator.ApprovalRequestFinalizerName))
+			})
+
+			It("UT-RO-2564-001: fails closed when an existing RAR has a mismatched parent UID", func() {
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).NotTo(HaveOccurred())
+
+				foreign := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, foreign)).To(Succeed())
+				foreign.Spec.RemediationRequestRef.UID = types.UID("foreign-parent-uid")
+				Expect(fakeClient.Update(ctx, foreign)).To(Succeed())
+
+				_, err = ac.Create(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+
+				var creationErr *creator.ApprovalCreationError
+				Expect(errors.As(err, &creationErr)).To(BeTrue())
+				Expect(creationErr.Outcome).To(Equal(creator.ApprovalCreationCollision))
 			})
 
 			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {
@@ -397,6 +585,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 		})
 
 		It("UT-RAR-206-001: WhyApprovalRequired should use actual Rego reason, not hardcoded 'below threshold'", func() {
+			zero := 0.0
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ai-test-rr-206-001",
@@ -405,6 +594,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					RCAResult: &aianalysisv1.RCAResult{
+						RCAConfidence: &zero,
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "wf-restart-pods",
@@ -415,6 +605,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.85,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -432,6 +623,8 @@ var _ = Describe("ApprovalOrchestration", func() {
 			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
 
 			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Missing remediation target"))
+			Expect(rar.Spec.RCAConfidence).To(HaveValue(Equal(0.0)))
+			Expect(rar.Spec.Confidence).To(Equal(.85))
 			Expect(rar.Spec.WhyApprovalRequired).ToNot(ContainSubstring("is below"))
 		})
 
@@ -454,6 +647,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.90,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -494,6 +688,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.65,
 							Rationale:  "HPA max replicas reached",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -565,6 +760,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.72,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -611,6 +807,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.72,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -664,6 +861,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.85,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -716,6 +914,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.85,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{
@@ -764,6 +963,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							},
 							Confidence: 0.72,
 							Rationale:  "Pod restart recommended",
+							Parameters: typedParametersFromStrings(map[string]string{}),
 						},
 					},
 					Approval: &aianalysisv1.ApprovalStatus{

@@ -79,6 +79,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	llmCtx.RepeatSelection = frozen.repeat
 	signal, rcaSummary, enrichData, p1Ctx = frozen.source.Signal, frozen.source.RCASummary, frozen.source.EnrichData, frozen.source.Phase1
 	ctx = katypes.WithSignalContext(ctx, signal)
+	llmCtx.workflowSignal = signal
 	inv.logger.Info("runWorkflowSelection: post-override signal",
 		"component_gvk", overriddenSignal.ComponentGVK(),
 		"resource_kind", overriddenSignal.ResourceKind,
@@ -404,6 +405,7 @@ func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context
 // result, then applies catalog enrichment and target-alignment checks to the
 // final accepted (or exhausted) result.
 func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, result *katypes.InvestigationResult, content string, messages []llm.Message, rcaSummary, correlationID string, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, error) {
+	prepareWorkflowSelectionResult(result, llmCtx)
 	validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
 	if fetchErr != nil {
 		inv.logger.Error(fetchErr, "workflow catalog unavailable, requiring human review")
@@ -428,6 +430,17 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 		return handleSelfCorrectError(corrErr, rcaSummary)
 	}
 	return inv.finalizeSelfCorrection(ctx, corrected, state.attempt, correlationID, validator), nil
+}
+
+// prepareWorkflowSelectionResult applies server-owned target resolution before
+// Validator.Validate runs. The finalization path repeats these operations, but
+// dependency validation must see the same immutable TARGET_RESOURCE_* values.
+func prepareWorkflowSelectionResult(result *katypes.InvestigationResult, llmCtx LLMInvocationContext) {
+	if result == nil {
+		return
+	}
+	InjectRemediationTarget(result, llmCtx.workflowSignal, llmCtx.workflowEnrichment)
+	InjectTargetResourceParameters(result)
 }
 
 // selfCorrectionState carries the mutable state threaded through the
@@ -477,7 +490,11 @@ func (inv *Investigator) runSelfCorrectionAttempt(ctx context.Context, r *katype
 	if extended := loopResultMessages(corrLoopRes); len(extended) > 0 {
 		state.messages = extended
 	}
-	return inv.classifySelfCorrectionLoopResult(corrLoopRes, r, state, rcaSummary)
+	corrected, err := inv.classifySelfCorrectionLoopResult(corrLoopRes, r, state, rcaSummary)
+	if corrected != nil {
+		prepareWorkflowSelectionResult(corrected, llmCtx)
+	}
+	return corrected, err
 }
 
 // classifySelfCorrectionLoopResult classifies one self-correction retry's

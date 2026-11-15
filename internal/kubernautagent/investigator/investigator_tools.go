@@ -400,11 +400,25 @@ func (inv *Investigator) phaseToolError(name string, phase katypes.Phase, correl
 }
 
 func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string, phase katypes.Phase) string {
+	return inv.executeToolWithOptions(ctx, name, args, correlationID, phase, false)
+}
+
+// executeToolWithOptions is the normal tool path with one controlled
+// exception: exact-GVK verification must inspect the structured discovery
+// payload after sanitization, before an optional LLM summarizer or output
+// truncation can destroy the evidence shape.
+func (inv *Investigator) executeToolWithOptions(ctx context.Context, name string, args json.RawMessage, correlationID string, phase katypes.Phase, preserveOutput bool) string {
 	if !inv.toolAllowedInPhase(ctx, phase, name) {
 		return inv.phaseToolError(name, phase, correlationID)
 	}
 	if inv.registry == nil {
-		return toolErrorJSON("no registry configured for tool " + name)
+		overlay, hasOverlay := FleetOverlayFromContext(ctx)
+		if !hasOverlay {
+			return toolErrorJSON("no registry configured for tool " + name)
+		}
+		if _, found := resolveTool(overlay, name); !found {
+			return toolErrorJSON("tool not found in target-cluster overlay: " + name)
+		}
 	}
 
 	detector := inv.anomalyDetectorFor(correlationID)
@@ -421,8 +435,19 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if err != nil {
 		return inv.handleToolExecutionError(ctx, detector, name, args, err)
 	}
+	if name == "resources_list" && discoveryToolError(result) == nil {
+		projected, projectionErr := projectResourcesListOutput(result, args)
+		if projectionErr != nil {
+			inv.logger.Error(projectionErr, "target-scoped resources_list output withheld",
+				"tool", name,
+			)
+			result = toolErrorJSON("target-scoped resources_list output withheld")
+		} else {
+			result = projected
+		}
+	}
 
-	return inv.finishToolResult(ctx, name, result, correlationID, phase)
+	return inv.finishToolResultWithOptions(ctx, name, result, correlationID, phase, preserveOutput)
 }
 
 func (inv *Investigator) handleToolExecutionError(ctx context.Context, detector *AnomalyDetector, name string, args json.RawMessage, err error) string {
@@ -443,6 +468,10 @@ func (inv *Investigator) handleToolExecutionError(ctx context.Context, detector 
 }
 
 func (inv *Investigator) finishToolResult(ctx context.Context, name, result, correlationID string, phase katypes.Phase) string {
+	return inv.finishToolResultWithOptions(ctx, name, result, correlationID, phase, false)
+}
+
+func (inv *Investigator) finishToolResultWithOptions(ctx context.Context, name, result, correlationID string, phase katypes.Phase, preserveOutput bool) string {
 	_ = correlationID
 	_ = phase
 	if inv.pipeline.Sanitizer != nil {
@@ -458,6 +487,9 @@ func (inv *Investigator) finishToolResult(ctx context.Context, name, result, cor
 		result = sanitized
 	}
 	alignment.SubmitToolStep(ctx, name, result)
+	if preserveOutput {
+		return result
+	}
 
 	if inv.pipeline.Summarizer != nil {
 		summarized, sumErr := inv.pipeline.Summarizer.MaybeSummarize(ctx, name, result)

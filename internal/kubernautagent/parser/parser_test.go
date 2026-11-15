@@ -27,6 +27,16 @@ import (
 )
 
 var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
+	DescribeTable("UT-KA-2570-118: BR-KA-191 preserves selected integer tokens beyond float64 precision", func(input string) {
+		result, err := parser.NewResultParser().Parse(input)
+		Expect(err).NotTo(HaveOccurred())
+		raw, err := json.Marshal(result.Parameters)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(Equal(`{"P":9007199254740993}`))
+	},
+		Entry("flat selection", `{"rca_summary":"test","workflow_id":"wf-test","confidence":0.9,"parameters":{"P":9007199254740993}}`),
+		Entry("nested selection", `{"rca_summary":"test","confidence":0.9,"selected_workflow":{"workflow_id":"wf-test","parameters":{"P":9007199254740993}}}`),
+	)
 
 	Describe("UT-KA-433-021: Parser extracts InvestigationResult from valid JSON", func() {
 		It("should parse a valid LLM JSON response into InvestigationResult", func() {

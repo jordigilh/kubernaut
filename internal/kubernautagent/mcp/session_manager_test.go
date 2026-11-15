@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -469,8 +470,8 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
-	Describe("UT-KA-ORPHAN-001: Takeover reclaims expired orphaned K8s Lease", func() {
-		It("should reclaim an expired Lease and create a new session", func() {
+	Describe("KA Lease expiry/reclaim qualification — BR-INTERACTIVE-005", func() {
+		It("UT-KA-2597-002: fresh manager reclaims an expired Lease and releases cleanly", func() {
 			mgrConcrete := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
 				mcpinternal.WithSessionTTL(30*time.Minute),
 			)
@@ -501,11 +502,20 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			Expect(sess).NotTo(BeNil())
 			Expect(sess.SessionID).NotTo(Equal("dead-session-id"))
 			Expect(sess.ActingUser.Username).To(Equal("charlie@example.com"))
+
+			var currentLease coordinationv1.Lease
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: "kubernaut-interactive-rr-orphan-001"}, &currentLease)).To(Succeed())
+			Expect(currentLease.Spec.HolderIdentity).NotTo(BeNil())
+			Expect(*currentLease.Spec.HolderIdentity).To(Equal(sess.SessionID))
+
+			Expect(mgrConcrete.Release(sess.SessionID, "qualification_cleanup")).To(Succeed())
+			Expect(mgrConcrete.ActiveSessionIDs()).To(BeEmpty())
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: "kubernaut-interactive-rr-orphan-001"}, &currentLease)).To(MatchError(apierrors.IsNotFound, "released Lease must be deleted"))
 		})
 
-		It("should NOT reclaim a non-expired Lease from a live pod", func() {
-			By("Creating a Lease that is still valid (acquired now, 30min TTL)")
-			recentAcquire := metav1.NewMicroTime(time.Now())
+		It("UT-KA-2597-001: preserves a Lease strictly before expiry", func() {
+			By("Creating a Lease with a deterministic just-before-expiry timestamp")
+			recentAcquire := metav1.NewMicroTime(time.Now().Add(-29 * time.Minute))
 			leaseDuration := int32(1800)
 			liveLease := &coordinationv1.Lease{
 				ObjectMeta: metav1.ObjectMeta{
@@ -531,6 +541,11 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			user := mcpinternal.UserInfo{Username: "dave@example.com"}
 			_, err := mgrConcrete.Takeover(ctx, "rr-orphan-002", user)
 			Expect(err).To(MatchError(mcpinternal.ErrLeaseHeld))
+
+			var currentLease coordinationv1.Lease
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: "kubernaut-interactive-rr-orphan-002"}, &currentLease)).To(Succeed())
+			Expect(currentLease.Spec.HolderIdentity).NotTo(BeNil())
+			Expect(*currentLease.Spec.HolderIdentity).To(Equal("live-session-id"))
 		})
 	})
 })

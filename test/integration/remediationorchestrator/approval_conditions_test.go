@@ -31,6 +31,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 )
+
 var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("integration", "approval", "conditions"), func() {
 
 	Context("DD-CRD-002-RAR: Initial Condition Setting", func() {
@@ -70,10 +71,10 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 					ConfidenceLevel: "low",
 					Reason:          "Confidence below 0.8 threshold",
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-						WorkflowID:     "test-workflow-1",
-						Version:        "v1.0.0",
+						WorkflowID:      "test-workflow-1",
+						Version:         "v1.0.0",
 						ExecutionBundle: "kubernaut/workflows:test",
-						Rationale:      "Test workflow for approval",
+						Rationale:       "Test workflow for approval",
 					},
 					InvestigationSummary: "Test investigation summary",
 					RecommendedActions: []remediationv1.ApprovalRecommendedAction{

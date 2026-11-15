@@ -94,6 +94,7 @@ rules:
   resources:
   - aianalyses/finalizers
   - notificationrequests/finalizers
+  - remediationapprovalrequests/finalizers
   - remediationrequests/finalizers
   - signalprocessings/finalizers
   - workflowexecutions/finalizers
@@ -134,6 +135,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - remediationworkflows
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - networking.k8s.io

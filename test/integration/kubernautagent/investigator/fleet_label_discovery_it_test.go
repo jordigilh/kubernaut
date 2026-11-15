@@ -31,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	meta "k8s.io/apimachinery/pkg/api/meta"
@@ -274,10 +273,10 @@ var _ = DescribeTable("IT-KA-FLEET-LABELS: remote label detection through workfl
 		name: "resources_list", root: tc.root, getByKind: tc.getByKind,
 		listByKind: tc.listByKind,
 	}
-	spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
-		"resources_get":  getTool,
-		"resources_list": listTool,
-	}}
+	overlay := newITTargetScopedDiscoveryOverlay(tc.apiVersion, tc.targetKind)
+	overlay["resources_get"] = getTool
+	overlay["resources_list"] = listTool
+	spy := &fleetOverlayResolverSpy{overlay: overlay}
 	hubK8s := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
 		{Kind: fleetLabelDeploymentKind, Name: "hub-should-not-appear", Namespace: "remote-ns"},
 	}}

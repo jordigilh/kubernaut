@@ -14,8 +14,12 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	adksession "google.golang.org/adk/v2/session"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -605,6 +609,101 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				"ISSignaler must call UpdateCorrelation with the KA session ID")
 			Expect(recorder.correlations[0].crdName).To(Equal("is-rr-api-gw-001"))
 			Expect(recorder.correlations[0].kaSessionID).To(Equal("sess-is-001"))
+		})
+
+		It("IT-AF-2596-002: production MCP dispatch persists ownership through the real CRD session service", func() {
+			const (
+				namespace = "kubernaut-system"
+				rrName    = "rr-real-session-2596"
+				kaSession = "ka-real-session-2596"
+			)
+			auditor = &fakeAuditor{}
+			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+			typedClient := newBridgeTypedClient(&agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "as-real-session-2596",
+					Namespace: namespace,
+				},
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{Namespace: namespace, Name: rrName},
+					IncidentID:            "incident-real-session-2596",
+					RemediationID:         "rem-real-session-2596",
+					SignalName:            "test-signal",
+					Severity:              "high",
+					Environment:           "test",
+					Priority:              "P1",
+					SignalMode:            "reactive",
+				},
+				Status: agentsessionv1.AgentSessionStatus{
+					SessionID:   kaSession,
+					Interactive: true,
+				},
+			})
+			realSessionService := session.NewCRDSessionService(
+				adksession.InMemoryService(),
+				typedClient,
+				bridgeTestScheme(),
+				namespace,
+				session.WithAuditor(auditor),
+			)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Expect(args.RRID).To(Equal(rrName))
+					return &ka.StartInvestigationResult{
+						SessionID: kaSession,
+						Status:    "interactive_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			cfg := handler.MCPConfig{
+				ServerName:    "af-it",
+				ServerVersion: "0.0.1-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          newFakeDynamicClient(),
+					TypedClient:        typedClient,
+					KAMCPClient:        mockMCP,
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+					Logger:             logr.Discard(),
+					Auditor:            auditor,
+					Metrics:            newBridgeMetrics(),
+					Namespace:          namespace,
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 10,
+					SessionInitializer: realSessionService,
+					InteractiveEnabled: true,
+				},
+			}
+
+			var err error
+			h, err = handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			sessionID = mcpInitialize(h, testUser)
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+				"rr_id": rrName,
+			}, testUser)
+			Expect(status).To(Equal(http.StatusOK))
+			Expect(extractTextContent(body)).To(ContainSubstring(kaSession))
+
+			var persisted isv1alpha1.InvestigationSession
+			Expect(typedClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: "is-" + rrName}, &persisted)).To(Succeed())
+			Expect(persisted.Spec.UserIdentity.Username).To(Equal(testUser.Username))
+			Expect(persisted.Spec.UserIdentity.Groups).To(Equal(testUser.Groups))
+			Expect(persisted.Spec.JoinMode).To(Equal(isv1alpha1.SessionJoinModeStart))
+			Expect(persisted.Status.KACorrelationID).To(Equal(kaSession))
+
+			var createdAudit bool
+			for _, event := range auditor.Events() {
+				if event.Type == audit.EventSessionCreated {
+					createdAudit = true
+					Expect(event.UserID).To(Equal(testUser.Username))
+				}
+			}
+			Expect(createdAudit).To(BeTrue(), "real MCP dispatch must emit the existing session-created audit event")
 		})
 
 		It("IT-AF-1326-IS-002: kubernaut_investigate skips IS CRD when SessionInitializer is nil", func() {

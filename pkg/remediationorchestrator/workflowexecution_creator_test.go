@@ -190,7 +190,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		// (Change 11e), RO's buildWorkflowExecution must be the one
 		// production call site that copies them from the CRD-embedded
 		// AIAnalysis.Status.SelectedWorkflow snapshot into WorkflowRef.
-		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName/ActionType/WorkflowName from SelectedWorkflow into WorkflowRef", func() {
+		It("UT-RO-341-001: copies execution metadata and typed values without a schema allowlist", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
@@ -206,7 +206,6 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
 			}
-			ai.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_POD": true}
 			ctx := context.Background()
 
 			name, err := weCreator.Create(ctx, rr, ai)
@@ -224,13 +223,26 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"Issue #1661 Change 12: WorkflowName must pass through to WorkflowRef like its siblings")
 			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Dependencies))
 			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Resources))
-			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))
+			Expect(created.Spec.Parameters).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Parameters))
 		})
 	})
 
 	Describe("resolveTargetResource (BR-KA-212)", func() {
 		// resolveTargetResource is private; tested via Create() which sets WE.Spec.TargetResource.
 		// BR-KA-212: Prefer LLM-identified RemediationTarget over RR's TargetResource.
+		It("UT-RO-2570-027: BR-ORCH-026 falls back to the frozen signal target when remediation target is absent", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-frozen-fallback", "default")
+			rr.Spec.TargetResource = remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Namespace: "reviewed", Name: "reviewed-pod"}
+			ai := helpers.NewCompletedAIAnalysis("ai-test-frozen-fallback", "default")
+			ai.Status.RCAResult.RootCauseAnalysis = nil
+			name, err := weCreator.Create(context.Background(), rr, ai)
+			Expect(err).NotTo(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			Expect(fakeClient.Get(context.Background(), client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)).To(Succeed())
+			Expect(created.Spec.TargetResource).To(Equal("reviewed/Pod/reviewed-pod"))
+		})
 		It("should use RCA RemediationTarget namespace/kind/name when namespaced (LLM identified Deployment)", func() {
 			// Arrange: AI with RootCauseAnalysis.RemediationTarget (namespaced)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()

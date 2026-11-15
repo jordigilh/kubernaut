@@ -20,6 +20,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -644,33 +648,310 @@ func ValidateDescription(d *WorkflowDescription) error {
 	return nil
 }
 
+const (
+	parameterTypeInteger = "integer"
+	parameterTypeFloat   = "float"
+	parameterTypeString  = "string"
+	parameterTypeBoolean = "boolean"
+	parameterTypeArray   = "array"
+)
+
 // ValidateParameterValue checks a string parameter value against the schema's type and bounds.
 // Returns nil if the value is valid; error with descriptive message otherwise.
 func ValidateParameterValue(param WorkflowParameter, value string) error {
 	switch param.Type {
-	case "integer":
-		v, err := strconv.ParseFloat(value, 64)
-		if err != nil {
+	case parameterTypeInteger:
+		v, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || !json.Valid([]byte(value)) {
 			return fmt.Errorf("parameter %q: invalid integer value %q", param.Name, value)
 		}
-		return checkNumericBounds(param, v)
-	case "float":
-		v, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return fmt.Errorf("parameter %q: invalid float value %q", param.Name, value)
-		}
-		return checkNumericBounds(param, v)
-	default:
+		return checkNumericBounds(param, float64(v), &v)
+	case parameterTypeFloat:
+		return validateFloatParameterValue(param, value)
+	case parameterTypeString:
 		return nil
+	case parameterTypeBoolean:
+		if value != "true" && value != "false" {
+			return fmt.Errorf("parameter %q: invalid boolean value %q", param.Name, value)
+		}
+		return nil
+	case parameterTypeArray:
+		var items []json.RawMessage
+		if err := json.Unmarshal([]byte(value), &items); err != nil || items == nil {
+			return fmt.Errorf("parameter %q: invalid array value %q", param.Name, value)
+		}
+		return nil
+	default:
+		return fmt.Errorf("parameter %q: unsupported type %q", param.Name, param.Type)
 	}
 }
 
-func checkNumericBounds(param WorkflowParameter, value float64) error {
+// ValidateParameterSet validates the complete effective string-valued parameter
+// map without modifying it or inserting schema defaults (BR-KA-191).
+// TypedParameterValue adapts a KA/AF typed value to the schema-directed string
+// validator without mutating the value used for the execution handoff.
+func TypedParameterValue(parameter WorkflowParameter, value interface{}) (string, error) {
+	switch parameter.Type {
+	case parameterTypeString:
+		if v, ok := value.(string); ok {
+			return v, nil
+		}
+	case parameterTypeBoolean:
+		if v, ok := value.(bool); ok {
+			return strconv.FormatBool(v), nil
+		}
+	case parameterTypeArray:
+		if v, ok := value.([]interface{}); ok && v != nil {
+			raw, err := json.Marshal(v)
+			if err != nil {
+				return "", fmt.Errorf("parameter %q: cannot encode array: %w", parameter.Name, err)
+			}
+			return string(raw), nil
+		}
+	case parameterTypeInteger, parameterTypeFloat:
+		return typedNumericParameterValue(parameter, value)
+	}
+	return "", fmt.Errorf("%s: expected type %s, got %T", parameter.Name, parameter.Type, value)
+}
+
+func typedNumericParameterValue(parameter WorkflowParameter, value interface{}) (string, error) {
+	var raw string
+	switch v := value.(type) {
+	case json.Number:
+		raw = string(v)
+		if parameter.Type == parameterTypeInteger && strings.ContainsAny(raw, ".eE") {
+			return "", fmt.Errorf("parameter %q: integer requires integer JSON text", parameter.Name)
+		}
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) || (parameter.Type == parameterTypeInteger && math.Abs(v) > 9007199254740992) {
+			return "", fmt.Errorf("parameter %q: invalid or imprecise numeric value", parameter.Name)
+		}
+		raw = strconv.FormatFloat(v, 'g', -1, 64)
+	case int:
+		raw = strconv.FormatInt(int64(v), 10)
+	case int64:
+		raw = strconv.FormatInt(v, 10)
+	default:
+		return "", fmt.Errorf("%s: expected type %s, got %T", parameter.Name, parameter.Type, value)
+	}
+	if parameter.Type == parameterTypeInteger {
+		integer, err := typedIntegerValue(raw)
+		if err != nil {
+			return "", fmt.Errorf("parameter %q: invalid integer: %w", parameter.Name, err)
+		}
+		return integer, nil
+	}
+	if err := ValidateParameterValue(WorkflowParameter{Name: parameter.Name, Type: parameterTypeFloat}, raw); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+
+// typedIntegerValue accepts integral JSON numeric values, including decimal and
+// exponent notation, and checks int64 range without converting through float64.
+func typedIntegerValue(raw string) (string, error) {
+	if len(raw) == 0 || !json.Valid([]byte(raw)) || (raw[0] != '-' && (raw[0] < '0' || raw[0] > '9')) {
+		return "", fmt.Errorf("invalid JSON number")
+	}
+	mantissa, exponentText, hasExponent := strings.Cut(strings.ToLower(raw), "e")
+	negative := strings.HasPrefix(mantissa, "-")
+	mantissa = strings.TrimPrefix(mantissa, "-")
+	whole, fraction, _ := strings.Cut(mantissa, ".")
+	digits := strings.TrimLeft(whole+fraction, "0")
+	if digits == "" {
+		return "0", nil
+	}
+	var exponent int64
+	if hasExponent {
+		var err error
+		exponent, err = strconv.ParseInt(exponentText, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("integer exponent out of range")
+		}
+	}
+	if exponent < math.MinInt64+int64(len(fraction)) {
+		return "", fmt.Errorf("integer is fractional")
+	}
+	scale := exponent - int64(len(fraction))
+	digits, err := scaleIntegerDigits(digits, scale)
+	if err != nil {
+		return "", err
+	}
+	if negative {
+		digits = "-" + digits
+	}
+	v, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("integer out of range: %w", err)
+	}
+	return strconv.FormatInt(v, 10), nil
+}
+
+func scaleIntegerDigits(digits string, scale int64) (string, error) {
+	if scale < 0 {
+		if scale < -int64(len(digits)) {
+			return "", fmt.Errorf("integer is fractional")
+		}
+		cut := len(digits) + int(scale)
+		if strings.Trim(digits[cut:], "0") != "" {
+			return "", fmt.Errorf("integer is fractional")
+		}
+		return digits[:cut], nil
+	}
+	if scale > 19 || int64(len(digits))+scale > 19 {
+		return "", fmt.Errorf("integer out of range")
+	}
+	return digits + strings.Repeat("0", int(scale)), nil
+}
+
+func ValidateParameterSet(schema []WorkflowParameter, values map[string]string) error {
+	validationErrors := ValidateParameterSetErrors(schema, values)
+	if len(validationErrors) > 0 {
+		return validationErrors[0]
+	}
+	return nil
+}
+
+// ValidateParameterSetErrors returns all constraint failures without mutating inputs.
+func ValidateParameterSetErrors(schema []WorkflowParameter, values map[string]string) []error {
+	if schema == nil || values == nil {
+		return []error{fmt.Errorf("parameter schema or values are missing")}
+	}
+	var errs []error
+	declared := make(map[string]WorkflowParameter, len(schema))
+	patterns := make(map[string]*regexp.Regexp, len(schema))
+	for _, parameter := range schema {
+		if parameter.Name == "" {
+			errs = append(errs, fmt.Errorf("parameter schema contains an empty name"))
+			continue
+		}
+		if _, exists := declared[parameter.Name]; exists {
+			errs = append(errs, fmt.Errorf("parameter %q is declared more than once", parameter.Name))
+			continue
+		}
+		declared[parameter.Name] = parameter
+		pattern, schemaErrors := validateParameterSchema(parameter)
+		errs = append(errs, schemaErrors...)
+		if pattern != nil {
+			patterns[parameter.Name] = pattern
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	for key := range values {
+		if _, exists := declared[key]; !exists {
+			errs = append(errs, fmt.Errorf("parameter %q is not declared", key))
+		}
+	}
+	for _, parameter := range schema {
+		errs = append(errs, validateParameterConstraints(parameter, values, patterns[parameter.Name])...)
+	}
+	return errs
+}
+
+func validateParameterSchema(parameter WorkflowParameter) (*regexp.Regexp, []error) {
+	var errs []error
+	switch parameter.Type {
+	case parameterTypeString, parameterTypeInteger, parameterTypeFloat, parameterTypeBoolean, parameterTypeArray:
+	default:
+		errs = append(errs, fmt.Errorf("parameter %q: unsupported type %q", parameter.Name, parameter.Type))
+	}
+	errs = append(errs, validateSchemaBounds(parameter)...)
+	if parameter.Pattern == "" {
+		return nil, errs
+	}
+	if parameter.Type != parameterTypeString {
+		return nil, append(errs, fmt.Errorf("parameter %q: pattern requires a string type", parameter.Name))
+	}
+	if len(parameter.Pattern) > 1024 {
+		return nil, append(errs, fmt.Errorf("parameter %q: pattern exceeds 1024 characters", parameter.Name))
+	}
+	pattern, err := regexp.Compile(parameter.Pattern)
+	if err != nil {
+		return nil, append(errs, fmt.Errorf("parameter %q: invalid pattern: %w", parameter.Name, err))
+	}
+	return pattern, errs
+}
+
+func validateSchemaBounds(parameter WorkflowParameter) []error {
+	var errs []error
+	if (parameter.Minimum != nil || parameter.Maximum != nil) && parameter.Type != parameterTypeInteger && parameter.Type != parameterTypeFloat {
+		errs = append(errs, fmt.Errorf("parameter %q: numeric bounds require a numeric type", parameter.Name))
+	}
+	if (parameter.Minimum != nil && (math.IsNaN(*parameter.Minimum) || math.IsInf(*parameter.Minimum, 0))) ||
+		(parameter.Maximum != nil && (math.IsNaN(*parameter.Maximum) || math.IsInf(*parameter.Maximum, 0))) {
+		errs = append(errs, fmt.Errorf("parameter %q: invalid numeric bounds", parameter.Name))
+	} else if parameter.Minimum != nil && parameter.Maximum != nil && *parameter.Minimum > *parameter.Maximum {
+		errs = append(errs, fmt.Errorf("parameter %q: minimum exceeds maximum", parameter.Name))
+	}
+	return errs
+}
+
+func validateParameterConstraints(parameter WorkflowParameter, values map[string]string, pattern *regexp.Regexp) []error {
+	value, present := values[parameter.Name]
+	if !present {
+		if parameter.Required {
+			return []error{fmt.Errorf("parameter %q: required parameter is missing", parameter.Name)}
+		}
+		return nil
+	}
+	if err := ValidateParameterValue(parameter, value); err != nil {
+		return []error{err}
+	}
+	var errs []error
+	if len(parameter.Enum) > 0 && !slices.Contains(parameter.Enum, value) {
+		errs = append(errs, fmt.Errorf("parameter %q: value is not in enum", parameter.Name))
+	}
+	if pattern != nil && !pattern.MatchString(value) {
+		errs = append(errs, fmt.Errorf("parameter %q: value does not match pattern", parameter.Name))
+	}
+	for _, dependency := range parameter.DependsOn {
+		if _, exists := values[dependency]; !exists {
+			errs = append(errs, fmt.Errorf("parameter %q: depends on %q which is not present", parameter.Name, dependency))
+		}
+	}
+	return errs
+}
+
+func validateFloatParameterValue(param WorkflowParameter, value string) error {
+	v, err := strconv.ParseFloat(value, 64)
+	if err != nil || !json.Valid([]byte(value)) || math.IsInf(v, 0) || math.IsNaN(v) {
+		return fmt.Errorf("parameter %q: invalid float value %q", param.Name, value)
+	}
+	if v == 0 {
+		mantissa, _, _ := strings.Cut(strings.ToLower(value), "e")
+		if strings.ContainsAny(mantissa, "123456789") {
+			return fmt.Errorf("parameter %q: float value %q underflows", param.Name, value)
+		}
+	}
+	return checkNumericBounds(param, v, nil)
+}
+
+func checkNumericBounds(param WorkflowParameter, value float64, integer *int64) error {
+	if (param.Minimum != nil && (math.IsNaN(*param.Minimum) || math.IsInf(*param.Minimum, 0))) ||
+		(param.Maximum != nil && (math.IsNaN(*param.Maximum) || math.IsInf(*param.Maximum, 0))) {
+		return fmt.Errorf("parameter %q: invalid numeric bounds", param.Name)
+	}
+	if integer != nil {
+		return checkIntegerBounds(param, *integer)
+	}
 	if param.Minimum != nil && value < *param.Minimum {
 		return fmt.Errorf("parameter %q: value %v is below minimum %v", param.Name, value, *param.Minimum)
 	}
 	if param.Maximum != nil && value > *param.Maximum {
 		return fmt.Errorf("parameter %q: value %v exceeds maximum %v", param.Name, value, *param.Maximum)
+	}
+	return nil
+}
+
+func checkIntegerBounds(param WorkflowParameter, value int64) error {
+	exact := new(big.Rat).SetInt64(value)
+	if param.Minimum != nil && exact.Cmp(new(big.Rat).SetFloat64(*param.Minimum)) < 0 {
+		return fmt.Errorf("parameter %q: value %d is below minimum %v", param.Name, value, *param.Minimum)
+	}
+	if param.Maximum != nil && exact.Cmp(new(big.Rat).SetFloat64(*param.Maximum)) > 0 {
+		return fmt.Errorf("parameter %q: value %d exceeds maximum %v", param.Name, value, *param.Maximum)
 	}
 	return nil
 }

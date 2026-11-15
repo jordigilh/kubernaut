@@ -586,7 +586,7 @@ func (inv *Investigator) findSentinelTool(ctx context.Context, messages []llm.Me
 		if !inv.toolAllowedInPhase(ctx, katypes.Phase(phase), tc.Name) {
 			continue
 		}
-		if sr := sentinelResult(tc, resp.Message.Reasoning, messages); sr != nil {
+		if sr := sentinelResult(tc, resp.ToolCalls, resp.Message.Reasoning, messages); sr != nil {
 			// DD-KA-2496: an allowed submit must not hide a rejected call in
 			// the same batch. Preserve sentinel short-circuit semantics for
 			// permitted tools while making off-phase attempts auditable.

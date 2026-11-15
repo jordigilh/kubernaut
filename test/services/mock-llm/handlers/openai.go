@@ -189,8 +189,14 @@ func (h *handler) respondWithSubmitToolCall(w http.ResponseWriter, stream, inclu
 	if cfg.WorkflowID == "" || cfg.DeclineWorkflow {
 		toolName = openai.ToolSubmitResultNoWorkflow
 	}
+	// ToolCallArgs belongs to a configured scripted call (for example the
+	// initial list_available_actions request). The submit payload is generated
+	// from the scenario's RCA and workflow fields, so stale call arguments must
+	// not override it on the final response.
+	responseCfg := cfg
+	responseCfg.ToolCallArgs = nil
 	h.trackToolCall(toolName)
-	writeChatCompletion(w, stream, includeUsage, response.BuildToolCallResponse(model, toolName, cfg))
+	writeChatCompletion(w, stream, includeUsage, response.BuildToolCallResponse(model, toolName, responseCfg))
 }
 
 // handleFullDAG executes the complete DAG path for tool-calling scenarios.

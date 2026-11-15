@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -53,6 +54,19 @@ type ObjectRef struct {
 	Name string `json:"name"`
 }
 
+// ApprovalTargetContext freezes both the signal target and the original
+// remediation target, including its absence, for approval-scoped execution.
+type ApprovalTargetContext struct {
+	// SignalTarget is the signal-derived resource from the parent request.
+	SignalTarget ResourceIdentifier `json:"signalTarget"`
+	// SignalClusterID identifies the signal's source cluster.
+	// +optional
+	SignalClusterID string `json:"signalClusterId,omitempty"`
+	// RemediationTarget is the AI-selected target, when one was supplied.
+	// +optional
+	RemediationTarget *ResourceIdentifier `json:"remediationTarget,omitempty"`
+}
+
 // RemediationApprovalRequestSpec defines the desired state of RemediationApprovalRequest.
 //
 // ADR-040: Spec Immutability
@@ -61,6 +75,11 @@ type ObjectRef struct {
 //
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-040)"
 type RemediationApprovalRequestSpec struct {
+	// RCAConfidence is nil when the RCA score is unknown.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RCAConfidence *float64 `json:"rcaConfidence,omitempty"`
 	// ========================================
 	// PARENT REFERENCES
 	// ========================================
@@ -104,6 +123,22 @@ type RemediationApprovalRequestSpec struct {
 	// Recommended workflow from AI analysis
 	// +kubebuilder:validation:Required
 	RecommendedWorkflow RecommendedWorkflowSummary `json:"recommendedWorkflow"`
+
+	// Workflow freezes the catalog-resolved execution details reviewed by the operator.
+	// +optional
+	Workflow *sharedtypes.WorkflowSnapshot `json:"workflow,omitempty"`
+
+	// Parameters freezes the original selected parameter values. An empty map is
+	// distinct from missing data.
+	// +optional
+	Parameters sharedtypes.TypedParameterMap `json:"parameters,omitzero"`
+	// ParameterEvidence retains the submitted numeric lexemes.
+	// +optional
+	ParameterEvidence string `json:"parameterEvidence,omitempty"`
+
+	// TargetContext freezes the target and cluster context for this review.
+	// +optional
+	TargetContext *ApprovalTargetContext `json:"targetContext,omitempty"`
 
 	// Investigation summary from KA
 	// +kubebuilder:validation:Required
@@ -203,15 +238,16 @@ type ApprovalPolicyEvaluation struct {
 // and/or parameters when approving a RemediationApprovalRequest (#594).
 // The RO resolves the final spec from either this override or the AIA default.
 type WorkflowOverride struct {
-	// Name of a RemediationWorkflow CRD to use instead of the AI-recommended one.
-	// If set, the webhook validates the RW exists and has CatalogStatus=Active.
+	// WorkflowName is a legacy field. Parameter-only approvals reject a non-empty value.
 	// +optional
 	WorkflowName string `json:"workflowName,omitempty"`
-	// Override parameters for the workflow execution.
-	// If non-nil (including empty map), replaces the AI-recommended parameters.
-	// If nil, the AI-recommended parameters are preserved.
+	// Parameters contains partial changes to the original values. Omitted keys
+	// are unchanged; nil and an explicitly empty map are both no-ops.
 	// +optional
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Parameters sharedtypes.TypedParameterMap `json:"parameters,omitzero"`
+	// ParameterEvidence retains the submitted override numeric lexemes.
+	// +optional
+	ParameterEvidence string `json:"parameterEvidence,omitempty"`
 	// Rationale for the override decision (audit trail).
 	// +optional
 	Rationale string `json:"rationale,omitempty"`

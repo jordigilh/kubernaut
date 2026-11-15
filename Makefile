@@ -353,6 +353,10 @@ test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests fo
 	fi
 
 # Integration Tests
+.PHONY: test-integration-remediationorchestrator-approvalsafety
+test-integration-remediationorchestrator-approvalsafety: ## Run Podman-free approval safety envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./test/integration/remediationorchestrator/approvalsafety -count=1
+
 .PHONY: test-integration-%
 test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -992,7 +996,7 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut throug
 		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
 
 .PHONY: setup-local-demo-infra
-setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, OPERATOR_IMAGE, OPERATOR_IMAGE_REPOSITORY, OPERATOR_IMAGE_TAG
+setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, OPERATOR_IMAGE, OPERATOR_IMAGE_REPOSITORY, OPERATOR_IMAGE_TAG, KUBERNAUT_CONSOLE_IMAGE, KUBERNAUT_CONSOLE_IMAGE_TAR (verified Console archive loaded before the CR)
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai"; \
 		echo "   make setup-local-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \

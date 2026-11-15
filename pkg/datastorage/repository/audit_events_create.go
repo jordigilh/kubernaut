@@ -17,6 +17,7 @@ limitations under the License.
 package repository
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -75,7 +76,9 @@ func normalizeCreateEvent(event *AuditEvent) ([]byte, string, error) {
 	}
 	if len(eventDataJSON) > 0 && string(eventDataJSON) != jsonNull {
 		var normalizedEventData map[string]interface{}
-		if err := json.Unmarshal(eventDataJSON, &normalizedEventData); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(eventDataJSON))
+		decoder.UseNumber()
+		if err := decoder.Decode(&normalizedEventData); err != nil {
 			return nil, "", fmt.Errorf("failed to normalize event_data: %w", err)
 		}
 		event.EventData = normalizedEventData // Replace with normalized version for hash calculation

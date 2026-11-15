@@ -834,12 +834,14 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithTimeoutTracker(d.timeoutMgr),
 		mcptools.WithNotifyFunc(d.sessionNotifier.Notify),
 		mcptools.WithRRExistenceChecker(d.rrChecker),
-		mcptools.WithAgentSessionExistenceChecker(d.agentSessionChecker),
 		mcptools.WithHTTPCompleter(d.autoMgr),
 		mcptools.WithAuditStore(d.auditStore, d.logger.WithName("mcp-audit")),
 		mcptools.WithSignalContextResolver(d.signalResolver),
 		mcptools.WithWorkflowCatalog(d.catalogAdapter),
 		mcptools.WithInvestigateAutoCloseTombstone(d.autoCloseTombstone),
+	}
+	if d.agentSessionChecker != nil {
+		investigateOpts = append(investigateOpts, mcptools.WithAgentSessionExistenceChecker(d.agentSessionChecker))
 	}
 	investigateTool := mcptools.NewInvestigateTool(d.leaseMgr, d.investigatorRunner, d.recon, d.autoMgr, investigateOpts...)
 
@@ -866,6 +868,9 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
 		mcptools.WithCompleteNoActionTimeoutTracker(d.timeoutMgr),
 		mcptools.WithCompleteNoActionAutoCloseTombstone(d.autoCloseTombstone),
+	}
+	if d.agentSessionChecker != nil {
+		completeNoActionOpts = append(completeNoActionOpts, mcptools.WithCompleteNoActionAgentSessionExistenceChecker(d.agentSessionChecker))
 	}
 	// #2387 Gap 2: cumulative per-RR totals for the no-discovery path.
 	// d.investigatorRunner is the production adapter (built at line ~427);

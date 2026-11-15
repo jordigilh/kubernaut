@@ -32,7 +32,10 @@ type RouterConfig struct {
 	// pre-flight check for the console/chat client. Registered only when
 	// non-nil, same authenticated middleware tier as StatusHandler.
 	ConsoleAccessHandler http.Handler
-	Draining             *atomic.Bool
+	// ConsolePolicyReadHandler serves the authenticated policy/scope and
+	// managed-resource projections. Registered only when non-nil.
+	ConsolePolicyReadHandler http.Handler
+	Draining                 *atomic.Bool
 }
 
 // PublicRouteConfig groups the unauthenticated agent card and Console
@@ -48,6 +51,7 @@ type BackendContractConfig struct {
 	Incarnation string
 }
 
+// validate checks required dependencies and the public backend contract value.
 func (c *RouterConfig) validate() error {
 	if c.MetricsRegistry == nil {
 		return fmt.Errorf("MetricsRegistry is required")
@@ -158,12 +162,31 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 		mux.Handle("GET /a2a/access", consoleAccessChain)
 	}
 
+	registerConsolePolicyReadRoutes(mux, &cfg, maxBytes)
+
 	recoverLogger := cfg.Logger
 	if recoverLogger.GetSink() == nil {
 		recoverLogger = logr.Discard()
 	}
 	return RecoverMiddleware(cfg.MetricsRegistry, recoverLogger.WithName("panic-recovery"))(
 		requestid.Middleware(metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux)))), nil
+}
+
+func registerConsolePolicyReadRoutes(mux *http.ServeMux, cfg *RouterConfig, maxBytes int64) {
+	if cfg.ConsolePolicyReadHandler == nil {
+		return
+	}
+	innerConsoleRead := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, cfg.ConsolePolicyReadHandler))
+	if cfg.PostAuthMiddleware != nil {
+		innerConsoleRead = cfg.PostAuthMiddleware(innerConsoleRead)
+	}
+	consoleReadChain := cfg.AuthMiddleware(innerConsoleRead)
+	if cfg.PreAuthMiddleware != nil {
+		consoleReadChain = cfg.PreAuthMiddleware(consoleReadChain)
+	}
+	mux.Handle("GET /api/v1/console/policies/scope", consoleReadChain)
+	mux.Handle("GET /api/v1/console/inventory/managed-resources", consoleReadChain)
+	mux.Handle("GET /api/v1/console/inventory/managed-resources/{resourceID}", consoleReadChain)
 }
 
 // maxBodyMiddleware limits request body size to prevent resource exhaustion.

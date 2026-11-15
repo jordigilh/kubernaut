@@ -101,7 +101,8 @@ func cachedPersonaSession(cache map[string]personaSession, persona string) (pers
 // callProbeTool invokes the probe tool using an already-authenticated
 // persona session, reporting whether AF's RBAC layer denied it.
 func callProbeTool(sess personaSession, persona, tool string) (text string, denied bool, err error) {
-	body := buildJSONRPC(fmt.Sprintf("acl-%s-%s", persona, tool), "tools/call", map[string]interface{}{
+	rpcID := fmt.Sprintf("acl-%s-%s", persona, tool)
+	body := buildJSONRPC(rpcID, "tools/call", map[string]interface{}{
 		"name":      tool,
 		"arguments": probeArgs(tool),
 	})
@@ -113,7 +114,7 @@ func callProbeTool(sess personaSession, persona, tool string) (text string, deni
 		return string(raw), true, nil
 	}
 
-	text, toolIsError, err := parseMCPToolPayload(unwrapSSEDataLine(raw))
+	text, toolIsError, err := parseMCPToolPayload(unwrapSSEDataLine(raw), rpcID)
 	if err != nil {
 		return text, false, err
 	}

@@ -29,6 +29,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,6 +45,49 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 
 	BeforeEach(func() {
 		ctx = context.Background()
+	})
+
+	It("UT-AUD-2570-039: BR-AUDIT-005 records original, changed and effective approval values without rewriting", func() {
+		now := metav1.Now()
+		rar := &remediationv1.RemediationApprovalRequest{
+			Spec: remediationv1.RemediationApprovalRequestSpec{Workflow: &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed"}, Parameters: typedParameters(`{"P":2,"UNCHANGED":"keep"}`)},
+			Status: remediationv1.RemediationApprovalRequestStatus{Decision: remediationv1.ApprovalDecisionApproved, DecidedAt: &now,
+				WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: typedParameters(`{"P":1.0}`), Rationale: "reviewed"}},
+		}
+		built, err := authwebhook.BuildRARApprovalAuditPayload(rar)
+		Expect(err).NotTo(HaveOccurred())
+		built.DelegatedUser = ogenclient.NewOptString("operator")
+		built.DelegatedVia = ogenclient.NewOptString("apifrontend")
+		built.PolicyHash = ogenclient.NewOptString("policy")
+		data, err := json.Marshal(&built)
+		Expect(err).NotTo(HaveOccurred())
+		var payload map[string]json.RawMessage
+		Expect(json.Unmarshal(data, &payload)).To(Succeed())
+		Expect(string(payload["original_parameters"])).To(MatchJSON(`{"P":{"kind":"integer","integerValue":2},"UNCHANGED":{"kind":"string","stringValue":"keep"}}`))
+		Expect(string(payload["override_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1}}`))
+		Expect(string(payload["effective_parameters"])).To(MatchJSON(`{"P":{"kind":"float","floatValue":1},"UNCHANGED":{"kind":"string","stringValue":"keep"}}`))
+		Expect(string(payload["override_rationale"])).To(MatchJSON(`"reviewed"`))
+		Expect(string(payload["workflow_id"])).To(MatchJSON(`"wf-reviewed"`))
+	})
+
+	It("UT-AUD-2570-033: BR-AUDIT-005 distinguishes an empty override from no override", func() {
+		now := metav1.Now()
+		rar := &remediationv1.RemediationApprovalRequest{Spec: remediationv1.RemediationApprovalRequestSpec{Parameters: typedParameters(`{}`)}, Status: remediationv1.RemediationApprovalRequestStatus{Decision: remediationv1.ApprovalDecisionApproved, DecidedAt: &now}}
+		without, err := authwebhook.BuildRARApprovalAuditPayload(rar)
+		Expect(err).NotTo(HaveOccurred())
+		_, present := without.OverrideParameters.Get()
+		Expect(present).To(BeFalse())
+		rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{Parameters: typedParameters(`{}`)}
+		with, err := authwebhook.BuildRARApprovalAuditPayload(rar)
+		Expect(err).NotTo(HaveOccurred())
+		changes, present := with.OverrideParameters.Get()
+		Expect(present).To(BeTrue())
+		Expect(changes).To(BeEmpty())
+		data, err := with.MarshalJSON()
+		Expect(err).NotTo(HaveOccurred())
+		var fields map[string]json.RawMessage
+		Expect(json.Unmarshal(data, &fields)).To(Succeed())
+		Expect(string(fields["override_parameters"])).To(MatchJSON(`{}`))
 	})
 
 	Describe("BR-AUDIT-006: notification audit ogen enum converters (delete paths)", func() {
@@ -242,7 +286,8 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 				},
 			}
 
-			payload := authwebhook.BuildRARApprovalAuditPayload(rar)
+			payload, err := authwebhook.BuildRARApprovalAuditPayload(rar)
+			Expect(err).NotTo(HaveOccurred())
 			hash, hasHash := payload.PolicyHash.Get()
 			Expect(hasHash).To(BeTrue(), "SOC 2 CC8.1/CC6.8: webhook audit event must carry the pinned policy hash")
 			Expect(hash).To(Equal(expectedHash))
@@ -261,7 +306,8 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 				},
 			}
 
-			payload := authwebhook.BuildRARApprovalAuditPayload(rar)
+			payload, err := authwebhook.BuildRARApprovalAuditPayload(rar)
+			Expect(err).NotTo(HaveOccurred())
 			_, hasHash := payload.PolicyHash.Get()
 			Expect(hasHash).To(BeFalse(), "no hash to attribute when PolicyEvaluation was never set")
 		})
@@ -281,6 +327,43 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 		})
 	})
 })
+
+func typedParameters(raw string) sharedtypes.TypedParameterMap {
+	values, _, err := sharedtypes.DecodeTypedParameterMap([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+	return values
+}
+
+func typedParametersFromStrings(values map[string]string) sharedtypes.TypedParameterMap {
+	if values == nil {
+		return nil
+	}
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, rawValue := range values {
+		encodedName, err := json.Marshal(name)
+		if err != nil {
+			panic(err)
+		}
+		raw := []byte{'{'}
+		raw = append(raw, encodedName...)
+		raw = append(raw, ':')
+		raw = append(raw, rawValue...)
+		raw = append(raw, '}')
+		decoded, _, err := sharedtypes.DecodeTypedParameterMap(raw)
+		if err == nil {
+			result[name] = decoded[name]
+			continue
+		}
+		// Keep adversarial legacy vectors representable in this in-memory test
+		// helper. Production ordinary-JSON boundaries reject these values before
+		// constructing a TypedParameterMap.
+		value := rawValue
+		result[name] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &value}
+	}
+	return result
+}
 
 // UT-AW-668-003: StartupReconciler and Validator lifecycle (BR-AUTH-001)
 var _ = Describe("UT-AW-668-003: StartupReconciler and Validator lifecycle (BR-AUTH-001)", func() {

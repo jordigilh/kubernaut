@@ -299,6 +299,20 @@ var _ = Describe("StoreAdapter", func() {
 		Expect(store.closed).To(BeTrue())
 	})
 
+	It("UT-AUD-2570-040: BR-AUDIT-005 persists denied tool executions with failure outcome", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type: audit.EventToolExecuted,
+			Detail: map[string]string{
+				"tool_name":    "kubernaut_approve",
+				"tool_outcome": "denied",
+			},
+		})
+
+		evt := store.lastEvent()
+		Expect(evt).NotTo(BeNil())
+		Expect(evt.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+	})
+
 	It("UT-AF-1189-001: EventRRCreated with CorrelationID set to RR name", func() {
 		adapter.Emit(context.Background(), &audit.Event{
 			Type:          audit.EventRRCreated,
