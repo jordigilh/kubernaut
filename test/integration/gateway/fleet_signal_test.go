@@ -113,11 +113,8 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		By("Seeding shared Redis with managed resources for remote clusters")
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "prod-west"} {
-			// GW passes ResourceIdentity with empty Group/Version (only Kind is set);
-			// scopecache.Client.IsManagedResource infers Group/Version from Kind via
-			// scope.InferGVK before building the lookup key (Issue #54 SOC2 gap RCA),
-			// exactly like pkg/fleet/fmc/syncer.go does when writing from the real
-			// K8s API. Deployment resolves to group "apps", version "v1".
+			// Remote signals carry the explicit GVK required by the federated scope
+			// contract. The cache key matches the real GVK written by syncer.go.
 			key, kerr := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", testNamespace, "nginx")
 			Expect(kerr).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
@@ -186,6 +183,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Namespace:    testNamespace,
 			ResourceKind: "Deployment",
 			ResourceName: "nginx",
+			APIVersion:   "apps/v1",
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
@@ -243,6 +241,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Namespace:    "default",
 			ResourceKind: "Deployment",
 			ResourceName: "nginx",
+			APIVersion:   "apps/v1",
 			Severity:     "warning",
 			Source:       "prometheus",
 		})
@@ -259,6 +258,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Namespace:    "default",
 			ResourceKind: "Deployment",
 			ResourceName: "nginx",
+			APIVersion:   "apps/v1",
 			Severity:     "warning",
 			Source:       "prometheus",
 		})

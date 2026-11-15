@@ -64,6 +64,7 @@ var _ = Describe("IT-SP-1511-001: ClusterRegistry wiring reachable through K8sEn
 				"metadata": map[string]interface{}{
 					"name":      name,
 					"namespace": "kubernaut-system",
+					"uid":       "backend-" + name,
 					"labels":    metadataLabels,
 				},
 			},

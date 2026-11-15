@@ -1377,6 +1377,7 @@ type SignalBuilder struct {
 	ResourceKind string
 	Name         string // Alias for ResourceName
 	ResourceName string
+	APIVersion   string
 	Severity     string
 	Source       string // Source adapter name
 	Labels       map[string]string
@@ -1434,9 +1435,10 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		Namespace:   builder.Namespace,
 		ClusterID:   builder.ClusterID,
 		Resource: types.ResourceIdentifier{
-			Kind:      builder.ResourceKind,
-			Name:      builder.ResourceName,
-			Namespace: builder.Namespace, // Set resource namespace
+			APIVersion: builder.APIVersion,
+			Kind:       builder.ResourceKind,
+			Name:       builder.ResourceName,
+			Namespace:  builder.Namespace, // Set resource namespace
 		},
 		Labels:       builder.Labels,
 		Annotations:  builder.Annotations,

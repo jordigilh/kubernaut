@@ -60,15 +60,18 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", gatewayRedisPort)
 
-		By("Seeding shared Redis with managed resources for prod-east only")
-		// Cache key uses the real GVK ("apps/v1" for Deployment) matching what
-		// pkg/fleet/fmc/syncer.go writes from the K8s API, and what
-		// scopecache.Client.IsManagedResource now infers via scope.InferGVK when
-		// the caller's ResourceIdentity leaves Group/Version empty (Issue #54).
+		By("Seeding shared Redis with managed and verified-unmanaged resources")
+		// Cache keys use the real GVK ("apps/v1" for Deployment/StatefulSet)
+		// matching what pkg/fleet/fmc/syncer.go writes from the K8s API. Remote
+		// callers provide the same explicit GVK so Kind-only identity cannot be
+		// guessed across API groups.
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "remote-ns", "api-server")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
+		unmanagedKey, err := scopecache.BuildKey("staging-west", "apps", "v1", "StatefulSet", "other-ns", "redis")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writer.SetObservation(ctx, unmanagedKey, scope.LabelStateFalse, 5*time.Minute)).To(Succeed())
 		_ = writer.Close()
 
 		By("Creating real FMC HTTP stack")
@@ -116,6 +119,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Namespace:    "remote-ns",
 			ResourceKind: "Deployment",
 			ResourceName: "api-server",
+			APIVersion:   "apps/v1",
 			Severity:     "critical",
 			ClusterID:    "prod-east",
 		})
@@ -154,6 +158,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Namespace:    "other-ns",
 			ResourceKind: "StatefulSet",
 			ResourceName: "redis",
+			APIVersion:   "apps/v1",
 			Severity:     "warning",
 			ClusterID:    "staging-west",
 		})

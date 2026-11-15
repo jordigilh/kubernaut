@@ -4,10 +4,10 @@
 
 **Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — local validation complete; PR CI pending
+**Status**: Singleton implementation amendment — local build/lint/unit validation complete; CI fixture/source alignment queued for rerun
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -1620,18 +1620,19 @@ approved contract changes; all scenario IDs remain visible.
 | 0.8 | 2026-11-13 | **Historical draft amendment**: user-approved pre-GA v1/no-migration contract; public `/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed`; typed v1 extension approval gate; `IT-FMC-MIGRATION-017` retained as N/A/out-of-scope with zero credit; active denominators are 12 UT, 4 IT, 16 overall, 15 critical, and 19 wiring; R13 remains immutable historical evidence |
 | 0.9 | 2026-11-13 | **Fast-path implementation baseline**: user-approved internal `PartitionStateKey`/tokenized repair/epoch-scoped `LeaseSession` contract; `BeginRepair` precedes MCP collection; `Repair`/`CommitRepair`/proof-bearing `ReadVerified` replace old internal repair/read signatures with no compatibility shim; bounded EVALSHA guards and complete repair ordering are authoritative; public FMC remains v1/no-migration; denominators unchanged; R13 remains immutable; clean-worktree carry/hold boundary recorded |
 | 1.0 | 2026-11-15 | **Singleton deployment amendment**: remove Kubernetes Lease/POD_UID deployment prerequisites, wire a process-local writer coordinator, retain Valkey writer-fence proof contracts, close operator PR #637 as out of scope, and defer multi-replica takeover fencing |
+| 1.1 | 2026-11-15 | CI run `43719091357` attributed affected integration failures to the approved explicit-remote-GVK and presence-aware cache contracts; align Gateway/SP/RO/FMC fixtures and preserve `CreateRRArgs.APIVersion` through the AF remote scope check. Local build, lint, affected unit suites, and integration-package compilation pass; affected integration execution remains environment-blocked. |
 
 ## 17. Current status
 
 - RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
 - GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease
-- REFACTOR: **Complete** — singleton deployment wording and review evidence aligned; local validation passed
+- REFACTOR: **Complete** — singleton deployment wording, review evidence, and CI-attributed GVK/presence fixtures aligned; local build/lint/unit validation passed
 - ACM inventory: **Unavailable / no rows**
 - AF non-local Console list/policy scope: **Unavailable**
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
 - This v0.9 amendment invalidated the historical dirty-worktree clean-review eligibility; the fast-path carry/hold boundary is recorded in `docs/tests/2593/evidence/FAST_PATH_CARRY_HOLD.md` and the review README. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**
-- Implementation readiness: **RED authorized in the clean worktree; final qualification remains pending**
+- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; PR CI rerun and final qualification remain pending**
 
 No public v2 route/media, deployment, cluster, ACM, Valkey qualification, GitHub, or release
 changes are authorized. Source changes are limited to the clean worktree and the bounded

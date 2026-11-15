@@ -169,7 +169,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				"IT-FMC-054-010: HTTPClient must return managed=true for a resource seeded in Valkey through the real FMC HTTP stack")
 		})
 
-		It("returns managed=false when resource does not exist in Valkey", func() {
+		It("returns an unavailable error when resource presence is not observed in Valkey", func() {
 			httpClient := fmc.NewHTTPClient(server.URL)
 
 			managed, err := httpClient.IsManagedResource(ctx, scope.ResourceIdentity{
@@ -180,9 +180,10 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				Namespace: "orphan-ns",
 				Name:      "no-such-deploy",
 			})
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred(),
+				"a Valkey cache miss must remain unavailable rather than becoming verified unmanaged")
 			Expect(managed).To(BeFalse(),
-				"IT-FMC-054-010: HTTPClient must return managed=false for an absent resource")
+				"IT-FMC-054-010: unavailable scope checks must fail closed")
 		})
 	})
 

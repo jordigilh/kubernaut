@@ -231,9 +231,16 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	// RR object creation that follow — RO's CheckUnmanagedResource would
 	// otherwise catch this downstream, but only after wasting a Prometheus
 	// triage round-trip and an RR CRD create/delete cycle.
-	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, scope.ResourceIdentity{
-		ClusterID: args.ClusterID, Namespace: args.Namespace, Kind: args.Kind, Name: args.Name,
-	}, d.ClusterLister); !managed {
+	targetIdentity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
+		ClusterID: args.ClusterID,
+		Namespace: args.Namespace,
+		Kind:      args.Kind,
+		Name:      args.Name,
+	}, args.APIVersion)
+	if err != nil {
+		return CreateRRResult{}, fmt.Errorf("%w: target GVK: %w", ErrInvalidInput, err)
+	}
+	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, targetIdentity, d.ClusterLister); !managed {
 		return CreateRRResult{}, fmt.Errorf("%w: %s", ErrResourceNotManaged, msg)
 	}
 

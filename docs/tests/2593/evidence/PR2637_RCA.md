@@ -4,7 +4,7 @@
 **Branch:** `work/2593-fmc-presence`
 **Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
 **Pre-amendment CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
-**Amended-head CI:** head `917ebfc61`; workflow run `43717310232` has passing build/lint/unit/security lanes while integration/E2E lanes remain pending at this evidence update. No final amended-head CI pass/fail claim is made.
+**Amended-head CI:** head `6a41d4c7d`; workflow run `43719091357` passed the build/lint/unit/security lanes and exposed five affected integration-lane failures before the bounded fixture/source alignment below. Affected E2E failures remain separately attributed to infrastructure or dependent fleet paths; the follow-up CI rerun is pending.
 **Review date:** 2026-11-15
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 **Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
@@ -67,20 +67,23 @@ and the raw E2E manifest no longer injects pod identity.
 
 ### Amended-head CI disposition
 
-The singleton amendment is at `917ebfc61`. Workflow run `43717310232` has passed
-the build, lint, unit, security, CodeQL, license, and operator-artifact lanes; its
-integration and E2E lanes are still pending. The amended head therefore has no
-final remote CI result yet; this RCA does not claim one.
+The singleton amendment head tested by workflow run `43719091357` was
+`6a41d4c7d450f122e1b84709df71d10c8a928577`. Build, lint, unit, security, CodeQL,
+license, operator-artifact, unaffected integration, and unaffected E2E lanes passed.
+The affected integration lanes failed on the strict remote-GVK and presence-aware
+fixture assumptions listed below. The bounded follow-up patch aligns those fixtures
+and preserves `CreateRRArgs.APIVersion` through the AF scope check; it requires a
+new CI run and is not represented by the `43719091357` result.
 
 ### Failed integration lanes
 
 | Lane | Observed failure | Disposition | Confidence |
 |---|---|---|---:|
-| `fleetmetadatacache` | The lane still reports inherited `kube-mcp-server: unknown flag: --port` and two `fmc scope check failed` cases; 17/20 executed specs passed, with 6 skipped | Hold dependency/fixture environment attribution; the validated structured-observation fix is already in the bounded diff | 95% |
-| `gateway` | Fleet signal/scope paths report `scope: explicit group/version is required for "Deployment"` | Introduced by this PR's explicit remote-GVK validation (`pkg/gateway/signal_ingestion.go:491-495`); current fleet fixtures create remote Deployment signals without `apiVersion`. The fail-closed behavior is intentional, while producer/fixture alignment remains held for an approved follow-up | 98% attribution |
-| `signalprocessing` | Remote enrichment and ClusterRegistry wiring fail on the same GVK/adjacent fleet path | Hold; do not expand into GVK or #2592 work | 90% attribution, below fix threshold |
-| `apifrontend` | Fleet AF severity/remediation ownership assertions fail | Hold; AF/RO ownership attribution is unresolved | <90% |
-| `remediationorchestrator` | Remote managed-resource routing fails in fleet scope integration | Hold; AF/RO ownership attribution is unresolved | <90% |
+| `fleetmetadatacache` | The lane reports inherited `kube-mcp-server: unknown flag: --port` plus cache-miss cases still expecting `false, nil`; 17/20 executed specs passed, with 6 skipped | Align the integration expectations with presence-aware unavailable/error semantics; retain the MCP flag issue as an environment/dependency hold | 98% |
+| `gateway` | Fleet signal/scope paths report `scope: explicit group/version is required for "Deployment"` | Add explicit `apps/v1` to remote signal fixtures and seed an explicit managed=false observation for the rejection path; fail-closed validation remains unchanged | 99% |
+| `signalprocessing` | Remote enrichment lacks a strict remote GVK and ClusterRegistry fixture Backend has empty `metadata.uid` | Add explicit `apps/v1` to the remote enrichment fixture and a Backend UID to the registry fixture; no production GVK relaxation | 99% |
+| `apifrontend` | Fleet AF scope checks use an identity that drops `CreateRRArgs.APIVersion` before remote validation | Preserve the parsed GVK through the AF pre-RR scope check; the ownership behavior remains covered by the existing fixture and requires rerun | 98% |
+| `remediationorchestrator` | Remote managed-resource routing fails because the fixture omits explicit GVK; unmanaged cases use cache absence rather than a verified false observation | Add explicit `apps/v1` target identities and seed a verified `managed=false` observation; fail-closed routing behavior remains unchanged | 99% |
 
 The previously observed `kubernautagent` structured-observation fixture failure is
 resolved; its current unit, integration, and E2E lanes passed.
@@ -150,7 +153,7 @@ external-plan finding is already reflected below.
 
 | Finding | Current evidence | Disposition |
 |---|---|---|
-| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `aede83812e3991df16daeab295d4a45da95e1274f5559f9dfa15daebbbad23e8`. | **Addressed** in `7ec90d893`; no source change required. |
+| Review authority still requires an external-plan hash | `docs/tests/2593/evidence/reviews/README.md` now requires the repository-versioned authority hash for new captures; `TEST_PLAN.md` identifies the OpenChamber plan as historical only. `shasum -a 256 docs/tests/2593/TEST_PLAN.md` matches `0a576b88c621364d35962b5e02585a6c2dd4c271eeef66036527279c752dc790`. | **Addressed** in `7ec90d893`; current plan amendment is included in this evidence update. |
 | Gateway GVK rejection was classified as inherited | The gateway row now records the rejection as introduced by the explicit remote-GVK validation and identifies the current fixture omission of `apiVersion`; fail-closed behavior remains intentional. | **Addressed** in `7ec90d893`; producer/fixture alignment remains a held GVK follow-up. |
 | Successful repair test needs deterministic server time | `status_store_red_test.go:233` calls `server.SetTime(...)` before the cleanup lifecycle; CodeRabbit confirmed this finding as addressed in `93db7975b`. | **Addressed**. |
 | Registered-cluster deletion followed by failed initial repair can reuse a stale clean partition | `handleClusterEvent` still logs deletion without removing the identity-keyed readiness partition. Fixing this needs identity-based removal and stale-repair protection, not only the registered-count guard added in `0a1f56b20`. | **Hold** for the readiness-lifecycle design decision; no partial fix is authorized in this slice. |
@@ -194,3 +197,25 @@ changes. GREEN wired the minimal fixes and passed the affected tests. REFACTOR r
 required build, lint, focused tests, and diff checks. The current evidence separates
 source-attributed defects from the inherited GVK/ownership/infrastructure findings and
 the local E2E image-build failure.
+
+### Post-run bounded alignment
+
+After attribution from CI run `43719091357`, the following narrow source/fixture
+changes were made without expanding the PR boundary:
+
+- remote Gateway, SignalProcessing, and RO fixtures now carry explicit `apps/v1`;
+- Gateway, FMC, and RO negative paths seed a verified `managed=false` observation
+  instead of treating a missing cache record as verified unmanaged;
+- FMC namespace-inheritance fixtures record verified resource presence with an
+  absent managed label;
+- the SignalProcessing Backend fixture supplies the UID required by the registry
+  source contract; and
+- AF applies `CreateRRArgs.APIVersion` to the scope identity before the remote check.
+
+The post-alignment local gates passed: `go build ./...`,
+`golangci-lint run --timeout=5m` (0 issues), affected production unit suites, and
+`go test -run '^$'` for all affected integration packages. Focused integration
+execution reached environment setup but could not run locally: the initial Gateway
+attempt lacked envtest `etcd`; with a valid envtest bundle, DataStorage image build
+failed in DNF with `util-linux ... cpio: chown failed - No data available`.
+The next CI run is the required execution evidence for these aligned fixtures.
