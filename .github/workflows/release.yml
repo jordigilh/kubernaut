@@ -426,9 +426,14 @@ jobs:
       - name: Install QEMU for arm64 emulation
         run: |
           sudo apt-get update
-          # Ubuntu 26.04 makes qemu-user-static virtual; install its concrete
-          # emulator and binfmt registration packages for both 24.04 and 26.04.
-          sudo apt-get install -y qemu-user qemu-user-binfmt
+          # Ubuntu 26.04 makes qemu-user-static virtual. Ubuntu 24.04 needs
+          # the static package so arm64 build containers can run emulated steps.
+          . /etc/os-release
+          if [ "$VERSION_ID" = "24.04" ]; then
+            sudo apt-get install -y qemu-user-static
+          else
+            sudo apt-get install -y qemu-user qemu-user-binfmt
+          fi
           if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
             echo "QEMU aarch64 registered successfully"
           else
