@@ -166,7 +166,7 @@ jobs:
           name: operator-candidate-${{ github.run_id }}
           path: /tmp/operator-candidate
       - name: Install qualification tools
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: latest
       - name: Set up Go
@@ -426,7 +426,14 @@ jobs:
       - name: Install QEMU for arm64 emulation
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static
+          # Ubuntu 26.04 makes qemu-user-static virtual. Ubuntu 24.04 needs
+          # the static package so arm64 build containers can run emulated steps.
+          . /etc/os-release
+          if [ "$VERSION_ID" = "24.04" ]; then
+            sudo apt-get install -y qemu-user-static
+          else
+            sudo apt-get install -y qemu-user qemu-user-binfmt
+          fi
           if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
             echo "QEMU aarch64 registered successfully"
           else
