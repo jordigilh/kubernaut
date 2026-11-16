@@ -44,11 +44,13 @@ type KuadrantRegistry struct {
 	metrics *Metrics
 	logger  logr.Logger
 
-	mu       sync.RWMutex
-	clusters map[string]ClusterInfo
-	revision uint64
-	ready    bool
-	started  bool
+	mu                    sync.RWMutex
+	clusters              map[string]ClusterInfo
+	revision              uint64 // global refresh mutation generation, not a registration proof
+	registrationRevisions map[string]uint64
+	ready                 bool
+	watchError            error
+	started               bool
 
 	eventCh chan ClusterEvent
 	stopCh  chan struct{}
@@ -64,13 +66,14 @@ func NewKuadrantRegistry(client dynamic.Interface, cfg EAIGWRegistryConfig, metr
 		cfg.ChannelSize = defaultChannelSize
 	}
 	return &KuadrantRegistry{
-		client:   client,
-		config:   cfg,
-		metrics:  metrics,
-		logger:   logger.WithName("kuadrant-registry"),
-		clusters: make(map[string]ClusterInfo),
-		eventCh:  make(chan ClusterEvent, cfg.ChannelSize),
-		stopCh:   make(chan struct{}),
+		client:                client,
+		config:                cfg,
+		metrics:               metrics,
+		logger:                logger.WithName("kuadrant-registry"),
+		clusters:              make(map[string]ClusterInfo),
+		registrationRevisions: make(map[string]uint64),
+		eventCh:               make(chan ClusterEvent, cfg.ChannelSize),
+		stopCh:                make(chan struct{}),
 	}
 }
 
@@ -91,7 +94,7 @@ func (w *KuadrantRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	return info, ok
 }
 
-// Snapshot returns the current registration and registry revision.
+// Snapshot returns the current registration and its per-registration revision.
 func (w *KuadrantRegistry) Snapshot(clusterID string) (RegistrationSnapshot, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -99,7 +102,14 @@ func (w *KuadrantRegistry) Snapshot(clusterID string) (RegistrationSnapshot, boo
 	if !ok {
 		return RegistrationSnapshot{}, false
 	}
-	return RegistrationSnapshot{Info: info, Revision: w.revision}, true
+	info.Labels = cloneLabels(info.Labels)
+	return RegistrationSnapshot{Info: info, Revision: w.registrationRevisions[clusterID]}, true
+}
+
+func (w *KuadrantRegistry) SnapshotAll() RegistrySnapshot {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return snapshotRegistrations(w.revision, w.clusters, w.registrationRevisions)
 }
 
 // WithCurrent runs callback only while the requested registration UID and
@@ -118,7 +128,7 @@ func (w *KuadrantRegistry) WithCurrent(ctx context.Context, clusterID, registrat
 	if !ok {
 		return fmt.Errorf("cluster %q is not registered", clusterID)
 	}
-	if info.RegistrationUID != registrationUID || w.revision != expectedRevision {
+	if info.RegistrationUID != registrationUID || w.registrationRevisions[clusterID] != expectedRevision {
 		return fmt.Errorf("cluster %q registration changed", clusterID)
 	}
 	return callback(info)
@@ -137,6 +147,8 @@ func (w *KuadrantRegistry) Ready() bool {
 func (w *KuadrantRegistry) markWatchUnhealthy(err error) {
 	w.mu.Lock()
 	w.ready = false
+	w.watchError = err
+	w.revision++
 	w.mu.Unlock()
 	w.logger.Error(err, "fleet cluster registry watch failed")
 }
@@ -145,7 +157,7 @@ func (w *KuadrantRegistry) markWatchUnhealthy(err error) {
 // readiness after a transient informer/watch failure.
 func (w *KuadrantRegistry) Probe(ctx context.Context) error {
 	w.mu.RLock()
-	started, stopped := w.started, w.stopped
+	started, stopped, generation := w.started, w.stopped, w.revision
 	w.mu.RUnlock()
 	refreshed, err := probeClusters(ctx, w.client, w.config.Namespace, MCPServerRegistrationGVR, started, stopped, w.trackableClusterInfo)
 	if err != nil {
@@ -153,12 +165,14 @@ func (w *KuadrantRegistry) Probe(ctx context.Context) error {
 		return err
 	}
 	w.mu.Lock()
-	changed := !clusterMapEqual(w.clusters, refreshed)
-	w.clusters = refreshed
-	if changed {
-		w.revision++
+	publish, err := refreshMayPublish(generation, w.revision, w.stopped, w.ready)
+	if !publish {
+		w.mu.Unlock()
+		return err
 	}
+	publishRegistrations(&w.clusters, refreshed, w.registrationRevisions, &w.revision)
 	w.ready = true
+	w.watchError = nil
 	w.mu.Unlock()
 	return nil
 }
@@ -167,28 +181,28 @@ func (w *KuadrantRegistry) Probe(ctx context.Context) error {
 func (w *KuadrantRegistry) Start(ctx context.Context) error {
 	config := w.config
 	config.onWatchError = w.markWatchUnhealthy
-	seeded, err := startInformerAndSeed(ctx, w.client, config, MCPServerRegistrationGVR,
+	config.seed = func(indexer cache.Indexer) error { return w.seedFromIndexer(ctx, indexer) }
+	err := startInformerAndSeed(ctx, w.client, config, MCPServerRegistrationGVR,
 		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
-		w.stopCh, w.trackableClusterInfo)
+		w.stopCh)
 	if err != nil {
 		return err
 	}
 
-	w.mu.Lock()
-	for id, info := range seeded {
-		w.clusters[id] = info
-	}
-	if len(seeded) > 0 {
-		w.revision++
-	}
-	w.ready = true
-	w.started = true
-	clusterCount := len(w.clusters)
-	w.mu.Unlock()
-
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("KuadrantRegistry started and synced", "clusters", clusterCount)
+	w.logger.Info("KuadrantRegistry started and synced", "clusters", len(w.List()))
 	return nil
+}
+
+func (w *KuadrantRegistry) seedFromIndexer(ctx context.Context, indexer cache.Indexer) error {
+	return seedRegistry(ctx, indexer, &w.mu, &w.revision, &w.stopped, w.trackableClusterInfo, func(seeded map[string]ClusterInfo) error {
+		if w.watchError != nil {
+			return fmt.Errorf("registry watch failed during startup: %w", w.watchError)
+		}
+		publishRegistrations(&w.clusters, seeded, w.registrationRevisions, &w.revision)
+		w.ready, w.started = true, true
+		return nil
+	})
 }
 
 func (w *KuadrantRegistry) Stop() {
@@ -198,6 +212,8 @@ func (w *KuadrantRegistry) Stop() {
 		return
 	}
 	w.stopped = true
+	w.ready = false
+	w.revision++
 	close(w.stopCh)
 	close(w.eventCh)
 	w.logger.Info("KuadrantRegistry stopped")
@@ -214,20 +230,11 @@ func (w *KuadrantRegistry) onAdd(obj interface{}) {
 		return
 	}
 
-	w.mu.Lock()
-	_, existed := w.clusters[info.ID]
-	w.clusters[info.ID] = info
-	w.revision++
-	clusterCount := len(w.clusters)
-	w.mu.Unlock()
-
-	w.metrics.NilSafeSetClusters(float64(clusterCount))
-	w.metrics.NilSafeIncReconcile()
-	eventType := EventAdded
-	if existed {
-		eventType = EventUpdated
+	changed, existed, count := addCluster(info, &w.mu, &w.clusters, w.registrationRevisions, &w.revision, &w.stopped)
+	if !changed {
+		return
 	}
-	w.emit(ClusterEvent{Type: eventType, Cluster: info})
+	emitAddedCluster(info, existed, count, w.metrics, w.emit)
 	w.logger.Info("cluster added", "id", info.ID, "toolPrefix", info.ToolPrefix)
 }
 
@@ -272,6 +279,7 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 			return
 		}
 		delete(w.clusters, id)
+		delete(w.registrationRevisions, id)
 		if existed {
 			w.revision++
 		}
@@ -293,6 +301,15 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 
 	w.mu.Lock()
 	current, existed := w.clusters[info.ID]
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	if existed && clusterInfoEqual(current, info) {
+		w.revision++
+		w.mu.Unlock()
+		return
+	}
 	if existed && current.RegistrationUID != info.RegistrationUID {
 		if oldUID := objectUID(oldObj); oldUID == "" || oldUID != current.RegistrationUID {
 			w.mu.Unlock()
@@ -301,6 +318,7 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 	}
 	w.clusters[info.ID] = info
 	w.revision++
+	w.registrationRevisions[info.ID] = w.revision
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
@@ -309,7 +327,7 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *KuadrantRegistry) onDelete(obj interface{}) {
-	handleDeletedCluster(obj, &w.mu, func() map[string]ClusterInfo { return w.clusters }, &w.revision, w.metrics, w.logger, w.emit)
+	handleDeletedCluster(obj, &w.mu, func() (map[string]ClusterInfo, map[string]uint64) { return w.clusters, w.registrationRevisions }, &w.revision, w.metrics, w.logger, w.emit)
 }
 
 func (w *KuadrantRegistry) removeIfCurrent(obj interface{}) {
@@ -326,6 +344,7 @@ func (w *KuadrantRegistry) removeIfCurrent(obj interface{}) {
 		return
 	}
 	delete(w.clusters, id)
+	delete(w.registrationRevisions, id)
 	w.revision++
 	clusterCount := len(w.clusters)
 	w.mu.Unlock()

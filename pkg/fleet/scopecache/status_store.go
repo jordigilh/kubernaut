@@ -265,6 +265,14 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 		return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
 	}
 	result.CleanupCount = cleanupCount
+	if result.ExpectedCount == 0 {
+		proof, err := s.finalizeEmptyRepair(ctx, request)
+		if err != nil {
+			return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
+		}
+		result.StatusTTL = proof
+		result.EmptyPartitionVerified = true
+	}
 	result.CleanCommitEligible = hasCleanRepairProof(result)
 	if !result.CleanCommitEligible {
 		return failRepairResult(result, RepairFailureCommitRejected, fmt.Errorf("repair proof is incomplete"), false)
@@ -275,7 +283,33 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 func hasCleanRepairProof(result RepairResult) bool {
 	return result.SourceComplete && result.ExpectedCount == result.ObservedCount &&
 		result.RecordValid && result.IndexValid && result.StatusValid && result.RecordIndexChecksValid &&
-		result.RecordTTL.Valid && result.IndexTTL.Valid && result.StatusTTL.Valid
+		result.ttlProofComplete()
+}
+
+func (s *ValkeyStatusStore) finalizeEmptyRepair(ctx context.Context, request RepairRequest) (TTLPTTLValidation, error) {
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), indexKey(request.Partition)},
+		"repair_finalize_empty", request.RegistrationUID, request.ExpectedRegistryRevision,
+		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
+		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation, request.Token.Value)
+	if err != nil {
+		return TTLPTTLValidation{}, err
+	}
+	if len(items) != 4 || scriptString(items, 0) != "ok" {
+		return TTLPTTLValidation{}, fmt.Errorf("empty finalization was not acknowledged")
+	}
+	values := make([]int64, 3)
+	for i := range values {
+		value, err := scriptInt(items, i+1)
+		if err != nil {
+			return TTLPTTLValidation{}, err
+		}
+		values[i] = value
+	}
+	proof := ttlValidation(values[0], values[1], values[2])
+	if !proof.Valid {
+		return TTLPTTLValidation{}, fmt.Errorf("empty partition status ttl is invalid")
+	}
+	return proof, nil
 }
 
 func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairCommitRequest) (RepairCommitResult, error) {
@@ -304,7 +338,7 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 		request.Proof.CleanupCount, boolArg(request.Proof.RecordValid), boolArg(request.Proof.IndexValid),
 		boolArg(request.Proof.StatusValid), boolArg(request.Proof.RecordIndexChecksValid),
 		boolArg(request.Proof.RecordTTL.Valid), boolArg(request.Proof.IndexTTL.Valid),
-		boolArg(request.Proof.StatusTTL.Valid))
+		boolArg(request.Proof.StatusTTL.Valid), boolArg(request.Proof.EmptyPartitionVerified))
 	if err != nil {
 		result.Failure = repairFailureFromError(err)
 		return result, classifyRepairError(err)

@@ -68,6 +68,10 @@ func (r *fencedRegistry) Snapshot(clusterID string) (registry.RegistrationSnapsh
 	return registry.RegistrationSnapshot{Info: r.current, Revision: r.revision}, true
 }
 
+func (r *fencedRegistry) SnapshotAll() registry.RegistrySnapshot {
+	return registry.RegistrySnapshot{Generation: r.revision, Registrations: []registry.RegistrationSnapshot{{Info: r.current, Revision: r.revision}}}
+}
+
 func (r *fencedRegistry) WithCurrent(_ context.Context, clusterID, registrationUID string, expectedRevision uint64, callback func(registry.ClusterInfo) error) error {
 	if clusterID != r.current.ID || registrationUID != r.current.RegistrationUID || expectedRevision != r.revision {
 		return context.Canceled

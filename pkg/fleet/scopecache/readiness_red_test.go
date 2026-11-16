@@ -22,14 +22,16 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
 var _ = Describe("FMC readiness snapshot (BR-SCOPE-001, BR-SECURITY-016)", func() {
 	const (
-		clusterID       = "prod-east"
-		registrationUID = "registration-uid-1"
-		sessionUID      = "session-uid-1"
+		clusterID          = "prod-east"
+		registrationUID    = "registration-uid-1"
+		sessionUID         = "session-uid-1"
+		replacementSession = "replacement-session"
 	)
 
 	newFixture := func() (*scopecache.FMCReadinessSnapshot, scopecache.PartitionStateKey, scopecache.WriterFence, scopecache.LeaseView) {
@@ -65,6 +67,8 @@ var _ = Describe("FMC readiness snapshot (BR-SCOPE-001, BR-SECURITY-016)", func(
 			ActiveLeaseValid:     true,
 			LeasePolicy:          scopecache.LeasePolicyProcessWideRequired,
 		})).To(Succeed())
+		Expect(snapshot.PublishWriterLease(scopecache.WriterFence{}, lease)).To(Succeed())
+		Expect(snapshot.ReconcileRegistry(registry.RegistrySnapshot{Generation: 3, Registrations: []registry.RegistrationSnapshot{{Info: registry.ClusterInfo{ID: clusterID, RegistrationUID: registrationUID}, Revision: 3}}})).To(Succeed())
 		return snapshot, partition, fence, lease
 	}
 
@@ -102,6 +106,7 @@ var _ = Describe("FMC readiness snapshot (BR-SCOPE-001, BR-SECURITY-016)", func(
 
 	It("UT-FMC-CACHE-014: rejects an expected revision that differs from the clean proof", func() {
 		snapshot, partition, fence, lease := newFixture()
+		Expect(snapshot.ReconcileRegistry(registry.RegistrySnapshot{Generation: 4, Registrations: []registry.RegistrationSnapshot{{Info: registry.ClusterInfo{ID: clusterID, RegistrationUID: registrationUID}, Revision: 4}}})).To(Succeed())
 		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 4, lease, 12)).To(Succeed())
 		Expect(snapshot.PublishPartitionClean(partition, scopecache.PartitionReadiness{
 			Key:                  partition,
@@ -145,5 +150,79 @@ var _ = Describe("FMC readiness snapshot (BR-SCOPE-001, BR-SECURITY-016)", func(
 		ready, err := snapshot.ServiceReady()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ready).To(BeTrue())
+	})
+
+	It("UT-FMC-REVIEW-001 [BR-SECURITY-016]: rejects old clean proofs after a full writer-fence transition", func() {
+		snapshot, partition, fence, lease := newFixture()
+		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 3, lease, 11)).To(Succeed())
+		Expect(snapshot.PublishPartitionClean(partition, scopecache.PartitionReadiness{
+			Key: partition, RegistrationUID: registrationUID, RegistrationRevision: 3,
+			LeaseEpoch: fence.LeaseEpoch, LeaseSessionUID: fence.HolderSessionUID,
+			WriterFence: fence, LeaseHeartbeatAt: lease.HeartbeatAt, LeaseHeartbeatValid: true,
+			Generation: 11, State: scopecache.PartitionClean, CleanCommit: true,
+			RecordValid: true, IndexValid: true, StatusValid: true,
+			RecordTTLValid: true, IndexTTLValid: true, StatusTTLValid: true,
+		})).To(Succeed())
+		global := snapshot.View().Global
+		global.Lease.WriterFence.HolderSessionUID = replacementSession
+		global.Lease.SessionUID = replacementSession
+		Expect(snapshot.PublishWriterLease(fence, global.Lease)).To(Succeed())
+		ready, err := snapshot.ServiceReady()
+		Expect(ready).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		_, err = snapshot.PartitionReady(partition, registrationUID, 3, fence, 11)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("UT-FMC-REVIEW-002 [BR-SECURITY-016]: delayed old fence loss leaves the replacement session intact", func() {
+		snapshot, _, oldFence, _ := newFixture()
+		global := snapshot.View().Global
+		global.Lease.WriterFence.HolderSessionUID = replacementSession
+		global.Lease.SessionUID = replacementSession
+		Expect(snapshot.PublishWriterLease(oldFence, global.Lease)).To(Succeed())
+		Expect(snapshot.InvalidateLease(oldFence, "delayed loss")).To(Succeed())
+		Expect(snapshot.View().Global.ActiveLeaseValid).To(BeTrue())
+		Expect(snapshot.View().Global.Lease.Invalid).To(BeFalse())
+	})
+
+	It("UT-FMC-REVIEW-003 [BR-SECURITY-016]: a prerequisite publisher cannot resurrect lost writer ownership", func() {
+		snapshot, _, fence, lease := newFixture()
+		stale := snapshot.View().Global
+		Expect(snapshot.InvalidateLease(fence, "lost during prerequisite probe")).To(Succeed())
+		stale.ScriptReady = true
+		Expect(snapshot.PublishGlobal(stale)).To(Succeed())
+		Expect(snapshot.View().Global.ActiveLeaseValid).To(BeFalse())
+		Expect(snapshot.View().Global.Lease.Invalid).To(BeTrue())
+		Expect(snapshot.PublishWriterLease(fence, lease)).NotTo(Succeed())
+	})
+
+	It("UT-FMC-REVIEW-004 [BR-SCOPE-001]: retirement rejects late starts and completions and a stale membership snapshot", func() {
+		snapshot, partition, fence, lease := newFixture()
+		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 3, lease, 11)).To(Succeed())
+		clean := snapshot.View().Partitions[partition]
+		clean.State, clean.CleanCommit = scopecache.PartitionClean, true
+		clean.RecordValid, clean.IndexValid, clean.StatusValid = true, true, true
+		clean.RecordTTLValid, clean.IndexTTLValid, clean.StatusTTLValid = true, true, true
+		Expect(snapshot.InvalidatePartition(partition, "failed repair")).To(Succeed())
+		Expect(snapshot.ReconcileRegistry(registry.RegistrySnapshot{Generation: 4})).To(Succeed())
+		Expect(snapshot.View().Partitions).To(BeEmpty())
+		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 3, lease, 12)).NotTo(Succeed())
+		Expect(snapshot.PublishPartitionClean(partition, clean)).NotTo(Succeed())
+		_, err := snapshot.PartitionReady(partition, registrationUID, 3, fence, 11)
+		Expect(err).To(HaveOccurred())
+		Expect(snapshot.ReconcileRegistry(registry.RegistrySnapshot{Generation: 3, Registrations: []registry.RegistrationSnapshot{{Info: registry.ClusterInfo{ID: clusterID, RegistrationUID: registrationUID}, Revision: 3}}})).NotTo(Succeed())
+		ready, err := snapshot.ServiceReady()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ready).To(BeTrue())
+	})
+
+	It("UT-FMC-REVIEW-005 [BR-SCOPE-001]: same-name recreation requires the new UID rather than a matching count", func() {
+		snapshot, partition, _, lease := newFixture()
+		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 3, lease, 11)).To(Succeed())
+		Expect(snapshot.ReconcileRegistry(registry.RegistrySnapshot{Generation: 4, Registrations: []registry.RegistrationSnapshot{{Info: registry.ClusterInfo{ID: clusterID, RegistrationUID: "new-uid"}, Revision: 4}}})).To(Succeed())
+		Expect(snapshot.BeginPartitionRepair(partition, registrationUID, 3, lease, 12)).NotTo(Succeed())
+		ready, err := snapshot.ServiceReady()
+		Expect(err).To(HaveOccurred())
+		Expect(ready).To(BeFalse())
 	})
 })

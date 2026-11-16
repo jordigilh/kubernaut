@@ -23,6 +23,7 @@ package registry
 import (
 	"context"
 	"reflect"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -47,10 +48,89 @@ type ClusterInfo struct {
 }
 
 // RegistrationSnapshot is an immutable view of one current registry entry and
-// the registry revision at which it was observed.
+// its per-registration revision (DD-FLEET-013).
 type RegistrationSnapshot struct {
 	Info     ClusterInfo
 	Revision uint64
+}
+
+// RegistrySnapshot atomically captures authoritative membership and the global
+// mutation generation. Generation fences publication, not individual read proofs.
+type RegistrySnapshot struct {
+	Generation    uint64
+	Registrations []RegistrationSnapshot
+}
+
+type RegistrySnapshotter interface {
+	SnapshotAll() RegistrySnapshot
+}
+
+func snapshotRegistrations(generation uint64, clusters map[string]ClusterInfo, revisions map[string]uint64) RegistrySnapshot {
+	snapshot := RegistrySnapshot{Generation: generation, Registrations: make([]RegistrationSnapshot, 0, len(clusters))}
+	for id, info := range clusters {
+		info.Labels = cloneLabels(info.Labels)
+		snapshot.Registrations = append(snapshot.Registrations, RegistrationSnapshot{Info: info, Revision: revisions[id]})
+	}
+	return snapshot
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(labels))
+	for key, value := range labels {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+// publishRegistrations preserves revisions of unchanged entries. The caller owns
+// the registry lock and has checked the refresh mutation generation.
+func publishRegistrations(current *map[string]ClusterInfo, refreshed map[string]ClusterInfo, revisions map[string]uint64, generation *uint64) {
+	if !clusterMapEqual(*current, refreshed) {
+		*generation++
+	}
+	for id := range revisions {
+		if _, exists := refreshed[id]; !exists {
+			delete(revisions, id)
+		}
+	}
+	for id, info := range refreshed {
+		old, exists := (*current)[id]
+		if !exists || !clusterInfoEqual(old, info) {
+			revisions[id] = *generation
+		}
+	}
+	*current = refreshed
+}
+
+func addCluster(info ClusterInfo, mu *sync.RWMutex, clusters *map[string]ClusterInfo, revisions map[string]uint64, generation *uint64, stopped *bool) (bool, bool, int) {
+	mu.Lock()
+	defer mu.Unlock()
+	current, existed := (*clusters)[info.ID]
+	if *stopped {
+		return false, existed, len(*clusters)
+	}
+	// Every accepted event fences refresh publication, including extracted-data
+	// no-ops; only a changed registration receives a new proof revision.
+	*generation++
+	if existed && clusterInfoEqual(current, info) {
+		return false, true, len(*clusters)
+	}
+	(*clusters)[info.ID] = info
+	revisions[info.ID] = *generation
+	return true, existed, len(*clusters)
+}
+
+func emitAddedCluster(info ClusterInfo, existed bool, count int, metrics *Metrics, emit func(ClusterEvent)) {
+	metrics.NilSafeSetClusters(float64(count))
+	metrics.NilSafeIncReconcile()
+	eventType := EventAdded
+	if existed {
+		eventType = EventUpdated
+	}
+	emit(ClusterEvent{Type: eventType, Cluster: info})
 }
 
 func clusterInfoEqual(left, right ClusterInfo) bool {

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // PartitionStateKey identifies one registration incarnation in the materialized
@@ -145,7 +147,9 @@ type PartitionReadiness struct {
 	RecordTTLValid       bool
 	IndexTTLValid        bool
 	StatusTTLValid       bool
-	InvalidLease         bool
+	// EmptyPartitionVerified means record/index TTLs are not applicable, not valid.
+	EmptyPartitionVerified bool
+	InvalidLease           bool
 }
 
 // FMCReadinessView is an immutable value returned by View. The map is copied
@@ -158,8 +162,10 @@ type FMCReadinessView struct {
 // FMCReadinessSnapshot is the single concurrency-safe readiness authority for
 // FMC global and partition state.
 type FMCReadinessSnapshot struct {
-	mu   sync.RWMutex
-	view FMCReadinessView
+	mu                   sync.RWMutex
+	view                 FMCReadinessView
+	membershipGeneration uint64
+	membership           map[PartitionStateKey]uint64
 }
 
 // ReadinessErrorCode identifies whether a readiness rejection is invalid input
@@ -196,27 +202,76 @@ func NewFMCReadinessSnapshot(policy LeasePolicy) (*FMCReadinessSnapshot, error) 
 	}, nil
 }
 
-// PublishGlobal replaces the global prerequisite view after validating the
-// Lease policy and active Lease predicates.
+// PublishGlobal publishes prerequisites only (DD-FLEET-013 A1). Writer-owned
+// fields are deliberately ignored, including those in stale View copies.
 func (s *FMCReadinessSnapshot) PublishGlobal(global FMCGlobalReadiness) error {
 	if s == nil {
 		return ReadinessError{Code: ReadinessInvalid, Reason: "readiness snapshot is nil"}
 	}
-	if !validLeasePolicy(global.LeasePolicy) || global.Lease.Policy != global.LeasePolicy {
+	if !validLeasePolicy(global.LeasePolicy) {
 		return ReadinessError{Code: ReadinessInvalid, Reason: "global lease policy is inconsistent"}
 	}
 	if global.RegisteredPartitionCount < 0 {
 		return ReadinessError{Code: ReadinessInvalid, Reason: "registered partition count is negative"}
-	}
-	if err := validateLeaseView(global.Lease); err != nil {
-		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.view.Global.LeasePolicy != "" && s.view.Global.LeasePolicy != global.LeasePolicy {
 		return ReadinessError{Code: ReadinessInvalid, Reason: "global lease policy changed"}
 	}
-	s.view.Global = cloneGlobal(global)
+	global.Lease = s.view.Global.Lease
+	global.ActiveLeaseValid = s.view.Global.ActiveLeaseValid
+	if s.membership != nil {
+		global.RegisteredPartitionCount = len(s.membership)
+	}
+	s.view.Global = global
+	return nil
+}
+
+// PublishWriterLease atomically transitions writer-owned state against the full
+// previous fence. Invalidated sessions cannot resurrect themselves.
+func (s *FMCReadinessSnapshot) PublishWriterLease(expected WriterFence, lease LeaseView) error {
+	if err := validateLeaseView(lease); err != nil {
+		return err
+	}
+	if !lease.Active {
+		return ReadinessError{Code: ReadinessInvalid, Reason: "writer lease must be active"}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.view.Global.Lease
+	if lease.Policy != s.view.Global.LeasePolicy || !sameFence(expected, current.WriterFence) ||
+		(current.Invalid && sameFence(current.WriterFence, lease.WriterFence)) {
+		return ReadinessError{Code: ReadinessUnavailable, Reason: "writer transition is stale"}
+	}
+	s.view.Global.Lease = lease
+	s.view.Global.ActiveLeaseValid = true
+	return nil
+}
+
+// ReconcileRegistry retires obsolete identities from an authoritative versioned
+// snapshot, even when registry events were dropped (DD-FLEET-013 B1).
+func (s *FMCReadinessSnapshot) ReconcileRegistry(snapshot registry.RegistrySnapshot) error {
+	membership := make(map[PartitionStateKey]uint64, len(snapshot.Registrations))
+	for _, registration := range snapshot.Registrations {
+		key := PartitionStateKey{ClusterID: registration.Info.ID, RegistrationUID: registration.Info.RegistrationUID}
+		if !key.valid() || registration.Revision == 0 {
+			return ReadinessError{Code: ReadinessInvalid, Reason: "registry membership is incomplete"}
+		}
+		membership[key] = registration.Revision
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if snapshot.Generation < s.membershipGeneration {
+		return ReadinessError{Code: ReadinessUnavailable, Reason: "registry membership snapshot is stale"}
+	}
+	s.membershipGeneration, s.membership = snapshot.Generation, membership
+	s.view.Global.RegisteredPartitionCount = len(membership)
+	for key, partition := range s.view.Partitions {
+		if revision, exists := membership[key]; !exists || revision != partition.RegistrationRevision {
+			delete(s.view.Partitions, key)
+		}
+	}
 	return nil
 }
 
@@ -229,6 +284,9 @@ func (s *FMCReadinessSnapshot) BeginPartitionRepair(key PartitionStateKey, regis
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensurePartitions()
+	if s.membership[key] != revision || !sameFence(s.view.Global.Lease.WriterFence, lease.WriterFence) || !s.view.Global.ActiveLeaseValid {
+		return ReadinessError{Code: ReadinessUnavailable, Reason: "repair registration or writer is no longer active"}
+	}
 	s.view.Partitions[key] = PartitionReadiness{
 		Key:                  key,
 		RegistrationUID:      registrationUID,
@@ -252,6 +310,9 @@ func (s *FMCReadinessSnapshot) PublishPartitionClean(key PartitionStateKey, read
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensurePartitions()
+	if s.membership[key] != readiness.RegistrationRevision || !sameFence(s.view.Global.Lease.WriterFence, readiness.WriterFence) || !s.view.Global.ActiveLeaseValid {
+		return ReadinessError{Code: ReadinessUnavailable, Reason: "clean registration or writer is no longer active"}
+	}
 	current, ok := s.view.Partitions[key]
 	if !ok || current.State != PartitionRepairing || current.Generation != readiness.Generation {
 		return ReadinessError{Code: ReadinessUnavailable, Reason: "partition is not in the requested repair generation"}
@@ -279,9 +340,11 @@ func (s *FMCReadinessSnapshot) InvalidateLease(fence WriterFence, _ string) erro
 			s.view.Partitions[key] = partition
 		}
 	}
-	s.view.Global.ActiveLeaseValid = false
-	s.view.Global.Lease.Valid = false
-	s.view.Global.Lease.Invalid = true
+	if sameFence(s.view.Global.Lease.WriterFence, fence) {
+		s.view.Global.ActiveLeaseValid = false
+		s.view.Global.Lease.Valid = false
+		s.view.Global.Lease.Invalid = true
+	}
 	return nil
 }
 
@@ -316,7 +379,7 @@ func (s *FMCReadinessSnapshot) ServiceReady() (bool, error) {
 		return false, ReadinessError{Code: ReadinessUnavailable, Reason: "global FMC prerequisites are not ready"}
 	}
 	for _, partition := range s.view.Partitions {
-		if !partitionClean(partition) {
+		if !partitionClean(partition) || !sameFence(partition.WriterFence, s.view.Global.Lease.WriterFence) {
 			return false, ReadinessError{Code: ReadinessUnavailable, Reason: "partition is not clean"}
 		}
 	}
@@ -355,6 +418,9 @@ func (s *FMCReadinessSnapshot) PartitionReady(partition PartitionStateKey, regis
 	defer s.mu.RUnlock()
 	if !s.view.Global.ServiceReady(len(s.view.Partitions)) {
 		return FencedReadProof{}, ReadinessError{Code: ReadinessUnavailable, Reason: "global FMC prerequisites are not ready"}
+	}
+	if !sameFence(s.view.Global.Lease.WriterFence, fence) {
+		return FencedReadProof{}, ReadinessError{Code: ReadinessUnavailable, Reason: "writer fence is not active"}
 	}
 	current, ok := s.view.Partitions[partition]
 	if !ok {
@@ -435,16 +501,18 @@ func cleanPartitionIdentityMatches(key PartitionStateKey, readiness PartitionRea
 }
 
 func (readiness PartitionReadiness) cleanProofComplete() bool {
+	ttlsValid := readiness.RecordTTLValid && readiness.IndexTTLValid
+	if readiness.EmptyPartitionVerified {
+		ttlsValid = !readiness.RecordTTLValid && !readiness.IndexTTLValid
+	}
 	return readiness.State == PartitionClean && readiness.CleanCommit && !readiness.InvalidLease &&
 		readiness.RecordValid && readiness.IndexValid && readiness.StatusValid &&
-		readiness.RecordTTLValid && readiness.IndexTTLValid && readiness.StatusTTLValid &&
+		ttlsValid && readiness.StatusTTLValid &&
 		readiness.LeaseHeartbeatValid
 }
 
 func partitionClean(partition PartitionReadiness) bool {
-	return partition.State == PartitionClean && partition.CleanCommit && !partition.InvalidLease &&
-		partition.LeaseHeartbeatValid && partition.RecordValid && partition.IndexValid &&
-		partition.StatusValid && partition.RecordTTLValid && partition.IndexTTLValid && partition.StatusTTLValid
+	return partition.cleanProofComplete()
 }
 
 func validateLeaseView(lease LeaseView) error {
@@ -475,10 +543,6 @@ func validLeasePolicy(policy LeasePolicy) bool {
 
 func sameFence(left, right WriterFence) bool {
 	return left == right
-}
-
-func cloneGlobal(global FMCGlobalReadiness) FMCGlobalReadiness {
-	return global
 }
 
 func clonePartition(partition PartitionReadiness) PartitionReadiness {

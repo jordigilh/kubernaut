@@ -72,6 +72,9 @@ type EAIGWRegistryConfig struct {
 	// onWatchError is installed by each registry instance to fail readiness
 	// closed when its informer loses the watch connection.
 	onWatchError func(error)
+	// seed publishes an indexer snapshot with mutation-generation fencing after
+	// informer sync, preserving asynchronous initial Add callbacks.
+	seed func(cache.Indexer) error
 }
 
 // EAIGWRegistry implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
@@ -82,11 +85,13 @@ type EAIGWRegistry struct {
 	metrics *Metrics
 	logger  logr.Logger
 
-	mu       sync.RWMutex
-	clusters map[string]ClusterInfo
-	revision uint64
-	ready    bool
-	started  bool
+	mu                    sync.RWMutex
+	clusters              map[string]ClusterInfo
+	revision              uint64 // global refresh mutation generation, not a registration proof
+	registrationRevisions map[string]uint64
+	ready                 bool
+	watchError            error
+	started               bool
 
 	eventCh chan ClusterEvent
 	stopCh  chan struct{}
@@ -102,13 +107,14 @@ func NewEAIGWRegistry(client dynamic.Interface, cfg EAIGWRegistryConfig, metrics
 		cfg.ChannelSize = defaultChannelSize
 	}
 	return &EAIGWRegistry{
-		client:   client,
-		config:   cfg,
-		metrics:  metrics,
-		logger:   logger.WithName("crd-watcher"),
-		clusters: make(map[string]ClusterInfo),
-		eventCh:  make(chan ClusterEvent, cfg.ChannelSize),
-		stopCh:   make(chan struct{}),
+		client:                client,
+		config:                cfg,
+		metrics:               metrics,
+		logger:                logger.WithName("crd-watcher"),
+		clusters:              make(map[string]ClusterInfo),
+		registrationRevisions: make(map[string]uint64),
+		eventCh:               make(chan ClusterEvent, cfg.ChannelSize),
+		stopCh:                make(chan struct{}),
 	}
 }
 
@@ -131,9 +137,8 @@ func (w *EAIGWRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	return info, ok
 }
 
-// Snapshot returns the current registration and the registry revision at
-// which it was read. The revision changes whenever a registry event publishes
-// an add, update, or delete.
+// Snapshot returns the current registration and its per-registration revision.
+// Unrelated and extracted-data no-op events affect refresh generation only.
 func (w *EAIGWRegistry) Snapshot(clusterID string) (RegistrationSnapshot, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -141,7 +146,14 @@ func (w *EAIGWRegistry) Snapshot(clusterID string) (RegistrationSnapshot, bool) 
 	if !ok {
 		return RegistrationSnapshot{}, false
 	}
-	return RegistrationSnapshot{Info: info, Revision: w.revision}, true
+	info.Labels = cloneLabels(info.Labels)
+	return RegistrationSnapshot{Info: info, Revision: w.registrationRevisions[clusterID]}, true
+}
+
+func (w *EAIGWRegistry) SnapshotAll() RegistrySnapshot {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return snapshotRegistrations(w.revision, w.clusters, w.registrationRevisions)
 }
 
 // WithCurrent runs callback while holding the registry update exclusion after
@@ -160,7 +172,7 @@ func (w *EAIGWRegistry) WithCurrent(ctx context.Context, clusterID, registration
 	if !ok {
 		return fmt.Errorf("cluster %q is not registered", clusterID)
 	}
-	if info.RegistrationUID != registrationUID || w.revision != expectedRevision {
+	if info.RegistrationUID != registrationUID || w.registrationRevisions[clusterID] != expectedRevision {
 		return fmt.Errorf("cluster %q registration changed", clusterID)
 	}
 	return callback(info)
@@ -181,6 +193,8 @@ func (w *EAIGWRegistry) Ready() bool {
 func (w *EAIGWRegistry) markWatchUnhealthy(err error) {
 	w.mu.Lock()
 	w.ready = false
+	w.watchError = err
+	w.revision++
 	w.mu.Unlock()
 	w.logger.Error(err, "fleet cluster registry watch failed")
 }
@@ -189,7 +203,7 @@ func (w *EAIGWRegistry) markWatchUnhealthy(err error) {
 // readiness after a transient informer/watch failure.
 func (w *EAIGWRegistry) Probe(ctx context.Context) error {
 	w.mu.RLock()
-	started, stopped := w.started, w.stopped
+	started, stopped, generation := w.started, w.stopped, w.revision
 	w.mu.RUnlock()
 	refreshed, err := probeClusters(ctx, w.client, w.config.Namespace, BackendGVR, started, stopped, w.trackableClusterInfo)
 	if err != nil {
@@ -197,12 +211,14 @@ func (w *EAIGWRegistry) Probe(ctx context.Context) error {
 		return err
 	}
 	w.mu.Lock()
-	changed := !clusterMapEqual(w.clusters, refreshed)
-	w.clusters = refreshed
-	if changed {
-		w.revision++
+	publish, err := refreshMayPublish(generation, w.revision, w.stopped, w.ready)
+	if !publish {
+		w.mu.Unlock()
+		return err
 	}
+	publishRegistrations(&w.clusters, refreshed, w.registrationRevisions, &w.revision)
 	w.ready = true
+	w.watchError = nil
 	w.mu.Unlock()
 	return nil
 }
@@ -211,28 +227,52 @@ func (w *EAIGWRegistry) Probe(ctx context.Context) error {
 func (w *EAIGWRegistry) Start(ctx context.Context) error {
 	config := w.config
 	config.onWatchError = w.markWatchUnhealthy
-	seeded, err := startInformerAndSeed(ctx, w.client, config, BackendGVR,
+	config.seed = func(indexer cache.Indexer) error { return w.seedFromIndexer(ctx, indexer) }
+	err := startInformerAndSeed(ctx, w.client, config, BackendGVR,
 		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
-		w.stopCh, w.trackableClusterInfo)
+		w.stopCh)
 	if err != nil {
 		return err
 	}
 
-	w.mu.Lock()
-	for id, info := range seeded {
-		w.clusters[id] = info
-	}
-	if len(seeded) > 0 {
-		w.revision++
-	}
-	w.ready = true
-	w.started = true
-	clusterCount := len(w.clusters)
-	w.mu.Unlock()
-
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("EAIGWRegistry started and synced", "clusters", clusterCount)
+	w.logger.Info("EAIGWRegistry started and synced", "clusters", len(w.List()))
 	return nil
+}
+
+func (w *EAIGWRegistry) seedFromIndexer(ctx context.Context, indexer cache.Indexer) error {
+	return seedRegistry(ctx, indexer, &w.mu, &w.revision, &w.stopped, w.trackableClusterInfo, func(seeded map[string]ClusterInfo) error {
+		if w.watchError != nil {
+			return fmt.Errorf("registry watch failed during startup: %w", w.watchError)
+		}
+		publishRegistrations(&w.clusters, seeded, w.registrationRevisions, &w.revision)
+		w.ready, w.started = true, true
+		return nil
+	})
+}
+
+func seedRegistry(ctx context.Context, indexer cache.Indexer, mu *sync.RWMutex, revision *uint64, stopped *bool, trackable func(*unstructured.Unstructured) (ClusterInfo, bool), publish func(map[string]ClusterInfo) error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		mu.RLock()
+		generation := *revision
+		mu.RUnlock()
+		seeded := seedClusters(indexer, trackable)
+		mu.Lock()
+		if *stopped {
+			mu.Unlock()
+			return fmt.Errorf("fleet cluster registry stopped")
+		}
+		if *revision != generation {
+			mu.Unlock()
+			continue
+		}
+		err := publish(seeded)
+		mu.Unlock()
+		return err
+	}
 }
 
 // startInformerAndSeed builds a filtered dynamic informer for gvr, registers
@@ -258,8 +298,7 @@ func startInformerAndSeed(
 	gvr schema.GroupVersionResource,
 	handlers cache.ResourceEventHandlerFuncs,
 	stopCh chan struct{},
-	trackable func(*unstructured.Unstructured) (ClusterInfo, bool),
-) (map[string]ClusterInfo, error) {
+) error {
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 		client,
 		cfg.ResyncPeriod,
@@ -272,13 +311,13 @@ func startInformerAndSeed(
 	informer := factory.ForResource(gvr).Informer()
 
 	if _, err := informer.AddEventHandler(handlers); err != nil {
-		return nil, fmt.Errorf("failed to add event handler: %w", err)
+		return fmt.Errorf("failed to add event handler: %w", err)
 	}
 	if cfg.onWatchError != nil {
 		if err := informer.SetWatchErrorHandler(func(_ *cache.Reflector, watchErr error) {
 			cfg.onWatchError(watchErr)
 		}); err != nil {
-			return nil, fmt.Errorf("failed to set informer watch error handler: %w", err)
+			return fmt.Errorf("failed to set informer watch error handler: %w", err)
 		}
 	}
 
@@ -287,18 +326,24 @@ func startInformerAndSeed(
 	}()
 
 	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
-		return nil, fmt.Errorf("failed to sync informer cache")
+		return fmt.Errorf("failed to sync informer cache")
 	}
+	if cfg.seed != nil {
+		return cfg.seed(informer.GetIndexer())
+	}
+	return nil
+}
 
+func seedClusters(indexer cache.Indexer, trackable func(*unstructured.Unstructured) (ClusterInfo, bool)) map[string]ClusterInfo {
 	seeded := make(map[string]ClusterInfo)
-	for _, obj := range informer.GetIndexer().List() {
+	for _, obj := range indexer.List() {
 		if u, ok := obj.(*unstructured.Unstructured); ok {
 			if info, ok := trackable(u); ok {
 				seeded[info.ID] = info
 			}
 		}
 	}
-	return seeded, nil
+	return seeded
 }
 
 // Stop halts the watcher and closes the event channel.
@@ -309,6 +354,8 @@ func (w *EAIGWRegistry) Stop() {
 		return
 	}
 	w.stopped = true
+	w.ready = false
+	w.revision++
 	close(w.stopCh)
 	close(w.eventCh)
 	w.logger.Info("EAIGWRegistry stopped")
@@ -324,20 +371,11 @@ func (w *EAIGWRegistry) onAdd(obj interface{}) {
 		return
 	}
 
-	w.mu.Lock()
-	_, existed := w.clusters[info.ID]
-	w.clusters[info.ID] = info
-	w.revision++
-	clusterCount := len(w.clusters)
-	w.mu.Unlock()
-
-	w.metrics.NilSafeSetClusters(float64(clusterCount))
-	w.metrics.NilSafeIncReconcile()
-	eventType := EventAdded
-	if existed {
-		eventType = EventUpdated
+	changed, existed, count := addCluster(info, &w.mu, &w.clusters, w.registrationRevisions, &w.revision, &w.stopped)
+	if !changed {
+		return
 	}
-	w.emit(ClusterEvent{Type: eventType, Cluster: info})
+	emitAddedCluster(info, existed, count, w.metrics, w.emit)
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
 }
 
@@ -368,6 +406,15 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 
 	w.mu.Lock()
 	current, existed := w.clusters[info.ID]
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	if existed && clusterInfoEqual(current, info) {
+		w.revision++
+		w.mu.Unlock()
+		return
+	}
 	if existed && current.RegistrationUID != info.RegistrationUID {
 		// The informer can deliver an old update after a delete/recreate. Never
 		// allow that old incarnation to overwrite the current registration.
@@ -378,6 +425,7 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 	}
 	w.clusters[info.ID] = info
 	w.revision++
+	w.registrationRevisions[info.ID] = w.revision
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
@@ -386,7 +434,7 @@ func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *EAIGWRegistry) onDelete(obj interface{}) {
-	handleDeletedCluster(obj, &w.mu, func() map[string]ClusterInfo { return w.clusters }, &w.revision, w.metrics, w.logger, w.emit)
+	handleDeletedCluster(obj, &w.mu, func() (map[string]ClusterInfo, map[string]uint64) { return w.clusters, w.registrationRevisions }, &w.revision, w.metrics, w.logger, w.emit)
 }
 
 func (w *EAIGWRegistry) removeIfCurrent(obj interface{}) {
@@ -403,6 +451,7 @@ func (w *EAIGWRegistry) removeIfCurrent(obj interface{}) {
 		return
 	}
 	delete(w.clusters, id)
+	delete(w.registrationRevisions, id)
 	w.revision++
 	clusterCount := len(w.clusters)
 	w.mu.Unlock()

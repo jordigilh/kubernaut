@@ -72,6 +72,45 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 	})
 
 	Describe("Probe", func() {
+		It("UT-REG-REVIEW-KUA-003 [BR-INTEGRATION-065]: startup preserves an update interleaved after the indexer read", func() {
+			old := newMCPServerRegistrationUnstructured("east", "old_", map[string]interface{}{ManagedLabel: "true"})
+			updated := newMCPServerRegistrationUnstructured("east", "new_", map[string]interface{}{ManagedLabel: "true"})
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			Expect(indexer.Add(old)).To(Succeed())
+			w.onAdd(old)
+			interleaved := &interleavedIndexer{Indexer: indexer, once: func() {
+				w.onUpdate(old, updated)
+				Expect(indexer.Update(updated)).To(Succeed())
+			}}
+			Expect(w.seedFromIndexer(context.Background(), interleaved)).To(Succeed())
+			current, found := w.Get("east")
+			Expect(found).To(BeTrue())
+			Expect(current.ToolPrefix).To(Equal("new_"))
+		})
+		It("UT-REG-REVIEW-KUA-001 [BR-INTEGRATION-065]: stale refresh cannot restore an intervening deletion", func() {
+			old := newMCPServerRegistrationUnstructured("east", "east_", map[string]interface{}{ManagedLabel: "true"})
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), old)
+			w.client, w.started, w.ready = client, true, true
+			w.onAdd(old)
+			client.PrependReactor("list", "mcpserverregistrations", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+				w.onDelete(old)
+				return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
+			})
+			Expect(w.Probe(context.Background())).To(Succeed())
+			_, found := w.Get("east")
+			Expect(found).To(BeFalse())
+		})
+
+		It("UT-REG-REVIEW-KUA-002 [BR-INTEGRATION-065]: unrelated and identical updates preserve a registration proof", func() {
+			east := newMCPServerRegistrationUnstructured("east", "east_", map[string]interface{}{ManagedLabel: "true"})
+			west := newMCPServerRegistrationUnstructured("west", "west_", map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(east)
+			snapshot, found := w.Snapshot("east")
+			Expect(found).To(BeTrue())
+			w.onAdd(west)
+			w.onUpdate(east, east.DeepCopy())
+			Expect(w.WithCurrent(context.Background(), "east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error { return nil })).To(Succeed())
+		})
 		It("UT-REG-KUA-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
 			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newMCPServerRegistrationUnstructured("prod-east", "prod_east_", map[string]interface{}{ManagedLabel: "true"}))
 			w = NewKuadrantRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))

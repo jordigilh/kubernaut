@@ -295,6 +295,9 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 	if !lifecycleEnabled {
 		return s.syncLegacyCluster(ctx, cluster, start)
 	}
+	if err := s.ReconcileRegistry(); err != nil {
+		return err
+	}
 	snapshot, err := s.currentRegistrationSnapshot(cluster)
 	if err != nil {
 		return err
@@ -303,7 +306,7 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 	if err != nil {
 		return fmt.Errorf("acquire FMC writer fence for cluster %s: %w", cluster.ID, err)
 	}
-	if err := s.publishGlobal(session); err != nil {
+	if err := s.publishGlobal(); err != nil {
 		return fmt.Errorf("publish FMC global readiness for cluster %s: %w", cluster.ID, err)
 	}
 	result, err := s.repairPartition(ctx, snapshot.Info, snapshot, session.Fence)
@@ -356,12 +359,28 @@ func (s *Syncer) syncLegacyCluster(ctx context.Context, cluster registry.Cluster
 }
 
 func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.PartitionStateKey, cluster registry.ClusterInfo, snapshot registry.RegistrationSnapshot, fence scopecache.WriterFence) (scopecache.RepairStartResult, error) {
-	return s.statusStore.BeginRepair(ctx, scopecache.BeginRepairRequest{
-		Partition:                partition,
-		RegistrationUID:          cluster.RegistrationUID,
-		ExpectedRegistryRevision: snapshot.Revision,
-		WriterFence:              fence,
+	guard, err := currentRegistrationGuard(s.registry)
+	if err != nil {
+		return scopecache.RepairStartResult{}, err
+	}
+	var start scopecache.RepairStartResult
+	err = guard.WithCurrent(ctx, cluster.ID, cluster.RegistrationUID, snapshot.Revision, func(registry.ClusterInfo) error {
+		if err := s.lease.Verify(ctx, fence); err != nil {
+			return err
+		}
+		var beginErr error
+		start, beginErr = s.statusStore.BeginRepair(ctx, scopecache.BeginRepairRequest{
+			Partition:                partition,
+			RegistrationUID:          cluster.RegistrationUID,
+			ExpectedRegistryRevision: snapshot.Revision,
+			WriterFence:              fence,
+		})
+		if beginErr != nil {
+			return beginErr
+		}
+		return s.readiness.BeginPartitionRepair(partition, cluster.RegistrationUID, snapshot.Revision, s.leaseView(fence), start.Generation)
 	})
+	return start, err
 }
 
 func (s *Syncer) markRepairUncertain(ctx context.Context, start scopecache.RepairStartResult, clusterID string, failure scopecache.RepairFailure) {
@@ -382,11 +401,9 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 	partition := scopecache.PartitionStateKey{ClusterID: cluster.ID, RegistrationUID: cluster.RegistrationUID}
 	start, err := s.beginRepair(ctx, partition, cluster, snapshot, fence)
 	if err != nil {
-		return scopecache.RepairResult{}, err
-	}
-	leaseView := s.leaseView(fence)
-	if err := s.readiness.BeginPartitionRepair(partition, cluster.RegistrationUID, snapshot.Revision, leaseView, start.Generation); err != nil {
-		s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureInvalidRequest, Message: err.Error()})
+		if start.Token.Value != "" {
+			s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureInvalidRequest, Message: err.Error()})
+		}
 		return scopecache.RepairResult{}, err
 	}
 	committed := false
@@ -441,7 +458,7 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 	if !commitResult.Committed || !commitResult.CleanCommit {
 		return repairResult, fmt.Errorf("repair commit did not publish clean state")
 	}
-	if err := s.publishCleanPartition(partition, cluster, snapshot, fence, start.Generation, repairResult, commitResult); err != nil {
+	if err := s.publishCleanPartition(ctx, cluster, start, repairResult, commitResult); err != nil {
 		return repairResult, err
 	}
 	committed = true
@@ -484,34 +501,40 @@ func (s *Syncer) collectRepairObservations(ctx context.Context, cluster registry
 }
 
 func (s *Syncer) publishCleanPartition(
-	partition scopecache.PartitionStateKey,
+	ctx context.Context,
 	cluster registry.ClusterInfo,
-	snapshot registry.RegistrationSnapshot,
-	fence scopecache.WriterFence,
-	generation uint64,
+	start scopecache.RepairStartResult,
 	repairResult scopecache.RepairResult,
 	commitResult scopecache.RepairCommitResult,
 ) error {
+	partition, fence := start.Partition, start.WriterFence
 	clean := scopecache.PartitionReadiness{
-		Key:                  partition,
-		RegistrationUID:      cluster.RegistrationUID,
-		RegistrationRevision: snapshot.Revision,
-		LeaseEpoch:           fence.LeaseEpoch,
-		LeaseSessionUID:      fence.HolderSessionUID,
-		WriterFence:          fence,
-		LeaseHeartbeatAt:     time.Now().UTC(),
-		LeaseHeartbeatValid:  true,
-		Generation:           generation,
-		State:                scopecache.PartitionClean,
-		CleanCommit:          commitResult.CleanCommit,
-		RecordValid:          repairResult.RecordValid,
-		IndexValid:           repairResult.IndexValid,
-		StatusValid:          repairResult.StatusValid,
-		RecordTTLValid:       repairResult.RecordTTL.Valid,
-		IndexTTLValid:        repairResult.IndexTTL.Valid,
-		StatusTTLValid:       repairResult.StatusTTL.Valid,
+		Key:                    partition,
+		RegistrationUID:        cluster.RegistrationUID,
+		RegistrationRevision:   start.ExpectedRegistryRevision,
+		LeaseEpoch:             fence.LeaseEpoch,
+		LeaseSessionUID:        fence.HolderSessionUID,
+		WriterFence:            fence,
+		LeaseHeartbeatAt:       time.Now().UTC(),
+		LeaseHeartbeatValid:    true,
+		Generation:             start.Generation,
+		State:                  scopecache.PartitionClean,
+		CleanCommit:            commitResult.CleanCommit,
+		RecordValid:            repairResult.RecordValid,
+		IndexValid:             repairResult.IndexValid,
+		StatusValid:            repairResult.StatusValid,
+		RecordTTLValid:         repairResult.RecordTTL.Valid,
+		IndexTTLValid:          repairResult.IndexTTL.Valid,
+		StatusTTLValid:         repairResult.StatusTTL.Valid,
+		EmptyPartitionVerified: repairResult.EmptyPartitionVerified,
 	}
-	return s.readiness.PublishPartitionClean(partition, clean)
+	guard, err := currentRegistrationGuard(s.registry)
+	if err != nil {
+		return err
+	}
+	return guard.WithCurrent(ctx, cluster.ID, cluster.RegistrationUID, start.ExpectedRegistryRevision, func(registry.ClusterInfo) error {
+		return s.readiness.PublishPartitionClean(partition, clean)
+	})
 }
 
 func (s *Syncer) leaseView(fence scopecache.WriterFence) scopecache.LeaseView {
@@ -531,7 +554,7 @@ func (s *Syncer) leaseView(fence scopecache.WriterFence) scopecache.LeaseView {
 	}
 }
 
-func (s *Syncer) publishGlobal(session scopecache.LeaseSession) error {
+func (s *Syncer) publishGlobal() error {
 	if s.readiness == nil {
 		return nil
 	}
@@ -544,8 +567,6 @@ func (s *Syncer) publishGlobal(session scopecache.LeaseSession) error {
 		global.ScriptReady = scriptReady.ScriptReady()
 	}
 	global.ValkeyReady = s.statusStore != nil
-	global.Lease = s.leaseView(session.Fence)
-	global.ActiveLeaseValid = true
 	return s.readiness.PublishGlobal(global)
 }
 
@@ -714,12 +735,20 @@ func (s *Syncer) ensureFence(ctx context.Context) (scopecache.LeaseSession, erro
 			s.fenceMu.Unlock()
 			return session, nil
 		}
+		s.invalidateHeldFence(session.Fence)
 		s.holdingFence = false
 	}
 	session, err := s.lease.Acquire(ctx)
 	if err != nil {
 		s.fenceMu.Unlock()
 		return scopecache.LeaseSession{}, err
+	}
+	if s.readiness != nil {
+		previous := s.readiness.View().Global.Lease.WriterFence
+		if err := s.readiness.PublishWriterLease(previous, s.leaseView(session.Fence)); err != nil {
+			s.fenceMu.Unlock()
+			return scopecache.LeaseSession{}, err
+		}
 	}
 	s.fence = session.Fence
 	s.leaseSession = session
@@ -731,6 +760,18 @@ func (s *Syncer) ensureFence(ctx context.Context) (scopecache.LeaseSession, erro
 	s.fenceMu.Unlock()
 	go s.renewFenceLoop(renewCtx, session, done)
 	return session, nil
+}
+
+func (s *Syncer) invalidateHeldFence(fence scopecache.WriterFence) {
+	if s.leaseCancel != nil {
+		s.leaseCancel()
+	}
+	if s.readiness == nil {
+		return
+	}
+	if err := s.readiness.InvalidateLease(fence, "writer verification failed"); err != nil {
+		s.logger.Error(err, "failed to invalidate old writer")
+	}
 }
 
 func (s *Syncer) renewFenceLoop(ctx context.Context, session scopecache.LeaseSession, done chan struct{}) {
@@ -765,7 +806,7 @@ func (s *Syncer) markFenceLost(fence scopecache.WriterFence, reason string) {
 		s.holdingFence = false
 	}
 	s.fenceMu.Unlock()
-	if owned && s.readiness != nil {
+	if s.readiness != nil {
 		if err := s.readiness.InvalidateLease(fence, reason); err != nil {
 			s.logger.Error(err, "failed to invalidate FMC readiness after lease loss")
 		}
@@ -863,6 +904,12 @@ func (s *Syncer) waitForBrokerReady(ctx context.Context) {
 }
 
 func (s *Syncer) syncAll(ctx context.Context) {
+	if s.readiness != nil {
+		if err := s.ReconcileRegistry(); err != nil {
+			s.logger.Error(err, "failed to reconcile registry membership")
+			return
+		}
+	}
 	clusters := s.registry.List()
 	if len(clusters) == 0 {
 		if s.statusStore != nil || s.lease != nil {
@@ -883,6 +930,12 @@ func (s *Syncer) syncAll(ctx context.Context) {
 }
 
 func (s *Syncer) handleClusterEvent(ctx context.Context, event registry.ClusterEvent) {
+	if s.readiness != nil {
+		if err := s.ReconcileRegistry(); err != nil {
+			s.logger.Error(err, "failed to reconcile registry event")
+			return
+		}
+	}
 	switch event.Type {
 	case registry.EventAdded:
 		s.logger.Info("New cluster discovered, syncing immediately", "cluster", event.Cluster.ID)
@@ -894,4 +947,14 @@ func (s *Syncer) handleClusterEvent(ctx context.Context, event registry.ClusterE
 	case registry.EventUpdated:
 		s.logger.V(1).Info("Cluster updated", "cluster", event.Cluster.ID)
 	}
+}
+
+// ReconcileRegistry publishes authoritative membership, independently of the
+// best-effort event channel (DD-FLEET-013 B1).
+func (s *Syncer) ReconcileRegistry() error {
+	snapshotter, ok := s.registry.(registry.RegistrySnapshotter)
+	if !ok {
+		return fmt.Errorf("FMC registry does not provide authoritative membership")
+	}
+	return s.readiness.ReconcileRegistry(snapshotter.SnapshotAll())
 }

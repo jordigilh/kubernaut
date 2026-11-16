@@ -102,6 +102,13 @@ func (d *fmcDeps) Ready() bool {
 	if d == nil || d.clusterRegistry == nil || d.readiness == nil {
 		return false
 	}
+	if snapshotter, ok := d.clusterRegistry.(registry.RegistrySnapshotter); ok {
+		if err := d.readiness.ReconcileRegistry(snapshotter.SnapshotAll()); err != nil {
+			return false
+		}
+	} else {
+		return false
+	}
 	global := d.readiness.View().Global
 	if d.mcpReadiness != nil {
 		global.MCPInitialSync = d.mcpReadiness.Ready()
@@ -109,7 +116,6 @@ func (d *fmcDeps) Ready() bool {
 	if d.clusterRegistry != nil {
 		global.RegistryInitialSync = d.clusterRegistry.Ready()
 		global.RegistryWatchHealthy = d.clusterRegistry.Ready()
-		global.RegisteredPartitionCount = len(d.clusterRegistry.List())
 	}
 	if d.statusStore != nil {
 		global.ScriptReady = d.statusStore.ScriptReady()

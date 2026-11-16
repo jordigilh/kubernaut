@@ -26,6 +26,18 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+// A superseded refresh may retain healthy informer state, but must never report
+// readiness after an intervening watch failure or stop.
+func refreshMayPublish(expected, current uint64, stopped, ready bool) (bool, error) {
+	if expected == current && !stopped {
+		return true, nil
+	}
+	if stopped || !ready {
+		return false, fmt.Errorf("fleet cluster registry changed during refresh and is not ready")
+	}
+	return false, nil
+}
+
 func probeClusters(
 	ctx context.Context,
 	client dynamic.Interface,

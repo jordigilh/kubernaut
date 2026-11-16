@@ -19,6 +19,7 @@ package scopecache_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -30,6 +31,44 @@ import (
 )
 
 var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func() {
+	It("IT-FMC-REVIEW-EMPTY-001 [BR-SCOPE-001]: commits a complete empty partition without fabricating TTL validity", func() {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		server.SetTime(time.Unix(1_700_000_000, 0))
+		store, err := scopecache.NewValkeyStatusStoreAt(server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		fence := scopecache.WriterFence{HolderPodUID: "pod", HolderSessionUID: "session", LeaseEpoch: 1, Fence: 1}
+		partition := scopecache.PartitionStateKey{ClusterID: "empty", RegistrationUID: "uid"}
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(repair.CleanCommitEligible).To(BeTrue())
+		Expect(repair.RecordTTL.Valid).To(BeFalse())
+		Expect(repair.IndexTTL.Valid).To(BeFalse())
+		Expect(repair.StatusTTL.Valid).To(BeTrue())
+		commit, err := store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation, Token: start.Token, Proof: repair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(commit.Committed).To(BeTrue())
+		read, err := store.ReadVerified(ctx, scopecache.FencedReadRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation,
+			Identity:   scopecache.ResourceIdentity{ClusterID: "empty", Version: "v1", Kind: "Pod", Namespace: "ns", Name: "absent"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(read.State).To(Equal(scopecache.ReadMissing))
+	})
 	It("IT-FMC-CACHE-004: preserves repair token, full fence, generation, and TTL proof through clean read", func() {
 		server, err := miniredis.Run()
 		Expect(err).ToNot(HaveOccurred())
@@ -309,5 +348,114 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(secondRepair.CleanupCount).To(Equal(300))
+
+		By("repairing the formerly populated partition to explicitly verified empty")
+		start, err = store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		empty, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(empty.CleanupCount).To(Equal(1))
+		Expect(empty.EmptyPartitionVerified).To(BeTrue())
+		Expect(empty.RecordTTL.Valid).To(BeFalse())
+		Expect(empty.IndexTTL.Valid).To(BeFalse())
+		commit, err := store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+			Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: fence, Generation: start.Generation, Token: start.Token, Proof: empty,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(commit.Committed).To(BeTrue())
 	})
+
+	DescribeTable("IT-FMC-REVIEW-EMPTY-002 [BR-SCOPE-001, BR-SECURITY-016]: empty repair rejects invalid status and interrupted cleanup", func(fault string) {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		server.SetTime(time.Unix(1_700_000_000, 0))
+		store, err := scopecache.NewValkeyStatusStoreAt(server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		partition := scopecache.PartitionStateKey{ClusterID: "fault", RegistrationUID: "uid"}
+		fence := scopecache.WriterFence{HolderPodUID: "pod", HolderSessionUID: "session", LeaseEpoch: 1, Fence: 1}
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		if fault == "interrupted" {
+			_, err := store.Repair(ctx, scopecache.RepairRequest{
+				Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence, Generation: start.Generation, Token: start.Token,
+				Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1, ItemCount: 1, Items: []scopecache.RepairObservation{{
+					Identity:   scopecache.ResourceIdentity{ClusterID: "fault", Version: "v1", Kind: "Pod", Namespace: "default", Name: "old"},
+					APIVersion: "v1", LabelsPresent: true, LabelState: scope.LabelStateTrue, TTL: 30 * time.Second,
+				}}},
+			})
+			Expect(err).ToNot(HaveOccurred())
+		}
+		for _, key := range server.Keys() {
+			switch {
+			case strings.HasSuffix(key, ":status") && fault == "wrongtype":
+				server.Del(key)
+				Expect(server.Set(key, "corrupted")).To(Succeed())
+			case strings.HasSuffix(key, ":status") && fault == "invalid-ttl":
+				server.SetTTL(key, 0)
+			case strings.Contains(key, ":record:") && fault == "interrupted":
+				server.Del(key)
+				Expect(server.Set(key, "corrupted")).To(Succeed())
+			}
+		}
+		if fault == "expired" {
+			server.FastForward(61 * time.Second)
+		}
+		result, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation, Token: start.Token, Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1},
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(result.CleanCommitEligible).To(BeFalse())
+		Expect(result.EmptyPartitionVerified).To(BeFalse())
+	}, Entry("wrong-type status", "wrongtype"), Entry("expired status", "expired"), Entry("status without expiry", "invalid-ttl"), Entry("interrupted cleanup", "interrupted"))
+
+	DescribeTable("IT-FMC-REVIEW-EMPTY-003 [BR-SECURITY-016]: empty commit rechecks server predicates after finalization", func(fault string) {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		server.SetTime(time.Unix(1_700_000_000, 0))
+		store, err := scopecache.NewValkeyStatusStoreAt(server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		partition := scopecache.PartitionStateKey{ClusterID: "empty-commit", RegistrationUID: "uid"}
+		fence := scopecache.WriterFence{HolderPodUID: "pod", HolderSessionUID: "session", LeaseEpoch: 1, Fence: 1}
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence})
+		Expect(err).ToNot(HaveOccurred())
+		proof, err := store.Repair(ctx, scopecache.RepairRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation, Token: start.Token, Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		for _, key := range server.Keys() {
+			if !strings.HasSuffix(key, ":status") {
+				continue
+			}
+			switch fault {
+			case "residual":
+				_, err := server.ZAdd(strings.TrimSuffix(key, ":status")+":index", 1, "unexpected")
+				Expect(err).ToNot(HaveOccurred())
+			case "wrongtype-index":
+				Expect(server.Set(strings.TrimSuffix(key, ":status")+":index", "corrupted")).To(Succeed())
+			default:
+				server.FastForward(61 * time.Second)
+			}
+		}
+		commit, err := store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
+			Generation: start.Generation, Token: start.Token, Proof: proof,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(commit.Committed).To(BeFalse())
+	}, Entry("residual index member", "residual"), Entry("wrong-type index", "wrongtype-index"), Entry("expired status", "expired"))
 })

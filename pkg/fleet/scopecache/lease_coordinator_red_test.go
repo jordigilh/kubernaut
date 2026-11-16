@@ -23,27 +23,70 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
 func expiredLeaseCoordinator() (*scopecache.KubernetesLeaseCoordinator, scopecache.LeaseSession) {
-	clientset := kubernetesfake.NewSimpleClientset()
+	scheme := runtime.NewScheme()
+	Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
+	clientset := &testCoordinationBridge{client: fake.NewClientBuilder().WithScheme(scheme).Build()}
 	coordinator, err := scopecache.NewKubernetesLeaseCoordinator(
-		clientset.CoordinationV1(), "kubernaut-system", "fmc-writer", types.UID("pod-a"), time.Second, logr.Discard())
+		clientset, "kubernaut-system", "fmc-writer", types.UID("pod-a"), time.Second, logr.Discard())
 	Expect(err).ToNot(HaveOccurred())
 	session, err := coordinator.Acquire(context.Background())
 	Expect(err).ToNot(HaveOccurred())
-	lease, err := clientset.CoordinationV1().Leases("kubernaut-system").Get(context.Background(), "fmc-writer", metav1.GetOptions{})
+	lease, err := clientset.Leases("kubernaut-system").Get(context.Background(), "fmc-writer", metav1.GetOptions{})
 	Expect(err).ToNot(HaveOccurred())
 	expiredAt := metav1.NewMicroTime(time.Now().UTC().Add(-2 * time.Second))
 	lease.Spec.RenewTime = &expiredAt
-	_, err = clientset.CoordinationV1().Leases("kubernaut-system").Update(context.Background(), lease, metav1.UpdateOptions{})
+	_, err = clientset.Leases("kubernaut-system").Update(context.Background(), lease, metav1.UpdateOptions{})
 	Expect(err).ToNot(HaveOccurred())
 	return coordinator, session
+}
+
+// Test-only external-client bridge: use the ADR-004 controller-runtime fake,
+// without changing the production typed Kubernetes client or singleton wiring.
+// Embedded interfaces intentionally leave unused external API methods unsupported.
+type testCoordinationBridge struct {
+	coordinationclient.CoordinationV1Interface
+	client client.Client
+}
+
+func (b *testCoordinationBridge) Leases(namespace string) coordinationclient.LeaseInterface {
+	return &testLeaseBridge{client: b.client, namespace: namespace}
+}
+
+type testLeaseBridge struct {
+	coordinationclient.LeaseInterface
+	client    client.Client
+	namespace string
+}
+
+func (b *testLeaseBridge) Get(ctx context.Context, name string, _ metav1.GetOptions) (*coordinationv1.Lease, error) {
+	lease := &coordinationv1.Lease{}
+	err := b.client.Get(ctx, client.ObjectKey{Namespace: b.namespace, Name: name}, lease)
+	return lease, err
+}
+
+func (b *testLeaseBridge) Create(ctx context.Context, lease *coordinationv1.Lease, _ metav1.CreateOptions) (*coordinationv1.Lease, error) {
+	cloned := lease.DeepCopy()
+	cloned.Namespace = b.namespace
+	err := b.client.Create(ctx, cloned)
+	return cloned, err
+}
+
+func (b *testLeaseBridge) Update(ctx context.Context, lease *coordinationv1.Lease, _ metav1.UpdateOptions) (*coordinationv1.Lease, error) {
+	cloned := lease.DeepCopy()
+	err := b.client.Update(ctx, cloned)
+	return cloned, err
 }
 
 var _ = Describe("FMC lease expiry (BR-SCOPE-001)", func() {

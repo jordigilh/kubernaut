@@ -1,12 +1,9 @@
 /*
 Copyright 2026 Jordi Gil.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
+http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,135 +15,171 @@ package fleetmetadatacache_test
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
-	"github.com/jordigilh/kubernaut/pkg/fleet/observation"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
-// IT-FMC-BROKER: Broker readiness probe integration tests.
-// Authority: BR-FLEET-002 (Fleet Metadata Caching)
-// FedRAMP: SI-4 (Information System Monitoring) -- startup readiness tracking
-//
-//	SC-5 (Denial of Service Protection) -- backoff prevents startup storms
-//
-// Pyramid Invariant: IT proves wiring.
-// These tests mirror the Syncer construction in cmd/fleetmetadatacache/main.go
-// to verify that the WaitForBrokerReady config field is correctly wired through
-// the production dispatch path:
-//
-//	fmcconfig.ServiceConfig.Sync.WaitForBrokerReady (YAML config)
-//	  -> fmc.Config.WaitForBrokerReady (syncer config)
-//	    -> syncer.Run() calls waitForBrokerReady() before sync loop
-//
-// Wiring Manifest:
-//
-//	waitForBrokerReady()      -> syncer.Run() startup  -> IT-FMC-BROKER-001
-//	Config.WaitForBrokerReady -> cmd/fleetmetadatacache -> IT-FMC-BROKER-001
-var _ = Describe("IT-FMC-BROKER: Broker readiness probe wiring (BR-FLEET-002)", Label("fmc", "broker-readiness"), func() {
+// Connection/reader construction is NOT partition cleanliness. These tests use
+// actual envtest registry, resilient session provider, MCP observation parser,
+// coordinator, Valkey Lua store, readiness and Client.Check business components.
+// Only the external MCP endpoint is controlled. DD-FLEET-013; AC-4/AC-6, SI-10.
+var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)", Label("fmc", "broker-readiness"), func() {
 	var (
-		ctx     context.Context
-		cancel  context.CancelFunc
-		writer  *fmc.ValkeyWriter
-		metrics *fmc.Metrics
+		ctx         context.Context
+		cancel      context.CancelFunc
+		cluster     string
+		clusterReg  *registry.EAIGWRegistry
+		store       *scopecache.ValkeyStatusStore
+		readiness   *scopecache.FMCReadinessSnapshot
+		coordinator *scopecache.ProcessWriterCoordinator
+		syncer      *fmc.Syncer
+		checker     *scopecache.Client
+		available   atomic.Bool
+		empty       atomic.Bool
+		calls       atomic.Int32
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(context.Background())
-		writer = fmc.NewValkeyWriter(valkeyAddr)
-		reg := prometheus.NewPedanticRegistry()
-		metrics = fmc.NewMetrics(reg)
-	})
-
-	AfterEach(func() {
-		cancel()
-		if writer != nil {
-			_ = writer.Close()
-		}
-	})
-
-	It("IT-FMC-BROKER-001 [SI-4, SC-5]: syncer constructed with WaitForBrokerReady=true waits for broker before starting sync cycles, mirroring cmd/fleetmetadatacache/main.go wiring", func() {
-		var probeAttempts atomic.Int32
-		var syncAllCalled atomic.Bool
-
-		By("Creating an ObservedReaderFactory that simulates an unready broker (mirrors cmd/fleetmetadatacache/main.go line 263-276)")
-		readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
-			attempt := probeAttempts.Add(1)
-			if attempt <= 3 {
-				return nil, fmt.Errorf("broker not ready: tools not synced (attempt %d)", attempt)
+		DeferCleanup(cancel)
+		available.Store(false)
+		empty.Store(false)
+		calls.Store(0)
+		cluster = "broker-" + uuid.NewString()
+		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			calls.Add(1)
+			if !available.Load() {
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "observation temporarily unavailable"}}}, nil
 			}
-			syncAllCalled.Store(true)
-			return &itSpyReader{}, nil
+			if empty.Load() {
+				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{}}}, nil
+			}
+			return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{{
+				"apiVersion": "v1", "kind": "Pod",
+				"metadata": map[string]interface{}{"name": "observed", "namespace": "default", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
+			}}}}, nil
+		}))
+		DeferCleanup(gw.Close)
+		config := mcpclient.DefaultResilienceConfig()
+		config.MaxElapsedTime = 3 * time.Second
+		rc, err := mcpclient.NewResilient(ctx, gw.URL(), config, logr.Discard())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { Expect(rc.Close()).To(Succeed()) })
+		createBackend(ctx, cluster)
+		DeferCleanup(deleteBackend, context.Background(), cluster)
+		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{Namespace: "default", ChannelSize: 1}, nil, logr.Discard())
+		Expect(clusterReg.Start(ctx)).To(Succeed())
+		DeferCleanup(clusterReg.Stop)
+		store, err = scopecache.NewValkeyStatusStoreAt(valkeyAddr)
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { Expect(store.Close()).To(Succeed()) })
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		readiness, err = scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		coordinator = scopecache.NewProcessWriterCoordinator()
+		readers := fmc.ObservedReaderFactoryFunc(func(_ context.Context, info registry.ClusterInfo) (fmc.ObservedReader, error) {
+			return mcpclient.NewFromSessionProvider(rc.SessionProvider(), info.ID,
+				mcpclient.WithToolPrefix(info.ToolPrefix), mcpclient.WithReconnect(rc.Reconnect)), nil
 		})
+		syncer = fmc.NewSyncer(fmc.Dependencies{Registry: clusterReg, Readers: readers, StatusStore: store, Lease: coordinator, Readiness: readiness},
+			fmc.Config{SyncInterval: 30 * time.Millisecond, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}, WaitForBrokerReady: true},
+			logr.Discard(), fmc.NewMetrics(prometheus.NewRegistry()))
+		checker, err = scopecache.NewClientWithStatusStore(store, clusterReg, readiness)
+		Expect(err).ToNot(HaveOccurred())
+	})
 
-		By("Creating Syncer with production-equivalent config (mirrors cmd/fleetmetadatacache/main.go line 140-154)")
-		clusterReg := &itStubRegistry{
-			clusters: []registry.ClusterInfo{{ID: "it-cluster"}},
-			eventCh:  make(chan registry.ClusterEvent, 8),
-		}
-
-		syncerConfig := fmc.Config{
-			SyncInterval:               time.Hour,
-			KeyTTL:                     30 * time.Second,
-			ResourceKinds:              []string{"Pod"},
-			WaitForBrokerReady:         true,
-			BrokerProbeInitialInterval: 5 * time.Millisecond,
-			BrokerProbeMaxInterval:     20 * time.Millisecond,
-			BrokerProbeTimeout:         5 * time.Second,
-		}
-
-		syncer := fmc.NewSyncerWithReaderFactory(clusterReg, readerFactory, writer, syncerConfig, logr.Discard(), metrics)
-
-		By("Running Syncer through the same path as cmd/fleetmetadatacache/main.go line 200")
+	It("IT-FMC-BROKER-001 [BR-SCOPE-001, BR-INTEGRATION-065]: successful connection cannot authorize a resource until real observations commit", func() {
 		done := make(chan error, 1)
-		go func() {
-			done <- syncer.Run(ctx)
-		}()
+		go func() { done <- syncer.Run(ctx) }()
+		DeferCleanup(func() { cancel(); Eventually(done, 5*time.Second).Should(Receive(BeNil())) })
+		Eventually(calls.Load, 5*time.Second).Should(BeNumerically(">", 0))
+		Expect(syncer.Ready()).To(BeFalse())
+		result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
+		available.Store(true)
+		Eventually(syncer.Ready, 5*time.Second).Should(BeTrue())
+		Eventually(func(g Gomega) {
+			result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		}, 5*time.Second).Should(Succeed())
+	})
 
-		By("Verifying readiness probe completed before sync cycles started")
-		Eventually(probeAttempts.Load, 5*time.Second, 10*time.Millisecond).Should(BeNumerically(">=", 4),
-			"SI-4: readiness probe must retry with backoff until broker responds, providing operational visibility into startup state transitions")
+	It("IT-FMC-REVIEW-LIFECYCLE-001 [BR-SECURITY-016]: reacquisition fails closed through Syncer, readiness and Client.Check", func() {
+		available.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		old := readiness.View().Global.Lease.WriterFence
+		Expect(coordinator.Release(ctx, old)).To(Succeed())
+		available.Store(false)
+		Expect(syncer.SyncCluster(ctx, info)).NotTo(Succeed())
+		current := readiness.View().Global.Lease.WriterFence
+		Expect(current).NotTo(Equal(old))
+		Expect(readiness.InvalidateLease(old, "delayed old loss")).To(Succeed())
+		Expect(readiness.View().Global.ActiveLeaseValid).To(BeTrue())
+		result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
+		available.Store(true)
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		result, err = checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+	})
 
-		cancel()
-		Eventually(done, 5*time.Second).Should(Receive(BeNil()))
+	It("IT-FMC-REVIEW-EMPTY-004 [BR-SCOPE-001]: complete empty repair is ready but missing resources cannot be authorized", func() {
+		available.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		empty.Store(true)
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		Expect(syncer.Ready()).To(BeTrue())
+		view := readiness.View()
+		partition := view.Partitions[scopecache.PartitionStateKey{ClusterID: cluster, RegistrationUID: info.RegistrationUID}]
+		Expect(partition.EmptyPartitionVerified).To(BeTrue())
+		Expect(partition.RecordTTLValid).To(BeFalse())
+		Expect(partition.IndexTTLValid).To(BeFalse())
+		result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).To(MatchError("scopecache: fenced-read proof changed"))
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
+		Expect(result.Managed).To(BeNil())
+	})
 
-		Expect(syncAllCalled.Load()).To(BeTrue(),
-			"SC-5: sync cycles must only begin after readiness probe succeeds, preventing denial-of-service storms against an unready MCP gateway")
+	It("IT-FMC-REVIEW-RETIRE-001 [BR-SCOPE-001]: Run reconciles a failed retired partition without a delivered deletion event", func() {
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).NotTo(Succeed())
+		Expect(syncer.Ready()).To(BeFalse())
+		deleteBackend(ctx, cluster)
+		Eventually(func() bool { _, found := clusterReg.Get(cluster); return found }, 5*time.Second).Should(BeFalse())
+		// Remove all queued events before Run, so the production syncAll snapshot
+		// path, not an event-specific removal, must restore empty-registry readiness.
+		for len(clusterReg.WatchClusters()) > 0 {
+			<-clusterReg.WatchClusters()
+		}
+		done := make(chan error, 1)
+		go func() { done <- syncer.Run(ctx) }()
+		DeferCleanup(func() { cancel(); Eventually(done, 5*time.Second).Should(Receive(BeNil())) })
+		Eventually(syncer.Ready, 5*time.Second).Should(BeTrue())
+		Expect(readiness.View().Partitions).To(BeEmpty())
+		Expect(syncer.SyncCluster(ctx, info)).NotTo(Succeed())
+		Expect(readiness.View().Partitions).To(BeEmpty())
 	})
 })
-
-// itSpyReader is a minimal observation reader for IT tests.
-type itSpyReader struct{}
-
-func (r *itSpyReader) ListObserved(_ context.Context, _ observation.ListRequest) (observation.ListObservation, error) {
-	return observation.ListObservation{Complete: true, PageCount: 1}, nil
-}
-
-// itStubRegistry is a minimal registry for IT tests.
-type itStubRegistry struct {
-	clusters []registry.ClusterInfo
-	eventCh  chan registry.ClusterEvent
-}
-
-func (r *itStubRegistry) List() []registry.ClusterInfo                { return r.clusters }
-func (r *itStubRegistry) WatchClusters() <-chan registry.ClusterEvent { return r.eventCh }
-func (r *itStubRegistry) Ready() bool                                 { return true }
-func (r *itStubRegistry) Start(_ context.Context) error               { return nil }
-func (r *itStubRegistry) Stop()                                       { close(r.eventCh) }
-
-func (r *itStubRegistry) Get(clusterID string) (registry.ClusterInfo, bool) {
-	for _, c := range r.clusters {
-		if c.ID == clusterID {
-			return c, true
-		}
-	}
-	return registry.ClusterInfo{}, false
-}

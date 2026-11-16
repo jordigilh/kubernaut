@@ -82,6 +82,13 @@ func (f *fakeClusterRegistry) Get(string) (registry.ClusterInfo, bool) {
 func (f *fakeClusterRegistry) Snapshot(string) (registry.RegistrationSnapshot, bool) {
 	return registry.RegistrationSnapshot{}, false
 }
+func (f *fakeClusterRegistry) SnapshotAll() registry.RegistrySnapshot {
+	result := registry.RegistrySnapshot{Generation: 1}
+	for _, info := range f.clusters {
+		result.Registrations = append(result.Registrations, registry.RegistrationSnapshot{Info: info, Revision: 1})
+	}
+	return result
+}
 func (f *fakeClusterRegistry) WithCurrent(context.Context, string, string, uint64, func(registry.ClusterInfo) error) error {
 	return nil
 }

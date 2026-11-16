@@ -40,6 +40,23 @@ func newTestWatcher() *EAIGWRegistry {
 	}, nil, logger)
 }
 
+// Captures an old indexer result, then deterministically interleaves a handler
+// before startup publication, without sleeps or production test hooks.
+type interleavedIndexer struct {
+	cache.Indexer
+	once func()
+}
+
+func (i *interleavedIndexer) List() []interface{} {
+	items := i.Indexer.List()
+	if i.once != nil {
+		run := i.once
+		i.once = nil
+		run()
+	}
+	return items
+}
+
 func newBackendUnstructured(name, endpoint string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -82,6 +99,69 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 	})
 
 	Describe("Probe", func() {
+		It("UT-REG-REVIEW-EA-003 [BR-INTEGRATION-065]: startup does not resurrect an entry deleted after the indexer read", func() {
+			old := newBackendUnstructured("east", "https://old")
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			Expect(indexer.Add(old)).To(Succeed())
+			w.onAdd(old)
+			interleaved := &interleavedIndexer{Indexer: indexer, once: func() {
+				w.onDelete(old)
+				Expect(indexer.Delete(old)).To(Succeed())
+			}}
+			Expect(w.seedFromIndexer(context.Background(), interleaved)).To(Succeed())
+			Expect(w.List()).To(BeEmpty())
+			Expect(w.Ready()).To(BeTrue())
+		})
+
+		It("UT-REG-REVIEW-EA-005 [BR-INTEGRATION-065]: startup does not claim watch health from a stale seed after watch failure", func() {
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			interleaved := &interleavedIndexer{Indexer: indexer, once: func() { w.markWatchUnhealthy(errors.New("startup watch failure")) }}
+			Expect(w.seedFromIndexer(context.Background(), interleaved)).NotTo(Succeed())
+			Expect(w.Ready()).To(BeFalse())
+		})
+
+		DescribeTable("UT-REG-REVIEW-EA-004 [BR-INTEGRATION-065]: in-flight refresh cannot undo lifecycle invalidation", func(stop bool) {
+			old := newBackendUnstructured("east", "https://old")
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), old)
+			w.client, w.started, w.ready = client, true, true
+			w.onAdd(old)
+			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+				if stop {
+					w.Stop()
+				} else {
+					w.markWatchUnhealthy(errors.New("watch failed during refresh"))
+				}
+				return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
+			})
+			Expect(w.Probe(context.Background())).NotTo(Succeed())
+			Expect(w.Ready()).To(BeFalse())
+		}, Entry("stop", true), Entry("watch failure", false))
+		It("UT-REG-REVIEW-EA-001 [BR-INTEGRATION-065]: stale refresh cannot overwrite an intervening update", func() {
+			old := newBackendUnstructured("east", "https://old")
+			updated := newBackendUnstructured("east", "https://new")
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), old)
+			w.client, w.started, w.ready = client, true, true
+			w.onAdd(old)
+			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+				w.onUpdate(old, updated)
+				return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
+			})
+			Expect(w.Probe(context.Background())).To(Succeed())
+			current, found := w.Get("east")
+			Expect(found).To(BeTrue())
+			Expect(current.MCPEndpoint).To(Equal("https://new"))
+		})
+
+		It("UT-REG-REVIEW-EA-002 [BR-INTEGRATION-065]: unrelated and identical updates preserve a registration proof", func() {
+			east := newBackendUnstructured("east", "https://east")
+			west := newBackendUnstructured("west", "https://west")
+			w.onAdd(east)
+			snapshot, found := w.Snapshot("east")
+			Expect(found).To(BeTrue())
+			w.onAdd(west)
+			w.onUpdate(east, east.DeepCopy())
+			Expect(w.WithCurrent(context.Background(), "east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error { return nil })).To(Succeed())
+		})
 		It("UT-REG-EAIGW-012 [BR-INTEGRATION-065, SI-4]: rejects a probe before initial sync", func() {
 			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry has not completed initial sync"))
 			Expect(w.Ready()).To(BeFalse())
@@ -128,10 +208,10 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, err := startInformerAndSeed(ctx, client, EAIGWRegistryConfig{
+			err := startInformerAndSeed(ctx, client, EAIGWRegistryConfig{
 				ResyncPeriod: time.Minute,
 				onWatchError: func(error) {},
-			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh, w.trackableClusterInfo)
+			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -231,8 +311,8 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 			}
 			w.clusters = currentClusters
 
-			handleDeletedCluster(deleted, &w.mu, func() map[string]ClusterInfo {
-				return currentClusters
+			handleDeletedCluster(deleted, &w.mu, func() (map[string]ClusterInfo, map[string]uint64) {
+				return currentClusters, nil
 			}, &w.revision, w.metrics, w.logger, func(ClusterEvent) {})
 
 			Expect(currentClusters).NotTo(HaveKey("current-map"))

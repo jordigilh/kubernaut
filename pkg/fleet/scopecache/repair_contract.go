@@ -252,7 +252,10 @@ type RepairResult struct {
 	IndexTTL                 TTLPTTLValidation
 	StatusTTL                TTLPTTLValidation
 	CleanCommitEligible      bool
-	Failure                  RepairFailure
+	// EmptyPartitionVerified explicitly makes record/index TTLs not applicable.
+	// They remain invalid; only status TTL has a server-time proof.
+	EmptyPartitionVerified bool
+	Failure                RepairFailure
 }
 
 type RepairCommitRequest struct {
@@ -309,8 +312,14 @@ func (r RepairResult) proofIdentityMatches(request RepairCommitRequest) bool {
 func (r RepairResult) proofCompletenessMatches(request RepairCommitRequest) bool {
 	return r.ExpectedCount == request.ExpectedCount && r.ObservedCount == request.ExpectedCount &&
 		r.CleanupCount >= 0 && r.SourceComplete && r.RecordValid && r.IndexValid &&
-		r.StatusValid && r.RecordIndexChecksValid && r.RecordTTL.Valid &&
-		r.IndexTTL.Valid && r.StatusTTL.Valid
+		r.StatusValid && r.RecordIndexChecksValid && r.ttlProofComplete()
+}
+
+func (r RepairResult) ttlProofComplete() bool {
+	if r.EmptyPartitionVerified {
+		return r.ExpectedCount == 0 && r.ObservedCount == 0 && !r.RecordTTL.Valid && !r.IndexTTL.Valid && r.StatusTTL.Valid
+	}
+	return r.RecordTTL.Valid && r.IndexTTL.Valid && r.StatusTTL.Valid
 }
 
 type RepairCommitResult struct {

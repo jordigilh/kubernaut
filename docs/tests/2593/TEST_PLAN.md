@@ -638,7 +638,7 @@ guarded read/repair/cleanup operations use the single server-side
 `MULTI/EXEC`, pipelines and client-side command sequences are not allowed alternatives.
 The approved operation verbs are `begin`, `put_observed`, `commit`, `abort`,
 `mark_uncertain`, `read_verified`, `repair_reconcile`, `repair_list_members` and
-`cleanup_member`. The script
+`cleanup_member`, and `repair_finalize_empty` (DD-FLEET-013 C1). The script
 checks registration UID, generation and the complete fence before touching co-located
 keys. `put_observed` obtains `TIME`, computes `expires_at_ms=server_now_ms+ttl_ms`, calls
 `PEXPIREAT`, writes the record and index score, and returns
@@ -874,6 +874,7 @@ type RepairResult struct {
     RecordTTL                TTLPTTLValidation
     IndexTTL                 TTLPTTLValidation
     StatusTTL                TTLPTTLValidation
+    EmptyPartitionVerified   bool // record/index TTLs explicitly N/A, never valid by fabrication
     CleanCommitEligible      bool
     Failure                  RepairFailure
 }
@@ -968,7 +969,7 @@ type RepairFailureError struct { Failure RepairFailure }
 
 All repair and read mutations use the bounded `EVALSHA` verbs `begin`,
 `repair_reconcile`, `repair_list_members`, `cleanup_member`, `read_verified`,
-`commit`, and `mark_uncertain`; `SCRIPT LOAD` is bootstrap/recovery only. Every verb
+`commit`, `repair_finalize_empty`, and `mark_uncertain`; `SCRIPT LOAD` is bootstrap/recovery only. Every verb
 checks the `PartitionStateKey` registration UID, generation, and all four
 `WriterFence` values. `WithCurrent` additionally checks the exact registry revision.
 No `EVAL`, `MULTI/EXEC`, pipeline, client-side mutation sequence, terminal loss
@@ -979,10 +980,12 @@ The complete repair ordering is: (1) obtain the current registry snapshot and Le
 session/fence; (2) call `BeginRepair` and publish `repairing` before MCP; (3) collect
 complete unfiltered observations for every qualified kind; (4) validate GVK, scope,
 labels, duplicate identities, bounds, and counts; (5) recheck the same registration
-UID/revision and full Lease fence; (6) call `Repair`, using `repair_reconcile` for
+UID/per-registration revision and full Lease fence; (6) call `Repair`, using `repair_reconcile` for
 source items; (7) enumerate the prior index in bounded lexical batches and use guarded
 `cleanup_member`; (8) run `read_verified` for every expected record, index member,
-status field, count, and server-time TTL/PTTL predicate; (9) call `CommitRepair` only
+status field, count, and server-time TTL/PTTL predicate (for zero items, use
+`repair_finalize_empty` to verify zero residual members and live status TTL, with
+record/index TTLs explicitly not applicable); (9) call `CommitRepair` only
 inside `CurrentRegistrationGuard.WithCurrent`; and (10) publish clean only when the
 commit result is `Committed && CleanCommit`. Any incomplete source, Lease/registry
 change, lost EVALSHA reply, wrong type, count mismatch, invalid record/index/status,
@@ -1100,12 +1103,117 @@ type CurrentRegistrationGuard interface {
 }
 ```
 
-The repair/commit caller obtains the snapshot and passes its exact `Revision`. The guard
-holds the registry update exclusion, verifies both registration UID and revision, then runs
-the callback. Every published add/update/delete, including a same-UID endpoint or metadata
-update, increments the revision; any UID or revision mismatch rejects the commit and leaves
-the partition `repairing`/`uncertain`. Source collection remains outside this critical
-section.
+The repair/commit caller obtains the snapshot and passes its exact **per-registration**
+`Revision` (approved B1 amendment, DD-FLEET-013). The guard holds registry update
+exclusion, verifies UID and that registration's revision, then runs the callback.
+Changed extracted registration data, including same-UID endpoint/metadata changes,
+and delete/recreate invalidate that registration's proof. Unrelated registrations
+and identical extracted updates do not. A separate global mutation generation fences
+refresh/startup publication on every accepted informer event (including extracted-data
+no-ops), watch-health and stop transitions; it is not a read/repair
+revision. Source collection remains outside this critical section. All earlier
+registry revision/read/repair guard descriptions mean this per-registration contract.
+
+### 5.4.5 Approved bounded review-fix batch (A1/B1/C1)
+
+Approval: 2026-11-15; DD-FLEET-013 records selected decisions and alternatives.
+This amendment supersedes the previous global-event invalidation requirement above.
+
+* A1: prerequisite-only atomic publication cannot replace writer ownership. Writer
+  transitions and clean publication validate the full active fence. Delayed loss of
+  an old fence cannot invalidate its replacement.
+* B1: reconcile authoritative versioned ClusterID+RegistrationUID+revision membership
+  periodically and before repairs, not just events/counts. Reject retired starts and
+  completions. Refresh publication must not overwrite intervening mutations; startup
+  fencing surrounds the indexer read, not informer initialization.
+* C1: add `repair_finalize_empty` to all protocol operation lists (including sections
+  5.4's Lua lists). It verifies zero residual members and live status server TIME/PTTL;
+  commit revalidates those predicates. Explicit empty proof makes record/index TTLs
+  not applicable, never valid by fabrication. Missing target reads remain unavailable.
+
+TDD sequence: RED (20–30 min) deterministic contract regressions; GREEN (30–45 min)
+minimal coordinated production wiring; REFACTOR (10–15 min) deduplicate publication
+and proof predicates/error handling. Scoped validation follows; rollback is a normal
+revert of this coordinated batch, not partial protocol rollback.
+
+| Wiring component | Production entry point / location | Proving scenarios |
+|---|---|---|
+| Registry refresh and per-registration proof | EAIGWRegistry/KuadrantRegistry Probe, Start, Snapshot, WithCurrent | UT-REG-REVIEW refresh/start/revision; IT-REG-REVIEW-GUARD-001 (both registries); IT-REG-GW-005 |
+| Atomic readiness ownership and membership | Syncer.SyncCluster/syncAll; fmcDeps.Ready | UT-FMC-REVIEW ownership/retirement; IT-FMC-REVIEW lifecycle |
+| Explicit empty finalization | Syncer.repairPartition -> ValkeyStatusStore.Repair/CommitRepair -> Lua | IT-FMC-REVIEW empty/status/cleanup |
+| Observation-backed clean state | Syncer.Run -> production MCP reader -> controlled external endpoint | IT-FMC-BROKER-001 |
+
+Success requires all critical scoped scenarios and wiring rows passing, build/lint
+without regressions, and absent-resource fail-closed assertions (AC-4/AC-6, SI-10).
+No new audit event types. Connection/reader allocation is not observation completeness;
+the broker test must not claim allocation proves synchronization. No BR-FLEET-002
+authority is claimed; use BR-SCOPE-001 and BR-INTEGRATION-065.
+
+**Supplemental scoped scenario matrix** (does not replace the historical source-slice
+or external-gate denominators): 14 critical UT scenarios: 5 readiness ownership/retirement
+(`UT-FMC-REVIEW-001..005`), 6 EAIGW registry cases (`UT-REG-REVIEW-EA-001..005`,
+including both EA-004 table entries), 3 Kuadrant registry cases
+(`UT-REG-REVIEW-KUA-001..003`). Store/Lua wiring has 8 additional critical cases
+(`IT-FMC-REVIEW-EMPTY-001`, four EMPTY-002 and three EMPTY-003 entries), plus the
+extended existing `IT-FMC-CACHE-015` stale-to-empty journey. Real envtest/Valkey/MCP
+wiring has 6 cases: `IT-FMC-BROKER-001`, `IT-FMC-REVIEW-LIFECYCLE-001`,
+`IT-FMC-REVIEW-RETIRE-001`, `IT-FMC-REVIEW-EMPTY-004` and both
+`IT-REG-REVIEW-GUARD-001` registry entries. All are required; none are pending.
+
+RED evidence: the initial seven new assertions failed on the original implementation
+(old active fence accepted, old loss invalidated replacement, complete empty rejected,
+two stale refreshes published, two unrelated-update proofs rejected). Additional RED
+proved startup watch failure could be overwritten and superseded refresh could return
+success after stop/watch loss. GREEN wires separate ownership/membership and explicit
+Lua proof through production callers. REFACTOR shares registry seed/publication/event
+logic and refresh rejection, consolidates TTL eligibility, and carries caller context
+through clean publication; build/tests are its safety checks, not the refactor itself.
+
+**External evidence limitations:** pinned producer structured-content behavior remains
+unverified. The required evidence is digest-pinned `tools/list` plus empty/nonempty
+`resources_list` request/response captures through the gateway. Strict parsing remains
+unchanged. HPA permission finding is moot for CI's operator
+`ae3d9e40b56dad5ddc6e9899eeb99f5b9fda3902`: `inventory_rbac.go:94–110` grants
+HPA get/list/watch; `rbac.go:1115–1128` appends that policy to Gateway and
+`rbac.go:197–200` binds its ServiceAccount. These are source grants, not live
+authorization qualification. No role additions or external repository edits.
+
+**Batch verification (2026-11-15):** supplemental critical UT scenarios **14/14**;
+store/Lua cases **8/8** (plus extended CACHE-015); real production-wiring cases
+**6/6**; wiring manifest **4/4**. No new pending/skipped scenarios. Native Lease
+expiry tests use a test-only typed-client bridge backed by ADR-004
+`fake.NewClientBuilder()`, without changing production coordination APIs or wiring.
+
+Passing checks: `go build ./...`; `go test ./... -run='^$' -timeout=30s`;
+`go test ./pkg/fleet/... ./cmd/fleetmetadatacache/... -race -count=1`;
+`go test ./test/infrastructure -count=1`; affected package race suites;
+`golangci-lint run --timeout=5m` (zero issues); `git diff --check`.
+
+The final focused real suite used the per-command
+`CONTAINER_CONNECTION=podman-machine-default-root` and installed envtest 1.37 assets:
+`go test ./test/integration/fleetmetadatacache -race -count=1 -timeout=10m
+-ginkgo.focus='IT-FMC-BROKER-001|IT-FMC-REVIEW|IT-REG-REVIEW|IT-REG-GW-005|IT-FLEET-EAIGW-001'`.
+Its report proves **9/9 selected cases passed**: the six required cases, both existing
+registry Probe cases and the existing real EAIGW journey. The other 22 specs were
+excluded by the focus filter, not claimed as passing.
+
+Broader runtime evidence is qualified: a detailed unfocused run before the two new
+registry-guard cases reported **26 passed, 1 failed, 2 skipped**. The failure was a
+connection reset during real EAIGW MCP initialize, before FMC/registry business
+dispatch; this test and MCP initialization code are unchanged by this batch. The
+same isolated test passed with a read-only Go source overlay of baseline `e6b474b82`
+and in the final current-source race run. This supports an intermittent runtime
+limitation, not an observed causal regression or a claim that the full suite is green.
+The existing parser specs skipped because kube-mcp containers were unavailable;
+they provide no pinned-producer structured-content evidence. No fixtures/checks were
+weakened to hide these limitations.
+
+Engram corpus/semantic discovery and writer/SnapshotAll reference checks succeeded.
+A later readiness reference lookup returned HTTP 403; local `gopls references`
+confirmed `ReconcileRegistry` production callers in `cmd/fleetmetadatacache/main.go`
+and `pkg/fleet/fmc/syncer.go`, and the store-to-empty-finalization caller. Source
+reads corroborated the Lua dispatch. This is scoped fix evidence, not release/GA
+certification or a resolution of the pinned producer question.
 
 **Conditional denominator relationship.** The conditional server rows are exactly
 `IT-AF-CACHE-006` and `IT-FMC-INVENTORY-012`, reported as `0/2` in this FMC slice. They are

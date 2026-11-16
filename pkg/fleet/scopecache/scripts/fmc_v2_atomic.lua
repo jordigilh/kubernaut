@@ -92,6 +92,7 @@ if op == 'begin' then
     'generation', generation,
     'repair_token', token,
     'clean_commit', '0',
+    'empty_verified', '0',
     'observed_count', '0',
     'cleanup_count', '0',
     'repair_reason', '',
@@ -232,6 +233,32 @@ if op == 'cleanup_member' then
   return {'ok', tostring(removed)}
 end
 
+-- DD-FLEET-013 C1: empty is a fenced, server-proven partition state, not a
+-- fabricated record/index TTL or a marker resource.
+if op == 'repair_finalize_empty' then
+  if not full_matches(ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
+    return redis.error_reply('STALE_FENCE')
+  end
+  if redis.call('HGET', status, 'state') ~= 'repairing' then
+    return redis.error_reply('COMMIT_REJECTED')
+  end
+  local index_type = key_type(KEYS[2])
+  if index_type ~= 'none' and index_type ~= 'zset' then
+    return redis.error_reply('WRONG_TYPE_ZSET')
+  end
+  if index_type == 'zset' and redis.call('ZCARD', KEYS[2]) ~= 0 then
+    return redis.error_reply('RESIDUAL_MEMBERS')
+  end
+  local now = now_ms()
+  local expires = tonumber(redis.call('HGET', status, 'status_expires_at_ms'))
+  local pttl = redis.call('PTTL', status)
+  if not valid_ttl(now, expires, pttl) then
+    return redis.error_reply('TTL_MISMATCH')
+  end
+  redis.call('HSET', status, 'empty_verified', '1')
+  return {'ok', tostring(now), tostring(expires), tostring(pttl)}
+end
+
 if op == 'read_verified' then
   local registration_uid = ARGV[2]
   local revision = ARGV[3]
@@ -310,10 +337,21 @@ if op == 'commit' then
   if redis.call('HGET', status, 'state') ~= 'repairing' or expected_count == nil or observed_count == nil or cleanup_count == nil or expected_count ~= observed_count or cleanup_count < 0 then
     return redis.error_reply('COMMIT_REJECTED')
   end
-  for i = 13, 19 do
+  for i = 13, 16 do
     if ARGV[i] ~= '1' then
       return redis.error_reply('COMMIT_REJECTED')
     end
+  end
+  if ARGV[19] ~= '1' then return redis.error_reply('COMMIT_REJECTED') end
+  if expected_count == 0 then
+    if ARGV[20] ~= '1' or ARGV[17] ~= '0' or ARGV[18] ~= '0' or redis.call('HGET', status, 'empty_verified') ~= '1' then
+      return redis.error_reply('COMMIT_REJECTED')
+    end
+    local index_type = key_type(KEYS[2])
+    if index_type ~= 'none' and index_type ~= 'zset' then return redis.error_reply('WRONG_TYPE_ZSET') end
+    if index_type == 'zset' and redis.call('ZCARD', KEYS[2]) ~= 0 then return redis.error_reply('RESIDUAL_MEMBERS') end
+  elseif ARGV[17] ~= '1' or ARGV[18] ~= '1' or ARGV[20] == '1' then
+    return redis.error_reply('COMMIT_REJECTED')
   end
   local now = now_ms()
   local status_expires = tonumber(redis.call('HGET', status, 'status_expires_at_ms'))

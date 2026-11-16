@@ -11,7 +11,7 @@ import (
 func handleDeletedCluster(
 	obj interface{},
 	mu *sync.RWMutex,
-	currentClusters func() map[string]ClusterInfo,
+	currentClusters func() (map[string]ClusterInfo, map[string]uint64),
 	revision *uint64,
 	metrics *Metrics,
 	logger logr.Logger,
@@ -31,7 +31,7 @@ func handleDeletedCluster(
 
 	id := u.GetName()
 	mu.Lock()
-	clusters := currentClusters()
+	clusters, revisions := currentClusters()
 	info, existed := clusters[id]
 	if existed && info.RegistrationUID != string(u.GetUID()) {
 		mu.Unlock()
@@ -39,8 +39,9 @@ func handleDeletedCluster(
 	}
 	delete(clusters, id)
 	if existed {
-		*revision++
+		delete(revisions, id)
 	}
+	*revision++
 	clusterCount := len(clusters)
 	mu.Unlock()
 
