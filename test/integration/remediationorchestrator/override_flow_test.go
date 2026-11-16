@@ -441,6 +441,10 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 					_, _ = w.Write([]byte(`{"count":1,"results":[{"id":7}]}`))
 					return
 				}
+				if r.URL.Path == "/api/v2/job_templates/7/" && r.Method == http.MethodGet {
+					_, _ = w.Write([]byte(`{"id":7,"ask_labels_on_launch":true,"job_slice_count":1}`))
+					return
+				}
 				if r.URL.Path == "/api/v2/job_templates/7/launch/" && r.Method == http.MethodPost {
 					var payload struct {
 						ExtraVars map[string]interface{} `json:"extra_vars"`

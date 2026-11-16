@@ -121,10 +121,15 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 
 		By("proving that a pending child prevents terminal parent state")
 		var pending remediationv1.RemediationRequest
-		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), &pending)).To(Succeed())
-		Expect(pending.Status.OverallPhase).To(Equal(remediationv1.PhaseCancelling))
-		Expect(pending.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateInProgress))
-		Expect(pending.Finalizers).To(ContainElement(cancellationFinalizer))
+		Eventually(func() bool {
+			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), &pending); err != nil {
+				return false
+			}
+			return pending.Status.OverallPhase == remediationv1.PhaseCancelling &&
+				pending.Status.Cancellation != nil &&
+				pending.Status.Cancellation.State == remediationv1.CancellationStateInProgress &&
+				controllerutil.ContainsFinalizer(&pending, cancellationFinalizer)
+		}, timeout, interval).Should(BeTrue(), "pending child must keep cancellation in progress")
 
 		By("marking notification delivery terminal and child backend termination verified")
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(&notification), &notification)).To(Succeed())
