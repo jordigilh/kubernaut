@@ -187,7 +187,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 		})
 		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
 
@@ -217,7 +217,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 		})
 		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
 
@@ -262,7 +262,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
@@ -293,7 +293,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			managedUntrusted, err := checkerUntrusted.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(), "transport/cert errors must propagate")
 			Expect(managedUntrusted).To(BeFalse(),
@@ -319,7 +319,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
@@ -358,7 +358,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue())
@@ -389,7 +389,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(), "transport/auth errors must propagate to the caller")
 			Expect(managed).To(BeFalse(),

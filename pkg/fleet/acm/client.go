@@ -82,10 +82,11 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
 		return false, fmt.Errorf("acm scope: cluster, kind and name are required")
 	}
-	if r.Group == "" && r.Version == "" {
-		gvk := scope.InferGVK(r.Kind)
-		r.Group, r.Version = gvk.Group, gvk.Version
+	gvk, err := scope.GVKForIdentity(r)
+	if err != nil {
+		return false, fmt.Errorf("acm scope: remote target GVK is unavailable: %w", err)
 	}
+	r.Group, r.Version = gvk.Group, gvk.Version
 	item, found, err := c.searchScopeItem(ctx, r)
 	if err != nil {
 		return false, err
@@ -111,10 +112,8 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 }
 
 func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {
-	filters := buildFilters(r)
-	if r.Version != "" {
-		filters = append(filters, searchFilter{Property: "apiversion", Values: []string{r.Version}})
-	}
+	// GVKForIdentity (IsManagedResource, above) guarantees a non-empty Version.
+	filters := append(buildFilters(r), searchFilter{Property: "apiversion", Values: []string{r.Version}})
 	reqBody := graphQLRequest{
 		Query: SearchQuery,
 		Variables: map[string]interface{}{

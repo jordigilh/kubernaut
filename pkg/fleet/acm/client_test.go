@@ -82,7 +82,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
 		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
 		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
-		Entry("invalid inherits namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", true),
+		Entry("invalid does not inherit namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", false),
 		Entry("missing labels default unmanaged", "", "", false),
 	)
 
@@ -126,15 +126,12 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("UT-ACM-2584-LIVE-006 [BR-SCOPE-001]: infers the GVK when existing callers supply only kind", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, err := w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`))
-			Expect(err).NotTo(HaveOccurred())
-		}))
-		client = acm.NewClient(server.URL)
+	It("UT-ACM-2592-GVK-001 [SI-10]: rejects a remote target when callers supply only kind", func() {
+		client = acm.NewClient("http://127.0.0.1:1")
 		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("explicit group/version"))
 	})
 
 	// AC-4: Search existence alone is insufficient; the explicit scope label is required.
@@ -182,7 +179,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(setupServer())
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred(),
@@ -220,7 +217,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		client = acm.NewClient(server.URL)
 
 		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 		})
 
 		Expect(err).To(HaveOccurred(),
@@ -394,7 +391,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(server.Client()))
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
@@ -410,7 +407,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(),
 				"SC-8: TLS failure must be observable to the caller")
@@ -428,7 +425,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(customClient))
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),

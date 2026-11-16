@@ -61,10 +61,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", gatewayRedisPort)
 
 		By("Seeding shared Redis with managed resources for prod-east only")
-		// Cache key uses the real GVK ("apps/v1" for Deployment) matching what
-		// pkg/fleet/fmc/syncer.go writes from the K8s API, and what
-		// scopecache.Client.IsManagedResource now infers via scope.InferGVK when
-		// the caller's ResourceIdentity leaves Group/Version empty (Issue #54).
+		// Cache key uses the explicit GVK written by the FMC syncer.
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "remote-ns", "api-server")
 		Expect(err).ToNot(HaveOccurred())
@@ -119,6 +116,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Severity:     "critical",
 			ClusterID:    "prod-east",
 		})
+		signal.Resource.APIVersion = "apps/v1"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
@@ -138,6 +136,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			ResourceName: "worker-1",
 			Severity:     "warning",
 		})
+		signal.Resource.APIVersion = "apps/v1"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
@@ -157,6 +156,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Severity:     "warning",
 			ClusterID:    "staging-west",
 		})
+		signal.Resource.APIVersion = "apps/v1"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
