@@ -155,6 +155,15 @@ func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (sc
 			Reason:     "invalid_resource_gvk",
 		}, err
 	}
+	// BR-SCOPE-001 FR-SCOPE-004 / #2593: cluster-scoped remediation
+	// remains deferred. This target boundary deliberately does not apply to
+	// internal Namespace observation reads used for namespaced inheritance.
+	if resource.Namespace == "" || scope.IsClusterScopedKind(resource.Kind) {
+		return scope.ScopeResult{
+			State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable,
+			Reason: "cluster_scoped_target_unsupported",
+		}, nil
+	}
 	if c.statusStore != nil {
 		return c.checkFencedStatus(ctx, resource, gvk.Group, gvk.Version)
 	}

@@ -25,12 +25,78 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"github.com/jordigilh/kubernaut/test/testutil/redisfault"
 )
 
 var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func() {
+	DescribeTable("lost begin replies are never replayed (BR-SCOPE-001)", func(injected, flush bool) {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		proxy, err := redisfault.New(context.Background(), server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(proxy.Close)
+		var store *scopecache.ValkeyStatusStore
+		if injected {
+			store, err = scopecache.NewValkeyStatusStore(redis.NewClient(&redis.Options{Addr: proxy.Addr()}))
+		} else {
+			store, err = scopecache.NewValkeyStatusStoreAt(proxy.Addr())
+		}
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		if flush {
+			admin := redis.NewClient(&redis.Options{Addr: server.Addr()})
+			DeferCleanup(admin.Close)
+			Expect(admin.ScriptFlush(ctx).Err()).To(Succeed())
+		}
+		proxy.Arm("begin")
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{
+			Partition:       scopecache.PartitionStateKey{ClusterID: "lost", RegistrationUID: "uid"},
+			RegistrationUID: "uid", ExpectedRegistryRevision: 1,
+			WriterFence: scopecache.WriterFence{HolderPodUID: "pod", HolderSessionUID: "session", LeaseEpoch: 1, Fence: 1},
+		})
+		expected := 1
+		if flush {
+			expected++
+		} // Only the definitive NOSCRIPT invocation may be replayed.
+		Expect(proxy.Calls("begin")).To(Equal(expected), "an executed mutation must not be replayed after EOF")
+		Expect(err).To(MatchError(scopecache.ErrAmbiguousWrite))
+		Expect(start.Generation).To(BeZero())
+	},
+		Entry("UT-FMC-REPLAY-001 standalone client", false, false),
+		Entry("UT-FMC-REPLAY-002 injected retry-enabled client", true, false),
+		Entry("UT-FMC-REPLAY-003 lost reply after explicit NOSCRIPT recovery", true, true),
+	)
+	It("UT-FMC-REPLAY-004 [BR-SCOPE-001]: definitive NOSCRIPT still permits one explicit recovery", func() {
+		server, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(server.Close)
+		proxy, err := redisfault.New(context.Background(), server.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(proxy.Close)
+		store, err := scopecache.NewValkeyStatusStoreAt(proxy.Addr())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(store.Close)
+		ctx := context.Background()
+		Expect(store.LoadScript(ctx)).To(Succeed())
+		admin := redis.NewClient(&redis.Options{Addr: server.Addr()})
+		DeferCleanup(admin.Close)
+		Expect(admin.ScriptFlush(ctx).Err()).To(Succeed())
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{
+			Partition:       scopecache.PartitionStateKey{ClusterID: "recover", RegistrationUID: "uid"},
+			RegistrationUID: "uid", ExpectedRegistryRevision: 1,
+			WriterFence: scopecache.WriterFence{HolderPodUID: "pod", HolderSessionUID: "session", LeaseEpoch: 1, Fence: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(start.Generation).To(Equal(uint64(1)))
+		Expect(proxy.Calls("begin")).To(Equal(2))
+	})
 	It("IT-FMC-REVIEW-EMPTY-001 [BR-SCOPE-001]: commits a complete empty partition without fabricating TTL validity", func() {
 		server, err := miniredis.Run()
 		Expect(err).ToNot(HaveOccurred())

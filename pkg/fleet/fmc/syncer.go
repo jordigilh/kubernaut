@@ -376,6 +376,12 @@ func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.Partition
 			WriterFence:              fence,
 		})
 		if beginErr != nil {
+			// Begin may have executed even though its reply was lost. Retire
+			// the previous clean proof while still holding the registration
+			// guard, before another guarded begin/clean publication can run.
+			if invalidateErr := s.readiness.InvalidatePartition(partition, "begin repair was not acknowledged"); invalidateErr != nil {
+				s.logger.Error(invalidateErr, "Failed to invalidate unacknowledged repair", "cluster", cluster.ID)
+			}
 			return beginErr
 		}
 		return s.readiness.BeginPartitionRepair(partition, cluster.RegistrationUID, snapshot.Revision, s.leaseView(fence), start.Generation)

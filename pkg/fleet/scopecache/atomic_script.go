@@ -44,6 +44,35 @@ type ScriptManager struct {
 	loaded bool
 }
 
+// atomicCommand prevents go-redis from replaying an EVALSHA whose reply was
+// lost. The server may already have mutated the partition. Only eval's explicit
+// definitive-NOSCRIPT recovery may issue the command a second time (#2593).
+type atomicCommand struct{ *redis.Cmd }
+
+func (*atomicCommand) NoRetry() bool { return true }
+
+func (m *ScriptManager) execute(ctx context.Context, keys []string, args ...interface{}) ([]interface{}, error) {
+	commandArgs := make([]interface{}, 0, 3+len(keys)+len(args))
+	commandArgs = append(commandArgs, "evalsha", m.digest, len(keys))
+	for _, key := range keys {
+		commandArgs = append(commandArgs, key)
+	}
+	commandArgs = append(commandArgs, args...)
+	command := &atomicCommand{Cmd: redis.NewCmd(ctx, commandArgs...)}
+	if err := m.client.Process(ctx, command); err != nil {
+		var serverError redis.Error
+		if errors.As(err, &serverError) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: atomic script reply unavailable: %w", ErrAmbiguousWrite, err)
+	}
+	items, err := asScriptArray(command.Val())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrAmbiguousWrite, err)
+	}
+	return items, nil
+}
+
 // NewScriptManager creates a Valkey script manager. Load must succeed before
 // the service publishes readiness.
 func NewScriptManager(client *redis.Client) (*ScriptManager, error) {
@@ -102,27 +131,21 @@ func (m *ScriptManager) eval(ctx context.Context, keys []string, args ...interfa
 			return nil, err
 		}
 	}
-	result, err := m.client.EvalSha(ctx, m.digest, keys, args...).Result()
-	if err == nil {
-		return asScriptArray(result)
+	result, err := m.execute(ctx, keys, args...)
+	if err == nil || !isNoScript(err) {
+		return result, err
 	}
+	m.mu.Lock()
+	loadErr := m.loadLocked(ctx)
+	m.mu.Unlock()
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	result, err = m.execute(ctx, keys, args...)
 	if isNoScript(err) {
-		m.mu.Lock()
-		loadErr := m.loadLocked(ctx)
-		m.mu.Unlock()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		result, retryErr := m.client.EvalSha(ctx, m.digest, keys, args...).Result()
-		if retryErr != nil {
-			if isNoScript(retryErr) {
-				return nil, fmt.Errorf("%w: NOSCRIPT after recovery", ErrScriptUnavailable)
-			}
-			return nil, retryErr
-		}
-		return asScriptArray(result)
+		return nil, fmt.Errorf("%w: NOSCRIPT after recovery", ErrScriptUnavailable)
 	}
-	return nil, err
+	return result, err
 }
 
 func asScriptArray(value interface{}) ([]interface{}, error) {
@@ -134,5 +157,10 @@ func asScriptArray(value interface{}) ([]interface{}, error) {
 }
 
 func isNoScript(err error) bool {
-	return strings.HasPrefix(strings.TrimSpace(err.Error()), "NOSCRIPT")
+	var serverError redis.Error
+	if !errors.As(err, &serverError) {
+		return false
+	}
+	message := strings.TrimSpace(serverError.Error())
+	return message == "NOSCRIPT" || strings.HasPrefix(message, "NOSCRIPT ")
 }

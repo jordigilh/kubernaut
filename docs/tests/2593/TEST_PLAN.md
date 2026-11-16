@@ -1575,6 +1575,16 @@ three independently registered external gates pass. The two server rows remain o
 19-row FMC implementation denominator, and the Page gate remains separately owned by
 `#2584/#2600`.
 
+### 5.4.6 Bounded no-replay and deferred-target review repair
+
+The 2026-11-16 batch is recorded in
+[REVIEW_FIX_2026-11-16.md](REVIEW_FIX_2026-11-16.md), created before implementation
+under the standing review/fix authorization. It enforces this plan's existing
+definitive-NOSCRIPT-only replay and deferred cluster-scoped target boundaries.
+Its additive scenarios do not replace the historical denominators below. Registry
+watch recovery and production typed-backend evidence remain explicitly held for
+the decisions described in that record; no new design approval is implied.
+
 ### 5.5 Requirements-based coverage policy
 
 The authoritative source-slice denominators are 12 UT scenarios, 4 IT-owned business

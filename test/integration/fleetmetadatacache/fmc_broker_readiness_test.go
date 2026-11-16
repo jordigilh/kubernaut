@@ -15,6 +15,11 @@ package fleetmetadatacache_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
+	"github.com/jordigilh/kubernaut/test/testutil/redisfault"
 )
 
 // Connection/reader construction is NOT partition cleanliness. These tests use
@@ -55,7 +61,9 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		checker     *scopecache.Client
 		available   atomic.Bool
 		empty       atomic.Bool
+		deferred    atomic.Bool
 		calls       atomic.Int32
+		proxy       *redisfault.Proxy
 	)
 
 	BeforeEach(func() {
@@ -63,6 +71,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		DeferCleanup(cancel)
 		available.Store(false)
 		empty.Store(false)
+		deferred.Store(false)
 		calls.Store(0)
 		cluster = "broker-" + uuid.NewString()
 		namespace = cluster
@@ -73,12 +82,31 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		DeferCleanup(func() {
 			Expect(kube.CoreV1().Namespaces().Delete(context.Background(), namespace, metav1.DeleteOptions{})).To(Succeed())
 		})
-		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			calls.Add(1)
 			if !available.Load() {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "observation temporarily unavailable"}}}, nil
 			}
 			if empty.Load() {
+				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{}}}, nil
+			}
+			var args struct {
+				Kind string `json:"kind"`
+			}
+			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				return nil, fmt.Errorf("decode list fixture arguments: %w", err)
+			}
+			if deferred.Load() {
+				metadata := map[string]interface{}{"name": "observed", "namespace": "default"}
+				if args.Kind != "Pod" {
+					metadata = map[string]interface{}{"name": "observed", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}}
+					if args.Kind == "Namespace" {
+						metadata["name"] = "default"
+					}
+				}
+				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{{"apiVersion": "v1", "kind": args.Kind, "metadata": metadata}}}}, nil
+			}
+			if args.Kind != "Pod" {
 				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{}}}, nil
 			}
 			return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{{
@@ -100,7 +128,10 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{Namespace: namespace, ChannelSize: 1}, nil, logr.Discard())
 		Expect(clusterReg.Start(ctx)).To(Succeed())
 		DeferCleanup(clusterReg.Stop)
-		store, err = scopecache.NewValkeyStatusStoreAt(valkeyAddr)
+		proxy, err = redisfault.New(ctx, valkeyAddr)
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(proxy.Close)
+		store, err = scopecache.NewValkeyStatusStoreAt(proxy.Addr())
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(store.Close()).To(Succeed()) })
 		Expect(store.LoadScript(ctx)).To(Succeed())
@@ -112,10 +143,64 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 				mcpclient.WithToolPrefix(info.ToolPrefix), mcpclient.WithReconnect(rc.Reconnect)), nil
 		})
 		syncer = fmc.NewSyncer(fmc.Dependencies{Registry: clusterReg, Readers: readers, StatusStore: store, Lease: coordinator, Readiness: readiness},
-			fmc.Config{SyncInterval: 30 * time.Millisecond, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}, WaitForBrokerReady: true},
+			fmc.Config{SyncInterval: 30 * time.Millisecond, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod", "Node", "Namespace"}, WaitForBrokerReady: true},
 			logr.Discard(), fmc.NewMetrics(prometheus.NewRegistry()))
 		checker, err = scopecache.NewClientWithStatusStore(store, clusterReg, readiness)
 		Expect(err).ToNot(HaveOccurred())
+	})
+
+	DescribeTable("IT-FMC-REPLAY-001 [BR-SCOPE-001]: lost replies require fresh repair through production wiring", func(verb string) {
+		available.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		Expect(syncer.Ready()).To(BeTrue())
+		before := proxy.Calls(verb)
+		proxy.Arm(verb)
+		err := syncer.SyncCluster(ctx, info)
+		Expect(proxy.Calls(verb)-before).To(Equal(1), "must not replay the executed mutation")
+		Expect(err).To(MatchError(scopecache.ErrAmbiguousWrite))
+		Expect(syncer.Ready()).To(BeFalse(), "a lost reply must invalidate the old clean readiness proof")
+		result, _ := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
+		Expect(result.Managed).To(BeNil())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(), "only a fresh complete repair may restore clean state")
+		Expect(syncer.Ready()).To(BeTrue())
+		result, err = checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+	}, Entry("begin", "begin"), Entry("commit", "commit"))
+
+	It("IT-FMC-DEFERRED-001 [BR-SCOPE-001]: observed managed Nodes cannot authorize targets but Namespace observations still support inheritance", func() {
+		available.Store(true)
+		deferred.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		Expect(syncer.Ready()).To(BeTrue())
+		node := scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Node", Name: "observed"}
+		result, err := checker.Check(ctx, node)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnsupported))
+		Expect(result.Managed).To(BeNil())
+		mux := http.NewServeMux()
+		fmc.NewHandler(checker, clusterReg, logr.Discard()).RegisterRoutes(mux)
+		server := httptest.NewServer(mux)
+		DeferCleanup(server.Close)
+		response, err := http.Get(server.URL + fmc.ScopeCheckPath + "?cluster=" + cluster + "&version=v1&kind=Node&name=observed")
+		Expect(err).ToNot(HaveOccurred())
+		body, err := io.ReadAll(response.Body)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(response.StatusCode).To(Equal(http.StatusServiceUnavailable))
+		Expect(string(body)).NotTo(ContainSubstring("managed"))
+		remote := fmc.NewHTTPClient(server.URL)
+		managed, err := remote.IsManagedResource(ctx, node)
+		Expect(err).To(HaveOccurred())
+		Expect(managed).To(BeFalse())
+		managed, err = remote.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeTrue(), "internal Namespace observations must remain available for inheritance")
 	})
 
 	It("IT-FMC-BROKER-001 [BR-SCOPE-001, BR-INTEGRATION-065]: successful connection cannot authorize a resource until real observations commit", func() {

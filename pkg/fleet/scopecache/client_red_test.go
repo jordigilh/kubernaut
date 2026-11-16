@@ -25,6 +25,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 type noOpStatusStore struct{}
@@ -50,6 +51,25 @@ func (noOpStatusStore) ReadVerified(context.Context, scopecache.FencedReadReques
 }
 
 var _ = Describe("Status-store scope cache client (BR-SCOPE-001)", func() {
+	DescribeTable("UT-FMC-DEFERRED-001 [BR-SCOPE-001]: cluster-scoped target checks are unsupported", func(kind, namespace string) {
+		// A verified-present managed observation must not authorize a deferred target.
+		reader := &mockCacheReader{store: make(map[string]bool)}
+		key, err := scopecache.BuildKey("cluster", "", "v1", kind, namespace, "target")
+		Expect(err).ToNot(HaveOccurred())
+		reader.store[key] = true
+		result, err := scopecache.NewClient(reader).Check(context.Background(), scope.ResourceIdentity{
+			ClusterID: "cluster", Version: "v1", Kind: kind, Namespace: namespace, Name: "target",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnsupported))
+		Expect(result.Managed).To(BeNil())
+	},
+		Entry("Node", "Node", ""),
+		Entry("PersistentVolume", "PersistentVolume", ""),
+		Entry("Namespace as target, not internal observation", "Namespace", ""),
+		Entry("unknown cluster-scoped kind", "CustomClusterResource", ""),
+		Entry("known cluster-scoped kind cannot gain scope from a supplied namespace", "Node", "default"),
+	)
 	It("UT-FMC-CACHE-015 [BR-SCOPE-001]: does not panic when legacy IsManaged is called without a reader", func() {
 		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
 		Expect(err).ToNot(HaveOccurred())
