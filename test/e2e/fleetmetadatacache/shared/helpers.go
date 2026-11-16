@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -55,8 +56,15 @@ func ScopeCheckUnavailable(g Gomega, h *Harness, identity scope.ResourceIdentity
 	resp := scopeCheckResponse(g, h, identity)
 	defer func() { _ = resp.Body.Close() }()
 	g.Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable), "missing target must be unavailable")
+	raw, err := io.ReadAll(resp.Body)
+	g.Expect(err).NotTo(HaveOccurred())
+	// Handler.ScopeCheck uses http.Error for unavailable results, not the
+	// JSON success response. Match that exact body; arbitrary text is not proof.
+	if string(raw) == "scope check temporarily unavailable\n" {
+		return
+	}
 	var body map[string]json.RawMessage
-	g.Expect(json.NewDecoder(resp.Body).Decode(&body)).To(Succeed())
+	g.Expect(json.Unmarshal(raw, &body)).To(Succeed())
 	g.Expect(body).NotTo(HaveKey("managed"), "unavailable must not assert a managed decision")
 }
 

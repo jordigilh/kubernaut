@@ -164,6 +164,45 @@ AF's prior PostgreSQL pull failure did not recur; its deeper cause remains
 unproven (<90%). Fleet fenced-read and FullPipeline conflict causes remain <90%;
 no speculative production, RBAC, workflow or baseline merge changes are included.
 
+### Bounded CI round 4 — unavailable error-body fixture (2026-11-16)
+
+Run `43818322134` at `863823ef7adcef0f0ac9a08b5795b22f3dbf65fb`
+produced a fresh terminal Kuadrant job failure (`133138839624`): 14 passed,
+one failed, one ordered skip. `E2E-FMC-054-015` reaches the absent-target
+assertion at `cross_cluster_isolation.go:83`; the helper fails JSON decoding
+at `helpers.go:59` (`invalid character 's'`). Production `handler.go:127`
+deliberately uses `http.Error` with `scope check temporarily unavailable\n`
+and status 503. This is a test-helper wire-format mismatch, not evidence for
+changing the public API or scope decision. Other lanes were still running
+when this bounded failure was selected; no overall qualification is claimed.
+
+- Requirements: BR-SCOPE-001 / BR-INTEGRATION-065; DD-FLEET-013 C1 unchanged.
+- RED: extend existing `UT-FMC-E2E-003` with the exact production text body
+  and rejection of arbitrary proxy text. Nine helper cases run; the production
+  text case fails before the change (eight pass).
+- GREEN: retain mandatory 503; accept only that exact plain-text error or the
+  existing JSON object without a `managed` member. JSON bodies asserting a
+  managed decision and incorrect HTTP statuses still fail.
+- REFACTOR: N/A; minimal error-body handling leaves no additional abstraction
+  to improve. No production, parser, fencing, RBAC or deployment changes.
+- Local validation: all nine helper cases plus FMC unit tests pass under
+  `-race`; `go build ./...`, repository-wide compile-only tests, scoped helper
+  lint (zero issues), and `git diff --check` pass. Live qualification requires
+  fresh standalone E2E lanes after push.
+
+Read-only source investigation also corrects the previous Fleet hypothesis:
+`extractTargetResource` does not consume an `apiVersion` alert label; it derives
+the version from the API resource registry. `ResolveFingerprintWithCluster`
+then constructs a new owner identity without `APIVersion` whenever a resolver
+is present. Adding the label to the fixture alone cannot repair that handoff.
+The owner interface returns only kind/name; a safe changed-kind owner's GVK
+requires authoritative discovery, not copying a Pod's version or guessing.
+Capture the current Fleet failure and resolved owner identity before selecting
+a bounded production correction. No such correction is included in this round.
+The separate fenced-read and approval-conflict causes remain unproven (<90%).
+The sole active producer thread still needs exact digest/config, tools/list,
+and empty/nonempty gateway wire captures; strict parsing remains unchanged.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head

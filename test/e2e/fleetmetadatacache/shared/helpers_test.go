@@ -71,6 +71,8 @@ var _ = Describe("BR-SCOPE-001: missing-target isolation assertions", func() {
 			}
 		},
 		Entry("missing target", http.StatusServiceUnavailable, `{"error":"resource unavailable"}`, true),
+		Entry("production http.Error unavailable body", http.StatusServiceUnavailable, "scope check temporarily unavailable\n", true),
+		Entry("unrecognized plain text is not the unavailable contract", http.StatusServiceUnavailable, "unexpected proxy error", false),
 		Entry("verified false is not absence", http.StatusOK, `{"managed":false}`, false),
 		Entry("verified true is not absence", http.StatusOK, `{"managed":true}`, false),
 		Entry("auth failure is not absence", http.StatusForbidden, `{"error":"forbidden"}`, false),
