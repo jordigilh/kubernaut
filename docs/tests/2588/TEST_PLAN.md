@@ -38,6 +38,31 @@ Three source-attributed causes, proven by CI logs and must-gather:
    to `%x`), producing 72 characters and failing the CRD's 64-byte ceiling.
    Replaced with a SHA-256 hex digest of the test name.
 
+### Post-validation fixes for run 43953700162 (head ba2a74c9e)
+
+Run 43953700162 confirmed the ba2a74c9e fixes: AA E2E, AA integration, DS
+E2E and RO E2E are green. Two fixture regressions remained:
+
+1. **IT-RO-2570-043 (Ansible)** — the mock AWX in
+   `test/integration/remediationorchestrator/override_flow_test.go` omitted
+   `organization` on the job-template GET and had no `/api/v2/labels/`
+   endpoint, so the new fail-closed organization check correctly rejected
+   the launch ("job template 7 has no organization for launch labels").
+   Fixture-only fix: the template response now carries `organization: 1`
+   and the mock serves the label search (empty results) and create (PK 64)
+   endpoints the production client calls. The fail-closed production check
+   is unchanged.
+2. **E2E-WE-2588-002** — the spec replaced `wfe.Spec.Parameters` with only
+   `FAILURE_MESSAGE`, dropping the required `TARGET_RESOURCE`; the
+   controller correctly failed closed (ConfigurationError). Fixture-only
+   fix: the spec now submits exactly the oomkill workflow's declared
+   parameter set (`TARGET_RESOURCE` and `FAILURE_MESSAGE`); the builder's
+   undeclared `MESSAGE` is not submitted.
+
+TC-E2E-KA-FLOW-02 (AF E2E) hit the agent's `max_sessions` capacity with
+zero code overlap with this PR; the next CI run re-executes the lane and a
+repeat failure triggers a session-leak investigation.
+
 | Component | Production entry | Wiring location | Proving test |
 |-----------|------------------|-----------------|--------------|
 | Parent RR type registration | AIAnalysis process startup | cmd/aianalysis/main.go init | IT-AA-2588-010 |

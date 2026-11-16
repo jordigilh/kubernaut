@@ -436,23 +436,41 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		launches := make(chan map[string]interface{}, 1)
 		if engine == ansibleEngine {
 			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v2/labels/", func(w http.ResponseWriter, r *http.Request) {
+				// #2588: the executor resolves launch labels to AWX label
+				// PKs inside the template organization before launching.
+				switch r.Method {
+				case http.MethodGet:
+					_, _ = w.Write([]byte(`{"results":[]}`))
+				case http.MethodPost:
+					w.WriteHeader(http.StatusCreated)
+					_, _ = w.Write([]byte(`{"id":64}`))
+				default:
+					http.NotFound(w, r)
+				}
+			})
 			mux.HandleFunc("/api/v2/job_templates/", func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/v2/job_templates/" && r.Method == http.MethodGet {
 					_, _ = w.Write([]byte(`{"count":1,"results":[{"id":7}]}`))
 					return
 				}
 				if r.URL.Path == "/api/v2/job_templates/7/" && r.Method == http.MethodGet {
-					_, _ = w.Write([]byte(`{"id":7,"ask_labels_on_launch":true,"job_slice_count":1}`))
+					_, _ = w.Write([]byte(`{"id":7,"ask_labels_on_launch":true,"job_slice_count":1,"organization":1}`))
 					return
 				}
 				if r.URL.Path == "/api/v2/job_templates/7/launch/" && r.Method == http.MethodPost {
 					var payload struct {
 						ExtraVars map[string]interface{} `json:"extra_vars"`
+						Labels    []int                  `json:"labels"`
 					}
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 						http.Error(w, "invalid launch payload", http.StatusBadRequest)
 						return
 					}
+					// #2588: the production client resolves the launch label
+					// to an AWX label primary key before launching.
+					Expect(payload.Labels).To(Equal([]int{64}),
+						"the launch must carry the resolved label PK, never the label name")
 					select {
 					case launches <- payload.ExtraVars:
 					default:

@@ -750,7 +750,14 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}
 			wfe.Spec.WorkflowRef.WorkflowID = infrastructure.RegisteredWorkflowUUIDs["test-job-oomkill"]
 			wfe.Spec.WorkflowRef.ExecutionBundle = infrastructure.TestJobOomkillExecutionBundle
-			wfe.Spec.Parameters = typedStringParameters(map[string]string{"FAILURE_MESSAGE": "E2E-WE-2588 cancellation"})
+			// Use exactly the oomkill workflow's declared parameter set:
+			// TARGET_RESOURCE and FAILURE_MESSAGE. The builder's MESSAGE is
+			// not declared by this workflow and would be rejected by the
+			// live-schema pre-execution validation (ConfigurationError).
+			wfe.Spec.Parameters = typedStringParameters(map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"FAILURE_MESSAGE": "E2E-WE-2588 cancellation",
+			})
 			Expect(wfe.Spec.WorkflowRef.WorkflowID).NotTo(BeEmpty(), "OOM-kill workflow must be registered")
 			defer func() { _ = deleteWFE(wfe) }()
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
