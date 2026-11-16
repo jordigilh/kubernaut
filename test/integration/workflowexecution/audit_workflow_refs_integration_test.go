@@ -169,7 +169,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					}),
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -324,7 +324,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()

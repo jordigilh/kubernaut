@@ -98,7 +98,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
 			}
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"NAMESPACE": `"default"`})
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -150,7 +150,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "it-remediation-config-002"}},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -186,7 +186,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			// Issue #1481: registration/admission-time dependency check is gone —
@@ -221,7 +221,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 
 		It("IT-WE-1645-001 [BR-WORKFLOW-008]: should enrich the Failed message from the Pod's image-pull-failure event", func() {
 			wfe := dependencyWFE("depres-1645-001", "default/deployment/dep-test-1645-001")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -246,7 +246,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
 			wfe := dependencyWFE("depres-005", "default/deployment/dep-test-005")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)

@@ -57,7 +57,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 				"HALLUCINATED": "should-be-stripped",
 				"INJECTED":     "malicious-value",
 			})
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
@@ -76,7 +76,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 				"NAMESPACE": "default",
 				"CUSTOM":    "value",
 			})
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
@@ -92,7 +92,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 				"NAMESPACE": "default",
 				"REPLICAS":  "3",
 			})
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -119,7 +119,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 					"HALLUCINATED": "should-be-stripped",
 				}))
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
 			failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
@@ -138,7 +138,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 					"CUSTOM":    "value",
 				}))
 			wfe.Spec.WorkflowRef.WorkflowID = "missing-workflow"
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
 			expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)

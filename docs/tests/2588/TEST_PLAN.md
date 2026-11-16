@@ -11,6 +11,95 @@
 
 ## 1. Purpose and objectives
 
+### Production WorkflowExecution parent-watch scheme registration
+
+Run 43801432628 deployed WE E2E is blocked before reconciliation: must-gather
+records `no kind is registered for the type v1alpha1.RemediationRequest`, then
+parent-watch cache sync timeout. Before the fix, `cmd/workflowexecution.init`
+registered WFE, workflow catalog and Tekton types, but not RR. Integration setup separately
+registers RR, so a passing controller integration suite cannot detect this.
+
+RED: IT-WE-2588-026 resolves both RR and RRList using the actual production
+scheme initialized by `cmd/workflowexecution.init`; neither test registers types.
+GREEN: add the existing RR AddToScheme call alongside the existing registrations.
+REFACTOR: N/A (one existing registration pattern, no new component).
+BR-ORCH-029; no audit schema, permissions or lifecycle semantics change.
+
+| Component | Production entry | Wiring location | Proving test |
+|-----------|------------------|-----------------|--------------|
+| Parent RR type registration | WE process startup | cmd/workflowexecution/main.go init | IT-WE-2588-026 |
+
+Validate RED/GREEN, cmd and controller unit suites, build/lint and affected
+compile checks. CI WE E2E must prove deployed cache sync and dispatch after push.
+
+### WorkflowExecution normal-execution fixture follow-up
+
+Test-only scope (BR-ORCH-029, BR-WE-014): create real active parent RRs before
+normal-execution WFE creation and bind the actual API-server UID, namespace,
+API version and same-namespace controller owner. Do not change production
+cancellation behavior or the ownerless/owned missing-parent unit tests
+UT-WE-2588-022/023. No new production components or wiring points.
+
+- RED (5 minutes): IT-WE-2588-024 exercises Job, Tekton and minimal fixtures
+  through the running controller and requires a persisted Executing parent,
+  matching reference/owner UID and Running WFE with an execution reference.
+- GREEN (15 minutes): an explicit test creation helper provisions the parent
+  before WFE creation; normal suite call sites use it, while raw client creation
+  remains available for missing-parent scenarios.
+- REFACTOR: remove fabricated Job-parent UIDs and centralize parent setup and
+  cleanup without changing target, workflow, audit-correlation or phase assertions.
+- Verification: focused fixture IT, full WE integration, unchanged missing-parent
+  unit specs, compile/build/lint and diff checks. Use the already loaded CI ARM64
+  DataStorage artifact only; no local image builds. Estimate 10–15 minutes for
+  the full integration suite. Report infrastructure blockers separately.
+
+Success: all three fixture variants prove the active-parent dispatch contract;
+both missing-parent contracts remain green. A failed unrelated baseline does not
+authorize unrelated production changes or relaxed assertions. Fixture rollback
+is test-only; the separate startup registration fix is described above.
+
+Implementation: normal suite creation sites now call
+`createWorkflowExecutionWithActiveParent`; it persists an RR, sets Executing
+through the status subresource, and binds the API-server-assigned UID before
+creating the WFE. Existing same-name active parents are reused rather than
+replaced. Same-namespace controller ownership is set explicitly; cross-namespace
+spec references retain the real namespace/UID without an invalid owner reference.
+The Job builder no longer fabricates a parent UUID. IT-WE-2588-025 deliberately
+uses raw client creation to prove owned missing-parent cancellation remains
+available. UT-WE-2588-022/023 and production cancellation semantics are unchanged;
+the production scheme registration is the only production change in this follow-up.
+IT-WE-2588-027 additionally proves same-namespace defaulting, cross-namespace
+reference persistence without invalid ownership, and sequential reuse of an
+active parent's UID/resourceVersion. It does not promise concurrent creation of
+the same parent by independent helper calls.
+
+Validation: full WE controller unit suite, the two focused missing-parent specs,
+integration-package compilation, repository build/compile and full lint pass.
+The normal integration invocation is blocked in BeforeSuite: the CI ARM64
+DataStorage image is used successfully, but Podman cannot unpack PostgreSQL
+(`lchown /etc/shadow: invalid argument`); no behavior specs execute, and teardown
+also encounters its pre-existing nil-manager panic. No image was built or Podman
+configuration changed to bypass this blocker.
+
+Reproducible checks use tracked tests, not temporary diagnostic scripts:
+
+```bash
+go test ./cmd/workflowexecution ./internal/controller/workflowexecution -count=1
+go test ./test/integration/workflowexecution -run='^$' -count=1
+golangci-lint run --timeout=5m
+```
+
+In CI with preloaded operand artifacts, run the focused suite with
+`-ginkgo.focus='IT-WE-2588-02[457]'`, then the full
+`make test-integration-workflowexecution` and `make test-e2e-workflowexecution`.
+Do not run image-building targets locally. The tracked tests are
+`cmd/workflowexecution/scheme_2588_test.go` and
+`test/integration/workflowexecution/parent_fixture_test.go`; CI logs/artifacts
+must be tied to the pushed commit. Local temporary admission diagnostics are
+supplementary only and are not a replacement for controller/dispatch or
+DataStorage/auth proof. Full IT-WE-2588-024/025/027 and deployed WE E2E remain
+unverified for this diff until that CI run passes.
+
 This plan proves that an RR cancellation is asynchronous and cooperative, does
 not claim terminal completion before child work stops, and remains observable
 when a backend cannot be stopped or verified. It also proves that cancellation

@@ -72,7 +72,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe.Spec.WorkflowRef.WorkflowID = missingWorkflowID
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 		var jobs batchv1.JobList
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
@@ -82,7 +82,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe := trustedJobWFE("undeclared-input", fmt.Sprintf("default/deployment/undeclared-input-%d", time.Now().UnixNano()))
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		failed, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(failed.Status.FailureDetails).NotTo(BeNil())
@@ -120,7 +120,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe := createUniqueJobWFE(fmt.Sprintf("identity-%d", time.Now().UnixNano()), fmt.Sprintf("default/deployment/identity-%d", time.Now().UnixNano()))
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		if shouldRun {
 			Eventually(func() string {
 				updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -150,7 +150,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		wfe := createUniqueJobWFE("no-catalog", targetResource)
 		wfe.Spec.WorkflowRef.WorkflowID = fmt.Sprintf("missing-%d", time.Now().UnixNano())
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		expectWFEIdentityRejectedBeforeMutation(wfe.Name, wfe.Namespace)
 		var jobs batchv1.JobList
 		Expect(k8sClient.List(ctx, &jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
@@ -168,7 +168,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for controller to create a Job and transition to Running")
 			Eventually(func() string {
@@ -215,7 +215,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {
@@ -262,7 +262,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with parameters")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Job creation")
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -318,7 +318,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with an explicit Spec.TimesOutAt")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for the real controller to create a Job")
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -342,7 +342,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			wfe := trustedJobWFE("cleanup", targetResource)
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase (Job created + finalizer added)")
 			Eventually(func() string {
@@ -397,7 +397,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating first WFE targeting the resource")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for first WFE to reach Running (Job created)")
 			Eventually(func() string {
@@ -430,7 +430,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Verifying a Job (not PipelineRun) was created")
 			Eventually(func() bool {
@@ -464,7 +464,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			targetResource := fmt.Sprintf("default/deployment/job-reentry-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("reentry", targetResource)
 			defer cleanupJobWFE(wfe)
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			Eventually(func() string {
 				updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -523,7 +523,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to transition to Running (Job created)")
 			Eventually(func() string {
@@ -579,7 +579,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {
@@ -626,7 +626,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {
@@ -677,7 +677,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for ExecutionCreated condition to be set")
 			key := client.ObjectKeyFromObject(wfe)
@@ -715,7 +715,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			key := client.ObjectKeyFromObject(wfe)
 
@@ -776,7 +776,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {
@@ -847,7 +847,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			By("Phase 1: Creating first WFE targeting the resource")
 			wfe1 := sequentialWFE("seq1", targetResource)
 			defer cleanupJobWFE(wfe1)
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for first WFE to reach Running (Job created)")
 			Eventually(func() string {
@@ -883,7 +883,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			wfe2.Spec.WorkflowRef.WorkflowID = differentID
 			wfe2.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/sequence-b:v2"
 			defer cleanupJobWFE(wfe2)
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 			By("Waiting for second WFE to reach Running without stale Job replacement")
 			Eventually(func() string {
@@ -934,7 +934,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			defer cleanupJobWFE(wfeSame)
 			defer cleanupJobWFE(wfeDifferent)
 
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
 				if err != nil {
@@ -953,7 +953,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
-			Expect(k8sClient.Create(ctx, wfeSame)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeSame)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfeSame.Name, wfeSame.Namespace)
 				if err != nil {
@@ -973,7 +973,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			}, 2*time.Second, 200*time.Millisecond).Should(Equal(0),
 				"same-workflow cooldown must prevent Job creation")
 
-			Expect(k8sClient.Create(ctx, wfeDifferent)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeDifferent)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfeDifferent.Name, wfeDifferent.Namespace)
 				if err != nil {
@@ -1003,7 +1003,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			}()
 			reconciler.SetFailedExecutionRetention(true, time.Minute)
 
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
 				if err != nil {
@@ -1022,7 +1022,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
 				if err != nil {
@@ -1086,7 +1086,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		}()
 
 		By("Creating a WFE with executionEngine=job and catalog-resolved resources")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 		By("Waiting for the controller to create a Job")
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -1116,7 +1116,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		}()
 
 		By("Creating a WFE with executionEngine=job and no catalog resources")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 		By("Waiting for the controller to create a Job")
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -1144,7 +1144,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		}()
 
 		By("Creating a WFE with executionEngine=job")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 		By("Waiting for the controller to create a Job")
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -1195,7 +1195,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		}()
 
 		By("Creating a WFE with executionEngine=job")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 		By("Waiting for the controller to create a Job")
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -1243,7 +1243,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		}()
 
 		By("Creating a WFE with executionEngine=job")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 		By("Waiting for the controller to create a Job")
 		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
@@ -1302,7 +1302,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		defer cleanupJobWFE(wfe1)
 		defer cleanupJobWFE(wfe2)
 
-		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 		Eventually(func() string {
 			updated, err := getWFE(wfe1.Name, wfe1.Namespace)
 			if err != nil {
@@ -1336,7 +1336,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		_, err = waitForWFEPhase(wfe1.Name, wfe1.Namespace, workflowexecutionv1alpha1.PhaseCompleted, 15*time.Second)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 		Eventually(func() string {
 			updated, err := getWFE(wfe2.Name, wfe2.Namespace)
 			if err != nil {

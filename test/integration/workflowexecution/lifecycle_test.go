@@ -59,7 +59,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			}()
 
 			// Create WFE
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Verify created
 			Eventually(func() error {
@@ -80,7 +80,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				cleanupWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Verify spec preserved
 			created, err := getWFE(wfe.Name, wfe.Namespace)
@@ -109,7 +109,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				cleanupWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for controller to set status to Running (creates PipelineRun)
 			Eventually(func() string {
@@ -137,7 +137,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				cleanupWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for controller to set ExecutionRef
 			Eventually(func() bool {
@@ -167,7 +167,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			wfe := lifecycleWFE("delete", targetResource)
 
 			// Create first
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for Running phase (controller adds finalizer)
 			Eventually(func() string {
@@ -194,7 +194,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			wfe := lifecycleWFE("finalizer", targetResource)
 
 			// Create WFE
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for controller to add finalizer (happens when Running)
 			Eventually(func() bool {
@@ -231,7 +231,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			wfe := lifecycleWFE("restart-recovery", targetResource)
 
 			// Create WFE
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for Running phase (PR created + finalizer added)
 			Eventually(func() string {
@@ -282,7 +282,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			}()
 
 			// Should succeed
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			GinkgoWriter.Println("✅ Valid WFE spec accepted")
 		})

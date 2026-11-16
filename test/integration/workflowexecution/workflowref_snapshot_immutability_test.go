@@ -91,7 +91,7 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 		wfe := newWFE(name)
 
 		By("creating a WorkflowExecution with the CRD-embedded snapshot fields populated")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
 		// RetryOnConflict below only re-runs the Get+mutate+Update body while
@@ -161,7 +161,7 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 		wfe := newWFE(name)
 
 		By("creating a WorkflowExecution with nil parameters")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
 		By("the first post-create update (finalizer registration, no spec change) must succeed (Issue #2284)")
