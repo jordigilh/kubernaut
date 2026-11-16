@@ -25,6 +25,7 @@ limitations under the License.
 package audit
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -411,18 +412,15 @@ func (m *Manager) BuildPhaseTransitionEvent(params PhaseTransitionEventParams) (
 }
 
 // BuildCancellationLifecycleEvent builds an idempotent lifecycle transition
-// audit event for a cancellation stage. The stage is part of the deterministic
-// event ID, so controller retries do not create duplicate logical events.
+// audit event for a cancellation observation. Identity includes the stage and
+// logical content, so identical retries deduplicate while changed observations
+// retain their evidence without conflicting with DD-AUDIT-010 payload binding.
 func (m *Manager) BuildCancellationLifecycleEvent(params CancellationLifecycleEventParams) (*api.AuditEventRequest, error) {
 	outcome := "success"
 	if params.Failure != nil {
 		outcome = "failure"
 	}
 	event := audit.NewAuditEventRequest()
-	audit.SetEventID(event, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
-		"remediationorchestrator/cancellation/%s/%s/%s/%s/%s/%s",
-		params.Namespace, params.RRName, params.RRUID, params.RequestID, params.Stage, outcome,
-	))))
 	audit.SetEventType(event, EventTypeLifecycleTransitioned)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionTransitioned)
@@ -470,6 +468,20 @@ func (m *Manager) BuildCancellationLifecycleEvent(params CancellationLifecycleEv
 		payload.Message = api.OptString{Value: params.Failure.Error(), Set: true}
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
+	// BR-AUDIT-005: a failed status write can replay this stage after concurrent
+	// phase progress; retries can also observe different failures or attribution.
+	// Match DataStorage's logical-content contract, not the observation timestamp.
+	logicalEvent := *event
+	logicalEvent.EventID.SetTo(uuid.Nil)
+	logicalEvent.EventTimestamp = time.Time{}
+	logicalPayload, err := json.Marshal(&logicalEvent)
+	if err != nil {
+		return nil, fmt.Errorf("marshal cancellation audit identity: %w", err)
+	}
+	audit.SetEventID(event, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
+		"remediationorchestrator/cancellation/%s/%s/%s/%s/%s/%s/%s",
+		params.Namespace, params.RRName, params.RRUID, params.RequestID, params.Stage, outcome, logicalPayload,
+	))))
 	return event, nil
 }
 

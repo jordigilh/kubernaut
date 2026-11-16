@@ -47,6 +47,37 @@ func (s *cancellationAuditStore) Flush(context.Context) error { return nil }
 func (s *cancellationAuditStore) Close() error { return nil }
 
 var _ = Describe("RemediationRequest cancellation coordination", func() {
+	It("UT-AUDIT-2588-012: preserves request observations after concurrent phase progress (BR-AUDIT-005)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		c := fake.NewClientBuilder().WithScheme(scheme).Build()
+		store := &cancellationAuditStore{}
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: store,
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-cancel-race", Namespace: "system", UID: "rr-cancel-race-uid", DeletionTimestamp: &now},
+			Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhasePending},
+		}
+		// Cancellation status was not persisted when another reconcile advanced
+		// the parent. Retry sees the same incarnation and intent, but a new phase.
+		retry := rr.DeepCopy()
+		retry.Status.OverallPhase = remediationv1.PhaseProcessing
+		reconciler.initializeCancellationStatus(context.Background(), rr, rr.Status.OverallPhase)
+		reconciler.initializeCancellationStatus(context.Background(), retry, retry.Status.OverallPhase)
+		Expect(store.events).To(HaveLen(4))
+		Expect(rr.Status.Cancellation.RequestID).To(Equal(retry.Status.Cancellation.RequestID))
+		Expect(store.events[1].EventID.Value).NotTo(Equal(store.events[3].EventID.Value))
+		first, ok := store.events[1].EventData.GetRemediationOrchestratorAuditPayload()
+		Expect(ok).To(BeTrue())
+		second, ok := store.events[3].EventData.GetRemediationOrchestratorAuditPayload()
+		Expect(ok).To(BeTrue())
+		Expect(first.FromPhase.Value).To(Equal("Pending"))
+		Expect(second.FromPhase.Value).To(Equal("Processing"))
+	})
+
 	It("UT-AUDIT-2588-004: initializes cancellation request identity before the first cancellation audit", func() {
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())

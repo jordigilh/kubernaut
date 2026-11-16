@@ -313,6 +313,53 @@ var _ = Describe("Audit Manager", func() {
 	})
 
 	Describe("BuildCancellationLifecycleEvent", func() {
+		// BR-AUDIT-005 / DD-AUDIT-010: a retry may observe concurrent phase
+		// progress or a different failure, but must not poison the audit batch
+		// by binding changed logical content to an already claimed event ID.
+		DescribeTable("UT-AUDIT-2588-010: distinguishes changed cancellation observations while deduplicating identical retries",
+			func(change func(*prodaudit.CancellationLifecycleEventParams)) {
+				params := prodaudit.CancellationLifecycleEventParams{
+					CorrelationID: "rr-cancel-replay", Namespace: "system", RRName: "rr-cancel-replay",
+					RRUID: "rr-cancel-replay-uid", RequestID: "system/rr-cancel-replay:cancellation",
+					Stage: "request", FromPhase: "Pending", ToPhase: "Cancelling",
+				}
+				first, err := manager.BuildCancellationLifecycleEvent(params)
+				Expect(err).NotTo(HaveOccurred())
+				change(&params)
+				changed, err := manager.BuildCancellationLifecycleEvent(params)
+				Expect(err).NotTo(HaveOccurred())
+				replayed, err := manager.BuildCancellationLifecycleEvent(params)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(changed.EventID.Value).NotTo(Equal(first.EventID.Value), "different logical content must never reuse an audit ID")
+				Expect(replayed.EventID.Value).To(Equal(changed.EventID.Value), "identical observations must remain idempotent")
+				Expect(changed.CorrelationID).To(Equal(first.CorrelationID))
+			},
+			Entry("phase progressed after an unsuccessful cancellation status update", func(p *prodaudit.CancellationLifecycleEventParams) { p.FromPhase = "Processing" }),
+			Entry("actor attribution changed", func(p *prodaudit.CancellationLifecycleEventParams) { p.ActorID = "kubernetes-api" }),
+		)
+
+		It("UT-AUDIT-2588-011: retains distinct failure evidence without conflicting IDs (BR-AUDIT-005)", func() {
+			params := prodaudit.CancellationLifecycleEventParams{
+				CorrelationID: "rr-cancel-failures", Namespace: "system", RRName: "rr-cancel-failures",
+				RRUID: "rr-cancel-failures-uid", RequestID: "system/rr-cancel-failures:cancellation",
+				Stage: "child.workflowexecution.failed", FromPhase: "cancellation.workflowexecution.requested",
+				ToPhase: "cancellation.workflowexecution.failed", FailurePhase: "WorkflowExecution",
+				Failure: errors.New("backend lookup timed out"),
+			}
+			first, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			params.Failure = errors.New("backend access denied")
+			second, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			replayed, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second.EventID.Value).NotTo(Equal(first.EventID.Value))
+			Expect(replayed.EventID.Value).To(Equal(second.EventID.Value))
+			payload, ok := second.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.ErrorDetails.Value.Message).To(ContainSubstring("backend access denied"))
+		})
+
 		It("UT-AUDIT-2588-001: builds a correlated, deterministic typed event", func() {
 			params := prodaudit.CancellationLifecycleEventParams{
 				CorrelationID: "rr-cancel-audit",

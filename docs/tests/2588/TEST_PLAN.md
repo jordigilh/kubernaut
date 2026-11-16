@@ -319,3 +319,76 @@ cause is fixed. No pending or skipped tests may remain at completion.
 ### Approval gate
 
 Issue #2588 remains **not approved** only because ENVTEST, live issue-specific SAR, and deployed E2E evidence are unavailable in this environment. The latest Engram-grounded closure review is complete and found no unresolved source-level lifecycle, AWX recovery, credential-ownership, identity, audit, retry, or wiring findings. The implementation is review-clean subject to the unavailable runtime evidence.
+
+## Audit 409 regression follow-up (PR #2643)
+
+Scope: BR-AUDIT-005 / DD-AUDIT-010, SOC2 CC7.2 and FedRAMP AU-2/AU-3/AU-9.
+This follow-up supersedes the earlier source-level audit-clear statement above:
+stage/outcome-only cancellation IDs can conflict when the logical observation changes.
+
+- **RED (~5 minutes):** UT-AUDIT-2588-010 covers phase progress after a failed
+  cancellation status update and changed actor attribution; UT-AUDIT-2588-011
+  covers changed failure details. UT-AUDIT-2588-012 exercises production RO
+  initialization on pre/post-progress snapshots. Identical observations must retain their ID.
+  IT-AUDIT-2588-002 proves distinct observations and identical retries survive
+  the real buffered DataStorage ingestion/query path.
+- **GREEN (~5 minutes):** bind the existing deterministic cancellation identity
+  to canonical event content, excluding the observation timestamp. Change only
+  the audit builder; preserve request/UID identity, all-child acknowledgement,
+  persisted retry budgets, finalizers, and notification behavior.
+- **REFACTOR:** N/A if the minimal builder change leaves no separate cleanup.
+- **Validation (~10 minutes):** focused RED/GREEN, audit/controller unit suites,
+  real PostgreSQL/HTTP-handler replay, affected integration test, build and lint.
+  No new component or wiring point is introduced. The existing audit wiring row
+  remains authoritative; IT-AUDIT-2588-002 adds ingestion/idempotency proof.
+- **Rollback/risk:** revert only this follow-up commit if necessary. Content-bound
+  IDs differ from earlier stage-only IDs; replay across versions can therefore
+  add one observation rather than deduplicate against the old key. Do not weaken
+  DataStorage conflict detection or drop retained audit events to mask a failure.
+
+Diagnostic evidence at starting HEAD `2c9b0c3d3`: production RO initialization
+on snapshots of the archived RR identity (namespace `kubernaut-system-p2`,
+name `rr-rar-schema-7e82e144`, UID `226e9720-7803-43e9-931e-af93da4ae4dc`)
+emits ID `c5e30c66-1c8c-57ae-8ed0-9135ea288962` for both `Pending -> Cancelling`
+and `Processing -> Cancelling` request observations. A real PostgreSQL 16 database
+with production migrations 001–020 and the production DataStorage batch HTTP
+handler accepts identical replay (201), then rejects the changed payload (409).
+This reconstructs a collision using archived identity; the original CI request
+bodies and conflicting ID were not captured, so attribution of that exact CI
+failure remains evidence-supported rather than directly observed.
+
+The initial focused integration replay ran zero specs: DataStorage image startup
+failed during `dnf update` (`/usr/bin/write`: `cpio: chown failed - No data available`).
+Do not attribute that environment failure to the audit change.
+
+### Follow-up validation results
+
+- RED: all four new unit scenarios failed against the stage/outcome-only IDs;
+  PostgreSQL/HTTP-handler replay captured the conflict detail above.
+- GREEN: audit manager (62 specs) and RO controller (433 specs) pass. The broader
+  affected race run passes for `./pkg/remediationorchestrator/...`,
+  `./internal/controller/remediationorchestrator`, `./cmd/remediationorchestrator`,
+  `./pkg/audit`, and `./pkg/datastorage/repository`.
+- Native integration GREEN: production RO initialization, BufferedAuditStore,
+  generated OpenAPI HTTP client, production DataStorage batch handler, and real
+  PostgreSQL 16 with migrations 001–020 persist two distinct observations while
+  deduplicating identical replay. This diagnostic bypasses auth middleware; it
+  is not a substitute for envtest TokenReview/SAR or deployed E2E qualification.
+- `go build ./...`, scoped `golangci-lint run --timeout=5m` (zero issues), integration
+  package compile-only, and `git diff --check` pass. No new component, lifecycle
+  transition, dependency, or retry behavior was introduced. Anti-pattern review:
+  no added interface, context field, goroutine, ignored error, or deep nesting.
+- IT-AUDIT-2588-002 is implemented and compiles, but its full infrastructure run
+  remains blocked by the local image-build failure. No tests were disabled or
+  weakened. Scoped new unit scenarios: 4/4 passing, including critical integrity
+  contracts; existing UID/deterministic-replay tests remain green.
+- Starting-HEAD CI run `43791520735` subsequently passed RO integration and E2E
+  `#1111`, confirming nondeterminism rather than disproving the reproduced race.
+  Its RO E2E job finished 36 passed / 3 failed, all in `approval_e2e_test.go`
+  (lines 234, 322, and BeforeEach 586). These are not certified resolved by this
+  audit-only fix; their attribution is outside this follow-up's evidence.
+
+Artifacts (local, not committed):
+`/private/var/folders/r7/gktmmltd1zq7wqhsjjslwsm80000gn/T/opencode/audit409-diagnostic/`
+contains `events.json`, `problem.json`, `events-green.json`, RED/GREEN/race logs,
+temporary Go overlays and the failed infrastructure replay log.

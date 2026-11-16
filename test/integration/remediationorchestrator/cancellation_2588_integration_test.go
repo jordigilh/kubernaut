@@ -21,6 +21,7 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -57,6 +58,41 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 
 	AfterEach(func() {
 		deleteTestNamespace(targetNamespace)
+	})
+
+	It("IT-AUDIT-2588-002: persists changed cancellation observations and deduplicates identical retries (BR-AUDIT-005)", func() {
+		rrName := "rr-audit-replay-" + uuid.NewString()
+		params := roaudit.CancellationLifecycleEventParams{
+			CorrelationID: rrName, Namespace: ROControllerNamespace, RRName: rrName,
+			RRUID: uuid.NewString(), RequestID: ROControllerNamespace + "/" + rrName + ":cancellation",
+			Stage: "request", ToPhase: "Cancelling", ActorType: "service", ActorID: "kubernetes-api",
+		}
+		manager := roaudit.NewManager(roaudit.ServiceName)
+		for _, fromPhase := range []string{"Pending", "Processing", "Processing"} {
+			params.FromPhase = fromPhase
+			event, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(auditStore.StoreAudit(ctx, event)).To(Succeed())
+		}
+		Expect(auditStore.Flush(ctx)).To(Succeed(), "a changed cancellation observation must not reject the buffered batch")
+		response, err := dsClients.OpenAPIClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(rrName), EventType: ogenclient.NewOptString(roaudit.EventTypeLifecycleTransitioned),
+			EventCategory: ogenclient.NewOptString(roaudit.EventCategoryOrchestration),
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Data).To(HaveLen(2), "both distinct observations must persist, with identical replay deduplicated")
+		fromPhases := make([]string, 0, len(response.Data))
+		for _, event := range response.Data {
+			Expect(event.CorrelationID).To(Equal(rrName))
+			Expect(event.ActorID.Value).To(Equal("kubernetes-api"))
+			raw, err := json.Marshal(event.EventData)
+			Expect(err).NotTo(HaveOccurred())
+			var payload ogenclient.RemediationOrchestratorAuditPayload
+			Expect(json.Unmarshal(raw, &payload)).To(Succeed())
+			Expect(payload.ToPhase.Value).To(Equal("Cancelling"))
+			fromPhases = append(fromPhases, payload.FromPhase.Value)
+		}
+		Expect(fromPhases).To(ConsistOf("Pending", "Processing"))
 	})
 
 	It("IT-ORCH-2588-001: production cancel API dispatches an RR into the cancellation path", func() {
