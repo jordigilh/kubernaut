@@ -149,7 +149,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
-	It("projects only sanitized current policy and exact historical metadata", func() {
+	It("projects only exact historical metadata [BR-SCOPE-001, AC-4, AC-6, SI-10]", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
 			ID:         policyReadTestResourceID,
@@ -193,6 +193,12 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		}
 		ai.Status.RCAResult.SelectionAssessment = nil
 		ai.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"}
+		missingGVK := *ai.DeepCopy()
+		missingGVK.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = ""
+		invalidGVK := *ai.DeepCopy()
+		invalidGVK.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = "apps/"
+		otherGroup := *ai.DeepCopy()
+		otherGroup.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = "other.example/v1"
 		// PolicyEvaluation is persisted in the RCA result's investigation data in
 		// production; this fixture uses the public status shape and checks that
 		// absent fields remain absent rather than being inferred.
@@ -214,7 +220,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
 				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
 			}},
-			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai}, sp: []spv1.SignalProcessing{sp}},
+			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}, sp: []spv1.SignalProcessing{sp}},
 			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -227,7 +233,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Value).To(Equal(0.85))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("runtime-config"))
 		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:ai"))
-		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(2))
+		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
 		Expect(result.Items[0].HistoricalEvaluations[0].Source).To(Equal("AIAnalysis"))
 		Expect(result.Items[0].HistoricalEvaluations[0].MatchedRules).To(ConsistOf("production_requires_review"))
 		Expect(result.Items[0].InventoryLink).To(ContainSubstring("/inventory/managed-resources/" + resource.ID))

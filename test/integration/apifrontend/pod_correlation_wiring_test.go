@@ -98,6 +98,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
+			APIVersion:  "apps/v1",
 			Name:        "worker",
 			Description: "CrashLoopBackOff on worker pod",
 		}, "it-user")
@@ -177,6 +178,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
+			APIVersion:  "apps/v1",
 			Name:        "api-server",
 			Description: "Pod crash looping",
 		}, "it-user")
@@ -254,6 +256,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
+			APIVersion:  "apps/v1",
 			Name:        "web",
 			Description: "High memory usage",
 		}, "it-user")
