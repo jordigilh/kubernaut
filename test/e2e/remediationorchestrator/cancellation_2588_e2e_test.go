@@ -48,7 +48,7 @@ import (
 const e2eCancellationFinalizer = "kubernaut.ai/remediationrequest-cancellation"
 
 var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation", "issue-2588"), func() {
-	It("E2E-ORCH-2588-001 / E2E-NT-2588-003: holds RR cancellation until child acknowledgement and terminal notification delivery", NodeTimeout(4*time.Minute), func() {
+	It("E2E-ORCH-2588-001 / E2E-NT-2588-003: holds RR cancellation until child acknowledgement and terminal notification delivery", NodeTimeout(4*time.Minute), func(ctx SpecContext) {
 		targetNamespace := createTestNamespace(ctx, "ro-cancel-2588")
 		DeferCleanup(func() { deleteTestNamespace(targetNamespace) })
 
