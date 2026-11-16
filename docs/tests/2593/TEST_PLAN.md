@@ -1418,7 +1418,7 @@ credit may be claimed.
 | Target-kind/GVK matrix | Scope/API owner | `docs/tests/2593/evidence/kinds/` |
 | SignalProcessing schema and GVK handoff | SignalProcessing API owner | `docs/tests/2593/evidence/gvk/` |
 | Cache lifecycle, readiness, Lease, repair, and source wiring | FMC owner | `docs/tests/2593/evidence/fmc/` |
-| Review/disposition metadata | #2593 review coordinator | Current `TEST_PLAN.md`/RCA and commit history; ephemeral session captures are not committed |
+| Review/disposition metadata | #2593 review coordinator | Current `TEST_PLAN.md` and commit history; ephemeral session captures and PR-qualification dossiers are not committed |
 | AF audit and conditional route evidence | #2584/#2600 owner | Existing #2584 plan/evidence; no FMC credit |
 | RO routing audit evidence | RO audit owner | `docs/tests/2593/evidence/ro-audit/it-ro-audit-2593-001.json` plus command/output, persisted `RoutingBlockedData`, correlation reconstruction, owner/reviewer and both artifact hashes |
 | Authentication E2E control evidence | Security/operator owner | `docs/tests/2593/evidence/rbac/e2e/` for `E2E-FMC-AUTH-018` |
@@ -1529,7 +1529,7 @@ are recorded.
 | Identity/GVK evidence | `docs/tests/2593/evidence/rbac/`, `.../kinds/`, `.../gvk/` | Rendered RBAC, target-kind matrix, generated CRD and handoff proof |
 | Authentication E2E evidence | `docs/tests/2593/evidence/rbac/e2e/` | Real Kind TokenReview/SAR, 401/403/500 and identity/security-event proof, or approved risk acceptance |
 | External Page evidence | `docs/tests/2593/evidence/af-page/` | #2584/#2600 Page invariants, exact wire JSON, command and owner/reviewer record |
-| Review/disposition record | `docs/tests/2593/TEST_PLAN.md` and `docs/tests/2593/evidence/PR2637_RCA.md` | Current scope, dispositions, hashes and final CI evidence; ephemeral review/session captures are excluded |
+| Review/disposition record | `docs/tests/2593/TEST_PLAN.md` and commit history | Current scope and dispositions; ephemeral review/session captures and PR-qualification dossiers are excluded |
 | Coverage/evidence report | CI or manually attached artifact | 16/16 source scenarios, 19/19 wiring, 15/15 critical, separate 0/1 E2E, 0/3 AF/FMC/Page, and 0/1 RO-audit gates, controls and no sensitive leakage; no qualification claim |
 
 ## 13. Execution commands
