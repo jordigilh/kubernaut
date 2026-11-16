@@ -164,9 +164,9 @@ var _ = Describe("RemediationRequestStatus God-Struct Decomposition (BR-COMMON-0
 			},
 		}
 
-		copy := original.DeepCopy()
-		copy.Status.Cancellation.LastError = "changed"
-		copy.Status.Cancellation.RequestedAt.Time = copy.Status.Cancellation.RequestedAt.Time.Add(time.Minute)
+		cloned := original.DeepCopy()
+		cloned.Status.Cancellation.LastError = "changed"
+		cloned.Status.Cancellation.RequestedAt.Time = cloned.Status.Cancellation.RequestedAt.Add(time.Minute)
 
 		Expect(original.Status.Cancellation.LastError).To(Equal("original"))
 		Expect(original.Status.Cancellation.RequestedAt.Time).To(Equal(requestedAt.Time))

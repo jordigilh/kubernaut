@@ -60,7 +60,7 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 		deleteTestNamespace(targetNamespace)
 	})
 
-	It("IT-AUDIT-2588-002: persists changed cancellation observations and deduplicates identical retries (BR-AUDIT-005)", func() {
+	It("IT-AUDIT-2588-002: persists cancellation replay without blocking RAR decisions (BR-AUDIT-005/006)", func() {
 		rrName := "rr-audit-replay-" + uuid.NewString()
 		params := roaudit.CancellationLifecycleEventParams{
 			CorrelationID: rrName, Namespace: ROControllerNamespace, RRName: rrName,
@@ -71,6 +71,17 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 		for _, fromPhase := range []string{"Pending", "Processing", "Processing"} {
 			params.FromPhase = fromPhase
 			event, err := manager.BuildCancellationLifecycleEvent(params)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(auditStore.StoreAudit(ctx, event)).To(Succeed())
+		}
+		// RAR and cancellation controllers share this production buffer. A
+		// conflicting cancellation ID must not block unrelated decision evidence.
+		for _, decision := range []string{"Approved", "Rejected"} {
+			decisionRR := rrName + "-" + decision
+			event, err := manager.BuildApprovalDecisionEvent(roaudit.ApprovalEventContext{
+				CorrelationID: decisionRR, Namespace: ROControllerNamespace,
+				RRName: decisionRR, RARName: "rar-" + decisionRR,
+			}, decision, "kubernetes-admin", "audit replay regression")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(auditStore.StoreAudit(ctx, event)).To(Succeed())
 		}
@@ -93,6 +104,22 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 			fromPhases = append(fromPhases, payload.FromPhase.Value)
 		}
 		Expect(fromPhases).To(ConsistOf("Pending", "Processing"))
+		for _, decision := range []string{"Approved", "Rejected"} {
+			decisionRR := rrName + "-" + decision
+			response, err := dsClients.OpenAPIClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(decisionRR),
+				EventCategory: ogenclient.NewOptString(roaudit.EventCategoryOrchestration),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(response.Data).To(HaveLen(1), "cancellation replay must not block unrelated RAR audit events")
+			Expect(response.Data[0].CorrelationID).To(Equal(decisionRR))
+			Expect(response.Data[0].ResourceID.Value).To(Equal("rar-" + decisionRR))
+			raw, err := json.Marshal(response.Data[0].EventData)
+			Expect(err).NotTo(HaveOccurred())
+			var payload ogenclient.RemediationOrchestratorAuditPayload
+			Expect(json.Unmarshal(raw, &payload)).To(Succeed())
+			Expect(string(payload.Decision.Value)).To(Equal(decision))
+		}
 	})
 
 	It("IT-ORCH-2588-001: production cancel API dispatches an RR into the cancellation path", func() {

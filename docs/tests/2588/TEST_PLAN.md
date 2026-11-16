@@ -392,3 +392,40 @@ Artifacts (local, not committed):
 `/private/var/folders/r7/gktmmltd1zq7wqhsjjslwsm80000gn/T/opencode/audit409-diagnostic/`
 contains `events.json`, `problem.json`, `events-green.json`, RED/GREEN/race logs,
 temporary Go overlays and the failed infrastructure replay log.
+
+### Remaining RAR audit failures and lint closure
+
+Run `43791520735` must-gather records 745 RO batch HTTP 409 responses. The
+retained approval RARs `rar-e2e-rar-audit-1ebbc625` and
+`rar-e2e-rar-persist-35229e98` have `AuditRecorded=True` with explicit
+"accepted by audit buffer" messages at 02:47:13Z and 02:47:15Z, after the
+retained 409 log begins at 02:47:08Z. Approval and cancellation controllers
+share the production audit store. This supports shared-buffer blockage for the
+missing orchestration events, not a failure to make or enqueue the decisions.
+The rejection RAR is absent from the final snapshot; its exact enqueue state
+cannot be reconstructed from this archive alone.
+
+Extend IT-AUDIT-2588-002 (BR-AUDIT-005/006, CC7.2, AU-2/AU-3) before further
+production changes: enqueue both approval and rejection events behind changed
+cancellation observations in the same buffer, and prove each persists under
+its own correlation ID while identical cancellation replay still deduplicates.
+Keep E2E exact event-count assertions and timeouts unchanged. RED uses the
+old builder's conflicting IDs; GREEN uses the content-bound IDs. No additional
+production change or component is planned. REFACTOR: N/A for assertion-only
+extension. Post-fix CI must still prove the three deployed RAR scenarios.
+
+The two lint findings in UT-CRD-2588-001 are test style only: avoid shadowing
+the predeclared `copy` identifier and use the promoted `Add` method. Preserve
+the existing DeepCopy isolation assertions; validate the API unit suite and
+full repository lint.
+
+Closure validation: the API, audit-manager, and RO-controller unit suites pass;
+the extended authenticated integration package compiles; full repository lint
+reports zero issues. A dedicated native PostgreSQL replay with production
+buffer/client/HTTP-handler wiring persists both RAR decisions behind cancellation
+replay, retains exactly two cancellation observations, and still rejects changed
+content forced under an existing ID with RFC7807 HTTP 409. Evidence:
+`/private/var/folders/r7/gktmmltd1zq7wqhsjjslwsm80000gn/T/opencode/audit-409-rar-fallout-proof.log`.
+This diagnostic bypasses auth middleware; post-fix deployed CI remains the gate
+for declaring all three original RAR E2E failures resolved. No production RAR
+logic or E2E assertion/timeout was changed.
