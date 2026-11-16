@@ -40,6 +40,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -147,6 +148,32 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification)).To(Succeed())
 		notification.Status.Phase = notificationv1.NotificationPhaseSent
 		Expect(k8sClient.Status().Update(ctx, notification)).To(Succeed())
+
+		By("acknowledging any SignalProcessing child created before cancellation")
+		Eventually(func() bool {
+			currentRR := &remediationv1.RemediationRequest{}
+			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), currentRR); err != nil {
+				return false
+			}
+			ref := currentRR.Status.GetPhaseProgress().SignalProcessingRef
+			if ref == nil {
+				return false
+			}
+			namespace := ref.Namespace
+			if namespace == "" {
+				namespace = currentRR.Namespace
+			}
+			sp := &signalprocessingv1.SignalProcessing{}
+			if err := apiReader.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, sp); err != nil {
+				return false
+			}
+			if cancellation.IsAcknowledged(sp.Status.Conditions) {
+				return true
+			}
+			cancellation.SetAcknowledged(&sp.Status.Conditions, sp.Generation, "backend termination verified by deployed journey")
+			return k8sClient.Status().Update(ctx, sp) == nil
+		}, timeout, interval).Should(BeTrue(), "SignalProcessing child must acknowledge cancellation")
+
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(wfe), wfe)).To(Succeed())
 		wfe.Status.Phase = workflowexecutionv1.PhaseCancelled
 		cancellation.SetAcknowledged(&wfe.Status.Conditions, wfe.Generation, "backend termination verified by deployed journey")
