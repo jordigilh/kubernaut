@@ -39,6 +39,41 @@ References below to Kubernetes Lease RBAC, holder Pod UID injection, Lease takeo
 multi-writer Lease integration are historical plan context unless explicitly marked as
 the current singleton contract. They are not required for this amendment or deployment.
 
+### Bounded standalone FMC fixture regression (2026-11-16)
+
+Run `43792764945` exposed a setup-order incompatibility with fail-closed
+readiness: the standalone FMC fixture waits for FMC rollout before granting
+the primary cluster's exchanged identity its existing target-read RBAC.
+EAIGW pod logs prove forbidden Deployment reads; Kuadrant has the same fixture
+ordering but lacks rollout-time FMC pod evidence, so its root cause remains
+unconfirmed.
+
+- Requirements: BR-SCOPE-001 and BR-SECURITY-016.
+- RED: `UT-FMC-E2E-002` checks the shared standalone fixture grants exchanged
+  identity RBAC before invoking the deployment helper that waits for readiness.
+- GREEN: move only the existing RBAC application before deployment; retain its
+  error handling, identity, permissions, and fail-closed production readiness.
+- REFACTOR: N/A; only the existing prerequisite block is reordered and explained.
+- Local acceptance: the new static ordering contract and affected infrastructure
+  suite pass, with build/lint validation. This source-level check is not live
+  authorization, wiring, or deployment qualification evidence.
+- CI acceptance: rerun both standalone FMC E2E lanes; capture primary FMC pod
+  logs, conditions/events and effective target-read RBAC for any remaining
+  rollout failure. No timeout increase, Lease RBAC, or permission expansion.
+
+Gateway diagnostics and PostgreSQL readiness remain separate work. E2E FP and
+Fleet remain deferred. This amendment does not change the scenario denominators,
+production wiring manifest, or existing qualification claims.
+
+Local execution evidence (existing checkout, base HEAD `cf404b6af`):
+`UT-FMC-E2E-002` failed before the fixture change because the RBAC call followed
+deployment (source offsets 620 > 389), then passed after reordering. The full
+`go test ./test/infrastructure -run '^TestInfrastructure$' -count=1 -timeout=3m`
+suite passed, as did `go test ./pkg/fleet/fmc ./pkg/fleet/scopecache
+./cmd/fleetmetadatacache -count=1 -timeout=3m`, `go build ./...`, and
+`golangci-lint run --timeout=5m` (zero issues). Formatting and `git diff --check`
+passed. Real-cluster E2E reruns have not been performed; no CI pass is claimed.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head

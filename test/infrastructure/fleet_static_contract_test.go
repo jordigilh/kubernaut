@@ -41,6 +41,25 @@ var _ = Describe("Fleet demo host-port isolation", func() {
 	})
 })
 
+var _ = Describe("Standalone FMC target-read RBAC ordering", func() {
+	It("UT-FMC-E2E-002 [BR-SCOPE-001] [BR-SECURITY-016]: grants exchanged identity reads before waiting for FMC readiness", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleetmetadatacache_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+
+		text := string(source)
+		start := strings.Index(text, "func runFMCFleetCorePhase(")
+		end := strings.Index(text, "\n// applyExchangedIdentityRBAC binds")
+		Expect(start).To(BeNumerically(">=", 0))
+		Expect(end).To(BeNumerically(">", start))
+		phase := text[start:end]
+		rbacIndex := strings.Index(phase, "applyExchangedIdentityRBAC(")
+		deploymentIndex := strings.Index(phase, "deployFMCFleetCore(")
+		Expect(rbacIndex).To(BeNumerically(">=", 0), "the exchanged target-read identity must be authorized")
+		Expect(deploymentIndex).To(BeNumerically(">=", 0), "the standalone fixture must deploy FMC")
+		Expect(rbacIndex).To(BeNumerically("<", deploymentIndex), "FMC rollout requires clean observations, so target-read RBAC must already exist")
+	})
+})
+
 var _ = Describe("Local demo OIDC CA ordering", func() {
 	It("UT-INFRA-OIDC-2566-001 [BR-PLATFORM-014]: prepares the operator CA before OIDC setup", func() {
 		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "hack", "setup-demo-infra", "main.go"))
