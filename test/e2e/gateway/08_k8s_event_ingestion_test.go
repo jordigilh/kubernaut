@@ -99,9 +99,10 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 				"reason":  eventReason,
 				"message": eventMessage,
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      podName,
-					"namespace": testNamespace,
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       podName,
+					"namespace":  testNamespace,
 				},
 				"metadata": map[string]interface{}{
 					"name":      fmt.Sprintf("event-%d-%s", i, uuid.New().String()[:8]),

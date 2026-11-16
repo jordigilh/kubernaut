@@ -232,6 +232,12 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 			existingDecidedBy := "original-operator@kubernaut.ai"
 			attackerEmail := "attacker@malicious.com"
 
+			// Single clock reading for both objects: separate time.Now() calls
+			// can serialize a second apart under parallel load, making the
+			// terminal tuples unequal and flaking the idempotency check.
+			decidedAt := time.Now().Add(-5 * time.Minute)
+			requiredBy := time.Now().Add(15 * time.Minute)
+
 			// OLD object: RAR with existing decision (TRUE idempotency scenario)
 			oldRAR := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -246,12 +252,12 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
-					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
+					RequiredBy: metav1.NewTime(requiredBy),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision:        remediationv1.ApprovalDecisionApproved,
 					DecidedBy:       existingDecidedBy, // Already decided by original operator
-					DecidedAt:       &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+					DecidedAt:       &metav1.Time{Time: decidedAt},
 					DecisionMessage: "Original decision",
 				},
 			}
@@ -271,12 +277,12 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-analysis-789",
 					},
-					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
+					RequiredBy: metav1.NewTime(requiredBy),
 				},
 				Status: remediationv1.RemediationApprovalRequestStatus{
 					Decision:        remediationv1.ApprovalDecisionApproved,
 					DecidedBy:       existingDecidedBy, // Already decided by original operator
-					DecidedAt:       &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+					DecidedAt:       &metav1.Time{Time: decidedAt},
 					DecisionMessage: "Original decision",
 				},
 			}
