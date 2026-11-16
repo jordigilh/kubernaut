@@ -203,6 +203,85 @@ The separate fenced-read and approval-conflict causes remain unproven (<90%).
 The sole active producer thread still needs exact digest/config, tools/list,
 and empty/nonempty gateway wire captures; strict parsing remains unchanged.
 
+### Bounded CI round 7 — complete owner-GVK handoff (2026-11-16)
+
+User approved complete authoritative owner-GVK handoff, with no added conditions;
+never infer an owner's version from its child. DD-FLEET-014 records alternatives
+and the selected contract. Preflight confidence: 93%; remaining risk is fixture
+compatibility, not uncertainty about owner-reference authority.
+
+Run `43821589382` attempt 2 at `4234ff20ee75052acda92590c3d706a295610b20`
+has one root failing lane: Fleet E2E (27 passed, 19 failed, 2 existing skips).
+All other E2E, integration, unit and build lanes passed. Request
+`7b95cbca-54bb-4b3f-943e-8586bb39dec4` confirms missing Deployment GVK.
+Source inspection proves fingerprint owner reconstruction drops APIVersion;
+the owner interface also loses the reference's version. Alert labels alone do
+not fix this. Separate FMC fenced-read/initial stale-fence errors remain <90%
+RCA confidence; no fencing changes are included.
+
+RED (15 minutes): add deterministic Ginkgo `UT-GW-2593-GVK-*` scenarios for
+changed-kind and same-kind owners, standalone identity, explicit version versus
+registry preference, direct fallback, Service selection and absent/invalid
+authority. Add `IT-GW-2593-GVK-001` for remote adapter/MCP dispatch. GREEN
+(20 minutes): carry source/reference versions through existing resolver steps
+and Gateway fingerprint handoff. REFACTOR (10 minutes): consolidate identity
+transition/error validation within the existing traversal; retain legacy API
+compatibility without duplicating traversal. Validation (15 minutes): scoped
+race tests, integration dispatch, build, compile-only repository tests and lint.
+
+| Component | Production entry point | Wiring location | IT proof |
+|---|---|---|---|
+| Version-bearing owner traversal | Gateway adapter registration | `cmd/gateway/main.go:registerAdapters` → `ResolveFingerprintWithCluster` → shared owner resolver | IT-GW-2593-GVK-001 |
+| Remote owner identity | Prometheus Parse/ParseBatch | `pkg/gateway/adapters/prometheus_adapter.go:resolverForCluster` → cluster-bound MCP reader | IT-GW-2593-GVK-001 |
+
+Success: all critical scenarios and both wiring rows pass, no guessed versions,
+unchanged hash inputs and cluster attribution, and strict unknown-GVK rejection.
+Risk containment: no FMC/Valkey, RBAC, dependency, parser or public API changes;
+if authority remains unknown, drop that signal rather than make a decision.
+Rollback is a normal revert of this bounded batch, never weakening scope gates.
+Applicable controls: AC-4/AC-6 and SI-10; no new audit event/control claims.
+
+Round 7 local evidence:
+
+- Initial RED ran ten owner-GVK cases against unchanged production: all ten
+  failed. The first integration run exposed an MCP teardown-order defect in the
+  new fixture (server closed before session); it is not valid business RED.
+  After fixing cleanup, a read-only Go overlay of the three original production
+  files from `4234ff20e` proves the integration assertion fails on empty owner
+  APIVersion. The final sixteen-case UT matrix against that same baseline has
+  fifteen failures and one existing pass (nil-resolver identity preservation).
+  No overlay is used for GREEN/build/lint evidence.
+- GREEN: scoped critical UT scenarios **16/16**, integration scenario **1/1**,
+  supplemental wiring rows **2/2**. The full Gateway Fleet integration suite
+  passes **3/3**, including Parse/ParseBatch remote MCP routing. Five old unit
+  fixtures used unknown targets/nil readers rather than actual remote resources;
+  they now supply discovery and external fake Kubernetes readers. One existing
+  fingerprint fixture now supplies the Pod schema version. No gate is weakened.
+- REFACTOR: validate GVK once at each identity transition (including maximum
+  depth), removing repeated loop/final validation while retaining one traversal
+  for the legacy and version-bearing entry points. The legacy KA consumer keeps
+  its historical kind-only API; its custom-tool race suite passes.
+- Final passing checks: `go test -race ./pkg/gateway/... ./pkg/shared/k8s/...
+  ./test/integration/gateway/fleet -count=1 -timeout=3m`; `go test -race
+  ./internal/kubernautagent/tools/custom -count=1 -timeout=3m`; `go build ./...`;
+  `go test ./... -run='^$' -timeout=30s`; `golangci-lint run --timeout=5m`
+  (zero issues); formatting and `git diff --check`. Engram references confirm
+  fingerprint and adapter production callers. These are scoped source/wiring
+  results, not full E2E or original whole-feature denominator certification.
+
+Separate fence blocker: sanitized must-gather `14207701579`, current FMC pod
+`fleetmetadatacache-f7cdbc54f-wbc2w`, starts at `07:48:31Z`. All four initial
+event-triggered repairs fail `commit_rejected: ERR STALE_FENCE` at
+`07:48:41.962Z`–`07:48:44.782Z`, followed by fenced-read failures beginning
+`07:50:50.916Z`. These logs contain neither the competing complete fence nor
+the generation/revision/TTL tuple. A safe RCA still needs contemporaneous
+coordinator process/session identities, full Valkey status/record/index fence
+and generation snapshots with server TIME/PTTL, authoritative registry UID+
+revision snapshots, and pod-overlap timestamps for the same rejected operation.
+No two-pod, TTL, fixture-race or GVK causal claim is established. Confidence
+remains below 90%; no fence repair is included. The pinned producer thread
+still needs digest/config, tools/list schema and empty/nonempty gateway captures.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head

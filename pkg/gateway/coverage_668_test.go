@@ -38,6 +38,7 @@ import (
 	gwconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // spyLogSink implements logr.LogSink for assertions on adapter logging (BR-GATEWAY-004).
@@ -63,8 +64,8 @@ func (s *spyLogSink) WithName(name string) logr.LogSink {
 
 type failingOwnerResolver struct{}
 
-func (failingOwnerResolver) ResolveTopLevelOwner(context.Context, string, string, string) (string, string, error) {
-	return "", "", errors.New("intentional owner resolution failure for BR-GATEWAY-004 coverage")
+func (failingOwnerResolver) ResolveTopLevelOwnerIdentity(context.Context, sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{}, errors.New("intentional owner resolution failure for BR-GATEWAY-004 coverage")
 }
 
 var _ = Describe("BR-GATEWAY-004: Kubernetes Event adapter SetLogger", func() {

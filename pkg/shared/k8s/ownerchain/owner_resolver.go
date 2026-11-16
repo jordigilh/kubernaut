@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -220,61 +221,95 @@ func WithRegistry(reg KindResolver) OwnerResolverOption {
 //   - No ownerReferences: returns the resource itself (standalone pod, bare deployment)
 //   - Max depth reached: returns deepest owner found (prevents infinite loops)
 func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error) {
-	logger := r.logger
+	// Legacy kind-only callers retain their historical lookup policy. Gateway
+	// uses ResolveTopLevelOwnerIdentity instead (DD-FLEET-014).
+	gvk, known := r.resolveGVK(kind)
+	if !known {
+		return kind, name, nil
+	}
+	owner, err := r.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
+		Namespace: namespace, Kind: kind, Name: name, APIVersion: gvk.GroupVersion().String(),
+	})
+	return owner.Kind, owner.Name, err
+}
 
-	currentNamespace := namespace
-	currentKind := kind
-	currentName := name
+// ResolveTopLevelOwnerIdentity carries source and owner-reference GVK authority
+// through the existing traversal (DD-FLEET-014). Static kind tables are never
+// authority for this entry point; an absent initial version requires discovery.
+func (r *K8sOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	if resource.APIVersion == "" && r.registry != nil {
+		if gvr, known := r.registry.KindToGVR(resource.Kind); known {
+			resource.APIVersion = gvr.GroupVersion().String()
+		}
+	}
+	gvk, err := ownerIdentityGVK(resource)
+	if err != nil {
+		r.logger.Error(err, "Missing or invalid source GVK")
+		return sharedtypes.OwnerChainEntry{}, err
+	}
+	current := resource
 
 	// #1029 Use Case 3: Service targets are Prometheus scrape infrastructure labels,
 	// not workloads. Traverse Service → selector → Pods → ownerRefs to find the
 	// actual backing workload before entering the normal ownerReference chain.
-	if currentKind == "Service" {
-		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, currentNamespace, currentName)
+	if current.Kind == "Service" && current.APIVersion == corev1.SchemeGroupVersion.String() {
+		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, current.Namespace, current.Name)
 		if resolved {
-			currentKind = podKind
-			currentName = podName
+			current.Kind, current.Name = podKind, podName
+			current.APIVersion = corev1.SchemeGroupVersion.String()
+			gvk = corev1.SchemeGroupVersion.WithKind(podKind)
 		} else {
-			return currentKind, currentName, nil
+			return current, nil
 		}
 	}
 
-	// Track the most recent owner found (starts as the resource itself)
-	topKind := currentKind
-	topName := currentName
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
-		step := r.traverseOneOwnerLevel(ctx, currentNamespace, currentKind, currentName, foundOwner, i)
+		step := r.traverseOneOwnerLevel(ctx, current.Namespace, gvk, current.Name, foundOwner, i)
 		if step.err != nil {
-			return "", "", step.err
+			return sharedtypes.OwnerChainEntry{}, step.err
 		}
 		if step.advanced {
-			topKind, topName = step.nextKind, step.nextName
+			current.Kind, current.Name, current.APIVersion = step.nextKind, step.nextName, step.nextAPIVersion
+			// Validate at the transition, including the last permitted depth.
+			gvk, err = ownerIdentityGVK(current)
+			if err != nil {
+				r.logger.Error(err, "Missing or invalid owner GVK")
+				return sharedtypes.OwnerChainEntry{}, err
+			}
 			foundOwner = true
-			currentKind, currentName = step.nextKind, step.nextName
 		}
 		if step.stop {
 			break
 		}
 	}
 
-	logger.V(1).Info("Owner resolution complete",
-		"inputKind", kind, "inputName", name,
-		"resolvedKind", topKind, "resolvedName", topName,
+	r.logger.V(1).Info("Owner resolution complete",
+		"inputKind", resource.Kind, "inputName", resource.Name,
+		"resolvedKind", current.Kind, "resolvedName", current.Name,
 		"foundOwner", foundOwner)
-	return topKind, topName, nil
+	return current, nil
+}
+
+func ownerIdentityGVK(identity sharedtypes.OwnerChainEntry) (schema.GroupVersionKind, error) {
+	gv, err := schema.ParseGroupVersion(identity.APIVersion)
+	if err != nil || gv.Version == "" || identity.Kind == "" || identity.Name == "" {
+		return schema.GroupVersionKind{}, fmt.Errorf("missing or invalid GVK for owner %s/%s (apiVersion %q)", identity.Kind, identity.Name, identity.APIVersion)
+	}
+	return gv.WithKind(identity.Kind), nil
 }
 
 // ownerStepResult captures the outcome of a single ResolveTopLevelOwner
 // traversal step (extracted to keep the driving loop's cognitive complexity
 // low — see Go Anti-Pattern Checklist, unnecessary nesting).
 type ownerStepResult struct {
-	stop     bool  // true: caller must break out of the traversal loop
-	advanced bool  // true: nextKind/nextName represent a new, resolved owner
-	nextKind string
-	nextName string
-	err      error // non-nil: caller must abort and propagate this error
+	stop           bool // true: caller must break out of the traversal loop
+	advanced       bool // true: nextKind/nextName represent a new, resolved owner
+	nextKind       string
+	nextName       string
+	nextAPIVersion string
+	err            error // non-nil: caller must abort and propagate this error
 }
 
 // traverseOneOwnerLevel performs one level of owner-chain traversal: resolve
@@ -283,21 +318,18 @@ type ownerStepResult struct {
 // ResolveTopLevelOwner's for-loop body.
 func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 	ctx context.Context,
-	currentNamespace, currentKind, currentName string,
+	currentNamespace string,
+	gvk schema.GroupVersionKind,
+	currentName string,
 	foundOwner bool,
 	level int,
 ) ownerStepResult {
 	logger := r.logger
-
-	gvk, known := r.resolveGVK(currentKind)
-	if !known {
-		logger.V(1).Info("Unknown kind, stopping traversal", "kind", currentKind, "level", level)
-		return ownerStepResult{stop: true}
-	}
+	currentKind := gvk.Kind
 
 	// CRD kinds (not in core/apps/batch/autoscaling/policy) have
 	// unpredictable owner chains — stop traversal (#1029 Option C).
-	if r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind) {
+	if gvk.Group != "" && gvk.Group != "apps" && gvk.Group != "batch" && gvk.Group != "autoscaling" && gvk.Group != "policy" {
 		logger.V(1).Info("CRD kind, stopping traversal", "kind", currentKind, "level", level)
 		return ownerStepResult{stop: true}
 	}
@@ -341,7 +373,7 @@ func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 		"from", fmt.Sprintf("%s/%s", currentKind, currentName),
 		"to", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name))
 
-	return ownerStepResult{advanced: true, nextKind: controllerRef.Kind, nextName: controllerRef.Name}
+	return ownerStepResult{advanced: true, nextKind: controllerRef.Kind, nextName: controllerRef.Name, nextAPIVersion: controllerRef.APIVersion}
 }
 
 // resolveMissingControllerRef handles the case where the cached lookup found
@@ -369,7 +401,7 @@ func (r *K8sOwnerResolver) resolveMissingControllerRef(
 		return ownerStepResult{err: verifyErr}
 	}
 	if verifiedRef != nil {
-		return ownerStepResult{advanced: true, nextKind: verifiedRef.Kind, nextName: verifiedRef.Name}
+		return ownerStepResult{advanced: true, nextKind: verifiedRef.Kind, nextName: verifiedRef.Name, nextAPIVersion: verifiedRef.APIVersion}
 	}
 	return ownerStepResult{stop: true}
 }

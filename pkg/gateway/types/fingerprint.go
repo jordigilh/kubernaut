@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ResolveFingerprint is the single entry point for fingerprint generation across
@@ -61,24 +62,26 @@ func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolv
 		return CalculateClusterAwareFingerprint(clusterID, resource), resource, nil
 	}
 
-	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(
-		ctx, resource.Namespace, resource.Kind, resource.Name)
+	resolved, err := resolver.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
+		Namespace: resource.Namespace, Kind: resource.Kind, Name: resource.Name, APIVersion: resource.APIVersion,
+	})
 	if err != nil {
 		logger.Error(err, "Owner resolution failed, dropping signal",
 			"resource", resource.String())
 		return "", ResourceIdentifier{}, fmt.Errorf("owner resolution failed for %s: %w", resource.String(), err)
 	}
 
-	if ownerKind == "" || ownerName == "" {
+	if resolved.Kind == "" || resolved.Name == "" {
 		logger.Info("Owner resolution returned empty, dropping signal",
 			"resource", resource.String())
 		return "", ResourceIdentifier{}, fmt.Errorf("owner resolution returned empty for %s", resource.String())
 	}
 
 	owner := ResourceIdentifier{
-		Namespace: resource.Namespace,
-		Kind:      ownerKind,
-		Name:      ownerName,
+		Namespace:  resolved.Namespace,
+		Kind:       resolved.Kind,
+		Name:       resolved.Name,
+		APIVersion: resolved.APIVersion,
 	}
 	fp := CalculateClusterAwareFingerprint(clusterID, owner)
 	logger.V(1).Info("Owner resolution succeeded",
