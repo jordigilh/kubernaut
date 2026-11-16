@@ -116,6 +116,54 @@ No production, workflow, RBAC, HA, public API or parser changes are included.
 No E2E qualification pass is claimed. The other failing lanes remain separately
 classified for the next bounded round.
 
+### Bounded CI round 3 — absent-target isolation contract (2026-11-16)
+
+Run `43812634298` at `e57aa1c69689d9248bb1ae4f2dc2a9c0fe6b9bed`
+finished failed. All integration lanes, including FMC, pass; AF fleet and
+Gateway E2E pass. Four E2E lanes fail; summary/merge gate are downstream:
+
+- Standalone Kuadrant `133120370276` and EAIGW `133120370309`: each
+  14 passed, one failed, one ordered skip. Cross-cluster isolation first
+  proves the remote-only Service managed, then incorrectly requires `200/false`
+  for the same absent Service in the primary cluster. Actual `503` is required
+  by DD-FLEET-013 C1, not a production regression.
+- Fleet `133120370237`: 27 passed, 19 failed, two existing skips. First reported
+  failure is `E2E-FLEET-017` at `suite_test.go:242` (Gateway 500 after 90s).
+  Must-gather `14202558760` correlates request
+  `e03d0062-c66a-4755-b37a-fd8ae33a712b` to explicit-GVK rejection for
+  Deployment; 889 Deployment-GVK errors appear in Gateway logs. Separately,
+  FMC logs contain 38 `fenced-read proof changed` errors. The GVK rejection is
+  established; the exact producer/fixture correction and fenced-read source
+  cause require separate investigation. No fencing weakening is justified.
+- FullPipeline `133120370292`: 50 passed, one failed (`E2E-2570-001`,
+  `23_parameter_override_execution_2570_test.go:138`). Authenticated
+  `kubernaut_approve` returns an optimistic-concurrency write conflict for
+  `rar-rr-86c2f7ef84b1-bdf8e313`. Must-gather `14203235434` confirms the AF
+  bridge error. The competing write and safe correction remain unproven.
+
+Bounded test-only correction, BR-SCOPE-001 / BR-INTEGRATION-065:
+
+- RED: current CI proves the stale `200/false` assertion fails. New
+  `UT-FMC-E2E-003` Ginkgo helper contracts initially fail to compile until the
+  unavailable assertion exists; five cases require 503 without a managed decision
+  and reject 200/true, 200/false, 403 and 503 with a managed field.
+- GREEN: assert precisely 503/no managed decision for cross-cluster missing
+  targets, retaining managed=true for present targets. Add the previously missing
+  positive check for primary-backed prod-west. No production contract is changed.
+- REFACTOR: share HTTP request construction between verified and unavailable
+  assertions; use the existing typed resource identity for the new helpers.
+  `UT-FMC-E2E-004` separately proves both existing verified boolean outcomes.
+- Local validation: all seven helper cases pass under `-race`; `go build ./...`,
+  repository-wide compile-only `go test ./... -run='^$' -timeout=30s`,
+  shared-helper lint (zero issues), and `git diff --check` pass.
+- Live E2E requalification remains CI-owned; local helper tests are not cluster
+  isolation qualification. Producer thread still requires digest/config,
+  tools/list and empty/nonempty gateway wire captures. Strict parsing is unchanged.
+
+AF's prior PostgreSQL pull failure did not recur; its deeper cause remains
+unproven (<90%). Fleet fenced-read and FullPipeline conflict causes remain <90%;
+no speculative production, RBAC, workflow or baseline merge changes are included.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head
