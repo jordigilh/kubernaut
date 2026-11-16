@@ -4,10 +4,10 @@
 
 **Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 1.4
+**Version**: 1.5
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; run `43735032208` passes build/lint/unit/security/operator/integration lanes and unaffected E2E lanes. Fleet, FMC EAIGW, FMC Kuadrant, and `apifrontend-fleet` E2E remain failed/held; the preserved-cluster Fleet replay is diagnostic evidence with no source regression proven, and final qualification remains pending.
+**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; final run `43748753311` passed the source, build, lint, unit, security, license, operator-artifact, integration, and CEL lanes, plus `WorkflowExecution`, `apifrontend-fleet`, and unaffected E2E lanes. Fleet failed after 46/48 specs (27 passed, 19 failed, 2 skipped); FMC EAIGW and FMC Kuadrant each failed setup before specs during a `0 of 1 updated replicas are available` rollout wait; downstream summary and merge gate failed. Final qualification remains pending, with no source or scope expansion authorized.
 **Branch**: `work/2593-fmc-presence`
 
 > This repository-versioned file is the active bounded implementation and test authority
@@ -39,6 +39,32 @@ follow-up and does not change the approved singleton source boundary.
 References below to Kubernetes Lease RBAC, holder Pod UID injection, Lease takeover, or
 multi-writer Lease integration are historical plan context unless explicitly marked as
 the current singleton contract. They are not required for this amendment or deployment.
+
+### Final CI evidence (2026-11-15)
+
+Final workflow run `43748753311` tested PR head
+`7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref
+`9c6bfe574edeeed94c651b19e0c01718bff53e47` and finished with a failed
+conclusion at `2026-11-15T19:45:54Z`. Source, build, lint, unit, security, license,
+operator-artifact, integration, and CEL lanes passed, as did `WorkflowExecution`,
+`apifrontend-fleet`, and the other unaffected E2E lanes. This is final CI evidence,
+not a qualification pass or authorization to change source or scope.
+
+| Job | Outcome | Evidence and classification |
+|---|---|---|
+| Fleet (`132921800827`) | 46/48 specs; 27 passed, 19 failed, 2 skipped | Must-gather `14178020929`; diagnostics `14177262938`. FMC became Ready with zero restarts, then logged `fenced-read proof changed` and `partition_unavailable`; scope probes returned 503 and MCP/A2A paths failed. Fleet root cause remains unresolved. |
+| FMC EAIGW (`132921800814`) | 0/16 specs | Must-gather `14176477996`; diagnostics `14176915262`. Setup timed out waiting for `0 of 1 updated replicas are available`; no application-level source cause is established. |
+| FMC Kuadrant (`132921800747`) | 0/16 specs | Must-gather `14176211983`; diagnostics `14176137095`. Setup timed out at the same FMC rollout wait; remote Kind/Podman cleanup also failed; no application-level source cause is established. |
+| Test Suite Summary (`132934325388`) / Merge Gate (`132934416735`) | Failed | Downstream rollups of the three failed E2E jobs; no additional root cause. |
+
+Fleet’s final partitions retained `lease_epoch=1` and `fence=1`; no literal
+`ERR STALE_FENCE` or stale-fence acceptance was observed. Strict-GVK rejection
+remains intentional fail-closed behavior. Valkey logged TLS `wrong version number`
+attempts from `.31` (MCP gateway), `.45` (current API Frontend), and `.44`;
+contemporaneous `.44` DataStorage traffic used the `apifrontend` service account,
+but the artifacts do not map `.44` directly to a pod. The `.44` client attribution,
+TLS mismatch, CPU pressure, and rollout/runner conditions remain unresolved
+observations or hypotheses, not proven source causes. RCA dossier: `14177886889`.
 
 ### Fast-path execution boundary (2026-11-13)
 
@@ -1630,6 +1656,7 @@ approved contract changes; all scenario IDs remain visible.
 | 1.2 | 2026-11-15 | CI run `43723420104` validated head `2ad936d17874d420c044045302fe6771559b74ff`: all affected integration lanes passed and `apifrontend-fleet` passed. Fleet, FMC EAIGW, FMC Kuadrant, and WorkflowExecution E2E remain held for infrastructure/dependency recovery and rerun; no source regression is attributed. |
 | 1.3 | 2026-11-15 | CI run `43728630518` validated PR head `d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`: all integration lanes, WorkflowExecution, `apifrontend-fleet`, and unaffected E2E lanes passed. Fleet, FMC EAIGW, and FMC Kuadrant remain held; artifacts classify the failures as fail-closed FMC/RBAC-fixture/remote-Kind conditions, with no source regression attributed. |
 | 1.4 | 2026-11-15 | CI run `43735032208` validated PR head `ec020153389bbe6c68fdbcea98b4aa964ba72dea`: all source/build/integration lanes and unaffected E2E lanes passed; Fleet, FMC EAIGW, FMC Kuadrant, and `apifrontend-fleet` failed. The preserved-cluster Fleet replay recorded a two-pod rollout overlap, fail-closed FMC proof/partition errors, and one MCP SSE transport failure; no source change is authorized. |
+| 1.5 | 2026-11-15 | Final CI run `43748753311` validated PR head `7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref `9c6bfe574edeeed94c651b19e0c01718bff53e47`: source/build/integration, `WorkflowExecution`, `apifrontend-fleet`, and unaffected E2E lanes passed; Fleet recorded 27 passed, 19 failed, and 2 skipped specs, while FMC EAIGW and Kuadrant each failed setup at the FMC rollout wait. Artifacts and unresolved `.44` Valkey attribution are recorded above; no source or scope change is authorized. |
 
 ## 17. Current status
 
@@ -1641,7 +1668,7 @@ approved contract changes; all scenario IDs remain visible.
 - Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
 - This v0.9 amendment invalidated the historical dirty-worktree clean-review eligibility; the fast-path carry/hold boundary is recorded in `docs/tests/2593/evidence/FAST_PATH_CARRY_HOLD.md` and the review README. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**
-- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; CI validation is complete for source/integration lanes, while four E2E lanes and final qualification remain pending. The preserved-cluster Fleet replay is diagnostic only and attributes the observed FMC unavailability to rollout overlap plus MCP/infrastructure conditions; no source regression is proven.**
+- Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; final CI run `43748753311` validates the source/build/integration lanes and unaffected E2E lanes, while Fleet plus the dedicated FMC EAIGW and Kuadrant setup lanes remain failed and final qualification remains pending. Fleet’s ready-pod fenced-read/partition evidence and the dedicated rollout timeouts are separate classifications; no source regression or unified root cause is proven.**
 
 No public v2 route/media, deployment, cluster, ACM, Valkey qualification, GitHub, or release
 changes are authorized. Source changes are limited to the clean worktree and the bounded

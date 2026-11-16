@@ -5,7 +5,7 @@
 **Scope amendment:** the current follow-up removes the Kubernetes Lease/POD_UID deployment dependency and uses a process-local writer coordinator for the intentional singleton deployment.
 **Pre-amendment CI runs:** `43642008948` (CI Pipeline, completed with held integration/E2E failures), `43642008872` (CodeQL, passed), `43642008918` (Gitleaks secret scan, passed); follow-up documentation run `43647855182` had no final conclusion at last observation.
 **Amended-head CI:** head `6a41d4c7d`; workflow run `43719091357` passed the build/lint/unit/security lanes and exposed five affected integration-lane failures before the bounded fixture/source alignment below. Follow-up run `43723420104` tested head `2ad936d17874d420c044045302fe6771559b74ff`; all affected integration lanes passed, while four E2E lanes remained held as documented below.
-**Latest CI:** workflow run `43735032208` tested PR head `ec020153389bbe6c68fdbcea98b4aa964ba72dea`; all build, lint, unit, security, license, operator-artifact, and integration lanes passed, as did `WorkflowExecution` and the unaffected E2E lanes. Four E2E jobs remained failed: Fleet (`132878265672`), FMC EAIGW (`132878265637`), FMC Kuadrant (`132878265595`), and `apifrontend-fleet` (`132878265623`). `Test Suite Summary` (`132888965309`) and `Merge Gate` (`132889071108`) failed downstream of the E2E aggregate.
+**Latest CI:** workflow run `43748753311` tested PR head `7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref `9c6bfe574edeeed94c651b19e0c01718bff53e47`; the source, build, lint, unit, security, license, operator-artifact, integration, and CEL lanes passed, as did `WorkflowExecution`, `apifrontend-fleet`, and the other unaffected E2E lanes. Fleet (`132921800827`), FMC EAIGW (`132921800814`), and FMC Kuadrant (`132921800747`) failed; `Test Suite Summary` (`132934325388`) and `Merge Gate` (`132934416735`) failed downstream. The run completed at `2026-11-15T19:45:54Z` with final qualification still pending.
 **Review date:** 2026-11-15
 **Scope:** PR #2637 only; the 87-file PR boundary is preserved.
 **Operator deployment follow-up:** `kubernaut-operator` PR [#637](https://github.com/jordigilh/kubernaut-operator/pull/637) was closed as out of scope. FMC no longer requires operator-provided `POD_UID` or namespace-scoped writer-Lease RBAC for the singleton deployment.
@@ -103,62 +103,48 @@ Run `43728630518` also passed the build, lint, unit, security, operator-artifact
 integration, and unaffected E2E lanes. `Test Suite Summary` and `Merge Gate` failed
 only as downstream rollups of the three E2E failures above.
 
-### Latest CI disposition: run `43735032208`
+### Final CI disposition: run `43748753311`
 
-Run `43735032208` tested `ec020153389bbe6c68fdbcea98b4aa964ba72dea` with the
-CI-built amd64 service images tagged `:pr-2637` and the pinned operator artifact
-`ae3d9e40b56dad5ddc6e9899eeb99f5b9fda3902`. The source, build, lint, unit,
-security, license, operator-artifact, and integration lanes passed. The failed
-jobs are classified as follows:
+Run `43748753311` tested PR head `7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref `9c6bfe574edeeed94c651b19e0c01718bff53e47` and failed at `2026-11-15T19:45:54Z`. The source, build, lint, unit, security, license, operator-artifact, integration, and CEL lanes passed, as did `WorkflowExecution`, `apifrontend-fleet`, and the other unaffected E2E lanes. The final failed jobs are classified as follows:
 
-| Job | Result | Attribution |
+| Job | Result | Attribution and evidence |
 |---|---|---|
-| Fleet (`132878265672`) | 46/48 specs executed; 27 passed, 19 failed, 2 skipped | Failures are dominated by FMC unavailable/strict-GVK fail-closed responses and Podman teardown symptoms; the preserved-cluster replay below supplies the detailed FMC evidence. No source regression is proven. |
-| FMC EAIGW (`132878265637`) | 0/16 specs | `SynchronizedBeforeSuite` timed out during FMC rollout; the remote API VIP had connection-refused intervals and cleanup also hit Podman failure. No source attribution. |
-| FMC Kuadrant (`132878265595`) | 0/16 specs | `SynchronizedBeforeSuite` timed out during FMC rollout while the remote Kind/API setup was unstable; cleanup also hit Podman failure. No source attribution. |
-| `apifrontend-fleet` (`132878265623`) | 11/235 specs executed; 10 passed, 1 failed, 224 skipped | `E2E-AF-FLEET-2462-004` failed in the separate AF consent/session contract; the lane also recorded API-VIP/remote API-server startup symptoms. This is not FMC source evidence. |
-| Test Suite Summary / Merge Gate | Failed | Downstream rollups of the four E2E job failures; no additional root cause. |
+| Fleet (`132921800827`) | 46/48 specs executed; 27 passed, 19 failed, 2 skipped | The final Fleet must-gather (`14178020929`) shows FMC started at `19:28:25Z`, became Ready, and had zero restarts. FMC logged `fenced-read proof changed` at `19:30:16Z` and `partition_unavailable` at `19:30:25Z`; scope probes returned 503, and MCP/A2A paths later failed before MCP reconnected at `19:40:55Z`. This confirms fail-closed behavior under uncertainty but does not establish a unified Fleet root cause or a source regression. The strict-GVK rejection remains the intentional fail-closed fixture/contract behavior. Fleet diagnostics are in artifact `14177262938`. |
+| FMC EAIGW (`132921800814`) | 0/16 specs; setup timed out | `SynchronizedBeforeSuite` timed out while the FMC rollout waited for `0 of 1 updated replicas are available`; the must-gather is `14176477996` and diagnostics are `14176915262`. The artifact does not establish an application-level FMC source cause; runner/deployment qualification remains unresolved. |
+| FMC Kuadrant (`132921800747`) | 0/16 specs; setup timed out | `SynchronizedBeforeSuite` timed out while the FMC rollout waited for `0 of 1 updated replicas are available`; the must-gather is `14176211983` and diagnostics are `14176137095`. Remote Kind/Podman cleanup also failed. The artifact does not establish an application-level FMC source cause; runner/deployment qualification remains unresolved. |
+| Test Suite Summary (`132934325388`) / Merge Gate (`132934416735`) | Failed | Downstream rollups of the three failed E2E jobs; no additional root cause. |
 
-### Preserved-cluster Fleet replay
+The dedicated FMC rollout failures are separate from Fleet's later ready-pod/proof-change evidence. Both dedicated lanes aborted during setup before any specs ran, so they must not be combined with the Fleet fenced-read classification.
 
-The same CI-built amd64 images and pinned operator image were loaded into the
-preserved `helios08` Fleet cluster. The Fleet suite completed 46 of 48 specs in
-approximately 29m36s: **26 passed, 20 failed, and 2 skipped**. This is diagnostic
-evidence, not a Fleet qualification pass.
+Valkey accepted TLS connections at `19:21:32Z` but logged `wrong version number` attempts from `10.244.0.31` (MCP gateway) at `19:28:05Z`, `10.244.0.44` at `19:28:36Z`, and `10.244.0.45` (the current API Frontend pod) at `19:28:58Z`. DataStorage concurrently recorded successful requests from `.44` authenticated as `system:serviceaccount:kubernaut-system:apifrontend`, but the artifacts do not map `.44` directly to a pod. `.44` therefore remains an unresolved client-attribution observation, not proof of a particular process or root cause. The TLS mismatch, CPU pressure, and deployment/runner conditions remain hypotheses or qualification follow-up, not proven source causes.
 
-The deployment events show an effective singleton rollout overlap. Although the
-Deployment requested one replica, the operator-managed `RollingUpdate` briefly
-ran the old ReplicaSet `fleetmetadatacache-544ff8446c` and the new ReplicaSet
+Final partitions retained `lease_epoch=1` and `fence=1`; no literal `ERR STALE_FENCE` or evidence of stale-fence acceptance was observed. The final RCA dossier is artifact `14177886889`. The final status supersedes the earlier run metadata but does not authorize a production or test-source change: keep the singleton `ProcessWriterCoordinator`, Valkey fencing/repair, fail-closed stale-fence behavior, and strict GVK contracts unchanged. Final qualification remains pending.
+
+### Historical preserved-cluster Fleet replay (run `43735032208`)
+
+The prior preserved `helios08` replay used the same CI-built amd64 service images
+and pinned operator image. It completed 46 of 48 specs: **26 passed, 20 failed,
+and 2 skipped**. This remains diagnostic evidence, not a Fleet qualification pass.
+
+The deployment events showed an effective singleton rollout overlap: although the
+Deployment requested one replica, the operator-managed `RollingUpdate` briefly ran
+the old ReplicaSet `fleetmetadatacache-544ff8446c` and the new ReplicaSet
 `fleetmetadatacache-f7cdbc54f` concurrently from `18:10:50Z` to `18:11:10Z`.
 `ProcessWriterCoordinator` is intentionally process-local and cannot coordinate
-that cross-pod overlap. During the overlap FMC logged repeated
-`scopecache: fenced-read proof changed` and then fail-closed
-`partition_unavailable` responses. This is deployment qualification evidence for
-the deployment owner, not authorization to change the singleton source or
-operator in #2637.
+that cross-pod overlap. FMC logged repeated `scopecache: fenced-read proof changed`
+and then fail-closed `partition_unavailable` responses. This remains deployment-owner
+qualification evidence, not authorization to change the singleton source or operator.
 
 The replay also captured a separate MCP transport failure: at `18:22:58Z`, the
-`prod-east` repair failed because the standalone SSE stream
-`exceeded 5 retries without progress`; the client reconnected shortly afterward
-and the metrics recorded one `prod-east` repair failure. Gateway readiness and
-scope requests correctly remained unavailable while the proof was uncertain.
-The strict-GVK fixture path separately logged
-`scope: explicit group/version is required for "Deployment"`, which is the
-approved fail-closed behavior for a fixture that omitted `apps/v1`.
+`prod-east` repair failed because the standalone SSE stream exceeded five retries
+without progress; the client reconnected shortly afterward and metrics recorded one
+repair failure. Gateway readiness and scope requests correctly remained unavailable
+while the proof was uncertain. The strict-GVK fixture path separately logged
+`scope: explicit group/version is required for "Deployment"`, the approved
+fail-closed behavior for a fixture that omitted `apps/v1`.
 
-Valkey evidence does not show stale-fence acceptance: final partitions carried
-the same process writer session with `lease_epoch=1` and `fence=1`, no literal
-`ERR STALE_FENCE` was recorded, and the final FMC pod was ready with zero
-restarts. The Valkey `wrong version number` TLS messages came from API Frontend
-startup clients; DataStorage recorded a successful TLS Valkey connection. No
-Valkey repair, stale-fence, or fail-closed source change is authorized by this
-replay.
-
-The current disposition is therefore: keep FMC single-replica, keep the
-process-local coordinator and Valkey fencing contracts, record rollout overlap
-as deployment-owner follow-up, and keep the CI E2E/merge gate blocked pending
-independent runner/deployment qualification. No production or test-source change
-is justified by run `43735032208`.
+This historical replay is retained for deployment-owner follow-up and is distinct
+from the final run's Fleet fenced-read evidence above.
 
 ### Attempt-2 RBAC and fixture analysis
 
@@ -303,11 +289,14 @@ CI run `43723420104` then validated the aligned head
 the affected Gateway, SignalProcessing, FMC, AF, and RO paths. Run
 `43728630518` validated the documentation-only follow-up head
 `d0922d5f9a88d9a3ae8ef8009941da81ff14a2bb`; its three held E2E jobs are retained
-above as historical evidence. Latest run `43735032208` validated
-`ec020153389bbe6c68fdbcea98b4aa964ba72dea`: all source/build/integration lanes
-passed, while Fleet, FMC EAIGW, FMC Kuadrant, and `apifrontend-fleet` remained
-failed as classified above. The preserved-cluster replay reproduced fail-closed
-FMC unavailability during a two-pod rollout overlap and a later MCP SSE transport
-failure, while final steady state recovered to one ready FMC pod. No additional
-production or test-source change is authorized from this evidence; deployment
-overlap and runner/Kind/Podman failures remain qualification follow-up.
+above as historical evidence. Final run `43748753311` validated PR head
+`7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref
+`9c6bfe574edeeed94c651b19e0c01718bff53e47`: all source/build/integration lanes,
+`WorkflowExecution`, `apifrontend-fleet`, and unaffected E2E lanes passed, while
+Fleet, FMC EAIGW, and FMC Kuadrant failed as classified above. The final artifacts
+are Fleet must-gather `14178020929`/diagnostics `14177262938`, EAIGW must-gather
+`14176477996`/diagnostics `14176915262`, Kuadrant must-gather `14176211983`/
+diagnostics `14176137095`, and RCA dossier `14177886889`. No additional
+production or test-source change is authorized from this evidence; Fleet
+fenced-read failures, dedicated FMC rollout failures, and runner/Kind/Podman
+conditions remain separately classified qualification follow-up.
