@@ -11,6 +11,22 @@
 
 ## 1. Purpose and objectives
 
+### CI operator builder-version compatibility follow-up
+
+Run 43884842808 at 9bedb2f5f failed both operator architecture jobs before
+Buildx: operator commit 48d9d91df942c7e851c937cca02bf06ce856d23d updates the
+builder to go-toolset:10.3, but the CI-only native-builder rewrite and its guard
+match only 10.2. Preserve the selected operator's image reference instead of
+pinning, downgrading or modifying that repository.
+
+BR-PLATFORM-008; RED UT-INFRA-CI-2643-001 executes the actual workflow run block
+with 10.2, 10.3, digest-pinned and unexpected builder fixtures. Assert exact output
+with literal `$BUILDPLATFORM`, unchanged source and fail-closed rejection of an
+unexpected builder. GREEN uses one capture-preserving rewrite plus its guard.
+REFACTOR N/A for this localized configuration fix. Validate the shell fixtures,
+infrastructure unit suite, lint and diff checks without building images. Both CI
+operator architectures and downstream E2E must pass on the next pushed commit.
+
 ### Production WorkflowExecution parent-watch scheme registration
 
 Run 43801432628 deployed WE E2E is blocked before reconciliation: must-gather
