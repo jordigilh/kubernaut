@@ -329,6 +329,12 @@ Objectives:
 | IT-RBAC-2588-001 | Rendered roles and live SARs prove least privilege for parent reads, child status, backend stop, and audit writes | PARTIAL — rendered RBAC PASS; live issue-specific SAR unavailable because the persistent `kubernaut-demo` cluster has no #2588 controller service-account/RBAC targets |
 | IT-AA-2588-003 | Generated controller RBAC grants required RemediationRequest parent-read verbs, while the direct AIAnalysis E2E ClusterRole is exactly read-only so its parent-cancellation informer can synchronize (E2E crash-loop fix, run 43913953987) | PASS — `go test ./test/infrastructure` |
 
+The focused AIAnalysis envtest suites `cascadecancel` and `schemarejection`
+also register `remediationv1alpha1` because the reconciler now performs the
+parent RemediationRequest read before those scenarios exercise their existing
+behavior. This is test-scheme wiring only; no production cancellation contract
+is relaxed.
+
 ### E2E tests
 
 | ID | Business outcome | Phase |
