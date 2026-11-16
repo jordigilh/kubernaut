@@ -21,6 +21,8 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -57,11 +59,14 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: controllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
-				SignalFingerprint: fmt.Sprintf("%064x", uuid.New()),
-				SignalName:        "E2ECancellation",
-				Severity:          "critical",
-				SignalType:        "alert",
-				TargetType:        "kubernetes",
+				SignalFingerprint: func() string {
+					h := sha256.Sum256([]byte(uuid.NewString()))
+					return hex.EncodeToString(h[:])
+				}(),
+				SignalName: "E2ECancellation",
+				Severity:   "critical",
+				SignalType: "alert",
+				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind: "Deployment", Name: "cancel-target", Namespace: targetNamespace,
 				},
