@@ -37,6 +37,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	apifrontendtools "github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -212,6 +213,22 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 
 		notification.Status.Phase = notificationv1.NotificationPhaseSent
 		Expect(k8sClient.Status().Update(ctx, &notification)).To(Succeed())
+		var current remediationv1.RemediationRequest
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), &current)).To(Succeed())
+		if ref := current.Status.GetPhaseProgress().SignalProcessingRef; ref != nil {
+			By("acknowledging a SignalProcessing child created before deletion")
+			sp := &signalprocessingv1.SignalProcessing{}
+			namespace := ref.Namespace
+			if namespace == "" {
+				namespace = current.Namespace
+			}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name:      ref.Name,
+				Namespace: namespace,
+			}, sp)).To(Succeed())
+			cancellation.SetAcknowledged(&sp.Status.Conditions, sp.Generation, "backend termination verified")
+			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(wfe), wfe)).To(Succeed())
 		cancellation.SetAcknowledged(&wfe.Status.Conditions, wfe.Generation, "backend termination verified")
 		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
