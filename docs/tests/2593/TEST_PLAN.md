@@ -19,6 +19,37 @@
 > inventory. Functional scenarios, denominators, wiring rows, and public v1 boundaries are
 > unchanged.
 
+### Bounded CI round 12 — operator dependency/schema alignment (2026-11-16)
+
+User explicitly approved a separate operator dependency/schema PR consuming reviewed
+core `8c36d5628d8865f78c7dba14f6051685954539ea`, plus the bounded Fleet Pod fixture
+correction. Round 11 CI `43890709940` (attempt 1) completed with 80 successful,
+4 failed and 2 skipped checks. Fleet had 38 passing / 10 failing / 0 skipped specs;
+KA failed PostgreSQL readiness setup before specs. No PG or fencing fix is authorized.
+
+- BR-INTEGRATION-054 / DD-FLEET-014: operator embeds core `4ef515778dc5`, whose SP
+  schema lacks targetResource.apiVersion. Live artifact `14240273278` proves pruning
+  while the RR retains apps/v1. Current core source/creator preserve the field.
+- Operator RED: embedded schema assertion fails; real reconciliation plus API-server
+  persistence fails for apps/v1 Deployment and v1 Pod. Exact core module alignment
+  makes all three assertions pass. No raw CRD replacement or operator API/RBAC change.
+- Core RED (2 minutes): UT-FLEET-2593-001 requires explicit v1 in E2E-FLEET-003's
+  actual Pod identity; fails before fixture correction. GREEN adds explicit v1 and
+  an API-server create-response persistence assertion. REFACTOR N/A: test data only.
+- Qualification uses existing CI workflow_dispatch operator_ref with the immutable
+  operator PR commit. Existing operator provenance records resolved SHA, chart and
+  both architecture image digests. No resolver/workflow/security change is needed.
+- Full operator/core affected checks must pass before normal topic-branch publication;
+  fresh exact-artifact CI and independent review remain required. Separate fenced-read
+  errors, KA PostgreSQL root cause and producer-contract evidence remain unresolved.
+
+Local core validation: complete infrastructure suite passes (including the new
+fixture guard), `go build ./...`, repository-wide compile-only tests, full lint
+(zero issues), formatting and whitespace checks pass. This is fixture/compilation
+evidence, not a live Fleet E2E pass. The aligned operator deliberately consumes
+the reviewed pre-fixture core SHA; this test-only correction changes no embedded
+schema or operator runtime dependency.
+
 ### Bounded CI round 10 — operator builder-image preparation (2026-11-16)
 
 Run `43887848957`, attempt 1, head `53517607e72055fac6d86dacc3177dab6e69dc82`,

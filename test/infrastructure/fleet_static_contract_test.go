@@ -19,6 +19,7 @@ package infrastructure
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -81,6 +82,15 @@ var _ = Describe("Thanos Querier release contract", func() {
 })
 
 var _ = Describe("Fleet static operator contract", func() {
+	It("UT-FLEET-2593-001 [BR-INTEGRATION-054]: gives the remote enrichment Pod fixture its actual core API version", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "e2e", "fleet", "02_sp_remote_enrichment_test.go"))
+		Expect(err).NotTo(HaveOccurred())
+		target := regexp.MustCompile(`(?s)TargetResource: signalprocessingv1.ResourceIdentifier\{([^}]+)\}`).FindSubmatch(source)
+		Expect(target).To(HaveLen(2))
+		Expect(string(target[1])).To(MatchRegexp(`APIVersion:\s*"v1"`))
+		Expect(string(target[1])).To(MatchRegexp(`Kind:\s*"Pod"`))
+	})
+
 	It("UT-2492-CR-STATIC-001 [BR-FLEET-004]: renders the checked-in Fleet CR without dynamic EAIGW names", func() {
 		fixture := filepath.Join(getProjectRoot(), "test", "fixtures", "operator", "kubernaut-fleet.yaml")
 		manifest, err := RenderStaticOperatorCRManifest(fixture, nil)
