@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -47,6 +48,60 @@ func restoreEnvironment(name, value string, wasSet bool) {
 }
 
 var _ = Describe("issue #2492 operator deployment contracts", func() {
+	DescribeTable("UT-2492-CI-001 [BR-PLATFORM-014]: runs the operator workflow preparation without changing source image authority",
+		func(image string, valid bool) {
+			workflow, err := os.ReadFile("../../.github/workflows/ci-pipeline.yml")
+			Expect(err).NotTo(HaveOccurred())
+			var document yaml.Node
+			Expect(yaml.Unmarshal(workflow, &document)).To(Succeed())
+			var prepare string
+			var visit func(*yaml.Node)
+			visit = func(node *yaml.Node) {
+				if node.Kind == yaml.MappingNode {
+					var name, run string
+					for i := 0; i < len(node.Content); i += 2 {
+						switch node.Content[i].Value {
+						case "name":
+							name = node.Content[i+1].Value
+						case "run":
+							run = node.Content[i+1].Value
+						}
+					}
+					if name == "Prepare native cross-compile Dockerfile" {
+						prepare = run
+					}
+				}
+				for _, child := range node.Content {
+					visit(child)
+				}
+			}
+			visit(&document)
+			Expect(prepare).NotTo(BeEmpty())
+			root := GinkgoT().TempDir()
+			operatorRoot := filepath.Join(root, "kubernaut-operator")
+			Expect(os.Mkdir(operatorRoot, 0700)).To(Succeed())
+			source := "FROM " + image + " AS builder\nARG TARGETARCH\nFROM scratch\n"
+			Expect(os.WriteFile(filepath.Join(operatorRoot, "Dockerfile"), []byte(source), 0600)).To(Succeed())
+			command := exec.Command("bash", "-c", prepare)
+			command.Dir = root
+			output, err := command.CombinedOutput()
+			if !valid {
+				Expect(err).To(HaveOccurred(), string(output))
+				return
+			}
+			Expect(err).NotTo(HaveOccurred(), string(output))
+			generated, err := os.ReadFile(filepath.Join(operatorRoot, "Dockerfile.ci"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(generated)).To(Equal(strings.Replace(source, "FROM ", "FROM --platform=$BUILDPLATFORM ", 1)))
+			original, err := os.ReadFile(filepath.Join(operatorRoot, "Dockerfile"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(original)).To(Equal(source))
+		},
+		Entry("previous source tag", "registry.access.redhat.com/ubi10/go-toolset:10.2", true),
+		Entry("current source tag", "registry.access.redhat.com/ubi10/go-toolset:10.3", true),
+		Entry("digest-pinned source", "registry.access.redhat.com/ubi10/go-toolset:10.3@sha256:"+strings.Repeat("a", 64), true),
+		Entry("unexpected builder fails closed", "unexpected.example/go:latest", false),
+	)
 	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
 		resolved, err := ResolveDemoOperatorArtifacts(DemoArtifactResolutionInput{ReleaseLine: "1.6.0-rc27"})
 		Expect(err).NotTo(HaveOccurred())

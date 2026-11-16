@@ -19,6 +19,46 @@
 > inventory. Functional scenarios, denominators, wiring rows, and public v1 boundaries are
 > unchanged.
 
+### Bounded CI round 10 — operator builder-image preparation (2026-11-16)
+
+Run `43887848957`, attempt 1, head `53517607e72055fac6d86dacc3177dab6e69dc82`,
+has terminal operator architecture failures in jobs `133370974944` (amd64) and
+`133370974935` (arm64). Both fail during `Prepare native cross-compile Dockerfile`,
+before image builds or qualification specs. Resolved operator source
+`48d9d91df942c7e851c937cca02bf06ce856d23d` uses `ubi10/go-toolset:10.3`;
+the CI-only rewrite and its guard require exactly `10.2`, so the guard exits 1.
+These are one shared preparation cause, not two application failures.
+
+- Requirement: BR-PLATFORM-014; preserve exact resolved operator source and image
+  authority while enabling the existing native Go cross-compilation path.
+- RED (3 minutes): `UT-2492-CI-001` executes the actual YAML preparation step in
+  an isolated directory. Four scenarios: old tag, current tag, digest-pinned tag,
+  unexpected builder. Current/digest cases fail before correction; old tag and
+  rejection pass. Every successful output must preserve the original image and
+  all other Dockerfile content, leaving the source file untouched.
+- GREEN (2 minutes): capture the existing approved registry/repository image token
+  instead of hard-coding its version; retain the builder-stage validation guard.
+  No operator ref, dependency image, build command, readiness, permission or gate
+  changes. No new production components/wiring manifest rows.
+- REFACTOR: N/A; the bounded change only updates the existing preparation pattern.
+- Verification (5–10 minutes): all four scenarios, complete infrastructure suite,
+  scoped race, repository build/test compilation, lint and whitespace checks.
+  These prove workflow-step execution, not a live image build or E2E journey.
+  CI must requalify both architectures and downstream operator-dependent lanes.
+- Rollback: revert only this bounded preparation change if the builder contract
+  changes; fail closed rather than silently emulate or substitute an image.
+
+Local execution: RED reproduced two failures (current `10.3` and digest-pinned
+source), with old `10.2` and unexpected-builder rejection passing. GREEN passes
+all four cases, the complete infrastructure suite, and scoped `-race` execution.
+`go build ./...`, repository-wide compile-only `go test ./... -run='^$'
+-timeout=30s`, full `golangci-lint run --timeout=5m` (zero issues), formatting and
+`git diff --check` pass. No live operator build or downstream E2E pass is claimed.
+At the final pre-commit status capture, run `43887848957` remains in progress:
+43 successful jobs, two operator preparation failures, one skipped package job,
+and the AF unit lane still running. This bounded round fixes the terminal
+preparation failure; any later failures require fresh evidence in the next round.
+
 ### Singleton deployment amendment (2026-11-15)
 
 The current FMC deployment is intentionally single-replica. Kubernetes Lease
