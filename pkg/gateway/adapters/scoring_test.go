@@ -206,9 +206,9 @@ var _ = Describe("Multi-Candidate Scoring (#1029)", func() {
 				"alerts": []map[string]interface{}{
 					{
 						"labels": map[string]interface{}{
-							"alertname":  "PodOOM",
-							"pod":        "worker-abc",
-							"namespace":  "staging",
+							"alertname": "PodOOM",
+							"pod":       "worker-abc",
+							"namespace": "staging",
 						},
 						"annotations": map[string]interface{}{"summary": "OOM"},
 						"status":      "firing",

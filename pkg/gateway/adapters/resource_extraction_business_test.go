@@ -333,9 +333,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// InvolvedObject contains Kind, Name, Namespace directly
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "payment-pod-xyz",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "payment-pod-xyz",
+					"namespace":  "production",
 				},
 				"reason":  "OOMKilled",
 				"message": "Container exceeded memory limit",
@@ -358,9 +359,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// BUSINESS OUTCOME: Node events trigger infrastructure workflows
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Node",
-					"name":      "worker-node-1",
-					"namespace": "", // Cluster-scoped - no namespace
+					"apiVersion": "v1",
+					"kind":       "Node",
+					"name":       "worker-node-1",
+					"namespace":  "", // Cluster-scoped - no namespace
 				},
 				"reason":  "NodeNotReady",
 				"message": "Node is not ready",
@@ -386,9 +388,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "payment-pod",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "payment-pod",
+					"namespace":  "production",
 				},
 				"reason":  "OOMKilled",
 				"message": "Container exceeded memory limit",
@@ -409,8 +412,9 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// Authority: BR-GATEWAY-181
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind": "Node",
-					"name": "worker-1",
+					"apiVersion": "v1",
+					"kind":       "Node",
+					"name":       "worker-1",
 				},
 				"reason": "NodeNotReady",
 				"type":   "Error",
@@ -430,9 +434,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// Authority: BR-GATEWAY-181
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "api-pod",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "api-pod",
+					"namespace":  "production",
 				},
 				"reason": "FailedScheduling",
 				"type":   "Warning", // Passed through as-is, not overridden
@@ -452,9 +457,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// Authority: BR-GATEWAY-181
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "api-pod",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "api-pod",
+					"namespace":  "production",
 				},
 				"reason": "BackOff",
 				"type":   "Warning",
@@ -474,9 +480,10 @@ var _ = Describe("Kubernetes Event Adapter - Resource Extraction Business Outcom
 			// Authority: BR-GATEWAY-181
 			eventPayload := map[string]interface{}{
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "test-pod",
-					"namespace": "default",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "test-pod",
+					"namespace":  "default",
 				},
 				"reason": "UnknownErrorReason", // Reason ignored
 				"type":   "Error",              // Type passed through
