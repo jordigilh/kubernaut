@@ -889,6 +889,9 @@ func completeAWXJobTemplates(ctx context.Context, awxBaseURL string, cfg *AWXCon
 		"playbook":                "playbooks/test-success.yml",
 		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
+		// #2588: the ansible executor launches with a recovery label and
+		// rejects templates that cannot accept launch labels.
+		"ask_labels_on_launch": true,
 	}
 	successResult, successStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", successBody)
 	if err != nil {
@@ -909,6 +912,8 @@ func completeAWXJobTemplates(ctx context.Context, awxBaseURL string, cfg *AWXCon
 		"playbook":                "playbooks/test-failure.yml",
 		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
+		// #2588: label-based launch recovery requires launch labels.
+		"ask_labels_on_launch": true,
 	}
 	failureResult, failureStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", failureBody)
 	if err != nil {
@@ -939,6 +944,8 @@ func completeAWXJobTemplates(ctx context.Context, awxBaseURL string, cfg *AWXCon
 			"inventory":                cfg.InventoryID,
 			"ask_variables_on_launch":  true,
 			"ask_credential_on_launch": true,
+			// #2588: label-based launch recovery requires launch labels.
+			"ask_labels_on_launch": true,
 		}
 		dtResult, dtStatus, dtErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", dtBody)
 		switch {
@@ -987,6 +994,8 @@ func createAWXCredentialMergeInfrastructure(ctx context.Context, awxBaseURL stri
 			"inventory":                cfg.InventoryID,
 			"ask_variables_on_launch":  true,
 			"ask_credential_on_launch": true,
+			// #2588: label-based launch recovery requires launch labels.
+			"ask_labels_on_launch": true,
 		}
 		credMergeResult, credMergeStatus, credMergeErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", credMergeBody)
 		if credMergeErr != nil || credMergeStatus != http.StatusCreated {

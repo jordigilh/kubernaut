@@ -273,6 +273,46 @@ var _ = Describe("AIAnalysis RBAC parity (IT-AA-2575-004)", func() {
 		Expect(directRule.Verbs).To(ConsistOf("get", "list", "watch"),
 			"direct AIAnalysis E2E access must remain read-only")
 	})
+
+	// IT-AA-2588-003 [BR-2588]: the AIAnalysis controller watches parent
+	// RemediationRequests to cascade cancellation. Without read access the
+	// informer cannot synchronize, controller-runtime exhausts its 2-minute
+	// cache-sync timeout, and the manager exits (E2E crash loop, run 43913953987).
+	// The generated shared manager role may contain additional controller verbs;
+	// the direct AIAnalysis E2E role is the exact read-only least-privilege check.
+	It("grants generated parent-read permissions and exact direct E2E read-only access", func() {
+		generatedPath := filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml")
+		generatedRules, err := parseClusterRoleRules(generatedPath, "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "generated manager role must be parseable")
+
+		inlineRules, err := parseClusterRoleRulesFromYAML(
+			[]byte(aiAnalysisControllerRBACManifest()), "aianalysis-controller")
+		Expect(err).NotTo(HaveOccurred(), "direct AIAnalysis RBAC fixture must be parseable")
+
+		var generatedMatching []rbacv1.PolicyRule
+		for _, rule := range generatedRules {
+			if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, "remediationrequests") {
+				generatedMatching = append(generatedMatching, rule)
+			}
+		}
+		Expect(generatedMatching).NotTo(BeEmpty(), "generated controller RBAC must contain a RemediationRequest rule")
+		for _, rule := range generatedMatching {
+			Expect(rule.Verbs).To(ContainElements("get", "list", "watch"),
+				"generated controller RemediationRequest access must include parent reads")
+		}
+
+		var directMatching []rbacv1.PolicyRule
+		for _, rule := range inlineRules {
+			if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, "remediationrequests") {
+				directMatching = append(directMatching, rule)
+			}
+		}
+		Expect(directMatching).NotTo(BeEmpty(), "direct AIAnalysis E2E RBAC must contain a RemediationRequest rule")
+		for _, rule := range directMatching {
+			Expect(rule.Verbs).To(ConsistOf("get", "list", "watch"),
+				"direct AIAnalysis RemediationRequest access must remain read-only")
+		}
+	})
 })
 
 // IT-RO-2575-005 [BR-ORCH-025/026, AC-6]: RemediationOrchestrator verifies the

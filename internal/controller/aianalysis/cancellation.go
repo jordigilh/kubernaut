@@ -84,7 +84,13 @@ func (r *AIAnalysisReconciler) parentCancellationRequested(
 		return false, false, fmt.Errorf("get parent RemediationRequest for cancellation: %w", err)
 	}
 	if apierrors.IsNotFound(err) {
-		return true, true, nil
+		// Synthetic or legacy AIAnalysis objects may carry a correlation
+		// reference without being controller-owned by a RemediationRequest
+		// (mirrors the WFE rule from commit 2bcb59b1f). Only a persisted
+		// controller owner proves that a missing parent represents an
+		// orphaned production child; anything else keeps its normal
+		// lifecycle instead of failing closed to cancellation.
+		return hasRemediationRequestOwner(analysis), true, nil
 	}
 	if !cancellation.ParentStopRequested(parent) {
 		return false, false, nil
@@ -218,6 +224,17 @@ func (r *AIAnalysisReconciler) recordAgentSessionCancellationAudit(
 	if r.AuditClient != nil {
 		r.AuditClient.RecordError(ctx, analysis, "Cancellation", fmt.Errorf("%s", analysis.Status.Message))
 	}
+}
+
+func hasRemediationRequestOwner(analysis *aianalysisv1.AIAnalysis) bool {
+	for _, owner := range analysis.OwnerReferences {
+		if owner.Controller != nil && *owner.Controller &&
+			owner.Kind == "RemediationRequest" &&
+			owner.Name == analysis.Spec.RemediationRequestRef.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func mapRemediationRequestToAIAnalysis(_ context.Context, rr *remediationv1.RemediationRequest) []ctrl.Request {

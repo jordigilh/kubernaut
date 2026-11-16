@@ -256,6 +256,8 @@ Objectives:
 | UT-AI-2588-005 | AgentSession cancellation exhaustion is bounded, non-acknowledged, and records manual-review evidence | PASS — `go test ./internal/controller/aianalysis` |
 | UT-AI-2588-006 | Active AIAnalysis work can enter and complete cancellation | PASS — `go test ./pkg/aianalysis/phase` |
 | UT-AI-2588-007 | AgentSession cancellation lookup failures persist status and use the explicit retry backoff without returning a conflicting error | PASS — `go test ./internal/controller/aianalysis` |
+| UT-AI-2588-008 | An ownerless AIAnalysis with a missing parent is not cancelled; only a persisted controller owner proves an orphaned production child (mirrors UT-WE-2588-022) | PASS — `go test ./internal/controller/aianalysis` |
+| UT-AI-2588-009 | An owned AIAnalysis whose parent RemediationRequest is missing still fails closed to ParentCancelled cancellation (mirrors UT-WE-2588-023) | PASS — `go test ./internal/controller/aianalysis` |
 | UT-AA-2588-003 | AgentSession deletion rejects a stale AIAnalysis UID | PASS — `go test ./pkg/aianalysis/...` |
 | UT-AA-2588-004 | AgentSession reuse rejects an owner with a stale AIAnalysis UID | PASS — `go test ./pkg/aianalysis/...` |
 | UT-EM-2588-001 | EffectivenessAssessment stops before acknowledging parent cancellation | PASS — `go test ./internal/controller/effectivenessmonitor` |
@@ -325,6 +327,7 @@ Objectives:
 | IT-NT-2588-002 | Existing notification deletion semantics remain unchanged | BLOCKED — exact ENVTEST scenario is present; ENVTEST infrastructure setup is unavailable |
 | IT-AUDIT-2588-001 | Correlation query reconstructs the full cancellation lifecycle | PASS — Helios08 DataStorage query returned `count:7,total:7`; artifact: `/tmp/kubernaut-must-gather/remediationorchestrator-integration-20261115-082908/remediationorchestrator_remediationorchestrator_datastorage_test.log` |
 | IT-RBAC-2588-001 | Rendered roles and live SARs prove least privilege for parent reads, child status, backend stop, and audit writes | PARTIAL — rendered RBAC PASS; live issue-specific SAR unavailable because the persistent `kubernaut-demo` cluster has no #2588 controller service-account/RBAC targets |
+| IT-AA-2588-003 | Generated controller RBAC grants required RemediationRequest parent-read verbs, while the direct AIAnalysis E2E ClusterRole is exactly read-only so its parent-cancellation informer can synchronize (E2E crash-loop fix, run 43913953987) | PASS — `go test ./test/infrastructure` |
 
 ### E2E tests
 

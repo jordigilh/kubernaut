@@ -26,6 +26,88 @@ import (
 )
 
 var _ = Describe("AIAnalysis parent cancellation", func() {
+	It("UT-AI-2588-008: does not classify an ownerless missing-parent AIAnalysis as cancelled", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(agentsessionv1.AddToScheme(scheme)).To(Succeed())
+
+		// Mirrors UT-WE-2588-022: synthetic or legacy AIAnalysis objects may
+		// carry a correlation reference without being controller-owned by a
+		// RemediationRequest. A missing parent alone must not cancel them.
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "aa-synthetic", Namespace: "system", UID: types.UID("aa-synthetic-uid")},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "missing", Namespace: "system"},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{Phase: aianalysisv1.PhaseInvestigating},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(analysis).WithObjects(analysis).Build()
+		reconciler := &controller.AIAnalysisReconciler{
+			Client:              c,
+			AgentSessionCreator: creator.NewAgentSessionCreator(c, scheme),
+		}
+
+		_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: analysis.Name, Namespace: analysis.Namespace}})
+		Expect(err).NotTo(HaveOccurred())
+		var got aianalysisv1.AIAnalysis
+		Expect(c.Get(context.Background(), client.ObjectKeyFromObject(analysis), &got)).To(Succeed())
+		Expect(got.Status.Phase).NotTo(Equal(aianalysisv1.PhaseCancelled),
+			"an ownerless AIAnalysis must not be cancelled for a missing parent")
+		Expect(got.Status.Reason).NotTo(Equal(aianalysisv1.ReasonParentCancelled))
+		Expect(got.Status.Message).NotTo(ContainSubstring("parent RemediationRequest is missing"))
+		// The companion fail-closed case is UT-AI-2588-009; dispatch of the
+		// AgentSession belongs to the kubernaut-agent dispatcher, so the
+		// positive lifecycle signal here is the untouched investigation phase.
+		Expect(got.Status.Phase).To(Equal(aianalysisv1.PhaseInvestigating),
+			"an ownerless AIAnalysis must keep its normal lifecycle phase")
+	})
+
+	It("UT-AI-2588-009: treats an owned missing-parent AIAnalysis as an orphan stop request", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(agentsessionv1.AddToScheme(scheme)).To(Succeed())
+
+		isController := true
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aa-orphan",
+				Namespace: "system",
+				UID:       types.UID("aa-orphan-uid"),
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: remediationv1.GroupVersion.String(),
+					Kind:       "RemediationRequest",
+					Name:       "missing",
+					UID:        types.UID("missing-uid"),
+					Controller: &isController,
+				}},
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "missing", Namespace: "system", UID: types.UID("missing-uid")},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{Phase: aianalysisv1.PhaseInvestigating},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(analysis).WithObjects(analysis).Build()
+		reconciler := &controller.AIAnalysisReconciler{
+			Client:              c,
+			AgentSessionCreator: creator.NewAgentSessionCreator(c, scheme),
+		}
+
+		_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: analysis.Name, Namespace: analysis.Namespace}})
+		Expect(err).NotTo(HaveOccurred())
+		var got aianalysisv1.AIAnalysis
+		Expect(c.Get(context.Background(), client.ObjectKeyFromObject(analysis), &got)).To(Succeed())
+		Expect(got.Status.Phase).To(Equal(aianalysisv1.PhaseCancelled),
+			"an owned AIAnalysis whose parent is gone must reach terminal cancellation")
+		Expect(got.Status.Reason).To(Equal(aianalysisv1.ReasonParentCancelled),
+			"an owned AIAnalysis whose parent is gone must fail closed to cancellation")
+		Expect(cancellation.IsAcknowledged(got.Status.Conditions)).To(BeTrue(),
+			"an orphaned AIAnalysis must acknowledge that no work remains")
+	})
+
 	It("UT-AI-2588-002: keeps cancellation nonterminal until an existing AgentSession is observed stopping", func() {
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
