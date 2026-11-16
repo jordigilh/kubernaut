@@ -74,6 +74,48 @@ suite passed, as did `go test ./pkg/fleet/fmc ./pkg/fleet/scopecache
 `golangci-lint run --timeout=5m` (zero issues). Formatting and `git diff --check`
 passed. Real-cluster E2E reruns have not been performed; no CI pass is claimed.
 
+### Bounded CI round 2 — parallel fixture isolation (2026-11-16)
+
+Run `43806463224`, head `0077899b16e92f1c7d55a8508249ad487f7b954a`,
+finished failed. Gateway and FullPipeline E2E passed. Five test lanes failed;
+summary and merge gate are downstream failures, not additional causes:
+
+| Lane / job | First failing phase and classification |
+|---|---|
+| FMC integration / `133101174018` | Specs: `IT-FMC-REVIEW-LIFECYCLE-001` returned unavailable after reacquisition; `IT-FMC-REVIEW-EMPTY-004` failed repair with `ERR STALE_FENCE`. All parallel broker fixtures watched shared `default` Backend membership, allowing another fixture's syncer to write the same partitions. |
+| FMC EAIGW / `133101344419` and Kuadrant / `133101344396` | Setup now succeeds; each has 14 passing specs, one failing cross-cluster-isolation spec and one existing ordered skip. `shared/cross_cluster_isolation.go:83` calls a helper requiring `200/false` for an object absent from the other cluster; actual `503` preserves the approved missing-target-unavailable contract. No parser relaxation is authorized. |
+| AF fleet / `133101344380` | BeforeSuite at `test/infrastructure/migrations.go:256`: PostgreSQL readiness timeout before migrations. Must-gather `14200270751` shows PostgreSQL `ContainerCreating`, no container ID, and a `Pulling` event for `postgres:16-alpine`; the reason the pull did not finish is not established. |
+| Fleet / `133101344408` | Specs: 27 passed, 19 failed, two existing skips. First reported failure is `E2E-FLEET-015`; must-gather `14200651323` records FMC `fenced-read proof changed` responses. This does not prove the integration-fixture cause applies to deployed Fleet. Source cause remains unproven. |
+
+The bounded test-only fix serves BR-SCOPE-001 and BR-INTEGRATION-065:
+
+- RED: `IT-FMC-ISOLATION-001` creates a foreign fixture Backend and proves the
+  original registry incorrectly admits it.
+- GREEN: give each broker fixture a unique namespace and namespace-scoped real
+  registry; preserve the shared real Valkey, production syncer, fencing, parser,
+  readiness and assertion contracts. Explicitly delete fixture Backends because
+  envtest has no namespace garbage collector.
+- REFACTOR: reuse a namespace-aware Backend creation helper while retaining the
+  existing default-namespace helper for unchanged callers.
+- Local evidence: the regression fails before isolation; all five broker specs
+  pass after isolation, including four-process race execution. The wider
+  four-process integration run records 29 passed, one external EAIGW
+  container-start failure, and the two existing parser-container skips. This
+  is not a complete integration-suite pass. Runs use a bootstrap-only Go overlay
+  selecting real local Valkey because Podman cannot unpack `redis:7-alpine`
+  (`lchown /etc/shadow: invalid argument`); no business code is overlaid.
+  `go build ./...`, repository-wide test compilation (`go test ./...
+  -run='^$' -timeout=30s`), affected-package lint (zero issues), and
+  `git diff --check` pass without an overlay.
+- Producer review thread remains externally unverified: require the exact
+  digest/config, `tools/list` schema and empty/nonempty `resources_list` captures
+  through the deployed gateway. Local Kind API is unavailable and parser-container
+  startup fails; neither supplies producer evidence. Preserve fail-closed parsing.
+
+No production, workflow, RBAC, HA, public API or parser changes are included.
+No E2E qualification pass is claimed. The other failing lanes remain separately
+classified for the next bounded round.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head

@@ -24,6 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
@@ -42,6 +46,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		ctx         context.Context
 		cancel      context.CancelFunc
 		cluster     string
+		namespace   string
 		clusterReg  *registry.EAIGWRegistry
 		store       *scopecache.ValkeyStatusStore
 		readiness   *scopecache.FMCReadinessSnapshot
@@ -60,6 +65,14 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		empty.Store(false)
 		calls.Store(0)
 		cluster = "broker-" + uuid.NewString()
+		namespace = cluster
+		kube, err := kubernetes.NewForConfig(restConfig)
+		Expect(err).ToNot(HaveOccurred())
+		_, err = kube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, metav1.CreateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() {
+			Expect(kube.CoreV1().Namespaces().Delete(context.Background(), namespace, metav1.DeleteOptions{})).To(Succeed())
+		})
 		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			calls.Add(1)
 			if !available.Load() {
@@ -79,9 +92,12 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		rc, err := mcpclient.NewResilient(ctx, gw.URL(), config, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(rc.Close()).To(Succeed()) })
-		createBackend(ctx, cluster)
-		DeferCleanup(deleteBackend, context.Background(), cluster)
-		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{Namespace: "default", ChannelSize: 1}, nil, logr.Discard())
+		createBackendInNamespace(ctx, namespace, cluster)
+		DeferCleanup(func() {
+			err := dynClient.Resource(registry.BackendGVR).Namespace(namespace).Delete(context.Background(), cluster, metav1.DeleteOptions{})
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue(), "delete fixture Backend: %v", err)
+		})
+		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{Namespace: namespace, ChannelSize: 1}, nil, logr.Discard())
 		Expect(clusterReg.Start(ctx)).To(Succeed())
 		DeferCleanup(clusterReg.Stop)
 		store, err = scopecache.NewValkeyStatusStoreAt(valkeyAddr)
@@ -118,6 +134,15 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
 		}, 5*time.Second).Should(Succeed())
+	})
+
+	It("IT-FMC-ISOLATION-001 [BR-SCOPE-001]: another fixture's registration cannot enter this writer's membership", func() {
+		foreign := "foreign-" + uuid.NewString()
+		createBackend(ctx, foreign)
+		DeferCleanup(deleteBackend, context.Background(), foreign)
+		Eventually(func() error { return clusterReg.Probe(ctx) }, 5*time.Second).Should(Succeed())
+		_, found := clusterReg.Get(foreign)
+		Expect(found).To(BeFalse(), "a parallel fixture's writer must not discover or repair this fixture's partitions")
 	})
 
 	It("IT-FMC-REVIEW-LIFECYCLE-001 [BR-SECURITY-016]: reacquisition fails closed through Syncer, readiness and Client.Check", func() {
@@ -167,7 +192,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(found).To(BeTrue())
 		Expect(syncer.SyncCluster(ctx, info)).NotTo(Succeed())
 		Expect(syncer.Ready()).To(BeFalse())
-		deleteBackend(ctx, cluster)
+		Expect(dynClient.Resource(registry.BackendGVR).Namespace(namespace).Delete(ctx, cluster, metav1.DeleteOptions{})).To(Succeed())
 		Eventually(func() bool { _, found := clusterReg.Get(cluster); return found }, 5*time.Second).Should(BeFalse())
 		// Remove all queued events before Run, so the production syncAll snapshot
 		// path, not an event-specific removal, must restore empty-registry readiness.
