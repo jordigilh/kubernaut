@@ -13,12 +13,11 @@
 > This repository-versioned file is the active bounded implementation and test authority
 > for #2593. It contains the approved fast-path boundary, approval-pending constraints,
 > TDD execution, production-wiring, evidence, and final validation gates. The user-approved
-> clean-worktree fast path authorizes RED and subsequent implementation only in the clean
-> worktree recorded by `evidence/FAST_PATH_CARRY_HOLD.md`;
-> it authorizes no public v2 route/media, cluster activity, deployment, release, GitHub
-> update, ACM Search qualification, or ACM Console inventory. The original dirty
-> worktree and all held paths remain preserved. Functional scenarios, denominators,
-> wiring rows, and public v1 boundaries are unchanged.
+> clean-worktree fast path authorizes RED and subsequent implementation only within the
+> bounded source and scope stated here; it authorizes no public v2 route/media, cluster
+> activity, deployment, release, GitHub update, ACM Search qualification, or ACM Console
+> inventory. Functional scenarios, denominators, wiring rows, and public v1 boundaries are
+> unchanged.
 
 ### Singleton deployment amendment (2026-11-15)
 
@@ -69,13 +68,11 @@ observations or hypotheses, not proven source causes. RCA dossier: `14177886889`
 ### Fast-path execution boundary (2026-11-13)
 
 The historical review-only Step 0/three-clean-review sequencing below is superseded
-for this clean worktree by the repository-versioned authority's approved fast path. The carry/hold
-classification is recorded in `evidence/FAST_PATH_CARRY_HOLD.md`; the original draft
-worktree remains untouched. This is not a new functional plan or a public API approval:
-RED starts from the carried foundation, GREEN still requires production wiring and
-passing RED tests, and final qualification/evidence gates remain pending. Expected
-implementation changes are reviewed with immutable RED/GREEN/REFACTOR pass captures;
-no second pre-RED review cycle is introduced.
+for this branch by the repository-versioned authority's approved fast path. This is not
+a new functional plan or a public API approval: RED starts from the bounded source
+baseline, GREEN still requires production wiring and passing RED tests, and final
+qualification/evidence gates remain pending. Expected implementation changes are
+reviewed per RED/GREEN/REFACTOR; no second pre-RED review cycle is introduced.
 
 ### Amendment note: user-approved pre-GA v1/no-migration and internal repair/Lease decision
 
@@ -194,8 +191,8 @@ review gates above.
 ### 2.2 Deferred approval and final-evidence documents
 
 The following remain acceptance, final-evidence, or separately owned gates. The
-user-approved clean-worktree fast path permits bounded RED from the recorded carry
-boundary; it does not waive these gates for GREEN completion, qualification, or release:
+user-approved clean-worktree fast path permits bounded RED within this authority; it
+does not waive these gates for GREEN completion, qualification, or release:
 
 - The [v0.9 amendment note](#amendment-note-user-approved-pre-ga-v1no-migration-and-internal-repairlease-decision)
   records the user-approved pre-GA v1/no-migration decision. This repository-versioned
@@ -328,9 +325,10 @@ PASS for this source-only amendment requires all of the following:
    registry incarnation/revision, GVK, invalid-label, direct ACM and DD-AF-018 boundaries
    are proven through the applicable source and wiring tests.
 6. The approved BR/ADR/API-owner package and source/wiring evidence are present, with the
-   historical review state and per-pass immutable review captures recorded. Conditional E2E, external AF/FMC/Page, RO-audit, deployment,
-   cluster, ACM, and Valkey qualification evidence remains separately owned and is not
-   credited by this slice.
+   historical review disposition recorded in this authority. Per-pass review is required
+   process evidence but its ephemeral captures are not committed. Conditional E2E, external
+   AF/FMC/Page, RO-audit, deployment, cluster, ACM, and Valkey qualification evidence
+   remains separately owned and is not credited by this slice.
 7. Required affected validation is run only after approval; this documentation review
    itself runs `git diff --check` and makes no build, test, deployment, or release claim.
 
@@ -1150,7 +1148,7 @@ zero credit and is not part of any active denominator.
 | FedRAMP SC-8 | HTTP/Valkey TLS/auth negative cases | IT-FMC-CACHE-003 and rendered transport config; ASVS V12.3.1/V12.3.2 pinned chapter | Platform owner |
 | FedRAMP SI-10 | Canonical identity and ordinary `application/json` contract validation | IT-FMC-PRES-009/010; ASVS V2.2.1/V2.2.2 pinned chapter | Scope/API owner |
 | DD-AUDIT-003 / AU-2/AU-3 / CC7.2 | No FMC audit claim | AF `IT-AF-2584-010`; RO `IT-RO-AUDIT-2593-001` executable external evidence with persisted routing fields and correlation reconstruction | AF/RO owners |
-| SOC2 CC8.1 | This amendment's change-control, authorization, testing, and review record only; not an audit-event completeness claim | Review archive, approval disposition, and clean-review counter | #2593 coordinator |
+| SOC2 CC8.1 | This amendment's change-control, authorization, testing, and review record only; not an audit-event completeness claim | Review/disposition record and clean-review counter | #2593 coordinator |
 | FedRAMP AU-9/AU-11 | Inherited or pending outside this FMC source-only slice; no audit-storage or retention claim | DataStorage/compliance evidence when separately authorized | DataStorage/compliance owner |
 | Typed scope contract | `UT-FMC-PRES-005/006/008` and typed-state unit cases | `IT-SCOPE-TYPED-018`–`IT-SCOPE-TYPED-021`; local, FMC, ACM, unknown-cluster, unavailable and verified-unmanaged routing | Scope/API owner |
 | AIAnalysis GVK handoff | `UT-FMC-PRES-008` identity validation | `IT-FMC-GVK-022`; analyzing handler, AI history, policy reader and remote `InferGVK` rejection | SignalProcessing/AI owner |
@@ -1420,7 +1418,7 @@ credit may be claimed.
 | Target-kind/GVK matrix | Scope/API owner | `docs/tests/2593/evidence/kinds/` |
 | SignalProcessing schema and GVK handoff | SignalProcessing API owner | `docs/tests/2593/evidence/gvk/` |
 | Cache lifecycle, readiness, Lease, repair, and source wiring | FMC owner | `docs/tests/2593/evidence/fmc/` |
-| Review responses, exact hashes, Engram references | #2593 review coordinator | `docs/tests/2593/evidence/reviews/` |
+| Review/disposition metadata | #2593 review coordinator | Current `TEST_PLAN.md`/RCA and commit history; ephemeral session captures are not committed |
 | AF audit and conditional route evidence | #2584/#2600 owner | Existing #2584 plan/evidence; no FMC credit |
 | RO routing audit evidence | RO audit owner | `docs/tests/2593/evidence/ro-audit/it-ro-audit-2593-001.json` plus command/output, persisted `RoutingBlockedData`, correlation reconstruction, owner/reviewer and both artifact hashes |
 | Authentication E2E control evidence | Security/operator owner | `docs/tests/2593/evidence/rbac/e2e/` for `E2E-FMC-AUTH-018` |
@@ -1486,7 +1484,7 @@ qualification evidence during this source-only phase.
 
 ### 11.2 Authoritative execution sequence
 
-1. **DISCOVERY**: use the approved fast-path boundary, carry/hold manifest, public v1
+1. **DISCOVERY**: use the approved bounded source/scope boundary, public v1
    contract and repository-versioned implementation/test authority. Record unresolved final-evidence dependencies without
    starting another planning or three-review cycle.
 2. **RED**: add failing Ginkgo/Gomega UTs and production-path ITs for every selected
@@ -1509,10 +1507,11 @@ qualification evidence during this source-only phase.
 
 The former three-review pre-implementation gate is historical and superseded by the
 approved fast-path boundary above. The current unreleased source is context, not accepted
-v2 behavior. Preserve complete historical responses, session IDs, exact plan/source hashes,
-Engram references, and disposition diffs in `docs/tests/2593/evidence/reviews/`. Expected
-source changes are captured and reviewed per RED/GREEN/REFACTOR pass; they do not introduce
-another three-review cycle or suspend RED while approval-pending dependencies are recorded.
+v2 behavior. Review/session captures are ephemeral provenance and are not repository
+artifacts; the current plan and RCA record the active scope and dispositions. Expected
+source changes are captured and reviewed per RED/GREEN/REFACTOR pass; they do not
+introduce another three-review cycle or suspend RED while approval-pending dependencies
+are recorded.
 
 ---
 
@@ -1530,7 +1529,7 @@ another three-review cycle or suspend RED while approval-pending dependencies ar
 | Identity/GVK evidence | `docs/tests/2593/evidence/rbac/`, `.../kinds/`, `.../gvk/` | Rendered RBAC, target-kind matrix, generated CRD and handoff proof |
 | Authentication E2E evidence | `docs/tests/2593/evidence/rbac/e2e/` | Real Kind TokenReview/SAR, 401/403/500 and identity/security-event proof, or approved risk acceptance |
 | External Page evidence | `docs/tests/2593/evidence/af-page/` | #2584/#2600 Page invariants, exact wire JSON, command and owner/reviewer record |
-| Review archive | `docs/tests/2593/evidence/reviews/` | Complete responses, hashes, Engram/source references and dispositions |
+| Review/disposition record | `docs/tests/2593/TEST_PLAN.md` and `docs/tests/2593/evidence/PR2637_RCA.md` | Current scope, dispositions, hashes and final CI evidence; ephemeral review/session captures are excluded |
 | Coverage/evidence report | CI or manually attached artifact | 16/16 source scenarios, 19/19 wiring, 15/15 critical, separate 0/1 E2E, 0/3 AF/FMC/Page, and 0/1 RO-audit gates, controls and no sensitive leakage; no qualification claim |
 
 ## 13. Execution commands
@@ -1606,7 +1605,7 @@ before conversion.
 | `pkg/fleet/fmc/http_client.go:164,173,284` | Current client builds `ScopeCheckPath`, sends `ScopeCheckMediaType`, and validates v2 media | Convert the client to the approved v1 route and ordinary JSON; preserve typed internal fail-closed handling without inventing a wire schema | Public client contract |
 | `pkg/fleet/fmc/handler_test.go:104-105,150-258` | Literal v2 paths and v2 media through the shared request helper | Convert every route/media assertion to the approved v1 contract; retain fail-closed unknown/invalid behavior and do not claim current v1 coverage | Handler route/media proof |
 | `pkg/fleet/fmc/http_client_test.go:64-70,83-299` | Literal v2 path and repeated v2 media response/Accept fixtures | Convert all fixtures and assertions to ordinary v1 JSON; any typed extension follows the approved schema only | Client contract and fail-closed safety |
-| `pkg/fleet/fmc/r13_scope_test.go:31-75` | Current untracked R13-labeled source test uses literal v2 route/media and typed response assertions | RED defines/tests the approved v1 conversion; GREEN reconciles this dirty source test atomically with the source consumers before production-composition credit; do not count it as v1 evidence; preserve `R13.md` as immutable historical evidence | Historical test label does not authorize v2 |
+| `pkg/fleet/fmc/r13_scope_test.go:31-75` | Current untracked R13-labeled source test uses literal v2 route/media and typed response assertions | RED defines/tests the approved v1 conversion; GREEN reconciles this dirty source test atomically with the source consumers before production-composition credit; do not count it as v1 evidence; historical review captures are excluded from the repository evidence set | Historical test label does not authorize v2 |
 | `pkg/fleet/scope_factory_test.go:238-376` | Current FMC factory tests return the v2 media type in five HTTP fixtures | Convert fixtures to the approved ordinary v1 JSON response; preserve transport/auth/TLS assertions and do not add a public media token | Factory/client wiring |
 | `pkg/fleet/mcpclient/client_test.go` | One-page list, missing structured content treated as empty | Add multi-page continuation, label retention, malformed/missing structured-content and pagination-error cases; incomplete observation must be unavailable, never empty | Presence evidence and TTL safety |
 | `pkg/fleet/fmc/syncer_test.go` | Positive-only `managed=true` filtering and namespace fallback assumptions | Assert full observed label states, incomplete cycle, no unobserved TTL refresh and label-bearing source evidence | Presence-before-inheritance |
@@ -1632,8 +1631,7 @@ listed above, including the FMC HTTP integration, factory, RO, diagnostics, E2E,
 infrastructure paths. Comment-only symbol mentions in
 `test/e2e/fleetmetadatacache/{suite_test.go,eaigw/suite_test.go}` and
 `docs/architecture/decisions/DD-FLEET-004-fmc-ping-clusters-endpoint.md` are not v1
-evidence; the literal mention in historical `docs/tests/2593/evidence/reviews/R5.md`
-is archive context only and is not edited.
+evidence and are not part of the current qualification record.
 
 No existing test is deleted to improve a denominator. Tests are amended only when the
 approved contract changes; all scenario IDs remain visible.
@@ -1649,8 +1647,8 @@ approved contract changes; all scenario IDs remain visible.
 | 0.5 | 2026-11-12 | R10 amendment: concrete MCP response/result and Go bridge signatures, consistent Pod/session/Lease/fence identity, one Lua/EVALSHA expiry protocol with lost-reply handling, and deterministic repair authority/order; denominators and fail-closed boundaries unchanged |
 | 0.6 | 2026-11-12 | R11 amendment: presence-aware labels, duplicate/scope rejection, package-safe MCP/Syncer/Lease/status composition, EVALSHA artifact/NOSCRIPT/TTL recovery, and bounded repair linearization; denominators and fail-closed boundaries unchanged |
 | 0.7 | 2026-11-12 | R12 amendment: invalid labels are unavailable/non-inheriting, public six-field canonical IDs are separated from internal registration fencing, `WithCurrent` requires expected registry revision, and conditional server `0/2` is explicitly a subset of aggregate AF/FMC/Page `0/3`; denominators and fail-closed boundaries unchanged |
-| 0.8 | 2026-11-13 | **Historical draft amendment**: user-approved pre-GA v1/no-migration contract; public `/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed`; typed v1 extension approval gate; `IT-FMC-MIGRATION-017` retained as N/A/out-of-scope with zero credit; active denominators are 12 UT, 4 IT, 16 overall, 15 critical, and 19 wiring; R13 remains immutable historical evidence |
-| 0.9 | 2026-11-13 | **Fast-path implementation baseline**: user-approved internal `PartitionStateKey`/tokenized repair/epoch-scoped `LeaseSession` contract; `BeginRepair` precedes MCP collection; `Repair`/`CommitRepair`/proof-bearing `ReadVerified` replace old internal repair/read signatures with no compatibility shim; bounded EVALSHA guards and complete repair ordering are authoritative; public FMC remains v1/no-migration; denominators unchanged; R13 remains immutable; clean-worktree carry/hold boundary recorded |
+| 0.8 | 2026-11-13 | **Historical draft amendment**: user-approved pre-GA v1/no-migration contract; public `/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed`; typed v1 extension approval gate; `IT-FMC-MIGRATION-017` retained as N/A/out-of-scope with zero credit; active denominators are 12 UT, 4 IT, 16 overall, 15 critical, and 19 wiring; R13 remains historical review context only |
+| 0.9 | 2026-11-13 | **Fast-path implementation baseline**: user-approved internal `PartitionStateKey`/tokenized repair/epoch-scoped `LeaseSession` contract; `BeginRepair` precedes MCP collection; `Repair`/`CommitRepair`/proof-bearing `ReadVerified` replace old internal repair/read signatures with no compatibility shim; bounded EVALSHA guards and complete repair ordering are authoritative; public FMC remains v1/no-migration; denominators unchanged; historical review context retained in plan metadata; clean-worktree boundary recorded in this authority |
 | 1.0 | 2026-11-15 | **Singleton deployment amendment**: remove Kubernetes Lease/POD_UID deployment prerequisites, wire a process-local writer coordinator, retain Valkey writer-fence proof contracts, close operator PR #637 as out of scope, and defer multi-replica takeover fencing |
 | 1.1 | 2026-11-15 | CI run `43719091357` attributed affected integration failures to the approved explicit-remote-GVK and presence-aware cache contracts; align Gateway/SP/RO/FMC fixtures and preserve `CreateRRArgs.APIVersion` through the AF remote scope check. Local build, lint, affected unit suites, and integration-package compilation pass; affected integration execution remains environment-blocked. |
 | 1.2 | 2026-11-15 | CI run `43723420104` validated head `2ad936d17874d420c044045302fe6771559b74ff`: all affected integration lanes passed and `apifrontend-fleet` passed. Fleet, FMC EAIGW, FMC Kuadrant, and WorkflowExecution E2E remain held for infrastructure/dependency recovery and rerun; no source regression is attributed. |
@@ -1665,8 +1663,8 @@ approved contract changes; all scenario IDs remain visible.
 - REFACTOR: **Complete** — singleton deployment wording, review evidence, and CI-attributed GVK/presence fixtures aligned; local build/lint/unit validation passed
 - ACM inventory: **Unavailable / no rows**
 - AF non-local Console list/policy scope: **Unavailable**
-- Latest review round R13: **Non-clean** (7 revalidated P0 and 5 revalidated P1; no fresh v0.7 contradiction); see immutable `docs/tests/2593/evidence/reviews/R13.md`
-- This v0.9 amendment invalidated the historical dirty-worktree clean-review eligibility; the fast-path carry/hold boundary is recorded in `docs/tests/2593/evidence/FAST_PATH_CARRY_HOLD.md` and the review README. No new three-review cycle is claimed.
+- Historical review gate: **Non-clean / 0/3**; ephemeral session-based review captures are excluded from the repository evidence set and do not create a qualification claim.
+- The historical dirty-worktree review ceremony is superseded by the bounded fast path in this authority. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**
 - Implementation readiness: **RED/GREEN/REFACTOR complete for the bounded slice; final CI run `43748753311` validates the source/build/integration lanes and unaffected E2E lanes, while Fleet plus the dedicated FMC EAIGW and Kuadrant setup lanes remain failed and final qualification remains pending. Fleet’s ready-pod fenced-read/partition evidence and the dedicated rollout timeouts are separate classifications; no source regression or unified root cause is proven.**
 
