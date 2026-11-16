@@ -1220,7 +1220,11 @@ var _ = Describe("kubernaut_investigate — discover_workflows takeover resilien
 			Expect(output.Status).To(Equal("workflows_discovered"),
 				"IR-4(1): discover_workflows must succeed using stored RCA from cancelled investigation")
 			Expect(sess.RCAResult).NotTo(BeNil(), "SC-24: session must have authoritative RCA")
-			Expect(sess.RCAResult.RCASummary).To(Equal("OOMKilled on api-server"))
+			Expect(runner.workflowDiscoveryRCA).NotTo(BeNil(),
+				"the stored RCA must be the input to workflow discovery")
+			Expect(runner.workflowDiscoveryRCA.RCASummary).To(Equal("OOMKilled on api-server"))
+			Expect(sess.RCAResult.RCASummary).To(Equal("mock RCA"),
+				"the session must store the post-discovery result, not the pre-gate snapshot")
 			Expect(sess.DiscoveryResult).NotTo(BeNil())
 		})
 	})

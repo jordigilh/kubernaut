@@ -129,7 +129,7 @@ var _ = Describe("present_decision rca gob-encodability (#2110, v1.6 clone #2111
 		state := newMapState()
 		Expect(state.Set(session.StateKeyGroundedContentAvailable, true)).To(Succeed())
 		Expect(state.Set(session.StateKeyGroundedRCA, &tools.InvestigateRCA{
-			Severity: "critical", Confidence: 0.9,
+			Severity: "critical", Confidence: func() *float64 { v := 0.9; return &v }(),
 			CausalChain:    []string{"MemoryPressure", "Evicted"},
 			Target:         "pod/checkout-service",
 			TotalToolCalls: 7, TotalLLMTurns: 3,

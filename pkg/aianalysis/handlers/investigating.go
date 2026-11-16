@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -63,6 +64,14 @@ type InvestigatingHandler struct {
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
 type InvestigatingHandlerOption func(*InvestigatingHandler)
+
+// WithWorkflowCatalog configures the trusted workflow reader for the handoff.
+func WithWorkflowCatalog(reader client.Reader, namespace string) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.processor.workflowReader = reader
+		h.processor.catalogNamespace = namespace
+	}
+}
 
 // WithRecorder injects a Kubernetes EventRecorder for session lifecycle events (DD-EVENT-001).
 // When set, the handler emits SessionCreated and UserDriving events.

@@ -4529,6 +4529,8 @@ func (s *AIAnalysisAIAgentCallPayload) SetDurationMs(val int32) {
 // Approval decision event payload (aianalysis.approval.decision).
 // Ref: #/components/schemas/AIAnalysisApprovalDecisionPayload
 type AIAnalysisApprovalDecisionPayload struct {
+	RcaConfidence      OptFloat64 `json:"rca_confidence"`
+	WorkflowConfidence OptFloat64 `json:"workflow_confidence"`
 	// Whether manual approval is required.
 	ApprovalRequired bool `json:"approval_required"`
 	// Reason for approval requirement.
@@ -4545,6 +4547,16 @@ type AIAnalysisApprovalDecisionPayload struct {
 	Confidence OptFloat64 `json:"confidence"`
 	// Selected workflow identifier (optional).
 	WorkflowID OptString `json:"workflow_id"`
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
+}
+
+// GetWorkflowConfidence returns the value of WorkflowConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) GetWorkflowConfidence() OptFloat64 {
+	return s.WorkflowConfidence
 }
 
 // GetApprovalRequired returns the value of ApprovalRequired.
@@ -4585,6 +4597,16 @@ func (s *AIAnalysisApprovalDecisionPayload) GetConfidence() OptFloat64 {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *AIAnalysisApprovalDecisionPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
+}
+
+// SetWorkflowConfidence sets the value of WorkflowConfidence.
+func (s *AIAnalysisApprovalDecisionPayload) SetWorkflowConfidence(val OptFloat64) {
+	s.WorkflowConfidence = val
 }
 
 // SetApprovalRequired sets the value of ApprovalRequired.
@@ -4646,6 +4668,9 @@ type AIAnalysisAuditPayload struct {
 	DegradedMode bool `json:"degraded_mode"`
 	// Number of warnings encountered.
 	WarningsCount int `json:"warnings_count"`
+	// RCA confidence, omitted when unknown and independent from workflow selection confidence
+	// (BR-AUDIT-005, AU-3).
+	RcaConfidence OptFloat64 `json:"rca_confidence"`
 	// Workflow selection confidence (0.0-1.0).
 	Confidence OptFloat32 `json:"confidence"`
 	// Selected workflow identifier.
@@ -4711,6 +4736,11 @@ func (s *AIAnalysisAuditPayload) GetDegradedMode() bool {
 // GetWarningsCount returns the value of WarningsCount.
 func (s *AIAnalysisAuditPayload) GetWarningsCount() int {
 	return s.WarningsCount
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisAuditPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
 }
 
 // GetConfidence returns the value of Confidence.
@@ -4831,6 +4861,11 @@ func (s *AIAnalysisAuditPayload) SetDegradedMode(val bool) {
 // SetWarningsCount sets the value of WarningsCount.
 func (s *AIAnalysisAuditPayload) SetWarningsCount(val int) {
 	s.WarningsCount = val
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisAuditPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -5281,6 +5316,8 @@ func (s *AIAnalysisPhaseTransitionPayload) SetNewPhase(val string) {
 // Rego policy evaluation event payload (aianalysis.rego.evaluation).
 // Ref: #/components/schemas/AIAnalysisRegoEvaluationPayload
 type AIAnalysisRegoEvaluationPayload struct {
+	RcaConfidence      OptFloat64 `json:"rca_confidence"`
+	WorkflowConfidence OptFloat64 `json:"workflow_confidence"`
 	// Evaluation outcome.
 	Outcome string `json:"outcome"`
 	// Whether evaluation ran in degraded mode.
@@ -5294,6 +5331,16 @@ type AIAnalysisRegoEvaluationPayload struct {
 	// policy bundle revision (BR-AI-030). Empty if no policy was loaded
 	// (degraded mode) or evaluation failed before a policy was resolved.
 	PolicyHash OptString `json:"policy_hash"`
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
+}
+
+// GetWorkflowConfidence returns the value of WorkflowConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) GetWorkflowConfidence() OptFloat64 {
+	return s.WorkflowConfidence
 }
 
 // GetOutcome returns the value of Outcome.
@@ -5319,6 +5366,16 @@ func (s *AIAnalysisRegoEvaluationPayload) GetReason() string {
 // GetPolicyHash returns the value of PolicyHash.
 func (s *AIAnalysisRegoEvaluationPayload) GetPolicyHash() OptString {
 	return s.PolicyHash
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
+}
+
+// SetWorkflowConfidence sets the value of WorkflowConfidence.
+func (s *AIAnalysisRegoEvaluationPayload) SetWorkflowConfidence(val OptFloat64) {
+	s.WorkflowConfidence = val
 }
 
 // SetOutcome sets the value of Outcome.
@@ -9951,6 +10008,8 @@ type ApifrontendToolExecutedPayload struct {
 	ApprovalRequest OptString `json:"approval_request"`
 	// Approval decision submitted by the reviewer.
 	ApprovalDecision OptString `json:"approval_decision"`
+	// Disposable lossless parameter evidence.
+	ParameterEvidence OptString `json:"parameter_evidence"`
 	// Original parameter values in the reviewed approval snapshot.
 	OriginalParameters OptApifrontendToolExecutedPayloadOriginalParameters `json:"original_parameters"`
 	// Exact parameter changes submitted by the reviewer.
@@ -10019,6 +10078,11 @@ func (s *ApifrontendToolExecutedPayload) GetApprovalRequest() OptString {
 // GetApprovalDecision returns the value of ApprovalDecision.
 func (s *ApifrontendToolExecutedPayload) GetApprovalDecision() OptString {
 	return s.ApprovalDecision
+}
+
+// GetParameterEvidence returns the value of ParameterEvidence.
+func (s *ApifrontendToolExecutedPayload) GetParameterEvidence() OptString {
+	return s.ParameterEvidence
 }
 
 // GetOriginalParameters returns the value of OriginalParameters.
@@ -10101,6 +10165,11 @@ func (s *ApifrontendToolExecutedPayload) SetApprovalDecision(val OptString) {
 	s.ApprovalDecision = val
 }
 
+// SetParameterEvidence sets the value of ParameterEvidence.
+func (s *ApifrontendToolExecutedPayload) SetParameterEvidence(val OptString) {
+	s.ParameterEvidence = val
+}
+
 // SetOriginalParameters sets the value of OriginalParameters.
 func (s *ApifrontendToolExecutedPayload) SetOriginalParameters(val OptApifrontendToolExecutedPayloadOriginalParameters) {
 	s.OriginalParameters = val
@@ -10122,12 +10191,12 @@ func (s *ApifrontendToolExecutedPayload) SetOverrideRationale(val OptString) {
 }
 
 // Effective parameter values after the submitted partial override.
-type ApifrontendToolExecutedPayloadEffectiveParameters map[string]string
+type ApifrontendToolExecutedPayloadEffectiveParameters map[string]WorkflowParameterValue
 
 func (s *ApifrontendToolExecutedPayloadEffectiveParameters) init() ApifrontendToolExecutedPayloadEffectiveParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -10169,24 +10238,24 @@ func (s *ApifrontendToolExecutedPayloadEventType) UnmarshalText(data []byte) err
 }
 
 // Original parameter values in the reviewed approval snapshot.
-type ApifrontendToolExecutedPayloadOriginalParameters map[string]string
+type ApifrontendToolExecutedPayloadOriginalParameters map[string]WorkflowParameterValue
 
 func (s *ApifrontendToolExecutedPayloadOriginalParameters) init() ApifrontendToolExecutedPayloadOriginalParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
 }
 
 // Exact parameter changes submitted by the reviewer.
-type ApifrontendToolExecutedPayloadOverrideParameters map[string]string
+type ApifrontendToolExecutedPayloadOverrideParameters map[string]WorkflowParameterValue
 
 func (s *ApifrontendToolExecutedPayloadOverrideParameters) init() ApifrontendToolExecutedPayloadOverrideParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -23713,6 +23782,9 @@ type IncidentResponseData struct {
 	// Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
 	SelectedWorkflow    OptIncidentResponseDataSelectedWorkflow `json:"selectedWorkflow"`
 	SelectionAssessment OptSelectionAssessment                  `json:"selection_assessment"`
+	// RCA confidence; absent when unknown and distinct from workflow selection confidence (BR-AUDIT-005,
+	// AU-3).
+	RcaConfidence OptFloat64 `json:"rca_confidence"`
 	// Overall confidence in analysis.
 	Confidence float32 `json:"confidence"`
 	// ISO timestamp of analysis completion.
@@ -23763,6 +23835,11 @@ func (s *IncidentResponseData) GetSelectedWorkflow() OptIncidentResponseDataSele
 // GetSelectionAssessment returns the value of SelectionAssessment.
 func (s *IncidentResponseData) GetSelectionAssessment() OptSelectionAssessment {
 	return s.SelectionAssessment
+}
+
+// GetRcaConfidence returns the value of RcaConfidence.
+func (s *IncidentResponseData) GetRcaConfidence() OptFloat64 {
+	return s.RcaConfidence
 }
 
 // GetConfidence returns the value of Confidence.
@@ -23833,6 +23910,11 @@ func (s *IncidentResponseData) SetSelectedWorkflow(val OptIncidentResponseDataSe
 // SetSelectionAssessment sets the value of SelectionAssessment.
 func (s *IncidentResponseData) SetSelectionAssessment(val OptSelectionAssessment) {
 	s.SelectionAssessment = val
+}
+
+// SetRcaConfidence sets the value of RcaConfidence.
+func (s *IncidentResponseData) SetRcaConfidence(val OptFloat64) {
+	s.RcaConfidence = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -33092,6 +33174,8 @@ type RemediationApprovalAuditPayload struct {
 	AiAnalysisRef string `json:"ai_analysis_ref"`
 	// Content-derived identifier of the reviewed workflow selection.
 	WorkflowID OptString `json:"workflow_id"`
+	// Disposable lossless parameter evidence.
+	ParameterEvidence OptString `json:"parameter_evidence"`
 	// Original reviewed parameter values, unchanged from the approval snapshot.
 	OriginalParameters OptRemediationApprovalAuditPayloadOriginalParameters `json:"original_parameters"`
 	// Exact parameter changes submitted by the reviewer.
@@ -33147,6 +33231,11 @@ func (s *RemediationApprovalAuditPayload) GetAiAnalysisRef() string {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *RemediationApprovalAuditPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// GetParameterEvidence returns the value of ParameterEvidence.
+func (s *RemediationApprovalAuditPayload) GetParameterEvidence() OptString {
+	return s.ParameterEvidence
 }
 
 // GetOriginalParameters returns the value of OriginalParameters.
@@ -33219,6 +33308,11 @@ func (s *RemediationApprovalAuditPayload) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
 }
 
+// SetParameterEvidence sets the value of ParameterEvidence.
+func (s *RemediationApprovalAuditPayload) SetParameterEvidence(val OptString) {
+	s.ParameterEvidence = val
+}
+
 // SetOriginalParameters sets the value of OriginalParameters.
 func (s *RemediationApprovalAuditPayload) SetOriginalParameters(val OptRemediationApprovalAuditPayloadOriginalParameters) {
 	s.OriginalParameters = val
@@ -33258,8 +33352,10 @@ func (s *RemediationApprovalAuditPayload) SetPolicyHash(val OptString) {
 type RemediationApprovalAuditPayloadDecision string
 
 const (
-	RemediationApprovalAuditPayloadDecisionApproved RemediationApprovalAuditPayloadDecision = "Approved"
-	RemediationApprovalAuditPayloadDecisionRejected RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionApproved  RemediationApprovalAuditPayloadDecision = "Approved"
+	RemediationApprovalAuditPayloadDecisionRejected  RemediationApprovalAuditPayloadDecision = "Rejected"
+	RemediationApprovalAuditPayloadDecisionExpired   RemediationApprovalAuditPayloadDecision = "Expired"
+	RemediationApprovalAuditPayloadDecisionCancelled RemediationApprovalAuditPayloadDecision = "Cancelled"
 )
 
 // AllValues returns all RemediationApprovalAuditPayloadDecision values.
@@ -33267,6 +33363,8 @@ func (RemediationApprovalAuditPayloadDecision) AllValues() []RemediationApproval
 	return []RemediationApprovalAuditPayloadDecision{
 		RemediationApprovalAuditPayloadDecisionApproved,
 		RemediationApprovalAuditPayloadDecisionRejected,
+		RemediationApprovalAuditPayloadDecisionExpired,
+		RemediationApprovalAuditPayloadDecisionCancelled,
 	}
 }
 
@@ -33276,6 +33374,10 @@ func (s RemediationApprovalAuditPayloadDecision) MarshalText() ([]byte, error) {
 	case RemediationApprovalAuditPayloadDecisionApproved:
 		return []byte(s), nil
 	case RemediationApprovalAuditPayloadDecisionRejected:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		return []byte(s), nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -33291,18 +33393,24 @@ func (s *RemediationApprovalAuditPayloadDecision) UnmarshalText(data []byte) err
 	case RemediationApprovalAuditPayloadDecisionRejected:
 		*s = RemediationApprovalAuditPayloadDecisionRejected
 		return nil
+	case RemediationApprovalAuditPayloadDecisionExpired:
+		*s = RemediationApprovalAuditPayloadDecisionExpired
+		return nil
+	case RemediationApprovalAuditPayloadDecisionCancelled:
+		*s = RemediationApprovalAuditPayloadDecisionCancelled
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
 // Effective values after applying the partial override.
-type RemediationApprovalAuditPayloadEffectiveParameters map[string]string
+type RemediationApprovalAuditPayloadEffectiveParameters map[string]WorkflowParameterValue
 
 func (s *RemediationApprovalAuditPayloadEffectiveParameters) init() RemediationApprovalAuditPayloadEffectiveParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -33344,24 +33452,24 @@ func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) er
 }
 
 // Original reviewed parameter values, unchanged from the approval snapshot.
-type RemediationApprovalAuditPayloadOriginalParameters map[string]string
+type RemediationApprovalAuditPayloadOriginalParameters map[string]WorkflowParameterValue
 
 func (s *RemediationApprovalAuditPayloadOriginalParameters) init() RemediationApprovalAuditPayloadOriginalParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
 }
 
 // Exact parameter changes submitted by the reviewer.
-type RemediationApprovalAuditPayloadOverrideParameters map[string]string
+type RemediationApprovalAuditPayloadOverrideParameters map[string]WorkflowParameterValue
 
 func (s *RemediationApprovalAuditPayloadOverrideParameters) init() RemediationApprovalAuditPayloadOverrideParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -34904,6 +35012,8 @@ type RemediationOrchestratorAuditPayload struct {
 	ToPhase OptString `json:"to_phase"`
 	// Reason for the transition.
 	TransitionReason OptString `json:"transition_reason"`
+	// Disposable lossless parameter evidence.
+	ParameterEvidence OptString `json:"parameter_evidence"`
 	// Original values in the reviewed approval snapshot.
 	OriginalParameters OptRemediationOrchestratorAuditPayloadOriginalParameters `json:"original_parameters"`
 	// Exact changes committed with the approval decision.
@@ -35049,6 +35159,11 @@ func (s *RemediationOrchestratorAuditPayload) GetToPhase() OptString {
 // GetTransitionReason returns the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) GetTransitionReason() OptString {
 	return s.TransitionReason
+}
+
+// GetParameterEvidence returns the value of ParameterEvidence.
+func (s *RemediationOrchestratorAuditPayload) GetParameterEvidence() OptString {
+	return s.ParameterEvidence
 }
 
 // GetOriginalParameters returns the value of OriginalParameters.
@@ -35271,6 +35386,11 @@ func (s *RemediationOrchestratorAuditPayload) SetTransitionReason(val OptString)
 	s.TransitionReason = val
 }
 
+// SetParameterEvidence sets the value of ParameterEvidence.
+func (s *RemediationOrchestratorAuditPayload) SetParameterEvidence(val OptString) {
+	s.ParameterEvidence = val
+}
+
 // SetOriginalParameters sets the value of OriginalParameters.
 func (s *RemediationOrchestratorAuditPayload) SetOriginalParameters(val OptRemediationOrchestratorAuditPayloadOriginalParameters) {
 	s.OriginalParameters = val
@@ -35486,12 +35606,12 @@ func (s *RemediationOrchestratorAuditPayloadDecision) UnmarshalText(data []byte)
 }
 
 // Effective parameter values after the committed partial override.
-type RemediationOrchestratorAuditPayloadEffectiveParameters map[string]string
+type RemediationOrchestratorAuditPayloadEffectiveParameters map[string]WorkflowParameterValue
 
 func (s *RemediationOrchestratorAuditPayloadEffectiveParameters) init() RemediationOrchestratorAuditPayloadEffectiveParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -35750,12 +35870,12 @@ func (s *RemediationOrchestratorAuditPayloadFailureReason) UnmarshalText(data []
 }
 
 // Original values in the reviewed approval snapshot.
-type RemediationOrchestratorAuditPayloadOriginalParameters map[string]string
+type RemediationOrchestratorAuditPayloadOriginalParameters map[string]WorkflowParameterValue
 
 func (s *RemediationOrchestratorAuditPayloadOriginalParameters) init() RemediationOrchestratorAuditPayloadOriginalParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -35811,12 +35931,12 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalText(data []byte) 
 }
 
 // Exact changes committed with the approval decision.
-type RemediationOrchestratorAuditPayloadOverrideParameters map[string]string
+type RemediationOrchestratorAuditPayloadOverrideParameters map[string]WorkflowParameterValue
 
 func (s *RemediationOrchestratorAuditPayloadOverrideParameters) init() RemediationOrchestratorAuditPayloadOverrideParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -39744,9 +39864,10 @@ type WorkflowExecutionAuditPayload struct {
 	ErrorDetails   OptErrorDetails `json:"error_details"`
 	// Name of the associated Tekton PipelineRun.
 	PipelinerunName OptString `json:"pipelinerun_name"`
-	// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
-	// 3 chain of custody.
+	// Typed workflow parameters applied to the execution resource. SOC2 CC7.1-CC7.3 chain of custody.
 	Parameters OptWorkflowExecutionAuditPayloadParameters `json:"parameters"`
+	// Lossless compact JSON preserving submitted numeric parameter lexemes.
+	ParameterEvidence OptString `json:"parameter_evidence"`
 	// Number of pod-failure attempts tolerated by PodFailurePolicy before the Job engine execution
 	// reached a terminal state (Job engine only). Present only when greater than 0. SOC2 CC8.1 / AU-3
 	// audit completeness for tolerated transient failures.
@@ -39868,6 +39989,11 @@ func (s *WorkflowExecutionAuditPayload) GetParameters() OptWorkflowExecutionAudi
 	return s.Parameters
 }
 
+// GetParameterEvidence returns the value of ParameterEvidence.
+func (s *WorkflowExecutionAuditPayload) GetParameterEvidence() OptString {
+	return s.ParameterEvidence
+}
+
 // GetRetryCount returns the value of RetryCount.
 func (s *WorkflowExecutionAuditPayload) GetRetryCount() OptInt {
 	return s.RetryCount
@@ -39986,6 +40112,11 @@ func (s *WorkflowExecutionAuditPayload) SetPipelinerunName(val OptString) {
 // SetParameters sets the value of Parameters.
 func (s *WorkflowExecutionAuditPayload) SetParameters(val OptWorkflowExecutionAuditPayloadParameters) {
 	s.Parameters = val
+}
+
+// SetParameterEvidence sets the value of ParameterEvidence.
+func (s *WorkflowExecutionAuditPayload) SetParameterEvidence(val OptString) {
+	s.ParameterEvidence = val
 }
 
 // SetRetryCount sets the value of RetryCount.
@@ -40155,14 +40286,13 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 	}
 }
 
-// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
-// 3 chain of custody.
-type WorkflowExecutionAuditPayloadParameters map[string]string
+// Typed workflow parameters applied to the execution resource. SOC2 CC7.1-CC7.3 chain of custody.
+type WorkflowExecutionAuditPayloadParameters map[string]WorkflowParameterValue
 
 func (s *WorkflowExecutionAuditPayloadParameters) init() WorkflowExecutionAuditPayloadParameters {
 	m := *s
 	if m == nil {
-		m = map[string]string{}
+		m = map[string]WorkflowParameterValue{}
 		*s = m
 	}
 	return m
@@ -40558,6 +40688,584 @@ func (s *WorkflowExecutionWebhookAuditPayloadPreviousState) UnmarshalText(data [
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterArray
+type WorkflowParameterArray struct {
+	Kind       WorkflowParameterArrayKind   `json:"kind"`
+	ArrayValue []WorkflowParameterPrimitive `json:"arrayValue"`
+}
+
+// GetKind returns the value of Kind.
+func (s *WorkflowParameterArray) GetKind() WorkflowParameterArrayKind {
+	return s.Kind
+}
+
+// GetArrayValue returns the value of ArrayValue.
+func (s *WorkflowParameterArray) GetArrayValue() []WorkflowParameterPrimitive {
+	return s.ArrayValue
+}
+
+// SetKind sets the value of Kind.
+func (s *WorkflowParameterArray) SetKind(val WorkflowParameterArrayKind) {
+	s.Kind = val
+}
+
+// SetArrayValue sets the value of ArrayValue.
+func (s *WorkflowParameterArray) SetArrayValue(val []WorkflowParameterPrimitive) {
+	s.ArrayValue = val
+}
+
+type WorkflowParameterArrayKind string
+
+const (
+	WorkflowParameterArrayKindArray WorkflowParameterArrayKind = "array"
+)
+
+// AllValues returns all WorkflowParameterArrayKind values.
+func (WorkflowParameterArrayKind) AllValues() []WorkflowParameterArrayKind {
+	return []WorkflowParameterArrayKind{
+		WorkflowParameterArrayKindArray,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowParameterArrayKind) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowParameterArrayKindArray:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowParameterArrayKind) UnmarshalText(data []byte) error {
+	switch WorkflowParameterArrayKind(data) {
+	case WorkflowParameterArrayKindArray:
+		*s = WorkflowParameterArrayKindArray
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterBoolean
+type WorkflowParameterBoolean struct {
+	Kind         WorkflowParameterBooleanKind `json:"kind"`
+	BooleanValue bool                         `json:"booleanValue"`
+}
+
+// GetKind returns the value of Kind.
+func (s *WorkflowParameterBoolean) GetKind() WorkflowParameterBooleanKind {
+	return s.Kind
+}
+
+// GetBooleanValue returns the value of BooleanValue.
+func (s *WorkflowParameterBoolean) GetBooleanValue() bool {
+	return s.BooleanValue
+}
+
+// SetKind sets the value of Kind.
+func (s *WorkflowParameterBoolean) SetKind(val WorkflowParameterBooleanKind) {
+	s.Kind = val
+}
+
+// SetBooleanValue sets the value of BooleanValue.
+func (s *WorkflowParameterBoolean) SetBooleanValue(val bool) {
+	s.BooleanValue = val
+}
+
+type WorkflowParameterBooleanKind string
+
+const (
+	WorkflowParameterBooleanKindBoolean WorkflowParameterBooleanKind = "boolean"
+)
+
+// AllValues returns all WorkflowParameterBooleanKind values.
+func (WorkflowParameterBooleanKind) AllValues() []WorkflowParameterBooleanKind {
+	return []WorkflowParameterBooleanKind{
+		WorkflowParameterBooleanKindBoolean,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowParameterBooleanKind) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowParameterBooleanKindBoolean:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowParameterBooleanKind) UnmarshalText(data []byte) error {
+	switch WorkflowParameterBooleanKind(data) {
+	case WorkflowParameterBooleanKindBoolean:
+		*s = WorkflowParameterBooleanKindBoolean
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterFloat
+type WorkflowParameterFloat struct {
+	Kind       WorkflowParameterFloatKind `json:"kind"`
+	FloatValue float64                    `json:"floatValue"`
+}
+
+// GetKind returns the value of Kind.
+func (s *WorkflowParameterFloat) GetKind() WorkflowParameterFloatKind {
+	return s.Kind
+}
+
+// GetFloatValue returns the value of FloatValue.
+func (s *WorkflowParameterFloat) GetFloatValue() float64 {
+	return s.FloatValue
+}
+
+// SetKind sets the value of Kind.
+func (s *WorkflowParameterFloat) SetKind(val WorkflowParameterFloatKind) {
+	s.Kind = val
+}
+
+// SetFloatValue sets the value of FloatValue.
+func (s *WorkflowParameterFloat) SetFloatValue(val float64) {
+	s.FloatValue = val
+}
+
+type WorkflowParameterFloatKind string
+
+const (
+	WorkflowParameterFloatKindFloat WorkflowParameterFloatKind = "float"
+)
+
+// AllValues returns all WorkflowParameterFloatKind values.
+func (WorkflowParameterFloatKind) AllValues() []WorkflowParameterFloatKind {
+	return []WorkflowParameterFloatKind{
+		WorkflowParameterFloatKindFloat,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowParameterFloatKind) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowParameterFloatKindFloat:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowParameterFloatKind) UnmarshalText(data []byte) error {
+	switch WorkflowParameterFloatKind(data) {
+	case WorkflowParameterFloatKindFloat:
+		*s = WorkflowParameterFloatKindFloat
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterInteger
+type WorkflowParameterInteger struct {
+	Kind         WorkflowParameterIntegerKind `json:"kind"`
+	IntegerValue int64                        `json:"integerValue"`
+}
+
+// GetKind returns the value of Kind.
+func (s *WorkflowParameterInteger) GetKind() WorkflowParameterIntegerKind {
+	return s.Kind
+}
+
+// GetIntegerValue returns the value of IntegerValue.
+func (s *WorkflowParameterInteger) GetIntegerValue() int64 {
+	return s.IntegerValue
+}
+
+// SetKind sets the value of Kind.
+func (s *WorkflowParameterInteger) SetKind(val WorkflowParameterIntegerKind) {
+	s.Kind = val
+}
+
+// SetIntegerValue sets the value of IntegerValue.
+func (s *WorkflowParameterInteger) SetIntegerValue(val int64) {
+	s.IntegerValue = val
+}
+
+type WorkflowParameterIntegerKind string
+
+const (
+	WorkflowParameterIntegerKindInteger WorkflowParameterIntegerKind = "integer"
+)
+
+// AllValues returns all WorkflowParameterIntegerKind values.
+func (WorkflowParameterIntegerKind) AllValues() []WorkflowParameterIntegerKind {
+	return []WorkflowParameterIntegerKind{
+		WorkflowParameterIntegerKindInteger,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowParameterIntegerKind) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowParameterIntegerKindInteger:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowParameterIntegerKind) UnmarshalText(data []byte) error {
+	switch WorkflowParameterIntegerKind(data) {
+	case WorkflowParameterIntegerKindInteger:
+		*s = WorkflowParameterIntegerKindInteger
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterPrimitive
+// WorkflowParameterPrimitive represents sum type.
+type WorkflowParameterPrimitive struct {
+	Type                     WorkflowParameterPrimitiveType // switch on this field
+	WorkflowParameterString  WorkflowParameterString
+	WorkflowParameterInteger WorkflowParameterInteger
+	WorkflowParameterFloat   WorkflowParameterFloat
+	WorkflowParameterBoolean WorkflowParameterBoolean
+}
+
+// WorkflowParameterPrimitiveType is oneOf type of WorkflowParameterPrimitive.
+type WorkflowParameterPrimitiveType string
+
+// Possible values for WorkflowParameterPrimitiveType.
+const (
+	WorkflowParameterStringWorkflowParameterPrimitive  WorkflowParameterPrimitiveType = "string"
+	WorkflowParameterIntegerWorkflowParameterPrimitive WorkflowParameterPrimitiveType = "integer"
+	WorkflowParameterFloatWorkflowParameterPrimitive   WorkflowParameterPrimitiveType = "float"
+	WorkflowParameterBooleanWorkflowParameterPrimitive WorkflowParameterPrimitiveType = "boolean"
+)
+
+// IsWorkflowParameterString reports whether WorkflowParameterPrimitive is WorkflowParameterString.
+func (s WorkflowParameterPrimitive) IsWorkflowParameterString() bool {
+	return s.Type == WorkflowParameterStringWorkflowParameterPrimitive
+}
+
+// IsWorkflowParameterInteger reports whether WorkflowParameterPrimitive is WorkflowParameterInteger.
+func (s WorkflowParameterPrimitive) IsWorkflowParameterInteger() bool {
+	return s.Type == WorkflowParameterIntegerWorkflowParameterPrimitive
+}
+
+// IsWorkflowParameterFloat reports whether WorkflowParameterPrimitive is WorkflowParameterFloat.
+func (s WorkflowParameterPrimitive) IsWorkflowParameterFloat() bool {
+	return s.Type == WorkflowParameterFloatWorkflowParameterPrimitive
+}
+
+// IsWorkflowParameterBoolean reports whether WorkflowParameterPrimitive is WorkflowParameterBoolean.
+func (s WorkflowParameterPrimitive) IsWorkflowParameterBoolean() bool {
+	return s.Type == WorkflowParameterBooleanWorkflowParameterPrimitive
+}
+
+// SetWorkflowParameterString sets WorkflowParameterPrimitive to WorkflowParameterString.
+func (s *WorkflowParameterPrimitive) SetWorkflowParameterString(v WorkflowParameterString) {
+	s.Type = WorkflowParameterStringWorkflowParameterPrimitive
+	s.WorkflowParameterString = v
+}
+
+// GetWorkflowParameterString returns WorkflowParameterString and true boolean if WorkflowParameterPrimitive is WorkflowParameterString.
+func (s WorkflowParameterPrimitive) GetWorkflowParameterString() (v WorkflowParameterString, ok bool) {
+	if !s.IsWorkflowParameterString() {
+		return v, false
+	}
+	return s.WorkflowParameterString, true
+}
+
+// NewWorkflowParameterStringWorkflowParameterPrimitive returns new WorkflowParameterPrimitive from WorkflowParameterString.
+func NewWorkflowParameterStringWorkflowParameterPrimitive(v WorkflowParameterString) WorkflowParameterPrimitive {
+	var s WorkflowParameterPrimitive
+	s.SetWorkflowParameterString(v)
+	return s
+}
+
+// SetWorkflowParameterInteger sets WorkflowParameterPrimitive to WorkflowParameterInteger.
+func (s *WorkflowParameterPrimitive) SetWorkflowParameterInteger(v WorkflowParameterInteger) {
+	s.Type = WorkflowParameterIntegerWorkflowParameterPrimitive
+	s.WorkflowParameterInteger = v
+}
+
+// GetWorkflowParameterInteger returns WorkflowParameterInteger and true boolean if WorkflowParameterPrimitive is WorkflowParameterInteger.
+func (s WorkflowParameterPrimitive) GetWorkflowParameterInteger() (v WorkflowParameterInteger, ok bool) {
+	if !s.IsWorkflowParameterInteger() {
+		return v, false
+	}
+	return s.WorkflowParameterInteger, true
+}
+
+// NewWorkflowParameterIntegerWorkflowParameterPrimitive returns new WorkflowParameterPrimitive from WorkflowParameterInteger.
+func NewWorkflowParameterIntegerWorkflowParameterPrimitive(v WorkflowParameterInteger) WorkflowParameterPrimitive {
+	var s WorkflowParameterPrimitive
+	s.SetWorkflowParameterInteger(v)
+	return s
+}
+
+// SetWorkflowParameterFloat sets WorkflowParameterPrimitive to WorkflowParameterFloat.
+func (s *WorkflowParameterPrimitive) SetWorkflowParameterFloat(v WorkflowParameterFloat) {
+	s.Type = WorkflowParameterFloatWorkflowParameterPrimitive
+	s.WorkflowParameterFloat = v
+}
+
+// GetWorkflowParameterFloat returns WorkflowParameterFloat and true boolean if WorkflowParameterPrimitive is WorkflowParameterFloat.
+func (s WorkflowParameterPrimitive) GetWorkflowParameterFloat() (v WorkflowParameterFloat, ok bool) {
+	if !s.IsWorkflowParameterFloat() {
+		return v, false
+	}
+	return s.WorkflowParameterFloat, true
+}
+
+// NewWorkflowParameterFloatWorkflowParameterPrimitive returns new WorkflowParameterPrimitive from WorkflowParameterFloat.
+func NewWorkflowParameterFloatWorkflowParameterPrimitive(v WorkflowParameterFloat) WorkflowParameterPrimitive {
+	var s WorkflowParameterPrimitive
+	s.SetWorkflowParameterFloat(v)
+	return s
+}
+
+// SetWorkflowParameterBoolean sets WorkflowParameterPrimitive to WorkflowParameterBoolean.
+func (s *WorkflowParameterPrimitive) SetWorkflowParameterBoolean(v WorkflowParameterBoolean) {
+	s.Type = WorkflowParameterBooleanWorkflowParameterPrimitive
+	s.WorkflowParameterBoolean = v
+}
+
+// GetWorkflowParameterBoolean returns WorkflowParameterBoolean and true boolean if WorkflowParameterPrimitive is WorkflowParameterBoolean.
+func (s WorkflowParameterPrimitive) GetWorkflowParameterBoolean() (v WorkflowParameterBoolean, ok bool) {
+	if !s.IsWorkflowParameterBoolean() {
+		return v, false
+	}
+	return s.WorkflowParameterBoolean, true
+}
+
+// NewWorkflowParameterBooleanWorkflowParameterPrimitive returns new WorkflowParameterPrimitive from WorkflowParameterBoolean.
+func NewWorkflowParameterBooleanWorkflowParameterPrimitive(v WorkflowParameterBoolean) WorkflowParameterPrimitive {
+	var s WorkflowParameterPrimitive
+	s.SetWorkflowParameterBoolean(v)
+	return s
+}
+
+// Ref: #/components/schemas/WorkflowParameterString
+type WorkflowParameterString struct {
+	Kind        WorkflowParameterStringKind `json:"kind"`
+	StringValue string                      `json:"stringValue"`
+}
+
+// GetKind returns the value of Kind.
+func (s *WorkflowParameterString) GetKind() WorkflowParameterStringKind {
+	return s.Kind
+}
+
+// GetStringValue returns the value of StringValue.
+func (s *WorkflowParameterString) GetStringValue() string {
+	return s.StringValue
+}
+
+// SetKind sets the value of Kind.
+func (s *WorkflowParameterString) SetKind(val WorkflowParameterStringKind) {
+	s.Kind = val
+}
+
+// SetStringValue sets the value of StringValue.
+func (s *WorkflowParameterString) SetStringValue(val string) {
+	s.StringValue = val
+}
+
+type WorkflowParameterStringKind string
+
+const (
+	WorkflowParameterStringKindString WorkflowParameterStringKind = "string"
+)
+
+// AllValues returns all WorkflowParameterStringKind values.
+func (WorkflowParameterStringKind) AllValues() []WorkflowParameterStringKind {
+	return []WorkflowParameterStringKind{
+		WorkflowParameterStringKindString,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowParameterStringKind) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowParameterStringKindString:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowParameterStringKind) UnmarshalText(data []byte) error {
+	switch WorkflowParameterStringKind(data) {
+	case WorkflowParameterStringKindString:
+		*s = WorkflowParameterStringKindString
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/WorkflowParameterValue
+// WorkflowParameterValue represents sum type.
+type WorkflowParameterValue struct {
+	Type                     WorkflowParameterValueType // switch on this field
+	WorkflowParameterString  WorkflowParameterString
+	WorkflowParameterInteger WorkflowParameterInteger
+	WorkflowParameterFloat   WorkflowParameterFloat
+	WorkflowParameterBoolean WorkflowParameterBoolean
+	WorkflowParameterArray   WorkflowParameterArray
+}
+
+// WorkflowParameterValueType is oneOf type of WorkflowParameterValue.
+type WorkflowParameterValueType string
+
+// Possible values for WorkflowParameterValueType.
+const (
+	WorkflowParameterStringWorkflowParameterValue  WorkflowParameterValueType = "string"
+	WorkflowParameterIntegerWorkflowParameterValue WorkflowParameterValueType = "integer"
+	WorkflowParameterFloatWorkflowParameterValue   WorkflowParameterValueType = "float"
+	WorkflowParameterBooleanWorkflowParameterValue WorkflowParameterValueType = "boolean"
+	WorkflowParameterArrayWorkflowParameterValue   WorkflowParameterValueType = "array"
+)
+
+// IsWorkflowParameterString reports whether WorkflowParameterValue is WorkflowParameterString.
+func (s WorkflowParameterValue) IsWorkflowParameterString() bool {
+	return s.Type == WorkflowParameterStringWorkflowParameterValue
+}
+
+// IsWorkflowParameterInteger reports whether WorkflowParameterValue is WorkflowParameterInteger.
+func (s WorkflowParameterValue) IsWorkflowParameterInteger() bool {
+	return s.Type == WorkflowParameterIntegerWorkflowParameterValue
+}
+
+// IsWorkflowParameterFloat reports whether WorkflowParameterValue is WorkflowParameterFloat.
+func (s WorkflowParameterValue) IsWorkflowParameterFloat() bool {
+	return s.Type == WorkflowParameterFloatWorkflowParameterValue
+}
+
+// IsWorkflowParameterBoolean reports whether WorkflowParameterValue is WorkflowParameterBoolean.
+func (s WorkflowParameterValue) IsWorkflowParameterBoolean() bool {
+	return s.Type == WorkflowParameterBooleanWorkflowParameterValue
+}
+
+// IsWorkflowParameterArray reports whether WorkflowParameterValue is WorkflowParameterArray.
+func (s WorkflowParameterValue) IsWorkflowParameterArray() bool {
+	return s.Type == WorkflowParameterArrayWorkflowParameterValue
+}
+
+// SetWorkflowParameterString sets WorkflowParameterValue to WorkflowParameterString.
+func (s *WorkflowParameterValue) SetWorkflowParameterString(v WorkflowParameterString) {
+	s.Type = WorkflowParameterStringWorkflowParameterValue
+	s.WorkflowParameterString = v
+}
+
+// GetWorkflowParameterString returns WorkflowParameterString and true boolean if WorkflowParameterValue is WorkflowParameterString.
+func (s WorkflowParameterValue) GetWorkflowParameterString() (v WorkflowParameterString, ok bool) {
+	if !s.IsWorkflowParameterString() {
+		return v, false
+	}
+	return s.WorkflowParameterString, true
+}
+
+// NewWorkflowParameterStringWorkflowParameterValue returns new WorkflowParameterValue from WorkflowParameterString.
+func NewWorkflowParameterStringWorkflowParameterValue(v WorkflowParameterString) WorkflowParameterValue {
+	var s WorkflowParameterValue
+	s.SetWorkflowParameterString(v)
+	return s
+}
+
+// SetWorkflowParameterInteger sets WorkflowParameterValue to WorkflowParameterInteger.
+func (s *WorkflowParameterValue) SetWorkflowParameterInteger(v WorkflowParameterInteger) {
+	s.Type = WorkflowParameterIntegerWorkflowParameterValue
+	s.WorkflowParameterInteger = v
+}
+
+// GetWorkflowParameterInteger returns WorkflowParameterInteger and true boolean if WorkflowParameterValue is WorkflowParameterInteger.
+func (s WorkflowParameterValue) GetWorkflowParameterInteger() (v WorkflowParameterInteger, ok bool) {
+	if !s.IsWorkflowParameterInteger() {
+		return v, false
+	}
+	return s.WorkflowParameterInteger, true
+}
+
+// NewWorkflowParameterIntegerWorkflowParameterValue returns new WorkflowParameterValue from WorkflowParameterInteger.
+func NewWorkflowParameterIntegerWorkflowParameterValue(v WorkflowParameterInteger) WorkflowParameterValue {
+	var s WorkflowParameterValue
+	s.SetWorkflowParameterInteger(v)
+	return s
+}
+
+// SetWorkflowParameterFloat sets WorkflowParameterValue to WorkflowParameterFloat.
+func (s *WorkflowParameterValue) SetWorkflowParameterFloat(v WorkflowParameterFloat) {
+	s.Type = WorkflowParameterFloatWorkflowParameterValue
+	s.WorkflowParameterFloat = v
+}
+
+// GetWorkflowParameterFloat returns WorkflowParameterFloat and true boolean if WorkflowParameterValue is WorkflowParameterFloat.
+func (s WorkflowParameterValue) GetWorkflowParameterFloat() (v WorkflowParameterFloat, ok bool) {
+	if !s.IsWorkflowParameterFloat() {
+		return v, false
+	}
+	return s.WorkflowParameterFloat, true
+}
+
+// NewWorkflowParameterFloatWorkflowParameterValue returns new WorkflowParameterValue from WorkflowParameterFloat.
+func NewWorkflowParameterFloatWorkflowParameterValue(v WorkflowParameterFloat) WorkflowParameterValue {
+	var s WorkflowParameterValue
+	s.SetWorkflowParameterFloat(v)
+	return s
+}
+
+// SetWorkflowParameterBoolean sets WorkflowParameterValue to WorkflowParameterBoolean.
+func (s *WorkflowParameterValue) SetWorkflowParameterBoolean(v WorkflowParameterBoolean) {
+	s.Type = WorkflowParameterBooleanWorkflowParameterValue
+	s.WorkflowParameterBoolean = v
+}
+
+// GetWorkflowParameterBoolean returns WorkflowParameterBoolean and true boolean if WorkflowParameterValue is WorkflowParameterBoolean.
+func (s WorkflowParameterValue) GetWorkflowParameterBoolean() (v WorkflowParameterBoolean, ok bool) {
+	if !s.IsWorkflowParameterBoolean() {
+		return v, false
+	}
+	return s.WorkflowParameterBoolean, true
+}
+
+// NewWorkflowParameterBooleanWorkflowParameterValue returns new WorkflowParameterValue from WorkflowParameterBoolean.
+func NewWorkflowParameterBooleanWorkflowParameterValue(v WorkflowParameterBoolean) WorkflowParameterValue {
+	var s WorkflowParameterValue
+	s.SetWorkflowParameterBoolean(v)
+	return s
+}
+
+// SetWorkflowParameterArray sets WorkflowParameterValue to WorkflowParameterArray.
+func (s *WorkflowParameterValue) SetWorkflowParameterArray(v WorkflowParameterArray) {
+	s.Type = WorkflowParameterArrayWorkflowParameterValue
+	s.WorkflowParameterArray = v
+}
+
+// GetWorkflowParameterArray returns WorkflowParameterArray and true boolean if WorkflowParameterValue is WorkflowParameterArray.
+func (s WorkflowParameterValue) GetWorkflowParameterArray() (v WorkflowParameterArray, ok bool) {
+	if !s.IsWorkflowParameterArray() {
+		return v, false
+	}
+	return s.WorkflowParameterArray, true
+}
+
+// NewWorkflowParameterArrayWorkflowParameterValue returns new WorkflowParameterValue from WorkflowParameterArray.
+func NewWorkflowParameterArrayWorkflowParameterValue(v WorkflowParameterArray) WorkflowParameterValue {
+	var s WorkflowParameterValue
+	s.SetWorkflowParameterArray(v)
+	return s
 }
 
 // Audit information for a single workflow result (BR-AUDIT-027).

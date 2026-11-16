@@ -3,7 +3,6 @@ package status
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -184,13 +183,14 @@ func applyPhaseTransition(notification *notificationv1alpha1.NotificationRequest
 // concurrent reconciles from double-recording the same attempt.
 //
 // BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly
-// identical attempts (same channel, status, error, and timestamp within 1s).
-// We no longer check attempt number because concurrent reconciles can assign
-// the same attempt# before the previous status update propagates (even with
-// apiReader cache bypass).
+// identical attempts (same channel, status, error, and exact timestamp).
+// A time window is not valid here: legitimate retries can occur within one
+// second when a retry policy uses a short backoff. We no longer check attempt
+// number because concurrent reconciles can assign the same attempt# before the
+// previous status update propagates (even with apiReader cache bypass).
 //
 // Extracted from AtomicStatusUpdate (Wave 6 6b GREEN: gocognit
-// remediation) — pure code motion, no behavior change.
+// remediation) to keep attempt merging isolated and testable.
 func mergeNewDeliveryAttempts(notification *notificationv1alpha1.NotificationRequest, attempts []notificationv1alpha1.DeliveryAttempt) {
 	for _, attempt := range attempts {
 		if isDuplicateStatusAttempt(notification.Status.DeliveryAttempts, attempt) {
@@ -202,16 +202,15 @@ func mergeNewDeliveryAttempts(notification *notificationv1alpha1.NotificationReq
 }
 
 // isDuplicateStatusAttempt checks whether an exact duplicate of attempt
-// (same channel, status, and error message at the same time, within 1s)
-// already exists in the recorded attempts. Extracted from
-// mergeNewDeliveryAttempts (Wave 6 6b GREEN: gocognit remediation) — pure
-// code motion, no behavior change.
+// (same channel, status, error message, and timestamp) already exists in the
+// recorded attempts. Extracted from mergeNewDeliveryAttempts (Wave 6 6b GREEN:
+// gocognit remediation) to keep duplicate detection isolated and testable.
 func isDuplicateStatusAttempt(existing []notificationv1alpha1.DeliveryAttempt, attempt notificationv1alpha1.DeliveryAttempt) bool {
 	for _, e := range existing {
 		if e.Channel == attempt.Channel &&
 			e.Status == attempt.Status &&
 			e.Error == attempt.Error &&
-			abs(e.Timestamp.Sub(attempt.Timestamp.Time)) < time.Second {
+			e.Timestamp.Time.Equal(attempt.Timestamp.Time) {
 			return true
 		}
 	}
@@ -369,12 +368,4 @@ func isValidPhaseTransition(current, target notificationv1alpha1.NotificationPha
 func isTerminalPhase(phase notificationv1alpha1.NotificationPhase) bool {
 	// Use centralized terminal phase detection (Pattern 1)
 	return notificationphase.IsTerminal(phase)
-}
-
-// abs returns the absolute value of a duration
-func abs(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }

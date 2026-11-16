@@ -95,7 +95,13 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	t.persistPendingDecision(input.RRID, workflowResult)
 
 	// Step 5: Store results on the interactive session.
-	sess.RCAResult = rcaResult
+	// Store the post-gate result, not the pre-validation extraction snapshot.
+	// RunWorkflowDiscovery may independently verify the RCA target against the
+	// target cluster and carries that server-owned provenance only on its
+	// returned result. Keeping the older snapshot would let select_workflow
+	// assemble a stale target after discovery had already passed through the
+	// safety gate.
+	sess.RCAResult = workflowResult
 	// #2387 Gap 2: converge the stored RCA onto the cumulative per-RR
 	// totals (message + extraction + Phase 3 legs, plus any prior
 	// autonomous legs in takeover flows). SET semantics: the scope is the

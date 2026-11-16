@@ -277,8 +277,8 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 		})
 	})
 
-	Describe("E2E-KA-DISC-005: cross-resource RCA discovery lifecycle (#1374)", func() {
-		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-KA-261]", func() {
+	Describe("E2E-KA-DISC-005: exact RCA target workflow handoff", func() {
+		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-KA-261, BR-KA-212]", func() {
 			By("Verifying the RCA target is discoverable in the cluster")
 			target := &unstructured.Unstructured{}
 			target.SetGroupVersionKind(schema.GroupVersionKind{Group: "security.istio.io", Version: "v1", Kind: "AuthorizationPolicy"})

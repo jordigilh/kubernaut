@@ -143,12 +143,6 @@ func validateApprovalPreconditions(ai *aianalysisv1.AIAnalysis) error {
 	if sw.Parameters == nil {
 		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing original parameters", ai.Namespace, ai.Name)
 	}
-	if sw.DeclaredParameterNames == nil {
-		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter declarations", ai.Namespace, ai.Name)
-	}
-	if sw.ParameterSchema == nil {
-		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing parameter schema", ai.Namespace, ai.Name)
-	}
 	return nil
 }
 
@@ -418,6 +412,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			Namespace: rr.Namespace,
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
+			RCAConfidence: ai.Status.GetRCAResult().RCAConfidence,
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: remediationv1.GroupVersion.String(),
 				Kind:       "RemediationRequest",
@@ -455,7 +450,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		frozen := selected.DeepCopy()
 		rar.Spec.Workflow = &frozen.WorkflowSnapshot
 		rar.Spec.Parameters = frozen.Parameters
-		rar.Spec.ParameterSchema = frozen.ParameterSchema
+		rar.Spec.ParameterEvidence = frozen.ParameterEvidence
 	}
 
 	return rar

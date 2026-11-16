@@ -168,6 +168,16 @@ type K8sOwnerResolver struct {
 	logger         logr.Logger
 }
 
+// OwnerResolution is the top-level controller resolved from a Kubernetes
+// resource, including the API version carried by its ownerReference. The API
+// version is needed by consumers that carry resource provenance across service
+// boundaries (for example, fleet-target enrichment).
+type OwnerResolution struct {
+	Kind       string
+	Name       string
+	APIVersion string
+}
+
 // NewK8sOwnerResolver creates a new owner resolver backed by the metadata-only
 // informer cache. Pass the same ctrlClient used by scope.NewManager().
 // A logr.Logger is required for diagnostics (the gateway does not use
@@ -221,16 +231,63 @@ func WithRegistry(reg KindResolver) OwnerResolverOption {
 //   - No ownerReferences: returns the resource itself (standalone pod, bare deployment)
 //   - Max depth reached: returns deepest owner found (prevents infinite loops)
 func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error) {
-	// Legacy kind-only callers retain their historical lookup policy. Gateway
-	// uses ResolveTopLevelOwnerIdentity instead (DD-FLEET-014).
-	gvk, known := r.resolveGVK(kind)
-	if !known {
-		return kind, name, nil
+	resolution, err := r.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
+	if err != nil {
+		return "", "", err
 	}
-	owner, err := r.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
-		Namespace: namespace, Kind: kind, Name: name, APIVersion: gvk.GroupVersion().String(),
-	})
-	return owner.Kind, owner.Name, err
+	return resolution.Kind, resolution.Name, nil
+}
+
+// ResolveTopLevelOwnerWithAPIVersion traverses ownerReferences to find the
+// top-level controller and preserves the API version from the ownerReference
+// that selected it. ResolveTopLevelOwner remains the compatibility wrapper for
+// callers that only need kind and name.
+func (r *K8sOwnerResolver) ResolveTopLevelOwnerWithAPIVersion(ctx context.Context, namespace, kind, name string) (OwnerResolution, error) {
+	logger := r.logger
+
+	// Preserve the kind-only compatibility policy used by KA. It is not GVK
+	// authority for Gateway, which uses ResolveTopLevelOwnerIdentity (DD-FLEET-014).
+	currentKind, currentName := kind, name
+	if currentKind == "Service" {
+		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, namespace, currentName)
+		if !resolved {
+			return OwnerResolution{Kind: currentKind, Name: currentName, APIVersion: "v1"}, nil
+		}
+		currentKind, currentName = podKind, podName
+	}
+	resolution := OwnerResolution{Kind: currentKind, Name: currentName}
+	if gvk, known := r.resolveGVK(currentKind); known {
+		resolution.APIVersion = gvk.GroupVersion().String()
+	}
+	foundOwner := false
+	for i := 0; i < MaxOwnerChainDepth; i++ {
+		gvk, known := r.resolveGVK(currentKind)
+		if !known || (r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind)) {
+			logger.V(1).Info("Unknown or CRD kind, stopping compatibility traversal", "kind", currentKind, "level", i)
+			break
+		}
+		step := r.traverseOneOwnerLevel(ctx, namespace, gvk, currentName, foundOwner, i)
+		if step.err != nil {
+			return OwnerResolution{}, step.err
+		}
+		if step.advanced {
+			resolution.Kind, resolution.Name = step.nextKind, step.nextName
+			resolution.APIVersion = step.nextAPIVersion
+			if ownerGVK, ownerKnown := r.resolveGVK(step.nextKind); resolution.APIVersion == "" && ownerKnown {
+				resolution.APIVersion = ownerGVK.GroupVersion().String()
+			}
+			foundOwner = true
+			currentKind, currentName = step.nextKind, step.nextName
+		}
+		if step.stop {
+			break
+		}
+	}
+	logger.V(1).Info("Owner resolution complete",
+		"inputKind", kind, "inputName", name,
+		"resolvedKind", resolution.Kind, "resolvedName", resolution.Name,
+		"resolvedAPIVersion", resolution.APIVersion, "foundOwner", foundOwner)
+	return resolution, nil
 }
 
 // ResolveTopLevelOwnerIdentity carries source and owner-reference GVK authority
@@ -373,7 +430,12 @@ func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 		"from", fmt.Sprintf("%s/%s", currentKind, currentName),
 		"to", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name))
 
-	return ownerStepResult{advanced: true, nextKind: controllerRef.Kind, nextName: controllerRef.Name, nextAPIVersion: controllerRef.APIVersion}
+	return ownerStepResult{
+		advanced:       true,
+		nextKind:       controllerRef.Kind,
+		nextName:       controllerRef.Name,
+		nextAPIVersion: controllerRef.APIVersion,
+	}
 }
 
 // resolveMissingControllerRef handles the case where the cached lookup found
@@ -401,7 +463,12 @@ func (r *K8sOwnerResolver) resolveMissingControllerRef(
 		return ownerStepResult{err: verifyErr}
 	}
 	if verifiedRef != nil {
-		return ownerStepResult{advanced: true, nextKind: verifiedRef.Kind, nextName: verifiedRef.Name, nextAPIVersion: verifiedRef.APIVersion}
+		return ownerStepResult{
+			advanced:       true,
+			nextKind:       verifiedRef.Kind,
+			nextName:       verifiedRef.Name,
+			nextAPIVersion: verifiedRef.APIVersion,
+		}
 	}
 	return ownerStepResult{stop: true}
 }

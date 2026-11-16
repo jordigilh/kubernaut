@@ -62,10 +62,13 @@ var _ = Describe("Console Access Endpoint (#1919)", func() {
 		consoleAuditor = &fakeAuditor{}
 		newRouterWith = func(checker auth.ConsoleAuthorizer) http.Handler {
 			router, err := handler.NewRouter(handler.RouterConfig{
-				MetricsRegistry:      metricsReg,
-				A2AHandler:           http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-				MCPHandler:           http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-				AgentCardHandler:     http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+				MetricsRegistry: metricsReg,
+				A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+				MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+				PublicRoutes: handler.PublicRouteConfig{
+					AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+					BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+				},
 				ConsoleAccessHandler: handler.NewConsoleAccessHandler(checker, consoleAuditor, logr.Discard()),
 				AuthMiddleware:       fakeIdentityAuthMiddleware,
 				ReadyChecker:         func() bool { return true },
@@ -138,12 +141,15 @@ var _ = Describe("Console Access Endpoint (#1919)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		router, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  metricsReg,
-			A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-			MCPHandler:       mcpHandler,
-			AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-			AuthMiddleware:   fakeIdentityAuthMiddleware,
-			ReadyChecker:     func() bool { return true },
+			MetricsRegistry: metricsReg,
+			A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+			MCPHandler:      mcpHandler,
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+				BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+			},
+			AuthMiddleware: fakeIdentityAuthMiddleware,
+			ReadyChecker:   func() bool { return true },
 		})
 		Expect(err).NotTo(HaveOccurred())
 

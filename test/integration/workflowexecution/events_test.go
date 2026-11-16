@@ -83,7 +83,6 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 	eventJobWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueJobWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 		return wfe
 	}
 
@@ -146,7 +145,6 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			// Create WFE with empty ContainerImage (ValidateSpec rejects this)
 			wfe := createUniqueWFE("events-invalid", "default/deployment/test-pod")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			wfe.Spec.WorkflowRef.ExecutionBundle = ""
 
 			defer func() {

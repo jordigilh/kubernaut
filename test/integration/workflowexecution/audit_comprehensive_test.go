@@ -77,19 +77,18 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{"test": true},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/test:v1",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
-					Parameters: map[string]string{
-						"test": "value",
-					},
+					Parameters: typedParametersFromStrings(map[string]string{
+						"MESSAGE": "value",
+					}),
 				},
 			}
 
@@ -136,16 +135,16 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{"test": true},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/test:v1",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -191,16 +190,16 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{"test": true},
-							WorkflowName:           "test-workflow-success",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/test:v1",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow-success",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -275,7 +274,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 		// Test moved to E2E - see above
 
 		It("should emit workflow.failed with pre-execution failure details", func() {
-			By("Creating a WorkflowExecution with invalid workflow reference")
+			By("Creating a WorkflowExecution with a trusted identity and invalid execution snapshot")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("audit-preexec-fail-%d", time.Now().UnixNano()),
@@ -291,8 +290,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "nonexistent-workflow",
-							WorkflowName:    "nonexistent-workflow",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
 							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "",
@@ -301,6 +300,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						},
 					},
 					TargetResource: "default/deployment/test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 
@@ -348,16 +348,16 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{"test": true},
-							WorkflowName:           "test-workflow-ordering",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/test:v1",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow-ordering",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/ordering-test",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 

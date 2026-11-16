@@ -30,6 +30,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedclock "github.com/jordigilh/kubernaut/pkg/clock"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
@@ -38,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
 
 // AwaitingApprovalCallbacks provides the reconciler methods needed by AwaitingApprovalHandler.
@@ -77,11 +79,12 @@ const (
 //
 // Reference: Issue #666, TP-666-v1 §8.5, ADR-040, BR-ORCH-026
 type AwaitingApprovalHandler struct {
-	k8sClient client.Client
-	apiReader client.Reader
-	m         *metrics.Metrics
-	callbacks AwaitingApprovalCallbacks
-	clock     sharedclock.Clock
+	k8sClient        client.Client
+	apiReader        client.Reader
+	catalogNamespace string
+	m                *metrics.Metrics
+	callbacks        AwaitingApprovalCallbacks
+	clock            sharedclock.Clock
 }
 
 func NewAwaitingApprovalHandler(
@@ -103,6 +106,12 @@ func (h *AwaitingApprovalHandler) SetAPIReader(reader client.Reader) {
 	if reader != nil {
 		h.apiReader = reader
 	}
+}
+
+// SetCatalogNamespace supplies the trusted namespace used for live workflow
+// identity and parameter-schema verification at approval execution time.
+func (h *AwaitingApprovalHandler) SetCatalogNamespace(namespace string) {
+	h.catalogNamespace = namespace
 }
 
 // SetClock injects the time source used for strict deadline and expiry
@@ -208,20 +217,9 @@ func isConfirmedExpiredAt(rar *remediationv1.RemediationApprovalRequest, now tim
 
 func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	var safetyErr error
-	if rar.Status.WorkflowOverride != nil && rar.Status.WorkflowOverride.WorkflowName != "" {
-		safetyErr = fmt.Errorf("approved approval request contains a forbidden workflow switch")
-	} else if err := remediationapprovalrequest.ValidateSnapshotPresence(&rar.Spec); err != nil {
-		safetyErr = fmt.Errorf("approved approval request is missing required workflow snapshot data: %w", err)
-	}
+	verifiedWorkflow, safetyErr := h.verifyApprovedWorkflow(ctx, rar)
 	if safetyErr != nil {
-		logger.Error(safetyErr, "Cannot execute approval")
-		h.callbacks.RecordEvent(rr, "Warning", "RemediationFailed", safetyErr.Error())
-		result, err := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, safetyErr)
-		if err != nil {
-			return phase.TransitionIntent{}, err
-		}
-		return resultToIntent(result, "unsafe approval request"), nil
+		return h.failUnsafeApproval(ctx, rr, safetyErr, logger)
 	}
 
 	logger.Info("Approval granted via RemediationApprovalRequest",
@@ -238,14 +236,51 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 	if done {
 		return fetchIntent, err
 	}
+	if verifiedWorkflow != nil {
+		if err := validateResolvedApprovedWorkflow(verifiedWorkflow, resolvedAI); err != nil {
+			return h.failUnsafeApproval(ctx, rr, err, logger)
+		}
+	}
 
 	preHash := h.capturePostApprovalHash(ctx, rr, ai, rar.Spec.TargetContext, logger)
+	return h.createApprovedWorkflowExecution(ctx, rr, rar, resolvedAI, preHash, logger)
+}
+
+func (h *AwaitingApprovalHandler) verifyApprovedWorkflow(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) (*remediationworkflowv1.RemediationWorkflow, error) {
+	if rar.Status.WorkflowOverride != nil && rar.Status.WorkflowOverride.WorkflowName != "" {
+		return nil, fmt.Errorf("approved approval request contains a forbidden workflow switch")
+	}
+	if err := remediationapprovalrequest.ValidateSnapshotPresence(&rar.Spec); err != nil {
+		return nil, fmt.Errorf("approved approval request is missing required workflow snapshot data: %w", err)
+	}
+	verifiedWorkflow, err := workflowidentity.GetVerified(ctx, h.apiReader, h.catalogNamespace, rar.Spec.Workflow.WorkflowID)
+	if err != nil {
+		return nil, fmt.Errorf("approved workflow verification failed: %w", err)
+	}
+	if err := remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(verifiedWorkflow, rar.Spec.Parameters); err != nil {
+		return nil, fmt.Errorf("approved workflow verification failed: %w", err)
+	}
+	return verifiedWorkflow, nil
+}
+
+func validateResolvedApprovedWorkflow(verifiedWorkflow *remediationworkflowv1.RemediationWorkflow, resolvedAI *aianalysisv1.AIAnalysis) error {
+	selected := resolvedAI.Status.GetRCAResult().SelectedWorkflow
+	if selected == nil || selected.WorkflowID != verifiedWorkflow.Status.WorkflowID {
+		return fmt.Errorf("approved workflow identity changed before execution")
+	}
+	if err := remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(verifiedWorkflow, selected.Parameters); err != nil {
+		return fmt.Errorf("approved workflow parameters are invalid: %w", err)
+	}
+	return nil
+}
+
+func (h *AwaitingApprovalHandler) createApprovedWorkflowExecution(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, resolvedAI *aianalysisv1.AIAnalysis, preHash string, logger logr.Logger) (phase.TransitionIntent, error) {
 
 	// Lock scope must span from acquisition through WFE creation (prevents a
 	// concurrent reconcile from creating a duplicate WFE for the same target
 	// resource) — the lock is therefore acquired/released here rather than
 	// inside checkApprovalTargetBusy.
-	approvalTargetResource := formatRemediationTargetString(ai)
+	approvalTargetResource := formatRemediationTargetString(resolvedAI)
 	if approvalTargetResource != "" {
 		acquired, lockErr := h.callbacks.AcquireLock(ctx, approvalTargetResource)
 		if lockErr != nil {
@@ -288,11 +323,11 @@ func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, r
 	ai.Namespace = rr.Namespace
 	ai.Status.RCAResult = &aianalysisv1.RCAResult{
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-			WorkflowSnapshot: *frozen.Spec.Workflow,
-			Parameters:       frozen.Spec.Parameters,
-			ParameterSchema:  frozen.Spec.ParameterSchema,
-			Confidence:       rar.Spec.Confidence,
-			Rationale:        rar.Spec.RecommendedWorkflow.Rationale,
+			WorkflowSnapshot:  *frozen.Spec.Workflow,
+			Parameters:        frozen.Spec.Parameters,
+			ParameterEvidence: frozen.Spec.ParameterEvidence,
+			Confidence:        rar.Spec.Confidence,
+			Rationale:         rar.Spec.RecommendedWorkflow.Rationale,
 		},
 	}
 	if target := frozen.Spec.TargetContext.RemediationTarget; target != nil {
@@ -327,8 +362,17 @@ func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, r
 			fmt.Sprintf("Operator override applied: workflow=%s", rar.Status.WorkflowOverride.WorkflowName))
 		h.m.OverrideAppliedTotal.WithLabelValues(classifyOverride(rar.Status.WorkflowOverride), rr.Namespace).Inc()
 	}
-
 	return ai, resolvedAI, phase.TransitionIntent{}, false, nil
+}
+
+func (h *AwaitingApprovalHandler) failUnsafeApproval(ctx context.Context, rr *remediationv1.RemediationRequest, safetyErr error, logger logr.Logger) (phase.TransitionIntent, error) {
+	logger.Error(safetyErr, "Cannot execute approval")
+	h.callbacks.RecordEvent(rr, "Warning", "RemediationFailed", safetyErr.Error())
+	result, err := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, safetyErr)
+	if err != nil {
+		return phase.TransitionIntent{}, err
+	}
+	return resultToIntent(result, "unsafe approval request"), nil
 }
 
 // capturePostApprovalHash captures the pre-remediation resource hash after

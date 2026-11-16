@@ -62,7 +62,6 @@ var _ = Describe("WorkflowSnapshot — Issue #1661 Change 12 shared embed", func
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 			},
-			DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true},
 		}
 
 		raw, err := json.Marshal(snap)
@@ -79,7 +78,6 @@ var _ = Describe("WorkflowSnapshot — Issue #1661 Change 12 shared embed", func
 
 		Expect(keys).To(Equal([]string{
 			"actionType",
-			"declaredParameterNames",
 			"dependencies",
 			"engineConfig",
 			"executionBundle",
@@ -99,6 +97,7 @@ var _ = Describe("WorkflowSnapshot — Issue #1661 Change 12 shared embed", func
 		Expect(roundTripped.ActionType).To(Equal("ScaleReplicas"))
 		Expect(roundTripped.WorkflowName).To(Equal("oom-recovery"))
 		Expect(roundTripped.WorkflowID).To(Equal("wf-oom-recovery"))
+		Expect(asMap).NotTo(HaveKey("declaredParameterNames"), "BR-WORKFLOW-004 requires live schema authority")
 	})
 
 	It("UT-SHARED-1661-654-002: omits optional fields from the wire payload when unset, but never the four Required fields", func() {

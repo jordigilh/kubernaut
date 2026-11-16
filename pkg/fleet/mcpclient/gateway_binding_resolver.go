@@ -188,7 +188,7 @@ func (r *GatewayBindingResolver) discoverDefinition(ctx context.Context, cluster
 	for _, def := range defs {
 		names = append(names, def.Name)
 	}
-	prefix, prefixErr := PrefixFromToolNames(clusterID, names)
+	prefix, prefixErr := PrefixFromToolNamesForGateway(r.gatewayType, clusterID, names)
 	if prefixErr != nil {
 		return ToolDefinition{}, fmt.Errorf("resolve binding prefix for cluster %q: %w", clusterID, prefixErr)
 	}

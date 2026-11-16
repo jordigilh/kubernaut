@@ -35,10 +35,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
@@ -51,16 +52,9 @@ const (
 	executionEngineJob     = "job"
 )
 
-// resolveSchemaMetadata builds executor.CreateOptions directly from
-// wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
-// #1661 this fetched Dependencies/DeclaredParameterNames from a DataStorage
-// schema round-trip (F6: consolidation of 3 DS round-trips into 1);
-// WorkflowRef is now RO's already-validated, CRD-embedded snapshot (Change
-// 11c/11d) copied verbatim from AIAnalysis.Status.SelectedWorkflow, so there
-// is no DS entry left to fetch. The *weclient.SchemaMetadata and error return
-// values are both always nil now (kept for signature stability at the call
-// site, resolvePendingSchemaAndEngine) since building CreateOptions from the
-// in-memory spec cannot fail.
+// resolveSchemaMetadataFromWorkflow builds executor.CreateOptions from the
+// verified live Workflow. Parameter declarations and dependencies are not read
+// from the persisted WorkflowRef compatibility fields.
 //
 // Issue #1481: dependency existence is no longer validated here (or anywhere
 // pre-execution) — a schema-declared Secret/ConfigMap dependency is mounted
@@ -69,43 +63,38 @@ const (
 // resulting fail-fast/observability guarantees).
 //
 //nolint:unparam // see doc comment above -- error kept for call-site signature stability (Issue #1546 Tier 4)
-func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
-	ref := wfe.Spec.WorkflowRef
-	if ref.DeclaredParameterNames == nil {
-		return nil, weexecutor.CreateOptions{}, fmt.Errorf("workflow parameter declarations are missing")
+func (r *WorkflowExecutionReconciler) resolveSchemaMetadataFromWorkflow(workflow *remediationworkflowv1.RemediationWorkflow) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
+	if workflow == nil {
+		return nil, weexecutor.CreateOptions{}, fmt.Errorf("verified workflow is missing")
+	}
+	declared := make(map[string]bool, len(workflow.Spec.Parameters))
+	for _, parameter := range workflow.Spec.Parameters {
+		declared[parameter.Name] = true
 	}
 	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
 	opts := weexecutor.CreateOptions{
-		Dependencies:           convertWorkflowDependencies(ref.Dependencies),
-		DeclaredParameterNames: ref.DeclaredParameterNames,
+		Dependencies:           convertCatalogWorkflowDependencies(workflow.Spec.Dependencies),
+		DeclaredParameterNames: declared,
 		RetainFailedExecutions: retainFailedExecutions,
 	}
 	return nil, opts, nil
 }
 
-// convertWorkflowDependencies adapts the CRD-embedded
-// sharedtypes.WorkflowDependencies (WorkflowRef.Dependencies) to the
-// models.WorkflowDependencies shape executor.CreateOptions and the
-// executors' volume/workspace builders expect. Issue #1661 Change 11e: this
-// is the sole remaining boundary between the two equivalent but
-// independently-named types (sharedtypes is CRD/kubebuilder-annotated for
-// AIAnalysis/WorkflowExecution; models is DataStorage's schema-parsing
-// type) now that DS is no longer in the resolution path.
-func convertWorkflowDependencies(deps *sharedtypes.WorkflowDependencies) *models.WorkflowDependencies {
+func convertCatalogWorkflowDependencies(deps *remediationworkflowv1.RemediationWorkflowDependencies) *models.WorkflowDependencies {
 	if deps == nil {
 		return nil
 	}
 	converted := &models.WorkflowDependencies{}
 	if len(deps.Secrets) > 0 {
 		converted.Secrets = make([]models.ResourceDependency, len(deps.Secrets))
-		for i, s := range deps.Secrets {
-			converted.Secrets[i] = models.ResourceDependency{Name: s.Name}
+		for i, secret := range deps.Secrets {
+			converted.Secrets[i] = models.ResourceDependency{Name: secret.Name}
 		}
 	}
 	if len(deps.ConfigMaps) > 0 {
 		converted.ConfigMaps = make([]models.ResourceDependency, len(deps.ConfigMaps))
-		for i, c := range deps.ConfigMaps {
-			converted.ConfigMaps[i] = models.ResourceDependency{Name: c.Name}
+		for i, configMap := range deps.ConfigMaps {
+			converted.ConfigMaps[i] = models.ResourceDependency{Name: configMap.Name}
 		}
 	}
 	return converted
@@ -129,7 +118,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	if result, err, shouldReturn := r.validateAndAnnouncePendingSpec(ctx, wfe, logger); shouldReturn {
 		return result, err
 	}
-	if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
+	verifiedWorkflow, err := workflowidentity.GetVerified(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctrl.Result{}, ctx.Err()
 		}
@@ -143,8 +133,16 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 		return ctrl.Result{}, nil
 	}
+	if err := remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(verifiedWorkflow, wfe.Spec.Parameters); err != nil {
+		logger.Error(err, "Workflow parameters failed live schema validation")
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, err.Error())
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
+			return ctrl.Result{}, markErr
+		}
+		return ctrl.Result{}, nil
+	}
 
-	createOpts, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
+	createOpts, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, verifiedWorkflow, logger)
 	if shouldReturn {
 		return schemaResult, schemaErr
 	}
@@ -227,12 +225,12 @@ func (r *WorkflowExecutionReconciler) validateAndAnnouncePendingSpec(ctx context
 // reconcilePending per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 //
 //nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared reconcilePending step-helper contract (see validateAndAnnouncePendingSpec) (Issue #1546 Tier 4)
-func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (weexecutor.CreateOptions, ctrl.Result, error, bool) {
+func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, workflow *remediationworkflowv1.RemediationWorkflow, logger logr.Logger) (weexecutor.CreateOptions, ctrl.Result, error, bool) {
 	// ========================================
 	// Step 1.2: Build CreateOptions (dependencies, declared parameter names)
 	// from the CRD-embedded WorkflowRef snapshot (#243, DD-WE-006).
 	// ========================================
-	_, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
+	_, createOpts, schemaErr := r.resolveSchemaMetadataFromWorkflow(workflow)
 	if schemaErr != nil {
 		logger.Error(schemaErr, "Workflow schema metadata validation failed")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,

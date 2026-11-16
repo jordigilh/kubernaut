@@ -21,10 +21,13 @@ var _ = Describe("Router", func() {
 		metricsReg = metrics.NewRegistry()
 		var err error
 		router, err = handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  metricsReg,
-			A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
-			MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
-			AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
+			MetricsRegistry: metricsReg,
+			A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
+			MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
+				BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+			},
 			AuthMiddleware: func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.Header.Get("Authorization") == "" {
@@ -60,12 +63,15 @@ var _ = Describe("Router", func() {
 
 	It("UT-AF-200-003: /readyz returns 503 when checker reports not ready", func() {
 		notReadyRouter, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  metricsReg,
-			A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-			ReadyChecker:     func() bool { return false },
+			MetricsRegistry: metricsReg,
+			A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+				BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+			},
+			AuthMiddleware: func(next http.Handler) http.Handler { return next },
+			ReadyChecker:   func() bool { return false },
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -208,12 +214,15 @@ var _ = Describe("RouterConfig validation", func() {
 
 	BeforeEach(func() {
 		validCfg = handler.RouterConfig{
-			MetricsRegistry:  metrics.NewRegistry(),
-			A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-			ReadyChecker:     func() bool { return true },
+			MetricsRegistry: metrics.NewRegistry(),
+			A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+				BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+			},
+			AuthMiddleware: func(next http.Handler) http.Handler { return next },
+			ReadyChecker:   func() bool { return true },
 		}
 	})
 
@@ -227,7 +236,7 @@ var _ = Describe("RouterConfig validation", func() {
 		Entry("MetricsRegistry nil", func(c *handler.RouterConfig) { c.MetricsRegistry = nil }, "MetricsRegistry"),
 		Entry("A2AHandler nil", func(c *handler.RouterConfig) { c.A2AHandler = nil }, "A2AHandler"),
 		Entry("MCPHandler nil", func(c *handler.RouterConfig) { c.MCPHandler = nil }, "MCPHandler"),
-		Entry("AgentCardHandler nil", func(c *handler.RouterConfig) { c.AgentCardHandler = nil }, "AgentCardHandler"),
+		Entry("AgentCardHandler nil", func(c *handler.RouterConfig) { c.PublicRoutes.AgentCardHandler = nil }, "agent card handler"),
 		Entry("AuthMiddleware nil", func(c *handler.RouterConfig) { c.AuthMiddleware = nil }, "AuthMiddleware"),
 		Entry("ReadyChecker nil", func(c *handler.RouterConfig) { c.ReadyChecker = nil }, "ReadyChecker"),
 	)

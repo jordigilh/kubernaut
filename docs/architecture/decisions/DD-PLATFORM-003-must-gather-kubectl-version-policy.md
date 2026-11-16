@@ -214,6 +214,26 @@ routing remain unchanged. Issue #1662 remains the re-triage owner; remove the
 entry earlier if a compatible fixed kubectl artifact is adopted, and renewal
 requires fresh approval.
 
+## 2026-11-08 Amendment: CVE-2026-78661 Exception
+
+CI run [42489136928](https://github.com/jordigilh/kubernaut/actions/runs/42489136928)
+reported **CVE-2026-78661** in the retained `kubectl v1.36.2` binary's
+`golang.org/x/net v0.49.0` dependency. Trivy v0.72.0 reports the finding as
+HIGH and identifies `v0.62.0` as the fixed version. The latest supported stable
+kubectl releases inspected, v1.36.6 and v1.37.2, embed x/net v0.56.0 and
+v0.57.0 respectively. A v1.38.0-beta.0 artifact embeds v0.62.0, but it is not
+a supported stable release and increases the documented server-version skew
+risk for this diagnostic image.
+
+**Approved by the user**: add only this exact CVE to the must-gather-only
+Trivy exception set through **2027-05-08**, six calendar months from the
+2026-11-08 approval. This is risk acceptance, not vulnerability remediation.
+The kubectl image is intentionally neither rebuilt nor upgraded. Existing
+severity, `ignore-unfixed`, fail-closed exit behavior, application-image
+routing, and all other findings remain unchanged. Issue #1662 remains the
+re-triage owner; remove the exception earlier if a compatible fixed stable
+kubectl artifact is adopted, and renewal requires fresh approval.
+
 ## 2026-10-11 Amendment: Explicit Six-Month Risk Acceptance
 
 **Approved by the user**: "let's add kubectl CVEs as exceptions for 6 months validity".

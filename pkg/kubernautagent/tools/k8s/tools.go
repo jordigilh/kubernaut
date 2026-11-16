@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	sigsyaml "sigs.k8s.io/yaml"
 )
@@ -52,6 +53,8 @@ var AllToolNames = []string{
 	"kubectl_logs_all_containers_grep",
 	"kubernetes_jq_query",
 	"kubernetes_count",
+	"api_resources_list",
+	"resources_list",
 }
 
 // NewAllTools creates the baseline K8s tools. The resolver handles generic
@@ -60,8 +63,10 @@ var AllToolNames = []string{
 func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools.Tool {
 	jqTools := newJQTools(resolver)
 
-	result := make([]tools.Tool, 0, 18+len(jqTools))
+	result := make([]tools.Tool, 0, 20+len(jqTools))
 	result = append(result,
+		newAPIResourcesList(client),
+		newResourcesList(resolver),
 		newDescribe(resolver),
 		newGetByName(resolver),
 		newGetByNameInCluster(resolver),
@@ -83,6 +88,139 @@ func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools
 	)
 	result = append(result, jqTools...)
 	return result
+}
+
+// apiResourceInfo is the bounded, model-facing projection of one discovered
+// resource. It mirrors the kube-mcp-server api_resources_list contract while
+// keeping local discovery independent from the REST mapper used by generic
+// get/list tools.
+type apiResourceInfo struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespaced bool   `json:"namespaced"`
+}
+
+type apiResourcesListResult struct {
+	Resources []apiResourceInfo `json:"resources"`
+	Warning   string            `json:"warning,omitempty"`
+}
+
+type apiResourcesListTool struct {
+	discovery discovery.DiscoveryInterface
+}
+
+func newAPIResourcesList(client kubernetes.Interface) *apiResourcesListTool {
+	var clientDiscovery discovery.DiscoveryInterface
+	if client != nil {
+		clientDiscovery = client.Discovery()
+	}
+	return &apiResourcesListTool{discovery: clientDiscovery}
+}
+
+func (t *apiResourcesListTool) Name() string { return "api_resources_list" }
+func (t *apiResourcesListTool) Description() string {
+	return "Look up the Kubernetes API resource type(s) matching a specific kind using the target cluster's preferred API discovery"
+}
+func (t *apiResourcesListTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","minLength":1,"description":"Required case-insensitive exact Kubernetes Kind filter"}},"required":["kind"]}`)
+}
+
+func (t *apiResourcesListTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	var input struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return "", fmt.Errorf("parsing api resource discovery args: %w", err)
+	}
+	input.Kind = strings.TrimSpace(input.Kind)
+	if input.Kind == "" {
+		return "", fmt.Errorf("api resource discovery kind must not be empty")
+	}
+	if t.discovery == nil {
+		return "", fmt.Errorf("api resource discovery unavailable: discovery client not configured")
+	}
+
+	resourceLists, discoveryErr := discovery.ServerPreferredResourcesWithContext(ctx, discovery.ToDiscoveryInterfaceWithContext(t.discovery))
+	result := apiResourcesListResult{Resources: make([]apiResourceInfo, 0)}
+	for _, resourceList := range resourceLists {
+		if resourceList == nil {
+			continue
+		}
+		for _, resource := range resourceList.APIResources {
+			if !strings.EqualFold(resource.Kind, input.Kind) {
+				continue
+			}
+			result.Resources = append(result.Resources, apiResourceInfo{
+				APIVersion: resourceList.GroupVersion,
+				Kind:       resource.Kind,
+				Name:       resource.Name,
+				Namespaced: resource.Namespaced,
+			})
+		}
+	}
+	sort.Slice(result.Resources, func(i, j int) bool {
+		if result.Resources[i].APIVersion != result.Resources[j].APIVersion {
+			return result.Resources[i].APIVersion < result.Resources[j].APIVersion
+		}
+		return result.Resources[i].Name < result.Resources[j].Name
+	})
+	if discoveryErr != nil {
+		if len(resourceLists) == 0 {
+			return "", fmt.Errorf("failed to list API resources: %w", discoveryErr)
+		}
+		result.Warning = fmt.Sprintf("some API groups could not be queried and are omitted from this list: %v", discoveryErr)
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshaling API resource discovery: %w", err)
+	}
+	return string(data), nil
+}
+
+type resourcesListTool struct {
+	resolver ExactResourceListResolver
+}
+
+func newResourcesList(resolver ResourceResolver) *resourcesListTool {
+	exactResolver, _ := resolver.(ExactResourceListResolver)
+	return &resourcesListTool{resolver: exactResolver}
+}
+
+func (t *resourcesListTool) Name() string { return "resources_list" }
+func (t *resourcesListTool) Description() string {
+	return "List resources from the target cluster using an exact apiVersion and kind; an empty result still proves the resource endpoint is served"
+}
+func (t *resourcesListTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"apiVersion":{"type":"string"},"kind":{"type":"string"},"namespace":{"type":"string"},"labelSelector":{"type":"string"},"fieldSelector":{"type":"string"}},"required":["apiVersion","kind"]}`)
+}
+
+func (t *resourcesListTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	var input struct {
+		APIVersion    string `json:"apiVersion"`
+		Kind          string `json:"kind"`
+		Namespace     string `json:"namespace"`
+		LabelSelector string `json:"labelSelector"`
+		FieldSelector string `json:"fieldSelector"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return "", fmt.Errorf("parsing resources_list args: %w", err)
+	}
+	if strings.TrimSpace(input.APIVersion) == "" || strings.TrimSpace(input.Kind) == "" {
+		return "", fmt.Errorf("resources_list requires apiVersion and kind")
+	}
+	if t.resolver == nil {
+		return "", fmt.Errorf("resources_list unavailable: exact resource resolver not configured")
+	}
+	result, err := t.resolver.ListForAPIVersion(ctx, input.APIVersion, input.Kind, input.Namespace, input.LabelSelector, input.FieldSelector)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshaling resources_list result: %w", err)
+	}
+	return string(data), nil
 }
 
 const (

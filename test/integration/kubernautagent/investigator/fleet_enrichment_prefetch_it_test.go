@@ -32,7 +32,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -141,7 +140,9 @@ var _ = Describe("Fleet-aware enrichment pre-fetch (BR-INTEGRATION-1489, Issue #
 
 			overlayGetTool := &fakeTool{name: "resources_get", result: `{"apiVersion":"apps/v1","kind":"Deployment",` +
 				`"metadata":{"name":"remote-target","namespace":"remote-ns"}}`}
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{"resources_get": overlayGetTool}}
+			overlay := newITTargetScopedDiscoveryOverlay("apps/v1", "Deployment")
+			overlay["resources_get"] = overlayGetTool
+			spy := &fleetOverlayResolverSpy{overlay: overlay}
 
 			mockClient := &mockLLMClient{responses: minimalInvestigationResponses()}
 
@@ -220,10 +221,10 @@ var _ = Describe("Fleet-aware enrichment pre-fetch (BR-INTEGRATION-1489, Issue #
 				{Kind: "Deployment", Name: "hub-should-not-appear", Namespace: "production"},
 			}}
 			hubDetector := enrichment.NewLabelDetector(nil, newItTestMapper(), invLogger)
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
-				"resources_get":  labelDetectorGetTool{},
-				"resources_list": labelDetectorListTool{},
-			}}
+			overlay := newITTargetScopedDiscoveryOverlay("apps/v1", "Deployment")
+			overlay["resources_get"] = labelDetectorGetTool{}
+			overlay["resources_list"] = labelDetectorListTool{}
+			spy := &fleetOverlayResolverSpy{overlay: overlay}
 			mockClient := &mockLLMClient{responses: minimalInvestigationResponses()}
 
 			enricher := enrichment.NewEnricher(hubK8s, suiteDSAdapter, auditStore, invLogger).
@@ -265,9 +266,9 @@ var _ = Describe("Fleet-aware enrichment pre-fetch (BR-INTEGRATION-1489, Issue #
 				{Kind: "Deployment", Name: "hub-should-not-appear", Namespace: "remote-ns"},
 			}}
 			hubDetector := enrichment.NewLabelDetector(nil, newItTestMapper(), invLogger)
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
-				"resources_get": gitOpsLabelDetectorGetTool{},
-			}}
+			overlay := newITTargetScopedDiscoveryOverlay("apps/v1", "Deployment")
+			overlay["resources_get"] = gitOpsLabelDetectorGetTool{}
+			spy := &fleetOverlayResolverSpy{overlay: overlay}
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				wfToolResp(`{"root_cause_analysis":{"summary":"GitOps drift"},"selected_workflow":{"workflow_id":"git-revert-v2","confidence":0.95},"confidence":0.95}`),
 			}}

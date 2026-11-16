@@ -22,6 +22,7 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
@@ -400,6 +401,17 @@ func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
 	}
 	if infra.Reconciler == nil {
 		t.Fatal("Reconciler must not be nil even with sub-minimum retention TTL")
+	}
+}
+
+// IT-AF-2570-003 / BR-AUTH-001: the production approval client must decode
+// trusted RemediationWorkflow objects during workflow identity verification.
+func TestBuildK8sTypedSchemeIncludesRemediationWorkflow(t *testing.T) {
+	scheme := buildK8sTypedScheme()
+	for _, kind := range []string{"RemediationWorkflow", "RemediationWorkflowList"} {
+		if gvk := remediationworkflowv1.GroupVersion.WithKind(kind); !scheme.Recognizes(gvk) {
+			t.Errorf("production APIFrontend scheme does not recognize %s", gvk)
+		}
 	}
 }
 
@@ -1917,13 +1929,14 @@ func testRouterBuildParams(authorizer auth.ToolAuthorizer) routerBuildParams {
 			Auditor:    &noopAuditor{},
 			Logger:     logr.Discard(),
 		},
-		MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		DepsReady:        func() bool { return true },
-		AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-		AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-		AuthReady:        func() bool { return true },
-		Draining:         draining,
+		MCPHandler:         http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		DepsReady:          func() bool { return true },
+		AgentCardHandler:   http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		A2AHandler:         http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		AuthMiddleware:     func(next http.Handler) http.Handler { return next },
+		AuthReady:          func() bool { return true },
+		Draining:           draining,
+		BackendIncarnation: "01234567-89ab-4cde-8123-456789abcdef",
 	}
 }
 

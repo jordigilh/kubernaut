@@ -36,6 +36,7 @@ import (
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -70,6 +71,110 @@ func selectionObject2496(raw []byte) map[string]json.RawMessage {
 // BR-KA-016 / BR-AI-088 / DD-KA-2496: these are real mapper/processor tests,
 // not a substitute for the admitted AgentSession -> AA controller IT.
 var _ = Describe("#2496 selection persistence", func() {
+	DescribeTable("UT-AA-2586-009: terminal audit events retain RCA confidence independently (BR-AUDIT-005, AU-3, CC7.2)", func(score *float64) {
+		analysis := buildLowConfidenceFloorTestAnalysis()
+		analysis.Status.RCAResult = &aianalysisv1.RCAResult{RCAConfidence: score, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{Confidence: .95}}
+		store := &aiAuditStoreSpy{}
+		client := aiaudit.NewAuditClient(store, logr.Discard())
+		client.RecordAnalysisComplete(context.Background(), analysis)
+		Expect(client.RecordAnalysisFailed(context.Background(), analysis, errors.New("investigation failed"))).To(Succeed())
+		Expect(store.events).To(HaveLen(2))
+		for _, event := range store.events {
+			raw, err := json.Marshal(event.EventData)
+			Expect(err).NotTo(HaveOccurred())
+			payload := selectionObject2496(raw)
+			if score == nil {
+				Expect(payload).NotTo(HaveKey("rca_confidence"))
+			} else {
+				var actual float64
+				Expect(json.Unmarshal(payload["rca_confidence"], &actual)).To(Succeed())
+				Expect(actual).To(Equal(*score))
+			}
+			var workflow float64
+			Expect(json.Unmarshal(payload["confidence"], &workflow)).To(Succeed())
+			Expect(workflow).To(BeNumerically("~", .95, .00001))
+		}
+	}, Entry("missing", (*float64)(nil)), Entry("zero", func() *float64 { v := 0.0; return &v }()), Entry("known", func() *float64 { v := .65; return &v }()))
+	DescribeTable("UT-AA-2586-008: analyzing handler leaves approval to user policy in both modes (BR-AI-028, SI-10)",
+		func(interactive bool, score *float64, requireApproval bool) {
+			analysis := buildLowConfidenceFloorTestAnalysis()
+			analysis.Status.RCAResult = &aianalysisv1.RCAResult{RCAConfidence: score, SelectedWorkflow: &aianalysisv1.SelectedWorkflow{Confidence: .95}}
+			if interactive {
+				analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{ActingUser: "operator"}
+			}
+			evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			policy := `package aianalysis.approval
+import rego.v1
+require_approval := false`
+			if requireApproval {
+				policy = `package aianalysis.approval
+import rego.v1
+require_approval := true`
+			}
+			Expect(evaluator.LoadPolicy(policy)).To(Succeed())
+			threshold := .8
+			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			_, err := handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).WithConfidenceThreshold(&threshold).Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(Equal(requireApproval))
+		},
+		// These inline policies intentionally ignore rca_confidence; the case names
+		// describe the policy-owned outcome rather than implying score-based routing.
+		Entry("interactive policy allows execution with missing RCA input", true, nil, false),
+		Entry("interactive policy allows execution with low RCA input", true, ptr(.2), false),
+		Entry("autonomous policy allows execution with missing RCA input", false, nil, false),
+		Entry("autonomous policy requires review", false, nil, true),
+	)
+	It("IT-AA-2586-001: KA handoff reaches the user policy with independent RCA confidence (BR-AI-012, AU-3, SI-10)", func() {
+		r := selectionResult2496(.95, false)
+		low := .65
+		r.RCAConfidence = &low
+		mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-2586")
+		analysis := buildLowConfidenceFloorTestAnalysis()
+		auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+		_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, mapped)
+		Expect(err).NotTo(HaveOccurred())
+		evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+		Expect(evaluator.LoadPolicy(`package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.rca_confidence < input.confidence_threshold; input.workflow_confidence == 0.95 }
+reason := "user policy"`)).To(Succeed())
+		threshold := .8
+		handler := handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).WithConfidenceThreshold(&threshold)
+		_, err = handler.Handle(context.Background(), analysis)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue())
+	})
+	DescribeTable("IT-AA-2586-003: interactive and autonomous paths respect user policy (BR-AI-028, SI-10)",
+		func(interactive bool, score *float64, policy string, approval bool) {
+			r := selectionResult2496(.95, false)
+			r.RCAConfidence = score
+			analysis := buildLowConfidenceFloorTestAnalysis()
+			if interactive {
+				analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{ActingUser: "operator"}
+			}
+			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-2586"))
+			Expect(err).NotTo(HaveOccurred())
+			evaluator := rego.NewEvaluator(rego.Config{}, logr.Discard())
+			Expect(evaluator.LoadPolicy(policy)).To(Succeed())
+			_, err = handlers.NewAnalyzingHandler(evaluator, logr.Discard(), metrics.NewMetrics(), auditClient).Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(Equal(approval))
+		},
+		Entry("interactive missing score permitted", true, nil, `package aianalysis.approval
+import rego.v1
+require_approval := false`, false),
+		Entry("autonomous missing score requires review", false, nil, `package aianalysis.approval
+import rego.v1
+default require_approval := true
+require_approval := false if { input.rca_confidence >= 0.8 }`, true),
+		Entry("interactive zero requires review", true, ptr(0), `package aianalysis.approval
+import rego.v1
+default require_approval := false
+require_approval if { input.identity.user == "operator"; input.rca_confidence == 0 }`, true),
+	)
 	DescribeTable("UT-AA-2496-AUDIT-002: AA status independently sanitizes admitted selected and rejected narratives",
 		func(rejected bool) {
 			r := selectionResult2496(.84, rejected)
@@ -77,18 +182,23 @@ var _ = Describe("#2496 selection persistence", func() {
 				r.WorkflowID, r.ProposedWorkflowID, r.RepeatValidationOutcome = "", aaCatalogID2496, aaRejected2496
 			}
 			mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-aa-narrative")
-			raw := mapped.SelectedWorkflow
 			if rejected {
-				raw = mapped.SelectionAssessment
+				var body map[string]any
+				Expect(json.Unmarshal(mapped.SelectionAssessment.Raw, &body)).To(Succeed())
+				body["repeat_justification"] = map[string]string{"evidence_basis": "Current password=private-private", "prior_outcome_relevance": "Prior password=private-private", "expected_mechanism": "Mechanism password=private-private"}
+				wire, err := json.Marshal(body)
+				Expect(err).NotTo(HaveOccurred())
+				mapped.SelectionAssessment.Raw = wire
+			} else {
+				mapped.SelectedWorkflow.RepeatJustification = &sharedtypes.RepeatJustification{
+					EvidenceBasis:         "Current password=private-private",
+					PriorOutcomeRelevance: "Prior password=private-private",
+					ExpectedMechanism:     "Mechanism password=private-private",
+				}
 			}
-			var body map[string]any
-			Expect(json.Unmarshal(raw.Raw, &body)).To(Succeed())
-			body["repeat_justification"] = map[string]string{"evidence_basis": "Current password=private-private", "prior_outcome_relevance": "Prior password=private-private", "expected_mechanism": "Mechanism password=private-private"}
-			wire, err := json.Marshal(body)
-			Expect(err).NotTo(HaveOccurred())
-			raw.Raw = wire
 			analysis := buildLowConfidenceFloorTestAnalysis()
 			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			var err error
 			_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, mapped)
 			Expect(err).NotTo(HaveOccurred())
 			var persisted []byte
@@ -296,12 +406,14 @@ var _ = Describe("#2496 selection persistence", func() {
 			r := selectionResult2496(confidence, review)
 			res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "incident-2496")
 			Expect(res.SelectedWorkflow).NotTo(BeNil())
-			wire := selectionObject2496(res.SelectedWorkflow.Raw)
-			Expect(string(wire["repeat_justification"])).To(MatchJSON(`{"evidence_basis":"New memory limit observed","prior_outcome_relevance":"Prior Full assessment was ineffective","expected_mechanism":"Increase the current limit"}`))
-			Expect(string(wire["workflow_selection_confidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
+			raw, err := json.Marshal(res.SelectedWorkflow)
+			Expect(err).NotTo(HaveOccurred())
+			wire := selectionObject2496(raw)
+			Expect(string(wire["repeatJustification"])).To(MatchJSON(`{"evidence_basis":"New memory limit observed","prior_outcome_relevance":"Prior Full assessment was ineffective","expected_mechanism":"Increase the current limit"}`))
+			Expect(string(wire["workflowSelectionConfidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
 			analysis := buildLowConfidenceFloorTestAnalysis()
 			processor := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{})
-			_, err := processor.ProcessAgentSessionResult(context.Background(), analysis, res)
+			_, err = processor.ProcessAgentSessionResult(context.Background(), analysis, res)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(analysis.Status.Phase).To(Equal(phase))
 			Expect(analysis.Status.GetReview().NeedsHumanReview).To(Equal(phase == aianalysis.PhaseFailed))
@@ -311,10 +423,10 @@ var _ = Describe("#2496 selection persistence", func() {
 			Expect(sw.WorkflowName).To(Equal(r.WorkflowName))
 			Expect(sw.Confidence).To(Equal(confidence))
 			Expect(sw.SelectedAt).NotTo(BeNil())
-			raw, err := json.Marshal(sw)
+			raw, err = json.Marshal(sw)
 			Expect(err).NotTo(HaveOccurred())
 			stored := selectionObject2496(raw)
-			Expect(string(stored["repeatJustification"])).To(MatchJSON(string(wire["repeat_justification"])))
+			Expect(string(stored["repeatJustification"])).To(MatchJSON(string(wire["repeatJustification"])))
 			Expect(string(stored["workflowSelectionConfidence"])).To(MatchJSON(confidenceJSON2496(confidence)))
 			Expect(string(stored["repeatJustificationRequired"])).To(Equal("true"))
 			Expect(string(stored["priorWorkflowMatch"])).To(Equal("true"))
@@ -331,13 +443,15 @@ var _ = Describe("#2496 selection persistence", func() {
 		r := selectionResult2496(0, false)
 		r.WorkflowSelectionConfidence = nil
 		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "incident-unknown-2496")
-		Expect(selectionObject2496(res.SelectedWorkflow.Raw)).NotTo(HaveKey("workflow_selection_confidence"))
+		raw, err := json.Marshal(res.SelectedWorkflow)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectionObject2496(raw)).NotTo(HaveKey("workflowSelectionConfidence"))
 		analysis := buildLowConfidenceFloorTestAnalysis()
-		_, err := handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{}).
+		_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{}).
 			ProcessAgentSessionResult(context.Background(), analysis, res)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
-		raw, err := json.Marshal(analysis.Status.GetRCAResult().SelectedWorkflow)
+		raw, err = json.Marshal(analysis.Status.GetRCAResult().SelectedWorkflow)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(selectionObject2496(raw)).NotTo(HaveKey("workflowSelectionConfidence"))
 		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Confidence).To(BeZero())

@@ -526,6 +526,9 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 	if err != nil {
 		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
 	}
+	if _, err := FilterDeclaredTypedParameterStrings(wfe.Spec.Parameters, opts.DeclaredParameterNames, log.FromContext(ctx)); err != nil {
+		return nil, fmt.Errorf("convert workflow parameters for Job environment: %w", err)
+	}
 
 	job := j.buildJob(ctx, wfe, namespace, opts)
 	if wfe.Status.ExecutionRef != nil {
@@ -890,7 +893,11 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 // kubectl's discovery cache) still function under readOnlyRootFilesystem.
 func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *batchv1.Job {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-	params := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	params, err := FilterDeclaredTypedParameterStrings(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	if err != nil {
+		logger.Error(err, "Failed to convert typed workflow parameters for Job environment")
+		params = map[string]string{}
+	}
 	envVars := buildEnvVars(wfe.Spec.TargetResource, params)
 	envVars = append(envVars, scratchSpaceEnvVars()...)
 	volumes, mounts := buildDependencyVolumes(opts.Dependencies)
@@ -1048,6 +1055,9 @@ func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvV
 	})
 
 	for key, value := range params {
+		if key == targetResourceParameterName {
+			continue
+		}
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  key,
 			Value: value,

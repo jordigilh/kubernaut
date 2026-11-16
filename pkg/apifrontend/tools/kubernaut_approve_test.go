@@ -21,6 +21,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -43,30 +44,30 @@ var _ = Describe("kubernaut_approve", func() {
 
 	It("UT-AF-2570-121: BR-ORCH-025 accepts a structured parameter-only override", func() {
 		rar := newTypedRAR()
-		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: map[string]bool{"P": true}}
-		rar.Spec.Parameters = map[string]string{"P": "2"}
-		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}}
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf"}
+		rar.Spec.Parameters = typedParameters(`{"P":2}`)
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}}
 		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
-		tc := newTypedFakeClientWithStatus(rar)
+		tc := newTypedFakeClientWithWorkflow(rar, schema)
 		var args tools.ApproveArgs
-		Expect(json.Unmarshal([]byte(`{"rar_name":"rar-1","decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}`), &args)).To(Succeed())
+		Expect(json.Unmarshal([]byte(`{"rar_name":"rar-1","decision":"Approved","workflow_override":{"parameters":{"P":1.0},"rationale":"reviewed"}}`), &args)).To(Succeed())
 		args.Namespace = "payments"
 		_, err := tools.HandleApprove(ctx, tc, args, "bob")
 		Expect(err).NotTo(HaveOccurred())
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
-		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(map[string]string{"P": "1.0"}))
+		Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedParameters(`{"P":1.0}`)))
 		Expect(persisted.Status.WorkflowOverride.Rationale).To(Equal("reviewed"))
 	})
 
 	DescribeTable("UT-AF-2570-122: BR-KA-191 rejects invalid approval changes before status update", func(decision string, changes map[string]string) {
 		rar := newTypedRAR()
-		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: map[string]bool{"P": true, "TARGET_RESOURCE_NAME": true}}
-		rar.Spec.Parameters = map[string]string{"P": "3", "TARGET_RESOURCE_NAME": "pod"}
-		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}, {Name: "TARGET_RESOURCE_NAME", Type: "string", Description: "target"}}
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf"}
+		rar.Spec.Parameters = typedParameters(`{"P":3,"TARGET_RESOURCE_NAME":"pod"}`)
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "integer", Description: "count"}, {Name: "TARGET_RESOURCE_NAME", Type: "string", Description: "target"}}
 		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
-		tc := newTypedFakeClientWithStatus(rar)
-		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: decision, WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: changes}}, "bob")
+		tc := newTypedFakeClientWithWorkflow(rar, schema)
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: decision, WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: typedParametersFromStrings(changes)}}, "bob")
 		Expect(err).To(HaveOccurred())
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
@@ -81,23 +82,20 @@ var _ = Describe("kubernaut_approve", func() {
 
 	DescribeTable("UT-AF-2570-123: BR-KA-191 validates shared vectors before persisting reviewer text", func(parameters []remediationworkflowv1.RemediationWorkflowParameter, original, changes map[string]string, valid bool) {
 		rar := newTypedRAR()
-		declared := make(map[string]bool, len(parameters))
-		for _, parameter := range parameters {
-			declared[parameter.Name] = true
-		}
-		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf", DeclaredParameterNames: declared}
-		rar.Spec.Parameters = original
-		rar.Spec.ParameterSchema = parameters
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf"}
+		typedOriginal := typedParametersFromStrings(original)
+		typedChanges := typedParametersFromStrings(changes)
+		rar.Spec.Parameters = typedOriginal
 		rar.Spec.TargetContext = &remediationv1.ApprovalTargetContext{}
-		tc := newTypedFakeClientWithStatus(rar)
-		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: "Approved", WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: changes}}, "bob")
+		tc := newTypedFakeClientWithWorkflow(rar, parameters)
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{Namespace: "payments", RARName: "rar-1", Decision: "Approved", WorkflowOverride: &remediationv1.WorkflowOverride{Parameters: typedChanges}}, "bob")
 		persisted := &remediationv1.RemediationApprovalRequest{}
 		Expect(tc.Get(ctx, crclient.ObjectKeyFromObject(rar), persisted)).To(Succeed())
-		Expect(persisted.Spec.Parameters).To(Equal(original))
+		Expect(persisted.Spec.Parameters).To(Equal(typedOriginal))
 		if valid {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
-			Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(changes))
+			Expect(persisted.Status.WorkflowOverride.Parameters).To(Equal(typedChanges))
 		} else {
 			Expect(err).To(HaveOccurred())
 			Expect(persisted.Status.Decision).To(Equal(remediationv1.ApprovalDecisionPending))
@@ -536,9 +534,36 @@ var _ = Describe("kubernaut_approve", func() {
 })
 
 func newTypedFakeClientWithStatus(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().WithScheme(rrTestScheme()).WithObjects(objects...).WithStatusSubresource(objects...).Build()
+}
+
+func newTypedFakeClientWithWorkflow(rar *remediationv1.RemediationApprovalRequest, parameters []remediationworkflowv1.RemediationWorkflowParameter) crclient.Client {
+	rw := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: "workflow-" + rar.Name, Namespace: rar.Namespace},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Version:    "1.0",
+			ActionType: "Test",
+			Description: remediationworkflowv1.RemediationWorkflowDescription{
+				What: "test workflow", WhenToUse: "approval test",
+			},
+			Execution:  remediationworkflowv1.RemediationWorkflowExecution{Engine: "tekton", Bundle: "oci://example.test/workflow:1"},
+			Parameters: parameters,
+		},
+	}
+	content, err := contenthash.MarshalCleanCRDContent(rw)
+	if err != nil {
+		panic(err)
+	}
+	rw.Status.ContentHash = contenthash.ComputeContentHash(string(content))
+	rw.Status.WorkflowID = contenthash.DeterministicUUID(rw.Status.ContentHash)
+	rar.Spec.Workflow.WorkflowID = rw.Status.WorkflowID
+	augmented := []crclient.Object{rar, rw}
 	return fake.NewClientBuilder().
 		WithScheme(rrTestScheme()).
-		WithObjects(objects...).
-		WithStatusSubresource(objects...).
+		WithObjects(augmented...).
+		WithStatusSubresource(augmented...).
+		WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj crclient.Object) []string {
+			return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+		}).
 		Build()
 }

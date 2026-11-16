@@ -38,19 +38,15 @@ var _ = Describe("AgentSession result call-level counts — #2387 Gap 1", func()
 		result := &katypes.InvestigationResult{WorkflowID: "wf-schema", ParameterSchema: []models.WorkflowParameter{{Name: "REPLICAS", Type: "integer", Required: true, Description: "count", Minimum: &minimum}}}
 		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), result, "incident-schema")
 		Expect(res.SelectedWorkflow).NotTo(BeNil())
-		var selected map[string]json.RawMessage
-		Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selected)).To(Succeed())
-		Expect(selected).To(HaveKey("parameter_schema"))
-		Expect(string(selected["parameter_schema"])).To(MatchJSON(`[{"name":"REPLICAS","type":"integer","required":true,"description":"count","minimum":1}]`))
+		Expect(res.SelectedWorkflow.Parameters).To(BeNil())
+		Expect(res.SelectedWorkflow.ParameterEvidence).To(BeEmpty())
 	})
 
 	It("UT-KA-2570-117: BR-KA-191 preserves an explicitly empty catalog schema", func() {
 		result := &katypes.InvestigationResult{WorkflowID: "wf-no-params", ParameterSchema: []models.WorkflowParameter{}}
 		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), result, "incident-schema-empty")
-		var selected map[string]json.RawMessage
-		Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selected)).To(Succeed())
-		Expect(selected).To(HaveKey("parameter_schema"))
-		Expect(string(selected["parameter_schema"])).To(MatchJSON(`[]`))
+		Expect(res.SelectedWorkflow.Parameters).To(BeNil())
+		Expect(res.SelectedWorkflow.ParameterEvidence).To(BeEmpty())
 	})
 
 	Describe("UT-KA-2387-011: mapping copies totals into rootCauseAnalysis when non-zero", func() {

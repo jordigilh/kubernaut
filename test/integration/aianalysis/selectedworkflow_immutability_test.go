@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -48,6 +47,17 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 
 	var analysis *aianalysisv1.AIAnalysis
 
+	typedValues := func(values map[string]bool) sharedtypes.TypedParameterMap {
+		if values == nil {
+			return nil
+		}
+		result := make(sharedtypes.TypedParameterMap, len(values))
+		for name, value := range values {
+			v := value
+			result[name] = sharedtypes.TypedParameterValue{Kind: "boolean", BooleanValue: &v}
+		}
+		return result
+	}
 	newSelectedWorkflow := func(selectedAt *metav1.Time, declared map[string]bool) *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -62,11 +72,11 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 				Resources: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 				},
-				DeclaredParameterNames: declared,
 			},
 			Confidence: 0.92,
 			Rationale:  "memory pressure detected",
 			SelectedAt: selectedAt,
+			Parameters: typedValues(declared),
 		}
 	}
 
@@ -115,7 +125,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
 		selected := newSelectedWorkflow(nil, map[string]bool{})
-		selected.Parameters = map[string]string{}
+		selected.Parameters = sharedtypes.TypedParameterMap{}
 		Eventually(func() error {
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 				return err
@@ -130,11 +140,11 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).To(BeEmpty())
 	})
 
-	DescribeTable("IT-AA-2570-026: BR-ORCH-025 preserves selected parameter schema through the API server", func(schema []remediationworkflowv1.RemediationWorkflowParameter) {
+	DescribeTable("IT-AA-2570-026: BR-ORCH-025 preserves typed selected parameters through the API server", func(values map[string]bool) {
 		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, analysis) })
 		selected := newSelectedWorkflow(nil, map[string]bool{})
-		selected.ParameterSchema = schema
+		selected.Parameters = typedValues(values)
 		Eventually(func() error {
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 				return err
@@ -144,11 +154,11 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		}, timeout, interval).Should(Succeed())
 		var persisted aianalysisv1.AIAnalysis
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
-		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.ParameterSchema).NotTo(BeNil())
-		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.ParameterSchema).To(Equal(schema))
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).NotTo(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).To(Equal(typedValues(values)))
 	},
-		Entry("empty schema", []remediationworkflowv1.RemediationWorkflowParameter{}),
-		Entry("declared schema", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "MODE", Type: "string", Required: true, Description: "mode", Enum: []string{"safe", "fast"}, Pattern: "^(safe|fast)$"}}),
+		Entry("empty values", map[string]bool{}),
+		Entry("declared values", map[string]bool{"MODE": false}),
 	)
 
 	It("IT-AA-344-001: locks SelectedWorkflow once SelectedAt is populated, while tolerating idempotent no-op retries", func() {
@@ -175,7 +185,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil())
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.SelectedAt).ToNot(BeNil(), "SelectedAt must persist as the immutability sentinel")
-		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).To(Equal(typedValues(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true})))
 
 		// The real AA controller in this process keeps reconciling this same
 		// object for the rest of the test (creating its AgentSession,
@@ -204,9 +214,9 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			return lastErr
 		}
 
-		By("Second status write: tampering with DeclaredParameterNames must be rejected by the API server")
+		By("Second status write: tampering with selected parameter values must be rejected by the API server")
 		err := attemptTamperedWrite(func(sw *aianalysisv1.SelectedWorkflow) {
-			sw.DeclaredParameterNames = map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true}
+			sw.Parameters = typedValues(map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true})
 		})
 		Expect(err).To(HaveOccurred(), "CEL must reject any mutation once selectedAt is populated (DD-WORKFLOW-018)")
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an Invalid admission error, got: %v", err)
@@ -222,7 +232,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		var afterTamper aianalysisv1.AIAnalysis
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &afterTamper)).To(Succeed())
 		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("increase-memory-v1"))
-		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.Parameters).To(Equal(typedValues(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true})))
 
 		By("Third status write: resubmitting an identical value must succeed (idempotent reconcile-retry safety)")
 		// No field changes at all — simulates a reconciler retry re-applying the
@@ -247,18 +257,16 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 	// IT-AA-2284-001 (Issue #2284)
 	// ========================================
 	// Authority: Issue #2284. Distinct from IT-AA-344-001 above: that test's
-	// "idempotent resubmit" step exercises a *populated* DeclaredParameterNames
-	// map (TARGET_NAMESPACE/REPLICAS). This test exercises DeclaredParameterNames
-	// == nil -- a legitimate, meaningful value (see WorkflowSnapshot's own doc
-	// comment: nil "no schema, no filtering" vs an empty map "strip
-	// everything" are distinct). On K8s v1.31.x, the CEL evaluator's
+	// "idempotent resubmit" step exercises a *populated* parameter map
+	// (TARGET_NAMESPACE/REPLICAS). This test exercises a nil parameter map -- a
+	// legitimate absent value. On K8s v1.31.x, the CEL evaluator's
 	// "self == oldSelf" spuriously returns false when a nullable:true field
 	// holds nil on both sides, so identical-value resubmits of a
-	// nil-DeclaredParameterNames SelectedWorkflow were incorrectly rejected,
+	// nil-parameter SelectedWorkflow values were incorrectly rejected,
 	// causing AIAnalysisReconciler to retry forever (#2030 Part A's bounded
 	// retry-then-escalate never durably advances its counter either, since
 	// *that* write is rejected by the same bug -- see #2284/#2287 comments).
-	It("IT-AA-2284-001: tolerates idempotent resubmit when DeclaredParameterNames is nil, while still rejecting real tampering", func() {
+	It("IT-AA-2284-001: tolerates idempotent resubmit when the parameter map is nil, while still rejecting real tampering", func() {
 		defer func() {
 			_ = k8sClient.Delete(ctx, analysis)
 		}()
@@ -266,7 +274,7 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		By("Creating the AIAnalysis CRD")
 		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("First status write: setting SelectedWorkflow with nil DeclaredParameterNames must succeed")
+		By("First status write: setting SelectedWorkflow with a nil parameter map must succeed")
 		now := metav1.Now()
 		firstSW := newSelectedWorkflow(&now, nil)
 		Eventually(func() error {
@@ -275,15 +283,15 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			}
 			analysis.Status.EnsureRCAResult().SelectedWorkflow = firstSW
 			return k8sClient.Status().Update(ctx, analysis)
-		}, timeout, interval).Should(Succeed(), "first write with nil DeclaredParameterNames must be accepted")
+		}, timeout, interval).Should(Succeed(), "first write with a nil parameter map must be accepted")
 
 		By("Re-reading the persisted SelectedWorkflow")
 		var persisted aianalysisv1.AIAnalysis
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil())
-		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.Parameters).To(BeNil())
 
-		By("Resubmitting an identical value (nil DeclaredParameterNames) must succeed (Issue #2284 regression)")
+		By("Resubmitting an identical value (nil parameter map) must succeed (Issue #2284 regression)")
 		// This is the exact incident-reproducing step: on the pre-fix CEL
 		// rule, this identical-value resubmit was rejected as Invalid,
 		// creating the infinite reconcile loop reported in #2284.
@@ -293,14 +301,14 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 				return err
 			}
 			return k8sClient.Status().Update(ctx, &latest)
-		}, timeout, interval).Should(Succeed(), "an update with an unchanged nil-DeclaredParameterNames SelectedWorkflow must not be rejected (Issue #2284)")
+		}, timeout, interval).Should(Succeed(), "an update with an unchanged nil-parameter SelectedWorkflow must not be rejected (Issue #2284)")
 
-		By("Tampering DeclaredParameterNames from nil to a populated map must still be rejected")
+		By("Tampering the parameter map from nil to a populated map must still be rejected")
 		var lastErr error
 		Eventually(func() bool {
 			var latest aianalysisv1.AIAnalysis
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
-			latest.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"INJECTED": true}
+			latest.Status.RCAResult.SelectedWorkflow.Parameters = typedValues(map[string]bool{"INJECTED": true})
 			lastErr = k8sClient.Status().Update(ctx, &latest)
 			return lastErr == nil || !apierrors.IsConflict(lastErr)
 		}, timeout, interval).Should(BeTrue(), "gave up waiting for a definitive (non-conflict) write result")

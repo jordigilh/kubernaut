@@ -282,6 +282,78 @@ No two-pod, TTL, fixture-race or GVK causal claim is established. Confidence
 remains below 90%; no fence repair is included. The pinned producer thread
 still needs digest/config, tools/list schema and empty/nonempty gateway captures.
 
+### Bounded baseline reconciliation round 9 (2026-11-16)
+
+User approved a normal main merge and reconciliation, validation and normal push;
+no rebase, force push, new architecture or PR merge. Clean branch/source head:
+`61e1a56b57239669360276cef463603376f1f2cc`; refreshed main:
+`741f7d8569fef9a5eed2d374c759b42298c0a6b8` (425 incoming files).
+Main's `679ec9bcf` adds `OwnerResolution` / `ResolveTopLevelOwnerWithAPIVersion`
+and wires KA overlay enrichment to preserve owner provenance. DD-FLEET-014's
+Gateway source/reference authority must remain stricter than this kind-only
+compatibility entry point. Confidence: 95%; no new architectural decision.
+
+RED (5 minutes): existing Gateway/ownerchain/KA/Fleet adapter baseline, then
+`UT-GW-2593-GVK-011` proves the legacy missing-reference-version contract and
+the strict Gateway rejection are distinct. GREEN (10 minutes): retain main's
+compatibility API and lookup policy, DD014's authoritative identity traversal,
+and the shared metadata/fallback steps. Preserve all incoming KA callers/tests.
+REFACTOR: N/A if the compatibility resolution leaves no independent cleanup;
+do not change unrelated main code. Validation (15 minutes): affected race tests,
+real adapter/MCP integration, full build/lint and repository test compilation.
+
+Existing Gateway wiring rows above still apply (`IT-GW-2593-GVK-001`);
+KA production wiring is `overlayK8sClient.GetOwnerChain` ->
+`ResolveTopLevelOwnerWithAPIVersion`, proved by `UT-KA-FLEET-032` through the
+real overlay client. Both APIs share I/O/fallback steps, but keep distinct
+driving policies: main's legacy kind-based lookup and missing-version fallback
+must not become authority for Gateway. Applicable BRs: BR-GATEWAY-004,
+BR-SCOPE-002, BR-INTEGRATION-1489; AC-4/AC-6/SI-10 unchanged. No new audit event.
+No fencing, RBAC, producer parsing or live qualification claims are added.
+
+Round 9 evidence (local reconciliation):
+
+- Pre-merge baseline: Gateway, shared K8s, KA custom tools and Fleet adapter
+  integration all pass. `UT-GW-2593-GVK-011` then fails on the unchanged branch:
+  missing owner API version incorrectly breaks the legacy kind-only entry point.
+  Its companion Gateway assertion requires continued fail-closed rejection.
+- Actual normal merge has exactly one conflicted file:
+  `pkg/shared/k8s/ownerchain/owner_resolver.go`. Main's compatibility result type,
+  method and KA caller are retained; Gateway still uses only the authoritative
+  identity method. `UT-GW-2593-GVK-012` also proves explicit compatibility owner
+  provenance is not replaced by the lookup preference.
+- Initial integrated race run passes across Gateway/shared K8s/KA custom tools
+  and all three Fleet adapter integration scenarios. Full build and repository
+  test compilation pass. Full lint identifies one new complexity violation;
+  REFACTOR flattens the compatibility version-fallback conditional. Full lint
+  then passes with zero issues; no suppression or threshold change.
+- Engram semantic corpus identifies DD014 and KA's provenance gate; Engram
+  references prove `ResolveFingerprintWithCluster` -> identity traversal.
+  After merge the Engram reference backend returns HTTP 503; gopls CLI fallback
+  proves the KA compatibility caller at `fleet_resource_context.go:211` and the
+  production overlay constructor caller in `resource_context.go:94`. Gateway
+  adapter references remain at `prometheus_adapter.go:392,418`.
+- A concurrent final validation command hits its 300-second harness timeout
+  while full `make test` is active, before emitting scoped race results.
+  This is incomplete evidence, not a passing test or an attributed code failure;
+  final post-refactor checks are rerun without that outer timeout.
+- Final post-refactor validation passes: `go build ./...`; scoped race tests
+  for `./pkg/gateway/... ./pkg/shared/k8s/...
+  ./internal/kubernautagent/tools/custom ./test/integration/gateway/fleet`
+  (`-count=1 -timeout=3m`); repository compile-only `go test ./... -run='^$'
+  -timeout=30s`; full `golangci-lint run --timeout=5m` (zero issues);
+  and full `make test` (all 12 service invocations / 130 suites pass).
+  No unrelated baseline failure or new skip/suppression is introduced.
+- Scoped critical GVK scenarios: **18/18** (prior sixteen plus compatibility
+  separation and explicit KA provenance); Fleet adapter IT **3/3**, Gateway
+  wiring rows **2/2**, KA overlay provenance assertions pass. This proves local
+  source/wiring compatibility, not live Fleet/FMC/producer qualification.
+- Final anti-pattern review: explicit return values, bounded context/I/O,
+  unchanged shared types, no new interface/dependency or ignored error path.
+  Confidence **95%** for the bounded reconciliation; fresh CI and independent
+  review remain required. The separate fence RCA stays below 90% and exact
+  pinned producer wire/schema evidence remains outstanding.
+
 ### Final CI evidence (2026-11-15)
 
 Final workflow run `43748753311` tested PR head

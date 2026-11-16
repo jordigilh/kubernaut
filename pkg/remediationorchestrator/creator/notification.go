@@ -294,6 +294,10 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 	}
 
 	sw := rca.SelectedWorkflow
+	rcaConfidence := "Unknown"
+	if rca.RCAConfidence != nil {
+		rcaConfidence = fmt.Sprintf("%.0f%%", *rca.RCAConfidence*100)
+	}
 	workflowLabel := sw.WorkflowID
 	if sw.ActionType != "" {
 		workflowLabel = fmt.Sprintf("%s (%s)", sw.ActionType, sw.WorkflowID)
@@ -310,7 +314,9 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 **Root Cause Analysis**:
 %s
 
-**Confidence**: %.0f%%
+**RCA Confidence**: %s
+
+**Workflow Confidence**: %.0f%%
 
 **Proposed Workflow**: %s
 
@@ -319,6 +325,7 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 			rr.Spec.Severity,
 			formatTargetResource(target),
 			rootCause,
+			rcaConfidence,
 			sw.Confidence*100,
 			workflowLabel,
 			approvalReason,

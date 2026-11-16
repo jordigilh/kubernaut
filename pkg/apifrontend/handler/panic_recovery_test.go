@@ -126,12 +126,15 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		passthrough := func(next http.Handler) http.Handler { return next }
 
 		router, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  reg,
-			A2AHandler:       noopHandler,
-			MCPHandler:       panicMCP,
-			AgentCardHandler: noopHandler,
-			AuthMiddleware:   passthrough,
-			ReadyChecker:     func() bool { return true },
+			MetricsRegistry: reg,
+			A2AHandler:      noopHandler,
+			MCPHandler:      panicMCP,
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: noopHandler,
+				BackendContract:  handler.BackendContractConfig{Incarnation: "01234567-89ab-4cde-8123-456789abcdef"},
+			},
+			AuthMiddleware: passthrough,
+			ReadyChecker:   func() bool { return true },
 		})
 		Expect(err).NotTo(HaveOccurred())
 

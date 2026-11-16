@@ -17,10 +17,13 @@ var _ = Describe("IT-AF-2584-001/002/005: Console read router wiring", func() {
 			w.WriteHeader(http.StatusNoContent)
 		})
 		router, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:          metrics.NewRegistry(),
-			A2AHandler:               http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler:               http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			AgentCardHandler:         http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MetricsRegistry: metrics.NewRegistry(),
+			A2AHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+				BackendContract:  handler.BackendContractConfig{Incarnation: testBackendIncarnation},
+			},
 			AuthMiddleware:           func(next http.Handler) http.Handler { return next },
 			ReadyChecker:             func() bool { return true },
 			ConsolePolicyReadHandler: consoleHandler,
@@ -41,10 +44,13 @@ var _ = Describe("IT-AF-2584-001/002/005: Console read router wiring", func() {
 	It("keeps the Console routes behind the configured authentication middleware", func() {
 		var authCalls int
 		router, err := handler.NewRouter(handler.RouterConfig{
-			MetricsRegistry:  metrics.NewRegistry(),
-			A2AHandler:       http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler:       http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			AgentCardHandler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MetricsRegistry: metrics.NewRegistry(),
+			A2AHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			PublicRoutes: handler.PublicRouteConfig{
+				AgentCardHandler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+				BackendContract:  handler.BackendContractConfig{Incarnation: testBackendIncarnation},
+			},
 			AuthMiddleware: func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					authCalls++

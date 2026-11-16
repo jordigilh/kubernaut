@@ -307,6 +307,59 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 		})
 	})
 
+	Describe("UT-KA-823-C12: Phase 3 cancellation preserves validated RCA target", func() {
+		It("retains the Phase 1 target and its GVK provenance in the cancelled snapshot", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			signal := testSignal
+			signal.ResourceKind = "Deployment"
+			signal.ResourceName = "test-deploy"
+			signal.ResourceAPIVersion = "apps/v1"
+
+			mockClient := &cancelAwareMockClient{
+				cancelAfter: 2,
+				cancelFn:    cancel,
+				responses: []llm.ChatResponse{
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit","severity":"critical","confidence":0.9,"remediation_target":{"kind":"Pod","name":"test-pod","namespace":"default","api_version":"v1"}}`}},
+					{
+						Message: llm.Message{Role: "assistant", Content: "Searching workflows..."},
+						ToolCalls: []llm.ToolCall{
+							{ID: "tc_wf_target", Name: "list_workflows", Arguments: `{}`},
+						},
+					},
+				},
+			}
+
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+			inv := investigator.New(investigator.Config{
+				Client:       mockClient,
+				Builder:      builder,
+				ResultParser: parser.NewResultParser(),
+				Enricher:     enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, logr.Discard()),
+				AuditStore:   audit.NopAuditStore{},
+				Logger:       logr.Discard(),
+				MaxTurns:     15,
+				PhaseTools:   investigator.DefaultPhaseToolMap(),
+				Registry:     newGateDiscoveryRegistry(),
+			})
+
+			result, err := inv.Investigate(ctx, signal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Cancelled).To(BeTrue())
+			Expect(result.CancelledPhase).To(Equal("workflow_discovery"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Pod"), "cancelled Phase 3 must retain the validated Phase 1 target")
+			Expect(result.RemediationTarget.Name).To(Equal("test-pod"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("default"))
+			Expect(result.RemediationTarget.APIVersion).To(Equal("v1"))
+			Expect(result.RemediationTarget.APIVersionValidated).To(BeTrue())
+			Expect(result.APIVersionValidation).NotTo(BeNil())
+			Expect(investigator.TargetAPIVersionValidationMatches(result, "")).To(BeTrue(),
+				"cancellation must preserve complete server-owned GVK provenance without weakening the gate (BR-KA-212)")
+		})
+	})
+
 	Describe("UT-KA-823-C07: Investigate short-circuits after cancelled RCA", func() {
 		It("does NOT proceed to workflow selection after cancelled RCA", func() {
 			ctx, cancel := context.WithCancel(context.Background())

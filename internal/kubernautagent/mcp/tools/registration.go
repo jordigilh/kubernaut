@@ -162,13 +162,48 @@ func simpleToolRegistration[TIn actingUserInput, TOut any](
 // SelectWorkflowRegistration returns a ToolRegistration that registers the
 // kubernaut_select_workflow tool with the MCP SDK server.
 func SelectWorkflowRegistration(tool *SelectWorkflowTool, logger logr.Logger) mcpinternal.ToolRegistration {
-	return simpleToolRegistration(
-		"kubernaut_select_workflow",
-		"Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
-		tool.Handle,
-		logger,
-		selectWorkflowOutputSchema(),
-	)
+	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
+		mcpsdk.AddTool(server, &mcpsdk.Tool{
+			Name:         "kubernaut_select_workflow",
+			Description:  "Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
+			InputSchema:  selectWorkflowInputSchema(),
+			OutputSchema: selectWorkflowOutputSchema(),
+		}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
+			actingUser, actingUserGroups := input.actingUserOverride()
+			output, err := tool.Handle(ctx, input, ResolveUser(userFromCtx(ctx), actingUser, actingUserGroups))
+			return nil, output, ErrorBoundary(logger, "kubernaut_select_workflow", err)
+		})
+	}
+}
+
+func selectWorkflowInputSchema() map[string]any {
+	primitive := map[string]any{"oneOf": []any{
+		map[string]any{"type": "string"},
+		map[string]any{"type": "number"},
+		map[string]any{"type": "boolean"},
+		map[string]any{"type": "array", "items": map[string]any{"oneOf": []any{
+			map[string]any{"type": "string"},
+			map[string]any{"type": "number"},
+			map[string]any{"type": "boolean"},
+		}}},
+	}}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"rr_id":              map[string]any{"type": "string"},
+			"workflow_id":        map[string]any{"type": "string"},
+			"kind":               map[string]any{"type": "string"},
+			"name":               map[string]any{"type": "string"},
+			"namespace":          map[string]any{"type": "string"},
+			"api_version":        map[string]any{"type": "string"},
+			"spec_hash":          map[string]any{"type": "string"},
+			"incident_id":        map[string]any{"type": "string"},
+			"parameters":         map[string]any{"type": "object", "additionalProperties": primitive},
+			"acting_user":        map[string]any{"type": "string"},
+			"acting_user_groups": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+		"required": []string{"rr_id", "workflow_id"},
+	}
 }
 
 // CompleteNoActionRegistration returns a ToolRegistration that registers the

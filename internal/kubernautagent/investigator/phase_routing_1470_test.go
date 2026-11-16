@@ -130,7 +130,7 @@ func (s *phaseScriptedClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.Ch
 				ID:   "tc-1",
 				Name: "submit_result",
 				Arguments: `{"rca_summary":"test rca from ` + s.model + `","confidence":0.9,` +
-					`"remediation_target":{"kind":"Pod","name":"test","namespace":"default"}}`,
+					`"remediation_target":{"kind":"Pod","name":"test","namespace":"default","api_version":"v1"}}`,
 			},
 		},
 		Usage: llm.TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
@@ -166,6 +166,7 @@ func buildInvestigatorWithResolver(
 		Logger:        logr.Discard(),
 		MaxTurns:      5,
 		PhaseTools:    investigator.DefaultPhaseToolMap(),
+		Registry:      newGateDiscoveryRegistry(),
 		PhaseResolver: resolver,
 	})
 }

@@ -66,7 +66,9 @@ All ingress enters through a single HTTPS listener on the configured port (defau
 | `POST /` | A2A JSON-RPC 2.0 | Yes (Bearer JWT or SA token) | Agent task execution (alias for `/a2a/invoke`, #1268) |
 | `POST /a2a/invoke` | A2A JSON-RPC 2.0 | Yes (Bearer JWT or SA token) | Agent task execution |
 | `POST /mcp` | MCP Streamable HTTP | Yes (Bearer JWT or SA token) | MCP tool invocation |
+| `POST /a2a/status` | A2A JSON-RPC 2.0 + SSE | Yes (Bearer JWT or SA token) | Authenticated remediation status subscription |
 | `GET /.well-known/agent-card.json` | HTTP GET | No | A2A Agent Card discovery |
+| `GET /.well-known/kubernaut-console-contract.json` | HTTP GET | No | Console #168 backend-incarnation discovery; `Cache-Control: no-store` |
 | `GET /healthz` | HTTP GET | No | Liveness probe (kubelet) |
 | `GET /readyz` | HTTP GET | No | Readiness probe (kubelet) |
 | `GET /metrics` | HTTP GET | No | Prometheus metrics scrape |
@@ -79,7 +81,15 @@ All ingress enters through a single HTTPS listener on the configured port (defau
 | ReadHeaderTimeout | 10s | Limits header-only slow loris |
 | IdleTimeout | 120s | Reclaims idle keep-alive connections |
 | WriteTimeout | 0 (disabled) | Required for SSE/streaming; per-request deadlines via `SetWriteDeadline()` |
-| MaxBodySize | 1 MB (`http.MaxBytesReader`) | Prevents memory exhaustion on request body |
+| MaxBodySize | 1 MB (`http.MaxBytesReader`) | Prevents memory exhaustion; A2A/root retain the a2a-go JSON-RPC body-limit baseline, status returns HTTP 400 `invalid_request`, and other handlers retain handler-specific behavior |
+
+The `X-Kubernaut-Backend-Incarnation` backend-incarnation lifecycle header is
+emitted only after successful authentication on `POST /a2a/invoke`, `POST /`, `POST /mcp`, and
+`POST /a2a/status`. It is absent on the public contract, health/readiness,
+metrics, agent-card, and `/a2a/access` routes, as well as on missing/invalid
+authentication and pre-authentication IP-limit responses. A post-authentication
+rate-limit response carries the header because it has crossed the authenticated
+boundary.
 
 ---
 
@@ -144,6 +154,11 @@ Both rate limiter tiers emit structured audit events (`ratelimit.denied`) contai
 - Source IP (pre-auth) or User ID (post-auth)
 - Limiter type (`ip` or `user`)
 - Current limit values
+
+Console #168 qualification is external to this service: use one AF replica and
+separately qualify OAuth2 Proxy evidence. The existing two-replica deployment
+architecture is not evidence that a process-local value is shared across pods;
+HA/failover remains kubernaut#2606.
 
 ---
 

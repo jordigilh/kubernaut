@@ -73,6 +73,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 			Client: mockClient, Builder: builder, ResultParser: rp,
 			Enricher: enricher, AuditStore: auditStore, Logger: logger,
 			MaxTurns: 15, PhaseTools: phaseTools,
+			Registry: newGateDiscoveryRegistry(),
 		})
 	}
 
@@ -82,15 +83,15 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				// Gate retry: LLM re-evaluates and targets the child Pod instead.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod filled ephemeral storage causing node DiskPressure",
 					"confidence":0.9,
-					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}
+					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}
 				}`}},
-				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`),
+				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}}`),
 			}
 
 			result, err := newInv().Investigate(context.Background(), signal)
@@ -108,16 +109,16 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				// Gate retry: LLM confirms Node is indeed correct.
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node itself has a stuck kubelet, confirmed root cause",
 					"confidence":0.8,
-					"remediation_target":{"kind":"Node","name":"worker-1"},
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"},
 					"due_diligence":{"target_accuracy":"confirmed after re-evaluation, kubelet process is the issue"}
 				}`}},
-				gateWfToolResp(`{"workflow_id":"restart-kubelet","confidence":0.8,"remediation_target":{"kind":"Node","name":"worker-1"}}`),
+				gateWfToolResp(`{"workflow_id":"restart-kubelet","confidence":0.8,"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}}`),
 			}
 
 			result, err := newInv().Investigate(context.Background(), signal)
@@ -141,9 +142,9 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"generic issue",
 					"confidence":0.75,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
-				gateWfToolResp(`{"workflow_id":"generic-fix","confidence":0.8,"remediation_target":{"kind":"Node","name":"worker-1"}}`),
+				gateWfToolResp(`{"workflow_id":"generic-fix","confidence":0.8,"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}}`),
 			}
 
 			result, err := newInv().Investigate(context.Background(), emptyKindSignal)
@@ -160,9 +161,9 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod caused node pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}
+					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}
 				}`}},
-				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`),
+				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}}`),
 			}
 
 			result, err := newInv().Investigate(context.Background(), signal)
@@ -179,7 +180,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 			}
 			mockClient.errors = []error{nil, fmt.Errorf("LLM service unavailable")}
@@ -198,7 +199,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: ""}},
 			}
@@ -217,7 +218,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `not valid json at all`}},
 			}
@@ -236,7 +237,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				// Gate retry: no remediation_target at all.
 				{Message: llm.Message{Role: "assistant", Content: `{
@@ -260,14 +261,14 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod caused it",
 					"confidence":0.9,
-					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}
+					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}
 				}`}},
-				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`),
+				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}}`),
 			}
 
 			_, err := newInv().Investigate(context.Background(), signal)
@@ -288,7 +289,7 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{
 					Role:    "assistant",
-					Content: `{"rca_summary":"Node under disk pressure","confidence":0.85,"remediation_target":{"kind":"Node","name":"worker-1"}}`,
+					Content: `{"rca_summary":"Node under disk pressure","confidence":0.85,"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}}`,
 					Reasoning: &llm.ReasoningBlock{
 						Text: "initial turn: assumed Node itself was at fault",
 					},
@@ -297,12 +298,12 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				// own reasoning block for this turn.
 				{Message: llm.Message{
 					Role:    "assistant",
-					Content: `{"rca_summary":"Pod filled ephemeral storage causing node DiskPressure","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`,
+					Content: `{"rca_summary":"Pod filled ephemeral storage causing node DiskPressure","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}}`,
 					Reasoning: &llm.ReasoningBlock{
 						Text: "retry turn: re-examined evidence and found the child Pod's ephemeral storage usage was the actual root cause",
 					},
 				}},
-				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`),
+				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}}`),
 			}
 
 			result, err := newInv().Investigate(context.Background(), signal)
@@ -321,12 +322,12 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Node under disk pressure",
 					"confidence":0.85,
-					"remediation_target":{"kind":"Node","name":"worker-1"}
+					"remediation_target":{"kind":"Node","name":"worker-1","api_version":"v1"}
 				}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Pod caused it",
 					"confidence":0.9,
-					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}
+					"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default","api_version":"v1"}
 				}`}},
 				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9}`),
 			}

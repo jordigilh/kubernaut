@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ApprovalRequestEventPayload is the structured payload emitted as a
@@ -30,7 +31,8 @@ type ApprovalRequestEventPayload struct {
 	Name                   string                       `json:"name"`
 	Namespace              string                       `json:"namespace"`
 	RemediationRequestName string                       `json:"remediationRequestName"`
-	Confidence             float64                      `json:"confidence"`
+	RCAConfidence          *float64                     `json:"rcaConfidence,omitempty"`
+	WorkflowConfidence     float64                      `json:"workflowConfidence"`
 	ConfidenceLevel        string                       `json:"confidenceLevel"`
 	Reason                 string                       `json:"reason"`
 	WhyApprovalRequired    string                       `json:"whyApprovalRequired"`
@@ -88,9 +90,9 @@ type ApprovalResolvedEventPayload struct {
 
 // ApprovalWorkflowOverridePayload represents an operator workflow override.
 type ApprovalWorkflowOverridePayload struct {
-	WorkflowName string            `json:"workflowName,omitempty"`
-	Parameters   map[string]string `json:"parameters,omitempty"`
-	Rationale    string            `json:"rationale,omitempty"`
+	WorkflowName string                        `json:"workflowName,omitempty"`
+	Parameters   sharedtypes.TypedParameterMap `json:"parameters,omitempty"`
+	Rationale    string                        `json:"rationale,omitempty"`
 }
 
 // MarshalApprovalRequestPayload extracts RAR spec fields from a typed
@@ -101,7 +103,8 @@ func MarshalApprovalRequestPayload(rar *remediationv1.RemediationApprovalRequest
 		Name:                   rar.Name,
 		Namespace:              rar.Namespace,
 		RemediationRequestName: rar.Spec.RemediationRequestRef.Name,
-		Confidence:             rar.Spec.Confidence,
+		RCAConfidence:          rar.Spec.RCAConfidence,
+		WorkflowConfidence:     rar.Spec.Confidence,
 		ConfidenceLevel:        rar.Spec.ConfidenceLevel,
 		Reason:                 rar.Spec.Reason,
 		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
@@ -155,9 +158,9 @@ func MarshalApprovalRequestPayload(rar *remediationv1.RemediationApprovalRequest
 // event.
 func MarshalApprovalResolvedPayload(rar *remediationv1.RemediationApprovalRequest) (string, error) {
 	payload := ApprovalResolvedEventPayload{
-		Name:     rar.Name,
-		Decision: string(rar.Status.Decision),
-		DecidedBy: rar.Status.DecidedBy,
+		Name:            rar.Name,
+		Decision:        string(rar.Status.Decision),
+		DecidedBy:       rar.Status.DecidedBy,
 		DecisionMessage: rar.Status.DecisionMessage,
 	}
 

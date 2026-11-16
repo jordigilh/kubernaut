@@ -151,13 +151,18 @@ func unwrapDoubleSerializedJSON(rawJSON string, logger logr.Logger) string {
 // coerceKnownFields fixes type drift from LLMs that return numeric or boolean
 // fields as quoted strings (e.g. "confidence":"0.92" or "actionable":"false").
 // It operates on raw JSON bytes, unquoting known fields before typed unmarshal.
-func coerceKnownFields(rawJSON string) string {
+func coerceKnownFields(rawJSON string, strictRCA bool) string {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
 		return rawJSON
 	}
 
-	changed := coerceStringifiedNumberField(raw, "confidence")
+	var changed bool
+	if strictRCA {
+		changed = coerceStringifiedNumberFieldIfQuoted(raw, "confidence")
+	} else {
+		changed = coerceStringifiedNumberField(raw, "confidence")
+	}
 	changed = coerceStringifiedBoolField(raw, "actionable") || changed
 	changed = coerceNestedWorkflowConfidence(raw) || changed
 

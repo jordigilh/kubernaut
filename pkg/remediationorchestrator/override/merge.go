@@ -25,14 +25,15 @@ package override
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -98,45 +99,18 @@ func ResolveWorkflow(
 	resolved := aiWorkflow.DeepCopy()
 
 	if overrideSpec.WorkflowName != "" {
-		rw := &remediationworkflowv1.RemediationWorkflow{}
-		err := reader.Get(ctx, client.ObjectKey{Name: overrideSpec.WorkflowName, Namespace: namespace}, rw)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, false, &overrideNotFoundError{
-					workflowName: overrideSpec.WorkflowName,
-					namespace:    namespace,
-					cause:        err,
-				}
-			}
-			return nil, false, fmt.Errorf("failed to lookup RemediationWorkflow %q in namespace %q: %w",
-				overrideSpec.WorkflowName, namespace, err)
-		}
-
-		// G2: field mapping from the override-target RW CRD onto the shared
-		// sharedtypes.WorkflowSnapshot embed. Issue #1661 Change 12 adds
-		// WorkflowName (a direct rw.Name field, trivially fixable) to the 8
-		// already mapped here. Dependencies/Resources/DeclaredParameterNames
-		// remain intentionally NOT remapped -- they're schema-derived
-		// (parsed by KA from the OCI execution bundle), and this override
-		// path only has CRD access, not KA's schema-parsing pipeline, so
-		// they stay stale copies from the original AI-selected workflow
-		// (aiWorkflow.DeepCopy() above). Pre-existing latent gap, tracked
-		// separately, not addressed here -- see Change 12 plan's "Open
-		// design question".
-		resolved.WorkflowID = rw.Status.WorkflowID
-		resolved.WorkflowName = rw.Name
-		resolved.ActionType = rw.Spec.ActionType
-		resolved.Version = rw.Spec.Version
-		resolved.ExecutionBundle = rw.Spec.Execution.Bundle
-		resolved.ExecutionBundleDigest = rw.Spec.Execution.BundleDigest
-		resolved.ExecutionEngine = rw.Spec.Execution.Engine
-		resolved.EngineConfig = rw.Spec.Execution.EngineConfig
-		resolved.ServiceAccountName = rw.Spec.Execution.ServiceAccountName
-		// Confidence preserved from aiWorkflow (AI's assessment, not overridden)
+		return nil, false, fmt.Errorf("workflow switching is not permitted")
 	}
 
 	if overrideSpec.Rationale != "" {
 		resolved.Rationale = overrideSpec.Rationale
+	}
+	if len(overrideSpec.Parameters) > 0 {
+		evidence, err := mergeEvidence(resolved.Parameters, resolved.ParameterEvidence, overrideSpec.Parameters, overrideSpec.ParameterEvidence)
+		if err != nil {
+			return nil, false, fmt.Errorf("merge parameter evidence: %w", err)
+		}
+		resolved.ParameterEvidence = evidence
 	}
 
 	for name, value := range overrideSpec.Parameters {
@@ -144,7 +118,7 @@ func ResolveWorkflow(
 		if !exists {
 			return nil, false, fmt.Errorf("override parameter %q is absent from original parameters", name)
 		}
-		if strings.HasPrefix(name, "TARGET_RESOURCE_") && value != original {
+		if strings.HasPrefix(name, "TARGET_RESOURCE_") && !reflect.DeepEqual(value, original) {
 			return nil, false, fmt.Errorf("override parameter %q is locked", name)
 		}
 		resolved.Parameters[name] = value
@@ -155,4 +129,58 @@ func ResolveWorkflow(
 	)
 
 	return resolved, true, nil
+}
+
+// mergeEvidence checks both submissions against the typed values before
+// overlaying their raw tokens. JSON RawMessage retains numeric lexemes.
+func mergeEvidence(original sharedtypes.TypedParameterMap, originalEvidence string, changes sharedtypes.TypedParameterMap, changesEvidence string) (string, error) {
+	if strings.TrimSpace(originalEvidence) == "" {
+		var err error
+		originalEvidence, err = evidenceFromTypedParameters(original)
+		if err != nil {
+			return "", fmt.Errorf("derive original evidence: %w", err)
+		}
+	}
+	if strings.TrimSpace(changesEvidence) == "" {
+		var err error
+		changesEvidence, err = evidenceFromTypedParameters(changes)
+		if err != nil {
+			return "", fmt.Errorf("derive override evidence: %w", err)
+		}
+	}
+	originalValues, _, err := sharedtypes.DecodeTypedParameterMap([]byte(originalEvidence))
+	if err != nil || !reflect.DeepEqual(originalValues, original) {
+		return "", fmt.Errorf("original evidence does not match selected parameters")
+	}
+	changeValues, _, err := sharedtypes.DecodeTypedParameterMap([]byte(changesEvidence))
+	if err != nil || !reflect.DeepEqual(changeValues, changes) {
+		return "", fmt.Errorf("override evidence does not match submitted parameters")
+	}
+	var originalTokens, changeTokens map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(originalEvidence), &originalTokens); err != nil {
+		return "", fmt.Errorf("decode original evidence: %w", err)
+	}
+	if err := json.Unmarshal([]byte(changesEvidence), &changeTokens); err != nil {
+		return "", fmt.Errorf("decode override evidence: %w", err)
+	}
+	for name, value := range changeTokens {
+		originalTokens[name] = value
+	}
+	encoded, err := json.Marshal(originalTokens)
+	if err != nil {
+		return "", fmt.Errorf("encode effective evidence: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func evidenceFromTypedParameters(values sharedtypes.TypedParameterMap) (string, error) {
+	jsonValues, err := sharedtypes.TypedParameterMapToJSONValues(values)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(jsonValues)
+	if err != nil {
+		return "", fmt.Errorf("encode typed parameters: %w", err)
+	}
+	return string(encoded), nil
 }

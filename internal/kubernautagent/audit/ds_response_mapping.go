@@ -262,6 +262,7 @@ type investigationResultJSON struct {
 	SelectionAssessment         *ogenclient.SelectionAssessment `json:"selection_assessment"`
 	ExecutionBundle             string                          `json:"execution_bundle"`
 	Confidence                  float64                         `json:"confidence"`
+	RCAConfidence               *float64                        `json:"rca_confidence"`
 	NeedsHumanReview            bool                            `json:"needs_human_review"`
 	HumanReviewReason           string                          `json:"human_review_reason"`
 	TerminalOutcome             string                          `json:"terminal_outcome"`
@@ -361,6 +362,9 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 }
 
 func applyIncidentResponseOptionalFields(data *ogenclient.IncidentResponseData, ir investigationResultJSON) {
+	if ir.RCAConfidence != nil {
+		data.RcaConfidence.SetTo(*ir.RCAConfidence)
+	}
 	if ir.NeedsHumanReview {
 		data.NeedsHumanReview.SetTo(true)
 	}

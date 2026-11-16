@@ -171,6 +171,7 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Optional target replica count for alternative selection tests"},
 			}},
 		// Issue #1170: Workflow for parameter validation self-correction E2E tests.
 		{WorkflowID: "param-validation-test-v1", Name: "Param Validation Test", Description: "Test workflow for parameter validation self-correction", ActionType: "ScaleReplicas", Severity: "high", Component: []string{"apps/v1/Deployment"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/param-validation-test:v1.0.0",

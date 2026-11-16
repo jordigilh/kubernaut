@@ -267,7 +267,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 		var payload tools.ApprovalRequestEventPayload
 		Expect(json.Unmarshal([]byte(textPart.Text), &payload)).To(Succeed())
 		Expect(payload.Name).To(Equal("rar-rr-1"))
-		Expect(payload.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(payload.WorkflowConfidence).To(BeNumerically("~", 0.72, 0.001))
 		Expect(payload.RemediationRequestName).To(Equal("rr-oom-1"))
 		Expect(payload.RecommendedWorkflow).NotTo(BeNil())
 	})

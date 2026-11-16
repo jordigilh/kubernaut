@@ -176,9 +176,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E test simulated Job failure",
-					},
+					}),
 				},
 			}
 
@@ -269,9 +270,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedStringParameters(map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E-WE-019-001 simulated OOM-kill",
-					},
+					}),
 				},
 			}
 
@@ -392,9 +394,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E-WE-019-002 genuine failure regression guard",
-					},
+					}),
 				},
 			}
 
@@ -738,9 +741,10 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				},
 			},
 			TargetResource: targetResource,
-			Parameters: map[string]string{
-				"MESSAGE": "E2E Job test message",
-			},
+			Parameters: typedParametersForTarget(targetResource, map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"MESSAGE":         "E2E Job test message",
+			}),
 		},
 	}
 }

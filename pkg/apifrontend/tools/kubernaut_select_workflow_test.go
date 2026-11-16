@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -57,5 +58,20 @@ var _ = Describe("kubernaut_select_workflow", func() {
 		}, nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not found"))
+	})
+
+	It("UT-TYP-2575-004: preserves large integer selection parameters at the AF boundary", func() {
+		var decoded tools.SelectWorkflowArgs
+		Expect(json.Unmarshal([]byte(`{"rr_id":"pay/rr-1","workflow_id":"wf-scale","parameters":{"COUNT":9007199254740993}}`), &decoded)).To(Succeed())
+		Expect(decoded.Parameters["COUNT"]).To(Equal(json.Number("9007199254740993")))
+
+		mockMCP := &ka.MockMCPClient{
+			SelectWorkflowFn: func(_ context.Context, args ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				Expect(args.Parameters["COUNT"]).To(Equal(json.Number("9007199254740993")))
+				return &ka.SelectWorkflowResult{Status: "accepted"}, nil
+			},
+		}
+		_, err := tools.HandleSelectWorkflow(ctx, mockMCP, decoded, nil)
+		Expect(err).NotTo(HaveOccurred())
 	})
 })

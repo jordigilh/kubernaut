@@ -61,19 +61,18 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/condition-test-app",
-					Parameters: map[string]string{
+					Parameters: typedParametersFromStrings(map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
-					},
+					}),
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -132,16 +131,16 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/running-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -201,16 +200,16 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/complete-success-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -290,16 +289,16 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/audit-test-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -350,16 +349,16 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:             workflowID,
-							DeclaredParameterNames: map[string]bool{},
-							WorkflowName:           "test-workflow",
-							ActionType:             "RestartPod",
-							Version:                "v1.0.0",
-							ExecutionBundle:        "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-							ExecutionEngine:        "tekton",
+							WorkflowID:      workflowID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
 						},
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
+					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

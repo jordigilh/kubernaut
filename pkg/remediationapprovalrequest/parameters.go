@@ -17,49 +17,88 @@ limitations under the License.
 package remediationapprovalrequest
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// ValidateSnapshotPresence rejects old or incomplete approval snapshots.
+// ValidateSnapshotPresence rejects old or incomplete approval values.
+// Schema and declared names are read from the verified live workflow.
 func ValidateSnapshotPresence(spec *remediationv1.RemediationApprovalRequestSpec) error {
-	if spec == nil || spec.Workflow == nil || spec.Workflow.WorkflowID == "" || spec.Workflow.DeclaredParameterNames == nil || spec.Parameters == nil || spec.ParameterSchema == nil || spec.TargetContext == nil {
+	if spec == nil || spec.Workflow == nil || spec.Workflow.WorkflowID == "" || spec.Parameters == nil || spec.TargetContext == nil {
 		return fmt.Errorf("required approval snapshot is missing")
 	}
 	return nil
 }
 
-// ValidateParameterOverride checks the complete effective map against the
-// frozen schema without changing the reviewed snapshot or submitted strings.
-func ValidateParameterOverride(spec *remediationv1.RemediationApprovalRequestSpec, changes map[string]string) error {
-	if err := ValidateSnapshotPresence(spec); err != nil {
-		return err
+// ValidateTypedParametersAgainstWorkflow validates a complete typed parameter
+// map against the schema on a verified live RemediationWorkflow. The workflow
+// is ephemeral and its schema is never copied into a CRD snapshot.
+func ValidateTypedParametersAgainstWorkflow(workflow *remediationworkflowv1.RemediationWorkflow, values sharedtypes.TypedParameterMap) error {
+	if workflow == nil || workflow.Status.WorkflowID == "" {
+		return fmt.Errorf("verified workflow is missing workflow identity")
+	}
+	if values == nil {
+		return fmt.Errorf("parameter values are missing")
+	}
+	if _, err := json.Marshal(values); err != nil {
+		return fmt.Errorf("validate typed parameter transport: %w", err)
+	}
+	schema := buildValidationSchemaFromWorkflow(workflow, values)
+	return validateTypedParameterSet(schema, values)
+}
+
+// ValidateTypedParameterSet validates typed values against an ephemeral live
+// workflow schema. It is used by KA before handoff when the catalog adapter has
+// already read the authoritative RemediationWorkflow spec. Managed target
+// parameters are admitted for the same reason as the controller path: KA
+// injects them from the authenticated remediation target rather than from the
+// caller's selection.
+func ValidateTypedParameterSet(schema []models.WorkflowParameter, values sharedtypes.TypedParameterMap) error {
+	if values == nil {
+		values = make(sharedtypes.TypedParameterMap)
+	}
+	return validateTypedParameterSet(augmentValidationSchema(schema, values), values)
+}
+
+// ValidateParameterOverrideWithWorkflow validates the complete effective
+// parameter map against the verified live workflow schema. The workflow is an
+// ephemeral trusted read; its schema is never copied into the approval object.
+func ValidateParameterOverrideWithWorkflow(
+	spec *remediationv1.RemediationApprovalRequestSpec,
+	workflow *remediationworkflowv1.RemediationWorkflow,
+	changes sharedtypes.TypedParameterMap,
+) error {
+	if spec == nil || spec.Workflow == nil || spec.Workflow.WorkflowID == "" || spec.Parameters == nil || spec.TargetContext == nil {
+		return fmt.Errorf("required approval values are missing")
+	}
+	if workflow == nil || workflow.Status.WorkflowID == "" || workflow.Status.WorkflowID != spec.Workflow.WorkflowID {
+		return fmt.Errorf("verified workflow does not match the reviewed workflow ID")
 	}
 	effective, err := mergeParameterChanges(spec.Parameters, changes)
 	if err != nil {
 		return err
 	}
-	schema, err := buildValidationSchema(spec, effective)
-	if err != nil {
-		return err
-	}
-	return models.ValidateParameterSet(schema, effective)
+	return ValidateTypedParametersAgainstWorkflow(workflow, effective)
 }
 
-func mergeParameterChanges(original, changes map[string]string) (map[string]string, error) {
-	effective := make(map[string]string, len(original))
-	for name, value := range original {
-		effective[name] = value
+func mergeParameterChanges(original, changes sharedtypes.TypedParameterMap) (sharedtypes.TypedParameterMap, error) {
+	effective := original.DeepCopy()
+	if effective == nil {
+		effective = make(sharedtypes.TypedParameterMap, len(original))
 	}
 	for name, value := range changes {
 		originalValue, exists := effective[name]
 		if !exists {
 			return nil, fmt.Errorf("parameter %q is absent from original parameters", name)
 		}
-		if isManagedTargetParameter(name) && value != originalValue {
+		if isManagedTargetParameter(name) && !reflect.DeepEqual(value, originalValue) {
 			return nil, fmt.Errorf("parameter %q is locked", name)
 		}
 		effective[name] = value
@@ -67,52 +106,94 @@ func mergeParameterChanges(original, changes map[string]string) (map[string]stri
 	return effective, nil
 }
 
-func buildValidationSchema(spec *remediationv1.RemediationApprovalRequestSpec, effective map[string]string) ([]models.WorkflowParameter, error) {
-	schema := make([]models.WorkflowParameter, 0, len(spec.ParameterSchema))
-	declaredParameterCount := 0
-	for name := range spec.Workflow.DeclaredParameterNames {
-		if !isManagedTargetParameter(name) {
-			declaredParameterCount++
-		}
-	}
-	schemaParameterCount := 0
-	for _, parameter := range spec.ParameterSchema {
-		if isManagedTargetParameter(parameter.Name) {
-			continue
-		}
-		schemaParameterCount++
-		if !spec.Workflow.DeclaredParameterNames[parameter.Name] {
-			return nil, fmt.Errorf("parameter %q is not declared for execution", parameter.Name)
-		}
+func buildValidationSchemaFromWorkflow(workflow *remediationworkflowv1.RemediationWorkflow, effective sharedtypes.TypedParameterMap) []models.WorkflowParameter {
+	schema := make([]models.WorkflowParameter, 0, len(workflow.Spec.Parameters))
+	for _, parameter := range workflow.Spec.Parameters {
 		schema = append(schema, models.WorkflowParameter{
-			Name: parameter.Name, Type: parameter.Type, Required: parameter.Required,
-			Description: parameter.Description, Enum: parameter.Enum, Pattern: parameter.Pattern,
-			Minimum: parameter.Minimum, Maximum: parameter.Maximum, DependsOn: parameter.DependsOn,
+			Name:        parameter.Name,
+			Type:        parameter.Type,
+			Required:    parameter.Required,
+			Description: parameter.Description,
+			Enum:        parameter.Enum,
+			Pattern:     parameter.Pattern,
+			Minimum:     parameter.Minimum,
+			Maximum:     parameter.Maximum,
+			DependsOn:   parameter.DependsOn,
 		})
 	}
-	if declaredParameterCount != schemaParameterCount {
-		return nil, fmt.Errorf("parameter declarations do not match the approval schema")
+	return augmentValidationSchema(schema, effective)
+}
+
+func augmentValidationSchema(schema []models.WorkflowParameter, effective sharedtypes.TypedParameterMap) []models.WorkflowParameter {
+	declared := make(map[string]struct{}, len(schema))
+	for _, parameter := range schema {
+		declared[parameter.Name] = struct{}{}
 	}
-	managedNames := make(map[string]struct{})
+	// Target identity values are injected by the remediation context and may
+	// not be declared by a workflow. Keep them visible for dependency checks,
+	// while rejecting every other undeclared value through the shared validator.
 	for name := range effective {
 		if isManagedTargetParameter(name) {
-			managedNames[name] = struct{}{}
+			if _, exists := declared[name]; !exists {
+				schema = append(schema, models.WorkflowParameter{Name: name, Type: "string"})
+				declared[name] = struct{}{}
+			}
 		}
 	}
 	for _, parameter := range schema {
 		for _, dependency := range parameter.DependsOn {
 			if isManagedTargetParameter(dependency) {
-				managedNames[dependency] = struct{}{}
+				if _, exists := declared[dependency]; !exists {
+					schema = append(schema, models.WorkflowParameter{Name: dependency, Type: "string"})
+					declared[dependency] = struct{}{}
+				}
 			}
 		}
 	}
-	// Keep managed target values visible only for dependency presence checks.
-	// Synthetic unconstrained declarations prevent the shared validator from
-	// rejecting injected keys as undeclared workflow parameters.
-	for name := range managedNames {
-		schema = append(schema, models.WorkflowParameter{Name: name, Type: "string"})
+	return schema
+}
+
+func validateTypedParameterSet(schema []models.WorkflowParameter, values sharedtypes.TypedParameterMap) error {
+	if values == nil {
+		return fmt.Errorf("parameter values are missing")
 	}
-	return schema, nil
+	parameters := make(map[string]models.WorkflowParameter, len(schema))
+	for _, parameter := range schema {
+		parameters[parameter.Name] = parameter
+	}
+	engineValues := make(map[string]string, len(values))
+	for name, value := range values {
+		parameter, declared := parameters[name]
+		if !declared {
+			encoded, err := sharedtypes.TypedParameterValueToEngineValue(value)
+			if err != nil {
+				return fmt.Errorf("parameter %q: %w", name, err)
+			}
+			engineValues[name] = encoded
+			continue
+		}
+		expectedKind := parameterKind(parameter.Type)
+		if value.Kind != expectedKind {
+			return fmt.Errorf("parameter %q: expected %s value, got %s", name, parameter.Type, value.Kind)
+		}
+		ordinary, err := sharedtypes.TypedParameterValueToJSONValue(value)
+		if err != nil {
+			return fmt.Errorf("parameter %q: %w", name, err)
+		}
+		encoded, err := models.TypedParameterValue(parameter, ordinary)
+		if err != nil {
+			return err
+		}
+		engineValues[name] = encoded
+	}
+	return models.ValidateParameterSet(schema, engineValues)
+}
+
+func parameterKind(schemaType string) string {
+	if schemaType == "array" {
+		return "array"
+	}
+	return schemaType
 }
 
 func isManagedTargetParameter(name string) bool {

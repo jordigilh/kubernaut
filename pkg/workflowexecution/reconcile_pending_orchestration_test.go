@@ -124,10 +124,10 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 						// Issue #1661 Change 11e: engine is read directly from
 						// WorkflowRef, not resolved via a DataStorage round-trip
 						// at runtime.
-						ExecutionEngine:        "tekton",
-						DeclaredParameterNames: map[string]bool{},
+						ExecutionEngine: "tekton",
 					},
 				},
+				Parameters: typedParametersFromStrings(map[string]string{}),
 			},
 		}
 	}
@@ -175,10 +175,9 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		Expect(pipelines.Items).To(BeEmpty())
 	})
 
-	It("UT-WE-2570-041: BR-ORCH-025 rejects absent declarations before executor dispatch", func() {
+	It("UT-WE-2570-041: BR-ORCH-025 rejects parameters absent from the live schema before executor dispatch", func() {
 		wfe := buildPendingWFE("wfe-no-declarations", "default/deployment/no-declarations")
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
-		wfe.Spec.Parameters = map[string]string{"UNDECLARED": "must-not-run"}
+		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": "must-not-run"})
 		rw := buildCatalogWorkflow(wfe)
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(wfe, rw).WithStatusSubresource(wfe).
 			WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).

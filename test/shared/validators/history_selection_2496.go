@@ -191,8 +191,7 @@ func validateHistoryReconstruction(g Gomega, fields map[string]any, result *agen
 		g.Expect(fields).NotTo(HaveKey("selectedWorkflow"))
 		g.Expect(fields).NotTo(HaveKey("workflow_id"))
 	} else {
-		var expected map[string]any
-		g.Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &expected)).To(Succeed())
+		expected := selectedWorkflowEvidence(result.SelectedWorkflow)
 		selected := fields
 		idKey, nameKey := "workflow_id", "workflow_name"
 		if kaResponse {
@@ -233,8 +232,7 @@ func ValidateHistorySelectionLive(resp *http.Response, result *agentsessionv1.Ag
 	Expect(marshalErr).NotTo(HaveOccurred())
 	Expect(string(raw)).NotTo(ContainSubstring("private-history-collision-2496"))
 	if result.SelectedWorkflow != nil {
-		var selected map[string]any
-		Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selected)).To(Succeed())
+		selected := selectedWorkflowEvidence(result.SelectedWorkflow)
 		live, ok := data["selected_workflow"].(map[string]any)
 		Expect(ok).To(BeTrue())
 		for _, field := range []string{"workflow_id", "workflow_name", "workflow_selection_confidence", "repeat_justification",
@@ -260,6 +258,41 @@ func ValidateHistorySelectionLive(resp *http.Response, result *agentsessionv1.Ag
 	} else {
 		Expect(data).NotTo(HaveKey("selection_assessment"))
 	}
+}
+
+func selectedWorkflowEvidence(workflow *agentsessionv1.AgentSessionSelectedWorkflow) map[string]any {
+	GinkgoHelper()
+	raw, err := json.Marshal(workflow)
+	Expect(err).NotTo(HaveOccurred())
+	var camelCase map[string]any
+	Expect(json.Unmarshal(raw, &camelCase)).To(Succeed())
+	aliases := map[string]string{
+		"workflowId":                  "workflow_id",
+		"workflowName":                "workflow_name",
+		"actionType":                  "action_type",
+		"executionBundle":             "execution_bundle",
+		"executionBundleDigest":       "execution_bundle_digest",
+		"executionEngine":             "execution_engine",
+		"serviceAccountName":          "service_account_name",
+		"executionClusterId":          "execution_cluster_id",
+		"parameterEvidence":           "parameter_evidence",
+		"repeatJustification":         "repeat_justification",
+		"workflowSelectionConfidence": "workflow_selection_confidence",
+		"repeatJustificationRequired": "repeat_justification_required",
+		"priorWorkflowMatch":          "prior_workflow_match",
+		"repeatValidationOutcome":     "repeat_validation_outcome",
+		"handoffDigest":               "handoff_digest",
+		"priorRemediationUIDs":        "prior_remediation_uids",
+	}
+	evidence := make(map[string]any, len(camelCase))
+	for key, value := range camelCase {
+		if snake, ok := aliases[key]; ok {
+			evidence[snake] = value
+		} else {
+			evidence[key] = value
+		}
+	}
+	return evidence
 }
 
 type historySelectionStreamEvent struct {

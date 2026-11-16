@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -190,5 +191,34 @@ var _ = Describe("Investigation decision ledger transitions — #2520", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(retryID).To(Equal(interactiveID),
 			"replaying the same invocation must retain deterministic retry deduplication")
+	})
+
+	It("UT-KA-2586-045: namespaces autonomous and interactive terminal decisions in one session", func() {
+		store := &decisionLedgerAuditStore{}
+		inv := &Investigator{auditStore: store, logger: logr.Discard()}
+		ctx := session.WithSessionID(
+			audit.WithCorrelationID(context.Background(), "rr-2586-045"),
+			"session-2586-045",
+		)
+
+		inv.emitResponseComplete(ctx, &katypes.InvestigationResult{
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusCompletedSelected,
+			TerminalOutcome:         sharedtypes.TerminalOutcomeWorkflowSelected,
+		}, &TokenAccumulator{}, "rr-2586-045", "mock-model", investigationCompletionAutonomousTurnID)
+		inv.emitResponseComplete(ctx, &katypes.InvestigationResult{
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch,
+			TerminalOutcome:         sharedtypes.TerminalOutcomeNoMatchingWorkflows,
+		}, &TokenAccumulator{}, "rr-2586-045", "mock-model", investigationCompletionInteractiveTurnID)
+
+		decisionEvents := make([]*audit.AuditEvent, 0, 2)
+		for _, event := range store.events {
+			if event.EventType == audit.EventTypeInvestigationDecision {
+				decisionEvents = append(decisionEvents, event)
+			}
+		}
+		Expect(decisionEvents).To(HaveLen(2))
+		Expect(decisionEvents[0].EventID).NotTo(Equal(decisionEvents[1].EventID))
+		Expect(decisionEvents[0].Data["turn_id"]).To(Equal(investigationCompletionAutonomousTurnID))
+		Expect(decisionEvents[1].Data["turn_id"]).To(Equal(investigationCompletionInteractiveTurnID))
 	})
 })

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // EventType classifies audit events for L3 forensic analysis.
@@ -109,9 +110,10 @@ type Event struct {
 // ApprovalAudit carries a reviewed approval snapshot to the typed audit adapter.
 type ApprovalAudit struct {
 	WorkflowID          string
-	OriginalParameters  map[string]string
-	OverrideParameters  map[string]string
-	EffectiveParameters map[string]string
+	OriginalParameters  sharedtypes.TypedParameterMap
+	OverrideParameters  sharedtypes.TypedParameterMap
+	EffectiveParameters sharedtypes.TypedParameterMap
+	ParameterEvidence   string
 	OverrideRationale   *string
 }
 

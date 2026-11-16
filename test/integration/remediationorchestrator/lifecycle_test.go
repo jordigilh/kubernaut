@@ -487,18 +487,19 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
 				},
 				Confidence: 0.72,
+				Parameters: trustedTargetParameters(namespace, "test-app"),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Pod restart recommended based on OOM patterns",
 			}
-			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+			supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, namespace, "test-app")
 			ai.Status.RCAResult.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -522,7 +523,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 			By("Verifying RAR spec")
 			Expect(rar.Spec.Confidence).To(BeNumerically("==", 0.72))
-			Expect(rar.Spec.RecommendedWorkflow.WorkflowID).To(Equal("wf-restart-pods"))
+			Expect(rar.Spec.RecommendedWorkflow.WorkflowID).To(Equal(trustedRestartWorkflowID))
 			Expect(rar.OwnerReferences).To(HaveLen(1))
 			Expect(rar.OwnerReferences[0].Name).To(Equal(rrName))
 
@@ -555,18 +556,19 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
 				},
 				Confidence: 0.70,
+				Parameters: trustedTargetParameters(namespace, "test-app"),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
-			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+			supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, namespace, "test-app")
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -633,18 +635,19 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-restart-pods",
-					WorkflowName:    "wf-restart-pods",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
 				},
 				Confidence: 0.70,
+				Parameters: trustedTargetParameters(namespace, "test-app"),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Restart recommended",
 			}
-			supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+			supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, namespace, "test-app")
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())

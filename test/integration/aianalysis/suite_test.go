@@ -693,7 +693,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
 	agentSessionCreator := creator.NewAgentSessionCreator(k8sManager.GetClient(), k8sManager.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder)) // DD-EVENT-001: Session lifecycle events
+		handlers.WithWorkflowCatalog(k8sManager.GetAPIReader(), processNamespace), // #2575: exercise trusted catalog verification
+		handlers.WithRecorder(eventRecorder))                                      // DD-EVENT-001: Session lifecycle events
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.

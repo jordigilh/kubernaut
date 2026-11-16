@@ -19,10 +19,6 @@ limitations under the License.
 // SelectedWorkflow, DetectedLabels on agentsessionv1.AgentSessionResult).
 package handlers
 
-import (
-	"encoding/json"
-)
-
 // GetStringFromMap safely extracts a string from a map
 func GetStringFromMap(m map[string]interface{}, key string) string {
 	if m == nil {
@@ -84,24 +80,4 @@ func GetBoolFromMap(m map[string]interface{}, key string) bool {
 		}
 	}
 	return false
-}
-
-// convertMapToStringMap converts map[string]interface{} to map[string]string
-// by converting all values to strings (for workflow parameters)
-func convertMapToStringMap(m map[string]interface{}) map[string]string {
-	if m == nil {
-		return nil
-	}
-	result := make(map[string]string, len(m))
-	for k, v := range m {
-		if str, ok := v.(string); ok {
-			result[k] = str
-		} else {
-			// Convert non-string values to JSON string representation
-			if bytes, err := json.Marshal(v); err == nil {
-				result[k] = string(bytes)
-			}
-		}
-	}
-	return result
 }

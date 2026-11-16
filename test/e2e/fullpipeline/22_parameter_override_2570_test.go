@@ -34,6 +34,8 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -78,9 +80,10 @@ var _ = Describe("Approval parameter denial [E2E-2570-002]", Label("e2e", "fullp
 			g.Expect(before.Spec.Workflow).NotTo(BeNil())
 			g.Expect(before.Spec.Workflow.ExecutionEngine).To(Equal("job"))
 			g.Expect(before.Spec.Parameters).NotTo(BeNil())
-			g.Expect(before.Spec.ParameterSchema).NotTo(BeNil())
 			g.Expect(before.Spec.TargetContext).NotTo(BeNil())
-			g.Expect(before.Spec.Workflow.DeclaredParameterNames).NotTo(BeNil())
+			live, err := workflowidentity.GetVerified(ctx, apiReader, namespace, before.Spec.Workflow.WorkflowID)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(remediationapprovalrequest.ValidateTypedParametersAgainstWorkflow(live, before.Spec.Parameters)).To(Succeed())
 		}, timeout, interval).Should(Succeed(), "RO must create a pending, Job-backed approval with frozen parameters")
 		Expect(before.Spec.Parameters).NotTo(HaveKey("E2E_INVALID_NEW_PARAMETER"))
 		initialStatus := before.Status.DeepCopy()

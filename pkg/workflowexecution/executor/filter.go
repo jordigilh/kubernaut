@@ -16,7 +16,17 @@ limitations under the License.
 
 package executor
 
-import "github.com/go-logr/logr"
+import (
+	"fmt"
+
+	"github.com/go-logr/logr"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+)
+
+// targetResourceParameterName is reserved for the execution target emitted
+// from WorkflowExecution.Spec.TargetResource. A same-named typed parameter may
+// be stale after a future RemediationApprovalRequest target override.
+const targetResourceParameterName = "TARGET_RESOURCE"
 
 // FilterDeclaredParameters strips undeclared parameters from the given map.
 // #243: Defense-in-depth — even if KA-side validation is bypassed,
@@ -41,4 +51,34 @@ func FilterDeclaredParameters(params map[string]string, declared map[string]bool
 		}
 	}
 	return filtered
+}
+
+// FilterDeclaredTypedParameters strips undeclared values without converting the
+// typed contract to strings. The returned map is an ephemeral execution view;
+// the WFE's persisted typed values remain unchanged.
+func FilterDeclaredTypedParameters(params sharedtypes.TypedParameterMap, declared map[string]bool, logger logr.Logger) sharedtypes.TypedParameterMap {
+	if declared == nil {
+		return params
+	}
+	filtered := make(sharedtypes.TypedParameterMap, len(declared))
+	for name, value := range params {
+		if declared[name] {
+			filtered[name] = value
+			continue
+		}
+		logger.Info("Stripped undeclared parameter", "parameter", name)
+	}
+	return filtered
+}
+
+// FilterDeclaredTypedParameterStrings creates the string-valued view required
+// by Job and Tekton. Non-string values use compact JSON/text representations;
+// no type is inferred from a string.
+func FilterDeclaredTypedParameterStrings(params sharedtypes.TypedParameterMap, declared map[string]bool, logger logr.Logger) (map[string]string, error) {
+	filtered := FilterDeclaredTypedParameters(params, declared, logger)
+	values, err := sharedtypes.TypedParameterMapToEngineValues(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("convert filtered workflow parameters: %w", err)
+	}
+	return values, nil
 }

@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -30,6 +31,7 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
@@ -474,7 +476,7 @@ func buildK8sDiscoveryMapper(restCfg *rest.Config, deps *backendDeps, logger log
 }
 
 // buildK8sTypedClient wires the controller-runtime typed client for all
-// kubernaut CRDs (RR, RAR, EA, AIAnalysis, IS, AgentSession, #1428, #2172).
+// kubernaut CRDs (RR, RAR, EA, AIAnalysis, RemediationWorkflow, IS, AgentSession, #1428, #2172).
 // Unavailable falls back to dynamic-only CRD operations.
 func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
 	typedScheme := buildK8sTypedScheme()
@@ -500,12 +502,13 @@ func buildPolicyReadTypedClient(restCfg *rest.Config, deps *backendDeps, logger 
 
 func buildK8sTypedScheme() *k8sruntime.Scheme {
 	typedScheme := k8sruntime.NewScheme()
-	_ = corev1.AddToScheme(typedScheme)
-	_ = eav1alpha1.AddToScheme(typedScheme)
-	_ = remediationv1.AddToScheme(typedScheme)
-	_ = aianalysisv1.AddToScheme(typedScheme)
-	_ = spv1.AddToScheme(typedScheme)
-	_ = isv1alpha1.AddToScheme(typedScheme)
+	utilruntime.Must(corev1.AddToScheme(typedScheme))
+	utilruntime.Must(eav1alpha1.AddToScheme(typedScheme))
+	utilruntime.Must(remediationv1.AddToScheme(typedScheme))
+	utilruntime.Must(remediationworkflowv1.AddToScheme(typedScheme))
+	utilruntime.Must(aianalysisv1.AddToScheme(typedScheme))
+	utilruntime.Must(spv1.AddToScheme(typedScheme))
+	utilruntime.Must(isv1alpha1.AddToScheme(typedScheme))
 	// DD-AA-KA-001 Amendment Gap 1 / #2172: AwaitAgentSessionInteractive
 	// watches AgentSession directly via this same typed client.
 	_ = agentsessionv1.AddToScheme(typedScheme)

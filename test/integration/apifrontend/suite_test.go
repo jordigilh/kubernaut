@@ -39,6 +39,7 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
@@ -579,6 +580,7 @@ timeoutSeconds: 120
 	scheme = runtime.NewScheme()
 	Expect(isv1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+	Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
 	Expect(eav1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
@@ -665,16 +667,19 @@ timeoutSeconds: 120
 	statusHandler := handler.NewStatusHandler(watchClient, defaultFixture, logf.Log.WithName("status-it"))
 
 	routerCfg := handler.RouterConfig{
-		MetricsRegistry:  metricsRegistry,
-		Logger:           logf.Log.WithName("router-it"),
-		A2AHandler:       stubA2A,
-		MCPHandler:       stubMCP,
-		AgentCardHandler: agentCardHandler,
-		AuthMiddleware:   authMiddleware,
-		ReadyChecker:     func() bool { return true },
-		MaxPayloadBytes:  1 << 20,
-		SSETracker:       sseTracker,
-		StatusHandler:    statusHandler,
+		MetricsRegistry: metricsRegistry,
+		Logger:          logf.Log.WithName("router-it"),
+		A2AHandler:      stubA2A,
+		MCPHandler:      stubMCP,
+		PublicRoutes: handler.PublicRouteConfig{
+			AgentCardHandler: agentCardHandler,
+			BackendContract:  handler.BackendContractConfig{Incarnation: integrationBackendIncarnation},
+		},
+		AuthMiddleware:  authMiddleware,
+		ReadyChecker:    func() bool { return true },
+		MaxPayloadBytes: 1 << 20,
+		SSETracker:      sseTracker,
+		StatusHandler:   statusHandler,
 	}
 
 	testRouter, err = handler.NewRouter(routerCfg)

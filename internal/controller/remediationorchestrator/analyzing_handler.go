@@ -202,6 +202,9 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 			return resultToIntent(result, "approval creation safety outcome"), nil
 		}
 		logger.Error(err, "Failed to create RemediationApprovalRequest")
+		if isWorkflowVerificationError(err) {
+			return phase.Fail(remediationv1.FailurePhaseApproval, err, "workflow verification failed"), nil
+		}
 		return phase.Requeue(config.RequeueGenericError, "RAR creation failed"), nil
 	}
 	logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
@@ -213,13 +216,12 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 				sw.Confidence*100, ai.Status.GetApproval().ApprovalReason))
 	}
 
+	oldPhase := rr.Status.OverallPhase
 	result, err := h.callbacks.HandleAIAnalysisStatus(ctx, rr, ai)
 	if err != nil {
 		return phase.TransitionIntent{}, err
 	}
 	_ = result
-
-	oldPhase := rr.Status.OverallPhase
 
 	intent := phase.Advance(phase.AwaitingApproval, "approval required")
 

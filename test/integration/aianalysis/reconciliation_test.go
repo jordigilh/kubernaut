@@ -79,7 +79,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}
 		})
 
-		It("IT-AA-2390-001: should transition through all phases and persist the selected workflow snapshot", func() {
+		It("IT-AA-2575-003 / IT-AA-2390-001: should verify through the trusted catalog reader before persisting the selected workflow snapshot", func() {
 			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
 			defer func() {
 				_ = k8sClient.Delete(ctx, analysis)

@@ -110,6 +110,26 @@ func discoveryWithWorkflow(wfID string) *mcpinternal.WorkflowDiscoveryResult {
 	}
 }
 
+// verifiedTargetResult models the post-discovery session snapshot required by
+// interactive selection. The production discovery path supplies this
+// server-owned provenance before select_workflow can assemble an executable
+// result.
+func verifiedTargetResult(name, namespace string) *katypes.InvestigationResult {
+	return &katypes.InvestigationResult{
+		RemediationTarget: katypes.RemediationTarget{
+			Kind:                "Deployment",
+			Name:                name,
+			Namespace:           namespace,
+			APIVersion:          "apps/v1",
+			APIVersionValidated: true,
+		},
+		APIVersionValidation: &katypes.APIVersionValidation{
+			Kind: "Deployment", Name: name, Namespace: namespace,
+			APIVersion: "apps/v1", Source: "api_resources_list",
+		},
+	}
+}
+
 type mockEnrichmentRunner struct {
 	result      *enrichment.EnrichmentResult
 	err         error
@@ -227,6 +247,40 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			Expect(output.Confidence).To(Equal(1.0))
 			Expect(output.Rationale).To(Equal("User-selected via interactive mode"))
 		})
+
+		It("UT-VAL-2575-008: validates selection values against the catalog live schema before handoff", func() {
+			wfID := "wf-constrained"
+			minimum := float64(1)
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID: wfID,
+					ParameterSchema: []models.WorkflowParameter{
+						{Name: "MODE", Type: "string", Required: true, Enum: []string{"safe", "fast"}},
+						{Name: "COUNT", Type: "integer", Required: true, Minimum: &minimum},
+					},
+				},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-constrained",
+					CorrelationID:   "rr-constrained",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-constrained",
+				WorkflowID: wfID,
+				Parameters: map[string]interface{}{"MODE": "unsafe", "COUNT": json.Number("0")},
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid_parameter"))
+			Expect(err.Error()).To(Or(ContainSubstring("enum"), ContainSubstring("below minimum")))
+		})
 	})
 
 	Describe("UT-KA-703-TOOL-006b: Workflow not found in catalog", func() {
@@ -302,7 +356,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-enrich-cluster",
 					CorrelationID:   "rr-enrich-cluster",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -339,7 +393,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-enrich-signal-error",
 					CorrelationID:   "rr-enrich-signal-error",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -370,7 +424,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 					SessionID:       "sess-empty-overlay-2419",
 					CorrelationID:   "rr-empty-overlay-2419",
 					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
-					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					RCAResult:       verifiedTargetResult("api-server", "production"),
 					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
@@ -906,6 +960,15 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 })
 
 var _ = Describe("kubernaut_select_workflow — helper functions", func() {
+	DescribeTable("UT-KA-2586-040: characterize interactive RCA review state after manual selection (BR-KA-200, BR-AI-028)", func(outcome string) {
+		rca, err := parser.NewResultParser().ParseRCA(`{"rca_summary":"evidence gathered","confidence":0.65` + outcome + `}`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rca.HumanReviewNeeded).To(BeTrue())
+		result := mcptools.BuildFinalResult(rca, &mcptools.CatalogWorkflow{WorkflowID: "wf-1", WorkflowName: "restart"}, discoveryWithWorkflow("wf-1"))
+		Expect(result.WorkflowID).To(Equal("wf-1"))
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+	}, Entry("outcome omitted", ""), Entry("explicit inconclusive", `,"investigation_outcome":"inconclusive"`))
 
 	Describe("UT-KA-SW-BUILDFINAL-001: buildFinalResult merges RCA + workflow fields", func() {
 		It("UT-KA-2570-113: BR-KA-191 retains catalog constraints for an interactive selection", func() {
@@ -1819,15 +1882,11 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 					SessionID:     "sess-ac-004",
 					CorrelationID: "rr-ac-004",
 					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
-					RCAResult: &katypes.InvestigationResult{
-						RCASummary: "needs more memory",
-						RemediationTarget: katypes.RemediationTarget{
-							Kind:       "Deployment",
-							Name:       "memory-eater",
-							Namespace:  "fp-interactive",
-							APIVersion: "apps/v1",
-						},
-					},
+					RCAResult: func() *katypes.InvestigationResult {
+						result := verifiedTargetResult("memory-eater", "fp-interactive")
+						result.RCASummary = "needs more memory"
+						return result
+					}(),
 					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
 						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-recommended"},
 						Alternatives: []mcpinternal.DiscoveredWorkflow{{
@@ -2102,9 +2161,13 @@ var _ = Describe("kubernaut_complete_no_action — interactive pipeline completi
 					CorrelationID: "rr-cna-007",
 					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 					RCAResult: &katypes.InvestigationResult{
-						RCASummary: "Pod OOM due to memory leak",
-						Confidence: 0.92,
-						Severity:   "critical",
+						RCASummary:        "Pod OOM due to memory leak",
+						Confidence:        0.92,
+						Severity:          "critical",
+						WorkflowID:        "wf-discovered",
+						ExecutionBundle:   "bundle-discovered",
+						ExecutionEngine:   "job",
+						WorkflowRationale: "recommended workflow",
 					},
 					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
 						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-discovered"},
@@ -2128,6 +2191,10 @@ var _ = Describe("kubernaut_complete_no_action — interactive pipeline completi
 			Expect(completer.completedResult.Confidence).To(Equal(0.92))
 			Expect(completer.completedResult.WorkflowID).To(BeEmpty(),
 				"no workflow should be selected")
+			Expect(completer.completedResult.ExecutionBundle).To(BeEmpty(),
+				"no executable workflow bundle should survive no-action completion")
+			Expect(completer.completedResult.ExecutionEngine).To(BeEmpty(),
+				"no executable workflow engine should survive no-action completion")
 			Expect(completer.completedResult.Reason).To(Equal("user prefers manual fix"))
 			Expect(*completer.completedResult.IsActionable).To(BeFalse())
 		})

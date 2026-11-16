@@ -33,11 +33,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	metadatafake "k8s.io/client-go/metadata/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -113,7 +115,13 @@ var _ = Describe("#2496 frozen handoff production wiring", func() {
 		dyn := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), &pod)
 		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
 		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
-		resolver := k8stools.NewDynamicResolver(dyn, mapper, nil, logr.Discard())
+		metadataScheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(metadataScheme)).To(Succeed())
+		metadataClient := metadatafake.NewSimpleMetadataClient(metadataScheme, &metav1.PartialObjectMetadata{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+			ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "prod"},
+		})
+		resolver := k8stools.NewDynamicResolver(dyn, mapper, nil, logr.Discard(), k8stools.WithMetadataClient(metadataClient))
 		for _, tool := range k8stools.NewAllTools(kubernetesfake.NewClientset(), resolver) {
 			reg.Register(tool)
 		}

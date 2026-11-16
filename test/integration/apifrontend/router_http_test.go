@@ -166,14 +166,17 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 			})
 
 			panicRouter, err := handler.NewRouter(handler.RouterConfig{
-				MetricsRegistry:  metricsRegistry,
-				Logger:           logf.Log.WithName("panic-it"),
-				A2AHandler:       panicHandler,
-				MCPHandler:       panicHandler,
-				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-				ReadyChecker:     func() bool { return true },
-				SSETracker:       streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
+				MetricsRegistry: metricsRegistry,
+				Logger:          logf.Log.WithName("panic-it"),
+				A2AHandler:      panicHandler,
+				MCPHandler:      panicHandler,
+				PublicRoutes: handler.PublicRouteConfig{
+					AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+					BackendContract:  handler.BackendContractConfig{Incarnation: integrationBackendIncarnation},
+				},
+				AuthMiddleware: func(next http.Handler) http.Handler { return next },
+				ReadyChecker:   func() bool { return true },
+				SSETracker:     streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -229,14 +232,17 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 	Describe("AC-7: Readyz reflects health and draining", func() {
 		It("IT-AF-1195-011: returns 503 when checker reports not ready", func() {
 			notReadyRouter, err := handler.NewRouter(handler.RouterConfig{
-				MetricsRegistry:  metricsRegistry,
-				Logger:           logf.Log.WithName("notready-it"),
-				A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-				ReadyChecker:     func() bool { return false },
-				SSETracker:       streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
+				MetricsRegistry: metricsRegistry,
+				Logger:          logf.Log.WithName("notready-it"),
+				A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				PublicRoutes: handler.PublicRouteConfig{
+					AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+					BackendContract:  handler.BackendContractConfig{Incarnation: integrationBackendIncarnation},
+				},
+				AuthMiddleware: func(next http.Handler) http.Handler { return next },
+				ReadyChecker:   func() bool { return false },
+				SSETracker:     streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -255,15 +261,18 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 			draining.Store(true)
 
 			drainingRouter, err := handler.NewRouter(handler.RouterConfig{
-				MetricsRegistry:  metricsRegistry,
-				Logger:           logf.Log.WithName("draining-it"),
-				A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-				ReadyChecker:     func() bool { return true },
-				Draining:         draining,
-				SSETracker:       streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
+				MetricsRegistry: metricsRegistry,
+				Logger:          logf.Log.WithName("draining-it"),
+				A2AHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				PublicRoutes: handler.PublicRouteConfig{
+					AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+					BackendContract:  handler.BackendContractConfig{Incarnation: integrationBackendIncarnation},
+				},
+				AuthMiddleware: func(next http.Handler) http.Handler { return next },
+				ReadyChecker:   func() bool { return true },
+				Draining:       draining,
+				SSETracker:     streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second),
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -361,14 +370,17 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 			capTracker.MaxConnections = 2
 
 			capRouter, err := handler.NewRouter(handler.RouterConfig{
-				MetricsRegistry:  metricsRegistry,
-				Logger:           logf.Log.WithName("sse-cap-it"),
-				A2AHandler:       blockingA2A,
-				MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
-				AuthMiddleware:   func(next http.Handler) http.Handler { return next },
-				ReadyChecker:     func() bool { return true },
-				SSETracker:       capTracker,
+				MetricsRegistry: metricsRegistry,
+				Logger:          logf.Log.WithName("sse-cap-it"),
+				A2AHandler:      blockingA2A,
+				MCPHandler:      http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				PublicRoutes: handler.PublicRouteConfig{
+					AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+					BackendContract:  handler.BackendContractConfig{Incarnation: integrationBackendIncarnation},
+				},
+				AuthMiddleware: func(next http.Handler) http.Handler { return next },
+				ReadyChecker:   func() bool { return true },
+				SSETracker:     capTracker,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -420,4 +432,3 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 		})
 	})
 })
-

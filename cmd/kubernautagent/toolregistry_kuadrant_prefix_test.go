@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
@@ -77,13 +78,13 @@ func (s *capturingSession) CallTool(_ context.Context, params *mcp.CallToolParam
 // external dependencies faked, per the project's mock-external-only policy.
 var _ = Describe("gatewayOverlayResolver.Overlay prefix resolution across gateway conventions (DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489) [AC-4]", func() {
 	DescribeTable("generic-izes the tool name regardless of the gateway's wire prefix convention",
-		func(clusterID, wireName string) {
+		func(gatewayType fleetregistry.MCPGatewayType, clusterID, wireName string) {
 			session := &capturingSession{}
 			disc := &fixedDiscoverer{
 				clusterID: clusterID,
 				defs:      []mcpclient.ToolDefinition{{Name: wireName}},
 			}
-			resolver := &gatewayOverlayResolver{discoverer: disc, session: session}
+			resolver := &gatewayOverlayResolver{discoverer: disc, session: session, gatewayType: gatewayType}
 
 			overlay, err := resolver.Overlay(context.Background(), clusterID)
 			Expect(err).ToNot(HaveOccurred())
@@ -101,9 +102,11 @@ var _ = Describe("gatewayOverlayResolver.Overlay prefix resolution across gatewa
 					"name even though the LLM only ever named the generic tool")
 		},
 		Entry("UT-KA-FLEET-024 [AC-4]: EAIGW convention ({clusterID}__resources_get)",
-			"cluster-a", "cluster-a__resources_get"),
+			fleetregistry.GatewayEAIGW, "cluster-a", "cluster-a__resources_get"),
 		Entry("UT-KA-FLEET-025 [AC-4]: Kuadrant convention (admin-set spec.prefix, NOT {clusterID}__)",
-			"prod-east", "prod_east_resources_get"),
+			fleetregistry.GatewayKuadrant, "prod-east", "prod_east_resources_get"),
+		Entry("UT-KA-FLEET-026 [AC-4]: Kuadrant accepts a prefix unrelated to the cluster ID",
+			fleetregistry.GatewayKuadrant, "cluster-a", "admin-prod_resources_get"),
 	)
 })
 

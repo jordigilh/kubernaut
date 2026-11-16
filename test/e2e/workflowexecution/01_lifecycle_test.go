@@ -193,11 +193,10 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 						},
 					},
 					TargetResource: targetResource,
-					Parameters: map[string]string{
-						// Per test/fixtures/tekton/failing-pipeline.yaml
-						"FAILURE_MODE":    "exit",
+					Parameters: typedParametersForTarget(targetResource, map[string]string{
+						"TARGET_RESOURCE": targetResource,
 						"FAILURE_MESSAGE": "E2E test simulated failure",
-					},
+					}),
 				},
 			}
 

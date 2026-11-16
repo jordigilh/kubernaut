@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -100,7 +101,13 @@ var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 			sharedtypes.WorkflowResourceDependency{Name: "e2e-2390-snapshot-secret"}))
 		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
 		Expect(we.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
-		Expect(we.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{
+		live, err := workflowidentity.GetVerified(ctx, apiReader, namespace, we.Spec.WorkflowRef.WorkflowID)
+		Expect(err).NotTo(HaveOccurred())
+		declared := make(map[string]bool, len(live.Spec.Parameters))
+		for _, parameter := range live.Spec.Parameters {
+			declared[parameter.Name] = true
+		}
+		Expect(declared).To(Equal(map[string]bool{
 			"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
 			"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
 		}))

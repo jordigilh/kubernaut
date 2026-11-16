@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // DiscoverToolPrefix queries the MCP Gateway's tools/list endpoint and finds
@@ -55,13 +57,12 @@ func DiscoverToolPrefix(ctx context.Context, session *mcp.ClientSession, cluster
 // tool names.
 //
 // The matching is gateway-agnostic: it normalizes both the cluster ID and each
-// tool name (replacing hyphens with underscores) and checks whether the name
-// starts with the normalized cluster ID and ends with a known base tool name.
-// The prefix returned is the original (un-normalized) substring before the
-// base tool name, preserving whatever separator the gateway uses -- this
-// covers both EAIGW's "{clusterID}__" convention and Kuadrant's admin-set
-// MCPServerRegistration.spec.prefix, which is not required to follow the
-// "{clusterID}__" shape at all (Issue #1756).
+// tool name (replacing hyphens with underscores), requires a separator at the
+// cluster boundary, and checks whether the name ends with a known base tool
+// name. Requiring that boundary prevents a cluster ID such as "cluster-a"
+// from matching the neighboring "cluster-a2". The prefix returned is the
+// original (un-normalized) substring before the base tool name, preserving
+// whatever separator the gateway uses.
 //
 // Operating on a plain name slice (rather than a live *mcp.ClientSession, as
 // DiscoverToolPrefix does) lets callers that already hold discovered tool
@@ -75,20 +76,89 @@ func DiscoverToolPrefix(ctx context.Context, session *mcp.ClientSession, cluster
 // DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
 func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 	normalized := strings.ReplaceAll(clusterID, "-", "_")
+	bestSuffixLength := 0
+	bestPrefix := ""
 
 	for _, name := range names {
 		normalizedName := strings.ReplaceAll(name, "-", "_")
-		if !strings.HasPrefix(normalizedName, normalized) {
+		if !hasClusterPrefixBoundary(normalizedName, normalized) {
 			continue
 		}
 		for _, suffix := range knownToolSuffixes {
-			if strings.HasSuffix(normalizedName, suffix) {
-				prefix := name[:len(name)-len(suffix)]
+			if len(suffix) <= bestSuffixLength || !strings.HasSuffix(normalizedName, suffix) {
+				continue
+			}
+			bestSuffixLength = len(suffix)
+			bestPrefix = name[:len(name)-len(suffix)]
+		}
+	}
+	if bestSuffixLength > 0 {
+		return bestPrefix, nil
+	}
+
+	return "", fmt.Errorf("no tools found for cluster %q among %d discovered tool names", clusterID, len(names))
+}
+
+// PrefixFromToolNamesForGateway resolves a cluster's wire prefix using the
+// configured gateway's naming contract. EAIGW has a deterministic
+// "{clusterID}__" prefix. Kuadrant scopes the session to the selected
+// cluster's tools first, so its admin-configured prefix can be extracted from
+// that target-only tool set even when it does not contain the cluster ID.
+//
+// The gateway-specific path is used by KA's overlay and binding resolver. The
+// gateway-agnostic PrefixFromToolNames helper remains the safe fallback for
+// callers that only have an unscoped tools/list response.
+func PrefixFromToolNamesForGateway(gatewayType registry.MCPGatewayType, clusterID string, names []string) (string, error) {
+	switch gatewayType {
+	case registry.GatewayEAIGW:
+		return prefixFromEAIGWToolNames(clusterID, names)
+	case registry.GatewayKuadrant:
+		if prefix, err := PrefixFromToolNames(clusterID, names); err == nil {
+			return prefix, nil
+		}
+		return prefixFromScopedToolNames(clusterID, names)
+	default:
+		return "", fmt.Errorf("unsupported MCP gateway type %q for tool prefix resolution", gatewayType)
+	}
+}
+
+func hasClusterPrefixBoundary(name, normalizedClusterID string) bool {
+	if !strings.HasPrefix(name, normalizedClusterID) {
+		return false
+	}
+	return len(name) > len(normalizedClusterID) && name[len(normalizedClusterID)] == '_'
+}
+
+func prefixFromEAIGWToolNames(clusterID string, names []string) (string, error) {
+	prefix := clusterID + "__"
+	for _, name := range names {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		for _, suffix := range knownToolSuffixes {
+			if strings.HasSuffix(name, suffix) {
 				return prefix, nil
 			}
 		}
 	}
+	return "", fmt.Errorf("no EAIGW tools found for cluster %q among %d discovered tool names", clusterID, len(names))
+}
 
+func prefixFromScopedToolNames(clusterID string, names []string) (string, error) {
+	bestSuffixLength := 0
+	bestPrefix := ""
+	for _, name := range names {
+		for _, suffix := range knownToolSuffixes {
+			if len(suffix) <= bestSuffixLength || !strings.HasSuffix(name, suffix) {
+				continue
+			}
+			bestSuffixLength = len(suffix)
+			bestPrefix = name[:len(name)-len(suffix)]
+		}
+	}
+	if bestSuffixLength > 0 {
+		return bestPrefix, nil
+	}
 	return "", fmt.Errorf("no tools found for cluster %q among %d discovered tool names", clusterID, len(names))
 }
 
@@ -96,6 +166,7 @@ func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 // PrefixFromToolNames (and, transitively, DiscoverToolPrefix) uses as anchors
 // to extract the cluster prefix from gateway-prefixed tool names.
 var knownToolSuffixes = []string{
+	"api_resources_list",
 	ToolGet,
 	ToolList,
 	ToolCreateOrUpdate,

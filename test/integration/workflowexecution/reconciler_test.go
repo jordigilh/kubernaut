@@ -28,6 +28,7 @@ import (
 	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
@@ -50,11 +51,16 @@ import (
 
 var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	var workflowID string
-	BeforeEach(func() { workflowID = trustedWorkflowFixture("Controller reconciliation fixture", "tekton") })
+	BeforeEach(func() {
+		workflowID = trustedWorkflowFixtureWithParameters("Controller reconciliation fixture", "tekton", []remediationworkflowv1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Description: "target namespace"},
+			{Name: "DEPLOYMENT_NAME", Type: "string", Description: "deployment name"},
+			{Name: "REPLICA_COUNT", Type: "integer", Description: "replica count"},
+		})
+	})
 	reconcilerWFE := func(testID, target string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := createUniqueWFE(testID, target)
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"NAMESPACE": true, "DEPLOYMENT_NAME": true, "REPLICA_COUNT": true}
 		return wfe
 	}
 
@@ -94,13 +100,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should pass parameters to PipelineRun", func() {
 			By("Creating a WorkflowExecution with parameters")
-			params := map[string]string{
-				"NAMESPACE":       "production",
-				"DEPLOYMENT_NAME": "my-service",
-				"REPLICA_COUNT":   "3",
-			}
 			wfe = reconcilerWFE("pr-params", "production/deployment/my-service")
-			wfe.Spec.Parameters = params
+			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
+				"NAMESPACE":       `"production"`,
+				"DEPLOYMENT_NAME": `"my-service"`,
+				"REPLICA_COUNT":   "3",
+			})
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")

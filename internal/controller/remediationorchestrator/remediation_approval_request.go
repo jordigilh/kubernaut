@@ -181,10 +181,14 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 		ClusterID:          rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
 		RARName:            rar.Name,
 		OriginalParameters: rar.Spec.Parameters,
+		ParameterEvidence:  rar.Spec.ParameterEvidence,
 	}
 	if rar.Status.WorkflowOverride != nil {
 		eventContext.OverrideParameters = rar.Status.WorkflowOverride.Parameters
 		eventContext.OverrideRationale = &rar.Status.WorkflowOverride.Rationale
+		if rar.Status.WorkflowOverride.ParameterEvidence != "" {
+			eventContext.ParameterEvidence = rar.Status.WorkflowOverride.ParameterEvidence
+		}
 	}
 	if rar.Spec.Workflow != nil {
 		eventContext.WorkflowID = rar.Spec.Workflow.WorkflowID

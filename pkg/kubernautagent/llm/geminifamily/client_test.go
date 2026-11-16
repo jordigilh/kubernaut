@@ -36,6 +36,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/geminifamily"
 )
@@ -390,6 +391,29 @@ var _ = Describe("geminifamily.Client Chat/StreamChat — #1778 BR-AI-087", func
 		Expect(request.GenerationConfig.Temperature).NotTo(BeNil())
 		Expect(*request.GenerationConfig.Temperature).To(Equal(temperature))
 	})
+
+	DescribeTable("UT-KA-2586-027: Gemini RCA schema preserves score presence (BR-AI-012, SI-10)", func(content string, present bool) {
+		var body map[string]interface{}
+		encoded, err := json.Marshal(content)
+		Expect(err).NotTo(HaveOccurred())
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			Expect(json.NewDecoder(r.Body).Decode(&body)).To(Succeed())
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":` + string(encoded) + `}]},"finishReason":"STOP"}]}`))
+		})
+		resp, err := client.Chat(context.Background(), llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: "investigate"}}, Options: llm.ChatOptions{OutputSchema: parser.RCAResultSchema()}})
+		Expect(err).NotTo(HaveOccurred())
+		config := body["generationConfig"].(map[string]interface{})
+		schema := config["responseJsonSchema"].(map[string]interface{})
+		Expect(schema["required"]).NotTo(ContainElement("confidence"))
+		result, err := parser.NewResultParser().ParseRCA(resp.Message.Content)
+		Expect(err).NotTo(HaveOccurred())
+		if present {
+			Expect(result.ParsedTopLevelConfidence).To(HaveValue(Equal(0.0)))
+		} else {
+			Expect(result.ParsedTopLevelConfidence).To(BeNil())
+		}
+	}, Entry("missing", `{"rca_summary":"Node pressure"}`, false), Entry("zero", `{"rca_summary":"Node pressure","confidence":0}`, true))
 
 	It("UT-GM-1778-209: rejects malformed output schema before making a request", func() {
 		called := false

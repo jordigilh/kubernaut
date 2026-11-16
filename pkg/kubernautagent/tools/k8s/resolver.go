@@ -49,10 +49,21 @@ type ResourceResolver interface {
 	GetByNameInCluster(ctx context.Context, kind, name, apiGroup string) (interface{}, error)
 }
 
+// ExactResourceListResolver lists a resource using the caller-supplied
+// apiVersion and kind. It is intentionally separate from ResourceResolver so
+// existing resolver test doubles do not gain a weaker version contract.
+type ExactResourceListResolver interface {
+	ListForAPIVersion(ctx context.Context, apiVersion, kind, namespace, labelSelector, fieldSelector string) (interface{}, error)
+}
+
 // DefaultResourceListLimit is sent to the API server for every bulk list.
 // List tools return metadata summaries, so a large ConfigMap/Secret body cannot
 // be copied into the LLM, audit, or sanitizer pipeline.
-const DefaultResourceListLimit int64 = 100
+const (
+	DefaultResourceListLimit        int64 = 100
+	MaxResourceListLabelCount       int   = 32
+	MaxResourceListLabelValueLength int   = 256
+)
 
 // ResourceListSummary is the bounded wire result for generic bulk lists.
 // It intentionally contains metadata only; use a targeted get tool for a full
@@ -457,6 +468,43 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	return nil, err
 }
 
+// ListForAPIVersion performs a metadata-only list against one exact GVK. The
+// named object need not exist: a successful empty list is positive evidence
+// that the selected resource endpoint is served by this cluster.
+func (r *dynamicResourceResolver) ListForAPIVersion(ctx context.Context, apiVersion, kind, namespace, labelSelector, fieldSelector string) (interface{}, error) {
+	if r.metadataClient == nil {
+		return nil, fmt.Errorf("exact resource list unavailable: metadata client not configured")
+	}
+	gv, err := schema.ParseGroupVersion(strings.TrimSpace(apiVersion))
+	if err != nil {
+		return nil, fmt.Errorf("invalid apiVersion %q: %w", apiVersion, err)
+	}
+	if strings.TrimSpace(kind) == "" {
+		return nil, fmt.Errorf("kind must not be empty")
+	}
+	mapping, err := r.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
+	if err != nil {
+		return nil, fmt.Errorf("resolve exact GVK %s/%s: %w", apiVersion, kind, err)
+	}
+	options := metav1.ListOptions{
+		Limit:         DefaultResourceListLimit,
+		LabelSelector: labelSelector,
+		FieldSelector: fieldSelector,
+	}
+	resource := r.metadataClient.Resource(mapping.Resource)
+	var metadataList *metav1.PartialObjectMetadataList
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		metadataList, err = resource.Namespace(namespace).List(ctx, options)
+	} else {
+		metadataList, err = resource.List(ctx, options)
+	}
+	r.notifySecretAccess(ctx, mapping, "list", "", namespace, err)
+	if err != nil {
+		return nil, fmt.Errorf("list exact GVK %s/%s: %w", apiVersion, kind, err)
+	}
+	return summarizeMetadataList(kind, metadataList), nil
+}
+
 // listBoundedSummary requires metadata-only access so full resource bodies are
 // never fetched for bulk list tools.
 func (r *dynamicResourceResolver) listBoundedSummary(ctx context.Context, mapping *meta.RESTMapping, kind, namespace string) (*ResourceListSummary, error) {
@@ -497,8 +545,14 @@ func summarizeMetadataList(kind string, list *metav1.PartialObjectMetadataList) 
 		total := len(list.Items)
 		totalCount = &total
 	}
+	apiVersion := list.APIVersion
+	if apiVersion == "" {
+		// PartialObjectMetadataList is served through the metadata API even when
+		// a fake or proxy client omits TypeMeta on the response object.
+		apiVersion = "meta.k8s.io/v1"
+	}
 	return &ResourceListSummary{
-		APIVersion: list.APIVersion,
+		APIVersion: apiVersion,
 		Kind:       kind + "List",
 		Items:      items,
 		ItemCount:  len(items),
@@ -512,13 +566,14 @@ func metadataSummary(name, namespace, uid, resourceVersion string, labels map[st
 	return ResourceMetadataSummary{
 		Metadata: ResourceObjectMetadata{
 			Name: name, Namespace: namespace, UID: uid, ResourceVersion: resourceVersion,
-			Labels: boundedLabels(labels),
+			Labels: BoundedResourceLabels(labels),
 		},
 	}
 }
 
-// boundedLabels keeps label metadata useful without allowing unbounded values.
-func boundedLabels(labels map[string]string) map[string]string {
+// BoundedResourceLabels keeps label metadata useful without allowing unbounded
+// values. It is shared by local and target-scoped remote list projections.
+func BoundedResourceLabels(labels map[string]string) map[string]string {
 	if len(labels) == 0 {
 		return nil
 	}
@@ -527,14 +582,14 @@ func boundedLabels(labels map[string]string) map[string]string {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	if len(keys) > 32 {
-		keys = keys[:32]
+	if len(keys) > MaxResourceListLabelCount {
+		keys = keys[:MaxResourceListLabelCount]
 	}
 	result := make(map[string]string, len(keys))
 	for _, key := range keys {
 		value := labels[key]
-		if len(value) > 256 {
-			value = value[:256]
+		if len(value) > MaxResourceListLabelValueLength {
+			value = value[:MaxResourceListLabelValueLength]
 		}
 		result[key] = value
 	}

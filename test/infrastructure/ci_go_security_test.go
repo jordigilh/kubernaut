@@ -31,7 +31,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 		module := readSecurityFixtureSource("go.mod")
 		match := regexp.MustCompile(`(?m)^go (\S+)$`).FindStringSubmatch(module)
 		Expect(match).To(HaveLen(2))
-		Expect(semver.Compare("v"+match[1], "v1.26.10")).To(BeNumerically(">=", 0))
+		Expect(semver.Compare("v"+match[1], "v1.26.11")).To(BeNumerically(">=", 0))
 		workflowCounts := map[string]int{
 			"ci-pipeline.yml": 8, "release.yml": 4, "codeql.yml": 1,
 		}
@@ -40,7 +40,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 			versions := regexp.MustCompile(`(?m)^\s*go-version:\s*['"]?([0-9.]+)`).FindAllStringSubmatch(body, -1)
 			Expect(versions).To(HaveLen(expectedCount), "workflow: %s", workflow)
 			for _, version := range versions {
-				Expect(semver.Compare("v"+version[1], "v1.26.10")).To(BeNumerically(">=", 0), "workflow: %s", workflow)
+				Expect(semver.Compare("v"+version[1], "v1.26.11")).To(BeNumerically(">=", 0), "workflow: %s", workflow)
 			}
 		}
 	})
@@ -51,7 +51,7 @@ var _ = Describe("CI security remediation [BR-SECURITY-2493]", func() {
 		Expect(match).To(HaveLen(2))
 		Expect(semver.Compare(match[1], "v0.60.0")).To(BeNumerically(">=", 0))
 		goose := readSecurityFixtureSource("docker/db-migrate.Dockerfile")
-		Expect(goose).To(MatchRegexp(`(?m)^ENV GOTOOLCHAIN=go1\.26\.10\+auto$`))
+		Expect(goose).To(MatchRegexp(`(?m)^ENV GOTOOLCHAIN=go1\.26\.11\+auto$`))
 		frontend := readSecurityFixtureSource("docker/apifrontend.Dockerfile")
 		Expect(frontend).To(ContainSubstring("ENV GOFIPS140=certified"))
 		Expect(frontend).NotTo(ContainSubstring("GOEXPERIMENT=boringcrypto"))

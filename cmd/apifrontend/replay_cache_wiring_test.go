@@ -136,7 +136,7 @@ func TestLoadReplayCachePassword_MissingFile_ReturnsError(t *testing.T) {
 // generateSelfSignedCertPair writes a self-signed CA/leaf cert (usable as
 // both server cert and its own trust root, mirroring the pattern in
 // pkg/shared/tls/tls_test.go) to certFile/keyFile.
-func generateSelfSignedCertPair(t *testing.T, certFile, keyFile string) {
+func generateSelfSignedCertPair(t testing.TB, certFile, keyFile string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

@@ -60,7 +60,7 @@ var _ = Describe("fleet demo Helm chart sources [BR-PLATFORM-014]", func() {
 	It("UT-INFRA-FLEETDEMO-HELM-002: resolves Traefik directly from its repository URL", func() {
 		Expect(traefikHelmInstallArgs()).To(Equal([]string{
 			"--repo", "https://traefik.github.io/charts",
-			"--set", "service.type=NodePort",
+			"--set", "service.spec.type=NodePort",
 			"--set=ports.web.nodePort=30880",
 			"--set=ports.websecure.nodePort=30843",
 			"--set", "ingressClass.enabled=true",

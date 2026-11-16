@@ -52,8 +52,8 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 		rp = parser.NewResultParser()
 		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
-				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
+				{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
+				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production", APIVersion: "apps/v1"},
 			},
 		}
 		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
@@ -67,7 +67,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 					"root_cause_analysis": {
 						"summary": "OOMKilled due to memory limit exceeded on api-server container",
 						"contributing_factors": ["memory leak in api-server container", "no HPA configured"],
-						"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production"}
+					"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production", "api_version": "apps/v1"}
 					},
 					"confidence": 0.85
 				}`}},
@@ -80,7 +80,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
-				MaxTurns: 15, PhaseTools: phaseTools,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: newITTargetScopedDiscoveryRegistry(),
 			})
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{

@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -158,23 +156,13 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 			}
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
+			analysis.Status.Message = "Workflow recommended: " + trustedWorkflowName
 			analysis.Status.EnsureRCAResult().RootCause = "Memory exhaustion due to unbounded cache growth"
 			analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:            "restart-pod-v1",
-					WorkflowName:          "restart-pod-v1",
-					ActionType:            "RestartPod",
-					Version:               "1.0.0",
-					ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
-					ExecutionBundleDigest: "sha256:abc123def456",
-					ExecutionEngine:       "tekton",
-				},
-				Confidence: 0.95,
-				Rationale:  "High confidence match for pod restart scenario",
-				Parameters: map[string]string{
-					"TARGET_POD": "test-pod-completion",
-				},
+				WorkflowSnapshot: trustedWorkflowSnapshot(),
+				Confidence:       0.95,
+				Rationale:        "High confidence match for pod restart scenario",
+				Parameters:       trustedWorkflowParameters("Pod", "test-pod-completion", testNS),
 			}
 			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Memory exhaustion due to unbounded cache growth",
@@ -276,7 +264,7 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 			"Subject should contain signal name")
 		Expect(notification.Spec.Body).To(ContainSubstring("Memory exhaustion"),
 			"Body should contain root cause analysis")
-		Expect(notification.Spec.Body).To(ContainSubstring("restart-pod-v1"),
+		Expect(notification.Spec.Body).To(ContainSubstring(trustedWorkflowID),
 			"Body should contain workflow ID")
 		Expect(notification.Spec.Body).NotTo(HavePrefix("**Cluster**:"),
 			"BR-FLEET-001/AU-3: local completion notification must not fabricate cluster provenance")
@@ -290,7 +278,7 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 
 		By("12. Validating NotificationRequest context")
 		Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
-		Expect(notification.Spec.Context.Workflow.WorkflowID).To(Equal("restart-pod-v1"))
+		Expect(notification.Spec.Context.Workflow.WorkflowID).To(Equal(trustedWorkflowID))
 
 		By("13. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(notification.OwnerReferences).To(HaveLen(1))

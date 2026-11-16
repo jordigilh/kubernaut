@@ -41,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -52,6 +53,25 @@ type selectionProposal2496 struct {
 	confidence     *float64
 	omitConfidence bool
 }
+
+// repeatTargetDiscoveryTool supplies the target-cluster GVK evidence required
+// by the final workflow-target gate. The production repeat-selection fixture
+// uses a real Pod/v1 signal, so its registry must model the same discovery
+// contract instead of relying only on workflow-catalog tools.
+type repeatTargetDiscoveryTool struct{}
+
+func (repeatTargetDiscoveryTool) Name() string { return "api_resources_list" }
+func (repeatTargetDiscoveryTool) Description() string {
+	return "test target-cluster API resource discovery"
+}
+func (repeatTargetDiscoveryTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
+}
+func (repeatTargetDiscoveryTool) Execute(context.Context, json.RawMessage) (string, error) {
+	return `{"resources":[{"apiVersion":"v1","kind":"Pod"}]}`, nil
+}
+
+var _ tools.Tool = repeatTargetDiscoveryTool{}
 
 // Real cached catalog, catalog fetcher, discovery tools, validator and provider
 // HTTP client. Only Kubernetes and the external inference endpoint are replaced.
@@ -79,6 +99,7 @@ var _ = Describe("#2496 production repeat acceptance and bounded correction", fu
 		wfB = seedFakeWorkflow(GinkgoTB(), c, strings.Replace(fakeCRDWorkflowYAML, "name: test-workflow", "name: alternate-workflow", 1))
 		catalog := workflowcatalog.NewLazyCatalogReady(workflowcatalog.NewCacheFromReader(c), logr.Discard())
 		reg := registry.New()
+		reg.Register(repeatTargetDiscoveryTool{})
 		for _, t := range custom.NewAllTools(catalog, nil, logr.Discard()) {
 			reg.Register(t)
 		}

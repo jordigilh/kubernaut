@@ -11,12 +11,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 func rrTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = remediationv1.AddToScheme(s)
+	_ = remediationworkflowv1.AddToScheme(s)
 	return s
 }
 

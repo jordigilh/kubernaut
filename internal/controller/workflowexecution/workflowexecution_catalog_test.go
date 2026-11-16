@@ -68,7 +68,6 @@ var _ = Describe("validateExecutionEngineResolved (Issue #1661 Change 11f)", fun
 							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
 						},
-						DeclaredParameterNames: map[string]bool{"TARGET_POD": true},
 					},
 				},
 			},

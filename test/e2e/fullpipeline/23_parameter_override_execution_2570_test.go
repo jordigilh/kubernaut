@@ -36,6 +36,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -96,14 +97,14 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 			g.Expect(rar.Spec.Workflow).NotTo(BeNil())
 			g.Expect(rar.Spec.Workflow.ExecutionEngine).To(Equal("job"))
 			g.Expect(rar.Spec.Workflow.WorkflowID).To(Equal(workflowUUIDs["crashloop-config-fix-v1:production"]))
-			g.Expect(rar.Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_NAME", original))
-			g.Expect(rar.Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_KEY", "APP_MODE"))
-			g.Expect(rar.Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_VALUE", "healthy"))
+			parameterEngineValues, conversionErr := sharedtypes.TypedParameterMapToEngineValues(rar.Spec.Parameters)
+			g.Expect(conversionErr).NotTo(HaveOccurred())
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_NAME", original))
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_KEY", "APP_MODE"))
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_VALUE", "healthy"))
 		}, timeout, interval).Should(Succeed())
-		originalParameters := make(map[string]string, len(rar.Spec.Parameters))
-		for k, v := range rar.Spec.Parameters {
-			originalParameters[k] = v
-		}
+		originalParameters, err := sharedtypes.TypedParameterMapToEngineValues(rar.Spec.Parameters)
+		Expect(err).NotTo(HaveOccurred())
 
 		By("Approving only the ConfigMap name through authenticated AF MCP")
 		token := getAFToken()
@@ -141,8 +142,12 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 			g.Expect(rar.Status.DecidedBy).NotTo(BeEmpty())
 			g.Expect(rar.Status.DecidedVia).NotTo(BeEmpty())
 			g.Expect(rar.Status.WorkflowOverride).NotTo(BeNil())
-			g.Expect(rar.Status.WorkflowOverride.Parameters).To(Equal(map[string]string{"CONFIGMAP_NAME": alternate}))
-			g.Expect(rar.Spec.Parameters).To(Equal(originalParameters))
+			overrideParameters, conversionErr := sharedtypes.TypedParameterMapToEngineValues(rar.Status.WorkflowOverride.Parameters)
+			g.Expect(conversionErr).NotTo(HaveOccurred())
+			g.Expect(overrideParameters).To(Equal(map[string]string{"CONFIGMAP_NAME": alternate}))
+			original, conversionErr := sharedtypes.TypedParameterMapToEngineValues(rar.Spec.Parameters)
+			g.Expect(conversionErr).NotTo(HaveOccurred())
+			g.Expect(original).To(Equal(originalParameters))
 		}, timeout, interval).Should(Succeed())
 		Expect(rar.Status.DecidedBy).To(Equal(fpA2AUsername()))
 
@@ -184,9 +189,9 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 						changed, changedSet := payload.OverrideParameters.Get()
 						effective, effectiveSet := payload.EffectiveParameters.Get()
 						g.Expect(originalSet && changedSet && effectiveSet).To(BeTrue())
-						g.Expect(map[string]string(original)).To(Equal(originalParameters))
-						g.Expect(map[string]string(changed)).To(Equal(changedParameters))
-						g.Expect(map[string]string(effective)).To(Equal(effectiveParameters))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(original)).To(Equal(auditStringParameterValues(originalParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(changed)).To(Equal(auditStringParameterValues(changedParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(effective)).To(Equal(auditStringParameterValues(effectiveParameters)))
 						g.Expect(payload.WorkflowID.Value).To(Equal(workflowID))
 						g.Expect(payload.ApprovalDecision.Value).To(Equal("Approved"))
 						g.Expect(event.ActorID.Value).To(Equal(fpA2AUsername()))
@@ -200,9 +205,9 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 						changed, changedSet := payload.OverrideParameters.Get()
 						effective, effectiveSet := payload.EffectiveParameters.Get()
 						g.Expect(originalSet && changedSet && effectiveSet).To(BeTrue())
-						g.Expect(map[string]string(original)).To(Equal(originalParameters))
-						g.Expect(map[string]string(changed)).To(Equal(changedParameters))
-						g.Expect(map[string]string(effective)).To(Equal(effectiveParameters))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(original)).To(Equal(auditStringParameterValues(originalParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(changed)).To(Equal(auditStringParameterValues(changedParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(effective)).To(Equal(auditStringParameterValues(effectiveParameters)))
 						g.Expect(payload.WorkflowID.Value).To(Equal(workflowID))
 						g.Expect(string(payload.Decision)).To(Equal("Approved"))
 						g.Expect(payload.DelegatedUser.Value).To(Equal(fpA2AUsername()))
@@ -219,9 +224,9 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 						changed, changedSet := payload.OverrideParameters.Get()
 						effective, effectiveSet := payload.EffectiveParameters.Get()
 						g.Expect(originalSet && changedSet && effectiveSet).To(BeTrue())
-						g.Expect(map[string]string(original)).To(Equal(originalParameters))
-						g.Expect(map[string]string(changed)).To(Equal(changedParameters))
-						g.Expect(map[string]string(effective)).To(Equal(effectiveParameters))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(original)).To(Equal(auditStringParameterValues(originalParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(changed)).To(Equal(auditStringParameterValues(changedParameters)))
+						g.Expect(map[string]ogenclient.WorkflowParameterValue(effective)).To(Equal(auditStringParameterValues(effectiveParameters)))
 						g.Expect(payload.RrName).To(Equal(rrName))
 						g.Expect(payload.WorkflowID.Value).To(Equal(workflowID))
 						g.Expect(event.ActorID.Value).To(Equal(fpA2AUsername()))
@@ -246,9 +251,11 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 			g.Expect(matches).To(HaveLen(1))
 			weName = matches[0].Name
 			g.Expect(matches[0].Spec.WorkflowRef.WorkflowID).To(Equal(rar.Spec.Workflow.WorkflowID))
-			g.Expect(matches[0].Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_NAME", alternate))
-			g.Expect(matches[0].Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_KEY", "APP_MODE"))
-			g.Expect(matches[0].Spec.Parameters).To(HaveKeyWithValue("CONFIGMAP_VALUE", "healthy"))
+			parameterEngineValues, conversionErr := sharedtypes.TypedParameterMapToEngineValues(matches[0].Spec.Parameters)
+			g.Expect(conversionErr).NotTo(HaveOccurred())
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_NAME", alternate))
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_KEY", "APP_MODE"))
+			g.Expect(parameterEngineValues).To(HaveKeyWithValue("CONFIGMAP_VALUE", "healthy"))
 		}, timeout, interval).Should(Succeed())
 		var job batchv1.Job
 		Eventually(func(g Gomega) {
@@ -289,3 +296,14 @@ var _ = Describe("Approved parameter execution [E2E-2570-001]", Label("e2e", "fu
 		}, timeout, interval).Should(Succeed())
 	})
 })
+
+func auditStringParameterValues(values map[string]string) map[string]ogenclient.WorkflowParameterValue {
+	result := make(map[string]ogenclient.WorkflowParameterValue, len(values))
+	for name, value := range values {
+		result[name] = ogenclient.NewWorkflowParameterStringWorkflowParameterValue(ogenclient.WorkflowParameterString{
+			Kind:        ogenclient.WorkflowParameterStringKindString,
+			StringValue: value,
+		})
+	}
+	return result
+}

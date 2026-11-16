@@ -32,7 +32,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
@@ -125,6 +124,12 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 		Expect(wfe.Status.BlockClearance.ClearMethod).To(Equal("StatusField"))
 
 		By("Step 2: Create and approve RemediationApprovalRequest")
+		workflow := buildRemediationWorkflowCRD(testNamespace, "E2E approval attribution workflow")
+		Expect(k8sClient.Create(testCtx, workflow)).To(Succeed())
+		DeferCleanup(func() { deleteCRDAndWait(workflow.Name) })
+		workflow = waitForCRDStatus(workflow.Name)
+		parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"TARGET_RESOURCE":"default/pod/test-pod"}`))
+		Expect(err).NotTo(HaveOccurred())
 		rar = &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-multi-rar",
@@ -144,21 +149,20 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				ConfidenceLevel: "medium",
 				Reason:          "E2E test: Testing approval flow",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:      "test-workflow",
+					WorkflowID:      workflow.Status.WorkflowID,
 					Version:         "v1",
 					ExecutionBundle: "test/image:latest",
 					Rationale:       "Test remediation plan for E2E validation",
 				},
 				Workflow: &sharedtypes.WorkflowSnapshot{
-					WorkflowID:             "test-workflow",
-					WorkflowName:           "test-workflow",
-					ActionType:             "RestartPod",
-					Version:                "v1",
-					ExecutionBundle:        "test/image:latest",
-					DeclaredParameterNames: map[string]bool{},
+					WorkflowID:      workflow.Status.WorkflowID,
+					WorkflowName:    workflow.Name,
+					ActionType:      "RestartPod",
+					Version:         "v1",
+					ExecutionBundle: "test/image:latest",
 				},
-				Parameters:      map[string]string{},
-				ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{},
+				Parameters:        parameters,
+				ParameterEvidence: evidence,
 				TargetContext: &remediationv1.ApprovalTargetContext{
 					SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "test-pod", Namespace: "default"},
 				},

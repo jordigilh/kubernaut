@@ -125,8 +125,11 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 // the most recent completed (non-cancelled) session for the given remediation_id.
 // This gives workflow discovery access to the complete RemediationTarget produced
 // by the autonomous Phase 1 RCA, avoiding a lossy re-extraction from conversation.
-// Cancelled sessions are excluded because their partial results may be stale or
-// incomplete (KA-HIGH-5).
+// Cancelled sessions and cancelled result snapshots are excluded because their
+// partial results may be stale or incomplete (KA-HIGH-5). A takeover can leave
+// a cancelled result attached to a StatusUserDriving session when the
+// investigation goroutine finishes after the status transition, so filtering
+// only on session status would incorrectly bypass interactive RCA extraction.
 func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
 	m.store.mu.RLock()
 	defer m.store.mu.RUnlock()
@@ -140,6 +143,9 @@ func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.Inves
 			continue
 		}
 		if sess.Status == StatusCancelled {
+			continue
+		}
+		if sess.Result.Cancelled {
 			continue
 		}
 		if sess.CreatedAt.After(latestTime) {

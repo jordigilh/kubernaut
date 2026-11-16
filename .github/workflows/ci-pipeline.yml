@@ -56,10 +56,10 @@ name: CI Pipeline
 
 on:
   pull_request:
-    branches: [ main, 'release/**' ]
+    branches: [ main ]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [ main, 'release/**' ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       operator_ref:
@@ -99,7 +99,7 @@ jobs:
 
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
@@ -141,7 +141,7 @@ jobs:
     name: Lint (Go Services)
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -153,7 +153,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -226,7 +226,7 @@ jobs:
     name: License Scan
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -237,7 +237,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Install go-licenses
@@ -276,7 +276,7 @@ jobs:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -304,7 +304,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -403,7 +403,7 @@ jobs:
     name: "Build (${{ matrix.service }}/${{ matrix.arch }})"
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -462,7 +462,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -569,7 +569,7 @@ jobs:
     name: Build Infra (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -607,7 +607,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Cache generated code
@@ -691,7 +691,7 @@ jobs:
     name: Resolve operator source
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 10
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
@@ -753,7 +753,7 @@ jobs:
     name: Build operator (${{ matrix.arch }})
     needs: [resolve-operator]
     if: needs.resolve-operator.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -816,7 +816,7 @@ jobs:
     name: Package operator qualification artifact
     needs: [resolve-operator, build-operator-arch]
     if: needs.resolve-operator.result == 'success' && needs.build-operator-arch.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     outputs:
       operator_sha: ${{ needs.resolve-operator.outputs.operator_sha }}
@@ -908,7 +908,7 @@ jobs:
     name: Integration (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1001,7 +1001,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Cache generated code
         id: gen-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -1120,7 +1120,7 @@ jobs:
     name: CEL Immutability Regression (K8s v1.31.0, #2284)
     needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 15
     env:
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
@@ -1130,7 +1130,7 @@ jobs:
           submodules: true
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Install Podman
         uses: ./.github/actions/install-podman
       - name: Load pre-built images (artifact-based, no registry)
@@ -1192,7 +1192,7 @@ jobs:
     name: E2E (${{ matrix.service }})
     needs: [detect-changes, unit-tests, build-images, build-infra-images, build-operator]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
@@ -1291,6 +1291,50 @@ jobs:
         with:
           submodules: true
 
+      - name: Capture runner resource baseline
+        shell: bash
+        run: |
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "kernel:"
+            uname -a
+            echo "os-release:"
+            cat /etc/os-release
+            echo "inotify:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "file handles:"
+            cat /proc/sys/fs/file-nr
+            echo "process limits:"
+            cat /proc/sys/kernel/pid_max
+            cat /proc/sys/kernel/threads-max
+            echo "cgroup PID limits:"
+            for file in /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.current; do
+              if [[ -r "${file}" ]]; then
+                printf '%s=' "${file}"
+                cat "${file}"
+              fi
+            done
+            echo "ulimits:"
+            printf 'nofile soft: '
+            ulimit -Sn
+            printf 'nofile hard: '
+            ulimit -Hn
+            printf 'nproc soft: '
+            ulimit -Su
+            printf 'nproc hard: '
+            ulimit -Hu
+            echo "process/thread count:"
+            ps -eLf --no-headers | wc -l
+            echo "memory:"
+            free -h
+            echo "disk:"
+            df -h /
+            echo "container runtime versions:"
+            command -v podman >/dev/null && podman --version || echo "podman: unavailable"
+            command -v crun >/dev/null && crun --version | head -1 || echo "crun: unavailable"
+          } | tee /tmp/e2e-runner-resources-before.txt
+
       - name: Free disk space (E2E jobs need headroom for Kind + images)
         if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'apifrontend-fleet'
         run: |
@@ -1311,7 +1355,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: Cache generated code
         id: gen-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -1328,6 +1372,61 @@ jobs:
         run: make generate
       - name: Install Podman
         uses: ./.github/actions/install-podman
+      - name: Configure E2E runner resource limits
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set_sysctl_floor() {
+            local key="$1"
+            local target="$2"
+            local current
+            current="$(sysctl -n "${key}")"
+            if (( current < target )); then
+              sudo sysctl -w "${key}=${target}"
+            else
+              echo "${key} already ${current}; keeping it"
+            fi
+          }
+
+          # These are ceilings, not allocations. The Ubuntu 26 inotify instance
+          # quota is applied separately for the affected E2E lanes.
+          set_sysctl_floor fs.inotify.max_user_watches 1048576
+          set_sysctl_floor fs.inotify.max_user_instances 8192
+          set_sysctl_floor fs.inotify.max_queued_events 32768
+
+          # Kind's Podman node contains the Kubernetes control plane and all
+          # test workloads. Raise its process and descriptor ceilings without
+          # changing application resource requests or test timing.
+          mkdir -p "${HOME}/.config/containers/containers.conf.d"
+          cat > "${HOME}/.config/containers/containers.conf.d/99-kubernaut-e2e-resources.conf" <<'EOF'
+          [containers]
+          pids_limit = 8192
+          default_ulimits = [
+            "nofile=1048576:1048576",
+            "nproc=65536:65536",
+          ]
+          EOF
+
+          {
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "effective inotify limits:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "Podman defaults:"
+            cat "${HOME}/.config/containers/containers.conf.d/99-kubernaut-e2e-resources.conf"
+            echo "Podman version:"
+            podman --version
+            echo "crun version:"
+            crun --version | head -1
+            echo "Podman host info:"
+            podman info --debug 2>&1 || true
+          } | tee /tmp/e2e-runner-resources-after.txt
+
+      - name: Configure Ubuntu 26 inotify instance quota
+        if: matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-eaigw'
+        shell: bash
+        run: bash hack/ci/configure-ubuntu-26-inotify.sh
+
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
       - name: Download exact-SHA operator artifact for FP/Fleet
@@ -1357,7 +1456,7 @@ jobs:
           kind version
       - name: Install Helm (Fleet E2E lanes deploy Istio/Kuadrant/Envoy AI Gateway via helm)
         if: matrix.service == 'fullpipeline' || matrix.service == 'apifrontend-fleet' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: latest
       - name: Install Tekton CLI (tkn)
@@ -1396,7 +1495,108 @@ jobs:
         env:
           GINKGO_LABEL: ${{ matrix.ginkgo_label }}
           AF_E2E_LANE: ${{ matrix.af_e2e_lane }}
-        run: make test-e2e-${{ matrix.service }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          raise_process_limit() {
+            local resource="$1"
+            local value="$2"
+            if ! sudo prlimit --pid "$$" "--${resource}=${value}:${value}"; then
+              echo "warning: unable to raise ${resource} limit to ${value}" >&2
+            fi
+          }
+
+          # prlimit targets this shell so the limits are inherited by make,
+          # Kind, Podman, and the Kubernetes node container it creates.
+          raise_process_limit nofile 1048576
+          raise_process_limit nproc 65536
+          ulimit -n 1048576 2>/dev/null || true
+          ulimit -u 65536 2>/dev/null || true
+
+          echo "effective E2E process limits:"
+          printf 'nofile soft: '
+          ulimit -Sn
+          printf 'nofile hard: '
+          ulimit -Hn
+          printf 'nproc soft: '
+          ulimit -Su
+          printf 'nproc hard: '
+          ulimit -Hu
+
+          make test-e2e-${{ matrix.service }}
+
+      - name: Capture failure cluster resource diagnostics
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          set +e
+          output_dir="/tmp/e2e-cluster-resource-diagnostics"
+          mkdir -p "${output_dir}"
+
+          {
+            echo "Runner process state"
+            date -u
+            ps -eLf
+            echo "inotify:"
+            sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
+            echo "file handles:"
+            cat /proc/sys/fs/file-nr
+            echo "process limits:"
+            cat /proc/sys/kernel/pid_max
+            cat /proc/sys/kernel/threads-max
+            echo "ulimits:"
+            printf 'nofile soft: '
+            ulimit -Sn
+            printf 'nofile hard: '
+            ulimit -Hn
+            printf 'nproc soft: '
+            ulimit -Su
+            printf 'nproc hard: '
+            ulimit -Hu
+            for file in /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.current; do
+              if [[ -r "${file}" ]]; then
+                printf '%s=' "${file}"
+                cat "${file}"
+              fi
+            done
+            echo "memory:"
+            free -h
+            echo "disk:"
+            df -h /
+          } > "${output_dir}/runner.txt"
+
+          if command -v podman >/dev/null; then
+            podman ps -a --no-trunc > "${output_dir}/podman-ps.txt" 2>&1
+            podman stats --no-stream > "${output_dir}/podman-stats.txt" 2>&1
+            podman info --debug > "${output_dir}/podman-info.txt" 2>&1
+          fi
+
+          if command -v kind >/dev/null && command -v kubectl >/dev/null; then
+            clusters="$(kind get clusters 2>/dev/null || true)"
+            while IFS= read -r cluster; do
+              [[ -z "${cluster}" ]] && continue
+              kubeconfig="${output_dir}/${cluster}.kubeconfig"
+              kind get kubeconfig --name "${cluster}" > "${kubeconfig}" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get nodes -o wide > "${output_dir}/${cluster}-nodes.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" describe nodes > "${output_dir}/${cluster}-node-describe.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get pods --all-namespaces -o wide > "${output_dir}/${cluster}-pods.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get events --all-namespaces --sort-by=.lastTimestamp > "${output_dir}/${cluster}-events.txt" 2>&1
+              kubectl --kubeconfig "${kubeconfig}" get pods --all-namespaces --no-headers | wc -l > "${output_dir}/${cluster}-pod-count.txt" 2>&1
+            done <<< "${clusters}"
+          fi
+
+      - name: Upload E2E runner diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: e2e-runner-diagnostics-${{ matrix.service }}-${{ github.run_id }}
+          path: |
+            /tmp/e2e-runner-resources-before.txt
+            /tmp/e2e-runner-resources-after.txt
+            /tmp/e2e-cluster-resource-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
       
       - name: Calculate and save E2E coverage
         if: always()
@@ -1533,7 +1733,7 @@ jobs:
     name: Must-Gather contract checks (no application chart)
     needs: [detect-changes, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -1551,7 +1751,7 @@ jobs:
     name: Test Suite Summary
     needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     permissions:
       contents: read
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
@@ -1860,7 +2060,7 @@ jobs:
     needs: [detect-changes, summary]
     if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.summary.result == 'failure'
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     container: quay.io/jordigilh/engram:latest
     permissions:
       actions: read
@@ -1930,7 +2130,7 @@ jobs:
             build-infra-images, build-operator,
             integration-tests, cel-immutability-regression, e2e-tests,
             must-gather-e2e-test, summary]
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     steps:
       - name: Evaluate CI results
         run: |

@@ -78,10 +78,10 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 						Resources: &corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 						},
-						DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true},
 					},
 				},
 				TargetResource: "default/deployment/test-app",
+				Parameters:     sharedtypes.TypedParameterMap{},
 			},
 		}
 	}
@@ -113,13 +113,13 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsInvalid(err)).To(BeTrue())
 
-		By("mutating DeclaredParameterNames post-creation being rejected")
+		By("mutating persisted parameters post-creation being rejected")
 		mutated2 := &workflowexecutionv1alpha1.WorkflowExecution{}
 		err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 			if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, mutated2); getErr != nil {
 				return getErr
 			}
-			mutated2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"OTHER": true}
+			mutated2.Spec.Parameters = typedParametersFromStrings(map[string]string{"OTHER": `"injected"`})
 			return k8sClient.Update(ctx, mutated2)
 		})
 		Expect(err).To(HaveOccurred())
@@ -145,22 +145,22 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 	// IT-WFE-2284-001 (Issue #2284)
 	// ========================================
 	// Authority: Issue #2284. IT-WFE-340-001 above only exercises a
-	// *populated* DeclaredParameterNames map, so it never caught this bug.
+	// *populated* parameter map, so it also exercises the nil-to-populated
+	// presence transition on the immutable spec.
 	// On K8s v1.31.x, ADR-001's unconditional "self == oldSelf" spuriously
 	// returns false when comparing two structurally-identical
 	// WorkflowExecutionSpec objects whose nullable:true
-	// WorkflowRef.DeclaredParameterNames field is nil on both sides. Unlike
+	// typed parameter fields are nil on both sides. Unlike
 	// AIAnalysis's SelectedWorkflow rule (guarded by
 	// "!has(oldSelf.selectedAt) ||"), ADR-001 applies to every Update()
 	// unconditionally -- so the very first post-create write (finalizer
 	// registration) can be rejected, preventing the WorkflowExecution from
 	// ever progressing past creation.
-	It("IT-WFE-2284-001: tolerates a finalizer-add update when DeclaredParameterNames is nil, while still rejecting real tampering", func() {
+	It("IT-WFE-2284-001: tolerates a finalizer-add update when parameters are nil, while still rejecting real tampering", func() {
 		name := fmt.Sprintf("wfref-2284-%d", time.Now().UnixNano())
 		wfe := newWFE(name)
-		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
 
-		By("creating a WorkflowExecution with nil DeclaredParameterNames")
+		By("creating a WorkflowExecution with nil parameters")
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
@@ -172,15 +172,15 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 			}
 			fetched.Finalizers = append(fetched.Finalizers, "kubernaut.ai/test-finalizer-2284")
 			return k8sClient.Update(ctx, fetched)
-		})).To(Succeed(), "a finalizer-add update must not be rejected by ADR-001 just because DeclaredParameterNames is nil on both sides")
+		})).To(Succeed(), "a finalizer-add update must not be rejected by ADR-001 because parameters are nil on both sides")
 
-		By("tampering DeclaredParameterNames from nil to a populated map must still be rejected")
+		By("tampering parameters from nil to a populated map must still be rejected")
 		tampered := &workflowexecutionv1alpha1.WorkflowExecution{}
 		err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 			if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, tampered); getErr != nil {
 				return getErr
 			}
-			tampered.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"INJECTED": true}
+			tampered.Spec.Parameters = typedParametersFromStrings(map[string]string{"INJECTED": `"true"`})
 			return k8sClient.Update(ctx, tampered)
 		})
 		Expect(err).To(HaveOccurred())

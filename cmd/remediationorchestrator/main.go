@@ -86,7 +86,7 @@ func init() {
 // level (Issue #875), discovers the controller namespace for CRD watch
 // restriction (ADR-057), and builds the controller manager. Exits the
 // process on any failure, matching main()'s original fail-fast behavior.
-func loadRemediationOrchestratorConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*config.Config, ctrl.Manager) {
+func loadRemediationOrchestratorConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*config.Config, ctrl.Manager, string) {
 	setupLog.Info("Starting RemediationOrchestrator Controller",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
@@ -131,7 +131,7 @@ func loadRemediationOrchestratorConfig(configPath string, atomicLevel zaplog.Ato
 		os.Exit(1)
 	}
 
-	return cfg, mgr
+	return cfg, mgr, controllerNS
 }
 
 // bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
@@ -157,7 +157,7 @@ func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
 // shutdown flush) and the config-watcher stop function (for the caller to
 // defer). Exits the process on any failure, matching main()'s original
 // fail-fast behavior.
-func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, configPath string, setupLog logr.Logger) (audit.AuditStore, func()) {
+func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, controllerNS, configPath string, setupLog logr.Logger) (audit.AuditStore, func()) {
 	// ========================================
 	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
 	// ========================================
@@ -217,13 +217,14 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
 	roReconciler, fleetResilientClient, stopConfigWatcher, err := buildReconciler(ctx, reconcilerParams{
-		cfg:           cfg,
-		mgr:           mgr,
-		auditStore:    auditStore,
-		roMetrics:     roMetrics,
-		eaCreator:     eaCreator,
-		routingEngine: routingEngine,
-		configPath:    configPath,
+		cfg:              cfg,
+		mgr:              mgr,
+		catalogNamespace: controllerNS,
+		auditStore:       auditStore,
+		roMetrics:        roMetrics,
+		eaCreator:        eaCreator,
+		routingEngine:    routingEngine,
+		configPath:       configPath,
 	}, setupLog)
 	if err != nil {
 		setupLog.Error(err, "Failed to build RemediationOrchestrator reconciler")
@@ -285,7 +286,7 @@ func run() int {
 	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
-	cfg, mgr := loadRemediationOrchestratorConfig(configPath, atomicLevel)
+	cfg, mgr, controllerNS := loadRemediationOrchestratorConfig(configPath, atomicLevel)
 
 	// Issue #2276: inject ambient CA trust before
 	// setupRemediationOrchestratorControllers' DataStorage-backed audit
@@ -301,7 +302,7 @@ func run() int {
 	// instead of running against an unbounded context.Background().
 	ctx := ctrl.SetupSignalHandler()
 
-	auditStore, stopConfigWatcher := setupRemediationOrchestratorControllers(ctx, cfg, mgr, configPath, setupLog)
+	auditStore, stopConfigWatcher := setupRemediationOrchestratorControllers(ctx, cfg, mgr, controllerNS, configPath, setupLog)
 	defer stopConfigWatcher()
 	//+kubebuilder:scaffold:builder
 
@@ -485,13 +486,14 @@ func buildRoutingEngine(cfg *config.Config, mgr ctrl.Manager, logger logr.Logger
 // AGENTS.md's 8+-param rule) — mirrors mcpHandlerParams in
 // cmd/kubernautagent/main.go (Phase 2).
 type reconcilerParams struct {
-	cfg           *config.Config
-	mgr           ctrl.Manager
-	auditStore    audit.AuditStore
-	roMetrics     *rometrics.Metrics
-	eaCreator     *creator.EffectivenessAssessmentCreator
-	routingEngine *routing.RoutingEngine
-	configPath    string
+	cfg              *config.Config
+	mgr              ctrl.Manager
+	catalogNamespace string
+	auditStore       audit.AuditStore
+	roMetrics        *rometrics.Metrics
+	eaCreator        *creator.EffectivenessAssessmentCreator
+	routingEngine    *routing.RoutingEngine
+	configPath       string
 }
 
 // buildReconciler constructs the RemediationOrchestrator reconciler and
@@ -509,12 +511,13 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	cfg, mgr := p.cfg, p.mgr
 
 	roReconciler := controller.NewReconciler(controller.ReconcilerDeps{
-		Client:     mgr.GetClient(),
-		APIReader:  mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
-		Scheme:     mgr.GetScheme(),
-		AuditStore: p.auditStore,
-		Recorder:   mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
-		Metrics:    p.roMetrics,                                                   // V1.0 P0: Metrics for observability (DD-METRICS-001)
+		Client:           mgr.GetClient(),
+		APIReader:        mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
+		Scheme:           mgr.GetScheme(),
+		CatalogNamespace: p.catalogNamespace,
+		AuditStore:       p.auditStore,
+		Recorder:         mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
+		Metrics:          p.roMetrics,                                                   // V1.0 P0: Metrics for observability (DD-METRICS-001)
 		Timeouts: controller.TimeoutConfig{
 			Global:           cfg.Timeouts.Global,
 			Processing:       cfg.Timeouts.Processing,

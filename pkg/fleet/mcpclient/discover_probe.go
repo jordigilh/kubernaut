@@ -98,3 +98,11 @@ func (t *discoverProbeRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	}
 	return resp, err
 }
+
+// CloseIdleConnections propagates transport cleanup through the probe wrapper
+// so failed MCP connection attempts can release the wrapped HTTP transport.
+func (t *discoverProbeRoundTripper) CloseIdleConnections() {
+	if closer, ok := t.next.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}

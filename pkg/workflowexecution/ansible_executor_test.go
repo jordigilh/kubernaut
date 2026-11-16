@@ -29,6 +29,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -166,7 +167,7 @@ func newAnsibleWFE(name, namespace string, engineConfigJSON []byte, params map[s
 					},
 				},
 			},
-			Parameters: params,
+			Parameters: typedParametersFromStrings(params),
 		},
 	}
 }
@@ -452,26 +453,30 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 })
 
 var _ = Describe("BuildExtraVars (BR-WE-015)", func() {
-	It("UT-WE-015-003: should coerce string parameters to typed values", func() {
-		params := map[string]string{
-			"REPLICAS":  "3",
-			"ENABLED":   "true",
-			"THRESHOLD": "0.75",
-			"NAME":      "hello",
-			"LIST":      `[1,2,3]`,
-		}
-
-		extraVars := executor.BuildExtraVars(params)
+	It("UT-WE-015-003: should preserve typed parameters as native JSON values", func() {
+		extraVars, err := executor.BuildExtraVars(sharedtypes.TypedParameterMap{
+			"REPLICAS":  {Kind: "integer", IntegerValue: ptr.To(int64(3))},
+			"ENABLED":   {Kind: "boolean", BooleanValue: ptr.To(true)},
+			"THRESHOLD": {Kind: "float", FloatValue: ptr.To(0.75)},
+			"NAME":      {Kind: "string", StringValue: ptr.To("hello")},
+			"LIST": {Kind: "array", ArrayValue: []sharedtypes.TypedPrimitiveParameter{
+				{Kind: "integer", IntegerValue: ptr.To(int64(1))},
+				{Kind: "integer", IntegerValue: ptr.To(int64(2))},
+				{Kind: "integer", IntegerValue: ptr.To(int64(3))},
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
 		Expect(extraVars).To(HaveLen(5), "all parameters should be converted to extra_vars")
 		Expect(extraVars["REPLICAS"]).To(BeNumerically("==", 3))
 		Expect(extraVars["ENABLED"]).To(BeTrue())
 		Expect(extraVars["THRESHOLD"]).To(BeNumerically("~", 0.75, 0.001))
 		Expect(extraVars["NAME"]).To(Equal("hello"))
-		Expect(extraVars["LIST"]).To(Equal([]interface{}{float64(1), float64(2), float64(3)}))
+		Expect(extraVars["LIST"]).To(Equal([]interface{}{int64(1), int64(2), int64(3)}))
 	})
 
 	It("should return nil for empty params", func() {
-		extraVars := executor.BuildExtraVars(nil)
+		extraVars, err := executor.BuildExtraVars(nil)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(extraVars).To(BeNil())
 	})
 })

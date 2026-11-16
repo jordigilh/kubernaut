@@ -88,40 +88,40 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 				// Note: Status.TimeoutConfig is nil - controller should initialize with defaults
 			}
 
-		// When: Create RemediationRequest CRD (controller will initialize defaults)
-		err := k8sClient.Create(ctx, rr)
-		Expect(err).ToNot(HaveOccurred())
+			// When: Create RemediationRequest CRD (controller will initialize defaults)
+			err := k8sClient.Create(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
 
-	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
-// Per universal standard: RemediationRequest.Name is the correlation ID for all services
-correlationID := rr.Name
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+			// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+			correlationID := rr.Name
 
-	// Wait briefly for controller to emit event
-	time.Sleep(500 * time.Millisecond)
+			// Wait briefly for controller to emit event
+			time.Sleep(500 * time.Millisecond)
 
-	// Then: orchestrator.lifecycle.created event should be emitted
-	// BR-AUDIT-005 Gap #8: Must capture TimeoutConfig for RR reconstruction
-	// RCA FIX: Flush INSIDE Eventually to handle async HTTP write to DataStorage
-	var events []ogenclient.AuditEvent
-	eventType := roaudit.EventTypeLifecycleCreated
-	Eventually(func() []ogenclient.AuditEvent {
-			// Flush buffer on each retry (handles async HTTP POST timing)
-			_ = auditStore.Flush(ctx)
+			// Then: orchestrator.lifecycle.created event should be emitted
+			// BR-AUDIT-005 Gap #8: Must capture TimeoutConfig for RR reconstruction
+			// RCA FIX: Flush INSIDE Eventually to handle async HTTP write to DataStorage
+			var events []ogenclient.AuditEvent
+			eventType := roaudit.EventTypeLifecycleCreated
+			Eventually(func() []ogenclient.AuditEvent {
+				// Flush buffer on each retry (handles async HTTP POST timing)
+				_ = auditStore.Flush(ctx)
 
-			var err error
-			events, _, err = helpers.QueryAuditEvents(
-				ctx,
-				dsClient,
-				&correlationID,
-				&eventType,
-				nil,
-			)
-			if err != nil {
-				return nil
-			}
-			return events
-		}, 10*time.Second, 500*time.Millisecond).Should(HaveLen(1),
-			"orchestrator.lifecycle.created event should be emitted exactly once")
+				var err error
+				events, _, err = helpers.QueryAuditEvents(
+					ctx,
+					dsClient,
+					&correlationID,
+					&eventType,
+					nil,
+				)
+				if err != nil {
+					return nil
+				}
+				return events
+			}, 10*time.Second, 500*time.Millisecond).Should(HaveLen(1),
+				"orchestrator.lifecycle.created event should be emitted exactly once")
 
 			event := events[0]
 
@@ -213,51 +213,51 @@ correlationID := rr.Name
 				},
 			}
 
-		// When: Create RR
-		err := k8sClient.Create(ctx, rr)
-		Expect(err).ToNot(HaveOccurred())
+			// When: Create RR
+			err := k8sClient.Create(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
 
-	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
-// Per universal standard: RemediationRequest.Name is the correlation ID for all services
-correlationID := rr.Name
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+			// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+			correlationID := rr.Name
 
-	// Wait for controller to emit event, then flush once
-	time.Sleep(500 * time.Millisecond)
-	err = auditStore.Flush(ctx)
-	Expect(err).ToNot(HaveOccurred())
+			// Wait for controller to emit event, then flush once
+			time.Sleep(500 * time.Millisecond)
+			err = auditStore.Flush(ctx)
+			Expect(err).ToNot(HaveOccurred())
 
-	// Then: Audit event should reflect initialized TimeoutConfig
-	// (not nil, proving event was emitted AFTER initialization)
-	eventType := roaudit.EventTypeLifecycleCreated
-	Eventually(func() bool {
-			events, _, err := helpers.QueryAuditEvents(
-				ctx,
-				dsClient,
-				&correlationID,
-				&eventType,
-				nil,
-			)
-			if err != nil {
-				GinkgoWriter.Printf("Query error: %v\n", err)
-				return false
-			}
-			if len(events) != 1 {
-				GinkgoWriter.Printf("Found %d events (expected 1) for correlation_id=%s, event_type=%s\n",
-					len(events), correlationID, eventType)
-				return false
-			}
+			// Then: Audit event should reflect initialized TimeoutConfig
+			// (not nil, proving event was emitted AFTER initialization)
+			eventType := roaudit.EventTypeLifecycleCreated
+			Eventually(func() bool {
+				events, _, err := helpers.QueryAuditEvents(
+					ctx,
+					dsClient,
+					&correlationID,
+					&eventType,
+					nil,
+				)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return false
+				}
+				if len(events) != 1 {
+					GinkgoWriter.Printf("Found %d events (expected 1) for correlation_id=%s, event_type=%s\n",
+						len(events), correlationID, eventType)
+					return false
+				}
 
-			// Per DD-AUDIT-004: Use strongly-typed access
-			payload := events[0].EventData.RemediationOrchestratorAuditPayload
+				// Per DD-AUDIT-004: Use strongly-typed access
+				payload := events[0].EventData.RemediationOrchestratorAuditPayload
 
-			// Critical: TimeoutConfig should be non-nil, proving event was emitted AFTER init
-			hasTimeoutConfig := payload.TimeoutConfig.IsSet()
-			if !hasTimeoutConfig {
-				GinkgoWriter.Printf("Event found but TimeoutConfig is not set\n")
-			}
-			return hasTimeoutConfig
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Event should capture initialized TimeoutConfig (Gap #8 timing requirement)")
+				// Critical: TimeoutConfig should be non-nil, proving event was emitted AFTER init
+				hasTimeoutConfig := payload.TimeoutConfig.IsSet()
+				if !hasTimeoutConfig {
+					GinkgoWriter.Printf("Event found but TimeoutConfig is not set\n")
+				}
+				return hasTimeoutConfig
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Event should capture initialized TimeoutConfig (Gap #8 timing requirement)")
 		})
 	})
 })

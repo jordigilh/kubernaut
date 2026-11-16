@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -66,10 +67,11 @@ var _ = Describe("Trusted Intermediary Delegation (DD-AUTH-MCP-001 v3.0)", func(
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockStore = &MockAuditStore{}
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, nil, testPodNS)
 
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(scheme)).To(Succeed())
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, completeSafetyWorkflowReader(scheme), testPodNS)
 		decoder = admission.NewDecoder(scheme)
 		Expect(handler.InjectDecoder(decoder)).To(Succeed())
 	})

@@ -52,6 +52,7 @@ var _ = Describe("DD-KA-2496 RO history producer (BR-KA-016, BR-AUDIT-005, AU-3,
 		ai := newAIAnalysisCompleted("ai-history-2496", defaultFixture, rr.Name, 0.94, "5be40179-af71-4139-a630-7fcebe1891ad")
 		ai.Status.GetRCAResult().SelectedWorkflow.WorkflowName = "Restore memory"
 		ai.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.APIVersion = "apps/v1"
+		workflow := verifiedWorkflowForSelection(ai.Status.GetRCAResult().SelectedWorkflow)
 		sp := newSignalProcessingCompleted("sp-history-2496", rr.Name)
 		target := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: defaultFixture, Labels: map[string]string{"kubernaut.ai/managed": "true"}}}
 		k8s := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}, &workflowexecutionv1.WorkflowExecution{}).
@@ -61,11 +62,12 @@ var _ = Describe("DD-KA-2496 RO history producer (BR-KA-016, BR-AUDIT-005, AU-3,
 			WithIndex(&workflowexecutionv1.WorkflowExecution{}, "spec.targetResource", func(obj client.Object) []string {
 				return []string{obj.(*workflowexecutionv1.WorkflowExecution).Spec.TargetResource}
 			}).
-			WithObjects(rr, ai, sp, target).Build()
+			WithObjects(rr, ai, sp, target, workflow).Build()
 		store := &MockAuditStore{}
 		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
 			Client: k8s, APIReader: k8s, Scheme: scheme, AuditStore: store, Recorder: record.NewFakeRecorder(30),
-			Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Metrics:          rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			CatalogNamespace: defaultFixture,
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}})

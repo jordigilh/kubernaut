@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -147,20 +145,14 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
 		analysis.Status.Phase = aianalysisv1.PhaseCompleted
 		analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-		analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
+		analysis.Status.Message = "Workflow recommended: " + trustedWorkflowName
 		analysis.Status.EnsureRCAResult().RootCause = "CPU throttling due to resource limits"
 		analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "restart-deployment-v1",
-				WorkflowName:    "restart-deployment-v1",
-				ActionType:      "RestartPod",
-				Version:         "1.0.0",
-				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
-				ExecutionEngine: "job",
-			},
+			WorkflowSnapshot: trustedWorkflowSnapshot(),
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.92,
 			Rationale:  "High confidence match for CPU remediation",
+			Parameters: trustedWorkflowParameters("Deployment", "test-app-ea", testNS),
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -394,20 +386,14 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-			analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
+			analysis.Status.Message = "Workflow recommended: " + trustedWorkflowName
 			analysis.Status.EnsureRCAResult().RootCause = "CPU throttling due to resource limits"
 			analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "restart-deployment-v1",
-					WorkflowName:    "restart-deployment-v1",
-					ActionType:      "RestartPod",
-					Version:         "1.0.0",
-					ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
-					ExecutionEngine: "job",
-				},
+				WorkflowSnapshot: trustedWorkflowSnapshot(),
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence: 0.92,
 				Rationale:  "High confidence match for CPU remediation",
+				Parameters: trustedWorkflowParameters("Deployment", "test-app-fail", testNS),
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

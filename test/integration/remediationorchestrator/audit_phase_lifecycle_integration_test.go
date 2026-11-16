@@ -250,13 +250,14 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "test-workflow",
-					WorkflowName:    "test-workflow",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				},
+				Parameters: trustedTargetParameters(ROControllerNamespace, "test-pod-phase-002"),
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution.
 			// Use a unique target name to avoid ResourceBusy conflicts with other tests
@@ -364,13 +365,14 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "test-workflow",
-					WorkflowName:    "test-workflow",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				},
+				Parameters: trustedTargetParameters(ROControllerNamespace, "test-pod"),
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

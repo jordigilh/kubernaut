@@ -26,12 +26,58 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	kasession "github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396)", func() {
+	DescribeTable("UT-AF-2586-003: bridge preserves omitted and zero RCA confidence (BR-AI-012, AU-3)", func(score *float64, present bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		DeferCleanup(cancel)
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-2586", "context-2586", nil)
+		events := make(chan ka.InvestigationEvent, 1)
+		wire := kasession.MarshalRCASubset(&katypes.InvestigationResult{Severity: "critical", RCASummary: "RCA", WorkflowID: "selected", Confidence: 0.95, RCAConfidence: score})
+		events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: wire}
+		close(events)
+		cfg := &tools.InvestigateConfig{MCPClient: &ka.MockMCPClient{StartInvestigationFn: func(context.Context, ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+			return &ka.StartInvestigationResult{SessionID: "session-2586", Status: "completed", Events: events}, nil
+		}}}
+		result, err := tools.HandleInvestigationMCPWithRegistry(ctx, cfg, tools.InvestigateMCPArgs{RRID: "rr-2586"}, true, "alice")
+		Expect(err).NotTo(HaveOccurred())
+		wire, err = json.Marshal(result.RCA)
+		Expect(err).NotTo(HaveOccurred())
+		var object map[string]json.RawMessage
+		Expect(json.Unmarshal(wire, &object)).To(Succeed())
+		artifacts := 0
+		for _, event := range queue.Events() {
+			if artifact, ok := event.(*a2a.TaskArtifactUpdateEvent); ok && artifact.Artifact.Metadata["schema"] == "investigation_summary" {
+				artifacts++
+				part := artifact.Artifact.Parts[0].(a2a.DataPart)
+				rca := part.Data["rca"].(map[string]any)
+				if present {
+					Expect(rca).To(HaveKeyWithValue("confidence", 0.0))
+				} else {
+					Expect(rca).NotTo(HaveKey("confidence"))
+				}
+				text := artifact.Artifact.Parts[1].(a2a.TextPart).Text
+				if present {
+					Expect(text).To(ContainSubstring("confidence 0%"))
+				} else {
+					Expect(text).NotTo(ContainSubstring("confidence"))
+				}
+			}
+		}
+		Expect(artifacts).To(Equal(1))
+		if present {
+			Expect(object).To(HaveKeyWithValue("confidence", json.RawMessage("0")))
+		} else {
+			Expect(object).NotTo(HaveKey("confidence"))
+		}
+	}, Entry("missing", (*float64)(nil), false), Entry("zero", func() *float64 { v := 0.0; return &v }(), true))
 	DescribeTable("UT-AF-2496-001: complete-event delivery keeps selection confidence independent and rejected reasoning non-executable (BR-KA-016, AU-3, SI-10)",
 		func(rejected bool) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -70,7 +116,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			result, err := tools.HandleInvestigationMCPWithRegistry(ctx, cfg, tools.InvestigateMCPArgs{RRID: "rr-live-2496"}, true, "alice")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RCA).NotTo(BeNil())
-			Expect(result.RCA.Confidence).To(Equal(.93))
+			Expect(result.RCA.Confidence).To(HaveValue(Equal(.93)))
 			var artifacts []*a2a.TaskArtifactUpdateEvent
 			for _, event := range queue.Events() {
 				if artifact, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
@@ -145,7 +191,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			Expect(summary).To(ContainSubstring("Investigating..."))
 			Expect(rca).NotTo(BeNil(), "RCA should be populated from complete event Data")
 			Expect(rca.Severity).To(Equal("critical"))
-			Expect(rca.Confidence).To(BeNumerically("~", 0.92, 0.001))
+			Expect(rca.Confidence).To(HaveValue(BeNumerically("~", 0.92, 0.001)))
 			Expect(rca.CausalChain).To(ConsistOf("Memory leak", "OOMKill"))
 			Expect(rca.Target).To(Equal("Deployment/worker in production"))
 			Expect(rca.RCASummary).To(Equal("OOMKill caused by memory leak"))

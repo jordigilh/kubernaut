@@ -88,7 +88,6 @@ const noGroundedContentSummary = "No investigation content is available for this
 // preserve. CausalChain is omitted (its json tag carries omitempty) rather
 // than an empty slice, matching RCAData's own zero value.
 var emptyRCAPayload = map[string]any{
-	"confidence":       0,
 	"target":           "",
 	"tool_calls_count": 0,
 	"llm_turns":        0,
@@ -912,9 +911,8 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) map[string]any {
 	if rca == nil || rca.Severity == "" {
 		return nil
 	}
-	return map[string]any{
+	data := map[string]any{
 		"severity":          rca.Severity,
-		"confidence":        rca.Confidence,
 		"causal_chain":      rca.CausalChain,
 		"target":            rca.Target,
 		"tool_calls_count":  rca.TotalToolCalls,
@@ -923,6 +921,10 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) map[string]any {
 		"completion_tokens": rca.CompletionTokens,
 		"total_tokens":      rca.TotalTokens,
 	}
+	if rca.Confidence != nil {
+		data["confidence"] = *rca.Confidence
+	}
+	return data
 }
 
 // substituteGroundedRCA implements the #2071 (forward-port of release/v1.5's

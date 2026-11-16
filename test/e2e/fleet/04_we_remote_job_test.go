@@ -19,6 +19,7 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -133,6 +134,17 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			}
 		}
 
+		targetResourceName := strings.TrimPrefix(targetResource, "default/deployment/")
+		parameters, _, parameterErr := sharedtypes.TypedParameterMapFromValues(map[string]interface{}{
+			"TARGET_RESOURCE_NAME":      targetResourceName,
+			"TARGET_RESOURCE_KIND":      "Deployment",
+			"TARGET_RESOURCE_NAMESPACE": "default",
+			"CONFIGMAP_NAME":            infrastructure.CrashLoopAppConfigMapName,
+			"CONFIGMAP_KEY":             infrastructure.CrashLoopAppConfigKey,
+			"CONFIGMAP_VALUE":           infrastructure.CrashLoopAppGoodValue,
+		})
+		Expect(parameterErr).NotTo(HaveOccurred())
+
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: wfeName, Namespace: namespace},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -145,16 +157,10 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 						Version:         "v1.0.0",
 						ExecutionBundle: "busybox:1.36",
 						ExecutionEngine: "job",
-						// Frozen from the crashloop-config-fix-job workflow schema.
-						DeclaredParameterNames: map[string]bool{
-							"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
-							"TARGET_RESOURCE_NAMESPACE": true, "CONFIGMAP_NAME": true,
-							"CONFIGMAP_KEY": true, "CONFIGMAP_VALUE": true,
-							"GRACE_PERIOD_SECONDS": true,
-						},
 					},
 				},
 				TargetResource: targetResource,
+				Parameters:     parameters,
 				ClusterID:      "remote-cluster",
 			},
 		}

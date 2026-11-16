@@ -130,8 +130,8 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			}
 			ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:      "wf-test-001",
-					WorkflowName:    "wf-test-001",
+					WorkflowID:      trustedRestartWorkflowID,
+					WorkflowName:    trustedRestartWorkflowName,
 					ActionType:      "restart",
 					Version:         "v1",
 					ExecutionBundle: "test-image:latest",
@@ -139,6 +139,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				},
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence: 0.95,
+				Parameters: trustedTargetParameters(ns, "test-app"),
 				Rationale:  "Test rationale",
 			}
 			return k8sClient.Status().Update(ctx, ai)
@@ -393,8 +394,8 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 						}
 						ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-test-001",
-								WorkflowName:    "wf-test-001",
+								WorkflowID:      trustedRestartWorkflowID,
+								WorkflowName:    trustedRestartWorkflowName,
 								ActionType:      "restart",
 								Version:         "v1",
 								ExecutionBundle: "test-image:latest",
@@ -402,9 +403,10 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 							},
 							// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 							Confidence: 0.65,
+							Parameters: trustedTargetParameters(ns, "test-app"),
 							Rationale:  "Test rationale - approval required",
 						}
-						supplyEmptyApprovalSnapshot(ai.Status.RCAResult.SelectedWorkflow)
+						supplyApprovalSnapshotParameters(ai.Status.RCAResult.SelectedWorkflow, ns, "test-app")
 						return k8sClient.Status().Update(ctx, ai)
 					}, timeout, interval).Should(Succeed())
 					break

@@ -28,18 +28,18 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 	It("UT-AF-2570-034: BR-ORCH-025 exposes the frozen workflow, exact values and complete schema", func() {
 		rar := newTypedDetailedRAR("payments", "rar-oom-1")
 		minimum, maximum := 1.0, 10.0
-		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed", DeclaredParameterNames: map[string]bool{"P": true}}
-		rar.Spec.Parameters = map[string]string{"P": "1.0"}
-		rar.Spec.ParameterSchema = []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold", Required: true, Enum: []string{"1.0"}, Pattern: "", Minimum: &minimum, Maximum: &maximum, Default: &apiextensionsv1.JSON{Raw: []byte(`1.0`)}, DependsOn: []string{"Q"}}}
-		result, err := tools.HandleGetApprovalRequest(ctx, newTypedFakeClient(rar), tools.GetApprovalRequestArgs{Namespace: "payments", Name: rar.Name})
+		rar.Spec.Workflow = &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed"}
+		rar.Spec.Parameters = typedParameters(`{"P":1.0}`)
+		schema := []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold", Required: true, Enum: []string{"1.0"}, Pattern: "", Minimum: &minimum, Maximum: &maximum, Default: &apiextensionsv1.JSON{Raw: []byte(`1.0`)}, DependsOn: []string{"Q"}}}
+		result, err := tools.HandleGetApprovalRequest(ctx, newTypedFakeClientWithWorkflow(rar, schema), tools.GetApprovalRequestArgs{Namespace: "payments", Name: rar.Name})
 		Expect(err).NotTo(HaveOccurred())
 		encoded, err := json.Marshal(result)
 		Expect(err).NotTo(HaveOccurred())
 		var fields map[string]json.RawMessage
 		Expect(json.Unmarshal(encoded, &fields)).To(Succeed())
-		Expect(string(fields["parameters"])).To(MatchJSON(`{"P":"1.0"}`))
+		Expect(string(fields["parameters"])).To(MatchJSON(`{"P":1}`))
 		Expect(string(fields["parameter_schema"])).To(MatchJSON(`[{"name":"P","type":"float","required":true,"description":"threshold","enum":["1.0"],"minimum":1,"maximum":10,"default":1.0,"dependsOn":["Q"]}]`))
-		Expect(string(fields["workflow"])).To(ContainSubstring("wf-reviewed"))
+		Expect(string(fields["workflow"])).To(ContainSubstring(rar.Spec.Workflow.WorkflowID))
 	})
 
 	It("UT-AF-109-001: returns full RAR detail by namespace/name", func() {
@@ -52,13 +52,36 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(result.Name).To(Equal("rar-oom-1"))
 		Expect(result.Namespace).To(Equal("payments"))
 		Expect(result.RemediationRequest).To(Equal("rr-oom-1"))
-		Expect(result.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(result.WorkflowConfidence).To(BeNumerically("~", 0.72, 0.001))
 		Expect(result.ConfidenceLevel).To(Equal("medium"))
 		Expect(result.InvestigationSummary).To(ContainSubstring("memory limits"))
 		Expect(result.WhyApprovalRequired).To(ContainSubstring("auto-approve"))
 		Expect(result.Decision).To(Equal("Pending"))
 		Expect(result.TimeRemaining).To(Equal("12m30s"))
 		Expect(result.Expired).To(BeFalse())
+	})
+
+	It("UT-AF-2586-002: approval list and detail preserve explicit zero RCA independently (BR-AI-076, AU-3)", func() {
+		rar := newTypedDetailedRAR("payments", "rar-2586")
+		zero := 0.0
+		rar.Spec.RCAConfidence = &zero
+		tc := newTypedFakeClient(rar)
+		detail, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{Namespace: "payments", Name: rar.Name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(detail.RCAConfidence).To(HaveValue(Equal(0.0)))
+		Expect(detail.WorkflowConfidence).To(Equal(.72))
+		encoded, err := json.Marshal(detail)
+		Expect(err).NotTo(HaveOccurred())
+		var fields map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &fields)).To(Succeed())
+		Expect(fields).To(HaveKey("rca_confidence"))
+		Expect(fields).To(HaveKey("workflow_confidence"))
+		Expect(fields).NotTo(HaveKey("confidence"))
+		list, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list.ApprovalRequests).To(HaveLen(1))
+		Expect(list.ApprovalRequests[0].RCAConfidence).To(HaveValue(Equal(0.0)))
+		Expect(list.ApprovalRequests[0].WorkflowConfidence).To(Equal(.72))
 	})
 
 	It("UT-AF-1959-003 (was UT-AF-109-002): returns full RAR detail by bare rar_id shorthand", func() {
@@ -238,7 +261,7 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Name).To(Equal("rar-oom-1"))
 		Expect(result.Namespace).To(Equal("payments"))
-		Expect(result.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(result.WorkflowConfidence).To(BeNumerically("~", 0.72, 0.001))
 		Expect(result.EvidenceCollected).To(HaveLen(2))
 	})
 
@@ -254,7 +277,7 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Name).To(Equal("rar-minimal"))
-			Expect(result.Confidence).To(Equal(0.0))
+			Expect(result.WorkflowConfidence).To(Equal(0.0))
 			Expect(result.EvidenceCollected).To(BeEmpty())
 			Expect(result.RecommendedActions).To(BeEmpty())
 			Expect(result.AlternativesConsidered).To(BeEmpty())

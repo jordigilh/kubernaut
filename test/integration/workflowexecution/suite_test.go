@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -443,14 +444,23 @@ var _ = SynchronizedAfterSuite(func() {
 
 // trustedWorkflowFixture registers a content-addressed catalog entry for one spec.
 func trustedWorkflowFixture(description, engine string) string {
+	return trustedWorkflowFixtureWithParameters(description, engine, []remediationworkflowv1.RemediationWorkflowParameter{{Name: "MESSAGE", Type: "string", Description: "fixture message"}})
+}
+
+func trustedWorkflowFixtureWithParameters(description, engine string, parameters []remediationworkflowv1.RemediationWorkflowParameter) string {
+	return trustedWorkflowFixtureWithDependencies(description, engine, parameters, nil)
+}
+
+func trustedWorkflowFixtureWithDependencies(description, engine string, parameters []remediationworkflowv1.RemediationWorkflowParameter, dependencies *remediationworkflowv1.RemediationWorkflowDependencies) string {
 	rw := &remediationworkflowv1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("it-catalog-%d", time.Now().UnixNano()), Namespace: DefaultNamespace},
 		Spec: remediationworkflowv1.RemediationWorkflowSpec{
 			Version: "1.0.0", ActionType: "RestartPod",
-			Description: remediationworkflowv1.RemediationWorkflowDescription{What: description, WhenToUse: "For integration tests"},
-			Labels:      remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
-			Execution:   remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef},
-			Parameters:  []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "string", Description: "fixture"}},
+			Description:  remediationworkflowv1.RemediationWorkflowDescription{What: description, WhenToUse: "For integration tests"},
+			Labels:       remediationworkflowv1.RemediationWorkflowLabels{Severity: []string{"critical"}, Environment: []string{"production"}, Component: []string{"v1/Pod"}, Priority: "P1"},
+			Execution:    remediationworkflowv1.RemediationWorkflowExecution{Engine: engine, Bundle: testutil.ValidBundleRef},
+			Dependencies: dependencies,
+			Parameters:   parameters,
 		},
 	}
 	Expect(k8sClient.Create(ctx, rw)).To(Succeed())
@@ -460,6 +470,35 @@ func trustedWorkflowFixture(description, engine string) string {
 	rw.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
 	Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
 	return rw.Status.WorkflowID
+}
+
+// typedParametersFromStrings keeps concise integration fixtures at the
+// ordinary-JSON boundary while constructing the persisted typed union. Values
+// are raw JSON tokens when valid (for example, 3 or true); invalid JSON tokens
+// are treated as literal strings for string-parameter fixtures.
+func typedParametersFromStrings(values map[string]string) sharedtypes.TypedParameterMap {
+	if values == nil {
+		return nil
+	}
+	result := make(sharedtypes.TypedParameterMap, len(values))
+	for name, rawValue := range values {
+		nameJSON, err := json.Marshal(name)
+		if err != nil {
+			panic(err)
+		}
+		raw := append([]byte{'{'}, nameJSON...)
+		raw = append(raw, ':')
+		raw = append(raw, rawValue...)
+		raw = append(raw, '}')
+		decoded, _, err := sharedtypes.DecodeTypedParameterMap(raw)
+		if err == nil {
+			result[name] = decoded[name]
+			continue
+		}
+		value := rawValue
+		result[name] = sharedtypes.TypedParameterValue{Kind: "string", StringValue: &value}
+	}
+	return result
 }
 
 // createUniqueWFE creates a WorkflowExecution with unique name for parallel test isolation
@@ -496,6 +535,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				},
 			},
 			TargetResource: targetResource,
+			Parameters:     make(sharedtypes.TypedParameterMap),
 		},
 	}
 }
@@ -512,7 +552,7 @@ func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha
 }
 
 // createUniqueWFEWithParams creates a WorkflowExecution with parameters
-func createUniqueWFEWithParams(testID, targetResource string, params map[string]string) *workflowexecutionv1alpha1.WorkflowExecution {
+func createUniqueWFEWithTypedParams(testID, targetResource string, params sharedtypes.TypedParameterMap) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
 	wfe.Spec.Parameters = params
 	return wfe
@@ -542,6 +582,21 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 	})
 
 	return wfe, err
+}
+
+// expectWFEIdentityRejectedBeforeMutation verifies the fail-closed boundary
+// for a newly created WFE whose workflow identity cannot be verified. The
+// controller must not add its finalizer or write terminal status before the
+// trusted catalog identity is proven.
+func expectWFEIdentityRejectedBeforeMutation(name, namespace string) {
+	Consistently(func() bool {
+		wfe, err := getWFE(name, namespace)
+		return err == nil &&
+			wfe.Status.Phase == "" &&
+			wfe.Status.ExecutionRef == nil &&
+			wfe.Status.FailureDetails == nil &&
+			len(wfe.Finalizers) == 0
+	}, 3*time.Second, 200*time.Millisecond).Should(BeTrue())
 }
 
 // waitForPipelineRunCreation waits for a PipelineRun to be created for a WFE

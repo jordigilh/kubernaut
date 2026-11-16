@@ -66,13 +66,16 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: schema-valid denied dispatch (AU-
 		binding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: actor}, RoleRef: rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: actor}, Subjects: []rbacv1.Subject{{Kind: "User", APIGroup: rbacv1.GroupName, Name: actor}}}
 		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(context.Background(), binding)).To(Succeed()) })
+		workflow := createTrustedWorkflow(ctx, "af-audit-workflow-"+uuid.NewString()[:8], []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}, {Name: "Q", Type: "string", Description: "unchanged"}})
+		parameters, evidence, err := types.DecodeTypedParameterMap([]byte(`{"P":2.0,"Q":"keep"}`))
+		Expect(err).NotTo(HaveOccurred())
 		rar := &remediationv1.RemediationApprovalRequest{ObjectMeta: metav1.ObjectMeta{Name: "rar-audit-2570-" + uuid.NewString(), Namespace: defaultFixture}, Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: corev1.ObjectReference{Name: correlationID, Namespace: defaultFixture}, AIAnalysisRef: remediationv1.ObjectRef{Name: "aia-test"},
 			Confidence: 0.7, ConfidenceLevel: "medium", Reason: "review", InvestigationSummary: "review", WhyApprovalRequired: "review",
 			RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{WorkflowID: "wf-reviewed", Version: "v1", ExecutionBundle: "example:v1", Rationale: "review"},
 			RecommendedActions:  []remediationv1.ApprovalRecommendedAction{{Action: "review", Rationale: "review"}}, RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-			Workflow:   &types.WorkflowSnapshot{WorkflowID: "wf-reviewed", WorkflowName: "wf-reviewed", ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1", DeclaredParameterNames: map[string]bool{"P": true, "Q": true}},
-			Parameters: map[string]string{"P": "2", "Q": "keep"}, ParameterSchema: []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float", Description: "threshold"}, {Name: "Q", Type: "string", Description: "unchanged"}},
+			Workflow:   &types.WorkflowSnapshot{WorkflowID: workflow.Status.WorkflowID, WorkflowName: workflow.Name, ActionType: "RestartPod", Version: "v1", ExecutionBundle: "example:v1"},
+			Parameters: parameters, ParameterEvidence: evidence,
 			TargetContext: &remediationv1.ApprovalTargetContext{SignalTarget: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "pod"}},
 		}}
 		Expect(k8sClient.Create(ctx, rar)).To(Succeed())
@@ -97,7 +100,7 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: schema-valid denied dispatch (AU-
 		token := signValidToken(actor)
 		_, sid := denialRPC(server.URL+"/mcp", token, "", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"audit-it","version":"1"}}}`)
 		denialRPC(server.URL+"/mcp", token, sid, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
-		body, _ := denialRPC(server.URL+"/mcp", token, sid, fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":"1.0"},"rationale":"reviewed"}}}}`, rar.Name))
+		body, _ := denialRPC(server.URL+"/mcp", token, sid, fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kubernaut_approve","arguments":{"rar_name":%q,"decision":"Approved","workflow_override":{"parameters":{"P":1.5},"rationale":"reviewed"}}}}`, rar.Name))
 		Expect(body).NotTo(ContainSubstring(`"isError":true`))
 		Expect(store.Flush(ctx)).To(Succeed())
 		query, err := ogenclient.NewClient("https://localhost:18096", ogenclient.WithClient(&http.Client{Transport: &bearerTransport{token: serviceAccountToken, base: transport}, Timeout: 2 * time.Second}))
@@ -115,11 +118,17 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: schema-valid denied dispatch (AU-
 		changes, changesPresent := payload.OverrideParameters.Get()
 		effective, effectivePresent := payload.EffectiveParameters.Get()
 		Expect(originalPresent && changesPresent && effectivePresent).To(BeTrue())
-		Expect(original).To(HaveKeyWithValue("P", "2"))
-		Expect(changes).To(HaveKeyWithValue("P", "1.0"))
-		Expect(effective).To(HaveKeyWithValue("P", "1.0"))
-		Expect(effective).To(HaveKeyWithValue("Q", "keep"))
-		Expect(payload.WorkflowID.Value).To(Equal("wf-reviewed"))
+		originalP, originalPOk := original["P"].GetWorkflowParameterFloat()
+		changesP, changesPOk := changes["P"].GetWorkflowParameterFloat()
+		effectiveP, effectivePOk := effective["P"].GetWorkflowParameterFloat()
+		effectiveQ, effectiveQOk := effective["Q"].GetWorkflowParameterString()
+		Expect(originalPOk && changesPOk && effectivePOk && effectiveQOk).To(BeTrue())
+		Expect(originalP.FloatValue).To(Equal(float64(2)))
+		Expect(changesP.FloatValue).To(Equal(float64(1.5)))
+		Expect(effectiveP.FloatValue).To(Equal(float64(1.5)))
+		Expect(effectiveQ.StringValue).To(Equal("keep"))
+		Expect(payload.ParameterEvidence.Value).To(ContainSubstring("1.5"))
+		Expect(payload.WorkflowID.Value).To(Equal(workflow.Status.WorkflowID))
 		Expect(payload.ApprovalRequest.Value).To(Equal(rar.Name))
 		Expect(payload.ApprovalDecision.Value).To(Equal("Approved"))
 		Expect(payload.OverrideRationale.Value).To(Equal("reviewed"))

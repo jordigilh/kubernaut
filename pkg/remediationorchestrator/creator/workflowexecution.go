@@ -123,9 +123,10 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			// BR-KA-212: Prefer LLM-identified RemediationTarget (e.g., Deployment)
 			// over the RR's TargetResource (e.g., Pod) when available.
 			// The LLM often identifies the correct higher-level resource to patch.
-			TargetResource: resolveTargetResource(rr, ai),
-			ClusterID:      ResolveExecutionClusterID(rr, ai),
-			Parameters:     ai.Status.RCAResult.SelectedWorkflow.Parameters,
+			TargetResource:    resolveTargetResource(rr, ai),
+			ClusterID:         ResolveExecutionClusterID(rr, ai),
+			Parameters:        ai.Status.RCAResult.SelectedWorkflow.Parameters,
+			ParameterEvidence: ai.Status.RCAResult.SelectedWorkflow.ParameterEvidence,
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.RCAResult.SelectedWorkflow.Confidence,
 			Rationale:  ai.Status.RCAResult.SelectedWorkflow.Rationale,
@@ -160,18 +161,17 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.WorkflowRef {
 	return workflowexecutionv1.WorkflowRef{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:             sw.WorkflowID,
-			WorkflowName:           sw.WorkflowName,
-			Version:                sw.Version,
-			ExecutionBundle:        sw.ExecutionBundle,
-			ExecutionBundleDigest:  sw.ExecutionBundleDigest,
-			EngineConfig:           sw.EngineConfig,
-			ExecutionEngine:        sw.ExecutionEngine,
-			ServiceAccountName:     sw.ServiceAccountName,
-			ActionType:             sw.ActionType,
-			Dependencies:           sw.Dependencies,
-			Resources:              sw.Resources,
-			DeclaredParameterNames: sw.DeclaredParameterNames,
+			WorkflowID:            sw.WorkflowID,
+			WorkflowName:          sw.WorkflowName,
+			Version:               sw.Version,
+			ExecutionBundle:       sw.ExecutionBundle,
+			ExecutionBundleDigest: sw.ExecutionBundleDigest,
+			EngineConfig:          sw.EngineConfig,
+			ExecutionEngine:       sw.ExecutionEngine,
+			ServiceAccountName:    sw.ServiceAccountName,
+			ActionType:            sw.ActionType,
+			Dependencies:          sw.Dependencies,
+			Resources:             sw.Resources,
 		},
 	}
 }

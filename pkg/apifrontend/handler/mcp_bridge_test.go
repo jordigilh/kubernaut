@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -40,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -147,14 +149,36 @@ func bridgeTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = agentsessionv1.AddToScheme(s)
 	_ = remediationv1.AddToScheme(s)
+	_ = remediationworkflowv1.AddToScheme(s)
 	_ = eav1alpha1.AddToScheme(s)
 	_ = isv1alpha1.AddToScheme(s)
 	return s
 }
 
+func bridgeVerifiedWorkflow(name string, parameters []remediationworkflowv1.RemediationWorkflowParameter) (*remediationworkflowv1.RemediationWorkflow, string) {
+	workflow := &remediationworkflowv1.RemediationWorkflow{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: remediationworkflowv1.RemediationWorkflowSpec{
+			Parameters: parameters,
+		},
+	}
+	content, err := contenthash.MarshalCleanCRDContent(workflow)
+	if err != nil {
+		panic(err)
+	}
+	contentHash := contenthash.ComputeContentHash(string(content))
+	workflowID := contenthash.DeterministicUUID(contentHash)
+	workflow.Status.WorkflowID = workflowID
+	workflow.Status.ContentHash = contentHash
+	return workflow, workflowID
+}
+
 func newBridgeTypedClient(objs ...crclient.Object) crclient.WithWatch {
 	return fake.NewClientBuilder().
 		WithScheme(bridgeTestScheme()).
+		WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj crclient.Object) []string {
+			return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+		}).
 		WithObjects(objs...).
 		WithStatusSubresource(
 			&agentsessionv1.AgentSession{},
@@ -1398,24 +1422,27 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 	Context("Audit events", func() {
 		It("UT-AF-2570-035: BR-AUDIT-005 records correlated approval intent and exact parameter text", func() {
+			rw, workflowID := bridgeVerifiedWorkflow("rw-reviewed-2570", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}, {Name: "Q", Type: "string"}})
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: "rar-audit-2570", Namespace: "default"},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{Name: "rr-audit-2570"},
-					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-reviewed", DeclaredParameterNames: map[string]bool{"P": true, "Q": true}},
-					Parameters:            map[string]string{"P": "2", "Q": "keep"},
-					ParameterSchema:       []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}, {Name: "Q", Type: "string"}},
-					TargetContext:         &remediationv1.ApprovalTargetContext{},
+					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID},
+					Parameters: sharedtypes.TypedParameterMap{
+						"P": {Kind: "float", FloatValue: ptr.To(float64(2))},
+						"Q": {Kind: "string", StringValue: ptr.To("keep")},
+					},
+					TargetContext: &remediationv1.ApprovalTargetContext{},
 				},
 			}
 			cfg := handler.MCPConfig{ServerName: "kubernaut-apifrontend", ServerVersion: "test", Enabled: true,
-				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
+				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar, rw), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			user := &auth.UserIdentity{Username: "reviewer", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
-			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{"rar_name": rar.Name, "decision": "Approved", "workflow_override": map[string]any{"parameters": map[string]string{"P": "1.0"}, "rationale": "reviewed"}}, user)
+			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{"rar_name": rar.Name, "decision": "Approved", "workflow_override": map[string]any{"parameters": map[string]any{"P": json.Number("1.5")}, "rationale": "reviewed"}}, user)
 			Expect(body).NotTo(ContainSubstring("isError"))
 			var found bool
 			for _, event := range auditor.Events() {
@@ -1428,27 +1455,33 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Expect(event.Detail["approval_request"]).To(Equal("rar-audit-2570"))
 				Expect(event.Detail["approval_decision"]).To(Equal("Approved"))
 				Expect(event.Approval).NotTo(BeNil())
-				Expect(event.Approval.WorkflowID).To(Equal("wf-reviewed"))
-				Expect(event.Approval.OriginalParameters).To(Equal(map[string]string{"P": "2", "Q": "keep"}))
-				Expect(event.Approval.OverrideParameters).To(Equal(map[string]string{"P": "1.0"}))
-				Expect(event.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "1.0", "Q": "keep"}))
+				Expect(event.Approval.WorkflowID).To(Equal(workflowID))
+				Expect(event.Approval.OriginalParameters).To(Equal(sharedtypes.TypedParameterMap{
+					"P": {Kind: "float", FloatValue: ptr.To(float64(2))},
+					"Q": {Kind: "string", StringValue: ptr.To("keep")},
+				}))
+				Expect(event.Approval.OverrideParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(1.5))}}))
+				Expect(event.Approval.EffectiveParameters).To(Equal(sharedtypes.TypedParameterMap{
+					"P": {Kind: "float", FloatValue: ptr.To(float64(1.5))},
+					"Q": {Kind: "string", StringValue: ptr.To("keep")},
+				}))
 				Expect(event.Approval.OverrideRationale).To(gstruct.PointTo(Equal("reviewed")))
 			}
 			Expect(found).To(BeTrue())
 		})
 		It("IT-AF-2570-037: BR-AUDIT-005 records invalid approval overrides as denied tool executions", func() {
+			rw, workflowID := bridgeVerifiedWorkflow("rw-denied-2570", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}})
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: "rar-denied-2570", Namespace: "default"},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{Name: "rr-denied-2570"},
-					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-denied", DeclaredParameterNames: map[string]bool{"P": true}},
-					Parameters:            map[string]string{"P": "2"},
-					ParameterSchema:       []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}},
+					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID},
+					Parameters:            sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(2))}},
 					TargetContext:         &remediationv1.ApprovalTargetContext{},
 				},
 			}
 			cfg := handler.MCPConfig{ServerName: "kubernaut-apifrontend", ServerVersion: "test", Enabled: true,
-				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
+				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar, rw), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			user := &auth.UserIdentity{Username: "reviewer-denied", Groups: []string{"sre"}, Issuer: "test"}
@@ -1457,7 +1490,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{
 				"rar_name": rar.Name, "decision": "Approved",
-				"workflow_override": map[string]any{"parameters": map[string]string{"P": "not-a-float"}, "rationale": "invalid review"},
+				"workflow_override": map[string]any{"parameters": map[string]any{"P": "not-a-float"}, "rationale": "invalid review"},
 			}, user)
 
 			Expect(isErrorResult(body)).To(BeTrue())
@@ -1476,28 +1509,28 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(denied.Detail).To(HaveKeyWithValue("approval_request", "rar-denied-2570"))
 			Expect(denied.Detail).To(HaveKeyWithValue("approval_decision", "Approved"))
 			Expect(denied.Approval).NotTo(BeNil())
-			Expect(denied.Approval.WorkflowID).To(Equal("wf-denied"))
-			Expect(denied.Approval.OriginalParameters).To(Equal(map[string]string{"P": "2"}))
-			Expect(denied.Approval.OverrideParameters).To(Equal(map[string]string{"P": "not-a-float"}))
-			Expect(denied.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "not-a-float"}))
+			Expect(denied.Approval.WorkflowID).To(Equal(workflowID))
+			Expect(denied.Approval.OriginalParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(2))}}))
+			Expect(denied.Approval.OverrideParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "string", StringValue: ptr.To("not-a-float")}}))
+			Expect(denied.Approval.EffectiveParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "string", StringValue: ptr.To("not-a-float")}}))
 			Expect(denied.Approval.OverrideRationale).To(gstruct.PointTo(Equal("invalid review")))
 			for _, event := range events {
 				Expect(event.Type).NotTo(Equal(audit.EventMCPToolFailed), "invalid approval override must not be reduced to generic MCP failure")
 			}
 		})
 		It("IT-AF-2570-039: BR-AUDIT-005 records rejected decisions with overrides as denied tool executions", func() {
+			rw, workflowID := bridgeVerifiedWorkflow("rw-rejected-2570", []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}})
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: "rar-rejected-2570", Namespace: "default"},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{Name: "rr-rejected-2570"},
-					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: "wf-rejected", DeclaredParameterNames: map[string]bool{"P": true}},
-					Parameters:            map[string]string{"P": "2"},
-					ParameterSchema:       []remediationworkflowv1.RemediationWorkflowParameter{{Name: "P", Type: "float"}},
+					Workflow:              &sharedtypes.WorkflowSnapshot{WorkflowID: workflowID},
+					Parameters:            sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(2))}},
 					TargetContext:         &remediationv1.ApprovalTargetContext{},
 				},
 			}
 			cfg := handler.MCPConfig{ServerName: "kubernaut-apifrontend", ServerVersion: "test", Enabled: true,
-				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
+				Bridge: &handler.MCPBridgeConfig{K8sClient: fakeK8s, TypedClient: newBridgeTypedClient(rar, rw), Namespace: "default", Authorizer: &allowAllAuthorizer{}, Auditor: auditor, Metrics: metrics, ToolTimeout: 5 * time.Second, MaxConcurrentTools: 5}}
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			user := &auth.UserIdentity{Username: "reviewer-rejected", Groups: []string{"sre"}, Issuer: "test"}
@@ -1506,7 +1539,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			_, body := mcpCallTool(h, sid, kubernautApprove, map[string]any{
 				"rar_name": rar.Name, "decision": "Rejected",
-				"workflow_override": map[string]any{"parameters": map[string]string{"P": "1.0"}, "rationale": "not allowed"},
+				"workflow_override": map[string]any{"parameters": map[string]any{"P": json.Number("1.5")}, "rationale": "not allowed"},
 			}, user)
 
 			Expect(isErrorResult(body)).To(BeTrue())
@@ -1525,10 +1558,10 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(denied.Detail).To(HaveKeyWithValue("approval_request", "rar-rejected-2570"))
 			Expect(denied.Detail).To(HaveKeyWithValue("approval_decision", "Rejected"))
 			Expect(denied.Approval).NotTo(BeNil())
-			Expect(denied.Approval.WorkflowID).To(Equal("wf-rejected"))
-			Expect(denied.Approval.OriginalParameters).To(Equal(map[string]string{"P": "2"}))
-			Expect(denied.Approval.OverrideParameters).To(Equal(map[string]string{"P": "1.0"}))
-			Expect(denied.Approval.EffectiveParameters).To(Equal(map[string]string{"P": "1.0"}))
+			Expect(denied.Approval.WorkflowID).To(Equal(workflowID))
+			Expect(denied.Approval.OriginalParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(2))}}))
+			Expect(denied.Approval.OverrideParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(1.5))}}))
+			Expect(denied.Approval.EffectiveParameters).To(Equal(sharedtypes.TypedParameterMap{"P": {Kind: "float", FloatValue: ptr.To(float64(1.5))}}))
 			Expect(denied.Approval.OverrideRationale).To(gstruct.PointTo(Equal("not allowed")))
 			for _, event := range events {
 				Expect(event.Type).NotTo(Equal(audit.EventMCPToolFailed), "invalid approval override must not be reduced to generic MCP failure")

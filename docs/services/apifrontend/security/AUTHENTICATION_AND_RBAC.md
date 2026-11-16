@@ -3,13 +3,16 @@
 **Service:** kubernaut-apifrontend
 **NIST Controls:** AC-2, AC-3, AC-6, IA-2, IA-5, IA-8
 **Source of truth:** `pkg/apifrontend/auth/sar.go`, `charts/kubernaut/values.yaml` (persona ClusterRoles)
-**Last updated:** 2026-05-21
+**Last updated:** 2026-11-09
 
 ---
 
 ## 1. Authentication Flow
 
-Every request to the API Frontend must carry a valid Bearer token. The authentication pipeline validates the token through a multi-stage process.
+Authenticated protocol requests to the API Frontend must carry a valid Bearer
+token. The public health, readiness, metrics, agent-card, and Console contract
+routes intentionally do not require authentication. The authentication
+pipeline validates protocol tokens through a multi-stage process.
 
 ```mermaid
 sequenceDiagram
@@ -45,7 +48,7 @@ sequenceDiagram
 
 | Stage | Code Location | Failure Mode |
 |-------|--------------|--------------|
-| Body size enforcement | `middleware.go` L45 | 413 if > 1MB |
+| Body size enforcement | `handler/router.go:maxBodyMiddleware` | Route-specific behavior: A2A/root retain the a2a-go JSON-RPC baseline, `/a2a/status` returns HTTP 400 with JSON-RPC `invalid_request`, and other handlers retain their existing behavior; there is no service-wide 413 promise |
 | Header sanitization | `security.ValidateHeaderValue` | 400 if control chars |
 | Bearer scheme check | `middleware.go` L71-78 | 401 if non-Bearer |
 | OIDC signature verification | `jwt.go` JWTValidator.Validate | 401 if signature invalid |
@@ -60,6 +63,24 @@ The `JWKSCache` fetches provider signing keys with:
 - In-memory cache with TTL refresh
 - Circuit breaker to prevent cascading failures if the OIDC provider is down
 - Fail-open semantics: if cache has valid keys and circuit is open, validation continues with cached keys (see ADR-016)
+
+### Backend-incarnation lifecycle boundary (#2614)
+
+The public `GET /.well-known/kubernaut-console-contract.json` response contains
+only the opaque `backend_incarnation` value and is `no-store`; it does not
+receive a lifecycle header. After successful authentication, the exact process
+value is returned in `X-Kubernaut-Backend-Incarnation` on `POST /a2a/invoke`,
+`POST /`, `POST /mcp`, and `POST /a2a/status`, including authenticated handler
+errors and post-authentication rate-limit responses. Missing or invalid
+authentication and pre-authentication rate-limit responses do not receive the
+header. The value contains no bearer token, cookie, raw Authorization value, or
+user identity.
+
+Console #168 owns browser qualification: missing, malformed, or changed values
+fence stale work and trigger revalidation; a transient lifecycle-check failure
+is retried without logging the user out; ambiguous non-idempotent operations are
+never automatically replayed. Console #168 v1 qualification requires one AF
+replica plus external OAuth2 Proxy evidence. HA/failover remains kubernaut#2606.
 
 ---
 

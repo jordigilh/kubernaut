@@ -37,9 +37,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -518,6 +520,12 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 	Context("UT-WE-659-005 (P1): reconcileRunning engine resolution failure emits event", func() {
 		It("should emit WorkflowFailed event when engine resolution fails during Running phase", func() {
 			wfe := buildPendingWFE("wfe-659-running-engine-fail")
+			Expect(remediationworkflowv1.AddToScheme(evtScheme)).To(Succeed())
+			workflow := &remediationworkflowv1.RemediationWorkflow{ObjectMeta: metav1.ObjectMeta{Name: "wf-659", Namespace: "default"}}
+			content, err := contenthash.MarshalCleanCRDContent(workflow)
+			Expect(err).NotTo(HaveOccurred())
+			workflow.Status.WorkflowID = contenthash.DeterministicUUID(contenthash.ComputeContentHash(string(content)))
+			wfe.Spec.WorkflowRef.WorkflowID = workflow.Status.WorkflowID
 			now := metav1.Now()
 			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
 			wfe.Status.StartTime = &now
@@ -527,14 +535,18 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
-				WithObjects(wfe).
+				WithObjects(wfe, workflow).
+				WithIndex(&remediationworkflowv1.RemediationWorkflow{}, "status.workflowId", func(obj client.Object) []string {
+					return []string{obj.(*remediationworkflowv1.RemediationWorkflow).Status.WorkflowID}
+				}).
 				WithStatusSubresource(wfe).
 				Build()
 
 			reconciler := buildReconciler(fakeClient, nil)
+			reconciler.CatalogNamespace = "default"
 			drainFakeRecorderEvents(evtRecorder)
 
-			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
+			_, err = reconciler.Reconcile(evtCtx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace},
 			})
 			Expect(err).ToNot(HaveOccurred())
