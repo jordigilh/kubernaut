@@ -58,8 +58,17 @@ var _ = Describe("ResourceIdentity GVK validation [BR-SCOPE-001, SI-10]", func()
 		Entry("empty group with separator", "/v1"),
 		Entry("multiple separators", "apps/v1/extra"),
 		Entry("group without separator is not a core version", "apps"),
-		Entry("malformed version", "apps/v1x"),
+		Entry("grouped version must be a DNS1035 label", "apps/1bad"),
+		Entry("malformed group with space", "apps ./v1"),
 	)
+
+	It("UT-SCOPE-2592-GVK-009 accepts CRD-style grouped versions", func() {
+		group, version, err := scope.ParseAPIVersion("example.com/stable")
+		Expect(err).NotTo(HaveOccurred(),
+			"Kubernetes only requires DNS1035 for CRD versions — a served example.com/stable identity must pass")
+		Expect(group).To(Equal("example.com"))
+		Expect(version).To(Equal("stable"))
+	})
 
 	It("UT-SCOPE-2592-GVK-008 rejects an empty apiVersion in ApplyAPIVersion", func() {
 		_, err := scope.ApplyAPIVersion(scope.ResourceIdentity{Kind: "Deployment", Namespace: "default", Name: "nginx"}, "")

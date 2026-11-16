@@ -46,6 +46,9 @@ import (
 // Architecture: Real FMC stack backed by the suite's shared Redis (port 16380).
 // No mock scope checkers — business outcomes prove the routing.
 var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordered, Label("fleet", "scope", "integration"), func() {
+	// appsAPIVersion is the explicit GVK of the remote Deployment/StatefulSet
+	// fixtures (goconst: hoisted shared literal).
+	const appsAPIVersion = "apps/v1"
 	var (
 		testLogger    logr.Logger
 		gwServer      *gateway.Server
@@ -116,7 +119,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Severity:     "critical",
 			ClusterID:    "prod-east",
 		})
-		signal.Resource.APIVersion = "apps/v1"
+		signal.Resource.APIVersion = appsAPIVersion
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
@@ -136,7 +139,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			ResourceName: "worker-1",
 			Severity:     "warning",
 		})
-		signal.Resource.APIVersion = "apps/v1"
+		signal.Resource.APIVersion = "v1"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
@@ -156,7 +159,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Severity:     "warning",
 			ClusterID:    "staging-west",
 		})
-		signal.Resource.APIVersion = "apps/v1"
+		signal.Resource.APIVersion = appsAPIVersion
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())

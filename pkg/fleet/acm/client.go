@@ -97,6 +97,13 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	resourceLabels := searchManagedLabels(item)
 	clusterScoped := r.Namespace == "" || scope.IsClusterScopedKind(r.Kind)
 	resolution := scope.ResolveLabels(resourceLabels, nil, clusterScoped)
+	// An invalid managed label is an unavailable resolution, not a verified
+	// unmanaged decision (ADR-068): it must surface as an observable error so
+	// the federated boolean lane fails closed instead of laundering
+	// managed=false through ScopeVerifiedUnmanaged.
+	if resolution.Source == scope.ScopeSourceUnavailable {
+		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", resolution.Reason)
+	}
 	if clusterScoped || resolution.ResourceLabel == scope.LabelStateTrue || resolution.ResourceLabel == scope.LabelStateFalse {
 		return resolution.Included, nil
 	}
@@ -108,7 +115,11 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	if !found {
 		return false, fmt.Errorf("acm scope: namespace visibility cannot be verified")
 	}
-	return scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false).Included, nil
+	nsResolution := scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false)
+	if nsResolution.Source == scope.ScopeSourceUnavailable {
+		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", nsResolution.Reason)
+	}
+	return nsResolution.Included, nil
 }
 
 func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {

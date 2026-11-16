@@ -200,7 +200,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 			redisClient.Del(ctx, valkeyKey)
 		})
 
-		It("returns managed=false for unknown cluster even when Valkey key exists", func() {
+		It("returns an observable error for unknown cluster even when Valkey key exists", func() {
 			httpClient := fmc.NewHTTPClient(server.URL)
 
 			managed, err := httpClient.IsManagedResource(ctx, scope.ResourceIdentity{
@@ -211,9 +211,10 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				Namespace: "default",
 				Name:      "nginx",
 			})
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred(),
+				"IT-FMC-054-020 (#2592): an unregistered cluster is an unavailable check, never a verified managed=false")
 			Expect(managed).To(BeFalse(),
-				"IT-FMC-054-020: unknown cluster must be rejected by EAIGWRegistry.Get() before reaching Valkey cache")
+				"fail-closed on unavailable checks")
 
 			By("Verifying the Valkey key still exists (cache was not the rejection reason)")
 			exists, err := redisClient.Exists(ctx, valkeyKey).Result()

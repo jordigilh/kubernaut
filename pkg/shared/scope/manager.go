@@ -46,6 +46,7 @@ package scope
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -255,6 +256,15 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error) {
 	resolution, err := m.Resolve(ctx, resource)
 	if err != nil {
+		// A target-identity defect is permanent, not retryable: report it as
+		// invalid so the typed contract never suggests a retry will help.
+		if errors.Is(err, ErrInvalidIdentity) {
+			return ScopeResult{
+				State:      ScopeInvalid,
+				Provenance: ScopeSourceUnavailable,
+				Reason:     "invalid_target_identity",
+			}, err
+		}
 		return ScopeResult{
 			State:      ScopeUnavailable,
 			Provenance: ScopeSourceUnavailable,
@@ -299,7 +309,10 @@ func (m *Manager) ResolveWithResourceLabels(ctx context.Context, resource Resour
 
 func (m *Manager) resolveWithResourceLabels(ctx context.Context, resource ResourceIdentity, resourceLabels map[string]string, clusterScoped bool) (Resolution, error) {
 	resourceState := labelState(resourceLabels)
-	if resourceState == LabelStateTrue || resourceState == LabelStateFalse || clusterScoped {
+	// A valid resource label is decisive; so is an INVALID one — it must fail
+	// closed without a Namespace read, whose infrastructure error could
+	// otherwise mask the decisive invalid-label outcome.
+	if resourceState == LabelStateTrue || resourceState == LabelStateFalse || resourceState == LabelStateInvalid || clusterScoped {
 		return resolveLabelStates(resourceState, LabelStateAbsent, clusterScoped), nil
 	}
 

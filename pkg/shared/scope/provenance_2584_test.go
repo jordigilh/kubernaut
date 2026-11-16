@@ -81,7 +81,10 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
-		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
+		// The invalid resource label is decisive: the namespace is not read,
+		// so a namespace infrastructure error can never mask the invalid-label
+		// outcome (CodeRabbit #2592 round 5).
+		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateAbsent))
 		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 	})
 

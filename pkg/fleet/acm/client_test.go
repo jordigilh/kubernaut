@@ -82,9 +82,25 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
 		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
 		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
-		Entry("invalid does not inherit namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", false),
 		Entry("missing labels default unmanaged", "", "", false),
 	)
+
+	// #2592 (CodeRabbit round 5): an invalid resource label is an unavailable
+	// resolution, not a verified unmanaged decision — it must surface as an
+	// observable error so the federated lane fails closed instead of
+	// laundering managed=false through ScopeVerifiedUnmanaged.
+	It("UT-ACM-2592-LABEL-001 [BR-SCOPE-001, AC-6]: invalid label is an observable error, never verified unmanaged", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "ConfigMap", "namespace": "payments", "name": "checkout", "label": "kubernaut.ai/managed=invalid"}
+			Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
+		}))
+		client = acm.NewClient(server.URL)
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(err).To(HaveOccurred(),
+			"an invalid managed label must fail closed as an unavailable resolution")
+		Expect(err.Error()).To(ContainSubstring("managed label is invalid"))
+		Expect(managed).To(BeFalse())
+	})
 
 	DescribeTable("UT-ACM-2592-001 [BR-SECURITY-016]: empty Search results do not prove an unmanaged target",
 		func(missingNamespace bool) {

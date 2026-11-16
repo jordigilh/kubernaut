@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // ErrInvalidIdentity is the sentinel for target-identity validation failures
@@ -31,15 +32,18 @@ import (
 // infrastructure failures. Reference: SI-10.
 var ErrInvalidIdentity = errors.New("scope: invalid resource identity")
 
-// versionRE matches Kubernetes API versions: v1, v2, v1beta1, v1alpha2, ...
-// A slash-less value that fails this pattern (e.g. "apps") is a group name,
-// not a core version, and must be rejected rather than accepted as core.
-var versionRE = regexp.MustCompile(`^v[0-9]+((alpha|beta)[0-9]+)?$`)
+// coreVersionRE matches core (slash-less) Kubernetes API versions:
+// v1, v2, v1beta1, v1alpha2, ... A slash-less value that fails this pattern
+// (e.g. "apps") is a group name, not a core version, and must be rejected
+// rather than accepted as core.
+var coreVersionRE = regexp.MustCompile(`^v[0-9]+((alpha|beta)[0-9]+)?$`)
 
 // ParseAPIVersion converts the Kubernetes wire representation into the group
 // and version fields used by ResourceIdentity. Core resources use "v1" and
 // return an empty group. An empty, malformed, or version-less value is never a
-// valid identity.
+// valid identity. Grouped resources follow Kubernetes CRD version syntax
+// (DNS1035 labels, e.g. "example.com/stable"); the slash-less core form keeps
+// the strict v<N> rule so a group name can never masquerade as a core version.
 func ParseAPIVersion(apiVersion string) (string, string, error) {
 	apiVersion = strings.TrimSpace(apiVersion)
 	if apiVersion == "" {
@@ -53,10 +57,26 @@ func ParseAPIVersion(apiVersion string) (string, string, error) {
 	if groupVersion.Version == "" || (strings.Contains(apiVersion, "/") && groupVersion.Group == "") {
 		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
 	}
-	if !versionRE.MatchString(groupVersion.Version) {
-		return "", "", fmt.Errorf("%w: invalid apiVersion %q: version must match v<N>[alpha|beta<N>]", ErrInvalidIdentity, apiVersion)
+	if !validGroupVersion(groupVersion.Group, groupVersion.Version, apiVersion) {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
 	}
 	return groupVersion.Group, groupVersion.Version, nil
+}
+
+// validGroupVersion checks group and version syntax. The empty group is valid
+// (core API) for both forms; a non-empty group must be a DNS1123 subdomain.
+// Grouped versions may be any DNS1035 label (Kubernetes CRD requirement —
+// e.g. "stable"); slash-less input must be a strict core v<N> version.
+func validGroupVersion(group, version, original string) bool {
+	if group != "" {
+		if errs := validation.IsDNS1123Subdomain(group); len(errs) > 0 {
+			return false
+		}
+	}
+	if strings.Contains(original, "/") {
+		return len(validation.IsDNS1035Label(version)) == 0
+	}
+	return coreVersionRE.MatchString(version)
 }
 
 // ApplyAPIVersion parses an explicit Kubernetes apiVersion into a resource
@@ -87,6 +107,18 @@ func GVKForIdentity(identity ResourceIdentity) (schema.GroupVersionKind, error) 
 	}
 	if version == "" {
 		return schema.GroupVersionKind{}, fmt.Errorf("%w: resource version is required for %q", ErrInvalidIdentity, kind)
+	}
+	// Defense in depth for directly-constructed identities (SI-10): the same
+	// syntax rules ParseAPIVersion enforces on the wire form apply to the
+	// individual components, so a malformed group or version cannot launder
+	// itself into a valid GVK through the struct fields.
+	if group != "" {
+		if errs := validation.IsDNS1123Subdomain(group); len(errs) > 0 {
+			return schema.GroupVersionKind{}, fmt.Errorf("%w: invalid group %q: %s", ErrInvalidIdentity, group, strings.Join(errs, ", "))
+		}
+	}
+	if len(validation.IsDNS1035Label(version)) > 0 {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: invalid version %q", ErrInvalidIdentity, version)
 	}
 
 	return schema.GroupVersionKind{Group: group, Version: version, Kind: kind}, nil

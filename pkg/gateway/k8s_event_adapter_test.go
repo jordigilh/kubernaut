@@ -140,7 +140,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "FailedCreate",
 				"message": "Failed to create pod for deployment: ImagePullBackOff",
 				"involvedObject": {
-					"apiVersion": "v1",
+					"apiVersion": "apps/v1",
 					"kind": "Deployment",
 					"namespace": "staging",
 					"name": "api-service"
