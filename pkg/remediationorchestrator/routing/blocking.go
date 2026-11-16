@@ -761,15 +761,40 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 
 	managed, err := r.checkScopeForResource(ctx, rr)
 	if err != nil {
+		retryCount := rr.Status.GetRoutingStatus().ConsecutiveFailureCount
+		backoffDuration := r.calculateScopeBackoff(retryCount)
+		blockedUntil := time.Now().Add(backoffDuration)
+
+		// A missing/malformed target identity is a permanent RemediationRequest
+		// defect (SI-10), not a scope-infrastructure failure and not an
+		// unmanaged resource. BlockReasonUnmanagedResource is reused only
+		// because the CRD enum is fixed; the message must not suggest that
+		// labeling the resource would fix it.
+		if errors.Is(err, scope.ErrInvalidIdentity) {
+			logger.Error(err, "Target resource identity is missing or invalid — blocking RR (fail-closed)",
+				"cluster", clusterCtx,
+				"namespace", rr.Spec.TargetResource.Namespace,
+				"kind", rr.Spec.TargetResource.Kind,
+				"name", rr.Spec.TargetResource.Name)
+			return &BlockingCondition{
+				Blocked: true,
+				Reason:  string(remediationv1.BlockReasonUnmanagedResource),
+				Message: fmt.Sprintf("Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
+					"The RemediationRequest must carry spec.targetResource.apiVersion (e.g. \"apps/v1\"); "+
+					"it cannot be scope-checked or remediated until corrected.",
+					rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+					rr.Spec.TargetResource.Name, clusterCtx, err),
+				RequeueAfter: backoffDuration,
+				BlockedUntil: &blockedUntil,
+			}
+		}
+
 		logger.Error(err, "Scope validation failed — blocking RR (fail-closed)",
 			"cluster", clusterCtx,
 			"namespace", rr.Spec.TargetResource.Namespace,
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
 
-		retryCount := rr.Status.GetRoutingStatus().ConsecutiveFailureCount
-		backoffDuration := r.calculateScopeBackoff(retryCount)
-		blockedUntil := time.Now().Add(backoffDuration)
 		return &BlockingCondition{
 			Blocked: true,
 			Reason:  string(remediationv1.BlockReasonUnmanagedResource),
@@ -813,12 +838,19 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 // checkScopeForResource checks scope using the unified ScopeChecker (ADR-068).
 // ResourceIdentity.ClusterID routes internally: empty → local, non-empty → remote.
 func (r *RoutingEngine) checkScopeForResource(ctx context.Context, rr *remediationv1.RemediationRequest) (bool, error) {
-	return r.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+	resourceIdentity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: rr.Spec.ClusterID,
 		Kind:      rr.Spec.TargetResource.Kind,
 		Namespace: rr.Spec.TargetResource.Namespace,
 		Name:      rr.Spec.TargetResource.Name,
-	})
+	}, rr.Spec.TargetResource.APIVersion)
+	if err != nil {
+		return false, fmt.Errorf("scope target identity: %w", err)
+	}
+	if _, err := scope.GVKForIdentity(resourceIdentity); err != nil {
+		return false, fmt.Errorf("scope target identity: %w", err)
+	}
+	return r.scopeChecker.IsManagedResource(ctx, resourceIdentity)
 }
 
 // calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.
