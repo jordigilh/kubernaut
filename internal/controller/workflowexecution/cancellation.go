@@ -232,7 +232,10 @@ func (r *WorkflowExecutionReconciler) parentCancellationRequested(
 		return false, fmt.Errorf("get parent RemediationRequest for cancellation: %w", err)
 	}
 	if apierrors.IsNotFound(err) {
-		return true, nil
+		// Synthetic or legacy WFEs may carry a correlation reference without
+		// being controller-owned by an RR. Only a persisted owner proves that a
+		// missing parent represents an orphaned production child.
+		return hasRemediationRequestOwner(wfe), nil
 	}
 	if !cancellation.ParentStopRequested(parent) {
 		return false, nil
@@ -250,6 +253,17 @@ func (r *WorkflowExecutionReconciler) parentCancellationRequested(
 		return false, fmt.Errorf("validate workflowexecution parent identity: %w", cancellation.ErrIdentityMismatch)
 	}
 	return true, nil
+}
+
+func hasRemediationRequestOwner(wfe *workflowexecutionv1.WorkflowExecution) bool {
+	for _, owner := range wfe.OwnerReferences {
+		if owner.Controller != nil && *owner.Controller &&
+			owner.Kind == "RemediationRequest" &&
+			owner.Name == wfe.Spec.RemediationRequestRef.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *WorkflowExecutionReconciler) cancellationExecutor(wfe *workflowexecutionv1.WorkflowExecution) (weexecutor.CancellableExecutor, error) {

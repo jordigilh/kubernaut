@@ -57,6 +57,61 @@ func (e *cancellationExecutor) VerifyStopped(context.Context, *workflowexecution
 }
 
 var _ = Describe("WorkflowExecution parent cancellation", func() {
+	It("UT-WE-2588-022: does not classify an ownerless missing-parent WFE as cancelled", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{Name: "wfe-synthetic", Namespace: "system"},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "missing", Namespace: "system"},
+				WorkflowRef: workflowexecutionv1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					ExecutionEngine: "job",
+				}},
+			},
+			Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhasePending},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+		reconciler := &WorkflowExecutionReconciler{Client: c}
+
+		stopRequested, err := reconciler.parentCancellationRequested(context.Background(), wfe)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stopRequested).To(BeFalse())
+	})
+
+	It("UT-WE-2588-023: treats an owned missing-parent WFE as an orphan stop request", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		controller := true
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-orphan",
+				Namespace: "system",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: remediationv1.GroupVersion.String(),
+					Kind:       "RemediationRequest",
+					Name:       "missing",
+					UID:        types.UID("missing-uid"),
+					Controller: &controller,
+				}},
+			},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "missing", Namespace: "system", UID: types.UID("missing-uid")},
+				WorkflowRef: workflowexecutionv1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					ExecutionEngine: "job",
+				}},
+			},
+			Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhasePending},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+		reconciler := &WorkflowExecutionReconciler{Client: c}
+
+		stopRequested, err := reconciler.parentCancellationRequested(context.Background(), wfe)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stopRequested).To(BeTrue())
+	})
+
 	It("UT-WE-2588-018: keeps an AWX recovery miss Pending and stops after the bounded discovery budget", func() {
 		scheme := runtime.NewScheme()
 		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
