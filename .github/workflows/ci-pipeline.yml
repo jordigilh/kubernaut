@@ -774,9 +774,10 @@ jobs:
       - name: Prepare native cross-compile Dockerfile
         run: |
           set -euo pipefail
-          sed "s|^FROM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder$|FROM --platform=\$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder|" \
+          # Preserve the source-selected tag/digest across operator image updates.
+          sed -E "s|^FROM (registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+) AS builder$|FROM --platform=\$BUILDPLATFORM \1 AS builder|" \
             kubernaut-operator/Dockerfile > kubernaut-operator/Dockerfile.ci
-          grep -Fqx "FROM --platform=\$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 AS builder" \
+          grep -Eq "^FROM --platform=\$BUILDPLATFORM registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+ AS builder\$" \
             kubernaut-operator/Dockerfile.ci
 
       - name: Set up Docker Buildx
