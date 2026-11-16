@@ -11,6 +11,73 @@
 
 ## 1. Purpose and objectives
 
+### Post-validation fixes for run 43937713539 (head 5fd6e87f7)
+
+Three source-attributed causes, proven by CI logs and must-gather:
+
+1. **AA E2E controller crash loop** — the `aianalysis-controller` container
+   exited with status 1 roughly every 120 s (containerd events, pod
+   `aianalysis-controller-6f8d76c47-zdmzv` CrashLoopBackOff). The deployed
+   RBAC already granted `remediationrequests get/list/watch`
+   (`clusterrole/aianalysis-controller created` in the job log), but
+   `cmd/aianalysis` never registered `remediationv1` in its production
+   scheme, so the new parent watch can never sync. Same defect class as the
+   `cmd/workflowexecution` fix. RED: IT-AA-2588-010 resolves RR/RRList from
+   the actual production scheme and fails. GREEN: one `AddToScheme` line.
+   SignalProcessing and EffectivenessMonitor already register the type.
+2. **AWX label launch rejected** — every Ansible-engine failure returned
+   HTTP 400 `{"labels":["Incorrect type. Expected pk value, received str."]}`:
+   the launch payload sent label names, but AWX requires label primary keys.
+   RED: UT-WE-2588-011 (resolve-existing and create-missing paths) fails.
+   GREEN: `resolveLabelIDs` resolves each label name through the AWX labels
+   API and creates a missing label inside the template's organization; the
+   launch payload now carries integer PKs. UT-WE-2588-013 was updated to the
+   proven PK contract.
+3. **E2E-WE-2588-002 fixture** — `fmt.Sprintf("%064x", uuid.New())`
+   hex-encodes the UUID's 36-character dashed `String()` (Stringer applies
+   to `%x`), producing 72 characters and failing the CRD's 64-byte ceiling.
+   Replaced with a SHA-256 hex digest of the test name.
+
+| Component | Production entry | Wiring location | Proving test |
+|-----------|------------------|-----------------|--------------|
+| Parent RR type registration | AIAnalysis process startup | cmd/aianalysis/main.go init | IT-AA-2588-010 |
+| AWX label PK resolution | Ansible executor launch | pkg/workflowexecution/executor/awx_client.go | UT-WE-2588-011/013 |
+
+Review follow-up hardening (round 1): label matching and creation are scoped
+to the template's organization — AWX labels are keyed by (organization,
+name), so a same-named foreign-organization label is never reused; a missing
+label is created inside the template organization only. Transient failures
+on the label path (template fetch, label search, label create) that are 5xx
+or transport-level are classified `ErrAWXLaunchRecoveryPending` so the
+controller retries instead of terminalizing; deterministic 4xx responses
+surface as `AWXAPIError`. A template without an organization is rejected
+rather than guessed. UT-WE-2588-011 grew to 11 scenarios covering
+organization scoping, cross-organization duplicates, both transient classes,
+both deterministic 4xx classes, the no-organization guard, and the
+invalid-create-id ambiguity; UT-WE-2588-013 asserts the organization-scoped
+PK contract. Scoped changed AWX logic coverage, measured by merging both
+test packages' profiles over the four changed functions
+(`resolveLabelIDs`, `templateOrganization`, `resolveLabelID`,
+`createLaunchLabel`): 59/66 statements (89.4%).
+
+Known follow-up trade-off (review round 2, not a regression): the launch
+label is persisted before the AWX launch POST, so a recovery-pending label
+failure requeues into discovery-only recovery; with zero matching jobs this
+retains the WFE in Pending until retry exhaustion rather than retrying the
+full launch. This extends the pre-existing double-launch-protection design
+(a lost launch POST already behaved this way) to pre-POST failures where a
+full retry would be safe; hoisting label resolution before
+`ensureAWXLaunchLabel` is the follow-up. The same template GET is also
+classified differently at `validateAWXJobTemplate` (pre-existing,
+terminalizing) versus `templateOrganization` (recovery-pending); unifying
+them by passing the fetched template through is a follow-up.
+
+Validation: RED observed for IT-AA-2588-010 and UT-WE-2588-011 before the
+fixes; after GREEN, `cmd/aianalysis`, `cmd/workflowexecution`,
+`pkg/workflowexecution/...`, both controller unit suites, E2E/IT compile
+checks, full lint and diff checks pass. Deployed AA/WE E2E must be re-proven
+by the next CI run.
+
 ### CI operator builder-version compatibility follow-up
 
 Run 43884842808 at 9bedb2f5f failed both operator architecture jobs before

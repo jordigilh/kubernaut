@@ -120,6 +120,9 @@ type AWXJobTemplate struct {
 	ID                int  `json:"id"`
 	AskLabelsOnLaunch bool `json:"ask_labels_on_launch"`
 	JobSliceCount     int  `json:"job_slice_count"`
+	// Organization is the AWX organization owning the template; launch
+	// labels are organization-scoped and are created inside it. #2588.
+	Organization int `json:"organization"`
 }
 
 const (

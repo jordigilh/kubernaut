@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,7 +93,11 @@ func (c *AWXHTTPClient) launchJobTemplate(ctx context.Context, templateID int, e
 		payload["credentials"] = credentialIDs
 	}
 	if len(labels) > 0 {
-		payload["labels"] = labels
+		labelIDs, err := c.resolveLabelIDs(ctx, templateID, labels)
+		if err != nil {
+			return 0, err
+		}
+		payload["labels"] = labelIDs
 	}
 
 	body, err := json.Marshal(payload)
@@ -132,6 +137,127 @@ func (c *AWXHTTPClient) launchJobTemplate(ctx context.Context, templateID int, e
 	}
 
 	return result.ID, nil
+}
+
+// resolveLabelIDs converts launch label names to AWX label primary keys.
+// AWX's launch endpoint rejects label names with HTTP 400
+// ("Incorrect type. Expected pk value, received str."), so each name is
+// resolved through the labels API; a missing label is created inside the
+// template's organization. AWX labels are keyed by (organization, name) —
+// duplicate names across organizations are valid — so matches are scoped
+// to the template's organization. Launch labels embed a UUID, so an exact
+// (organization, name) match is unambiguous. #2588.
+func (c *AWXHTTPClient) resolveLabelIDs(ctx context.Context, templateID int, labels []string) ([]int, error) {
+	organization, err := c.templateOrganization(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(labels))
+	for _, name := range labels {
+		id, err := c.resolveLabelID(ctx, organization, name)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// templateOrganization resolves the organization that owns the template so
+// launch labels are created and matched inside it. A transient template
+// fetch failure is recovery-pending: nothing has launched yet, and the
+// lookup is safe to retry.
+func (c *AWXHTTPClient) templateOrganization(ctx context.Context, templateID int) (int, error) {
+	template, err := c.GetJobTemplate(ctx, templateID)
+	if err != nil {
+		var apiErr *AWXAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode >= http.StatusInternalServerError {
+			return 0, fmt.Errorf("%w: fetch AWX job template for launch labels: %w", ErrAWXLaunchRecoveryPending, err)
+		}
+		return 0, err
+	}
+	if template.Organization <= 0 {
+		return 0, fmt.Errorf("AWX job template %d has no organization for launch labels", templateID)
+	}
+	return template.Organization, nil
+}
+
+func (c *AWXHTTPClient) resolveLabelID(ctx context.Context, organization int, name string) (int, error) {
+	searchURL := fmt.Sprintf("%s/api/v2/labels/?name=%s&organization=%d", c.baseURL, url.QueryEscape(name), organization)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create label search request: %w", err)
+	}
+	c.setHeaders(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("%w: AWX label search request: %w", ErrAWXLaunchRecoveryPending, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		apiErr := &AWXAPIError{Operation: "label search", StatusCode: resp.StatusCode, Body: string(respBody)}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			// Nothing has launched yet and the search is idempotent, so a
+			// server-side failure must retry rather than terminalize.
+			return 0, fmt.Errorf("%w: %w", ErrAWXLaunchRecoveryPending, apiErr)
+		}
+		return 0, apiErr
+	}
+	var search struct {
+		Results []struct {
+			ID           int    `json:"id"`
+			Name         string `json:"name"`
+			Organization int    `json:"organization"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&search); err != nil {
+		return 0, fmt.Errorf("%w: decode label search response: %w", ErrAWXLaunchRecoveryPending, err)
+	}
+	for _, result := range search.Results {
+		if result.Name == name && result.Organization == organization && result.ID > 0 {
+			return result.ID, nil
+		}
+	}
+	return c.createLaunchLabel(ctx, organization, name)
+}
+
+// createLaunchLabel creates the label inside the template's organization.
+// A server-side failure is recovery-pending: the create may or may not have
+// been applied, and a retried resolution finds an existing label instead.
+func (c *AWXHTTPClient) createLaunchLabel(ctx context.Context, organization int, name string) (int, error) {
+	payload, err := json.Marshal(map[string]interface{}{"name": name, "organization": organization})
+	if err != nil {
+		return 0, fmt.Errorf("marshal label payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v2/labels/", bytes.NewReader(payload))
+	if err != nil {
+		return 0, fmt.Errorf("create label request: %w", err)
+	}
+	c.setHeaders(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("%w: AWX label create request: %w", ErrAWXLaunchRecoveryPending, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		apiErr := &AWXAPIError{Operation: "label create", StatusCode: resp.StatusCode, Body: string(respBody)}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return 0, fmt.Errorf("%w: %w", ErrAWXLaunchRecoveryPending, apiErr)
+		}
+		return 0, apiErr
+	}
+	var created struct {
+		ID int `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return 0, fmt.Errorf("%w: decode label create response: %w", ErrAWXLaunchRecoveryPending, err)
+	}
+	if created.ID <= 0 {
+		return 0, fmt.Errorf("%w: AWX label create response did not include a valid id", ErrAWXLaunchRecoveryPending)
+	}
+	return created.ID, nil
 }
 
 func (c *AWXHTTPClient) GetJobStatus(ctx context.Context, jobID int) (*AWXJobStatus, error) {

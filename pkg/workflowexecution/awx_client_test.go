@@ -205,13 +205,30 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 	})
 
 	Context("LaunchJobTemplateWithCreds", func() {
-		It("UT-WE-2588-013: sends the persisted recovery label in the AWX launch payload", func() {
+		It("UT-WE-2588-013: sends the persisted recovery label as an AWX label primary key", func() {
+			// AWX rejects label names on launch with HTTP 400
+			// ("Incorrect type. Expected pk value, received str."), so the
+			// client must resolve the persisted label name to its
+			// organization-scoped PK.
+			mux.HandleFunc("/api/v2/job_templates/10/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v2/job_templates/10/" {
+					http.NotFound(w, r)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id": 10, "ask_labels_on_launch": true, "organization": 2}`))
+			})
+			mux.HandleFunc("/api/v2/labels/", func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.Method).To(Equal(http.MethodGet))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"results": [{"id": 64, "name": "kubernaut-awx-launch-2588", "organization": 2}]}`))
+			})
 			mux.HandleFunc("/api/v2/job_templates/10/launch/", func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
 				Expect(err).ToNot(HaveOccurred())
 				var payload map[string]interface{}
 				Expect(json.Unmarshal(body, &payload)).To(Succeed())
-				Expect(payload["labels"]).To(Equal([]interface{}{"kubernaut-awx-launch-2588"}))
+				Expect(payload["labels"]).To(Equal([]interface{}{float64(64)}))
 				w.WriteHeader(http.StatusCreated)
 				_, _ = w.Write([]byte(`{"id": 79}`))
 			})

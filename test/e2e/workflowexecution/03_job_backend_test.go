@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -720,7 +721,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			rr := &remediationv1alpha1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: controllerNamespace},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
-					SignalFingerprint: fmt.Sprintf("%064x", uuid.New()),
+					// uuid.UUID implements Stringer, so %064x hex-encodes its
+					// 36-character dashed representation (72 chars) and fails
+					// the CRD's 64-byte fingerprint ceiling. Use a real
+					// SHA-256 hex digest instead. #2588.
+					SignalFingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(testName))),
 					SignalName:        "E2EJobCancellation",
 					Severity:          "critical",
 					SignalType:        "alert",
