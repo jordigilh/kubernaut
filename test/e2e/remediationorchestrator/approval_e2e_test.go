@@ -137,6 +137,25 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", controllerNamespace, testRAR.Name)
 
+			// The E2E RO config sets awaitingApproval to 3s (required by the
+			// expiry specs in the other context). This audit-trail context
+			// runs several decision specs plus DataStorage audit polling after
+			// RAR creation, which can cross that deadline and make the
+			// authwebhook correctly deny the later decision updates
+			// ("approval decision deadline has passed" — observed as a flake,
+			// run 44018398286). Extend the deadline for this context only: a
+			// spec-only update with Decision still Pending passes the webhook
+			// as a no-op (remediationapprovalrequest_handler.go, status-write
+			// guard), so the deadline control itself stays exercised by the
+			// expiry context.
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
+					return err
+				}
+				testRAR.Spec.RequiredBy = metav1.NewTime(time.Now().Add(10 * time.Minute))
+				return k8sClient.Update(ctx, testRAR)
+			})).To(Succeed())
+
 			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
