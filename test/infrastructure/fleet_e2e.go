@@ -1952,7 +1952,7 @@ func istioHelmInstallArgs() []string {
 func traefikHelmInstallArgs() []string {
 	return []string{
 		"--repo", traefikHelmRepoURL,
-		"--set", "service.type=NodePort",
+		"--set", "service.spec.type=NodePort",
 		fmt.Sprintf("--set=ports.web.nodePort=%d", traefikWebNodePort),
 		fmt.Sprintf("--set=ports.websecure.nodePort=%d", traefikWebsecureNodePort),
 		"--set", "ingressClass.enabled=true",
