@@ -92,10 +92,11 @@ func (s *ValkeyStatusStore) BeginRepair(ctx context.Context, request BeginRepair
 		return RepairStartResult{}, repairFailureError(RepairFailureInvalidRequest, err, false)
 	}
 	token := RepairToken{Value: uuid.NewString()}
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), stagedIndexKey(request.Partition)},
 		"begin", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
-		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, token.Value)
+		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, token.Value,
+		stagedRecordKeyPrefix(request.Partition))
 	if err != nil {
 		return RepairStartResult{}, classifyRepairError(err)
 	}
@@ -296,14 +297,11 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 	// prefix, [12]=staged record prefix, [13..]=proof flags per the Lua
 	// contract.
 	// ARGV[21]: per-record TTL (ms) so the commit refreshes renamed record
-	// expiries from commit time. Derived from the staged reconcile proof.
+	// expiries from commit time. Derived from the staged reconcile proof;
+	// Repair validates a uniform positive TTL across all observations.
 	refreshTTLMillis := int64(0)
 	if request.Proof.RecordTTL.Valid {
 		refreshTTLMillis = request.Proof.RecordTTL.ExpiresAtMillis - request.Proof.RecordTTL.ServerNowMillis
-	}
-	if refreshTTLMillis <= 0 && request.ExpectedCount > 0 {
-		// Non-empty commits prove a valid record TTL above; defend anyway.
-		refreshTTLMillis = 0
 	}
 	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), indexKey(request.Partition), stagedIndexKey(request.Partition)},
 		"commit", request.RegistrationUID, request.ExpectedRegistryRevision,

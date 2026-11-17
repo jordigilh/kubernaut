@@ -70,7 +70,25 @@ if op == 'begin' then
     if redis.call('HGET', staged, 'state') == 'repairing' then
       return redis.error_reply('REPAIR_IN_FLIGHT')
     end
-    -- An explicitly abandoned (uncertain) staging may be replaced.
+    -- An explicitly abandoned (uncertain) staging may be replaced, but its
+    -- residual staged index/records must be cleared first: a partially
+    -- reconciled repair that was abandoned leaves members that would
+    -- contaminate the new generation's commit count validation.
+    local old_index = KEYS[3]
+    local old_index_type = key_type(old_index)
+    if old_index_type == 'zset' then
+      if redis.call('ZCARD', old_index) > 10000 then
+        return redis.error_reply('INDEX_BOUNDS')
+      end
+      local members = redis.call('ZRANGE', old_index, 0, -1)
+      local staged_prefix = ARGV[9]
+      for _, m in ipairs(members) do
+        redis.call('DEL', staged_prefix .. m)
+      end
+      redis.call('DEL', old_index)
+    elseif old_index_type ~= 'none' then
+      return redis.error_reply('WRONG_TYPE_ZSET')
+    end
   end
   local committed_generation = tonumber(redis.call('HGET', KEYS[1], 'generation')) or 0
   local generation = committed_generation + 1
@@ -132,6 +150,16 @@ if op == 'repair_reconcile' then
     return redis.error_reply('INVALID_TTL')
   end
   local now = now_ms()
+  -- Roll the staged status TTL forward on each reconcile: an actively
+  -- progressing repair of any duration survives, while an idle or
+  -- stranded staging still self-clears 15s after its last activity.
+  local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
+  local rolled = now + 15000
+  if rolled > staged_expires then
+    staged_expires = rolled
+    redis.call('HSET', staged, 'status_expires_at_ms', staged_expires)
+  end
+  redis.call('PEXPIREAT', staged, staged_expires)
   local expires = now + ttl
   redis.call('HSET', KEYS[2],
     'public_id', public_id,
@@ -152,7 +180,6 @@ if op == 'repair_reconcile' then
   redis.call('PEXPIREAT', KEYS[2], expires)
   redis.call('ZADD', KEYS[3], expires, public_id)
   redis.call('HINCRBY', staged, 'observed_count', 1)
-  local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
   local index_expires = tonumber(redis.call('HGET', staged, 'index_expires_at_ms')) or 0
   if expires > index_expires then
     index_expires = expires
@@ -226,6 +253,9 @@ if op == 'commit' then
   local staged_count = 0
   if staged_index_type == 'zset' then
     staged_count = redis.call('ZCARD', KEYS[4])
+    if staged_count > 10000 then
+      return redis.error_reply('INDEX_BOUNDS')
+    end
   end
   if staged_count ~= expected_count then
     return redis.error_reply('COUNT_MISMATCH')
@@ -260,11 +290,22 @@ if op == 'commit' then
     local members = redis.call('ZRANGE', KEYS[4], 0, -1)
     for _, m in ipairs(members) do staged_members[m] = true end
   end
+  if live_index_type == 'zset' and redis.call('ZCARD', KEYS[3]) > 10000 then
+    return redis.error_reply('INDEX_BOUNDS')
+  end
+  -- Pre-validate every staged record key before the first live mutation: a
+  -- RENAME of a missing key would abort the script mid-way with partial
+  -- live changes already applied (atomic but not transactional).
+  if staged_index_type == 'zset' then
+    local staged_members = redis.call('ZRANGE', KEYS[4], 0, -1)
+    for _, m in ipairs(staged_members) do
+      if redis.call('EXISTS', staged_prefix .. m) == 0 then
+        return redis.error_reply('COMMIT_REJECTED')
+      end
+    end
+  end
   if live_index_type == 'zset' then
     local live_members = redis.call('ZRANGE', KEYS[3], 0, -1)
-    if #live_members > 10000 then
-      return redis.error_reply('INDEX_BOUNDS')
-    end
     for _, m in ipairs(live_members) do
       if not staged_members[m] then
         redis.call('DEL', live_prefix .. m)
@@ -272,8 +313,8 @@ if op == 'commit' then
       end
     end
   end
-  -- Install the committed status first so the expiry refresh below can use
-  -- one consistent server TIME sample.
+  -- Take one server TIME sample for the whole swap so every expiry refresh
+  -- below is consistent; the committed status HSET happens after the renames.
   local now = now_ms()
   local status_expires = now + 60000
   local index_expires = tonumber(redis.call('HGET', staged, 'index_expires_at_ms')) or status_expires

@@ -9,6 +9,13 @@
 **Author**: Kubernaut Team
 **Status**: DD-FLEET-016 A2 complete and remotely qualified at 7c5d6ac14: full AF Fleet suite 11/11 (4 procs, seed 1794866481) on the live cluster, journeys 002/003/004 and the two-phase refusal journey pass, scope availability 100% under full suite load (195/195 polls) and 99.5% idle (1s blip per 5-min registry rotation). Local gates: build 0, units 0, lint 0, full make test 119/119 suites (7df53edf7 base; 7c delta covered by affected suites). Remaining pre-push gates: fresh independent review, broader changed-service validation decision, main-conflict recheck, final PR-context CI. Earlier progress records below are historical.
 
+> Supersession note: the R10/R11 amendment sections below still describe the
+> pre-A2 protocol verbs `repair_list_members` and `cleanup_member`, which
+> DD-FLEET-016 A2 removed when stale-member cleanup moved into the atomic
+> commit swap. Those sections are historical amendment records; the current
+> verb set is `begin`, `repair_reconcile`, `repair_finalize_empty`, `commit`
+> (swap), `read_verified`, `mark_uncertain` and `abandon_staging`.
+
 ### DD-FLEET-016 A2: staged repair availability (2026-11-17)
 
 Live diagnostic on `af-fleet-2593-rca` (`rotation-diagnostic/`) proved the

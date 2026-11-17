@@ -154,10 +154,17 @@ func (s ValidatedObservationSet) Validate() error {
 	if s.ItemCount < 0 || s.ItemCount > 5000 || s.ItemCount != len(s.Items) {
 		return fmt.Errorf("repair observation item count is invalid")
 	}
+	uniformTTL := true
 	for index, item := range s.Items {
 		if err := item.Validate(); err != nil {
 			return fmt.Errorf("repair observation %d: %w", index, err)
 		}
+		if item.TTL != s.Items[0].TTL {
+			uniformTTL = false
+		}
+	}
+	if !uniformTTL {
+		return fmt.Errorf("repair observations must share one TTL")
 	}
 	return nil
 }

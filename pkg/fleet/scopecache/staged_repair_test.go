@@ -134,7 +134,6 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		f.commitGeneration(start1, []scopecache.RepairObservation{oldObservation})
 
 		newIdentity, newObservation := f.identity("checkout", "false")
-		_ = newIdentity
 		start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
 		})
@@ -295,6 +294,79 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		read, readErr := f.read(start, identity)
 		Expect(readErr).ToNot(HaveOccurred())
 		Expect(read.State).To(Equal(scopecache.ReadVerified), "committed records must carry a full TTL from commit time")
+	})
+
+	It("UT-FMC-STAGED-008 [BR-SCOPE-001]: replacing an abandoned staging clears its residual staged index and records", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		// First staging partially reconciles one member, then is abandoned.
+		_, partialObservation := f.identity("abandoned", "true")
+		start1, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start1.Generation, Token: start1.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{partialObservation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(f.store.MarkRepairUncertain(f.ctx, start1, scopecache.RepairFailure{Code: scopecache.RepairFailureSourceIncomplete, Message: "abandoned mid-reconcile"})).To(Succeed())
+
+		// The replacement staging observes a DIFFERENT single member. Without
+		// residual cleanup the abandoned member contaminates the staged index
+		// and the commit count check rejects every subsequent cycle.
+		identity, observation := f.identity("replacement", "true")
+		start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		f.commitGeneration(start2, []scopecache.RepairObservation{observation})
+
+		read, readErr := f.read(start2, identity)
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(read.State).To(Equal(scopecache.ReadVerified), "a replacement staging must not inherit contaminated members")
+	})
+
+	It("UT-FMC-STAGED-009 [BR-SCOPE-001]: the staged status TTL rolls forward on each reconcile so long repairs survive", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		identity, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// A load-slowed repair: 10s pass between begin and reconcile, and the
+		// commit lands at t20 -- beyond the original fixed 15s staged window.
+		// The reconcile must roll the staged TTL forward for the repair to
+		// complete.
+		f.server.FastForward(10 * time.Second)
+		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(10 * time.Second))
+		repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		f.server.FastForward(10 * time.Second)
+		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(20 * time.Second))
+		commit, err := f.store.CommitRepair(f.ctx, scopecache.RepairCommitRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			ExpectedCount: 1, Proof: repair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(commit.Committed).To(BeTrue(), "a repair whose reconcile activity is recent must not hit a fixed staged TTL ceiling")
+
+		read, readErr := f.read(start, identity)
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(read.State).To(Equal(scopecache.ReadVerified))
 	})
 
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
