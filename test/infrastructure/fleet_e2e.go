@@ -236,10 +236,11 @@ func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigP
 }
 
 const (
-	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.8.0"
-	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.8.0"
-	valkeyImage              = "docker.io/valkey/valkey:8.1"
-	gatewayAPICRDsURL        = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
+	valkeyImage       = "docker.io/valkey/valkey:8.1"
+	gatewayAPICRDsURL = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
+	// Kuadrant's controller image version is owned by this upstream ref; the
+	// broker and redis images are chosen by that controller at runtime. The
+	// harness deliberately does not pin either (see fleetGatewayPreloadImages).
 	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
 	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
 	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
@@ -1251,11 +1252,13 @@ func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, 
 
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
 	// EAIGW's controller/CRDs are installed separately (deployEnvoyAIGatewayInfra
-	// applies its own upstream manifests, not preloaded images here) --
-	// kube-mcp-server is the only image both gateways need preloaded. Keep the
-	// archive path for CI, where it avoids registry rate limits; local Podman
-	// Kind imports can leave containerd with an unusable temporary image alias.
-	preloadedKubeMCPImage := preloadFleetGatewayImages(ctx, clusterName, gatewayType, writer)
+	// applies its own upstream manifests, not preloaded images here) and
+	// Kuadrant's controller/broker images are owned upstream (see
+	// fleetGatewayPreloadImages) -- kube-mcp-server is the only image this
+	// harness can preload and then actually reference. Keep the archive path
+	// for CI, where it avoids registry rate limits; local Podman Kind imports
+	// can leave containerd with an unusable temporary image alias.
+	preloadedKubeMCPImage := preloadFleetGatewayImages(ctx, clusterName, writer)
 	kubeMCPAuthConfig := sharedAuthConfig
 	kubeMCPAuthConfig.ImageReference = preloadedKubeMCPImage
 	kubeMCPAuthConfig.RemoteBridge = remoteBridge
@@ -1381,26 +1384,37 @@ func applyFleetHubWriteRBAC(ctx context.Context, kubeconfigPath, hubClusterID st
 	return nil
 }
 
-func preloadFleetGatewayImages(ctx context.Context, clusterName string, gatewayType registry.MCPGatewayType, writer io.Writer) string {
-	var preloadedKubeMCPImage string
-	if shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
-		preloadImages := []string{KubeMCPServerImage}
-		if gatewayType != registry.GatewayEAIGW {
-			preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
-		}
-		for _, img := range preloadImages {
-			var loadErr error
-			if img == KubeMCPServerImage {
-				preloadedKubeMCPImage, loadErr = PreloadExternalImageWithReference(ctx, img, clusterName, writer)
-			} else {
-				loadErr = PreloadExternalImage(ctx, img, clusterName, writer)
-			}
-			if loadErr != nil {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
-			}
-		}
-	} else {
+// fleetGatewayPreloadImages returns the third-party images the fleet-core
+// harness preloads into Kind before deployment.
+//
+// Only kube-mcp-server is listed: this harness writes that exact reference
+// into the Deployment it applies, so the preloaded local tag can be
+// substituted for it. Kuadrant's controller image is owned by the pinned
+// upstream kustomize overlay, and the broker plus redis Deployments are
+// created at runtime by that controller from its own compiled-in defaults --
+// none of those references are visible to this harness. A local pin can only
+// guess (v0.7.1 was preloaded while the controller deployed v0.8.0), so those
+// images are left to the node's own pull instead.
+func fleetGatewayPreloadImages() []string {
+	return []string{KubeMCPServerImage}
+}
+
+func preloadFleetGatewayImages(ctx context.Context, clusterName string, writer io.Writer) string {
+	if !shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
 		_, _ = fmt.Fprintln(writer, "  ℹ️  Local mode: skipping external image archive preload; Kind will pull images on demand")
+		return ""
+	}
+
+	var preloadedKubeMCPImage string
+	for _, img := range fleetGatewayPreloadImages() {
+		archiveRef, loadErr := PreloadExternalImageWithReference(ctx, img, clusterName, writer)
+		if loadErr != nil {
+			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+			continue
+		}
+		if img == KubeMCPServerImage {
+			preloadedKubeMCPImage = archiveRef
+		}
 	}
 
 	return preloadedKubeMCPImage
