@@ -714,9 +714,10 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "Container killed due to memory limit",
 				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "memory-hog",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "memory-hog",
+					"namespace":  "production",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}
@@ -737,8 +738,9 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "Node is not ready",
 				"type":    "Error", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
-					"kind": "Node",
-					"name": "worker-node-1",
+					"apiVersion": "v1",
+					"kind":       "Node",
+					"name":       "worker-node-1",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}
@@ -760,9 +762,10 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "0/3 nodes available: insufficient memory",
 				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "payment-api",
-					"namespace": "production",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "payment-api",
+					"namespace":  "production",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}
@@ -783,9 +786,10 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "An error occurred",
 				"type":    "Error", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "test-pod",
-					"namespace": "default",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "test-pod",
+					"namespace":  "default",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}
@@ -807,9 +811,10 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "Back-off restarting failed container",
 				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "flaky-app",
-					"namespace": "staging",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "flaky-app",
+					"namespace":  "staging",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}
@@ -831,9 +836,10 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 				"message": "Back-off pulling image",
 				"type":    "Warning", // Type passed through
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "test-pod",
-					"namespace": "default",
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "test-pod",
+					"namespace":  "default",
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
 			}

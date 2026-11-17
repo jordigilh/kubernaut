@@ -83,9 +83,10 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 			SignalSource: "test",
 			TargetType:   "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      targetKind,
-				Name:      targetName,
-				Namespace: targetNamespace,
+				Kind:       targetKind,
+				APIVersion: testAPIVersionForKind(targetKind),
+				Name:       targetName,
+				Namespace:  targetNamespace,
 			},
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),
@@ -108,6 +109,20 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	}
 
 	return rr
+}
+
+// testAPIVersionForKind maps a fixture kind to its apiVersion, mirroring what
+// production adapters resolve via API discovery (#2592: RRs must carry an
+// explicit targetResource.apiVersion).
+func testAPIVersionForKind(kind string) string {
+	switch kind {
+	case "Deployment", "StatefulSet", "ReplicaSet", "DaemonSet":
+		return "apps/v1"
+	case "Job", "CronJob":
+		return "batch/v1"
+	default:
+		return "v1" // core: Pod, Node, ConfigMap, Service, ...
+	}
 }
 
 func applyRemediationOverrides(fingerprint, signalName, severity, signalType, targetKind, targetName, targetNamespace string, opt RemediationRequestOpts) (string, string, string, string, string, string, string) {

@@ -83,6 +83,7 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 
 	It("UT-FLEET-FC-001: empty ClusterID delegates to local checker", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			Group: "apps", Version: "v1",
 			Namespace: "default",
 			Kind:      "Deployment",
 			Name:      "nginx",
@@ -91,8 +92,19 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(managed).To(BeTrue())
 	})
 
+	It("UT-FLEET-2592-LOCAL-GVK [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects Kind-only local identities", func() {
+		identity := scope.ResourceIdentity{Kind: "Deployment", Namespace: "default", Name: "nginx"}
+		managed, err := fc.IsManagedResource(ctx, identity)
+		Expect(err).To(HaveOccurred())
+		Expect(managed).To(BeFalse())
+		result, err := fc.Check(ctx, identity)
+		Expect(err).To(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+	})
+
 	It("UT-FLEET-FC-002: returns false for unmanaged local resource", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			Group: "apps", Version: "v1",
 			Namespace: "default",
 			Kind:      "Deployment",
 			Name:      "redis",
@@ -104,6 +116,8 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-FC-003: non-empty ClusterID routes to remote backend", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
@@ -115,6 +129,8 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-FC-004: remote miss returns an evaluated unmanaged result", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "unknown",
@@ -127,6 +143,8 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		remote.err = fmt.Errorf("connection refused")
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
@@ -137,9 +155,52 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 
 	It("UT-FLEET-2584-SCOPE-001 [BR-SECURITY-016]: preserves remote errors through the federated checker", func() {
 		remote.err = fmt.Errorf("backend unavailable")
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "nginx"})
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx"})
 		Expect(managed).To(BeFalse())
 		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
+	})
+
+	It("UT-FLEET-2592-GVK-001 [SI-10]: rejects a remote identity without explicit Group and Version", func() {
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("target GVK is unavailable"))
+	})
+
+	It("UT-FLEET-2592-TYPED-001 [BR-SCOPE-001, AC-4]: preserves a verified remote decision in the typed contract", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		Expect(result.Managed).NotTo(BeNil())
+		Expect(*result.Managed).To(BeTrue())
+	})
+
+	It("UT-FLEET-2592-TYPED-002 [BR-SCOPE-001, SI-10]: returns invalid for an ambiguous remote identity", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).To(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
 })
 
@@ -179,6 +240,8 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "unknown-cluster",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
@@ -194,6 +257,8 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
@@ -208,6 +273,8 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "any-cluster",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",

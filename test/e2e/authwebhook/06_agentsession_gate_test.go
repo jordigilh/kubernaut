@@ -85,9 +85,10 @@ func buildRemediationRequestCRD(crdName string) *remediationv1.RemediationReques
 			Severity:          "critical",
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Pod",
-				Name:      "e2e-agentsession-test-pod",
-				Namespace: sharedNamespace,
+				Kind:       "Pod",
+				APIVersion: "v1",
+				Name:       "e2e-agentsession-test-pod",
+				Namespace:  sharedNamespace,
 			},
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),

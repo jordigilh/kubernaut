@@ -73,9 +73,10 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 					FiringTime:        now,
 					ReceivedTime:      now,
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNamespace,
 					},
 				},
 			}
@@ -132,9 +133,10 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 					FiringTime:        now,
 					ReceivedTime:      now,
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNamespace,
 					},
 				},
 			}

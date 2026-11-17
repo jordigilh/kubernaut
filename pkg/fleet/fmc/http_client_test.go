@@ -98,7 +98,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(setupServer())
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred(),
@@ -134,6 +134,8 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 
 		_, _ = client.IsManagedResource(context.Background(), scope.ResourceIdentity{
 			ClusterID: "cluster with spaces",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Name:      "name/with/slashes",
 			Namespace: "ns",
@@ -212,7 +214,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue())
@@ -250,7 +252,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -268,7 +270,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(server.URL, fmc.WithHTTPClient(&http.Client{Transport: flaky}))
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -285,7 +287,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "missing",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "missing",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -301,7 +303,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			client = fmc.NewHTTPClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred())
@@ -318,7 +320,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 
 			start := time.Now()
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			elapsed := time.Since(start)
 
@@ -345,7 +347,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 
 			start := time.Now()
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			elapsed := time.Since(start)
 

@@ -149,10 +149,10 @@ var _ = Describe("Prometheus Reserved Label Denylist (#1045)", func() {
 
 		It("UT-GW-1045-007: job + poddisruptionbudget — PDB resolves, not Job", func() {
 			signal, err := adapter.Parse(ctx, makePayload(map[string]interface{}{
-				"alertname":            "PDBViolation",
-				"namespace":            "production",
-				"job":                  "kube-state-metrics",
-				"poddisruptionbudget":  "demo-pdb",
+				"alertname":           "PDBViolation",
+				"namespace":           "production",
+				"job":                 "kube-state-metrics",
+				"poddisruptionbudget": "demo-pdb",
 			}))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal.Resource.Kind).To(Equal("PodDisruptionBudget"),

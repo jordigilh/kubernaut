@@ -80,7 +80,8 @@ var _ = Describe("BR-GATEWAY-004: Kubernetes Event adapter SetLogger", func() {
 		payload := []byte(`{
 			"type": "Warning",
 			"reason": "OOMKilled",
-			"involvedObject": {"kind": "Pod", "namespace": "ns", "name": "pod-1"}
+			"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "ns", "name": "pod-1"}
 		}`)
 		_, err := adapter.Parse(context.Background(), payload)
 		Expect(err).To(HaveOccurred())

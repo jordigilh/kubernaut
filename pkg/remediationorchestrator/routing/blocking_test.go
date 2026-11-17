@@ -850,7 +850,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "rr-effective-execution-cluster", Namespace: "default"},
 				Spec: remediationv1.RemediationRequestSpec{
 					ClusterID:      "signal-origin-cluster",
-					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-effective-cluster", Namespace: "default"},
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "nginx-effective-cluster", Namespace: "default"},
 				},
 			}
 
@@ -1322,6 +1322,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "priority-test-fp",
+					TargetResource:    remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "target"},
 				},
 			}
 
@@ -1355,6 +1356,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "short-circuit-fp",
+					TargetResource:    remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "target"},
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					RoutingStatus: &remediationv1.RoutingStatus{
@@ -1378,7 +1380,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "unique-no-block-fp",
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "unique-target",
 						Namespace: "default",
@@ -1453,7 +1455,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "", // Empty fingerprint
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "test-pod",
 						Namespace: "default",
@@ -1475,7 +1477,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "test-fp",
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "", // Empty name
 						Namespace: "default",
@@ -1517,7 +1519,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind: "Node",
 						Name: "worker-1",
 						// No namespace (cluster-scoped)
@@ -1559,7 +1561,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "test-pod",
 						Namespace: "default",
@@ -1604,7 +1606,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "test-pod-old",
 						Namespace: "default",
@@ -1730,7 +1732,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					TargetResource: remediationv1.ResourceIdentifier{
+					TargetResource: remediationv1.ResourceIdentifier{APIVersion: "v1",
 						Kind:      "Pod",
 						Name:      "multi-target",
 						Namespace: "default",
@@ -1837,6 +1839,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "priority-test-fp", // Same fingerprint (duplicate)
+					TargetResource:    remediationv1.ResourceIdentifier{APIVersion: "v1", Kind: "Pod", Name: "target"},
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseAnalyzing,
@@ -1865,9 +1868,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					ClusterID: "prod-east",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "nginx",
-						Namespace: "default",
+						APIVersion: "apps/v1",
+						Kind:       "Deployment",
+						Name:       "nginx",
+						Namespace:  "default",
 					},
 					SignalType: "alert",
 					TargetType: "kubernetes",
@@ -1896,8 +1900,44 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				"RO must route to remote scope check when ClusterID is non-empty (AC-4: cross-cluster information flow)")
 			Expect(spy.capturedClusterID).To(Equal("prod-east"),
 				"clusterID from RR spec must be passed to IsManagedResource")
+			Expect(spy.capturedGroup).To(Equal("apps"),
+				"Group from RR TargetResource APIVersion must be passed to IsManagedResource")
+			Expect(spy.capturedVersion).To(Equal("v1"),
+				"Version from RR TargetResource APIVersion must be passed to IsManagedResource")
 			Expect(result).To(BeNil(),
 				"managed remote resource should not be blocked")
+		})
+
+		It("UT-FLEET-RO-002 [AC-4, SI-10]: blocks a remote RR without APIVersion before scope checking", func() {
+			scheme := runtime.NewScheme()
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-missing-gvk", Namespace: "kubernaut-system"},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "prod-east",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "nginx", Namespace: "default",
+					},
+				},
+			}
+
+			spy := &spyFederatedScopeChecker{localManaged: true}
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
+			engine := routing.NewRoutingEngine(k8sClient, k8sClient, "kubernaut-system", routing.Config{}, spy)
+
+			result := engine.CheckUnmanagedResource(ctx, rr)
+
+			Expect(result).NotTo(BeNil())
+			Expect(result.Blocked).To(BeTrue())
+			Expect(result.Message).To(ContainSubstring("is missing or invalid"),
+				"an identity defect must be reported as such, not as an unmanaged-resource label problem")
+			Expect(result.Message).To(ContainSubstring("apiVersion"),
+				"the message must tell the operator which field to correct")
+			Expect(result.Message).ToNot(ContainSubstring("Add label"),
+				"label guidance is wrong for a permanent identity defect")
+			Expect(spy.calledRemote).To(BeFalse())
 		})
 	})
 })
@@ -1909,6 +1949,8 @@ type spyFederatedScopeChecker struct {
 	remoteManaged     bool
 	calledRemote      bool
 	capturedClusterID string
+	capturedGroup     string
+	capturedVersion   string
 }
 
 var _ scope.ScopeChecker = (*spyFederatedScopeChecker)(nil)
@@ -1917,6 +1959,8 @@ func (s *spyFederatedScopeChecker) IsManagedResource(_ context.Context, resource
 	if resource.ClusterID != "" {
 		s.calledRemote = true
 		s.capturedClusterID = resource.ClusterID
+		s.capturedGroup = resource.Group
+		s.capturedVersion = resource.Version
 		return s.remoteManaged || s.localManaged, nil
 	}
 	return s.localManaged, nil

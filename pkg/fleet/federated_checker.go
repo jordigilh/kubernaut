@@ -27,6 +27,7 @@ import (
 
 // Compile-time interface compliance.
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
+var _ scope.TypedScopeChecker = (*FederatedScopeChecker)(nil)
 
 // ClusterLookup checks whether a cluster is known to Kubernaut's fleet registry.
 // Implemented by EAIGWRegistry/KuadrantRegistry via the adapter below.
@@ -101,6 +102,9 @@ func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
 //  1. Cluster check: is the cluster known? (via ClusterLookup, if configured)
 //  2. Resource check: is the resource managed? (via remote backend)
 func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if _, err := scope.GVKForIdentity(resource); err != nil {
+		return false, fmt.Errorf("fleet scope: target GVK is unavailable: %w", err)
+	}
 	if resource.ClusterID == "" {
 		return f.local.IsManagedResource(ctx, resource)
 	}
@@ -119,4 +123,47 @@ func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource 
 		return false, err
 	}
 	return managed, nil
+}
+
+// Check is the typed federated scope contract. It preserves invalid and
+// unavailable outcomes while allowing existing boolean backends to participate
+// through the established error-preserving compatibility method.
+func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
+	if _, err := scope.GVKForIdentity(resource); err != nil {
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: "invalid_gvk"}, fmt.Errorf("fleet scope: target GVK is unavailable: %w", err)
+	}
+	if resource.ClusterID == "" {
+		if typed, ok := f.local.(scope.TypedScopeChecker); ok {
+			return typed.Check(ctx, resource)
+		}
+		managed, err := f.local.IsManagedResource(ctx, resource)
+		if err != nil {
+			return unavailableScopeResult("local_scope_check_failed"), err
+		}
+		return legacyScopeResult(managed), nil
+	}
+
+	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
+		return unavailableScopeResult("cluster_unknown"), fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
+	}
+	if typed, ok := f.remote.(scope.TypedScopeChecker); ok {
+		return typed.Check(ctx, resource)
+	}
+	managed, err := f.remote.IsManagedResource(ctx, resource)
+	if err != nil {
+		return unavailableScopeResult("remote_scope_check_failed"), err
+	}
+	return legacyScopeResult(managed), nil
+}
+
+func legacyScopeResult(managed bool) scope.ScopeResult {
+	state := scope.ScopeVerifiedUnmanaged
+	if managed {
+		state = scope.ScopeVerifiedManaged
+	}
+	return scope.ScopeResult{State: state, Managed: &managed, Provenance: scope.ScopeSourceLegacy}
+}
+
+func unavailableScopeResult(reason string) scope.ScopeResult {
+	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: reason, Retryable: true}
 }

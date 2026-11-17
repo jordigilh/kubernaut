@@ -1382,6 +1382,27 @@ type SignalBuilder struct {
 	Labels       map[string]string
 	Annotations  map[string]string
 	ClusterID    string
+	// ResourceAPIVersion overrides the kind-based default apiVersion that
+	// createNormalizedSignal resolves (#2592: strict identity contract).
+	ResourceAPIVersion string
+}
+
+// resourceAPIVersion resolves the fixture's apiVersion: an explicit
+// ResourceAPIVersion wins; otherwise a kind-based default mirrors what the
+// production adapters resolve via API discovery (#2592: the strict identity
+// contract requires an explicit GVK on every signal).
+func (b SignalBuilder) resourceAPIVersion() string {
+	if b.ResourceAPIVersion != "" {
+		return b.ResourceAPIVersion
+	}
+	switch b.ResourceKind {
+	case "Deployment", "StatefulSet", "ReplicaSet", "DaemonSet":
+		return "apps/v1"
+	case "Job", "CronJob":
+		return "batch/v1"
+	default:
+		return "v1" // core: Pod, Node, ConfigMap, Service, ...
+	}
 }
 
 // createNormalizedSignal creates a NormalizedSignal for integration tests
@@ -1434,9 +1455,10 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		Namespace:   builder.Namespace,
 		ClusterID:   builder.ClusterID,
 		Resource: types.ResourceIdentifier{
-			Kind:      builder.ResourceKind,
-			Name:      builder.ResourceName,
-			Namespace: builder.Namespace, // Set resource namespace
+			Kind:       builder.ResourceKind,
+			Name:       builder.ResourceName,
+			Namespace:  builder.Namespace, // Set resource namespace
+			APIVersion: builder.resourceAPIVersion(),
 		},
 		Labels:       builder.Labels,
 		Annotations:  builder.Annotations,
@@ -1601,7 +1623,8 @@ func createK8sEvent(eventType, reason, namespace, name string) []byte {
 		"involvedObject": {
 			"kind": "Pod",
 			"name": "%s",
-			"namespace": "%s"
+			"namespace": "%s",
+			"apiVersion": "v1"
 		},
 		"message": "Test K8s event",
 		"firstTimestamp": "2026-01-16T12:00:00Z",

@@ -107,10 +107,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", roRedisPort)
 
 		By("Seeding shared Redis with managed resources for remote clusters")
-		// Cache keys use the real GVK ("apps/v1" for Deployment/StatefulSet) matching
-		// what pkg/fleet/fmc/syncer.go writes from the K8s API, and what
-		// scopecache.Client.IsManagedResource now infers via scope.InferGVK when
-		// the caller's ResourceIdentity leaves Group/Version empty (Issue #54 RCA).
+		// Cache keys use the explicit GVK written by the FMC syncer.
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "staging-west", "dr-site-east", "any-cluster"} {
 			key, err := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "production", "api-server")
@@ -172,7 +169,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-managed", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "prod-east",
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "Deployment", Name: "api-server", Namespace: "production",
 				},
 			},
@@ -187,7 +184,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-local", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "Deployment", Name: "web-app", Namespace: testNamespace,
 				},
 			},
@@ -203,7 +200,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-unmanaged", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "prod-east",
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "Deployment", Name: "unknown-resource", Namespace: "unknown-ns",
 				},
 			},
@@ -220,7 +217,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-lineage", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "dr-site-east",
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "StatefulSet", Name: "postgres", Namespace: "databases",
 				},
 			},
@@ -236,7 +233,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-unknown-cluster", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "unknown-cluster",
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "Deployment", Name: "api-server", Namespace: "production",
 				},
 			},

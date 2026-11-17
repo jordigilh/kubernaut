@@ -82,9 +82,25 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
 		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
 		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
-		Entry("invalid inherits namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", true),
 		Entry("missing labels default unmanaged", "", "", false),
 	)
+
+	// #2592 (CodeRabbit round 5): an invalid resource label is an unavailable
+	// resolution, not a verified unmanaged decision — it must surface as an
+	// observable error so the federated lane fails closed instead of
+	// laundering managed=false through ScopeVerifiedUnmanaged.
+	It("UT-ACM-2592-LABEL-001 [BR-SCOPE-001, AC-6]: invalid label is an observable error, never verified unmanaged", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "ConfigMap", "namespace": "payments", "name": "checkout", "label": "kubernaut.ai/managed=invalid"}
+			Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
+		}))
+		client = acm.NewClient(server.URL)
+		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(err).To(HaveOccurred(),
+			"an invalid managed label must fail closed as an unavailable resolution")
+		Expect(err.Error()).To(ContainSubstring("managed label is invalid"))
+		Expect(managed).To(BeFalse())
+	})
 
 	DescribeTable("UT-ACM-2592-001 [BR-SECURITY-016]: empty Search results do not prove an unmanaged target",
 		func(missingNamespace bool) {
@@ -126,15 +142,12 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("UT-ACM-2584-LIVE-006 [BR-SCOPE-001]: infers the GVK when existing callers supply only kind", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, err := w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`))
-			Expect(err).NotTo(HaveOccurred())
-		}))
-		client = acm.NewClient(server.URL)
+	It("UT-ACM-2592-GVK-001 [SI-10]: rejects a remote target when callers supply only kind", func() {
+		client = acm.NewClient("http://127.0.0.1:1")
 		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("explicit group/version"))
 	})
 
 	// AC-4: Search existence alone is insufficient; the explicit scope label is required.
@@ -182,7 +195,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(setupServer())
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred(),
@@ -220,7 +233,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		client = acm.NewClient(server.URL)
 
 		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 		})
 
 		Expect(err).To(HaveOccurred(),
@@ -394,7 +407,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(server.Client()))
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
@@ -410,7 +423,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL)
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(),
 				"SC-8: TLS failure must be observable to the caller")
@@ -428,7 +441,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(customClient))
 
 			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),

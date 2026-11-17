@@ -76,6 +76,14 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	})
 
 	Describe("IsManagedResource (scope.ScopeChecker)", func() {
+		It("UT-FLEET-SC-2592 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects missing GVK even when the namespace is managed", func() {
+			key, err := scopecache.BuildKey("remote", "", "v1", "Namespace", "", "default")
+			Expect(err).NotTo(HaveOccurred())
+			reader.store[key] = true
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "remote", Kind: "Pod", Namespace: "default", Name: "p"})
+			Expect(err).To(HaveOccurred())
+			Expect(managed).To(BeFalse())
+		})
 		It("UT-FLEET-SC-009: Client implements scope.ScopeChecker", func() {
 			var checker scope.ScopeChecker = client
 			Expect(checker).ToNot(BeNil())
@@ -98,46 +106,12 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(managed).To(BeTrue())
 		})
 
-		// Issue #54 SOC2 gap RCA (CI run 28495045499): every fleet E2E caller
-		// (pkg/gateway/server.go validateScope) builds a scope.ResourceIdentity
-		// with Group/Version left empty -- exactly as documented on
-		// scope.ResourceIdentity ("optional -- inferred from Kind when empty").
-		// pkg/fleet/fmc/syncer.go, however, writes cache keys using the
-		// resource's REAL GVK obtained from the K8s API (e.g. "apps/v1" for
-		// Deployment). Without inferring Group/Version here the same way
-		// scope.Manager already does (pkg/shared/scope/manager.go InferGVK),
-		// the read-side key ("kubernaut:managed:...://Deployment:...") never
-		// matches the write-side key ("kubernaut:managed:...:apps/v1/Deployment:..."),
-		// so every federated scope check permanently and deterministically
-		// resolves to "not managed" regardless of any sync/cache timing.
-		It("UT-FLEET-SC-011 [AC-4]: IsManagedResource with empty Group/Version infers from Kind like scope.Manager", func() {
-			key, err := scopecache.BuildKey("loopback-cluster", "apps", "v1", "Deployment", "kubernaut-system", "memory-eater")
-			Expect(err).ToNot(HaveOccurred())
-			reader.store[key] = true
-
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
-				ClusterID: "loopback-cluster",
-				Kind:      "Deployment",
-				Namespace: "kubernaut-system",
-				Name:      "memory-eater",
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
-				"empty Group/Version must be inferred from Kind (apps/v1 for Deployment) to match syncer-written keys")
-		})
-
-		It("UT-FLEET-SC-012 [AC-4]: IsManagedResource infers core-group empty-string GVK for Pod", func() {
+		It("UT-FLEET-SC-012 [BR-SCOPE-001, AC-4, AC-6, SI-10]: accepts an explicit core GVK", func() {
 			key, err := scopecache.BuildKey("loopback-cluster", "", "v1", "Pod", "kubernaut-system", "web-0")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred())
 			reader.store[key] = true
-
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
-				ClusterID: "loopback-cluster",
-				Kind:      "Pod",
-				Namespace: "kubernaut-system",
-				Name:      "web-0",
-			})
-			Expect(err).ToNot(HaveOccurred())
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "loopback-cluster", Version: "v1", Kind: "Pod", Namespace: "kubernaut-system", Name: "web-0"})
+			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
 
@@ -159,6 +133,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "demo-checkout",
 				Name:      "worker-5f74bb54f7-28jpv",
@@ -176,6 +151,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "demo-checkout",
 				Name:      "worker-1",
@@ -187,6 +163,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		It("UT-FLEET-SC-015 [Issue #2311]: IsManagedResource returns unmanaged when neither the resource nor its namespace is cached", func() {
 			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "unmanaged-ns",
 				Name:      "orphan",
@@ -204,6 +181,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
+				Version:   "v1",
 				Kind:      "Node",
 				Namespace: "",
 				Name:      "worker-node-1",
@@ -214,6 +192,10 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	})
 
 	Describe("BuildKey", func() {
+		It("UT-FLEET-SC-2592-KEY [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects missing version", func() {
+			_, err := scopecache.BuildKey("prod-east", "apps", "", "Deployment", "default", "nginx")
+			Expect(err).To(HaveOccurred())
+		})
 		It("UT-FLEET-SC-003: produces expected key format", func() {
 			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
