@@ -69,7 +69,12 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind: "Deployment", Name: "cancel-target", Namespace: targetNamespace,
+					// Issue #2592 scope-safety contract: strict GVK propagation requires
+					// spec.targetResource.apiVersion; without it the deployed RO fails
+					// closed (UnmanagedResource) and never spawns the SignalProcessing
+					// child this spec must acknowledge.
+					APIVersion: "apps/v1",
+					Kind:       "Deployment", Name: "cancel-target", Namespace: targetNamespace,
 				},
 				FiringTime: now, ReceivedTime: now,
 			},

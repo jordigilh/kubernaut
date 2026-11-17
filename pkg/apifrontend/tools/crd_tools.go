@@ -12,7 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	k8sretry "k8s.io/client-go/util/retry"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -21,7 +21,6 @@ import (
 	"google.golang.org/adk/v2/tool/functiontool"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"k8s.io/client-go/util/retry"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -1110,7 +1109,7 @@ func HandleCancelRemediation(ctx context.Context, client crclient.Client, args C
 	}
 
 	var result CancelRemediationResult
-	err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var attemptErr error
 		result, attemptErr = cancelRemediationAttempt(ctx, client, ns, name)
 		return attemptErr
