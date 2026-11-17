@@ -92,6 +92,9 @@ func (r *staticClusterRegistry) Stop()                         {}
 // to handle remote cluster scope checks. This avoids mocking and exercises the real
 // FMC HTTP path that production GW uses (ADR-068).
 var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Label("fleet", "integration"), func() {
+	// appsAPIVersion is the explicit GVK of the remote Deployment fixtures
+	// (goconst: hoisted shared literal).
+	const appsAPIVersion = "apps/v1"
 	var (
 		testLogger    logr.Logger
 		testNamespace string
@@ -185,7 +188,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
-		signal.Resource.APIVersion = "apps/v1"
+		signal.Resource.APIVersion = appsAPIVersion
 		signal.ClusterID = "prod-east"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
@@ -243,7 +246,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "warning",
 			Source:       "prometheus",
 		})
-		signalEast.Resource.APIVersion = "apps/v1"
+		signalEast.Resource.APIVersion = appsAPIVersion
 		signalEast.ClusterID = "prod-east"
 		signalEast.Fingerprint = types.CalculateClusterAwareFingerprint("prod-east", sharedResource)
 
@@ -260,7 +263,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "warning",
 			Source:       "prometheus",
 		})
-		signalWest.Resource.APIVersion = "apps/v1"
+		signalWest.Resource.APIVersion = appsAPIVersion
 		signalWest.ClusterID = "prod-west"
 		signalWest.Fingerprint = types.CalculateClusterAwareFingerprint("prod-west", sharedResource)
 
@@ -325,7 +328,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
-		signal.Resource.APIVersion = "apps/v1"
+		signal.Resource.APIVersion = appsAPIVersion
 		// ClusterID is intentionally NOT set (zero value) to test backward compat
 
 		response, err := gwServer.ProcessSignal(ctx, signal)

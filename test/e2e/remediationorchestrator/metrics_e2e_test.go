@@ -67,9 +67,10 @@ func seedMetricsWithRemediation() {
 			SignalType:        "alert",
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Pod",
-				Namespace: "default",
-				Name:      "test-pod",
+				Kind:       "Pod",
+				APIVersion: "v1",
+				Namespace:  "default",
+				Name:       "test-pod",
 			},
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),

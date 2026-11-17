@@ -321,3 +321,4 @@ must-gather-*.tar.gz
 # temporary live-validation harnesses (#2592, not committed)
 liveval/
 regprobe/
+.ci-dossier/

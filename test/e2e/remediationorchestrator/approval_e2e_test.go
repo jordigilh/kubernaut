@@ -111,9 +111,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNamespace, // workload namespace
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNamespace, // workload namespace
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
@@ -367,9 +368,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app-expiry",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app-expiry",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
@@ -474,9 +476,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app-persist",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app-persist",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

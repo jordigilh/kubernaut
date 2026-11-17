@@ -113,9 +113,10 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-deployment",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-deployment",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

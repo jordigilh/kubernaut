@@ -59,6 +59,26 @@ func ScopeCheck(g Gomega, h *Harness, clusterID, group, version, kind, namespace
 	return body.Managed
 }
 
+// ScopeCheckStatus returns the raw HTTP status of a scope-check request for
+// assertions about the wire contract itself (#2592: unregistered clusters are
+// an unavailable check — 503 — never an authoritative managed=false).
+func ScopeCheckStatus(g Gomega, h *Harness, clusterID, group, version, kind, namespace, name string) int {
+	q := url.Values{}
+	q.Set("cluster", clusterID)
+	q.Set("group", group)
+	q.Set("version", version)
+	q.Set("kind", kind)
+	q.Set("namespace", namespace)
+	q.Set("name", name)
+
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ScopeCheckPath+"?"+q.Encode(), http.NoBody)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to build scope check request")
+	resp, err := h.FMCHTTPClient.Do(req)
+	g.Expect(err).ToNot(HaveOccurred(), "scope check request failed")
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
+}
+
 // ListClusters queries FMC's real /api/v1/clusters endpoint.
 func ListClusters(g Gomega, h *Harness) []fmc.ClusterInfoResponse {
 	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ClustersPath, http.NoBody)

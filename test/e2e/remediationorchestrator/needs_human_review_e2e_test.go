@@ -81,9 +81,10 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					SignalType:        "mock_rca_incomplete", // Mock LLM detects this keyword
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod-rca-incomplete",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod-rca-incomplete",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
@@ -233,9 +234,10 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					SignalType:        "oomkilled", // Mock LLM detects this keyword → needs_human_review=false
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod-oomkilled",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod-oomkilled",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

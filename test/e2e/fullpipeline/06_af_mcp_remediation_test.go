@@ -97,6 +97,7 @@ spec:
   targetType: "kubernetes"
   targetResource:
     kind: Deployment
+    apiVersion: apps/v1
     name: memory-eater
     namespace: %s
 `, rrName, namespace, fp, testNS)

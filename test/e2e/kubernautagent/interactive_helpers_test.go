@@ -81,9 +81,10 @@ func createTestRemediationRequest(testCtx context.Context, rrID string, opts ...
 			SignalSource:      "e2e-test",
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Pod",
-				Name:      "e2e-test-pod",
-				Namespace: sharedNamespace,
+				Kind:       "Pod",
+				APIVersion: "v1",
+				Name:       "e2e-test-pod",
+				Namespace:  sharedNamespace,
 			},
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),
