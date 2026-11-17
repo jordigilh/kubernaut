@@ -21,8 +21,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -31,12 +31,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
@@ -58,15 +60,17 @@ import (
 // investigation goroutine too, which a Status-only write would not.
 //
 // FedRAMP Control Objectives:
-//   IR-4 (Incident Handling): Cancelled remediation sessions MUST be terminated
-//     promptly -- orphaned AI investigation sessions represent uncontrolled
-//     incident handling that violates IR-4(1) automated response mechanisms.
-//   AC-6 (Least Privilege): Active KA sessions hold elevated cluster access;
-//     failing to revoke them when the parent operation is cancelled violates
-//     the principle of least privilege by maintaining unnecessary access.
-//   SI-4 (Information System Monitoring): All state transitions in the
-//     remediation chain must be observable; a cancelled RR with an active
-//     AgentSession creates a blind spot in monitoring.
+//
+//	IR-4 (Incident Handling): Cancelled remediation sessions MUST be terminated
+//	  promptly -- orphaned AI investigation sessions represent uncontrolled
+//	  incident handling that violates IR-4(1) automated response mechanisms.
+//	AC-6 (Least Privilege): Active KA sessions hold elevated cluster access;
+//	  failing to revoke them when the parent operation is cancelled violates
+//	  the principle of least privilege by maintaining unnecessary access.
+//	SI-4 (Information System Monitoring): All state transitions in the
+//	  remediation chain must be observable; a cancelled RR with an active
+//	  AgentSession creates a blind spot in monitoring.
+//
 // ============================================================================
 var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [IR-4, AC-6, SI-4]", func() {
 
@@ -83,6 +87,7 @@ var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [I
 		_ = aianalysisv1.AddToScheme(scheme)
 		_ = isv1alpha1.AddToScheme(scheme)
 		_ = agentsessionv1.AddToScheme(scheme)
+		_ = remediationv1.AddToScheme(scheme)
 		testMetrics = metrics.NewMetrics()
 	})
 
@@ -131,6 +136,7 @@ var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [I
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "rr-1421-001",
 					Namespace: "default",
+					UID:       types.UID("rr-1421-001-uid"),
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -146,10 +152,15 @@ var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [I
 				Namespace: "default",
 			},
 		}
+		Expect(controllerutil.SetControllerReference(analysis, agentSession, scheme)).To(Succeed())
+		parent := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-1421-001", Namespace: "default", UID: types.UID("rr-1421-001-uid")},
+			Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseCancelling},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(analysis, agentSession).
+			WithObjects(analysis, agentSession, parent).
 			WithStatusSubresource(analysis).
 			Build()
 
@@ -195,10 +206,13 @@ var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [I
 				Namespace: "default",
 			},
 		}
+		parent := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-1421-002", Namespace: "default"},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(analysis, agentSession).
+			WithObjects(analysis, agentSession, parent).
 			WithStatusSubresource(analysis).
 			Build()
 
@@ -238,10 +252,14 @@ var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [I
 				ObservedGeneration: 1,
 			},
 		}
+		parent := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-1421-003", Namespace: "default"},
+			Status:     remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseCancelling},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(analysis).
+			WithObjects(analysis, parent).
 			WithStatusSubresource(analysis).
 			Build()
 

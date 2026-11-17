@@ -264,6 +264,7 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 	payload := &ogenclient.AIAnalysisErrorPayload{
 		Phase:        phase,
 		ErrorMessage: err.Error(),
+		ErrorDetails: sharedaudit.ToOgenOptErrorDetails(classifyAnalysisFailureError(err)).Or(ogenclient.ErrorDetails{}),
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -670,6 +671,9 @@ func classifyAnalysisFailureError(err error) *sharedaudit.ErrorDetails {
 	}
 
 	errMsg := err.Error()
+	if strings.Contains(strings.ToLower(errMsg), "cancellation retry budget exhausted") {
+		return sharedaudit.NewErrorDetails("aianalysis", "ERR_CANCELLATION_RETRY_EXHAUSTED", errMsg, false)
+	}
 	switch {
 	case strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded"):
 		return sharedaudit.NewErrorDetails("aianalysis", "ERR_UPSTREAM_TIMEOUT", errMsg, true) // Timeout is transient

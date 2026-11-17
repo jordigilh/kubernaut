@@ -59,7 +59,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(createRR(rrNamespace, rrName, "test-deploy-rr01")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
-		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
+		By("TC-E2E-RR-03: kubernaut_cancel_remediation records nonterminal Cancelling")
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
 			"name": rrName,
 		})
@@ -68,6 +68,8 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 			ContainSubstring("cancel"),
 			ContainSubstring("cancelled"),
 		))
+		Expect(strings.ToLower(text)).To(ContainSubstring("cancelling"),
+			"the cancel API must acknowledge a nonterminal cancellation request")
 
 		By("TC-E2E-RR-04: kubernaut_list_remediations returns the RR")
 		var out map[string]interface{}

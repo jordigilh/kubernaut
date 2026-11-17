@@ -242,6 +242,56 @@ spec:
           status:
             description: RemediationRequestStatus defines the observed state of RemediationRequest.
             properties:
+              cancellation:
+                description: |-
+                  Cancellation records the idempotent cancellation request accepted by the
+                  authorized cancellation API. RO owns the subsequent lifecycle transition
+                  and child acknowledgement aggregation.
+                  Reference: BR-AUDIT-005, issue #2588.
+                properties:
+                  lastError:
+                    description: LastError contains the latest observable cancellation
+                      failure, if any.
+                    type: string
+                  reason:
+                    description: Reason describes why cancellation was requested.
+                    type: string
+                  requestID:
+                    description: RequestID is stable across retries and controller
+                      restarts.
+                    type: string
+                  requestedAt:
+                    description: RequestedAt records when cancellation was first accepted.
+                    format: date-time
+                    type: string
+                  requestedBy:
+                    description: RequestedBy identifies the authenticated actor or
+                      system controller.
+                    type: string
+                  retryCount:
+                    description: RetryCount records bounded cancellation attempts
+                      for operator visibility.
+                    format: int32
+                    type: integer
+                  source:
+                    description: Source identifies the cancellation authority.
+                    enum:
+                    - User
+                    - Deletion
+                    - System
+                    type: string
+                  state:
+                    description: State is the parent-level cancellation lifecycle
+                      state.
+                    enum:
+                    - Requested
+                    - InProgress
+                    - Completed
+                    - Failed
+                    type: string
+                required:
+                - requestID
+                type: object
               completedAt:
                 format: date-time
                 type: string
@@ -378,6 +428,7 @@ spec:
                     - Executing
                     - Verifying
                     - Blocked
+                    - Cancelling
                     - Completed
                     - Failed
                     - TimedOut
@@ -537,6 +588,7 @@ spec:
                 - Executing
                 - Verifying
                 - Blocked
+                - Cancelling
                 - Completed
                 - Failed
                 - TimedOut

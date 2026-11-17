@@ -67,7 +67,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			By("Creating first WorkflowExecution for target resource")
 			// Use shared helper function from suite_test.go (consolidated per compliance triage)
 			wfe1 := cooldownWFE("cooldown-test-1", "default/deployment/cooldown-app-1")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for controller to complete initial reconciliation")
 			// Wait for controller to add finalizer and set initial phase
@@ -105,7 +105,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 
 			By("Creating second WorkflowExecution immediately for SAME resource (within cooldown)")
 			wfe2 := cooldownWFE("cooldown-test-2", "default/deployment/cooldown-app-1") // Same resource!
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 			By("Waiting for second WorkflowExecution to reach Pending phase")
 			// Controller needs time to process and set initial phase
@@ -146,7 +146,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 
 			By("Creating first WorkflowExecution for resource A")
 			wfe1 := cooldownWFE("cooldown-resource-a", "default/deployment/app-a")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for controller to complete initial reconciliation")
 			// Wait for controller to add finalizer and set initial phase
@@ -176,7 +176,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 
 			By("Creating second WorkflowExecution for resource B (DIFFERENT resource)")
 			wfe2 := cooldownWFE("cooldown-resource-b", "default/deployment/app-b") // Different resource!
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 			By("Verifying second WorkflowExecution is NOT blocked (different resource)")
 			// Different resource means no cooldown applies - should be allowed immediately

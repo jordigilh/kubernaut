@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
 	duckv1 "knative.dev/pkg/apis/duck/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -229,7 +230,8 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 					Name:      prName,
 					Namespace: namespace,
 					Labels: map[string]string{
-						"kubernaut.ai/workflow-execution": "wfe-tek-cleanup",
+						"kubernaut.ai/workflow-execution":     "wfe-tek-cleanup",
+						"kubernaut.ai/workflow-execution-uid": "uid-wfe-tek-cleanup",
 					},
 				},
 			}
@@ -238,6 +240,7 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 			te := executor.NewTektonExecutorWithFactory(factory)
 
 			wfe := newTestWFE("wfe-tek-cleanup", "default/deployment/tekcleanup", "")
+			wfe.UID = types.UID("uid-wfe-tek-cleanup")
 
 			err := te.Cleanup(ctx, wfe, namespace)
 			Expect(err).ToNot(HaveOccurred())
@@ -245,6 +248,78 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 			var deleted tektonv1.PipelineRun
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &deleted)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("Verified cancellation", func() {
+		It("UT-WE-2588-TEK-001: requests an idempotent PipelineRun stop and verifies disappearance", func() {
+			prName := executor.ExecutionResourceName("default/deployment/tek-cancel")
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      prName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution":     "wfe-tek-cancel",
+						"kubernaut.ai/workflow-execution-uid": "uid-wfe-tek-cancel",
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
+			te := executor.NewTektonExecutorWithFactory(&mockClientFactory{client: fakeClient})
+			wfe := newTestWFE("wfe-tek-cancel", "default/deployment/tek-cancel", "")
+			wfe.UID = types.UID("uid-wfe-tek-cancel")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: prName}
+
+			Expect(te.RequestStop(ctx, wfe, namespace)).To(Succeed())
+			verification, err := te.VerifyStopped(ctx, wfe, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(verification.State).To(Equal(executor.StopStateStopped))
+		})
+
+		It("UT-WE-2588-TEK-002: refuses to stop a PipelineRun owned by another WFE", func() {
+			prName := executor.ExecutionResourceName("default/deployment/tek-foreign")
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      prName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution":     "wfe-tek-foreign",
+						"kubernaut.ai/workflow-execution-uid": "uid-other",
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
+			te := executor.NewTektonExecutorWithFactory(&mockClientFactory{client: fakeClient})
+			wfe := newTestWFE("wfe-tek-foreign", "default/deployment/tek-foreign", "")
+			wfe.UID = types.UID("uid-wfe-tek-foreign")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: prName}
+
+			Expect(te.RequestStop(ctx, wfe, namespace)).To(MatchError(ContainSubstring("identity mismatch")))
+			verification, err := te.VerifyStopped(ctx, wfe, namespace)
+			Expect(err).To(MatchError(ContainSubstring("identity mismatch")))
+			Expect(verification.State).To(Equal(executor.StopStateUnknown))
+		})
+
+		It("UT-WE-2588-TEK-003: does not delete a same-name PipelineRun owned by another WFE UID", func() {
+			prName := executor.ExecutionResourceName("default/deployment/tek-uid-collision")
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      prName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution":     "wfe-tek-uid-collision",
+						"kubernaut.ai/workflow-execution-uid": "uid-previous",
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
+			te := executor.NewTektonExecutorWithFactory(&mockClientFactory{client: fakeClient})
+			wfe := newTestWFE("wfe-tek-uid-collision", "default/deployment/tek-uid-collision", "")
+			wfe.UID = types.UID("uid-wfe-tek-uid-collision")
+
+			Expect(te.RequestStop(ctx, wfe, namespace)).To(MatchError(ContainSubstring("identity mismatch")))
+			var stillThere tektonv1.PipelineRun
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &stillThere)).To(Succeed())
 		})
 	})
 

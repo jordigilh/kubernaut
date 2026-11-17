@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -451,10 +452,27 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 		// garbage-collector controller, so the RAR remains available with its
 		// finalizer and the explicit RAR delete below exercises RO's NotFound
 		// path without relying on GC fan-out.
+		//
+		// Race hardening: if RO reconciles the RR before this delete lands,
+		// ensureCancellationFinalizer retains the parent and full cancellation
+		// runs — including the cancellation NotificationRequest, whose
+		// terminal delivery this suite's NR controller never provides (the NR
+		// controller is deliberately not started here). Mark that
+		// notification delivered so cancellation can complete on that path;
+		// when the delete wins the race the RR vanishes immediately and the
+		// helper is a no-op.
 		Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
 		Eventually(func() bool {
 			current := &remediationv1.RemediationRequest{}
-			return apierrors.IsNotFound(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), current))
+			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), current)
+			if apierrors.IsNotFound(err) {
+				return true
+			}
+			Expect(err).NotTo(HaveOccurred())
+			if current.Status.OverallPhase == remediationv1.PhaseCancelling {
+				deliverCancellationNotification(rr.Name)
+			}
+			return false
 		}, timeout, interval).Should(BeTrue())
 
 		Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
@@ -739,6 +757,23 @@ func setRARSafetyParentPhase(name string, desired remediationv1.RemediationPhase
 		current.Status.ObservedGeneration = current.Generation
 		return k8sClient.Status().Update(ctx, current)
 	}, timeout, interval).Should(Succeed())
+}
+
+// deliverCancellationNotification marks the RR's cancellation
+// NotificationRequest delivered. This suite deliberately does not start the
+// NR controller, so a parent that entered full cancellation before its test
+// deletion would otherwise wait for a delivery that never happens.
+func deliverCancellationNotification(rrName string) {
+	nr := &notificationv1.NotificationRequest{}
+	key := types.NamespacedName{Name: "nr-cancellation-" + rrName, Namespace: ROControllerNamespace}
+	if err := k8sManager.GetAPIReader().Get(ctx, key, nr); err != nil {
+		return // not created yet; retry on the next poll tick
+	}
+	if nr.Status.Phase == notificationv1.NotificationPhaseSent {
+		return
+	}
+	nr.Status.Phase = notificationv1.NotificationPhaseSent
+	_ = k8sClient.Status().Update(ctx, nr)
 }
 
 func rarSafetyRemoveFinalizer(name string) {

@@ -12,6 +12,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sretry "k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"google.golang.org/adk/v2/agent"
@@ -26,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 )
@@ -1106,37 +1109,93 @@ func HandleCancelRemediation(ctx context.Context, client crclient.Client, args C
 		return CancelRemediationResult{}, err
 	}
 
-	var rr remediationv1.RemediationRequest
-	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); err != nil {
+	var result CancelRemediationResult
+	err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		var attemptErr error
+		result, attemptErr = cancelRemediationAttempt(ctx, client, ns, name)
+		return attemptErr
+	})
+	if err != nil {
 		return CancelRemediationResult{}, ToUserFriendlyError(err)
 	}
+	return result, nil
+}
 
-	if IsTerminalPhase(string(rr.Status.OverallPhase)) {
-		return CancelRemediationResult{}, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, ns, name, rr.Status.OverallPhase)
+func cancelRemediationAttempt(
+	ctx context.Context,
+	client crclient.Client,
+	namespace, name string,
+) (CancelRemediationResult, error) {
+	var rr remediationv1.RemediationRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, &rr); err != nil {
+		return CancelRemediationResult{}, ToUserFriendlyError(err)
+	}
+	if result, done, err := cancellationResult(namespace, name, &rr); done {
+		return result, err
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	patch := map[string]interface{}{
-		"status": map[string]interface{}{
-			"overallPhase":   "Cancelled",
-			"completedAt":    now,
-			"lastModifiedAt": now,
-			"message":        "Cancelled by user via kubernaut_cancel_remediation",
-		},
-	}
-	patchBytes, err := json.Marshal(patch)
-	if err != nil {
-		return CancelRemediationResult{}, fmt.Errorf("marshaling patch: %w", err)
+	if !controllerutil.ContainsFinalizer(&rr, cancellation.RemediationRequestFinalizer) {
+		controllerutil.AddFinalizer(&rr, cancellation.RemediationRequestFinalizer)
+		if err := client.Update(ctx, &rr); err != nil {
+			if apierrors.IsConflict(err) {
+				return CancelRemediationResult{}, err
+			}
+			return CancelRemediationResult{}, ToUserFriendlyError(err)
+		}
 	}
 
-	if err := client.Status().Patch(ctx, &rr, crclient.RawPatch(types.MergePatchType, patchBytes)); err != nil {
+	base := rr.DeepCopy()
+	setCancellationRequest(&rr, ctx, namespace, name)
+	if err := client.Status().Patch(ctx, &rr, crclient.MergeFromWithOptions(base, crclient.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			return CancelRemediationResult{}, err
+		}
 		return CancelRemediationResult{}, ToUserFriendlyError(err)
 	}
 
 	return CancelRemediationResult{
-		Status:  "Cancelled",
-		Message: fmt.Sprintf("Remediation %s/%s cancelled", ns, name),
+		Status:  string(remediationv1.PhaseCancelling),
+		Message: fmt.Sprintf("Cancellation requested for remediation %s/%s", namespace, name),
 	}, nil
+}
+
+func cancellationResult(namespace, name string, rr *remediationv1.RemediationRequest) (CancelRemediationResult, bool, error) {
+	if IsTerminalPhase(string(rr.Status.OverallPhase)) {
+		if rr.Status.OverallPhase == remediationv1.PhaseCancelled {
+			return CancelRemediationResult{
+				Status:  string(remediationv1.PhaseCancelled),
+				Message: fmt.Sprintf("Remediation %s/%s is already cancelled", namespace, name),
+			}, true, nil
+		}
+		return CancelRemediationResult{}, true, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, namespace, name, rr.Status.OverallPhase)
+	}
+	if rr.Status.OverallPhase == remediationv1.PhaseCancelling {
+		return CancelRemediationResult{
+			Status:  string(remediationv1.PhaseCancelling),
+			Message: fmt.Sprintf("Cancellation already requested for remediation %s/%s", namespace, name),
+		}, true, nil
+	}
+	return CancelRemediationResult{}, false, nil
+}
+
+func setCancellationRequest(rr *remediationv1.RemediationRequest, ctx context.Context, namespace, name string) {
+	now := time.Now().UTC()
+	requestedBy := usernameFromContext(ctx)
+	status := &rr.Status
+	status.OverallPhase = remediationv1.PhaseCancelling
+	status.Message = "Cancellation requested by user via kubernaut_cancel_remediation"
+	status.Cancellation = &remediationv1.CancellationStatus{
+		RequestID:   fmt.Sprintf("%s/%s:cancellation", namespace, name),
+		RequestedAt: &metav1.Time{Time: now},
+		RequestedBy: requestedBy,
+		Source:      remediationv1.CancellationSourceUser,
+		Reason:      "User requested remediation cancellation",
+		State:       remediationv1.CancellationStateRequested,
+	}
+	status.OperatorAudit = &remediationv1.OperatorAudit{
+		LastModifiedBy: requestedBy,
+		LastModifiedAt: &metav1.Time{Time: now},
+	}
 }
 
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.

@@ -38,6 +38,15 @@ func TestPhase(t *testing.T) {
 	RunSpecs(t, "RemediationOrchestrator Phase Suite")
 }
 
+var _ = Describe("Cancellation phase state machine", func() {
+	It("UT-ORCH-2588-006: exposes Cancelled as a terminal transition state", func() {
+		Expect(phase.ValidTransitions).To(HaveKey(phase.Cancelled))
+		Expect(phase.ValidTransitions[phase.Cancelled]).To(BeEmpty())
+		Expect(phase.CanTransition(phase.Cancelling, phase.Cancelled)).To(BeTrue())
+		Expect(phase.CanTransition(phase.Cancelled, phase.Pending)).To(BeFalse())
+	})
+})
+
 var _ = Describe("TransitionType.String (CHAR-RO-1532)", func() {
 	It("returns the human-readable name for each known transition type", func() {
 		Expect(phase.TransitionNone.String()).To(Equal("None"))

@@ -706,7 +706,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			_, body := mcpCallTool(h, sessionID, "kubernaut_cancel_remediation",
 				map[string]any{"name": "test-rr"}, testUser)
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("Cancelled"))
+			Expect(text).To(ContainSubstring("Cancelling"))
 		})
 
 		It("UT-AF-B-006: kubernaut_watch dispatches and returns events", func() {

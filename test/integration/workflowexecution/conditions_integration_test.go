@@ -75,7 +75,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					}),
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// ✅ REQUIRED: Use Eventually() to wait for condition (NO time.Sleep())
 			// Per TESTING_GUIDELINES.md lines 443-487
@@ -143,7 +143,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for WFE to reach Running phase
 			key := client.ObjectKeyFromObject(wfe)
@@ -212,7 +212,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for Running phase
 			key := client.ObjectKeyFromObject(wfe)
@@ -301,7 +301,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			// Wait for WFE to reach Running phase (audit event emitted)
 			key := client.ObjectKeyFromObject(wfe)
@@ -361,7 +361,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			key := client.ObjectKeyFromObject(wfe)
 

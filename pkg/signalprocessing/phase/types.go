@@ -54,11 +54,17 @@ const (
 	// Business Requirements: BR-SP-002, BR-SP-080, BR-SP-081
 	Categorizing = signalprocessingv1alpha1.PhaseCategorizing
 
+	// Cancelling indicates that parent cancellation is being acknowledged.
+	Cancelling = signalprocessingv1alpha1.PhaseCancelling
+
 	// Completed is the terminal success state.
 	Completed = signalprocessingv1alpha1.PhaseCompleted
 
 	// Failed is the terminal error state.
 	Failed = signalprocessingv1alpha1.PhaseFailed
+
+	// Cancelled is the terminal state after cancellation acknowledgement.
+	Cancelled = signalprocessingv1alpha1.PhaseCancelled
 )
 
 // IsTerminal returns true if the phase is a terminal state.
@@ -67,7 +73,7 @@ const (
 // Reference: CONTROLLER_REFACTORING_PATTERN_LIBRARY.md - Pattern 2 (Terminal State Logic)
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed:
+	case Completed, Failed, Cancelled:
 		return true
 	default:
 		return false
@@ -78,28 +84,33 @@ func IsTerminal(p Phase) bool {
 // Key: current phase, Value: list of valid target phases
 //
 // State Machine Flow:
-//   Pending → Enriching → Classifying → Categorizing → Completed
-//                  ↓            ↓             ↓
-//                Failed       Failed        Failed
+//
+//	Pending → Enriching → Classifying → Categorizing → Completed
+//	Any non-terminal phase → Cancelling → Cancelled
+//	               ↓            ↓             ↓
+//	             Failed       Failed        Failed
 //
 // Reference: CONTROLLER_REFACTORING_PATTERN_LIBRARY.md - Pattern 1 (Phase State Machine)
 var ValidTransitions = map[Phase][]Phase{
-	Pending:      {Enriching},
-	Enriching:    {Classifying, Failed},
-	Classifying:  {Categorizing, Failed},
-	Categorizing: {Completed, Failed},
+	Pending:      {Enriching, Cancelling},
+	Enriching:    {Classifying, Failed, Cancelling},
+	Classifying:  {Categorizing, Failed, Cancelling},
+	Categorizing: {Completed, Failed, Cancelling},
+	Cancelling:   {Cancelled},
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {},
+	Cancelled: {},
 }
 
 // CanTransition checks if transition from current to target is valid.
 // Returns true if the transition is allowed by the state machine, false otherwise.
 //
 // Example:
-//   phase.CanTransition(phase.Pending, phase.Enriching)      // true
-//   phase.CanTransition(phase.Pending, phase.Classifying)    // false (skip not allowed)
-//   phase.CanTransition(phase.Completed, phase.Enriching)    // false (terminal state)
+//
+//	phase.CanTransition(phase.Pending, phase.Enriching)      // true
+//	phase.CanTransition(phase.Pending, phase.Classifying)    // false (skip not allowed)
+//	phase.CanTransition(phase.Completed, phase.Enriching)    // false (terminal state)
 func CanTransition(current, target Phase) bool {
 	validTargets, ok := ValidTransitions[current]
 	if !ok {
@@ -117,22 +128,9 @@ func CanTransition(current, target Phase) bool {
 // Returns an error if the phase is not recognized.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Enriching, Classifying, Categorizing, Completed, Failed:
+	case Pending, Enriching, Classifying, Categorizing, Cancelling, Completed, Failed, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
