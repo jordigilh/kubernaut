@@ -153,6 +153,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(signal.Resource.Kind).To(Equal(deployment),
 				"AI chooses rollback strategy for Deployments")
+			Expect(signal.Resource.APIVersion).To(Equal("apps/v1"),
+				"the registered Deployment GVK must survive parsing (#2066)")
 			Expect(signal.SignalName).To(Equal("FailedCreate"),
 				"AI needs failure type to determine root cause")
 
