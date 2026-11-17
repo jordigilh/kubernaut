@@ -328,7 +328,7 @@ Authorization: Bearer <k8s-serviceaccount-token>
 Both sources converted to `NormalizedSignal` format:
 ```go
 type NormalizedSignal struct {
-    Fingerprint   string             // SHA256(alertname:namespace:kind:name)
+    Fingerprint   string             // SHA256(group:namespace:kind:name) (#2650)
     SignalName    string             // "HighMemoryUsage" (Issue #166: was AlertName)
     Severity      string             // "critical"
     Namespace     string             // "prod-payment-service"

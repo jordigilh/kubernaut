@@ -44,7 +44,7 @@ boundary (AW or otherwise).
 
 | | Gateway (GW) | ApiFrontend (AF) | AuthWebhook (AW) |
 |---|---|---|---|
-| **Fingerprint algorithm** | `CalculateClusterAwareFingerprint` — `SHA256(clusterID:namespace:kind:name)` (`pkg/gateway/types/fingerprint.go`) | **Calls GW's function directly** via `gwtypes.CalculateClusterAwareFingerprint` (`pkg/apifrontend/tools/af_create_rr.go`) | none |
+| **Fingerprint algorithm** | `CalculateClusterAwareFingerprint` — `SHA256(clusterID:group:namespace:kind:name)` (#2650 group dimension) (`pkg/gateway/types/fingerprint.go`) | **Calls GW's function directly** via `gwtypes.CalculateClusterAwareFingerprint` (`pkg/apifrontend/tools/af_create_rr.go`) | none |
 | **Owner-chain resolution** | Yes — `OwnerResolver.ResolveTopLevelOwner` before hashing | No — hashes the LLM-supplied `namespace/kind/name` as-is | n/a |
 | **Dedup check** | `PhaseBasedDeduplicationChecker.ShouldDeduplicate` (`pkg/gateway/processing/phase_checker.go`) — lists RRs by `spec.signalFingerprint` field index, checks terminal phase / backoff / `ManualReviewRequired` | `HandleCheckExistingRR` / `checkExistingRRByFingerprint` (`pkg/apifrontend/tools/af_check_existing_rr.go`, `af_create_rr.go`) — own copy of the same field-index list + `IsTerminalPhase` check | none |
 | **Concurrency control** | Cluster-wide K8s `Lease` distributed lock (`pkg/gateway/processing/distributed_lock.go`) | In-process `singleflight.Group` only (`rrCreateGroup` in `af_create_rr.go`) | none |

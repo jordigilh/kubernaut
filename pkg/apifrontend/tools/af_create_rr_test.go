@@ -462,7 +462,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			rr.Spec.ClusterID = hubClusterID
 			rr.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint(hubClusterID, gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			tc := newTypedFakeClient(rr)
 
@@ -683,7 +683,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				ObjectMeta: objMeta(controllerNS, "rr-deploy-web-existing"),
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: gwtypes.CalculateClusterAwareFingerprint(hubClusterID, gwtypes.ResourceIdentifier{
-						Namespace: workloadNS, Kind: "Deployment", Name: "web",
+						Namespace: workloadNS, Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 					}),
 					ClusterID: hubClusterID,
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -795,7 +795,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 		rr.Spec.ClusterID = hubClusterID
 		rr.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint(hubClusterID, gwtypes.ResourceIdentifier{
-			Namespace: "prod", Kind: "Deployment", Name: "web",
+			Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		tc := newTypedFakeClient(rr)
 
@@ -946,7 +946,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			existing.Spec.ClusterID = "cluster-original"
 			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-original", gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			tc := newTypedFakeClient(existing)
 
@@ -1012,7 +1012,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			rr.Spec.ClusterID = hubClusterID
 			rr.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint(hubClusterID, gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			tc := newTypedFakeClient(rr)
 			rec := &auditRecorder{}
@@ -1060,7 +1060,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			existing.Spec.ClusterID = "cluster-east-1"
 			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-1", gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			tc := newTypedFakeClient(existing)
 			rec := &auditRecorder{}

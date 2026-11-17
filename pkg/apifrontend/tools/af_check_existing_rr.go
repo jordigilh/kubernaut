@@ -20,6 +20,12 @@ type CheckExistingRRArgs struct {
 	Namespace string `json:"namespace"`
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
+	// APIVersion is the Kubernetes API group/version of the target (e.g.
+	// "apps/v1", "route.openshift.io/v1"). Required since #2650: the dedup
+	// fingerprint includes the API group, so the same kind/name in two groups
+	// (route.openshift.io Route vs serving.knative.dev Route) are distinct
+	// dedup targets (BR-GATEWAY-004, SI-10).
+	APIVersion string `json:"api_version"`
 	// ClusterID scopes the dedup fingerprint to a specific fleet cluster
 	// (#1409, AC-4). Empty string preserves pre-#1409 local-hub matching
 	// behavior for backward compatibility.
@@ -63,8 +69,14 @@ func HandleCheckExistingRR(ctx context.Context, client crclient.Client, controll
 	if err := validate.ClusterID(args.ClusterID); err != nil {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	// #2650/SI-10: the group dimension makes api_version a required input —
+	// an empty value would silently collapse every group of the target's
+	// kind/name onto the empty-group fingerprint.
+	if err := validate.APIVersion(args.APIVersion); err != nil {
+		return CheckExistingRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 
-	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
+	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name, args.APIVersion)
 
 	var list remediationv1.RemediationRequestList
 	if err := client.List(ctx, &list, crclient.InNamespace(controllerNS)); err != nil {
