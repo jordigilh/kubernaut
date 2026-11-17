@@ -22,8 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	effectivenessv1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -46,7 +48,138 @@ func (s *cancellationAuditStore) Flush(context.Context) error { return nil }
 
 func (s *cancellationAuditStore) Close() error { return nil }
 
+// terminalChildFixture bundles a terminal-phase child with its parent
+// reference and the cancellation-state function under test.
+type terminalChildFixture struct {
+	child   client.Object
+	ref     *corev1.ObjectReference
+	stateFn func(r *Reconciler, ctx context.Context, rr *remediationv1.RemediationRequest) (bool, string, error)
+}
+
+// terminalWFEChildFixture builds a WorkflowExecution in the given terminal
+// phase with a valid parent identity and no CancellationAcknowledged
+// condition, mirroring a child that finished its business outcome normally.
+func terminalWFEChildFixture(phase string) terminalChildFixture {
+	wfe := &workflowexecutionv1.WorkflowExecution{
+		ObjectMeta: metav1.ObjectMeta{Name: "wfe-terminal", Namespace: "system", UID: "wfe-terminal-uid"},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name: "rr-terminal-child", Namespace: "system", UID: "rr-terminal-child-uid",
+			},
+		},
+		Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: phase},
+	}
+	ref := &corev1.ObjectReference{Name: wfe.Name, Namespace: wfe.Namespace, UID: wfe.UID}
+	return terminalChildFixture{child: wfe, ref: ref,
+		stateFn: func(r *Reconciler, ctx context.Context, rr *remediationv1.RemediationRequest) (bool, string, error) {
+			acknowledged, failure, backendVerified, err := r.workflowExecutionCancellationState(ctx, rr, ref)
+			// BR-ORCH-047: a terminal child finished normally; no stop was
+			// requested, so the acknowledgement must never claim backend
+			// termination verification.
+			ExpectWithOffset(1, backendVerified).To(BeFalse())
+			return acknowledged, failure, err
+		}}
+}
+
+func terminalAIAnalysisChildFixture(phase string) terminalChildFixture {
+	analysis := &aianalysisv1.AIAnalysis{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-terminal", Namespace: "system", UID: "aa-terminal-uid"},
+		Spec: aianalysisv1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name: "rr-terminal-child", Namespace: "system", UID: "rr-terminal-child-uid",
+			},
+		},
+		Status: aianalysisv1.AIAnalysisStatus{Phase: phase},
+	}
+	ref := &corev1.ObjectReference{Name: analysis.Name, Namespace: analysis.Namespace, UID: analysis.UID}
+	return terminalChildFixture{child: analysis, ref: ref,
+		stateFn: func(r *Reconciler, ctx context.Context, rr *remediationv1.RemediationRequest) (bool, string, error) {
+			return r.aiAnalysisCancellationState(ctx, rr, ref)
+		}}
+}
+
+func terminalSPChildFixture(phase string) terminalChildFixture {
+	sp := &signalprocessingv1.SignalProcessing{
+		ObjectMeta: metav1.ObjectMeta{Name: "sp-terminal", Namespace: "system", UID: "sp-terminal-uid"},
+		Spec: signalprocessingv1.SignalProcessingSpec{
+			RemediationRequestRef: signalprocessingv1.ObjectReference{
+				Name: "rr-terminal-child", Namespace: "system", UID: "rr-terminal-child-uid",
+			},
+		},
+		Status: signalprocessingv1.SignalProcessingStatus{Phase: signalprocessingv1.SignalProcessingPhase(phase)},
+	}
+	ref := &corev1.ObjectReference{Name: sp.Name, Namespace: sp.Namespace, UID: sp.UID}
+	return terminalChildFixture{child: sp, ref: ref,
+		stateFn: func(r *Reconciler, ctx context.Context, rr *remediationv1.RemediationRequest) (bool, string, error) {
+			return r.signalProcessingCancellationState(ctx, rr, ref)
+		}}
+}
+
+func terminalEAChildFixture(phase string) terminalChildFixture {
+	ea := &effectivenessv1.EffectivenessAssessment{
+		ObjectMeta: metav1.ObjectMeta{Name: "ea-terminal", Namespace: "system", UID: "ea-terminal-uid"},
+		Spec:       effectivenessv1.EffectivenessAssessmentSpec{CorrelationID: "rr-terminal-child"},
+		Status:     effectivenessv1.EffectivenessAssessmentStatus{Phase: phase},
+	}
+	ref := &corev1.ObjectReference{Name: ea.Name, Namespace: ea.Namespace, UID: ea.UID}
+	return terminalChildFixture{child: ea, ref: ref,
+		stateFn: func(r *Reconciler, ctx context.Context, rr *remediationv1.RemediationRequest) (bool, string, error) {
+			return r.effectivenessCancellationState(ctx, rr, ref)
+		}}
+}
+
 var _ = Describe("RemediationRequest cancellation coordination", func() {
+	DescribeTable("UT-RO-2588-014: treats a terminal-phase child as implicitly acknowledged (BR-ORCH-047)",
+		func(fixture terminalChildFixture) {
+			scheme := runtime.NewScheme()
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+			Expect(signalprocessingv1.AddToScheme(scheme)).To(Succeed())
+			Expect(effectivenessv1.AddToScheme(scheme)).To(Succeed())
+			Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+			now := metav1.Now()
+			isController := true
+			fixture.child.SetOwnerReferences([]metav1.OwnerReference{{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       "rr-terminal-child",
+				UID:        "rr-terminal-child-uid",
+				Controller: &isController,
+			}})
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "rr-terminal-child", Namespace: "system", UID: "rr-terminal-child-uid",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{"kubernaut.ai/remediationrequest-cancellation"},
+				},
+				Status: remediationv1.RemediationRequestStatus{OverallPhase: remediationv1.PhaseExecuting},
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr, fixture.child).Build()
+			reconciler := NewReconciler(ReconcilerDeps{
+				Client: c, APIReader: c, Scheme: scheme, AuditStore: &cancellationAuditStore{},
+				Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			})
+
+			// A child that already reached a terminal business outcome has no
+			// remaining work and never sets CancellationAcknowledged. CI run
+			// 43971993157 proved the previous behavior hangs `kubectl delete rr`
+			// forever behind the retained cancellation finalizer.
+			acknowledged, failure, err := fixture.stateFn(reconciler, context.Background(), rr)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failure).To(BeEmpty())
+			Expect(acknowledged).To(BeTrue(),
+				"a terminal-phase child must count as implicitly acknowledged")
+		},
+		Entry("completed WorkflowExecution", terminalWFEChildFixture("Completed")),
+		Entry("failed WorkflowExecution", terminalWFEChildFixture("Failed")),
+		Entry("cancelled WorkflowExecution", terminalWFEChildFixture("Cancelled")),
+		Entry("completed AIAnalysis", terminalAIAnalysisChildFixture("Completed")),
+		Entry("failed AIAnalysis", terminalAIAnalysisChildFixture("Failed")),
+		Entry("completed SignalProcessing", terminalSPChildFixture("Completed")),
+		Entry("cancelled EffectivenessAssessment", terminalEAChildFixture("Cancelled")),
+	)
+
 	It("UT-AUDIT-2588-012: preserves request observations after concurrent phase progress (BR-AUDIT-005)", func() {
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())

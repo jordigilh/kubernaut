@@ -38,6 +38,42 @@ Three source-attributed causes, proven by CI logs and must-gather:
    to `%x`), producing 72 characters and failing the CRD's 64-byte ceiling.
    Replaced with a SHA-256 hex digest of the test name.
 
+### Post-validation fixes for run 43971993157 (head 577144109) — fullpipeline hang
+
+Run 43971993157: every lane green except E2E (fullpipeline), cancelled by
+its 45-minute job budget for the 6th consecutive run. Triage dossier
+(`pr2643-dossier/fullpipeline-e2e-43971993157.md`): 50/51 specs passed; the
+lane hung ~28 minutes in E2E-FP-1189-001's DeferCleanup
+`kubectl delete remediationrequest` (runner `ps`, PID 72005), because the RR
+was stuck Terminating behind this PR's cancellation finalizer after its
+children had already reached terminal business phases — terminal children
+never set `CancellationAcknowledged`, so the coordinator waited forever.
+This is user-visible product behavior, not a test artifact: any
+`kubectl delete rr` on a remediation whose child already completed hangs the
+same way. User selected the product fix (option A).
+
+Fix (BR-ORCH-047): a terminal-phase child (Completed/Failed/Cancelled via
+the shared `phase.IsTerminal` set) counts as implicitly acknowledged — it
+has no remaining work. Identity validation still runs first and still fails
+closed on mismatch; non-terminal children still require explicit
+acknowledgement; the retry budget and finalizer retention for genuinely
+stuck children are unchanged.
+
+| Component | Production entry | Wiring location | Proving test |
+|-----------|------------------|-----------------|--------------|
+| Terminal-child implicit acknowledgement | RO cancellation coordination | internal/controller/remediationorchestrator/cancellation.go | UT-RO-2588-014 |
+
+Requirement: `docs/requirements/BR-ORCH-047-terminal-children-implicitly-acknowledged.md`.
+
+RED: UT-RO-2588-014 (7 scenarios: WFE Completed/Failed/Cancelled, AA
+Completed/Failed, SP Completed, EA Cancelled) failed before the fix —
+terminal children returned acknowledged=false. GREEN: all 7 pass; changed
+production statements 9/9 (100%); full controller suites
+(remediationorchestrator, aianalysis, workflowexecution,
+effectivenessmonitor, signalprocessing, apifrontend, notification),
+`pkg/remediationorchestrator/...`, build, lint and diff checks pass.
+Deployed fullpipeline E2E must prove the lane completes within its budget.
+
 ### Post-validation fixes for run 43953700162 (head ba2a74c9e)
 
 Run 43953700162 confirmed the ba2a74c9e fixes: AA E2E, AA integration, DS

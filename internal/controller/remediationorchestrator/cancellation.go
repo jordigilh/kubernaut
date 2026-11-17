@@ -24,6 +24,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 )
@@ -581,6 +582,16 @@ func (r *Reconciler) cancelRARIfNeeded(ctx context.Context, rr *remediationv1.Re
 	return true, nil
 }
 
+// A terminal child has no remaining work, so it counts as implicitly
+// acknowledged: it never sets CancellationAcknowledged because it finished
+// normally (BR-ORCH-047, #2588). Without this, deleting a parent whose child
+// already completed hangs forever behind the retained cancellation finalizer
+// (CI run 43971993157). phase.IsTerminal covers every child kind's terminal
+// set (Completed/Failed/Cancelled; children never use TimedOut/Skipped).
+func childPhaseIsTerminal(childPhase string) bool {
+	return phase.IsTerminal(phase.Phase(childPhase))
+}
+
 func (r *Reconciler) signalProcessingCancellationState(ctx context.Context, rr *remediationv1.RemediationRequest, ref *corev1.ObjectReference) (bool, string, error) {
 	sp := &signalprocessingv1.SignalProcessing{}
 	if err := r.client.Get(ctx, cancellationChildObjectKey(rr, ref), sp); err != nil {
@@ -600,6 +611,9 @@ func (r *Reconciler) signalProcessingCancellationState(ctx context.Context, rr *
 		"RemediationRequest",
 	) {
 		return false, "", fmt.Errorf("validate SignalProcessing parent identity: %w", cancellation.ErrIdentityMismatch)
+	}
+	if childPhaseIsTerminal(string(sp.Status.Phase)) {
+		return true, "", nil
 	}
 	acknowledged, failure := childCancellationState(sp.Status.Conditions)
 	return acknowledged, failure, nil
@@ -625,6 +639,9 @@ func (r *Reconciler) aiAnalysisCancellationState(ctx context.Context, rr *remedi
 	) {
 		return false, "", fmt.Errorf("validate AIAnalysis parent identity: %w", cancellation.ErrIdentityMismatch)
 	}
+	if childPhaseIsTerminal(analysis.Status.Phase) {
+		return true, "", nil
+	}
 	acknowledged, failure := childCancellationState(analysis.Status.Conditions)
 	return acknowledged, failure, nil
 }
@@ -648,6 +665,9 @@ func (r *Reconciler) workflowExecutionCancellationState(ctx context.Context, rr 
 		"RemediationRequest",
 	) {
 		return false, "", false, fmt.Errorf("validate WorkflowExecution parent identity: %w", cancellation.ErrIdentityMismatch)
+	}
+	if childPhaseIsTerminal(wfe.Status.Phase) {
+		return true, "", false, nil
 	}
 	acknowledged, failure := childCancellationState(wfe.Status.Conditions)
 	// The WFE cancellation controller sets CancellationAcknowledged only after
@@ -674,6 +694,9 @@ func (r *Reconciler) effectivenessCancellationState(ctx context.Context, rr *rem
 		"RemediationRequest",
 	) {
 		return false, "", fmt.Errorf("validate EffectivenessAssessment parent identity: %w", cancellation.ErrIdentityMismatch)
+	}
+	if childPhaseIsTerminal(ea.Status.Phase) {
+		return true, "", nil
 	}
 	acknowledged, failure := childCancellationState(ea.Status.Conditions)
 	return acknowledged, failure, nil
