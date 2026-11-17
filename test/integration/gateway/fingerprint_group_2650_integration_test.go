@@ -62,8 +62,8 @@ import (
 // the adapter's route.
 func k8sEventPayloadFor2650(namespace, apiVersion, name string) []byte {
 	payload := map[string]any{
-		"type":   "Warning",
-		"reason": "DegradedRoute",
+		"type":    "Warning",
+		"reason":  "DegradedRoute",
 		"message": fmt.Sprintf("route %s degraded", name),
 		"involvedObject": map[string]any{
 			"kind":            "Route",

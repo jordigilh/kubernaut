@@ -57,8 +57,13 @@ var _ = Describe("Fingerprint group dimension — AF tools (#2650, BR-GATEWAY-00
 	}
 
 	It("UT-AF-2650-001: two targets differing only in group create two RRs with distinct SignalFingerprint", func() {
-		openshiftRR := createRoute(routeDeps(), "route.openshift.io/v1")
-		knativeRR := createRoute(routeDeps(), "serving.knative.dev/v1")
+		// Both creates share ONE client so the second create runs the real
+		// check-existing-RR dedup lookup against the first group's RR — the
+		// BR-GATEWAY-004 outcome on the AF path (fresh clients would make
+		// the dedup assertion vacuous).
+		deps := routeDeps()
+		openshiftRR := createRoute(deps, "route.openshift.io/v1")
+		knativeRR := createRoute(deps, "serving.knative.dev/v1")
 
 		Expect(openshiftRR.Spec.SignalFingerprint).NotTo(Equal(knativeRR.Spec.SignalFingerprint),
 			"BR-GATEWAY-004: same ns/kind/name in two API groups are different dedup targets on the AF path too")
@@ -105,13 +110,14 @@ var _ = Describe("Fingerprint group dimension — AF tools (#2650, BR-GATEWAY-00
 		})
 	})
 
-	// IT-AF-2650-002 (AC-4, GW/AF parity): identical cluster+GVK standalone
+	// UT-AF-2650-004 (AC-4, GW/AF parity): identical cluster+GVK standalone
 	// resource -> identical fingerprint from the GW path
 	// (ResolveFingerprintWithCluster with an OwnerResolverWithAPIVersion-capable
 	// resolver, fleet_wiring_test.go UT-FLEET-FP-001 pattern) and from the AF
 	// path (HandleCreateRR's RR spec.signalFingerprint, which is produced by
-	// rrFingerprintWithCluster).
-	It("IT-AF-2650-002: GW and AF produce identical fingerprints for identical cluster+GVK (AC-4 parity)", func() {
+	// rrFingerprintWithCluster). Labeled UT, not IT: it proves pure-function
+	// parity on fake clients; the tool-closure wiring proof is IT-AF-2650-001.
+	It("UT-AF-2650-004: GW and AF produce identical fingerprints for identical cluster+GVK (AC-4 parity)", func() {
 		const clusterID = "prod-east"
 		deps := &tools.ToolDeps{
 			Client:       newTypedFakeClient(),

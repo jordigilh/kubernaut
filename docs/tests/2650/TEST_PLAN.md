@@ -78,13 +78,13 @@ Maintainer decision: NO migration, NO backward compatibility — clean installs 
 | R2 | Legacy persisted RRs never match new fingerprints | Accepted | Certain | — | Clean installs only, no migration (maintainer decision) |
 | R3 | Empty-group signals colliding with a real group | None | None | UT-GW-2650-004 | Impossible: real groups are non-empty; empty apiVersion is the prometheus ambiguity case (residual gap, out of scope) |
 | R4 | Malformed apiVersion collapsing to empty-group segment | High | Low | UT-GW-2650-005 | Raw-string fallback via `scope.ParseAPIVersion` rejection; verified unreachable in production (defense-in-depth) |
-| R5 | GW hashes owner's group, AF hashes target's group | Pre-existing seam | — | Parity test | AC-4 claim scoped to top-level-owner parity; proven by IT-AF-2650-002 |
+| R5 | GW hashes owner's group, AF hashes target's group | Pre-existing seam | — | Parity test | AC-4 claim scoped to top-level-owner parity; proven by UT-AF-2650-004 |
 
 ### 3.1 Risk-to-Test Traceability
 
 - R1 → fixture sweep rules (existing suites; no new test IDs)
 - R4 → UT-GW-2650-005
-- R5 → IT-AF-2650-002 (parity)
+- R5 → UT-AF-2650-004 (parity)
 
 ---
 
@@ -182,7 +182,7 @@ Tests validate deduplication business outcomes: two cross-group signals → two 
 | BR-GATEWAY-004 | AF check path group dimension | P0 | Unit | UT-AF-2650-002 | Pending |
 | SI-10 | `api_version` validated on CheckExistingRRArgs | P0 | Unit | UT-AF-2650-003 | Pending |
 | SI-10 | `api_version` validated through real tool closure | P0 | Integration | IT-AF-2650-001 | Pending |
-| AC-4 (scoped) | GW/AF fingerprint parity for identical cluster+GVK | P0 | Integration | IT-AF-2650-002 | Pending |
+| AC-4 (scoped) | GW/AF fingerprint parity for identical cluster+GVK | P0 | Integration | UT-AF-2650-004 | Pending |
 
 ### Status Legend
 
@@ -221,7 +221,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}` (issue-numbered sequences per 
 |----|----------------------------|-------|
 | `IT-GW-2650-001` | Two cross-group signals through `ProcessSignal` production dispatch (adapter → `ResolveFingerprintWithCluster` → CRDCreator) → two RRs; includes standalone-resource cross-group case proving M1 seeding with the registry-miss gap deliberately constructed | Pending |
 | `IT-AF-2650-001` | Through the production tool closure (`NewCheckExistingRemediationTool` → `functiontool.New`), missing `api_version` → `ErrInvalidInput` | Pending |
-| `IT-AF-2650-002` | GW/AF parity (AC-4): identical cluster+GVK standalone resource → identical fingerprint from the GW path (`ResolveFingerprintWithCluster`) and the AF path (`HandleCreateRR`'s RR `SignalFingerprint`) | Pending |
+| `UT-AF-2650-004` | GW/AF parity (AC-4): identical cluster+GVK standalone resource → identical fingerprint from the GW path (`ResolveFingerprintWithCluster`) and the AF path (`HandleCreateRR`'s RR `SignalFingerprint`) | Pending |
 
 ### Tier 3: E2E Tests
 
@@ -309,7 +309,7 @@ None — plan approved; all production surfaces verified in preflight.
 
 ### 11.2 Execution Order
 
-1. **Phase 1 (RED)**: UT-GW-2650-001..007, UT-AF-2650-001..003, IT-GW-2650-001, IT-AF-2650-001, IT-AF-2650-002 — all fail
+1. **Phase 1 (RED)**: UT-GW-2650-001..007, UT-AF-2650-001..003, IT-GW-2650-001, IT-AF-2650-001, UT-AF-2650-004 — all fail
 2. **Phase 2 (GREEN)**: Changes 1-4 (group-aware hash; owner-path seeding; AF create apiVersion param; CheckExistingRRArgs.APIVersion + fallout) + fixture sweep
 3. **Phase 3 (REFACTOR)**: dedupe hash input builder / `groupSegment` helper; doc comments; invariant comment on plain-resolver fallback
 4. **Phase 4 (WIRING VERIFICATION)**: CHECKPOINT W per Wiring Manifest
