@@ -602,8 +602,12 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 	// compare an unchanged spec hash and leave the branch schema in place —
 	// preserving Issue #1737's operator-owned lifecycle.
 	branchCRDs := filepath.Join(getProjectRoot(), "config", "crd", "bases")
+	// conflicts: the operator owns .spec.versions under its dynamic-client
+	// field manager; --force-conflicts transfers that ownership to this
+	// apply, which is the test's explicit intent — override the released
+	// schema with the tested revision.
 	syncCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"apply", "-f", branchCRDs, "--server-side")
+		"apply", "-f", branchCRDs, "--server-side", "--force-conflicts")
 	syncOut, syncErr := syncCmd.CombinedOutput()
 	if syncErr != nil {
 		return fmt.Errorf("failed to sync branch CRDs after operator reconcile: %w: %s", syncErr, strings.TrimSpace(string(syncOut)))
