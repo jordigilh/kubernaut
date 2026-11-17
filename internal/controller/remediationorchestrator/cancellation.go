@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -72,7 +73,7 @@ func (r *Reconciler) reconcileCancellation(
 	// the cancellation notification is being delivered. Do not regress its
 	// phase; only release the finalizer after notification terminal handling.
 	if wasCancelled {
-		return r.reconcilePreviouslyCancelled(ctx, rr, notificationReady)
+		return r.reconcilePreviouslyCancelled(ctx, rr, notificationReady, logger)
 	}
 
 	allAcknowledged, firstFailure, err := r.cancellationChildrenState(ctx, rr)
@@ -82,6 +83,30 @@ func (r *Reconciler) reconcileCancellation(
 
 	if allAcknowledged && notificationReady {
 		return r.completeCancellation(ctx, rr, previousPhase, logger)
+	}
+
+	// BR-ORCH-048: bound silent waits by wall-clock. A cancellation whose
+	// children acknowledge neither success nor failure, or whose notification
+	// never reaches a terminal phase, must escalate instead of requeueing
+	// forever — an unbounded wait hangs `kubectl delete rr` behind the
+	// retained finalizer (CI runs 43971993157, 44009101345). The
+	// State=Failed guard prevents re-firing the escalation (audit emission,
+	// status write) on every subsequent wake.
+	if rr.Status.GetCancellation().State != remediationv1.CancellationStateFailed && cancellationWaitExhausted(rr) {
+		r.finalizeCancellationExhaustion(ctx, rr, firstFailureOr(notificationFailure, firstFailure), logger, true)
+
+		rr.Status.Message = "Cancellation exceeded its wait budget; manual review required"
+		if err := r.client.Status().Update(ctx, rr); err != nil {
+			return ctrl.Result{}, fmt.Errorf("persist RemediationRequest cancellation exhaustion: %w", err)
+		}
+		// The terminal status is persisted; a deleting RR may now release the
+		// finalizer without losing the manual-review evidence. A failed
+		// release requeues with controller-runtime backoff; the State=Failed
+		// guard makes the retry non-re-escalating.
+		if err := r.releaseFinalizerIfDeleting(ctx, rr, logger); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
 
 	r.recordCancellationProgress(ctx, rr, allAcknowledged, notificationFailure, notificationCreationFailed, firstFailure, logger)
@@ -96,7 +121,13 @@ func (r *Reconciler) reconcileCancellation(
 	if status.State == remediationv1.CancellationStateFailed {
 		// Stop automatic polling after the bounded aggregate retry budget. Child
 		// and NotificationRequest watches will wake RO when manual remediation
-		// changes the observable state.
+		// changes the observable state. A deleting RR additionally releases
+		// the finalizer here — after the terminal status above was persisted —
+		// so the manual-review evidence survives and deletion cannot hang
+		// forever (BR-ORCH-048).
+		if err := r.releaseFinalizerIfDeleting(ctx, rr, logger); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{RequeueAfter: cancellation.RetryBackoff(status.RetryCount)}, nil
@@ -194,10 +225,10 @@ func (r *Reconciler) reconcilePreviouslyCancelled(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	notificationReady bool,
+	logger logr.Logger,
 ) (ctrl.Result, error) {
 	if !notificationReady {
-		status := rr.Status.EnsureCancellation()
-		return ctrl.Result{RequeueAfter: cancellation.RetryBackoff(status.RetryCount)}, nil
+		return r.reconcileCancelledNotificationWait(ctx, rr, logger)
 	}
 	if controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
 		controllerutil.RemoveFinalizer(rr, remediationRequestCancellationFinalizer)
@@ -206,6 +237,40 @@ func (r *Reconciler) reconcilePreviouslyCancelled(
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// reconcileCancelledNotificationWait bounds the terminal-Cancelled RR's wait
+// for its cancellation notification by wall-clock (BR-ORCH-048): a
+// notification that never reaches a terminal phase must not requeue (or
+// hang deletion) forever. The State=Failed guard prevents re-firing the
+// escalation on subsequent wakes.
+func (r *Reconciler) reconcileCancelledNotificationWait(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	if rr.Status.GetCancellation().State != remediationv1.CancellationStateFailed && cancellationWaitExhausted(rr) {
+		r.finalizeCancellationExhaustion(ctx, rr, "cancellation notification delivery is pending", logger, true)
+		rr.Status.Message = "Cancellation notification exceeded its wait budget; manual review required"
+		if err := r.client.Status().Update(ctx, rr); err != nil {
+			return ctrl.Result{}, fmt.Errorf("persist cancellation notification exhaustion: %w", err)
+		}
+		if err := r.releaseFinalizerIfDeleting(ctx, rr, logger); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+	// An already-escalated deleting RR retries the release on every wake —
+	// one transient API failure must not leave the finalizer permanently
+	// retained (the same BR-ORCH-048 mandate as the main path).
+	if rr.Status.GetCancellation().State == remediationv1.CancellationStateFailed {
+		if err := r.releaseFinalizerIfDeleting(ctx, rr, logger); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+	status := rr.Status.EnsureCancellation()
+	return ctrl.Result{RequeueAfter: cancellation.RetryBackoff(status.RetryCount)}, nil
 }
 
 func (r *Reconciler) cancellationChildrenState(
@@ -379,6 +444,12 @@ func (r *Reconciler) recordCancellationProgress(
 	logger logr.Logger,
 ) {
 	status := rr.Status.EnsureCancellation()
+	// BR-ORCH-048: an exhausted cancellation keeps its manual-review status
+	// message on later wakes — "waiting for…" messages would regress the
+	// operator-facing escalation evidence while State stays Failed.
+	if status.State == remediationv1.CancellationStateFailed {
+		return
+	}
 	if allAcknowledged {
 		// Child work is stopped. Keep the parent in Cancelling until the
 		// cancellation notification has finished its own delivery lifecycle.
@@ -386,9 +457,7 @@ func (r *Reconciler) recordCancellationProgress(
 		if notificationCreationFailed && notificationFailure != "" && status.State != remediationv1.CancellationStateFailed {
 			status.RetryCount++
 			if status.RetryCount >= remediationCancellationMaxRetries {
-				r.emitCancellationExhaustedAudit(ctx, rr, notificationFailure)
-				status.State = remediationv1.CancellationStateFailed
-				r.ensureCancellationFailureNotification(ctx, rr, notificationFailure, logger)
+				r.finalizeCancellationExhaustion(ctx, rr, notificationFailure, logger, false)
 				rr.Status.Message = "Cancellation notification could not be created or delivered; manual review required"
 				return
 			}
@@ -403,13 +472,75 @@ func (r *Reconciler) recordCancellationProgress(
 		status.LastError = firstFailure
 	}
 	if status.State != remediationv1.CancellationStateFailed && status.RetryCount >= remediationCancellationMaxRetries {
-		r.emitCancellationExhaustedAudit(ctx, rr, firstFailure)
-		status.State = remediationv1.CancellationStateFailed
-		r.ensureCancellationFailureNotification(ctx, rr, firstFailure, logger)
+		r.finalizeCancellationExhaustion(ctx, rr, firstFailure, logger, false)
 		rr.Status.Message = "Cancellation could not verify all child stops; manual review required"
 		return
 	}
 	rr.Status.Message = "Cancellation requested; waiting for child acknowledgements"
+}
+
+// cancellationWaitTimeout bounds how long a cancellation may wait silently —
+// children acknowledged neither success nor failure, or the notification is
+// neither delivered nor failed — before escalation. Legitimate child stops
+// are paced by each child's own bounded retries and do not consume the
+// aggregate failure budget (UT-ORCH-2588-028), so the bound is wall-clock.
+// Ten minutes covers the slowest verified child stop plus notification
+// delivery while staying far below the CI E2E job budget that CI runs
+// 43971993157 and 44009101345 proved a silent wait can consume entirely.
+const cancellationWaitTimeout = 10 * time.Minute
+
+// cancellationWaitExhausted reports whether the cancellation request has
+// waited beyond the wall-clock budget (BR-ORCH-048).
+func cancellationWaitExhausted(rr *remediationv1.RemediationRequest) bool {
+	status := rr.Status.GetCancellation()
+	if status.RequestedAt == nil {
+		return false
+	}
+	return time.Since(status.RequestedAt.Time) > cancellationWaitTimeout
+}
+
+// finalizeCancellationExhaustion records the terminal exhaustion state and
+// publishes manual-review evidence. The caller persists the status and, for a
+// deleting RR, releases the finalizer afterwards. waitExhausted selects the
+// audit attribution: true for the wall-clock wait budget (BR-ORCH-048, the
+// retry budget was deliberately not consumed), false for the retry-budget
+// path.
+func (r *Reconciler) finalizeCancellationExhaustion(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	failure string,
+	logger logr.Logger,
+	waitExhausted bool,
+) {
+	if waitExhausted {
+		r.emitCancellationWaitExhaustedAudit(ctx, rr, failure)
+	} else {
+		r.emitCancellationExhaustedAudit(ctx, rr, failure)
+	}
+	rr.Status.EnsureCancellation().State = remediationv1.CancellationStateFailed
+	r.ensureCancellationFailureNotification(ctx, rr, failure, logger)
+}
+
+// releaseFinalizerIfDeleting releases the cancellation finalizer at retry
+// budget exhaustion for an already-deleting RR (BR-ORCH-048). An unbounded
+// deletion hang is never acceptable: children are owner-referenced, so parent
+// deletion cascades to their own deletion paths, which independently verify
+// backend shutdown before acknowledging. The cancel-API path (no deletion)
+// keeps the documented fail-closed retention — watches and manual remediation
+// remain its recovery path. A failed release Update is returned so callers
+// requeue with controller-runtime backoff; the State=Failed guard makes the
+// retry safe and non-re-escalating.
+func (r *Reconciler) releaseFinalizerIfDeleting(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) error {
+	if rr.DeletionTimestamp.IsZero() || !controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
+		return nil
+	}
+	controllerutil.RemoveFinalizer(rr, remediationRequestCancellationFinalizer)
+	if err := r.client.Update(ctx, rr); err != nil {
+		logger.Error(err, "Failed to remove exhausted cancellation finalizer for deleting RemediationRequest",
+			"remediationRequest", rr.Name)
+		return fmt.Errorf("remove exhausted cancellation finalizer for deleting RemediationRequest: %w", err)
+	}
+	return nil
 }
 
 // ensureCancellationNotification creates and tracks the deterministic
@@ -764,6 +895,33 @@ func (r *Reconciler) emitCancellationExhaustedAudit(
 		"cancellation.failed",
 		"",
 		failureErr,
+	)
+	r.emitCancellationLifecycleAudit(
+		ctx,
+		rr,
+		"cancellation.manual_review.required",
+		"cancellation.failed",
+		"cancellation.manual_review.required",
+	)
+}
+
+// emitCancellationWaitExhaustedAudit records wall-clock wait exhaustion
+// (BR-ORCH-048) with a distinct stage so correlation-based reconstruction
+// attributes the cause correctly: the retry budget was deliberately NOT
+// consumed (pending-is-free contract, UT-ORCH-2588-028) — the cancellation
+// simply waited beyond its time budget.
+func (r *Reconciler) emitCancellationWaitExhaustedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failure string) {
+	if failure == "" {
+		failure = "cancellation waited silently without observable progress"
+	}
+	r.emitCancellationFailureAudit(
+		ctx,
+		rr,
+		"cancellation.wait.exhausted",
+		"cancellation.in_progress",
+		"cancellation.failed",
+		"",
+		fmt.Errorf("cancellation wait budget (%s) exceeded: %s", cancellationWaitTimeout, failure),
 	)
 	r.emitCancellationLifecycleAudit(
 		ctx,

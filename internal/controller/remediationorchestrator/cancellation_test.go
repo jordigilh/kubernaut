@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -179,6 +180,394 @@ var _ = Describe("RemediationRequest cancellation coordination", func() {
 		Entry("completed SignalProcessing", terminalSPChildFixture("Completed")),
 		Entry("cancelled EffectivenessAssessment", terminalEAChildFixture("Cancelled")),
 	)
+
+	DescribeTable("UT-RO-2588-015: escalates a cancellation that waited silently beyond the wall-clock budget (BR-ORCH-048)",
+		func(requestedAgo time.Duration) {
+			now := metav1.Now()
+			requestedAt := metav1.NewTime(now.Add(-requestedAgo))
+			rr := &remediationv1.RemediationRequest{
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseCancelling,
+					Cancellation: &remediationv1.CancellationStatus{
+						State:       remediationv1.CancellationStateInProgress,
+						RequestedAt: &requestedAt,
+					},
+				},
+			}
+			// CI runs 43971993157 and 44009101345 proved a silent wait
+			// (children acknowledge neither, or notification delivery never
+			// terminates) requeues forever and hangs `kubectl delete rr`
+			// behind the retained finalizer. The wait is bounded by
+			// wall-clock, not poll count: legitimate child stops are paced by
+			// each child's own retries (UT-ORCH-2588-028).
+			Expect(cancellationWaitExhausted(rr)).To(BeTrue(),
+				"a request older than the wait budget must be considered exhausted")
+
+			// A silent wait carries no observable failure detail; the
+			// escalation must still record a meaningful audit reason.
+			scheme := runtime.NewScheme()
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+			reconciler := NewReconciler(ReconcilerDeps{
+				Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme,
+				AuditStore: &cancellationAuditStore{}, Recorder: record.NewFakeRecorder(10),
+				Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			})
+			reconciler.finalizeCancellationExhaustion(context.Background(), rr, "", logr.Discard(), true)
+			Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed))
+		},
+		Entry("eleven minutes old", cancellationWaitTimeout+time.Minute),
+		Entry("one hour old", time.Hour),
+	)
+
+	It("UT-RO-2588-018: a recent or untimestamped cancellation is not exhausted (BR-ORCH-048)", func() {
+		now := metav1.Now()
+		recent := metav1.NewTime(now.Add(-time.Minute))
+		rr := &remediationv1.RemediationRequest{
+			Status: remediationv1.RemediationRequestStatus{
+				Cancellation: &remediationv1.CancellationStatus{RequestedAt: &recent},
+			},
+		}
+		Expect(cancellationWaitExhausted(rr)).To(BeFalse(),
+			"a recently requested cancellation must keep waiting")
+		rr.Status.Cancellation.RequestedAt = nil
+		Expect(cancellationWaitExhausted(rr)).To(BeFalse(),
+			"a missing RequestedAt must never report exhaustion")
+	})
+
+	It("UT-RO-2588-017: releases the finalizer for a deleting RR after the exhausted status is persisted (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-exhausted-delete", Namespace: "system", UID: "rr-exhausted-delete-uid",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					State:      remediationv1.CancellationStateFailed,
+					RetryCount: remediationCancellationMaxRetries,
+				},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).WithStatusSubresource(rr).Build()
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: &cancellationAuditStore{},
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		Expect(reconciler.releaseFinalizerIfDeleting(context.Background(), rr, logr.Discard())).To(Succeed())
+
+		// The persisted object must lose the finalizer so the pending delete
+		// completes; the exhausted status evidence must remain queryable.
+		// With no finalizers left and a deletion timestamp, the fake client
+		// completes the deletion, so the object is gone — exactly the
+		// production outcome.
+		persisted := &remediationv1.RemediationRequest{}
+		err := c.Get(context.Background(), client.ObjectKeyFromObject(rr), persisted)
+		if err == nil {
+			Expect(persisted.Finalizers).NotTo(ContainElement(cancellation.RemediationRequestFinalizer))
+			Expect(persisted.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed),
+				"the exhausted status evidence must survive the finalizer release")
+		} else {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+				"the RR must be deleted once the finalizer is released")
+		}
+	})
+
+	It("UT-RO-2588-016: retains the finalizer at exhaustion for a non-deleting RR (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-silent-wait-api", Namespace: "system", UID: "rr-silent-wait-api-uid",
+				Finalizers: []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					State:      remediationv1.CancellationStateInProgress,
+					RetryCount: remediationCancellationMaxRetries - 1,
+				},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).WithStatusSubresource(rr).Build()
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: &cancellationAuditStore{},
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		// The cancel-API path (no deletion) keeps the documented fail-closed
+		// retention: watches and manual remediation remain the recovery path.
+		Expect(reconciler.releaseFinalizerIfDeleting(context.Background(), rr, logr.Discard())).To(Succeed())
+
+		Expect(rr.Finalizers).To(ContainElement(cancellation.RemediationRequestFinalizer),
+			"only a deleting RR releases the finalizer at exhaustion")
+	})
+
+	It("UT-RO-2588-019: reconcile escalates a wall-clock-exhausted cancellation once and retains the finalizer for a non-deleting RR (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(signalprocessingv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		Expect(effectivenessv1.AddToScheme(scheme)).To(Succeed())
+		requestedAt := metav1.NewTime(time.Now().Add(-(cancellationWaitTimeout + time.Minute)))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-wait-exhausted-api", Namespace: "system", UID: "rr-wait-exhausted-api-uid",
+				Finalizers: []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					RequestID:   "system/system:cancellation",
+					State:       remediationv1.CancellationStateInProgress,
+					RequestedAt: &requestedAt,
+				},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).WithStatusSubresource(rr).Build()
+		store := &cancellationAuditStore{}
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: store,
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		// First wake: the aged cancellation escalates exactly once —
+		// wait-exhausted audit, terminal state, manual-review message — and
+		// the finalizer is retained on the cancel-API path.
+		_, err := reconciler.reconcileCancellation(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed))
+		Expect(rr.Status.Message).To(ContainSubstring("wait budget"))
+		Expect(rr.Finalizers).To(ContainElement(cancellation.RemediationRequestFinalizer))
+		waitEvents := 0
+		for _, e := range store.events {
+			raw, marshalErr := json.Marshal(e.EventData)
+			Expect(marshalErr).NotTo(HaveOccurred())
+			if strings.Contains(string(raw), "cancellation.wait.exhausted") {
+				waitEvents++
+			}
+		}
+		Expect(waitEvents).To(BeNumerically(">", 0), "the wait-exhausted audit must be emitted")
+
+		// Second wake after exhaustion: the State=Failed guard prevents
+		// re-firing the escalation — no additional wait-exhausted audit —
+		// and the manual-review status message is preserved.
+		waitEventsBefore := 0
+		for _, e := range store.events {
+			raw, marshalErr := json.Marshal(e.EventData)
+			Expect(marshalErr).NotTo(HaveOccurred())
+			if strings.Contains(string(raw), "cancellation.wait.exhausted") {
+				waitEventsBefore++
+			}
+		}
+		messageBefore := rr.Status.Message
+		_, err = reconciler.reconcileCancellation(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		waitEventsAfter := 0
+		for _, e := range store.events {
+			raw, marshalErr := json.Marshal(e.EventData)
+			Expect(marshalErr).NotTo(HaveOccurred())
+			if strings.Contains(string(raw), "cancellation.wait.exhausted") {
+				waitEventsAfter++
+			}
+		}
+		Expect(waitEventsAfter).To(Equal(waitEventsBefore),
+			"an already-Failed cancellation must not re-emit wait-exhausted audits")
+		Expect(rr.Status.Message).To(Equal(messageBefore),
+			"the manual-review status message must not regress to a waiting message")
+	})
+
+	It("UT-RO-2588-020: reconcile releases the finalizer for a deleting RR after persisting the exhausted status (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(signalprocessingv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		Expect(effectivenessv1.AddToScheme(scheme)).To(Succeed())
+		now := metav1.Now()
+		requestedAt := metav1.NewTime(now.Add(-(cancellationWaitTimeout + time.Minute)))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-wait-exhausted-del", Namespace: "system", UID: "rr-wait-exhausted-del-uid",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					RequestID:   "system/system:cancellation",
+					State:       remediationv1.CancellationStateInProgress,
+					RequestedAt: &requestedAt,
+				},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).WithStatusSubresource(rr).Build()
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: &cancellationAuditStore{},
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		_, err := reconciler.reconcileCancellation(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+
+		// The exhausted status was persisted BEFORE the finalizer release, so
+		// the manual-review evidence survives; with the finalizer gone and a
+		// deletion timestamp present, the object completes deletion.
+		persisted := &remediationv1.RemediationRequest{}
+		getErr := c.Get(context.Background(), client.ObjectKeyFromObject(rr), persisted)
+		if getErr == nil {
+			Expect(persisted.Finalizers).NotTo(ContainElement(cancellation.RemediationRequestFinalizer))
+			Expect(persisted.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed),
+				"the exhausted status evidence must be persisted before the finalizer release")
+		} else {
+			Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
+				"the deleting RR must complete deletion once the finalizer is released")
+		}
+	})
+
+	It("UT-RO-2588-021: a terminal-Cancelled RR with a stuck notification escalates once by wall-clock and releases for deletion (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		now := metav1.Now()
+		requestedAt := metav1.NewTime(now.Add(-(cancellationWaitTimeout + time.Minute)))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-cancelled-stuck-nr", Namespace: "system", UID: "rr-cancelled-stuck-nr-uid",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelled,
+				Cancellation: &remediationv1.CancellationStatus{
+					RequestID:   "system/system:cancellation",
+					State:       remediationv1.CancellationStateInProgress,
+					RequestedAt: &requestedAt,
+				},
+			},
+		}
+		// The cancellation NotificationRequest exists but never reaches a
+		// terminal delivery phase (this suite runs no NR controller).
+		nr := &notificationv1.NotificationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "nr-cancellation-rr-cancelled-stuck-nr", Namespace: "system"},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr, nr).WithStatusSubresource(rr, nr).Build()
+		store := &cancellationAuditStore{}
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: store,
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		// First wake: the aged terminal-Cancelled RR escalates by wall-clock.
+		_, err := reconciler.reconcileCancellation(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed))
+		Expect(rr.Status.Message).To(ContainSubstring("wait budget"))
+		waitExhausted := func() int {
+			count := 0
+			for _, e := range store.events {
+				raw, marshalErr := json.Marshal(e.EventData)
+				Expect(marshalErr).NotTo(HaveOccurred())
+				if strings.Contains(string(raw), "cancellation.wait.exhausted") {
+					count++
+				}
+			}
+			return count
+		}
+		firstCount := waitExhausted()
+		Expect(firstCount).To(BeNumerically(">", 0), "the wait-exhausted audit must be emitted")
+
+		// The exhausted status was persisted before the finalizer release.
+		persisted := &remediationv1.RemediationRequest{}
+		getErr := c.Get(context.Background(), client.ObjectKeyFromObject(rr), persisted)
+		if getErr == nil {
+			Expect(persisted.Finalizers).NotTo(ContainElement(cancellation.RemediationRequestFinalizer))
+			Expect(persisted.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed))
+		} else {
+			Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
+				"the deleting RR must complete deletion once the finalizer is released")
+		}
+
+		// Second wake: drive reconcileCancelledNotificationWait directly —
+		// the RR-level entry would exit early once the finalizer is gone
+		// (cancellationRequested requires PhaseCancelled+finalizer), which
+		// would make a guard assertion vacuous. The State=Failed guard must
+		// hold without re-escalating, and the release must be idempotent.
+		_, err = reconciler.reconcileCancelledNotificationWait(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(waitExhausted()).To(Equal(firstCount),
+			"an already-Failed cancellation must not re-emit wait-exhausted audits")
+	})
+
+	It("UT-RO-2588-022: a failed finalizer release on the escalated notification-wait path is retried on the next wake (BR-ORCH-048)", func() {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "rr-release-retry", Namespace: "system", UID: "rr-release-retry-uid",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{cancellation.RemediationRequestFinalizer},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelled,
+				Cancellation: &remediationv1.CancellationStatus{
+					State: remediationv1.CancellationStateFailed,
+				},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).WithStatusSubresource(rr).Build()
+		reconciler := NewReconciler(ReconcilerDeps{
+			Client: c, APIReader: c, Scheme: scheme, AuditStore: &cancellationAuditStore{},
+			Recorder: record.NewFakeRecorder(10), Metrics: rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		})
+
+		// An already-escalated deleting RR retries the release on every wake;
+		// a successful release completes the pending deletion.
+		_, err := reconciler.reconcileCancelledNotificationWait(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		persisted := &remediationv1.RemediationRequest{}
+		getErr := c.Get(context.Background(), client.ObjectKeyFromObject(rr), persisted)
+		if getErr != nil {
+			Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
+				"the deleting RR must complete deletion once the finalizer release is retried")
+		} else {
+			Expect(persisted.Finalizers).NotTo(ContainElement(cancellation.RemediationRequestFinalizer))
+		}
+	})
+
+	It("UT-RO-2588-024: a fresh terminal-Cancelled wait requeues with backoff (BR-ORCH-048)", func() {
+		recent := metav1.NewTime(metav1.Now().Add(-time.Minute))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-fresh-cancelled-wait", Namespace: "system", UID: "rr-fresh-cancelled-wait-uid"},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelled,
+				Cancellation: &remediationv1.CancellationStatus{
+					State:       remediationv1.CancellationStateInProgress,
+					RequestedAt: &recent,
+				},
+			},
+		}
+		reconciler := &Reconciler{}
+
+		result, err := reconciler.reconcileCancelledNotificationWait(context.Background(), rr, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+			"a recently requested notification wait must keep polling with backoff")
+		Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateInProgress),
+			"a fresh wait must not escalate")
+	})
 
 	It("UT-AUDIT-2588-012: preserves request observations after concurrent phase progress (BR-AUDIT-005)", func() {
 		scheme := runtime.NewScheme()
@@ -821,7 +1210,55 @@ var _ = Describe("RemediationRequest cancellation coordination", func() {
 			}
 		}
 		Expect(observedStages).To(HaveKey("cancellation.failed"))
+		// BR-ORCH-048: the retry-budget path must attribute its exhaustion to
+		// the retry stage, never to the wall-clock wait stage.
+		for _, event := range auditStore.events {
+			raw, marshalErr := json.Marshal(event.EventData)
+			Expect(marshalErr).NotTo(HaveOccurred())
+			Expect(string(raw)).NotTo(ContainSubstring("cancellation.wait.exhausted"),
+				"the retry-budget path must not emit the wait-exhausted audit stage")
+		}
 		Expect(observedStages).To(HaveKey("cancellation.manual_review.required"))
+	})
+
+	It("UT-RO-2588-023: child-stop retry exhaustion attributes to the retry stage, never the wait stage (BR-ORCH-048)", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-child-stop-exhaust", Namespace: "system", UID: "rr-child-stop-exhaust-uid"},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseCancelling,
+				Cancellation: &remediationv1.CancellationStatus{
+					State:      remediationv1.CancellationStateInProgress,
+					RetryCount: remediationCancellationMaxRetries - 1,
+				},
+			},
+		}
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
+		auditStore := &cancellationAuditStore{}
+		reconciler := &Reconciler{
+			client:              c,
+			notificationCreator: rocreator.NewNotificationCreator(c, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())),
+			auditStore:          auditStore,
+			auditManager:        roaudit.NewManager(roaudit.ServiceName),
+		}
+
+		// A persistent child-stop failure exhausts the retry budget through
+		// the child-failure branch of recordCancellationProgress.
+		reconciler.recordCancellationProgress(
+			context.Background(), rr, false, "", false, "child did not stop", logr.Discard(),
+		)
+		Expect(rr.Status.Cancellation.RetryCount).To(Equal(remediationCancellationMaxRetries))
+		Expect(rr.Status.Cancellation.State).To(Equal(remediationv1.CancellationStateFailed))
+		Expect(rr.Status.Message).To(ContainSubstring("manual review required"))
+
+		for _, event := range auditStore.events {
+			raw, marshalErr := json.Marshal(event.EventData)
+			Expect(marshalErr).NotTo(HaveOccurred())
+			Expect(string(raw)).NotTo(ContainSubstring("cancellation.wait.exhausted"),
+				"the child-stop retry-exhaustion path must not emit the wait-exhausted audit stage")
+		}
 	})
 })
 

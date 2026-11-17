@@ -647,6 +647,29 @@ func prepareFullPipelineOperatorResources(ctx context.Context, config OperatorDe
 			return fmt.Errorf("failed to prepare %s: %w", step.name, err)
 		}
 	}
+	// CRD schema sync to the branch under test. The operator bootstrap
+	// installs the CRDs embedded in the operator image, which come from the
+	// kubernaut Go module version the operator repo depends on — a released
+	// schema that can predate this branch's CRD changes. The service images
+	// deployed below are built from THIS branch, so their controllers may
+	// write fields the embedded CRDs reject (proven live: run 44009101345's
+	// fullpipeline lane hung `kubectl delete rr` for 45 minutes because the
+	// operator-shipped RemediationRequest CRD rejected overallPhase
+	// "Cancelling", status.cancellation, and the Cancellation notification
+	// type, so every cancellation status update failed and the finalizer was
+	// never released; applying this branch's config/crd/bases completed the
+	// deletion within 45 seconds). Re-applying the branch CRDs after the
+	// bootstrap keeps the schema consistent with the controllers under test
+	// while preserving Issue #1737's operator-owned lifecycle — the operator
+	// installs first, this only upgrades the schema to the tested revision.
+	branchCRDs := filepath.Join(getProjectRoot(), "config", "crd", "bases")
+	syncCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", branchCRDs, "--server-side")
+	syncOut, syncErr := syncCmd.CombinedOutput()
+	if syncErr != nil {
+		return fmt.Errorf("failed to sync branch CRDs after operator bootstrap: %w: %s", syncErr, strings.TrimSpace(string(syncOut)))
+	}
+	_, _ = fmt.Fprintf(writer, "🗄️  Synced CRDs to the branch schema (config/crd/bases)\n")
 	return nil
 }
 

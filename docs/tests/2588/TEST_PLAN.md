@@ -38,6 +38,81 @@ Three source-attributed causes, proven by CI logs and must-gather:
    to `%x`), producing 72 characters and failing the CRD's 64-byte ceiling.
    Replaced with a SHA-256 hex digest of the test name.
 
+### Post-validation fixes for run 44009101345 (head 3093cff36) — three lanes
+
+Three lanes failed on merge head 3093cff36. All three root causes are proven
+with log, must-gather, and live-cluster evidence; fixes validated on
+helios08 against CI-built images before push.
+
+1. **E2E (fullpipeline) — CRD schema mismatch (the 8-run hang's true root
+   cause).** The FP lane's CRDs come from the operator chart, whose operator
+   image embeds the RELEASED kubernaut module's CRDs — which predate #2588:
+   the RemediationRequest CRD rejects `overallPhase: "Cancelling"`, has no
+   `status.cancellation`, and the NotificationRequest CRD rejects
+   `spec.type: "Cancellation"`. The branch-built controllers write those
+   fields; every cancellation status update was rejected by the API server;
+   cancellation never progressed; the finalizer was never released;
+   `kubectl delete rr` hung until the 45-minute job budget on 8 consecutive
+   runs. Live proof on the retained helios08 cluster: applying the branch's
+   `config/crd/bases` completed a deletion stuck for ~50 minutes within 45
+   seconds. Fix: `fullpipeline_e2e.go` applies the branch CRDs server-side
+   after the operator bootstrap (operator installs first per Issue #1737;
+   the sync only upgrades the schema to the tested revision). Validated:
+   focused E2E-FP-1189-001 PASSED on helios08 (1/1, 1731s).
+2. **Integration (remediationorchestrator) — IT-RO-2564-003 test race.**
+   When RO reconciles the RR before the test's delete, the cancellation
+   finalizer lands and full cancellation runs — gated on the cancellation
+   notification's terminal delivery, which this suite (deliberately without
+   an NR controller) never provides. The test could never pass once the
+   finalizer landed; green runs won the race. Fix: the test marks the
+   cancellation notification `Sent` when Cancelling is observed (mirroring
+   the suite's own convention), a no-op on the fast path. Validated: 9/9
+   IT-RO-2564 specs on helios08.
+3. **E2E (apifrontend) — docker.io postgres pull stall (infrastructure
+   flake).** `SynchronizedBeforeSuite` failed at `migrations.go:256`; all
+   224 specs skipped; the postgres pod never pulled. Zero code overlap;
+   rerun candidate. On helios08 the lane ran 234/235 with the single
+   failure being a helios08-only TLS CA artifact (the same spec passed in
+   CI run 43971993157).
+
+Also hardened in this round (BR-ORCH-048,
+`docs/requirements/BR-ORCH-048-bounded-cancellation-waits.md`): silent
+cancellation waits are bounded by a 10-minute wall-clock budget anchored on
+`status.cancellation.requestedAt`. Beyond it, RO escalates once (distinct
+`cancellation.wait.exhausted` audit, `State=Failed`, manual-review
+notification) and, for a deleting RR, releases the finalizer after
+persisting the exhausted status. The failure retry budget is untouched
+(pending-is-free, UT-ORCH-2588-028). This is defense-in-depth: a genuinely
+stuck child or a dead notification controller would still hang deletion
+without it even with the CRD fix.
+
+| Component | Production entry | Wiring location | Proving test |
+|-----------|------------------|-----------------|--------------|
+| Branch CRD schema sync | FP E2E infrastructure | test/infrastructure/fullpipeline_e2e.go | E2E-FP-1189-001 (helios08) |
+| Wall-clock wait bound | RO cancellation coordination | internal/controller/remediationorchestrator/cancellation.go | UT-RO-2588-015/018/019/020 |
+
+Requirement: `docs/requirements/BR-ORCH-048-bounded-cancellation-waits.md`.
+
+RED/GREEN: UT-RO-2588-015..021 written before the bound; the reconcile-path
+tests (019/020/021) initially exposed the missing re-entrancy guard and the
+audit-stage conflation, both fixed. All 7 controller suites, build, lint and
+diff checks pass. Deployed CI on the pushed commit is the runtime gate.
+
+Scoped coverage note: the critical BR-ORCH-048 scenarios are covered by
+UT-RO-2588-015/016/017/018/019/020/021/022/023 plus the extended
+UT-ORCH-2588-005: both wall-clock branches, at-most-once escalation,
+status-before-release ordering, release retry after escalation,
+manual-review message stability, and retry-path stage separation for both
+the notification-failure and child-stop-failure exhaustion sites, plus the
+fresh-wait requeue tail (UT-RO-2588-024). The remaining uncovered changed
+statements are the API-conflict error returns
+(`Status().Update` / finalizer-release `Update` failure branches); the
+in-file `failOnceOnCancellationFinalizerRemovalClient` pattern covers the
+finalizer-removal failure at the sibling UT-ORCH-2588-003 site, and the
+same injection could extend to the new call sites, but per methodology no
+additional fault-injection tests were manufactured solely to raise the
+line percentage — the deferral is documented rather than hidden.
+
 ### Post-validation fixes for run 43971993157 (head 577144109) — fullpipeline hang
 
 Run 43971993157: every lane green except E2E (fullpipeline), cancelled by
