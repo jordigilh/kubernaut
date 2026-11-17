@@ -386,7 +386,7 @@ helm template istio-base istio/base -n istio-system --version 1.30.2 | kubectl a
 helm template istiod istio/istiod -n istio-system --version 1.30.2 \
   --set global.proxy.autoInject=disabled \
   --set sidecarInjectorWebhook.enableNamespacesByDefault=false | kubectl apply -f -
-kubectl rollout status deployment/istiod -n istio-system --timeout=180s
+kubectl rollout status deployment/istiod -n istio-system --timeout=300s
 
 kubectl create namespace gateway-system
 kubectl apply -f - <<'EOF'
