@@ -1162,6 +1162,54 @@ is claimed yet. Remote AF amendment remains **0/4**. Original exclusive 002/004 
 remains 85%; nine later same-request repairing refusals remain 98%. The consumed
 logging-only image exception is not reused for functional builds.
 
+#### Normal merge and final acceptance-boundary completion (2026-11-17)
+
+Atomic local candidate commit is `552e47dd0566f8edad71fdd7310e4beee2bdde6c`.
+Normal merge commit is `77b6b55bbfac504ceee194e2c6d693b85157d37c`, with actual
+main parent `ed19d855c30423abbcf181efbb3d4974c9f9a871`. Both refs were refreshed
+from origin immediately before the clean-tree merge; the published topic head
+remains `2cda8b1ec`. Only workflow YAML conflicted. The resolution combines the
+source-preserving single-quoted shell expression with main's `[:@]` tag/digest
+support and literal `[$]BUILDPLATFORM` guard. It preserves both intentions rather
+than choosing ours/theirs. The actual preparation step is executed with
+`BUILDPLATFORM=must-not-expand`; all five old/current/tag+digest/digest-only/
+unexpected-builder cases pass with race. `merge-workflow-red.log` first proves
+digest-only failure against the candidate parent's colon-only expression;
+`merge-workflow-green.log` proves the combined result. No image build is run.
+
+The first complete **post-merge** serial validation round passes all nine gates
+at merge source `77b6b55bb` (`postmerge-results.json`): full build, repository
+test compilation, full lint (zero issues), affected race suites, full AF tools
+and mock-provider race suites, EM/SP command race suites, selected real FMC IT,
+`make test TEST_SUITE_PROCS=1`, and whitespace. Suite serialization changes no
+assertion, timeout, test set or coverage gate. `make test` takes 685.473 seconds;
+the real FMC IT takes 65.685 seconds. Earlier timing-sensitive AF/MCP failures
+do not recur in this serial round without production changes to those paths.
+
+Final scope-boundary review then reproduced **two actual remaining approved
+acceptance gaps** against that merge source, not new architecture or extra
+denominator credit. `final-boundary-red.log`, seed 1794892851, records two REDs:
+direct FMC Check accepted missing explicit GVK from a successful backend; an
+already-queued cross-namespace WATCH event allowed initial publication. GREEN
+validates required remote GVK/identity before HTTP dispatch and validates WATCH
+namespace before both pending-event publication and live event dispatch. Namespace
+metadata is required on namespaced LIST/WATCH objects. Valid transport-fixture
+requests now supply explicit GVK. The complete FMC/registry race packages and
+full build pass (`final-boundary-green-final.log`, `build-final-boundary.log`).
+A fresh serial gate round is required for this final post-merge source; the
+earlier nine passes are retained under their original SHA, not relabeled.
+
+Read-only local CI artifact inspection revalidates the original five application
+archive/config hashes and extracts ELF build metadata without executing any
+application binary (`original-ci-binary-inventory.json`, buildinfo and nm files).
+Their compiler is Red Hat Go 1.27.3; host validation is Go 1.26.11. Source/module
+closure inspection is provisional until final freeze. Incoming main's four module
+updates do not automatically imply changes in every runtime binary. The original
+db-migrate archive is independently reverified: its actual goose binary is
+**v3.27.2**, built with Go 1.26.11 and interpolate v0.0.2, matching the unchanged
+recipe's isolated explicit pin, not main go.mod's goose v3.30.1. This is artifact
+input/provenance evidence, not migration execution or a new-image permission.
+
 ## Authority and disposition (historical bounded repair)
 
 The current `TEST_PLAN.md`, DD-FLEET-011/012/013/014, BR-SCOPE-001 and

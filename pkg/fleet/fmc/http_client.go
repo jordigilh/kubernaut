@@ -103,6 +103,16 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 // responses and transient transport failures have bounded retry; verified,
 // invalid, unsupported, denied and protocol outcomes are never retried.
 func (c *HTTPClient) Check(ctx context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
+	if ctx.Err() != nil {
+		return failedScope(), ctx.Err()
+	}
+	invalid := scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}
+	if r.ClusterID == "" || r.Name == "" {
+		return invalid, nil
+	}
+	if _, err := scope.GVKForIdentity(r, true); err != nil {
+		return invalid, nil //nolint:nilerr // DD-FLEET-015: missing/invalid remote GVK is a completed input-domain outcome
+	}
 	reqURL := c.buildScopeCheckURL(r)
 
 	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)

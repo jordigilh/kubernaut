@@ -27,7 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// ValkeyCacheReader implements CacheReader using a Valkey (Redis-compatible) client.
+// ValkeyCacheReader implements ObservationReader using a Valkey-compatible client.
 type ValkeyCacheReader struct {
 	client *redis.Client
 }
@@ -46,7 +46,7 @@ func WithTLSConfig(tlsConfig *tls.Config) ValkeyOption {
 	}
 }
 
-// NewValkeyCacheReader creates a CacheReader backed by Valkey.
+// NewValkeyCacheReader creates an observation reader backed by Valkey.
 func NewValkeyCacheReader(addr string, opts ...ValkeyOption) *ValkeyCacheReader {
 	redisOpts := &redis.Options{Addr: addr}
 	for _, opt := range opts {

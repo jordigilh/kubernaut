@@ -13,6 +13,21 @@ import (
 )
 
 var _ = Describe("Enum wire contract [BR-SCOPE-001, BR-INTEGRATION-065]", func() {
+	It("S11: a direct FMC checker cannot authorize a request without explicit GVK", func() {
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
+		}))
+		defer server.Close()
+		result, err := fmc.NewHTTPClient(server.URL).Check(context.Background(), scope.ResourceIdentity{ClusterID: "hub", Kind: "Pod", Namespace: "payments", Name: "api"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+		Expect(calls.Load()).To(BeZero(), "invalid remote identity must not reach a backend or authorize from its response")
+	})
+
 	DescribeTable("S13/S16 preserve validated domain outcomes with exact status",
 		func(state scope.ScopeState, source scope.ScopeSource, status, attempts int) {
 			var calls atomic.Int32

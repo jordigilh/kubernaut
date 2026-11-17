@@ -232,7 +232,7 @@ func (cfg registryWatchConfig) session(ctx context.Context, installed func()) (s
 	var pending *watch.Event
 	select {
 	case event, open := <-stream.ResultChan():
-		if err := validRegistryEvent(event, open); err != nil {
+		if err := cfg.validateEvent(event, open); err != nil {
 			return err
 		}
 		pending = &event
@@ -260,7 +260,7 @@ func (cfg registryWatchConfig) consume(ctx context.Context, stream watch.Interfa
 		case <-rotation.C:
 			return fmt.Errorf("fleet registry watch rotation")
 		case event, open := <-stream.ResultChan():
-			if err := validRegistryEvent(event, open); err != nil {
+			if err := cfg.validateEvent(event, open); err != nil {
 				return err
 			}
 			if err := ctx.Err(); err != nil {
@@ -291,6 +291,20 @@ func (cfg registryWatchConfig) establish(ctx context.Context, rv string) (contex
 		return nil, nil, nil, fmt.Errorf("fleet registry watch is nil")
 	}
 	return streamCtx, stream, cancel, nil
+}
+
+func (cfg registryWatchConfig) validateEvent(event watch.Event, open bool) error {
+	if err := validRegistryEvent(event, open); err != nil {
+		return err
+	}
+	if event.Type == watch.Bookmark {
+		return nil
+	}
+	obj, ok := event.Object.(*unstructured.Unstructured)
+	if !ok || obj.GetNamespace() == "" || (cfg.config.Namespace != "" && obj.GetNamespace() != cfg.config.Namespace) {
+		return fmt.Errorf("fleet registry watch violates namespace scope")
+	}
+	return nil
 }
 
 func validRegistryEvent(event watch.Event, open bool) error {
@@ -346,7 +360,7 @@ func (cfg registryWatchConfig) list(ctx context.Context) (map[string]ClusterInfo
 func (cfg registryWatchConfig) addPage(clusters map[string]ClusterInfo, page *unstructured.UnstructuredList) error {
 	for i := range page.Items {
 		obj := &page.Items[i]
-		if obj.GetName() == "" || obj.GetUID() == "" || (cfg.config.Namespace != "" && obj.GetNamespace() != cfg.config.Namespace) {
+		if obj.GetName() == "" || obj.GetUID() == "" || obj.GetNamespace() == "" || (cfg.config.Namespace != "" && obj.GetNamespace() != cfg.config.Namespace) {
 			return fmt.Errorf("fleet registration list has invalid identity")
 		}
 		if obj.GetLabels()[ManagedLabel] != managedLabelValue {

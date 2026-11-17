@@ -107,4 +107,31 @@ var _ = Describe("Owned registry publication [BR-INTEGRATION-065, BR-SCOPE-001]"
 		Expect(err).To(HaveOccurred())
 		Expect(w.Ready()).To(BeFalse())
 	}, Entry("nil", true), Entry("already closed", false))
+
+	It("W01/W03: an already-observed cross-namespace WATCH event cannot publish a session", func() {
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BackendGVR: "BackendList"})
+		client.PrependReactor("list", "backends", func(k8stesting.Action) (bool, runtime.Object, error) {
+			list := &unstructured.UnstructuredList{}
+			list.SetResourceVersion("10")
+			return true, list, nil
+		})
+		stream := watch.NewFakeWithChanSize(1, false)
+		foreign := newBackendUnstructured("foreign", "https://mcp")
+		foreign.SetNamespace("other")
+		foreign.SetUID("foreign-uid")
+		foreign.SetResourceVersion("10")
+		stream.Add(foreign)
+		stream.Stop()
+		client.PrependWatchReactor("backends", func(k8stesting.Action) (bool, watch.Interface, error) { return true, stream, nil })
+		w := NewEAIGWRegistry(client, EAIGWRegistryConfig{Namespace: "registrations"}, nil, logr.Discard())
+		DeferCleanup(w.Stop)
+		cfg := registryWatchConfig{client: client, gvr: BackendGVR, config: w.config, trackable: w.trackableClusterInfo,
+			publish: watchPublication{begin: w.begin, install: w.install, invalidate: w.invalidate, apply: w.applyWatchEvent}}
+		published := false
+		err := cfg.session(context.Background(), func() { published = true })
+		Expect(err).To(HaveOccurred())
+		Expect(published).To(BeFalse(), "matching LIST/WATCH namespace is part of current-session evidence")
+		Expect(w.List()).To(BeEmpty())
+		Expect(w.Ready()).To(BeFalse())
+	})
 })
