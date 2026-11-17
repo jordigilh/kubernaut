@@ -143,18 +143,28 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// RAR creation, which can cross that deadline and make the
 			// authwebhook correctly deny the later decision updates
 			// ("approval decision deadline has passed" — observed as a flake,
-			// run 44018398286). Extend the deadline for this context only: a
-			// spec-only update with Decision still Pending passes the webhook
-			// as a no-op (remediationapprovalrequest_handler.go, status-write
-			// guard), so the deadline control itself stays exercised by the
-			// expiry context.
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
-					return err
+			// run 44018398286). The RAR spec is immutable after creation
+			// (ADR-040), so the deadline cannot be patched in place; instead
+			// replace the RO-created RAR with an identical copy (same
+			// deterministic name, refs, and owner references) carrying a
+			// 10-minute RequiredBy. The webhook's deadline control itself
+			// stays exercised by the expiry context, and RO's reconcile sees
+			// the RAR present under the same name.
+			Eventually(func(g Gomega) {
+				current := &remediationv1.RemediationApprovalRequest{}
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), current)).To(Succeed())
+				if time.Until(current.Spec.RequiredBy.Time) > 5*time.Minute {
+					testRAR = current
+					return
 				}
-				testRAR.Spec.RequiredBy = metav1.NewTime(time.Now().Add(10 * time.Minute))
-				return k8sClient.Update(ctx, testRAR)
-			})).To(Succeed())
+				replacement := current.DeepCopy()
+				replacement.ResourceVersion = ""
+				replacement.Spec.RequiredBy = metav1.NewTime(time.Now().Add(10 * time.Minute))
+				g.Expect(k8sClient.Delete(ctx, current)).To(Succeed())
+				g.Expect(k8sClient.Create(ctx, replacement)).To(Succeed(),
+					"recreate the RAR under its deterministic name if RO raced us")
+				testRAR = replacement
+			}, e2eTimeout, e2eInterval).Should(Succeed())
 
 			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
