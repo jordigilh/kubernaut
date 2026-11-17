@@ -775,9 +775,9 @@ jobs:
         run: |
           set -euo pipefail
           # Preserve the source-selected tag/digest across operator image updates.
-          sed -E "s|^FROM (registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+) AS builder$|FROM --platform=\$BUILDPLATFORM \1 AS builder|" \
+          sed -E "s|^FROM (registry\.access\.redhat\.com/ubi10/go-toolset[:@][^[:space:]]+) AS builder$|FROM --platform=\$BUILDPLATFORM \1 AS builder|" \
             kubernaut-operator/Dockerfile > kubernaut-operator/Dockerfile.ci
-          grep -Eq "^FROM --platform=[$]BUILDPLATFORM registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+ AS builder$" \
+          grep -Eq "^FROM --platform=[$]BUILDPLATFORM registry\.access\.redhat\.com/ubi10/go-toolset[:@][^[:space:]]+ AS builder$" \
             kubernaut-operator/Dockerfile.ci
 
       - name: Set up Docker Buildx
