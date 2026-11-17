@@ -397,7 +397,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 				WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
 				Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
 			})
-			Expect(err).ToNot(HaveOccurred(), "reconcile at t=%d0s within the lifetime cap must succeed", step)
+			Expect(err).ToNot(HaveOccurred(), "reconcile at t=%ds within the lifetime cap must succeed", step*10)
 		}
 
 		// Reconcile at t=61 -- past the created_at + 60s total staged lifetime
@@ -413,12 +413,18 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(err).To(HaveOccurred(), "a staging past its total lifetime cap must not accept further reconciliation")
 
 		// The expired staging no longer blocks the next repair cycle, and the
-		// still-live staged records from the loop are cleared as residue.
-		_, err = f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+		// still-live staged records from the loop are cleared as residue: the
+		// replacement generation commits and reads cleanly. Without the
+		// absent-status residue cleanup, the leftover member contaminates the
+		// staged index and the commit count check rejects the cycle.
+		start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
 		})
 		Expect(err).ToNot(HaveOccurred(), "an expired staging must not block the next repair")
-		_ = identity
+		f.commitGeneration(start2, []scopecache.RepairObservation{observation})
+		read, readErr := f.read(start2, identity)
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(read.State).To(Equal(scopecache.ReadVerified), "residue from an expired staging must not contaminate the replacement generation")
 	})
 
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
