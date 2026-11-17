@@ -374,7 +374,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		DeferCleanup(f.server.Close)
 		DeferCleanup(f.store.Close)
 
-		identity, observation := f.identity("checkout", "true")
+		_, observation := f.identity("checkout", "true")
 		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
 		})
@@ -421,8 +421,12 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
 		})
 		Expect(err).ToNot(HaveOccurred(), "an expired staging must not block the next repair")
-		f.commitGeneration(start2, []scopecache.RepairObservation{observation})
-		read, readErr := f.read(start2, identity)
+		// The replacement stages a DISTINCT resource: reusing the loop's
+		// resource would overwrite the residue member by identical public_id
+		// and hide the contamination the cleanup must prevent.
+		replacementIdentity, replacementObservation := f.identity("checkout-replacement", "false")
+		f.commitGeneration(start2, []scopecache.RepairObservation{replacementObservation})
+		read, readErr := f.read(start2, replacementIdentity)
 		Expect(readErr).ToNot(HaveOccurred())
 		Expect(read.State).To(Equal(scopecache.ReadVerified), "residue from an expired staging must not contaminate the replacement generation")
 	})
