@@ -380,12 +380,31 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Reconcile at t61 -- past the created_at + 60s total staged lifetime
+		// A reconcile-without-commit loop: successful reconciles at t=10..50
+		// each roll the staged TTL forward, so the staging is continuously
+		// active and never idles out. Without the lifetime cap this loop
+		// could continue indefinitely.
+		advanced := time.Duration(0)
+		advance := func(d time.Duration) {
+			advanced += d
+			f.server.FastForward(d)
+			f.server.SetTime(time.Unix(1_700_000_000, 0).Add(advanced))
+		}
+		for step := 1; step <= 5; step++ {
+			advance(10 * time.Second)
+			_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+				Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+				WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+				Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+			})
+			Expect(err).ToNot(HaveOccurred(), "reconcile at t=%d0s within the lifetime cap must succeed", step)
+		}
+
+		// Reconcile at t=61 -- past the created_at + 60s total staged lifetime
 		// cap. The roll cannot extend the staging beyond the cap, so the
 		// staged status has expired and reconcile fails closed instead of
 		// keeping a never-committing repair alive indefinitely.
-		f.server.FastForward(61 * time.Second)
-		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(61 * time.Second))
+		advance(11 * time.Second)
 		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
 			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
@@ -393,7 +412,8 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		})
 		Expect(err).To(HaveOccurred(), "a staging past its total lifetime cap must not accept further reconciliation")
 
-		// The expired staging no longer blocks the next repair cycle.
+		// The expired staging no longer blocks the next repair cycle, and the
+		// still-live staged records from the loop are cleared as residue.
 		_, err = f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
 		})

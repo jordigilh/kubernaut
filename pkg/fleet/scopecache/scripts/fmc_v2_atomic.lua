@@ -66,29 +66,28 @@ if op == 'begin' then
   local fence = ARGV[7]
   local token = ARGV[8]
   local staged = KEYS[2]
-  if redis.call('EXISTS', staged) == 1 then
-    if redis.call('HGET', staged, 'state') == 'repairing' then
-      return redis.error_reply('REPAIR_IN_FLIGHT')
+  if redis.call('EXISTS', staged) == 1 and redis.call('HGET', staged, 'state') == 'repairing' then
+    return redis.error_reply('REPAIR_IN_FLIGHT')
+  end
+  -- Replacing an abandoned (uncertain) or expired staging: its residual
+  -- staged index/records must be cleared first. A partially reconciled
+  -- repair that was abandoned or whose status expired while its records
+  -- (30s TTL) still live would otherwise contaminate the new generation's
+  -- commit count validation.
+  local old_index = KEYS[3]
+  local old_index_type = key_type(old_index)
+  if old_index_type == 'zset' then
+    if redis.call('ZCARD', old_index) > 10000 then
+      return redis.error_reply('INDEX_BOUNDS')
     end
-    -- An explicitly abandoned (uncertain) staging may be replaced, but its
-    -- residual staged index/records must be cleared first: a partially
-    -- reconciled repair that was abandoned leaves members that would
-    -- contaminate the new generation's commit count validation.
-    local old_index = KEYS[3]
-    local old_index_type = key_type(old_index)
-    if old_index_type == 'zset' then
-      if redis.call('ZCARD', old_index) > 10000 then
-        return redis.error_reply('INDEX_BOUNDS')
-      end
-      local members = redis.call('ZRANGE', old_index, 0, -1)
-      local staged_prefix = ARGV[9]
-      for _, m in ipairs(members) do
-        redis.call('DEL', staged_prefix .. m)
-      end
-      redis.call('DEL', old_index)
-    elseif old_index_type ~= 'none' then
-      return redis.error_reply('WRONG_TYPE_ZSET')
+    local members = redis.call('ZRANGE', old_index, 0, -1)
+    local staged_prefix = ARGV[9]
+    for _, m in ipairs(members) do
+      redis.call('DEL', staged_prefix .. m)
     end
+    redis.call('DEL', old_index)
+  elseif old_index_type ~= 'none' then
+    return redis.error_reply('WRONG_TYPE_ZSET')
   end
   local committed_generation = tonumber(redis.call('HGET', KEYS[1], 'generation')) or 0
   local generation = committed_generation + 1
