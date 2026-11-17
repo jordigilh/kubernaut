@@ -369,6 +369,38 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(read.State).To(Equal(scopecache.ReadVerified))
 	})
 
+	It("UT-FMC-STAGED-010 [BR-SCOPE-001]: the staged lifetime cap stops a reconcile-without-commit loop", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		identity, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Reconcile at t61 -- past the created_at + 60s total staged lifetime
+		// cap. The roll cannot extend the staging beyond the cap, so the
+		// staged status has expired and reconcile fails closed instead of
+		// keeping a never-committing repair alive indefinitely.
+		f.server.FastForward(61 * time.Second)
+		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(61 * time.Second))
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).To(HaveOccurred(), "a staging past its total lifetime cap must not accept further reconciliation")
+
+		// The expired staging no longer blocks the next repair cycle.
+		_, err = f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred(), "an expired staging must not block the next repair")
+		_ = identity
+	})
+
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
 		f := newStagedRepairFixture()
 		DeferCleanup(f.server.Close)

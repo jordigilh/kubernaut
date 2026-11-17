@@ -486,8 +486,9 @@ func recordKeyPrefix(partition PartitionStateKey) string {
 	return partitionPrefix(partition) + ":record:"
 }
 
-// Staged keys carry the in-flight repair generation (DD-FLEET-016 A2). Their
-// TTL bounds the lifetime of an abandoned repair.
+// Staged keys hold the in-flight repair generation's state (DD-FLEET-016
+// A2); the generation itself lives in the staged status hash fields. The
+// keys' TTL bounds the lifetime of an abandoned repair.
 func stagedStatusKey(partition PartitionStateKey) string {
 	return partitionPrefix(partition) + ":status:staged"
 }

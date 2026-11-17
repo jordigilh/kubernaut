@@ -97,7 +97,10 @@ if op == 'begin' then
   end
   local now = now_ms()
   -- Staged TTL: bounded well inside the 30s data TTL so a lost-reply
-  -- stranding self-clears before the committed records expire.
+  -- stranding self-clears before the committed records expire. The total
+  -- staged lifetime is separately capped at 60s (created_at_ms below): a
+  -- fence holder that keeps reconciling without committing cannot keep the
+  -- staging alive indefinitely, preserving bounded self-healing.
   local staged_expires = now + 15000
   redis.call('HSET', staged,
     'state', 'repairing',
@@ -114,6 +117,7 @@ if op == 'begin' then
     'observed_count', '0',
     'cleanup_count', '0',
     'repair_reason', '',
+    'created_at_ms', now,
     'status_expires_at_ms', staged_expires,
     'index_expires_at_ms', staged_expires)
   redis.call('PEXPIREAT', staged, staged_expires)
@@ -151,10 +155,13 @@ if op == 'repair_reconcile' then
   end
   local now = now_ms()
   -- Roll the staged status TTL forward on each reconcile: an actively
-  -- progressing repair of any duration survives, while an idle or
-  -- stranded staging still self-clears 15s after its last activity.
+  -- progressing repair survives, while an idle or stranded staging still
+  -- self-clears 15s after its last activity. The roll is capped at
+  -- created_at + 60s so a fence holder that reconciles without committing
+  -- can never keep the staging alive indefinitely.
   local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
-  local rolled = now + 15000
+  local created_at = tonumber(redis.call('HGET', staged, 'created_at_ms')) or now
+  local rolled = math.min(now + 15000, created_at + 60000)
   if rolled > staged_expires then
     staged_expires = rolled
     redis.call('HSET', staged, 'status_expires_at_ms', staged_expires)
@@ -286,22 +293,21 @@ if op == 'commit' then
   -- Remove live members absent from the staged observation set.
   local cleanup_count = 0
   local staged_members = {}
+  local staged_members_list = {}
   if staged_index_type == 'zset' then
-    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
-    for _, m in ipairs(members) do staged_members[m] = true end
+    staged_members_list = redis.call('ZRANGE', KEYS[4], 0, -1)
+    for _, m in ipairs(staged_members_list) do staged_members[m] = true end
   end
   if live_index_type == 'zset' and redis.call('ZCARD', KEYS[3]) > 10000 then
     return redis.error_reply('INDEX_BOUNDS')
   end
   -- Pre-validate every staged record key before the first live mutation: a
   -- RENAME of a missing key would abort the script mid-way with partial
-  -- live changes already applied (atomic but not transactional).
-  if staged_index_type == 'zset' then
-    local staged_members = redis.call('ZRANGE', KEYS[4], 0, -1)
-    for _, m in ipairs(staged_members) do
-      if redis.call('EXISTS', staged_prefix .. m) == 0 then
-        return redis.error_reply('COMMIT_REJECTED')
-      end
+  -- live changes already applied (atomic but not transactional). Reuses the
+  -- members already fetched for the count/set construction above.
+  for _, m in ipairs(staged_members_list) do
+    if redis.call('EXISTS', staged_prefix .. m) == 0 then
+      return redis.error_reply('COMMIT_REJECTED')
     end
   end
   if live_index_type == 'zset' then
@@ -321,8 +327,7 @@ if op == 'commit' then
   -- Rename staged records into their live keys, refreshing each expiry from
   -- commit time, then swap the index with matching scores.
   if staged_index_type == 'zset' then
-    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
-    for _, m in ipairs(members) do
+    for _, m in ipairs(staged_members_list) do
       local live_key = live_prefix .. m
       redis.call('RENAME', staged_prefix .. m, live_key)
       if refresh_ttl > 0 then
