@@ -247,6 +247,12 @@ if op == 'commit' then
   end
   local live_prefix = ARGV[11]
   local staged_prefix = ARGV[12]
+  -- ARGV[21]: per-record TTL in milliseconds. The commit refreshes every
+  -- renamed record's expiry to now+TTL so the committed proof is valid for
+  -- the full TTL from COMMIT time, not from the earlier staged reconcile
+  -- (under load, a repair cycle may run long enough that reconcile-time
+  -- TTLs would lapse before the next commit lands).
+  local refresh_ttl = tonumber(ARGV[21]) or 0
   -- Remove live members absent from the staged observation set.
   local cleanup_count = 0
   local staged_members = {}
@@ -266,20 +272,35 @@ if op == 'commit' then
       end
     end
   end
-  -- Rename staged records into their live keys, then swap the index.
-  if staged_index_type == 'zset' then
-    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
-    for _, m in ipairs(members) do
-      redis.call('RENAME', staged_prefix .. m, live_prefix .. m)
-    end
-    redis.call('RENAME', KEYS[4], KEYS[3])
-  else
-    redis.call('DEL', KEYS[3])
-  end
-  -- Install the committed clean status.
+  -- Install the committed status first so the expiry refresh below can use
+  -- one consistent server TIME sample.
   local now = now_ms()
   local status_expires = now + 60000
   local index_expires = tonumber(redis.call('HGET', staged, 'index_expires_at_ms')) or status_expires
+  -- Rename staged records into their live keys, refreshing each expiry from
+  -- commit time, then swap the index with matching scores.
+  if staged_index_type == 'zset' then
+    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
+    for _, m in ipairs(members) do
+      local live_key = live_prefix .. m
+      redis.call('RENAME', staged_prefix .. m, live_key)
+      if refresh_ttl > 0 then
+        local new_expires = now + refresh_ttl
+        redis.call('HSET', live_key, 'expires_at_ms', new_expires)
+        redis.call('PEXPIREAT', live_key, new_expires)
+        redis.call('ZADD', KEYS[4], new_expires, m)
+        if new_expires > index_expires then
+          index_expires = new_expires
+        end
+      end
+    end
+    redis.call('RENAME', KEYS[4], KEYS[3])
+    -- The renamed index keeps its reconcile-time TTL; refresh it to the
+    -- (possibly extended) index expiry so it outlives the refreshed records.
+    redis.call('PEXPIREAT', KEYS[3], index_expires)
+  else
+    redis.call('DEL', KEYS[3])
+  end
   redis.call('HSET', KEYS[1],
     'state', 'clean',
     'clean_commit', '1',

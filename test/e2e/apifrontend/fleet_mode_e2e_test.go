@@ -11,6 +11,7 @@ import (
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -215,6 +216,22 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 			if session.Status.KACorrelationID != "" {
 				ref := session.Spec.RemediationRequestRef
 				binding.PreviouslyStarted[ref.Namespace+"/"+ref.Name] = true
+			}
+		}
+		// Test isolation for the interactive RR dedup contract: a prior run's
+		// LIVE (non-terminal) RR for this spec's target is reused by
+		// production dedup (checkExistingRRByFingerprint), which would deny
+		// this stream its own action=start proof. The session-active target
+		// and its RRs are test-owned fixtures of this spec; retire them so
+		// each execution investigates a fresh RR.
+		var priorRRs remediationv1alpha1.RemediationRequestList
+		Expect(fleetAFK8sClient.List(firstCtx, &priorRRs, client.InNamespace(e2eNamespace))).To(Succeed())
+		for i := range priorRRs.Items {
+			rr := &priorRRs.Items[i]
+			target := rr.Spec.TargetResource
+			if target.Namespace == "fleet-session-active-e2e" && target.Name == "fleet-session-active-target" &&
+				rr.Spec.ClusterID == "hub" && !tools.IsTerminalPhase(string(rr.Status.OverallPhase)) {
+				Expect(fleetAFK8sClient.Delete(firstCtx, rr)).To(Succeed())
 			}
 		}
 		// Keep the original 15-second response-header budget without giving the

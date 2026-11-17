@@ -256,6 +256,47 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(read.State).To(Equal(scopecache.ReadMissing), "a swapped empty partition must not serve removed records")
 	})
 
+	It("UT-FMC-STAGED-007 [BR-SCOPE-001]: the commit refreshes record TTLs from commit time, not reconcile time", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		identity, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// A slow repair: the staged observation was reconciled at t0 with a
+		// 30s TTL, but the commit only lands at t5 (e.g. load-slowed cycle).
+		advanced := time.Duration(0)
+		advance := func(d time.Duration) {
+			advanced += d
+			f.server.FastForward(d)
+			f.server.SetTime(time.Unix(1_700_000_000, 0).Add(advanced))
+		}
+		advance(5 * time.Second)
+		_, err = f.store.CommitRepair(f.ctx, scopecache.RepairCommitRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			ExpectedCount: 1, Proof: repair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// At t32 the reconcile-time TTL (t0+30) would have lapsed; the
+		// commit-time refresh (t5+30) must keep the proof readable.
+		advance(27 * time.Second)
+		read, readErr := f.read(start, identity)
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(read.State).To(Equal(scopecache.ReadVerified), "committed records must carry a full TTL from commit time")
+	})
+
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
 		f := newStagedRepairFixture()
 		DeferCleanup(f.server.Close)
