@@ -67,9 +67,10 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: testNamespace,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  testNamespace,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
