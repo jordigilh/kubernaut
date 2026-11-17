@@ -1,13 +1,17 @@
 # Bounded PR #2637 review repair — 2026-11-16
 
-Status: repairs 2/3 verified. The historical holds on decisions 1/4 below are
-superseded by the user's explicit 2026-11-16 amended implementation approval,
-recorded in DD-FLEET-015 and TEST_PLAN. No new implementation evidence is implied.
+Current local status (2026-11-17): the approved atomic WATCH/enum source is
+implemented, normally merged with actual main, and locally validated at
+`b63d9f7e400bd0caa5259f05aea07a43003feb8e`: **9/9 terminal gates, 26/26 defined
+critical contracts and 11/11 scoped wiring rows pass**. Remote AF amendment
+qualification remains **0/4**. No push, functional image build or remote cluster
+change is authorized/performed here. The terminal appendix below supersedes
+earlier implementation-incomplete/held dispositions; their evidence stays historical.
 Historical baseline:
 `13f629ccabbc15ed4680d89eff166b7dd2f03535`; remote main independently verified as
 `741f7d8569fef9a5eed2d374c759b42298c0a6b8`. No main merge is authorized here.
 
-## Active amended implementation — in progress, not publication-ready
+## Historical amended implementation progress — not current completion status
 
 Approved working base is `2cda8b1ecfdfe51c4ac8e00ce0c1136dd84eaa7d`.
 DD-FLEET-015 and TEST_PLAN v1.6 were written before implementation. No new
@@ -1209,6 +1213,78 @@ db-migrate archive is independently reverified: its actual goose binary is
 **v3.27.2**, built with Go 1.26.11 and interpolate v0.0.2, matching the unchanged
 recipe's isolated explicit pin, not main go.mod's goose v3.30.1. This is artifact
 input/provenance evidence, not migration execution or a new-image permission.
+
+#### Terminal local validation, scoped acceptance and remaining permission gate
+
+The final serial run has **completed**, not merely started. All nine processes
+exit **0** at `b63d9f7e400bd0caa5259f05aea07a43003feb8e`; exact commands,
+environment and elapsed times are in
+`../2593-atomic-completion-evidence/final-round/postmerge-results.json`.
+Every log below is in that same `final-round/` directory:
+
+| Gate | Command / scope | Log | Terminal result |
+|---|---|---|---|
+| Build | `go build ./...` | `postmerge-build.log` | PASS, 29.929s |
+| Repository compilation | `go test ./... -run=^$ -timeout=30s` | `postmerge-compile.log` | PASS, 64.079s |
+| Full lint | `golangci-lint run --timeout=5m --allow-parallel-runners` | `postmerge-lint.log` | PASS, **0 issues**, 19.528s |
+| Scoped race / wiring | Full shared scope, Fleet, GW, RO routing, AF policy-read, AF/RO/FMC commands, ACM factory, serving helper and infrastructure packages; `-race -count=1 -v -ginkgo.v -ginkgo.no-color` | `postmerge-race.log` | PASS, 31.210s; no skipped/pending selected specs |
+| AF / provider race | `go test -race -count=1 ./pkg/apifrontend/tools ./test/services/mock-llm/...` | `postmerge-af-mock-race.log` | PASS, 184.422s |
+| EM/SP command race | `go test -race -count=1 ./cmd/effectivenessmonitor ./cmd/signalprocessing` | `postmerge-em-sp-race.log` | PASS, 19.680s |
+| Real FMC IT | `go test -race -count=1 -v -timeout=8m ./test/integration/fleetmetadatacache` with focus `FMC observed repair wiring\|IT-REG-GW-005\|IT-FLEET-VALKEY\|IT-FMC-054\|E2E-FMC-054` | `postmerge-fmc-it.log` | PASS, **26/26 selected**, 57.708s wall; ten focus exclusions, zero pending |
+| All unit suites | `make test TEST_SUITE_PROCS=1` | `postmerge-make-test.log` | PASS, 564.774s; **12,169 Ginkgo passes**, zero failures/pending, two pre-existing skips |
+| Whitespace | `git diff --check` | `postmerge-whitespace.log` | PASS, 0.022s |
+
+FMC IT uses per-command root Podman connection and envtest
+`1.37.0-darwin-arm64`, not a shared cluster. The two make skips are unchanged
+`UT-AA-1116-002/003` in `pkg/aianalysis/controller_nil_safety_test.go`, which skip
+manager construction without kubeconfig. That file is byte-identical to published
+`2cda8b1ec`; no skip was added, no critical/wiring credit is taken for them, and
+their cause/count is recorded in `make-test-existing-skips.json`.
+
+**Scoped acceptance:** `acceptance-assessment.json` maps all **W01–W08 and
+S01–S18 (26/26)** to passing proving assertions, and all **11/11** supplemental
+wiring rows to actual production-composition tests. These are requirements-based
+numerators, not the coincidental 26 selected FMC cases, line coverage, or a claim
+that every repository integration/E2E suite ran. RO wiring proves the real command
+constructor through the blocking/requeue decision; it is not a full controller WFE
+creation E2E. Registry recovery proves both HTTP registries → real prober → Gate;
+AF/EM/SP installation remains source-verified with passing command suites. Real
+Kind TokenReview/SAR and exact-image journeys remain separate remote gates.
+
+Current finding disposition is explicit: finding 1 is locally implemented by the
+owned LIST/WATCH supervisor and production lifecycle wiring; finding 4 is locally
+implemented by enum-only producers, strict HTTP/ACM/factory and GW/RO/AF consumers.
+Findings 2/3 retain their passing no-replay/fencing and deferred-target regressions.
+All four are local-source dispositions, not remote artifact qualification. The
+four amended AF journeys remain **0/4 remotely qualified**.
+
+No more coverage-driven expansion is required for this bounded source. Any final
+repository evidence update is documentation-only; reuse the above source-attributed
+results only after verifying no Go/recipe/module/test inputs changed. Exact source
+archive, per-file manifest, diff hash, final clean HEAD and per-image recipe/closure
+inventory are recorded in the versioned freeze packet under
+`../2593-atomic-completion-evidence/` after that evidence commit. No images are built.
+
+After the dependency merge, original CI ELF module versions/checksums and current
+Linux/amd64 recipe import closures are compared, not inferred from go.mod alone.
+Main's OPA bump affects AA/SP runtime closures; the other bumped modules do not
+appear in the five original AF-lane application binaries. KA/DS have unchanged
+live scope/registry business paths but changed compiled coverage metadata in
+shared packages. They may be reused only as explicitly identified unchanged
+runtime dependencies, with **no old KA/DS coverage attributed to the new source**;
+the AF collector collects AF only. If qualification requires refreshing every
+instrumented dependency's metadata, request KA/DS images explicitly rather than
+silently building them. Neither alternative calls old images new code.
+
+Minimum functional AF exception is FMC + AF + mock-LLM from the final frozen
+source, Linux/amd64 development/coverage recipes, reusing verified compatible KA,
+DS, unchanged db-migrate/migration inputs, must-gather and operator artifacts as
+documented in the packet. Broader source/coverage-exact refresh is a separate
+five-image AF-lane option; broader Fleet/FullPipeline image inputs are listed
+individually and are not implicitly authorized. All post-resolution remote gates
+still block push. Confidence: **95%** for bounded local implementation/composition,
+supported by real external HTTP/Valkey/envtest, full checks and preserved regression
+proof; no exact-image Helios08 qualification, ACM Console qualification or GA claim.
 
 ## Authority and disposition (historical bounded repair)
 

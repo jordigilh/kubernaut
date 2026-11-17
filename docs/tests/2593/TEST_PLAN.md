@@ -7,10 +7,22 @@
 **Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Approved owned-WATCH/enum-only source implemented locally; normal-main reconciliation and post-resolution gates pending. Remote AF amendment remains 0/4 qualified. Historical evidence below remains source-attributed, not qualification of the current candidate.
+**Status**: Approved atomic source implemented, normally merged with actual main and locally validated at b63d9f7e400bd0caa5259f05aea07a43003feb8e: 9/9 terminal gates, 26/26 critical contracts and 11/11 scoped wiring rows pass. Remote AF amendment remains 0/4 qualified; image-build permission and post-resolution remote gates still block push. Earlier progress records below are historical.
 **Branch**: `work/2593-fmc-presence`
 
 ### Atomic local completion and reconciliation phase (2026-11-16)
+
+**Terminal update (2026-11-17):** the final serial run at
+`b63d9f7e400bd0caa5259f05aea07a43003feb8e` has finished with all nine gates
+passing, including make test, full lint (zero issues), repository build/compilation,
+affected race suites and real FMC IT. The 26/26 local critical and 11/11 wiring
+assessment is recorded in REVIEW_FIX's terminal appendix and the source-attributed
+acceptance packet. Make's two existing kubeconfig-dependent AA skips and FMC IT's
+ten focus exclusions receive no critical/wiring credit. No remote test, image build,
+push or cluster change occurred; remote amendment is still 0/4. Documentation-only
+evidence updates do not relabel those passes as tests of a different Go source.
+
+Historical phase-entry state follows:
 
 The user explicitly authorizes local candidate commits followed by a normal merge
 of actual refreshed main from a clean preserved tree. No push, image build,
