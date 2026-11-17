@@ -48,6 +48,9 @@ const (
 	// Business Requirement: BR-AI-030 (Analysis phase)
 	Analyzing Phase = "Analyzing"
 
+	// Cancelling indicates that parent cancellation is being processed.
+	Cancelling Phase = "Cancelling"
+
 	// Completed - Analysis completed successfully (terminal state)
 	// Business Requirement: BR-AI-050 (Completion)
 	Completed Phase = "Completed"
@@ -55,6 +58,9 @@ const (
 	// Failed - Analysis failed permanently (terminal state)
 	// Business Requirement: BR-AI-060 (Error handling)
 	Failed Phase = "Failed"
+
+	// Cancelled indicates that parent cancellation has been acknowledged.
+	Cancelled Phase = "Cancelled"
 )
 
 // IsTerminal returns true if the phase is a terminal state.
@@ -68,7 +74,7 @@ const (
 // Pattern: P1 - Terminal State Logic
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed:
+	case Completed, Failed, Cancelled:
 		return true
 	default:
 		return false
@@ -79,26 +85,32 @@ func IsTerminal(p Phase) bool {
 // Key: current phase, Value: list of valid target phases
 //
 // State Machine:
-//   Pending → Investigating
-//   Investigating → Analyzing, Failed
-//   Analyzing → Completed, Failed
-//   Completed → (terminal, no transitions)
-//   Failed → (terminal, no transitions)
+//
+//	Pending → Investigating, Cancelling
+//	Investigating → Analyzing, Failed, Cancelling
+//	Analyzing → Completed, Failed, Cancelling
+//	Cancelling → Cancelled
+//	Completed/Failed/Cancelled → (terminal, no transitions)
 //
 // Pattern: P0 - Phase State Machine
 var ValidTransitions = map[Phase][]Phase{
 	// Initial state transitions
-	Pending: {Investigating},
+	Pending: {Investigating, Cancelling},
 
 	// Investigation can proceed to analysis or fail
-	Investigating: {Analyzing, Failed},
+	Investigating: {Analyzing, Failed, Cancelling},
 
 	// Analysis can complete successfully or fail
-	Analyzing: {Completed, Failed},
+	Analyzing: {Completed, Failed, Cancelling},
+
+	// Cancellation completes only after the child controller has stopped its
+	// owned work and persisted the acknowledgement.
+	Cancelling: {Cancelled},
 
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {},
+	Cancelled: {},
 }
 
 // CanTransition checks if transition from current to target phase is valid.
@@ -108,8 +120,9 @@ var ValidTransitions = map[Phase][]Phase{
 //   - false: Transition violates state machine rules
 //
 // Example:
-//   CanTransition(Pending, Investigating)  // true
-//   CanTransition(Investigating, Completed) // false (must go through Analyzing)
+//
+//	CanTransition(Pending, Investigating)  // true
+//	CanTransition(Investigating, Completed) // false (must go through Analyzing)
 func CanTransition(current, target Phase) bool {
 	validTargets, ok := ValidTransitions[current]
 	if !ok {
@@ -130,7 +143,7 @@ func CanTransition(current, target Phase) bool {
 //   - error: Phase is not recognized
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Investigating, Analyzing, Completed, Failed:
+	case Pending, Investigating, Analyzing, Cancelling, Completed, Failed, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)
@@ -144,8 +157,10 @@ func AllPhases() []Phase {
 		Pending,
 		Investigating,
 		Analyzing,
+		Cancelling,
 		Completed,
 		Failed,
+		Cancelled,
 	}
 }
 
@@ -153,5 +168,3 @@ func AllPhases() []Phase {
 func (p Phase) String() string {
 	return string(p)
 }
-
-

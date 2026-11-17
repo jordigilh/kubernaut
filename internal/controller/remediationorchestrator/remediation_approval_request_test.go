@@ -227,7 +227,36 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	})
 
-	It("UT-RO-RAR-007 UT-AUD-2570-031: audit store failure is fire-and-forget (no reconcile error) and sets AuditRecorded=False/AuditFailed", func() {
+	It("UT-RAR-2588-005: system-cancelled decision emits a correlated cancelled audit event", func() {
+		rar := newRemediationApprovalRequestApproved("rar-cancelled", "rr-cancelled", "system")
+		rar.Status.Decision = remediationv1.ApprovalDecisionCancelled
+		rar.Status.DecisionMessage = "parent RemediationRequest cancellation"
+		fakeClient := newFakeClient(rar)
+		mockAuditStore := &MockAuditStore{}
+		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
+
+		result, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rar.Name, Namespace: rar.Namespace},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(ctrl.Result{}))
+		Expect(mockAuditStore.Events).To(HaveLen(1))
+		event := mockAuditStore.GetLastEvent()
+		Expect(event.EventType).To(Equal(roaudit.EventTypeApprovalCancelled))
+		Expect(event.EventAction).To(Equal(roaudit.ActionCancelled))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
+		Expect(event.CorrelationID).To(Equal("rr-cancelled"))
+		Expect(event.ActorType.Value).To(Equal("service"))
+
+		var updated remediationv1.RemediationApprovalRequest
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rar.Name, Namespace: rar.Namespace}, &updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, rarconditions.ConditionAuditRecorded)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("UT-RO-RAR-007 / UT-AUD-2570-031: audit store failure is fire-and-forget (no reconcile error) and sets AuditRecorded=False/AuditFailed", func() {
 		rar := newRemediationApprovalRequestApproved("rar-audit-fail", "rr-6", "alice")
 		fakeClient := newFakeClient(rar)
 		erroringStore := &erroringAuditStore{err: fmt.Errorf("simulated datastorage outage")}

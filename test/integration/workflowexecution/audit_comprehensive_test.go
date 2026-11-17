@@ -92,7 +92,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -148,7 +148,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -203,7 +203,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -304,7 +304,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -361,7 +361,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()

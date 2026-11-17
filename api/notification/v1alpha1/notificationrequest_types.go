@@ -26,7 +26,7 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// +kubebuilder:validation:Enum=Escalation;Simple;StatusUpdate;Approval;ManualReview;Completion
+// +kubebuilder:validation:Enum=Escalation;Simple;StatusUpdate;Approval;ManualReview;Completion;Cancellation
 type NotificationType string
 
 const (
@@ -44,6 +44,10 @@ const (
 	// Created when WorkflowExecution completes successfully and RR transitions to Completed phase
 	// Enables operators to track successful autonomous remediations
 	NotificationTypeCompletion NotificationType = "Completion"
+	// NotificationTypeCancellation is used for durable cancellation lifecycle
+	// notifications (issue #2588). It remains independently reconcilable while
+	// child shutdown is verified and uses the normal notification retry policy.
+	NotificationTypeCancellation NotificationType = "Cancellation"
 )
 
 // +kubebuilder:validation:Enum=Critical;High;Medium;Low

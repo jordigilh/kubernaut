@@ -44,6 +44,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
@@ -73,6 +74,9 @@ func init() {
 	// #2575: the response processor verifies selected workflows through the
 	// trusted RemediationWorkflow catalog before persisting AIAnalysis status.
 	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme))
+	// #2588: the controller watches the parent RemediationRequest to cascade
+	// cancellation; the type must be registered before the manager starts.
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
 	// DD-AA-KA-001: AgentSession replaces the retired pkg/agentclient HTTP
 	// channel -- AA creates it and watches its Status. #2214 Amendment: AA no
 	// longer registers the InvestigationSession scheme -- it has no

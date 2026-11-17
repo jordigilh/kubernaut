@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -98,6 +99,12 @@ var _ = Describe("AIAnalysisCreator", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "ai-test-remediation",
 						Namespace: "default",
+					},
+					Spec: aianalysisv1.AIAnalysisSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name:      "test-remediation",
+							Namespace: "default",
+						},
 					},
 				}
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")

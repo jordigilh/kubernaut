@@ -55,7 +55,11 @@ func setActivePhaseConditionFalse(sp *signalprocessingv1alpha1.SignalProcessing,
 		spconditions.SetClassificationComplete(sp, false, spconditions.ReasonTimedOut, message)
 	case signalprocessingv1alpha1.PhaseCategorizing:
 		spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonTimedOut, message)
-	case signalprocessingv1alpha1.PhasePending, signalprocessingv1alpha1.PhaseCompleted, signalprocessingv1alpha1.PhaseFailed, signalprocessingv1alpha1.PhaseCancelled:
+	case signalprocessingv1alpha1.PhasePending,
+		signalprocessingv1alpha1.PhaseCompleted,
+		signalprocessingv1alpha1.PhaseFailed,
+		signalprocessingv1alpha1.PhaseCancelling,
+		signalprocessingv1alpha1.PhaseCancelled:
 		// No phase-specific condition to set: Pending precedes any active
 		// phase (per DD-SP-002), and Completed/Failed are already terminal
 		// by the time this timeout check would ever run.

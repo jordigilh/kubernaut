@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -434,6 +435,9 @@ func buildRRObject(controllerNS string, args *CreateRRArgs, fingerprint, signalN
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rrName,
 			Namespace: controllerNS,
+			Finalizers: []string{
+				cancellation.RemediationRequestFinalizer,
+			},
 		},
 		Spec: remediationv1.RemediationRequestSpec{
 			SignalName:        signalName,

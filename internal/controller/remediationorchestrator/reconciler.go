@@ -25,6 +25,13 @@ limitations under the License.
 // - BR-ORCH-036: Manual review notification creation
 // - BR-ORCH-037: WorkflowNotNeeded handling
 // - BR-ORCH-038: Preserve Gateway deduplication data
+//
+// RBAC for the RemediationRequest coordinator is declared here because this
+// reconciler writes RR metadata/finalizers and status, creates the approval
+// request, and records the system-owned cancellation decision.
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch;update;patch;delete
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationapprovalrequests/finalizers,verbs=update

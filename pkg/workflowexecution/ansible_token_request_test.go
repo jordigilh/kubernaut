@@ -332,6 +332,21 @@ func (m *mockTokenRequestAWXClient) LaunchJobTemplateWithCreds(_ context.Context
 	return m.launchedJob, nil
 }
 
+func (m *mockTokenRequestAWXClient) LaunchJobTemplateWithLabels(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int, _ []string) (int, error) {
+	if len(credentialIDs) > 0 {
+		return m.LaunchJobTemplateWithCreds(ctx, templateID, extraVars, credentialIDs)
+	}
+	return m.LaunchJobTemplate(ctx, templateID, extraVars)
+}
+
+func (m *mockTokenRequestAWXClient) FindJobsByLabel(_ context.Context, _ string) ([]executor.AWXJobStatus, error) {
+	return nil, nil
+}
+
+func (m *mockTokenRequestAWXClient) GetJobTemplate(_ context.Context, templateID int) (*executor.AWXJobTemplate, error) {
+	return &executor.AWXJobTemplate{ID: templateID, AskLabelsOnLaunch: true, JobSliceCount: 1}, nil
+}
+
 func (m *mockTokenRequestAWXClient) GetJobStatus(_ context.Context, _ int) (*executor.AWXJobStatus, error) {
 	return nil, fmt.Errorf("not implemented")
 }

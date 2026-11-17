@@ -73,6 +73,7 @@ const (
 const (
 	ReasonApproved        = "Approved"
 	ReasonRejected        = "Rejected"
+	ReasonCancelled       = "Cancelled"
 	ReasonPendingDecision = "PendingDecision"
 )
 
@@ -150,6 +151,15 @@ func SetApprovalDecided(rar *remediationv1.RemediationApprovalRequest, decided b
 		status = metav1.ConditionFalse
 	}
 	SetCondition(rar, ConditionApprovalDecided, status, reason, message, m)
+}
+
+// SetApprovalCancelled records a system-owned cancellation decision. It is
+// intentionally separate from the user approval/rejection helpers so callers
+// cannot accidentally expose cancellation as an operator decision.
+func SetApprovalCancelled(rar *remediationv1.RemediationApprovalRequest, message string, m *rometrics.Metrics) {
+	SetApprovalPending(rar, false, message, m)
+	SetApprovalDecided(rar, true, ReasonCancelled, message, m)
+	SetReady(rar, false, ReasonNotReady, message, m)
 }
 
 // SetApprovalExpired sets the ApprovalExpired condition

@@ -41,7 +41,8 @@ const (
 	ApprovalDecisionRejected ApprovalDecision = "Rejected"
 	// ApprovalDecisionExpired indicates the approval request timed out
 	ApprovalDecisionExpired ApprovalDecision = "Expired"
-	// ApprovalDecisionCancelled indicates the parent remediation failed or was cancelled.
+	// ApprovalDecisionCancelled indicates the system cancelled the approval
+	// because its parent RemediationRequest was cancelled. Users cannot set it.
 	ApprovalDecisionCancelled ApprovalDecision = "Cancelled"
 )
 

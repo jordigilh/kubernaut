@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -450,6 +451,14 @@ func isCooldownCandidate(wfe *workflowexecutionv1alpha1.WorkflowExecution, workf
 // finalizers-lifecycle.md: Event emission
 // ========================================
 func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	return r.reconcileDelete(ctx, wfe, false)
+}
+
+func (r *WorkflowExecutionReconciler) reconcileDelete(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	backendStopVerified bool,
+) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for delete).
@@ -465,6 +474,17 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	if remaining, retain := r.failedExecutionRetentionRemaining(wfe); retain && remaining > 0 {
 		logger.V(1).Info("Deferring failed execution finalization until retention expires", "remaining", remaining)
 		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
+	// Issue #2588: a Kubernetes deletion finalizer must not be removed while an
+	// external execution backend may still be running. The parent-cancellation
+	// path calls this method only after observing DeletionTimestamp; keeping the
+	// gate tied to that API signal also preserves direct cleanup calls used by
+	// legacy callers that do not represent an active deletion request.
+	if !backendStopVerified {
+		if result, handled, err := r.reconcileDeleteExecutionStop(ctx, wfe, logger); handled || err != nil {
+			return result, err
+		}
 	}
 
 	// ========================================
@@ -493,6 +513,67 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 
 	logger.Info("WorkflowExecution cleanup complete")
 	return ctrl.Result{}, nil
+}
+
+func (r *WorkflowExecutionReconciler) reconcileDeleteExecutionStop(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	logger logr.Logger,
+) (ctrl.Result, bool, error) {
+	if wfe.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, false, nil
+	}
+	if wfe.Status.CancellationRetryCount >= workflowExecutionCancellationMaxRetries && !cancellation.IsAcknowledged(wfe.Status.Conditions) {
+		return r.finalizeCancellationRetryExhaustion(ctx, wfe, logger)
+	}
+	stopped, stopErr := r.ensureExecutionStoppedForDelete(ctx, wfe, logger)
+	if stopErr != nil {
+		logger.Error(stopErr, "WorkflowExecution backend cancellation is not verified before finalizer removal")
+		return r.persistDeleteExecutionStopRetry(ctx, wfe, stopErr)
+	}
+	if stopped {
+		return ctrl.Result{}, false, nil
+	}
+	logger.Info("Retaining WorkflowExecution finalizer until backend stop is verified")
+	return r.persistDeleteExecutionStopRetry(ctx, wfe, nil)
+}
+
+func (r *WorkflowExecutionReconciler) persistDeleteExecutionStopRetry(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	stopErr error,
+) (ctrl.Result, bool, error) {
+	if stopErr != nil {
+		wfe.Status.FailureReason = stopErr.Error()
+		cancellation.SetFailed(&wfe.Status.Conditions, wfe.Generation, stopErr.Error())
+	} else {
+		cancellation.SetRequested(&wfe.Status.Conditions, wfe.Generation, "backend termination is not yet verified")
+	}
+	delay, statusErr := r.persistDeletionCancellationRetry(ctx, wfe)
+	if statusErr != nil {
+		return ctrl.Result{}, true, fmt.Errorf("persist deletion cancellation retry: %w", statusErr)
+	}
+	if wfe.Status.CancellationRetryCount >= workflowExecutionCancellationMaxRetries {
+		finalizeCancellationFailure(wfe, "cancellation retry budget exhausted before backend termination was verified")
+		if statusErr := r.Status().Update(ctx, wfe); statusErr != nil {
+			return ctrl.Result{}, true, fmt.Errorf("persist exhausted deletion cancellation: %w", statusErr)
+		}
+		return ctrl.Result{}, true, nil
+	}
+	// Stop failures are durable in status; return the explicit backoff without
+	// an error so controller-runtime does not discard the retry schedule.
+	return ctrl.Result{RequeueAfter: delay}, true, nil
+}
+
+func (r *WorkflowExecutionReconciler) persistDeletionCancellationRetry(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+) (time.Duration, error) {
+	wfe.Status.CancellationRetryCount++
+	if err := r.Status().Update(ctx, wfe); err != nil {
+		return 0, err
+	}
+	return cancellation.RetryBackoff(wfe.Status.CancellationRetryCount), nil
 }
 
 // cleanupExecutionResourceForDelete deletes the execution resource during

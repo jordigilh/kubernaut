@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +34,7 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -44,11 +45,13 @@ import (
 	"knative.dev/pkg/apis"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
@@ -230,6 +233,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Registering CRD schemes")
 	err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = remediationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = remediationworkflowv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -544,11 +549,61 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
 	wfe.Spec.WorkflowRef.ExecutionEngine = "job"
-	// Production WorkflowExecutionCreator copies the parent RR UID into this
-	// immutable reference. Job-backend integration fixtures must do the same so
-	// they exercise DD-WE-010 rather than the legacy target-name fallback.
-	wfe.Spec.RemediationRequestRef.UID = types.UID(uuid.NewString())
 	return wfe
+}
+
+// createWorkflowExecutionWithActiveParent provisions the normal-execution
+// lineage before the controller can observe the WFE (BR-ORCH-029, BR-WE-014).
+// Missing-parent tests must use the raw client instead of this fixture helper.
+func createWorkflowExecutionWithActiveParent(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	ref := &wfe.Spec.RemediationRequestRef
+	if ref.Namespace == "" {
+		ref.Namespace = wfe.Namespace
+	}
+	parent := &remediationv1.RemediationRequest{}
+	key := client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}
+	err := k8sClient.Get(ctx, key, parent)
+	if apierrors.IsNotFound(err) {
+		now := metav1.Now()
+		parent = &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: ref.Namespace},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(ref.Namespace+"/"+ref.Name))),
+				SignalName:        "WorkflowExecutionFixture", Severity: "critical",
+				SignalType: "alert", TargetType: "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "test-app", Namespace: wfe.Namespace,
+				},
+				FiringTime: now, ReceivedTime: now,
+			},
+		}
+		if err := k8sClient.Create(ctx, parent); err != nil {
+			return fmt.Errorf("create active WFE parent: %w", err)
+		}
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, parent))).To(Succeed())
+		})
+		parent.Status.OverallPhase = remediationv1.PhaseExecuting
+		if err := k8sClient.Status().Update(ctx, parent); err != nil {
+			return fmt.Errorf("activate WFE parent: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("get active WFE parent: %w", err)
+	}
+	if !parent.DeletionTimestamp.IsZero() || parent.Status.OverallPhase != remediationv1.PhaseExecuting {
+		return fmt.Errorf("WFE parent %s is not active", key)
+	}
+	ref.APIVersion = remediationv1.GroupVersion.String()
+	ref.Kind = "RemediationRequest"
+	ref.UID = parent.UID
+	// Kubernetes disallows cross-namespace owner references. The immutable
+	// spec reference still carries the actual namespace and UID in that case.
+	if parent.Namespace == wfe.Namespace {
+		if err := controllerutil.SetControllerReference(parent, wfe, scheme.Scheme); err != nil {
+			return fmt.Errorf("bind WFE parent owner: %w", err)
+		}
+	}
+	return k8sClient.Create(ctx, wfe)
 }
 
 // createUniqueWFEWithParams creates a WorkflowExecution with parameters
