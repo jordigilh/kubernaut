@@ -28,6 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,6 +37,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 )
 
 // SignalProcessingCreator creates SignalProcessing CRDs from RemediationRequests.
@@ -120,6 +122,19 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 	existing := &signalprocessingv1.SignalProcessing{}
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
 	if err == nil {
+		if err := validateExistingChildIdentity(
+			rr,
+			cancellation.ReferenceIdentity{
+				Name:      existing.Spec.RemediationRequestRef.Name,
+				Namespace: existing.Spec.RemediationRequestRef.Namespace,
+				UID:       types.UID(existing.Spec.RemediationRequestRef.UID),
+			},
+			existing.OwnerReferences,
+			"SignalProcessing",
+		); err != nil {
+			logger.Error(err, "Refusing to reuse SignalProcessing from another RemediationRequest incarnation")
+			return "", err
+		}
 		// Already exists, return existing name
 		logger.Info("SignalProcessing already exists, reusing", "name", name)
 		return name, nil

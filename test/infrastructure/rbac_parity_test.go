@@ -155,6 +155,42 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 	})
 })
 
+// IT-RBAC-2588-001: The rendered operator manager role must contain the
+// permissions required by the system-owned cancellation path. This is the
+// static half of the RBAC/SAR check; deployed qualification supplies the live
+// ServiceAccount SAR evidence.
+var _ = Describe("Issue #2588 manager RBAC", func() {
+	var rules []rbacv1.PolicyRule
+
+	BeforeEach(func() {
+		var err error
+		rules, err = parseClusterRoleRules(filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml"), "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "rendered manager role must be parseable")
+		Expect(rules).NotTo(BeEmpty(), "rendered manager role must have rules")
+	})
+
+	DescribeTable("required cancellation permission is rendered",
+		func(apiGroup, resource string, verbs []string) {
+			for _, rule := range rules {
+				if !slices.Contains(rule.APIGroups, apiGroup) || !slices.Contains(rule.Resources, resource) {
+					continue
+				}
+				for _, verb := range verbs {
+					Expect(rule.Verbs).To(ContainElement(verb),
+						"manager-role %s/%s must include verb %q", apiGroup, resource, verb)
+				}
+				return
+			}
+			Fail("manager-role must contain a rule for " + apiGroup + "/" + resource)
+		},
+		Entry("RR metadata and cancellation finalizer", "kubernaut.ai", "remediationrequests", []string{"get", "list", "watch", "update", "patch", "delete"}),
+		Entry("RR status", "kubernaut.ai", "remediationrequests/status", []string{"get", "update", "patch"}),
+		Entry("RR finalizers", "kubernaut.ai", "remediationrequests/finalizers", []string{"update"}),
+		Entry("RAR metadata", "kubernaut.ai", "remediationapprovalrequests", []string{"get", "list", "watch", "create", "update", "patch"}),
+		Entry("RAR status", "kubernaut.ai", "remediationapprovalrequests/status", []string{"get", "update", "patch"}),
+	)
+})
+
 // IT-RO-2564-004: The deployed generated ClusterRole and the inline RO E2E
 // fixture must grant the same narrow RAR permissions. In particular, neither
 // fixture may grant delete on remediationapprovalrequests: lifecycle cleanup
@@ -237,6 +273,46 @@ var _ = Describe("AIAnalysis RBAC parity (IT-AA-2575-004)", func() {
 		Expect(directRule.Verbs).To(ConsistOf("get", "list", "watch"),
 			"direct AIAnalysis E2E access must remain read-only")
 	})
+
+	// IT-AA-2588-003 [BR-2588]: the AIAnalysis controller watches parent
+	// RemediationRequests to cascade cancellation. Without read access the
+	// informer cannot synchronize, controller-runtime exhausts its 2-minute
+	// cache-sync timeout, and the manager exits (E2E crash loop, run 43913953987).
+	// The generated shared manager role may contain additional controller verbs;
+	// the direct AIAnalysis E2E role is the exact read-only least-privilege check.
+	It("grants generated parent-read permissions and exact direct E2E read-only access", func() {
+		generatedPath := filepath.Join(getProjectRoot(), "config", "rbac", "role.yaml")
+		generatedRules, err := parseClusterRoleRules(generatedPath, "manager-role")
+		Expect(err).NotTo(HaveOccurred(), "generated manager role must be parseable")
+
+		inlineRules, err := parseClusterRoleRulesFromYAML(
+			[]byte(aiAnalysisControllerRBACManifest()), "aianalysis-controller")
+		Expect(err).NotTo(HaveOccurred(), "direct AIAnalysis RBAC fixture must be parseable")
+
+		var generatedMatching []rbacv1.PolicyRule
+		for _, rule := range generatedRules {
+			if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, "remediationrequests") {
+				generatedMatching = append(generatedMatching, rule)
+			}
+		}
+		Expect(generatedMatching).NotTo(BeEmpty(), "generated controller RBAC must contain a RemediationRequest rule")
+		for _, rule := range generatedMatching {
+			Expect(rule.Verbs).To(ContainElements("get", "list", "watch"),
+				"generated controller RemediationRequest access must include parent reads")
+		}
+
+		var directMatching []rbacv1.PolicyRule
+		for _, rule := range inlineRules {
+			if slices.Contains(rule.APIGroups, "kubernaut.ai") && slices.Contains(rule.Resources, "remediationrequests") {
+				directMatching = append(directMatching, rule)
+			}
+		}
+		Expect(directMatching).NotTo(BeEmpty(), "direct AIAnalysis E2E RBAC must contain a RemediationRequest rule")
+		for _, rule := range directMatching {
+			Expect(rule.Verbs).To(ConsistOf("get", "list", "watch"),
+				"direct AIAnalysis RemediationRequest access must remain read-only")
+		}
+	})
 })
 
 // IT-RO-2575-005 [BR-ORCH-025/026, AC-6]: RemediationOrchestrator verifies the
@@ -282,6 +358,7 @@ var _ = Describe("RO RBAC parity (IT-RO-2575-005)", func() {
 		Expect(directRule.Verbs).To(ConsistOf("get", "list", "watch"),
 			"direct RO E2E access must remain read-only")
 	})
+
 })
 
 // UT-INFRA-RBAC-002: Structural parity test for PersonaToolClusterRolesYAML.

@@ -41,10 +41,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/alert"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
@@ -184,6 +186,7 @@ func NewReconciler(deps ReconcilerDeps, cfg ReconcilerConfig) *Reconciler {
 
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -211,6 +214,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		"correlationID", ea.Spec.CorrelationID,
 		"phase", ea.Status.Phase,
 	)
+
+	if result, handled, err := r.reconcileParentCancellation(ctx, ea, logger); err != nil {
+		return result, err
+	} else if handled {
+		return result, nil
+	}
 
 	// Step 1b: Spec validation
 	if reason := validateEASpec(ea); reason != "" {
@@ -270,7 +279,11 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles 
 		// loops during alert decay monitoring. EA spec is immutable (set once by RO)
 		// and EM is the sole status writer, matching the WE controller pattern
 		// (DD-CONTROLLER-001 v4.0 Pattern B-WE).
-		WithEventFilter(predicate.GenerationChangedPredicate{})
+		WithEventFilter(effectivenessAssessmentEventPredicate())
+
+	builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), &remediationv1.RemediationRequest{},
+		handler.TypedEnqueueRequestsFromMapFunc(mapRemediationRequestToEffectivenessAssessment),
+	))
 
 	if len(maxConcurrentReconciles) > 0 && maxConcurrentReconciles[0] > 0 {
 		builder = builder.WithOptions(ctrlcontroller.TypedOptions[ctrl.Request]{

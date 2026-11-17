@@ -576,6 +576,44 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
+	// CRD schema sync to the branch under test. The operator installs the
+	// operand CRDs embedded in its image — from the kubernaut Go module the
+	// operator repo depends on, a released schema that can predate this
+	// branch's CRD changes. The service images deployed by the CR are built
+	// from THIS branch, so their controllers may write fields the embedded
+	// CRDs reject (proven live: run 44009101345's fullpipeline lane hung
+	// `kubectl delete rr` for 45 minutes because the operator-shipped
+	// RemediationRequest CRD rejected overallPhase "Cancelling",
+	// status.cancellation, and the Cancellation notification type, so every
+	// cancellation status update failed and the finalizer was never
+	// released; applying this branch's config/crd/bases completed the
+	// deletion within 45 seconds).
+	//
+	// The sync MUST run after the operator has reconciled the CR: the
+	// operator's fail-closed shared-CRD ownership check (operator repo
+	// internal/resources/crds.go, ISSUE-514 ownership contract) rejects any
+	// operand CRD lacking the app.kubernetes.io/managed-by=kubernaut-operator
+	// label — applying the branch CRDs before the operator's first reconcile
+	// would create them without that label and block all service deployment
+	// (run 44093122226). After the operator has created and labeled the CRDs,
+	// this server-side apply only upgrades the schema to the tested revision:
+	// the ownership label and the operator's spec-hash annotation are not in
+	// the applied files, so they survive, and subsequent operator reconciles
+	// compare an unchanged spec hash and leave the branch schema in place —
+	// preserving Issue #1737's operator-owned lifecycle.
+	branchCRDs := filepath.Join(getProjectRoot(), "config", "crd", "bases")
+	// conflicts: the operator owns .spec.versions under its dynamic-client
+	// field manager; --force-conflicts transfers that ownership to this
+	// apply, which is the test's explicit intent — override the released
+	// schema with the tested revision.
+	syncCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", branchCRDs, "--server-side", "--force-conflicts")
+	syncOut, syncErr := syncCmd.CombinedOutput()
+	if syncErr != nil {
+		return fmt.Errorf("failed to sync branch CRDs after operator reconcile: %w: %s", syncErr, strings.TrimSpace(string(syncOut)))
+	}
+	_, _ = fmt.Fprintf(writer, "🗄️  Synced CRDs to the branch schema (config/crd/bases)\n")
+
 	// API Frontend keeps A2A session state in memory. A preserved cluster can
 	// therefore retain fixed qualification session IDs (for example
 	// ctx-fp-cg3-1) even after their CRs are deleted; restart the now-reconciled

@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
@@ -227,8 +228,9 @@ func generateCRDName(fingerprint string) string {
 func (c *CRDCreator) buildRemediationRequestCRD(crdName string, signal *types.NormalizedSignal) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      crdName,
-			Namespace: c.controllerNamespace,
+			Name:       crdName,
+			Namespace:  c.controllerNamespace,
+			Finalizers: []string{cancellation.RemediationRequestFinalizer},
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "gateway-service",
 				"app.kubernetes.io/component":  "remediation",

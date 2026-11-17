@@ -33,6 +33,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -98,6 +99,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 		It("MUST return error when AnalyzingHandler is nil", func() {
 			scheme := runtime.NewScheme()
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
 			cfg, err := ctrl.GetConfig()
@@ -268,6 +270,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 		It("MUST return permanent error when InvestigatingHandler is nil during Investigating phase", func() {
 			scheme := runtime.NewScheme()
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 			testAnalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
@@ -290,7 +293,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -318,6 +321,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 		It("MUST return permanent error when AnalyzingHandler is nil during Analyzing phase", func() {
 			scheme := runtime.NewScheme()
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 			testAnalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
@@ -340,7 +344,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 

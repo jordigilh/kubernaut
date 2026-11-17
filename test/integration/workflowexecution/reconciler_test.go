@@ -79,7 +79,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should create PipelineRun when WFE is created", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("pr-create", "default/deployment/test-app")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for controller to create PipelineRun")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -106,7 +106,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				"DEPLOYMENT_NAME": `"my-service"`,
 				"REPLICA_COUNT":   "3",
 			})
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -129,7 +129,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Creating a WorkflowExecution")
 			targetResource := "monitoring/deployment/prometheus"
 			wfe = reconcilerWFE("pr-target", targetResource)
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -164,7 +164,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should sync WFE status when PipelineRun succeeds", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("status-sync-success", "default/deployment/status-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			var err error
@@ -185,7 +185,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should sync WFE status when PipelineRun fails", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("status-sync-fail", "default/deployment/fail-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			var err error
@@ -206,7 +206,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should populate ExecutionStatus during Running phase", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("status-running", "default/deployment/running-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -238,7 +238,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should set owner reference on PipelineRun", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("owner-ref", "default/deployment/owner-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -266,7 +266,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should leave TaskRunTemplate serviceAccount empty when WFE has no ExecutionConfig SA (DD-WE-005 v2)", func() {
 			By("Creating a WorkflowExecution without ExecutionConfig service account")
 			wfe = reconcilerWFE("sa-default", "default/deployment/sa-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -283,7 +283,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Creating a WorkflowExecution with a custom ServiceAccountName in WorkflowRef")
 			wfe = reconcilerWFE("sa-custom", "default/deployment/sa-custom-test")
 			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-workflow-sa"
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
@@ -310,7 +310,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should transition Pending → Running → Completed", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("phase-complete", "default/deployment/phase-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Verifying initial phase is empty or Pending")
 			initialWFE, err := getWFE(wfe.Name, wfe.Namespace)
@@ -337,7 +337,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should transition Pending → Running → Failed", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("phase-fail", "default/deployment/phase-fail-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -394,7 +394,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should persist workflowexecution.execution.started audit event (BR-AUDIT-005 Gap #6, ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("audit-started", "default/deployment/audit-started-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -453,7 +453,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should persist workflowexecution.workflow.completed audit event with correct field values (ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("audit-complete", "default/deployment/audit-complete-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -518,7 +518,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		It("should persist workflowexecution.workflow.failed audit event with failure details (ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
 			wfe = reconcilerWFE("audit-fail", "default/deployment/audit-fail-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -596,7 +596,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			wfe = reconcilerWFE("audit-corr", "default/deployment/audit-corr-test")
 			// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is the authoritative source
 			expectedCorrID := wfe.Spec.RemediationRequestRef.Name
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -641,7 +641,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				targetResource := "test-namespace/deployment/payment-api"
 				wfe1 := reconcilerWFE("lock-test-1", targetResource)
 				wfe1.Labels = map[string]string{"test-id": "parallel-lock-test"}
-				Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 				By("Waiting for first WFE to start Running")
 				_, err := waitForWFEPhase(wfe1.Name, wfe1.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -650,7 +650,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating second WorkflowExecution for the SAME target resource")
 				wfe2 := reconcilerWFE("lock-test-2", targetResource)
 				wfe2.Labels = map[string]string{"test-id": "parallel-lock-test"}
-				Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 				By("Verifying second WFE fails with ExecutionRaceCondition")
 				var wfe2Status *workflowexecutionv1alpha1.WorkflowExecution
@@ -679,8 +679,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				wfe1 := reconcilerWFE("different-lock-1", targetResource1)
 				wfe2 := reconcilerWFE("different-lock-2", targetResource2)
 
-				Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
-				Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 				By("Verifying both WFEs reach Running phase (no lock conflict)")
 				_, err1 := waitForWFEPhase(wfe1.Name, wfe1.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -696,7 +696,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating WorkflowExecution with known target resource")
 				targetResource := "test-namespace/deployment/deterministic-test"
 				wfe := reconcilerWFE("deterministic-name", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 				By("Waiting for PipelineRun creation")
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -719,7 +719,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating WorkflowExecution that will complete")
 				targetResource := "test-namespace/deployment/cooldown-release-test"
 				wfe1 := reconcilerWFE("cooldown-release-1", targetResource)
-				Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 				By("Waiting for first WFE to reach Running phase")
 				_, err := waitForWFEPhase(wfe1.Name, wfe1.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -778,7 +778,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating WorkflowExecution")
 				targetResource := "test-namespace/deployment/cooldown-wait"
 				wfe := reconcilerWFE("cooldown-wait", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 				By("Waiting for Running phase")
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
@@ -825,7 +825,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating and completing WorkflowExecution")
 				targetResource := "test-namespace/deployment/cooldown-calculation"
 				wfe := reconcilerWFE("cooldown-calc", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
@@ -865,7 +865,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating and completing WorkflowExecution")
 				targetResource := "test-namespace/deployment/lock-released-event"
 				wfe := reconcilerWFE("lock-released", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
@@ -926,7 +926,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Creating and completing WorkflowExecution")
 				targetResource := "test-namespace/deployment/metrics-duration"
 				wfe := reconcilerWFE("metrics-duration", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 				wfeStatus, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())

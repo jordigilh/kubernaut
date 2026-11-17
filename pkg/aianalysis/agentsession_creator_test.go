@@ -22,7 +22,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -152,6 +154,30 @@ var _ = Describe("AgentSessionCreator", func() {
 			list := &agentsessionv1.AgentSessionList{}
 			Expect(fakeClient.List(ctx, list)).To(Succeed())
 			Expect(list.Items).To(HaveLen(1))
+		})
+
+		It("UT-AA-2588-004: refuses to reuse an AgentSession owned by a stale AIAnalysis UID", func() {
+			controller := true
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+			analysis.UID = types.UID("current-analysis-uid")
+			stale := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "as-test-remediation",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						Kind:       "AIAnalysis",
+						Name:       analysis.Name,
+						UID:        types.UID("old-analysis-uid"),
+						Controller: &controller,
+					}},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stale).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+
+			_, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).To(MatchError(ContainSubstring("identity mismatch")))
 		})
 
 		It("UT-AA-KA-065-205: should error when RemediationRequestRef.Name is empty (validation)", func() {

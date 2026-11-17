@@ -2075,6 +2075,7 @@ components:
               'orchestrator.approval.requested': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.approved': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.rejected': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.cancelled': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'signalprocessing.signal.processed': '#/components/schemas/SignalProcessingAuditPayload'
               'signalprocessing.phase.transition': '#/components/schemas/SignalProcessingAuditPayload'
               'signalprocessing.classification.decision': '#/components/schemas/SignalProcessingAuditPayload'
@@ -2907,7 +2908,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.verifying_started', 'orchestrator.lifecycle.verification_completed', 'orchestrator.lifecycle.verification_timed_out', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.verifying_started', 'orchestrator.lifecycle.verification_completed', 'orchestrator.lifecycle.verification_timed_out', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.approval.cancelled', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2997,7 +2998,7 @@ components:
           description: Workflow selection confidence as string
         decision:
           type: string
-          enum: [Approved, Rejected, Pending]
+          enum: [Approved, Rejected, Pending, Cancelled]
           description: Approval decision
         approved_by:
           type: string
@@ -4841,7 +4842,7 @@ components:
 
     AIAnalysisErrorPayload:
       type: object
-      required: [phase, error_message]
+      required: [phase, error_message, error_details]
       description: Error event payload (aianalysis.error.occurred)
       properties:
         phase:
@@ -4852,6 +4853,8 @@ components:
           type: string
           description: Error message
           example: "Kubernaut Agent (KA) timeout after 30s"
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
 
     ProviderResponseSummary:
       type: object

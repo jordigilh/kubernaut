@@ -24,6 +24,7 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -168,6 +169,17 @@ func (h *RemediationApprovalRequestAuthHandler) handleTerminalRARUpdate(ctx cont
 		(!h.isROServiceAccount(authCtx.Username) || rar.Status.DecidedBy != systemDecisionActor) {
 		return h.denyDecision(ctx, logger, rar, authCtx, "system-only decision requires the trusted remediation orchestrator")
 	}
+	if oldRAR.Status.Decision == remediationv1.ApprovalDecisionCancelled &&
+		rar.Status.Decision == remediationv1.ApprovalDecisionCancelled &&
+		h.isROServiceAccount(authCtx.Username) &&
+		rar.Status.DecidedBy == systemDecisionActor {
+		oldCancellation := oldRAR.DeepCopy()
+		oldCancellation.Status.DecidedBy = systemDecisionActor
+		if terminalBusinessTupleEqual(rar, oldCancellation) && h.terminalBookkeepingUnchanged(oldRAR, rar, authCtx.Username) {
+			logger.Info("Skipping repeated system cancellation - exact terminal tuple")
+			return admission.Allowed("system-initiated cancellation already recorded")
+		}
+	}
 	if terminalBusinessTupleEqual(rar, oldRAR) && h.terminalBookkeepingUnchanged(oldRAR, rar, authCtx.Username) {
 		logger.Info("Skipping RAR (decision already attributed) - exact terminal tuple")
 		return admission.Allowed("decision already attributed")
@@ -205,7 +217,11 @@ func (h *RemediationApprovalRequestAuthHandler) handleSystemDecision(ctx context
 		now := metav1.NewTime(h.clock.Now())
 		rar.Status.DecidedAt = &now
 	}
-	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, false)
+	if rar.Status.Decision == remediationv1.ApprovalDecisionCancelled {
+		h.emitSystemCancellationAudit(ctx, logger, rar, authCtx.Username)
+	} else {
+		h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, false)
+	}
 	return finalizeRARResponse(logger, req, rar)
 }
 
@@ -532,6 +548,49 @@ func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx conte
 		"rarName", rar.Name,
 		"eventAction", "approval_decided",
 	)
+}
+
+// emitSystemCancellationAudit records the trusted RO attribution for a system
+// cancellation with a deterministic event ID. Repeated cancellation status
+// observations must not create a second lifecycle event.
+func (h *RemediationApprovalRequestAuthHandler) emitSystemCancellationAudit(
+	ctx context.Context,
+	logger logr.Logger,
+	rar *remediationv1.RemediationApprovalRequest,
+	caller string,
+) {
+	if h.auditStore == nil {
+		logger.Error(fmt.Errorf("audit store is nil"), "Cannot record system RAR cancellation audit")
+		return
+	}
+	forAudit := rar.DeepCopy()
+	if forAudit.Status.DecidedAt == nil {
+		now := metav1.NewTime(h.clock.Now())
+		forAudit.Status.DecidedAt = &now
+	}
+	payload, err := BuildRARApprovalAuditPayload(forAudit)
+	if err != nil {
+		logger.Error(err, "System RAR cancellation audit payload construction failed")
+		return
+	}
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventID(auditEvent, uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf(
+		"authwebhook/rar-cancellation/%s/%s/%s",
+		rar.Namespace, rar.Name, rar.UID,
+	))))
+	audit.SetEventType(auditEvent, EventTypeRARDecided)
+	audit.SetEventCategory(auditEvent, EventCategoryApproval)
+	audit.SetEventAction(auditEvent, "approval_decided")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "service", caller)
+	audit.SetResource(auditEvent, "RemediationApprovalRequest", string(rar.UID))
+	audit.SetCorrelationID(auditEvent, rar.Spec.RemediationRequestRef.Name)
+	audit.SetNamespace(auditEvent, rar.Namespace)
+	audit.SetClusterID(auditEvent, rar.Spec.ClusterID)
+	auditEvent.EventData = WrapRARApprovalPayloadWithDiscriminator(payload)
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		logger.Error(err, "System RAR cancellation audit storage failed", "eventType", auditEvent.EventType)
+	}
 }
 
 // emitDeniedApprovalAuditEvent records an authenticated denial attempt. The

@@ -52,11 +52,18 @@ const (
 	// Running - PipelineRun is actively executing
 	Running Phase = workflowexecutionv1alpha1.PhaseRunning
 
+	// Cancelling indicates that the external execution is being stopped and
+	// verified before the child acknowledges parent cancellation.
+	Cancelling Phase = workflowexecutionv1alpha1.PhaseCancelling
+
 	// Completed - Workflow executed successfully (terminal state)
 	Completed Phase = workflowexecutionv1alpha1.PhaseCompleted
 
 	// Failed - Workflow execution failed (terminal state)
 	Failed Phase = workflowexecutionv1alpha1.PhaseFailed
+
+	// Cancelled indicates verified external execution termination.
+	Cancelled Phase = workflowexecutionv1alpha1.PhaseCancelled
 )
 
 // ========================================
@@ -76,7 +83,7 @@ const (
 // - Running: PipelineRun actively executing
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed:
+	case Completed, Failed, Cancelled:
 		return true
 	default:
 		return false
@@ -95,14 +102,17 @@ func IsTerminal(p Phase) bool {
 // 1. Pending → Running (PipelineRun created)
 // 2. Running → Completed (PipelineRun succeeded)
 // 3. Running → Failed (PipelineRun failed or timed out)
+// 4. Pending/Running → Cancelling → Cancelled (verified stop)
 //
 // Terminal states (Completed, Failed) have no valid transitions.
 var ValidTransitions = map[Phase][]Phase{
-	Pending: {Running, Failed}, // Can transition to Running or fail immediately (e.g., PipelineRun creation error)
-	Running: {Completed, Failed}, // Can complete successfully or fail
+	Pending:    {Running, Failed, Cancelling},   // Can transition to Running, fail immediately, or cancel before creation
+	Running:    {Completed, Failed, Cancelling}, // Can complete, fail, or cancel
+	Cancelling: {Cancelled},
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {},
+	Cancelled: {},
 }
 
 // CanTransition checks if transition from current phase to target phase is valid.
@@ -130,10 +140,9 @@ func CanTransition(current, target Phase) bool {
 // Returns an error if the phase is not one of the defined constants.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Running, Completed, Failed:
+	case Pending, Running, Cancelling, Completed, Failed, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)
 	}
 }
-

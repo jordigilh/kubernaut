@@ -245,6 +245,25 @@ func (h *NotificationHandler) applyNotificationPhase(rr *remediationv1.Remediati
 			"deliveryDuration", deliveryDuration,
 		)
 
+	case notificationv1.NotificationPhasePartiallySent:
+		rr.Status.EnsureCompletionStatus().NotificationStatus = "PartiallySent"
+		deliveryDuration := time.Since(startTime)
+		failureMessage := notif.Status.Message
+		if failureMessage == "" {
+			failureMessage = "Notification was delivered to only some channels"
+		}
+		remediationrequest.SetNotificationDelivered(
+			rr,
+			false,
+			remediationrequest.ReasonDeliveryFailed,
+			fmt.Sprintf("Notification delivery was partial: %s", failureMessage),
+			h.Metrics,
+		)
+		logger.Info("Notification delivered partially",
+			"deliveryDuration", deliveryDuration,
+			"reason", failureMessage,
+		)
+
 	case notificationv1.NotificationPhaseFailed:
 		rr.Status.EnsureCompletionStatus().NotificationStatus = "Failed"
 		deliveryDuration := time.Since(startTime)

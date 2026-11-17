@@ -95,6 +95,7 @@ rules:
   - aianalyses/finalizers
   - notificationrequests/finalizers
   - remediationapprovalrequests/finalizers
+  - remediationrequests/finalizers
   - signalprocessings/finalizers
   - workflowexecutions/finalizers
   verbs:
@@ -106,6 +107,7 @@ rules:
   - effectivenessassessments/status
   - notificationrequests/status
   - remediationapprovalrequests/status
+  - remediationrequests/status
   - signalprocessings/status
   - workflowexecutions/status
   verbs:
@@ -118,6 +120,17 @@ rules:
   - remediationapprovalrequests
   verbs:
   - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - remediationrequests
+  verbs:
+  - delete
   - get
   - list
   - patch
@@ -143,14 +156,6 @@ rules:
   - policy
   resources:
   - poddisruptionbudgets
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - remediation.kubernaut.ai
-  resources:
-  - remediationrequests
   verbs:
   - get
   - list

@@ -93,7 +93,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 	})
 
 	Describe("BR-ORCH-029: User-Initiated Cancellation", func() {
-		It("should update status when user deletes NotificationRequest", func() {
+		It("IT-NT-2588-002: existing notification deletion updates only notification state", func() {
 			// ADR-057: NR must be in ROControllerNamespace (same as parent RR)
 			notif := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{

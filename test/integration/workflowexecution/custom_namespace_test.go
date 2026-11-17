@@ -75,7 +75,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			wfe := createUniqueWFE("custom-ns", "default/deployment/test-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			// WFE is in "default" namespace, but PipelineRun should be in "kubernaut-workflows"
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
 			By("Waiting for controller to add finalizer")
@@ -171,8 +171,8 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			wfe1.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe2.Spec.WorkflowRef.WorkflowID = workflowID
 
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe1)
 				_ = k8sClient.Delete(ctx, wfe2)
@@ -253,7 +253,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			By("Creating WorkflowExecution")
 			wfe := createUniqueWFE("isolation", "default/deployment/isolated-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
 			By("Waiting for WFE to get UID assigned")

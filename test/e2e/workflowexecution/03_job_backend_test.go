@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -26,11 +27,16 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedcancellation "github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -700,6 +706,121 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				GinkgoWriter.Printf("   Failure reason: %s\n", failed.Status.FailureDetails.Reason)
 				GinkgoWriter.Printf("   Failure message: %s\n", failed.Status.FailureDetails.Message)
 			}
+		})
+	})
+
+	Context("E2E-WE-2588-002: Parent cancellation stops Job backend", func() {
+		It("should delete the active Job before acknowledging WFE cancellation", func() {
+			// Business outcome: a parent cancellation never reports a stopped
+			// WorkflowExecution while its Kubernetes Job is still active.
+			testName := fmt.Sprintf("e2e-job-cancel-2588-%s", uuid.New().String()[:8])
+			rrName := "rr-" + testName
+			targetResource := fmt.Sprintf("default/deployment/job-cancel-test-%s", uuid.New().String()[:8])
+
+			now := metav1.Now()
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: controllerNamespace},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					// uuid.UUID implements Stringer, so %064x hex-encodes its
+					// 36-character dashed representation (72 chars) and fails
+					// the CRD's 64-byte fingerprint ceiling. Use a real
+					// SHA-256 hex digest instead. #2588.
+					SignalFingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(testName))),
+					SignalName:        "E2EJobCancellation",
+					Severity:          "critical",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1alpha1.ResourceIdentifier{
+						Kind: "Deployment", Name: "job-cancel-target", Namespace: "default",
+					},
+					FiringTime: now, ReceivedTime: now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			defer func() { _ = client.IgnoreNotFound(k8sClient.Delete(ctx, rr)) }()
+
+			By("Creating a Job-backed WFE that references the parent RR")
+			wfe := createTestJobWFE(testName, targetResource)
+			wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+				APIVersion: remediationv1alpha1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			}
+			wfe.Spec.WorkflowRef.WorkflowID = infrastructure.RegisteredWorkflowUUIDs["test-job-oomkill"]
+			wfe.Spec.WorkflowRef.ExecutionBundle = infrastructure.TestJobOomkillExecutionBundle
+			// Use exactly the oomkill workflow's declared parameter set:
+			// TARGET_RESOURCE and FAILURE_MESSAGE. The builder's MESSAGE is
+			// not declared by this workflow and would be rejected by the
+			// live-schema pre-execution validation (ConfigurationError).
+			wfe.Spec.Parameters = typedStringParameters(map[string]string{
+				"TARGET_RESOURCE": targetResource,
+				"FAILURE_MESSAGE": "E2E-WE-2588 cancellation",
+			})
+			Expect(wfe.Spec.WorkflowRef.WorkflowID).NotTo(BeEmpty(), "OOM-kill workflow must be registered")
+			defer func() { _ = deleteWFE(wfe) }()
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for the WFE to become Running and create its Job")
+			phaseOfWFE := func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated == nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}
+			Eventually(phaseOfWFE, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			var jobs batchv1.JobList
+			Eventually(func() int {
+				if err := k8sClient.List(ctx, &jobs, client.InNamespace(infrastructure.ExecutionNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name}); err != nil {
+					return 0
+				}
+				return len(jobs.Items)
+			}, 30*time.Second, 2*time.Second).Should(Equal(1))
+			jobName := jobs.Items[0].Name
+
+			By("Requesting cancellation on the parent RR")
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				current := &remediationv1alpha1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), current); err != nil {
+					return err
+				}
+				current.Status.OverallPhase = remediationv1alpha1.PhaseCancelling
+				cancellation := current.Status.EnsureCancellation()
+				cancellation.RequestID = fmt.Sprintf("%s/%s:cancellation", rr.Namespace, rr.Name)
+				cancellation.RequestedAt = &now
+				cancellation.RequestedBy = "system"
+				cancellation.Source = remediationv1alpha1.CancellationSourceSystem
+				cancellation.Reason = "E2E-WE-2588 parent cancellation"
+				cancellation.State = remediationv1alpha1.CancellationStateRequested
+				current.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
+					APIVersion: workflowexecutionv1alpha1.GroupVersion.String(),
+					Kind:       "WorkflowExecution",
+					Name:       wfe.Name,
+					Namespace:  wfe.Namespace,
+				}
+				return k8sClient.Status().Update(ctx, current)
+			})).To(Succeed())
+
+			By("Verifying the controller deletes the Job before acknowledging cancellation")
+			Eventually(func() bool {
+				var job batchv1.Job
+				err := apiReader.Get(ctx, types.NamespacedName{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &job)
+				return apierrors.IsNotFound(err)
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(), "active Job must be terminated")
+
+			Eventually(func() bool {
+				updated, err := getWFEDirect(wfe.Name, wfe.Namespace)
+				if err != nil || updated == nil {
+					return false
+				}
+				condition := meta.FindStatusCondition(updated.Status.Conditions, sharedcancellation.ConditionAcknowledged)
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCancelled &&
+					condition != nil && condition.Status == metav1.ConditionTrue &&
+					condition.Reason == sharedcancellation.ReasonStopped
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(), "WFE must acknowledge only after verified Job termination")
 		})
 	})
 })

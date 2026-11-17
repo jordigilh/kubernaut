@@ -36,6 +36,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 )
 
 // WorkflowExecutionCreator creates WorkflowExecution CRDs from RemediationRequests.
@@ -214,6 +215,19 @@ func (c *WorkflowExecutionCreator) CreateWithResult(
 	existing := &workflowexecutionv1.WorkflowExecution{}
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
 	if err == nil {
+		if err := validateExistingChildIdentity(
+			rr,
+			cancellation.ReferenceIdentity{
+				Name:      existing.Spec.RemediationRequestRef.Name,
+				Namespace: existing.Spec.RemediationRequestRef.Namespace,
+				UID:       existing.Spec.RemediationRequestRef.UID,
+			},
+			existing.OwnerReferences,
+			"WorkflowExecution",
+		); err != nil {
+			logger.Error(err, "Refusing to reuse WorkflowExecution from another RemediationRequest incarnation")
+			return "", false, err
+		}
 		logger.Info("WorkflowExecution already exists, reusing", "name", name)
 		return name, false, nil
 	}

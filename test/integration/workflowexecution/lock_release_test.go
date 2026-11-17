@@ -47,7 +47,7 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 		wfe1 := createUniqueJobWFE("lock-rel1", targetResource)
 		wfe1.Spec.WorkflowRef.WorkflowID = workflowID
 		defer cleanupJobWFE(wfe1)
-		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 		By("Waiting for WFE1 to reach Running (Job created)")
 		Eventually(func() string {
@@ -78,7 +78,7 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 		wfe2 := createUniqueJobWFE("lock-rel2", targetResource)
 		wfe2.Spec.WorkflowRef.WorkflowID = workflowID
 		defer cleanupJobWFE(wfe2)
-		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 		By("Verifying WFE2 stays in Pending during cooldown (blocked)")
 		Consistently(func() string {

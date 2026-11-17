@@ -357,6 +357,12 @@ rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["remediationworkflows"]
   verbs: ["get", "list", "watch"]
+# BR-2588: the controller watches parent RemediationRequests to cascade
+# cancellation; without read access the informer never synchronizes and the
+# manager exits after the cache-sync timeout.
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationrequests"]
+  verbs: ["get", "list", "watch"]
 # AgentSessionCreator.GetOrCreate needs create/get/list/watch so the
 # controller's AgentSession informer can synchronize. Delete and update are
 # required by its retry and cancellation paths.
