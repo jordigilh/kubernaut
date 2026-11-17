@@ -3143,6 +3143,29 @@ func (s AIAnalysisConfigReloadedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAnalysisErrorPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *AIAnalysisRegoEvaluationPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -5796,7 +5819,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationTimedOutAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerifyingStartedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalCancelledAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerificationTimedOutAuditEventEventData, AuditEventEventDataOrchestratorLifecycleVerifyingStartedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -5868,7 +5891,10 @@ func (s AuditEventEventData) Validate() error {
 		}
 		return nil
 	case AIAnalysisErrorPayloadAuditEventEventData:
-		return nil // no validation needed
+		if err := s.AIAnalysisErrorPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case NotificationMessageSentPayloadAuditEventEventData:
 		return nil // no validation needed
 	case NotificationMessageFailedPayloadAuditEventEventData:
@@ -6599,7 +6625,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -6671,7 +6697,10 @@ func (s AuditEventRequestEventData) Validate() error {
 		}
 		return nil
 	case AIAnalysisErrorPayloadAuditEventRequestEventData:
-		return nil // no validation needed
+		if err := s.AIAnalysisErrorPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case NotificationMessageSentPayloadAuditEventRequestEventData:
 		return nil // no validation needed
 	case NotificationMessageFailedPayloadAuditEventRequestEventData:
@@ -11877,6 +11906,8 @@ func (s RemediationOrchestratorAuditPayloadDecision) Validate() error {
 		return nil
 	case "Pending":
 		return nil
+	case "Cancelled":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -11927,6 +11958,8 @@ func (s RemediationOrchestratorAuditPayloadEventType) Validate() error {
 	case "orchestrator.approval.approved":
 		return nil
 	case "orchestrator.approval.rejected":
+		return nil
+	case "orchestrator.approval.cancelled":
 		return nil
 	case "orchestrator.remediation.manual_review":
 		return nil

@@ -66,7 +66,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -275,6 +277,7 @@ func (r *WorkflowExecutionReconciler) executionClientFor(ctx context.Context, cl
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 // BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
 // reconciler only calls List() -- the manager's cached client establishes
 // an Informer for any type it reads, and that Informer needs list+watch to
@@ -299,6 +302,12 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		"phase", wfe.Status.Phase,
 	)
 
+	if result, handled, err := r.reconcileParentCancellation(ctx, &wfe, logger); err != nil {
+		return result, err
+	} else if handled {
+		return result, nil
+	}
+
 	// ========================================
 	// Handle Deletion
 	// ========================================
@@ -306,18 +315,9 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.ReconcileDelete(ctx, &wfe)
 	}
 
-	// Catalog identity is verified during Pending reconciliation before dispatch.
-	// Once a WFE has progressed past Pending, its immutable WorkflowRef snapshot
-	// is authoritative and the source catalog object may be deleted safely
-	// (DD-WORKFLOW-018, BR-WE-014). Only verify an unfinalized Pending object
-	// before adding the finalizer; reconcilePending performs the full verified
-	// lookup for every subsequent Pending attempt.
-	pending := wfe.Status.Phase == "" || wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending
-	if pending && !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
-		if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
-			logger.Error(err, "Workflow identity verification failed before reconciliation")
-			return ctrl.Result{}, fmt.Errorf("verify workflow before reconciliation: %w", err)
-		}
+	if err := r.verifyPendingWorkflowIdentity(ctx, &wfe); err != nil {
+		logger.Error(err, "Workflow identity verification failed before reconciliation")
+		return ctrl.Result{}, err
 	}
 
 	// ========================================
@@ -355,6 +355,12 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.reconcilePending(ctx, &wfe)
 	case workflowexecutionv1alpha1.PhaseRunning:
 		return r.reconcileRunning(ctx, &wfe)
+	case workflowexecutionv1alpha1.PhaseCancelling,
+		workflowexecutionv1alpha1.PhaseCancelled:
+		// Cancellation is handled before phase dispatch so backend termination
+		// is verified before the child reaches Cancelled. Keep these explicit
+		// cases total for status-only events and restarts.
+		return ctrl.Result{}, nil
 	case workflowexecutionv1alpha1.PhaseCompleted, workflowexecutionv1alpha1.PhaseFailed:
 		// P1: Terminal State Logic - ReconcileTerminal handles cooldown, then returns
 		// This prevents unnecessary reconciliation of terminal resources
@@ -369,6 +375,22 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Should never reach here
 	return ctrl.Result{}, nil
+}
+
+// verifyPendingWorkflowIdentity protects the first reconciliation of an
+// unfinalized WFE from a stale or missing catalog object. Once the finalizer is
+// present, reconcilePending performs the full verified lookup on each retry.
+func (r *WorkflowExecutionReconciler) verifyPendingWorkflowIdentity(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if wfe.Status.Phase != "" && wfe.Status.Phase != workflowexecutionv1alpha1.PhasePending {
+		return nil
+	}
+	if controllerutil.ContainsFinalizer(wfe, FinalizerName) {
+		return nil
+	}
+	if err := workflowidentity.Verify(ctx, r.APIReader, r.CatalogNamespace, wfe.Spec.WorkflowRef.WorkflowID); err != nil {
+		return fmt.Errorf("verify workflow before reconciliation: %w", err)
+	}
+	return nil
 }
 
 // ========================================
@@ -388,7 +410,11 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Use GenerationChangedPredicate to only reconcile on spec changes
 		// Status updates (PipelineRunStatus) are informational and don't require reconciliation
 		// Rationale: Controller only needs to act on spec changes, not status updates
-		WithEventFilter(predicate.GenerationChangedPredicate{})
+		WithEventFilter(workflowExecutionEventPredicate())
+
+	ctrlBuilder = ctrlBuilder.WatchesRawSource(source.Kind(mgr.GetCache(), &remediationv1.RemediationRequest{},
+		handler.TypedEnqueueRequestsFromMapFunc(mapRemediationRequestToWorkflowExecution),
+	))
 
 	// BR-WE-014: Only watch PipelineRuns if Tekton CRDs are installed.
 	// This is a runtime optimization - if Tekton is not installed, the controller

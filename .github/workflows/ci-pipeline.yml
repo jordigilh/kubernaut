@@ -56,10 +56,10 @@ name: CI Pipeline
 
 on:
   pull_request:
-    branches: [ main, 'release/**' ]
+    branches: [ main ]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [ main, 'release/**' ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       operator_ref:
@@ -774,12 +774,10 @@ jobs:
       - name: Prepare native cross-compile Dockerfile
         run: |
           set -euo pipefail
-          # Tag-agnostic: the operator repo bumps its go-toolset tag
-          # independently (10.2 -> 10.3 broke the pinned match on 2026-11-16),
-          # so patch whichever tag is currently pinned.
-          sed -E "s|^FROM (registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+) AS builder$|FROM --platform=\$BUILDPLATFORM \1 AS builder|" \
+          # Preserve the source-selected tag/digest across operator image updates.
+          sed -E "s|^FROM (registry\.access\.redhat\.com/ubi10/go-toolset[:@][^[:space:]]+) AS builder$|FROM --platform=\$BUILDPLATFORM \1 AS builder|" \
             kubernaut-operator/Dockerfile > kubernaut-operator/Dockerfile.ci
-          grep -Eq '^FROM --platform=\$BUILDPLATFORM registry\.access\.redhat\.com/ubi10/go-toolset:[^[:space:]]+ AS builder$' \
+          grep -Eq "^FROM --platform=[$]BUILDPLATFORM registry\.access\.redhat\.com/ubi10/go-toolset[:@][^[:space:]]+ AS builder$" \
             kubernaut-operator/Dockerfile.ci
 
       - name: Set up Docker Buildx
@@ -1459,7 +1457,7 @@ jobs:
           kind version
       - name: Install Helm (Fleet E2E lanes deploy Istio/Kuadrant/Envoy AI Gateway via helm)
         if: matrix.service == 'fullpipeline' || matrix.service == 'apifrontend-fleet' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: latest
       - name: Install Tekton CLI (tkn)

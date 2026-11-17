@@ -65,7 +65,7 @@ var _ = Describe("BR-ORCH-025 missing approval", func() {
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "missing-approval", Namespace: "default"}, Spec: remediationv1.RemediationRequestSpec{
 			SignalFingerprint: strings.Repeat("a", 64), SignalName: "TestAlert", Severity: "critical", SignalType: "alert", TargetType: "kubernetes",
-			TargetResource: remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "app", Namespace: "default"}, FiringTime: now, ReceivedTime: now,
+			TargetResource: remediationv1.ResourceIdentifier{Kind: "Deployment", APIVersion: "apps/v1", Name: "app", Namespace: "default"}, FiringTime: now, ReceivedTime: now,
 		}}
 		Expect(c.Create(ctx, rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseAwaitingApproval

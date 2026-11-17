@@ -138,6 +138,17 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 	}
 }
 
+func newCancellationWFE(name string) *workflowexecutionv1alpha1.WorkflowExecution {
+	wfe := newTestWFE(name, "default/deployment/cancellation", "")
+	wfe.UID = types.UID(name + "-uid")
+	wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+		Name:      "rr-" + name,
+		Namespace: wfe.Namespace,
+		UID:       types.UID("rr-" + name + "-uid"),
+	}
+	return wfe
+}
+
 // newSuccessfulCreateEvent builds a "SuccessfulCreate" Event on a Job object,
 // matching what the real job-controller emits each time it creates a Pod
 // (initial attempt or PodFailurePolicy-Ignore replacement). Used to simulate
@@ -172,7 +183,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		scheme = newTestScheme()
-		namespace = "kubernaut-workflows"
+		namespace = testExecutionNamespace
 	})
 
 	Describe("Engine", func() {
@@ -1228,6 +1239,112 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 	})
 })
 
+var _ = Describe("Issue #2588 Job cancellation", func() {
+	var (
+		ctx       context.Context
+		scheme    *runtime.Scheme
+		namespace string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = newTestScheme()
+		namespace = testExecutionNamespace
+	})
+
+	It("UT-WE-2588-001: Job stop is idempotent and disappearance is positive termination evidence", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newCancellationWFE("wfe-job-cancel")
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+
+		Expect(je.RequestStop(ctx, wfe, namespace)).To(Succeed())
+		verification, err := je.VerifyStopped(ctx, wfe, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(verification.State).To(Equal(executor.StopStateStopped))
+		Expect(verification.Message).To(ContainSubstring("no longer present"))
+	})
+
+	It("UT-WE-2588-002: active Job remains running until a terminal condition is observed", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newCancellationWFE("wfe-job-running")
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+		var job batchv1.Job
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+		job.Status.Active = 1
+		Expect(fakeClient.Update(ctx, &job)).To(Succeed())
+
+		verification, err := je.VerifyStopped(ctx, wfe, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(verification.State).To(Equal(executor.StopStateRunning))
+		Expect(verification.Message).To(ContainSubstring("still active"))
+	})
+
+	It("UT-WE-2588-JOB-001: Job cancellation refuses a stale RemediationRequest UID", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newCancellationWFE("wfe-job-stale")
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+		wfe.Spec.RemediationRequestRef.UID = types.UID("rr-job-stale-new-uid")
+
+		Expect(je.RequestStop(ctx, wfe, namespace)).To(MatchError(ContainSubstring("identity mismatch")))
+		verification, err := je.VerifyStopped(ctx, wfe, namespace)
+		Expect(err).To(MatchError(ContainSubstring("identity mismatch")))
+		Expect(verification.State).To(Equal(executor.StopStateUnknown))
+	})
+
+	It("UT-WE-2588-JOB-002: Job deletion requested but not yet observed is Unknown", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newCancellationWFE("wfe-job-deleting")
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+		var job batchv1.Job
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+		job.Finalizers = []string{"tests.kubernaut.ai/job-stop"}
+		Expect(fakeClient.Update(ctx, &job)).To(Succeed())
+		Expect(fakeClient.Delete(ctx, &job)).To(Succeed())
+
+		verification, err := je.VerifyStopped(ctx, wfe, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(verification.State).To(Equal(executor.StopStateUnknown))
+		Expect(verification.Message).To(ContainSubstring("not yet observed"))
+	})
+
+	It("UT-WE-2588-JOB-003: completed and failed Job conditions are both terminal stop evidence", func() {
+		for _, terminalType := range []batchv1.JobConditionType{batchv1.JobComplete, batchv1.JobFailed} {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+			wfe := newCancellationWFE("wfe-job-terminal-" + strings.ToLower(string(terminalType)))
+
+			created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+			job.Status.Conditions = []batchv1.JobCondition{{Type: terminalType, Status: corev1.ConditionTrue}}
+			Expect(fakeClient.Status().Update(ctx, &job)).To(Succeed())
+
+			verification, err := je.VerifyStopped(ctx, wfe, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(verification.State).To(Equal(executor.StopStateStopped))
+			Expect(verification.Message).To(ContainSubstring("terminal condition"))
+		}
+	})
+})
+
 // UT-WE-2512: Job identity must follow the immutable RR/WFE execution identity,
 // not the target resource. BR-WE-014/011, FedRAMP AU-3/AU-9, SOC2 CC7.2,
 // OWASP ASVS V4.1.3/V5.1.x.
@@ -1241,7 +1358,7 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		scheme = newTestScheme()
-		namespace = "kubernaut-workflows"
+		namespace = testExecutionNamespace
 	})
 
 	It("UT-WE-2512-001: includes the RR name and bounded WFE suffix in a valid Job name", func() {

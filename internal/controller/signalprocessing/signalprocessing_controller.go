@@ -44,7 +44,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
@@ -113,7 +116,7 @@ type SignalProcessingReconciler struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 
 // Reconcile implements the reconciliation loop for SignalProcessing.
 func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -127,6 +130,12 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
+	}
+
+	if handled, err := r.reconcileParentCancellation(ctx, sp, logger); err != nil {
+		return ctrl.Result{}, err
+	} else if handled {
+		return ctrl.Result{}, nil
 	}
 
 	// O5: Defense-in-depth nil guard for PolicyEvaluator (after resource exists)
@@ -159,24 +168,27 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	result, err := r.dispatchPhase(ctx, sp, logger)
+	return r.finishReconcile(ctx, sp, result, err, logger)
+}
+
+func (r *SignalProcessingReconciler) finishReconcile(
+	ctx context.Context,
+	sp *signalprocessingv1alpha1.SignalProcessing,
+	result ctrl.Result,
+	err error,
+	logger logr.Logger,
+) (ctrl.Result, error) {
 	if errors.Is(err, errUnknownPhase) {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
-
-	// DD-SHARED-001: Handle transient errors with exponential backoff
-	// Transient errors get explicit backoff delays to prevent thundering herd
 	if err != nil && isTransientError(err) {
 		return r.handleTransientError(ctx, sp, err, logger)
 	}
-
-	// BR-SP-111: On success, reset consecutive failures
-	// E1 fix: Success paths use RequeueAfter (not Requeue), so check both.
 	if err == nil && (result.Requeue || result.RequeueAfter > 0) {
 		if resetErr := r.resetConsecutiveFailures(ctx, sp); resetErr != nil {
 			logger.V(1).Info("Failed to reset consecutive failures (non-fatal)", "error", resetErr)
 		}
 	}
-
 	return result, err
 }
 
@@ -190,7 +202,8 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 // requeue, so the caller pairs handled=true with a bare ctrl.Result{}.
 func (r *SignalProcessingReconciler) checkTerminalOrTimeout(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (handled bool, err error) {
 	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
-		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseCancelled {
 		return true, nil
 	}
 	if hasTimedOut(sp) {
@@ -207,7 +220,8 @@ func isDuplicateGenerationReconcile(sp *signalprocessingv1alpha1.SignalProcessin
 	return sp.Status.ObservedGeneration == sp.Generation &&
 		sp.Status.Phase != "" &&
 		sp.Status.Phase != signalprocessingv1alpha1.PhaseCompleted &&
-		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseCancelled
 }
 
 // errUnknownPhase is a sentinel returned by dispatchPhase when sp.Status.Phase
@@ -256,6 +270,14 @@ func (r *SignalProcessingReconciler) dispatchPhase(ctx context.Context, sp *sign
 		return r.reconcileClassifying(ctx, sp, logger)
 	case signalprocessingv1alpha1.PhaseCategorizing:
 		return r.reconcileCategorizing(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseCancelling,
+		signalprocessingv1alpha1.PhaseCancelled,
+		signalprocessingv1alpha1.PhaseCompleted,
+		signalprocessingv1alpha1.PhaseFailed:
+		// Parent cancellation is handled before dispatch. Explicit terminal and
+		// cancellation cases prevent status-only events from being treated as an
+		// unknown phase.
+		return ctrl.Result{}, nil
 	default:
 		// SP-BUG-005: Unexpected phase encountered
 		// All valid phases are handled above. If we reach here, it indicates:
@@ -326,6 +348,9 @@ func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&signalprocessingv1alpha1.SignalProcessing{}).
+		WatchesRawSource(source.Kind(mgr.GetCache(), &remediationv1.RemediationRequest{},
+			handler.TypedEnqueueRequestsFromMapFunc(mapRemediationRequestToSignalProcessing),
+		)).
 		Named(fmt.Sprintf("signalprocessing-%s", "controller")).
 		Complete(r)
 }

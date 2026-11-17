@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -38,7 +39,12 @@ import (
 var _ = Describe("WorkflowExecution snapshot isolation", func() {
 	It("UT-WE-1661-SNAPSHOT-001: does not re-verify the catalog after dispatch", func() {
 		scheme := runtime.NewScheme()
+		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		parent := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "snapshot-isolation-rr", Namespace: "default"},
+		}
 
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{
@@ -70,7 +76,7 @@ var _ = Describe("WorkflowExecution snapshot isolation", func() {
 			},
 		}
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent, wfe).Build()
 		exec := &snapshotIsolationExecutor{}
 		registry := weexecutor.NewRegistry()
 		registry.Register("job", exec)

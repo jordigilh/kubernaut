@@ -59,6 +59,11 @@ const (
 	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
 	Blocked = remediationv1.PhaseBlocked
 
+	// Cancelling - Cancellation requested; child controllers are stopping work
+	// and RO is waiting for verified acknowledgements (NON-terminal).
+	// Reference: issue #2588.
+	Cancelling = remediationv1.PhaseCancelling
+
 	// Completed - All phases completed successfully (terminal state)
 	Completed = remediationv1.PhaseCompleted
 
@@ -90,15 +95,16 @@ func IsTerminal(p Phase) bool {
 // ValidTransitions defines the state machine.
 // Key: current phase, Value: list of valid target phases
 var ValidTransitions = map[Phase][]Phase{
-	Pending:          {Processing},
-	Processing:       {Analyzing, Failed, TimedOut},
-	Analyzing:        {AwaitingApproval, Executing, Completed, Failed, TimedOut}, // Completed for WorkflowNotNeeded (BR-ORCH-037)
-	AwaitingApproval: {Executing, Failed, TimedOut},
-	Executing:        {Verifying, Failed, TimedOut, Skipped}, // #280: Executing -> Completed removed; must go through Verifying
-	Verifying:        {Completed},                                      // #280: EA terminal or timeout -> Completed
+	Pending:          {Processing, Cancelling},
+	Processing:       {Analyzing, Failed, TimedOut, Cancelling},
+	Analyzing:        {AwaitingApproval, Executing, Completed, Failed, TimedOut, Cancelling}, // Completed for WorkflowNotNeeded (BR-ORCH-037)
+	AwaitingApproval: {Executing, Failed, TimedOut, Cancelling},
+	Executing:        {Verifying, Failed, TimedOut, Skipped, Cancelling}, // #280: Executing -> Completed removed; must go through Verifying
+	Verifying:        {Completed, Cancelling},                            // #280: EA terminal or timeout -> Completed
 	// Blocked is NON-terminal: transitions to Failed (terminal) or back to Analyzing/Pending
 	// via clearEventBasedBlock (e.g., UnmanagedResource re-scope). (BR-ORCH-042)
-	Blocked: {Failed, Analyzing, Pending},
+	Blocked:    {Failed, Analyzing, Pending, Cancelling},
+	Cancelling: {Cancelled},
 	// NOTE: Blocked -> Completed/Failed also occurs via transitionToInherited* (#614 outcome
 	// inheritance), which bypasses CanTransition and writes status directly.
 	// Terminal states - no transitions allowed
@@ -106,6 +112,7 @@ var ValidTransitions = map[Phase][]Phase{
 	Failed:    {Blocked}, // Failed can transition to Blocked when consecutive failure threshold reached (BR-ORCH-042)
 	TimedOut:  {},
 	Skipped:   {},
+	Cancelled: {},
 }
 
 // CanTransition checks if transition from current to target is valid.
@@ -125,7 +132,7 @@ func CanTransition(current, target Phase) bool {
 // Validate checks if a phase value is valid.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Completed, Failed, TimedOut, Skipped, Blocked, Cancelled:
+	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Completed, Failed, TimedOut, Skipped, Blocked, Cancelling, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)

@@ -99,7 +99,7 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 				cleanupWFE(wfe)
 			}()
 
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), persisted)

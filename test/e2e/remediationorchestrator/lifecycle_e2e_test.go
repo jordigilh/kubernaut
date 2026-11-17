@@ -26,8 +26,10 @@ import (
 	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -358,6 +360,26 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 
 			By("Deleting parent RemediationRequest")
 			Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
+
+			By("acknowledging the cancellation notification and child shutdown")
+			notification := &notificationv1.NotificationRequest{}
+			Eventually(func() error {
+				return apiReader.Get(ctx, client.ObjectKey{
+					Name:      "nr-cancellation-" + rr.Name,
+					Namespace: rr.Namespace,
+				}, notification)
+			}, timeout, interval).Should(Succeed())
+			notification.Status.Phase = notificationv1.NotificationPhaseSent
+			Expect(k8sClient.Status().Update(ctx, notification)).To(Succeed())
+
+			currentSP := &signalprocessingv1.SignalProcessing{}
+			Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(sp), currentSP)).To(Succeed())
+			cancellation.SetAcknowledged(
+				&currentSP.Status.Conditions,
+				currentSP.Generation,
+				"child shutdown verified for cascade deletion",
+			)
+			Expect(k8sClient.Status().Update(ctx, currentSP)).To(Succeed())
 
 			By("Verifying parent RR is deleted")
 			Eventually(func() bool {

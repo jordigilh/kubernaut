@@ -307,6 +307,9 @@ func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteK
 	if err := loadDemoImagesToKind(ctx, kindClusterName, opts, writer); err != nil {
 		return err
 	}
+	if err := loadPreCRDemoImageArchivesToKind(ctx, kindClusterName, writer); err != nil {
+		return fmt.Errorf("load pre-CR demo images: %w", err)
+	}
 	fixtureDir, err := os.MkdirTemp("", "operator-demo-fixtures-*")
 	if err != nil {
 		return fmt.Errorf("create demo fixture directory: %w", err)

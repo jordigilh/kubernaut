@@ -144,7 +144,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
@@ -265,7 +265,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
