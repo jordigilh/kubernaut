@@ -19,6 +19,7 @@ import (
 	"google.golang.org/adk/v2/tool/functiontool"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/client-go/util/retry"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -820,17 +821,47 @@ func applyApprovalDecision(rar *remediationv1.RemediationApprovalRequest, args A
 }
 
 func persistApprovalDecision(ctx context.Context, client crclient.Client, args ApproveArgs, username string, rar remediationv1.RemediationApprovalRequest) (ApproveResult, error) {
-	if err := client.Status().Update(ctx, &rar); err != nil {
+	// MANDATORY status-update pattern (DEVELOPMENT_GUIDELINES): retry on
+	// optimistic-concurrency conflicts. RO's reconcile may write RAR
+	// conditions concurrently with this decision; a single un-retried
+	// Status().Update then fails with "the object has been modified" and the
+	// conflict surfaced as an MCP tool error (E2E-2570-001 flake, run
+	// 44129342657). On conflict, refresh the RAR, re-check that it is still
+	// Pending, re-apply the decision, and retry. Admission denials and
+	// definitive rejections are not conflicts and are never retried.
+	persistErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		err := client.Status().Update(ctx, &rar)
+		if err == nil {
+			return nil
+		}
+		if !apierrors.IsConflict(err) {
+			return err
+		}
+		fresh := remediationv1.RemediationApprovalRequest{}
+		if getErr := client.Get(ctx, crclient.ObjectKey{Namespace: rar.Namespace, Name: rar.Name}, &fresh); getErr != nil {
+			return getErr
+		}
+		if fresh.UID != rar.UID {
+			return err // replaced underneath us: not retryable
+		}
+		if fresh.Status.Decision != remediationv1.ApprovalDecisionPending {
+			return err // a business decision committed: not retryable
+		}
+		applyApprovalDecision(&fresh, args, username)
+		rar = fresh
+		return err
+	})
+	if persistErr != nil {
 		// The apiserver may retry admission after another decision commits. In
 		// that case the webhook denies the stale decision as terminal, rather
 		// than returning a resourceVersion conflict. Prove the winner by readback.
-		if isTerminalAdmissionDenial(err) {
-			return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
+		if isTerminalAdmissionDenial(persistErr) {
+			return proveConditionalDecision(ctx, client, args, username, rar.UID, persistErr)
 		}
-		if isDefinitiveApprovalDecisionRejection(err) {
-			return ApproveResult{}, toUserFriendlyApprovalDecisionError(err)
+		if isDefinitiveApprovalDecisionRejection(persistErr) {
+			return ApproveResult{}, toUserFriendlyApprovalDecisionError(persistErr)
 		}
-		return proveConditionalDecision(ctx, client, args, username, rar.UID, err)
+		return proveConditionalDecision(ctx, client, args, username, rar.UID, persistErr)
 	}
 	return ApproveResult{
 		Status:  args.Decision,
