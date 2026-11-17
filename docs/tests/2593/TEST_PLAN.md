@@ -7,7 +7,7 @@
 **Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: DD-FLEET-016 A2 (staged repair with atomic commit swap) implemented on top of the atomic candidate after live evidence showed 2-4s read outages every 10s repair cycle (~30% unavailability) plus rotation/compound windows; unit, FMC IT (race, real envtest+Valkey, 36/36 incl. restructured IT-AF-FMC-2593-001 and IT-FMC-REPLAY-001) pass. New freeze, three-image rebuild (needs fresh user approval — the frozen86a938fb9 exception does not cover new source), remote journeys and full AF suite revalidation pending. Earlier progress records below are historical.
+**Status**: DD-FLEET-016 A2 complete and remotely qualified at 7c5d6ac14: full AF Fleet suite 11/11 (4 procs, seed 1794866481) on the live cluster, journeys 002/003/004 and the two-phase refusal journey pass, scope availability 100% under full suite load (195/195 polls) and 99.5% idle (1s blip per 5-min registry rotation). Local gates: build 0, units 0, lint 0, full make test 119/119 suites (7df53edf7 base; 7c delta covered by affected suites). Remaining pre-push gates: fresh independent review, broader changed-service validation decision, main-conflict recheck, final PR-context CI. Earlier progress records below are historical.
 
 ### DD-FLEET-016 A2: staged repair availability (2026-11-17)
 
@@ -27,6 +27,25 @@ stale-member cleanup moved from the staged phase into the atomic swap
 (CommitRepair result now carries CleanupCount); readiness keeps a current
 clean entry during staging and accepts clean→clean generation publication.
 Spike evidence and alternatives: DD-FLEET-016.
+
+Parallel-suite follow-ups (both evidenced, fixed at 7c5d6ac14): (1) record
+TTLs originally expired from staged-reconcile time, so load-slowed repair
+cycles opened a brief fail-closed gap (003's grounding refusal, 315ms fast
+503 with no FMC error); commit_swap now refreshes every renamed record and
+the index from COMMIT time (UT-FMC-STAGED-007). (2) E2E-AF-FLEET-2462-004
+reliably hit production interactive RR dedup (checkExistingRRByFingerprint)
+reusing a prior run's live RR for its test-owned target -- the historical
+"line-256 first-caller-start" mode; the spec now retires its own
+non-terminal session-active RRs before starting (dedup semantics unchanged).
+
+Qualification evidence on helios08 (`af-atomic/`): FMC IT suite 36/36 under
+race (envtest 1.37.0 + real Valkey) including the restructured
+IT-AF-FMC-2593-001 and IT-FMC-REPLAY-001; journeys and full-suite logs
+(`journey-a2-*`, `af-suite-7c.log`); availability polls
+(`a2-rotation-diagnostic/`, `ev-7c/`); image inventories
+(`built-image-inventory-a2.json`). Freeze: 7c5d6ac14, archive SHA-256
+de40675ba15d949987d9ffe5a4cc909777041104e877f26310ed6e296fcca1f0, 5890 files
+verified.
 **Branch**: `work/2593-fmc-presence`
 
 ### Atomic local completion and reconciliation phase (2026-11-16)
