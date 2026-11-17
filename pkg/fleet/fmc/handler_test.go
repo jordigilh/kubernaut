@@ -163,6 +163,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			Entry("missing cluster", "/api/v1/scope/check?kind=Deployment&name=nginx"),
 			Entry("missing kind", "/api/v1/scope/check?cluster=prod-east&name=nginx"),
 			Entry("missing name", "/api/v1/scope/check?cluster=prod-east&kind=Deployment"),
+			Entry("missing version (#2592)", "/api/v1/scope/check?cluster=prod-east&kind=Deployment&name=nginx&group=apps"),
+			Entry("group without version (#2592)", "/api/v1/scope/check?cluster=prod-east&kind=Deployment&name=nginx&group=apps&version="),
 		)
 
 		It("UT-FMC-API-006 [SI-10]: rejects non-GET method on scope check endpoint", func() {
@@ -200,11 +202,10 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 		It("UT-FMC-API-015 [SI-10]: excessively long cluster param does not panic or produce incorrect result", func() {
 			longCluster := strings.Repeat("a", 10000)
-			w := doGet(mux, "/api/v1/scope/check?cluster="+longCluster+"&kind=Deployment&name=nginx")
+			w := doGet(mux, "/api/v1/scope/check?cluster="+longCluster+"&version=v1&kind=Deployment&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse(),
-				"oversized input must not panic and must return unmanaged")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
+				"oversized unknown-cluster input must not panic and must surface as an unavailable check, not managed=false")
 		})
 
 		It("UT-FMC-API-016 [SI-10]: special characters in params handled safely", func() {
@@ -215,7 +216,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 				"path-traversal-like input must not cause errors and must return unmanaged")
 		})
 
-		It("UT-FMC-API-020 [SC-7]: returns managed=false for unknown cluster without hitting cache", func() {
+		It("UT-FMC-API-020 [SC-7]: unknown cluster returns 503, distinguishable from a genuine managed=false", func() {
 			reg.clusters = []registry.ClusterInfo{
 				{ID: "prod-east"},
 			}
@@ -223,9 +224,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=unknown-cluster&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse(),
-				"unknown cluster must return unmanaged without consulting cache")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
+				"#2592: an unregistered cluster is an unavailable check, not a completed managed=false determination")
 		})
 
 		It("UT-FMC-API-021 [AC-4]: returns managed=true for known cluster with cached resource", func() {
@@ -238,15 +238,14 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 				"known cluster with cached resource must return managed=true")
 		})
 
-		It("UT-FMC-API-022 [SC-7]: empty registry rejects all clusters", func() {
+		It("UT-FMC-API-022 [SC-7]: empty registry rejects all clusters as unavailable", func() {
 			reg.clusters = nil
 			checker.managed["prod-east/apps/v1/Deployment/default/nginx"] = true
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse(),
-				"with empty registry, all clusters must be rejected")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
+				"with an empty registry every cluster is an unavailable check, not managed=false")
 		})
 	})
 

@@ -116,21 +116,14 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 	})
 
 	It("IT-FLEET-VALKEY-004: FederatedScopeChecker reads through to Valkey for remote cluster", func() {
-		// Issue #54 SOC2 gap RCA: pkg/fleet/fmc/syncer.go always writes cache
-		// keys using the resource's real GVK read from the K8s API ("apps/v1"
-		// for StatefulSet), never an empty group/version. This fixture must
-		// match that production write path -- scope.ResourceIdentity below
-		// intentionally leaves Group/Version empty (as real callers such as
-		// Gateway's validateScope do) and relies on
-		// scopecache.Client.IsManagedResource inferring "apps/v1" from Kind
-		// (see pkg/shared/scope.InferGVK), exactly as scope.Manager already
-		// does for local checks.
+		// Cache lookups use the same explicit GVK as the syncer's write path.
 		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "StatefulSet", "data", "redis-master")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps", Version: "v1",
 			Kind:      "StatefulSet",
 			Namespace: "data",
 			Name:      "redis-master",
@@ -143,6 +136,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 	It("IT-FLEET-VALKEY-005: FederatedScopeChecker returns false for unmanaged remote resource", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps", Version: "v1",
 			Kind:      "Deployment",
 			Namespace: "orphan-ns",
 			Name:      "no-such-deploy",
@@ -176,6 +170,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Version:   "v1",
 			Kind:      "Pod",
 			Namespace: "demo-checkout",
 			Name:      "worker-5f74bb54f7-28jpv",
@@ -195,6 +190,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Version:   "v1",
 			Kind:      "Node",
 			Namespace: "",
 			Name:      "worker-node-7",
@@ -204,4 +200,3 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			"IT-FLEET-VALKEY-007: Node is cluster-scoped and must only ever be resolved from its own resource-level label")
 	})
 })
-

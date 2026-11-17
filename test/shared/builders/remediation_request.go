@@ -65,9 +65,10 @@ func NewRemediationRequest(name, namespace string) *RemediationRequestBuilder {
 				Severity:          "medium",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "default-resource",
-					Namespace: "default",
+					Kind:       "Pod",
+					APIVersion: "v1",
+					Name:       "default-resource",
+					Namespace:  "default",
 				},
 				FiringTime:   metav1.Now(),
 				ReceivedTime: metav1.Now(),

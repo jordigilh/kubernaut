@@ -156,9 +156,10 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 					SignalType:        "oomkilled",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod-dryrun",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod-dryrun",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

@@ -83,9 +83,10 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 				SignalType: signalNameOOMKilledFixture,
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod-completion",
-					Namespace: testNS,
+					Kind:       "Pod",
+					APIVersion: "v1",
+					Name:       "test-pod-completion",
+					Namespace:  testNS,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

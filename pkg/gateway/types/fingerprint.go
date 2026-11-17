@@ -22,7 +22,20 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 )
+
+// OwnerResolverWithAPIVersion is the optional APIVersion-aware extension of
+// OwnerResolver (#2592). Implementations that can preserve the top-level
+// owner's apiVersion through the chain (e.g. ownerchain.K8sOwnerResolver)
+// satisfy it structurally; ResolveFingerprintWithCluster prefers it so the
+// resolved signal target carries a complete GVK. Resolvers that do not
+// implement it leave the owner's APIVersion empty — the strict scope gate
+// then rejects the Kind-only identity instead of guessing (fail-closed).
+type OwnerResolverWithAPIVersion interface {
+	ResolveTopLevelOwnerWithAPIVersion(ctx context.Context, namespace, kind, name string) (ownerchain.OwnerResolution, error)
+}
 
 // ResolveFingerprint is the single entry point for fingerprint generation across
 // all gateway adapters. It encapsulates the owner resolution logic that
@@ -59,6 +72,34 @@ func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource Re
 func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolver OwnerResolver, resource ResourceIdentifier, logger logr.Logger) (string, ResourceIdentifier, error) {
 	if resolver == nil {
 		return CalculateClusterAwareFingerprint(clusterID, resource), resource, nil
+	}
+
+	// #2592: prefer the APIVersion-aware resolution so the owner target keeps
+	// its complete GVK. The plain method remains the fallback for resolvers
+	// that cannot supply it; their targets carry no apiVersion and are
+	// rejected by the strict identity gate rather than inferred.
+	if avResolver, ok := resolver.(OwnerResolverWithAPIVersion); ok {
+		resolution, err := avResolver.ResolveTopLevelOwnerWithAPIVersion(ctx, resource.Namespace, resource.Kind, resource.Name)
+		if err != nil {
+			logger.Error(err, "Owner resolution failed, dropping signal",
+				"resource", resource.String())
+			return "", ResourceIdentifier{}, fmt.Errorf("owner resolution failed for %s: %w", resource.String(), err)
+		}
+		if resolution.Kind == "" || resolution.Name == "" {
+			logger.Info("Owner resolution returned empty, dropping signal",
+				"resource", resource.String())
+			return "", ResourceIdentifier{}, fmt.Errorf("owner resolution returned empty for %s", resource.String())
+		}
+		owner := ResourceIdentifier{
+			Namespace:  resource.Namespace,
+			Kind:       resolution.Kind,
+			Name:       resolution.Name,
+			APIVersion: resolution.APIVersion,
+		}
+		fp := CalculateClusterAwareFingerprint(clusterID, owner)
+		logger.V(1).Info("Owner resolution succeeded",
+			"resource", resource.String(), "owner", owner.String(), "fingerprint", fp[:12])
+		return fp, owner, nil
 	}
 
 	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(

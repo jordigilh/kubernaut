@@ -1025,7 +1025,14 @@ data:
       enabled: true
       sessionTTL: "5m"
       inactivityTimeout: "2m"
-      maxConcurrentSessions: 10
+      # The apifrontend E2E lane starts more interactive sessions (19+
+      # kubernaut_investigate call sites) than the janitor can reap within one
+      # 5m TTL sweep, so a cap of 10 intermittently exhausted mid-lane and
+      # flaked whichever spec crossed the threshold (KA-FLOW-02,
+      # max_sessions). 50 matches the apifrontend e2e fixture
+      # (test/fixtures/kubernetes/apifrontend/e2e/config.yaml) with headroom.
+      # This is test infrastructure only; production defaults are unchanged.
+      maxConcurrentSessions: 50
       # The standalone KA E2E suite can opt into Ginkgo --procs against this
       # single shared KA instance. Keep enough per-user burst headroom for
       # concurrent MCP session setup, matching the full-pipeline E2E override.

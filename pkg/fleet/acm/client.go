@@ -82,10 +82,11 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
 		return false, fmt.Errorf("acm scope: cluster, kind and name are required")
 	}
-	if r.Group == "" && r.Version == "" {
-		gvk := scope.InferGVK(r.Kind)
-		r.Group, r.Version = gvk.Group, gvk.Version
+	gvk, err := scope.GVKForIdentity(r)
+	if err != nil {
+		return false, fmt.Errorf("acm scope: remote target GVK is unavailable: %w", err)
 	}
+	r.Group, r.Version = gvk.Group, gvk.Version
 	item, found, err := c.searchScopeItem(ctx, r)
 	if err != nil {
 		return false, err
@@ -96,6 +97,13 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	resourceLabels := searchManagedLabels(item)
 	clusterScoped := r.Namespace == "" || scope.IsClusterScopedKind(r.Kind)
 	resolution := scope.ResolveLabels(resourceLabels, nil, clusterScoped)
+	// An invalid managed label is an unavailable resolution, not a verified
+	// unmanaged decision (ADR-068): it must surface as an observable error so
+	// the federated boolean lane fails closed instead of laundering
+	// managed=false through ScopeVerifiedUnmanaged.
+	if resolution.Source == scope.ScopeSourceUnavailable {
+		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", resolution.Reason)
+	}
 	if clusterScoped || resolution.ResourceLabel == scope.LabelStateTrue || resolution.ResourceLabel == scope.LabelStateFalse {
 		return resolution.Included, nil
 	}
@@ -107,14 +115,16 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	if !found {
 		return false, fmt.Errorf("acm scope: namespace visibility cannot be verified")
 	}
-	return scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false).Included, nil
+	nsResolution := scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false)
+	if nsResolution.Source == scope.ScopeSourceUnavailable {
+		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", nsResolution.Reason)
+	}
+	return nsResolution.Included, nil
 }
 
 func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {
-	filters := buildFilters(r)
-	if r.Version != "" {
-		filters = append(filters, searchFilter{Property: "apiversion", Values: []string{r.Version}})
-	}
+	// GVKForIdentity (IsManagedResource, above) guarantees a non-empty Version.
+	filters := append(buildFilters(r), searchFilter{Property: "apiversion", Values: []string{r.Version}})
 	reqBody := graphQLRequest{
 		Query: SearchQuery,
 		Variables: map[string]interface{}{

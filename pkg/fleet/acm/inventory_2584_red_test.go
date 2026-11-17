@@ -115,7 +115,7 @@ var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func()
 			Expect(item.ID).NotTo(ContainSubstring("/"))
 			names = append(names, item.Name)
 		}
-		Expect(names).To(ConsistOf("payments", "inherited", "invalid-inherits", "opted-in", "explicit-override", "worker"))
+		Expect(names).To(ConsistOf("payments", "inherited", "opted-in", "explicit-override", "worker"))
 
 		first, err := acm.NewClient(server.URL).List(context.Background(), inventory.Filters{ClusterID: "prod-east", Limit: 2})
 		Expect(err).NotTo(HaveOccurred())
@@ -133,7 +133,7 @@ var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func()
 		for _, item := range filtered.Items {
 			filteredNames = append(filteredNames, item.Name)
 		}
-		Expect(filteredNames).To(ConsistOf("inherited", "invalid-inherits", "opted-in"))
+		Expect(filteredNames).To(ConsistOf("inherited", "opted-in"))
 		invalidPage, err := acm.NewClient(server.URL).List(context.Background(), inventory.Filters{ClusterID: "prod-east", Cursor: "r-missing", Limit: 2})
 		Expect(err).To(MatchError(ContainSubstring("cursor is not present")))
 		Expect(invalidPage.State).To(Equal(inventory.StateUnavailable))

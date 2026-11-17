@@ -57,9 +57,10 @@ var _ = Describe("Field Index Smoke Test", func() {
 				SignalType:        "test",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: testNamespace,
+					Kind:       "Pod",
+					APIVersion: "v1",
+					Name:       "test-pod",
+					Namespace:  testNamespace,
 				},
 				FiringTime:   metav1.Now(),
 				ReceivedTime: metav1.Now(),

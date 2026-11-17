@@ -156,7 +156,7 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 		It("IT-ACM-2584-SCOPE-001: canonical factory dispatch preserves backend errors", func() {
 			nextStatus = http.StatusForbidden
 			DeferCleanup(func() { nextStatus = 0 })
-			target := scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx"}
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
 			managed, err := fedChecker.IsManagedResource(context.Background(), target)
 			Expect(managed).To(BeFalse())
 			Expect(err).To(HaveOccurred())
@@ -248,7 +248,7 @@ var _ = Describe("ACM Search Factory Bearer-Token Auth (BR-INTEGRATION-065, #155
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx",
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
 

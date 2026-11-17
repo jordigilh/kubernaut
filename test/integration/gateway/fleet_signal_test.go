@@ -92,6 +92,9 @@ func (r *staticClusterRegistry) Stop()                         {}
 // to handle remote cluster scope checks. This avoids mocking and exercises the real
 // FMC HTTP path that production GW uses (ADR-068).
 var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Label("fleet", "integration"), func() {
+	// appsAPIVersion is the explicit GVK of the remote Deployment fixtures
+	// (goconst: hoisted shared literal).
+	const appsAPIVersion = "apps/v1"
 	var (
 		testLogger    logr.Logger
 		testNamespace string
@@ -113,11 +116,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		By("Seeding shared Redis with managed resources for remote clusters")
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "prod-west"} {
-			// GW passes ResourceIdentity with empty Group/Version (only Kind is set);
-			// scopecache.Client.IsManagedResource infers Group/Version from Kind via
-			// scope.InferGVK before building the lookup key (Issue #54 SOC2 gap RCA),
-			// exactly like pkg/fleet/fmc/syncer.go does when writing from the real
-			// K8s API. Deployment resolves to group "apps", version "v1".
+			// Cache keys use the explicit GVK from the signal target.
 			key, kerr := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", testNamespace, "nginx")
 			Expect(kerr).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
@@ -189,6 +188,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
+		signal.Resource.APIVersion = appsAPIVersion
 		signal.ClusterID = "prod-east"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
@@ -246,6 +246,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "warning",
 			Source:       "prometheus",
 		})
+		signalEast.Resource.APIVersion = appsAPIVersion
 		signalEast.ClusterID = "prod-east"
 		signalEast.Fingerprint = types.CalculateClusterAwareFingerprint("prod-east", sharedResource)
 
@@ -262,6 +263,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "warning",
 			Source:       "prometheus",
 		})
+		signalWest.Resource.APIVersion = appsAPIVersion
 		signalWest.ClusterID = "prod-west"
 		signalWest.Fingerprint = types.CalculateClusterAwareFingerprint("prod-west", sharedResource)
 
@@ -326,6 +328,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
+		signal.Resource.APIVersion = appsAPIVersion
 		// ClusterID is intentionally NOT set (zero value) to test backward compat
 
 		response, err := gwServer.ProcessSignal(ctx, signal)

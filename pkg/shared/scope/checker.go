@@ -18,12 +18,44 @@ package scope
 
 import "context"
 
+// ScopeState is the typed outcome of a scope evaluation. Only the two
+// verified states are authoritative business decisions; every other state is
+// unavailable for authorization and must fail closed.
+type ScopeState string
+
+const (
+	ScopeVerifiedManaged   ScopeState = "verified_managed"
+	ScopeVerifiedUnmanaged ScopeState = "verified_unmanaged"
+	ScopeUnavailable       ScopeState = "unavailable"
+	ScopeUnsupported       ScopeState = "unsupported"
+	ScopeInvalid           ScopeState = "invalid"
+	ScopeUnauthorized      ScopeState = "unauthorized"
+)
+
+// ScopeResult carries a typed scope outcome across a boundary that otherwise
+// cannot safely represent unavailable or invalid input as managed=false.
+// Managed is non-nil only for the two verified states.
+type ScopeResult struct {
+	State      ScopeState  `json:"state"`
+	Managed    *bool       `json:"managed"`
+	Provenance ScopeSource `json:"provenance,omitempty"`
+	Reason     string      `json:"reason,omitempty"`
+	Retryable  bool        `json:"retryable,omitempty"`
+}
+
+// TypedScopeChecker is an additive contract for callers that must preserve
+// the difference between verified unmanaged and unavailable or invalid scope.
+// ScopeChecker remains the boolean compatibility seam for existing consumers.
+type TypedScopeChecker interface {
+	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
+}
+
 // ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
 // Replaces positional string parameters across all scope checking interfaces.
 //
 // ClusterID is empty for local/hub cluster resources.
-// Group and Version are optional — when empty, the implementation infers them from Kind
-// (matching existing scope.Manager behavior with the static kindToGroup map).
+// Version is required; Group is empty only for the core API group. Kind alone
+// is not a unique Kubernetes identity.
 //
 // References: ADR-068 (Federated Control Plane Interface), SI-10 (Input Validation)
 type ResourceIdentity struct {
@@ -66,3 +98,4 @@ type ScopeChecker interface {
 
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
+var _ TypedScopeChecker = (*Manager)(nil)

@@ -317,3 +317,8 @@ must-gather-*.tar.gz
 # MCP server config (local)
 .mcp.json
 /fleetmetadatacache
+
+# temporary live-validation harnesses (#2592, not committed)
+liveval/
+regprobe/
+.ci-dossier/

@@ -87,9 +87,10 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: "default",
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  "default",
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

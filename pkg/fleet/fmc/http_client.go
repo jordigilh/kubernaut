@@ -101,6 +101,9 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 // so callers can distinguish an unavailable scope backend from an unmanaged
 // resource.
 func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	if _, err := scope.GVKForIdentity(r); err != nil {
+		return false, fmt.Errorf("fmc scope: remote target GVK is unavailable: %w", err)
+	}
 	reqURL := c.buildScopeCheckURL(r)
 
 	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)

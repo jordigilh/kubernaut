@@ -104,11 +104,23 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cluster, kind, and name are required query parameters", http.StatusBadRequest)
 		return
 	}
+	// #2592 (SI-10): a missing or partial GVK is a permanent input defect and
+	// must be a 400, never a retryable 503 or a final managed=false. Group is
+	// optional (core API); version is mandatory.
+	if _, err := scope.GVKForIdentity(resource); err != nil {
+		http.Error(w, "version is a required query parameter (group optional for the core API)", http.StatusBadRequest)
+		return
+	}
 
 	if _, known := h.registry.Get(resource.ClusterID); !known {
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, ScopeCheckResponse{Managed: false})
+		// A cluster missing from the registry is an unavailable check, not a
+		// completed managed=false determination — the two must stay
+		// distinguishable on the wire (SC-7), mirroring the checker-error
+		// lane below. Gateway/RO's HTTPClient retries with backoff and fails
+		// safe if retries are exhausted.
+		http.Error(w, "scope check unavailable: cluster is not registered", http.StatusServiceUnavailable)
 		return
 	}
 
