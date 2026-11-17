@@ -119,8 +119,8 @@ github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5 h1:HNNPIT0D7
 github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5/go.mod h1:gODRUjNEdGPRGn+LjJQ59H6VJy8qR6V3h1+otlw6zwI=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
-github.com/containers/kubernetes-mcp-server v0.1.2 h1:bcV6icaPJ/AlZM4YvFnOAaeeizNNjra8yKqrqbgDayk=
-github.com/containers/kubernetes-mcp-server v0.1.2/go.mod h1:SZGUJOcRx6kHzyzryta3mweUlNsPtx0Lk/UbPwX0Nt8=
+github.com/containers/kubernetes-mcp-server v0.1.3 h1:HVUsDIiNXQWlbIoj8qUWxHLHOmCX49bXkb6WBwdGT4c=
+github.com/containers/kubernetes-mcp-server v0.1.3/go.mod h1:WRgxvkN6ROsK1V7TTQMj97PEOfXEOqz/KR5WYB+DP3g=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -388,8 +388,8 @@ github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI
 github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/mattn/go-sqlite3 v1.14.32 h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
 github.com/mattn/go-sqlite3 v1.14.32/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
-github.com/mfridman/interpolate v0.0.2 h1:pnuTK7MQIxxFz1Gr+rjSIx9u7qVjf5VOoM/u6BbAxPY=
-github.com/mfridman/interpolate v0.0.2/go.mod h1:p+7uk6oE07mpE/Ik1b8EckO0O4ZXiGAfshKBWLUM9Xg=
+github.com/mfridman/interpolate v0.2.0 h1:HM9ID8p6CUxoMJX+fECOtGQ2Mu7TW/GIMPyu48nnvUg=
+github.com/mfridman/interpolate v0.2.0/go.mod h1:8SfDy95IaPNnIokZh9mvIppmc3fGl8fx+Gu7uusuO9Q=
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=
@@ -425,8 +425,8 @@ github.com/onsi/ginkgo/v2 v2.34.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU
 github.com/onsi/gomega v1.5.0/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
 github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
 github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
-github.com/open-policy-agent/opa v1.22.3 h1:d46phjoHHFSl8F2bC8nT8wFxuGEvZRvs8FhYWFqsJ2w=
-github.com/open-policy-agent/opa v1.22.3/go.mod h1:1V4qD8pI14x77B4wUiAHBfoQLQypj03WcokRdY6zM80=
+github.com/open-policy-agent/opa v1.22.4 h1:/sKtqt7GVSvXQn1sML2PSzl8tD/mTHF2pzQC3x1CV8k=
+github.com/open-policy-agent/opa v1.22.4/go.mod h1:1V4qD8pI14x77B4wUiAHBfoQLQypj03WcokRdY6zM80=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
@@ -449,8 +449,8 @@ github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/pressly/goose/v3 v3.30.0 h1:hmsrzlpLLKiIxukTV1YKCfSoM/F0QZGGmJLsbXcYD/I=
-github.com/pressly/goose/v3 v3.30.0/go.mod h1:aw7C4/P6xjcOoa3Nsj9H2xGmLyIs+JgSLTUImg2KaWE=
+github.com/pressly/goose/v3 v3.30.1 h1:KO28meBdbAUIdMbTP7bl9dp1FYZGXcYWb2O7miT09lE=
+github.com/pressly/goose/v3 v3.30.1/go.mod h1:CHGwuG2acDerUaXwz2i5T18VSauXpYDiL4WxzDvcOIM=
 github.com/prometheus/client_golang v1.25.0 h1:cDtW1TcFsMi1RJc8khwCKB4VhzwV04aKqbYtNOXuiK0=
 github.com/prometheus/client_golang v1.25.0/go.mod h1:j2X/4/kaQHLPnmyEU8zjmkndo1T317VpCIQEml8LTKk=
 github.com/prometheus/client_golang/exp v0.0.0-20261019101427-217707f26b14 h1:9HDpMghhKryeNMmGjJaPSeTxLEnOXcNCh0y05OnSiQ8=

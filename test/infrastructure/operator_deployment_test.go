@@ -84,6 +84,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 			Expect(os.WriteFile(filepath.Join(operatorRoot, "Dockerfile"), []byte(source), 0600)).To(Succeed())
 			command := exec.Command("bash", "-c", prepare)
 			command.Dir = root
+			command.Env = append(os.Environ(), "BUILDPLATFORM=must-not-expand")
 			output, err := command.CombinedOutput()
 			if !valid {
 				Expect(err).To(HaveOccurred(), string(output))
@@ -100,6 +101,7 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Entry("previous source tag", "registry.access.redhat.com/ubi10/go-toolset:10.2", true),
 		Entry("current source tag", "registry.access.redhat.com/ubi10/go-toolset:10.3", true),
 		Entry("digest-pinned source", "registry.access.redhat.com/ubi10/go-toolset:10.3@sha256:"+strings.Repeat("a", 64), true),
+		Entry("digest-only source", "registry.access.redhat.com/ubi10/go-toolset@sha256:"+strings.Repeat("b", 64), true),
 		Entry("unexpected builder fails closed", "unexpected.example/go:latest", false),
 	)
 	It("UT-2492-ARTIFACT-002 [BR-PLATFORM-014]: resolves the published operator chart and image repositories", func() {
