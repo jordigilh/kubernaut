@@ -177,37 +177,31 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	It("IT-AF-FMC-2593-001 [BR-SCOPE-001, BR-INTEGRATION-065]: real repair-window refusal is unavailable, never unmanaged or an admitted investigation", func() {
+	It("IT-AF-FMC-2593-001 [BR-SCOPE-001, BR-INTEGRATION-065]: repair-window refusal is unavailable, never unmanaged or an admitted investigation", func() {
 		available.Store(true)
 		info, found := clusterReg.Get(cluster)
 		Expect(found).To(BeTrue())
-		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
 		key := scopecache.PartitionStateKey{ClusterID: cluster, RegistrationUID: info.RegistrationUID}
-		before := readiness.View().Partitions[key]
-		Expect(before.State).To(Equal(scopecache.PartitionClean))
-		Expect(before.CleanCommit).To(BeTrue())
 
-		// Control only the external observation boundary, not production readiness.
-		// SyncCluster must publish its actual new repair generation before arriving.
+		// Phase 1 (refusal contract, no committed proof): hold the FIRST
+		// repair at the external observation boundary. There is no committed
+		// clean proof yet, so the repair window must refuse fail-closed.
 		holdCollection.Store(true)
-		repairDone := make(chan error, 1)
-		go func() { repairDone <- syncer.SyncCluster(ctx, info) }()
-		released := false
-		joined := false
+		firstDone := make(chan error, 1)
+		go func() { firstDone <- syncer.SyncCluster(ctx, info) }()
+		releaseFirst := releaseCollection
+		joinedFirst := false
 		DeferCleanup(func() {
-			if !released {
-				close(releaseCollection)
-			}
-			if !joined {
+			if !joinedFirst {
+				close(releaseFirst)
 				cancel()
-				Eventually(repairDone, 5*time.Second).Should(Receive())
+				Eventually(firstDone, 5*time.Second).Should(Receive())
 			}
 		})
 		Eventually(collectionEntered, 5*time.Second).Should(Receive())
-		during := readiness.View().Partitions[key]
-		Expect(during.State).To(Equal(scopecache.PartitionRepairing))
-		Expect(during.Generation).To(BeNumerically(">", before.Generation))
-		Expect(during.CleanCommit).To(BeFalse())
+		duringFirst := readiness.View().Partitions[key]
+		Expect(duringFirst.State).To(Equal(scopecache.PartitionRepairing))
+		Expect(duringFirst.CleanCommit).To(BeFalse())
 		Expect(syncer.Ready()).To(BeFalse())
 
 		mux := http.NewServeMux()
@@ -225,7 +219,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		scheme := runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		rrClient, err := crclient.New(restConfig, crclient.Options{Scheme: scheme})
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 		var starts atomic.Int32
 		kaClient := &ka.MockMCPClient{StartInvestigationFn: func(context.Context, ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 			starts.Add(1)
@@ -245,30 +239,68 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		var requests remediationv1.RemediationRequestList
 		Expect(rrClient.List(ctx, &requests, crclient.InNamespace(namespace))).To(Succeed())
 		Expect(requests.Items).To(BeEmpty(), "repair-window refusal must persist no RR")
-
-		// A distinct successful scope check follows guarded complete publication;
-		// never replay the rejected AF investigation until it happens to succeed.
-		close(releaseCollection)
-		released = true
-		Eventually(repairDone, 5*time.Second).Should(Receive(BeNil()))
-		joined = true
-		after := readiness.View().Partitions[key]
-		Expect(after.State).To(Equal(scopecache.PartitionClean))
-		Expect(after.CleanCommit).To(BeTrue())
-		Expect(after.Generation).To(Equal(during.Generation))
-		Expect(after.WriterFence).To(Equal(during.WriterFence))
-		Expect(syncer.Ready()).To(BeTrue())
-		verified, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(verified.State).To(Equal(scope.ScopeVerifiedManaged))
-		managed, err := fmc.NewHTTPClient(server.URL).Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
-
 		// DD-FLEET-015: repair refusal is unavailable, never opt-in advice.
 		Expect(refusal.Error()).To(ContainSubstring("unavailable"))
 		Expect(refusal.Error()).NotTo(ContainSubstring("Add label"))
 		Expect(refusal.Error()).NotTo(ContainSubstring("not managed"))
+
+		close(releaseFirst)
+		Eventually(firstDone, 5*time.Second).Should(Receive(BeNil()))
+		joinedFirst = true
+		committed := readiness.View().Partitions[key]
+		Expect(committed.State).To(Equal(scopecache.PartitionClean))
+		Expect(committed.CleanCommit).To(BeTrue())
+		Expect(syncer.Ready()).To(BeTrue())
+		verified, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(verified.State).To(Equal(scope.ScopeVerifiedManaged))
+
+		// Phase 2 (DD-FLEET-016 A2 availability contract): hold the SECOND
+		// repair. The committed clean proof must remain readable for the
+		// entire staged repair window.
+		releaseCollection = make(chan struct{})
+		holdCollection.Store(true)
+		select {
+		case <-collectionEntered:
+		default:
+		}
+		secondDone := make(chan error, 1)
+		go func() { secondDone <- syncer.SyncCluster(ctx, info) }()
+		joinedSecond := false
+		DeferCleanup(func() {
+			if !joinedSecond {
+				select {
+				case <-releaseCollection:
+				default:
+					close(releaseCollection)
+				}
+				cancel()
+				Eventually(secondDone, 5*time.Second).Should(Receive())
+			}
+		})
+		Eventually(collectionEntered, 5*time.Second).Should(Receive())
+		duringSecond := readiness.View().Partitions[key]
+		Expect(duringSecond.State).To(Equal(scopecache.PartitionClean), "a staged repair must keep the committed proof readable")
+		Expect(duringSecond.CleanCommit).To(BeTrue())
+		Expect(syncer.Ready()).To(BeTrue(), "readiness must survive a staged repair")
+		httpStill, err := http.Get(server.URL + fmc.ScopeCheckPath + "?cluster=" + cluster + "&version=v1&kind=Pod&namespace=default&name=observed")
+		Expect(err).NotTo(HaveOccurred())
+		stillBody, err := io.ReadAll(httpStill.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(httpStill.Body.Close()).To(Succeed())
+		Expect(httpStill.StatusCode).To(Equal(http.StatusOK), "the staged repair window must serve the committed proof, body: %s", stillBody)
+		stillVerified, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stillVerified.State).To(Equal(scope.ScopeVerifiedManaged))
+
+		close(releaseCollection)
+		Eventually(secondDone, 5*time.Second).Should(Receive(BeNil()))
+		joinedSecond = true
+		after := readiness.View().Partitions[key]
+		Expect(after.State).To(Equal(scopecache.PartitionClean))
+		Expect(after.CleanCommit).To(BeTrue())
+		Expect(after.Generation).To(BeNumerically(">", committed.Generation))
+		Expect(syncer.Ready()).To(BeTrue())
 	})
 
 	DescribeTable("IT-FMC-REPLAY-001 [BR-SCOPE-001]: lost replies require fresh repair through production wiring", func(verb string) {
@@ -282,11 +314,24 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		err := syncer.SyncCluster(ctx, info)
 		Expect(proxy.Calls(verb)-before).To(Equal(1), "must not replay the executed mutation")
 		Expect(err).To(MatchError(scopecache.ErrAmbiguousWrite))
-		Expect(syncer.Ready()).To(BeFalse(), "a lost reply must invalidate the old clean readiness proof")
+		// DD-FLEET-016 A2: a lost reply strands only the staged state; the
+		// committed clean proof stays readable and readiness stays up.
+		Expect(syncer.Ready()).To(BeTrue(), "a lost reply must not invalidate the committed proof")
 		result, _ := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
-		Expect(result.State).To(Equal(scope.ScopeUnavailable))
-		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
-		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(), "only a fresh complete repair may restore clean state")
+		if verb == "begin" {
+			// The begin never executed, so the committed proof serves reads.
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		} else {
+			// An ambiguous commit may have executed server-side: the server
+			// then holds the NEW generation while readiness still publishes
+			// the previous proof. Both outcomes are fail-closed (verified or
+			// unavailable, never unmanaged); the next cycle republishes.
+			Expect(result.State).To(BeElementOf(scope.ScopeVerifiedManaged, scope.ScopeUnavailable), "an ambiguous commit must never authorize from uncertainty")
+		}
+		// The stranded staging is abandoned fence-scoped (begin) or marked
+		// uncertain (commit), so the next cycle repairs without waiting for
+		// the staged TTL.
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(), "the next repair cycle must recover immediately")
 		Expect(syncer.Ready()).To(BeTrue())
 		result, err = checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
 		Expect(err).ToNot(HaveOccurred())

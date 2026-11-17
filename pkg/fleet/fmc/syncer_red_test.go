@@ -141,6 +141,10 @@ func (s *lifecycleStatusStore) MarkRepairUncertain(ctx context.Context, _ scopec
 	return nil
 }
 
+func (s *lifecycleStatusStore) AbandonStaging(context.Context, scopecache.PartitionStateKey, string, uint64, scopecache.WriterFence) error {
+	return nil
+}
+
 func (s *lifecycleStatusStore) Repair(_ context.Context, request scopecache.RepairRequest) (scopecache.RepairResult, error) {
 	s.repairRequest = &request
 	count := len(request.Observations.Items)

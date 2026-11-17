@@ -289,6 +289,10 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		})
 		Expect(err).To(HaveOccurred(), "a mismatched token must not repair")
 
+		// DD-FLEET-016 A2: a failed repair leaves the staging in flight; the
+		// syncer's failure path marks it uncertain so the next cycle can begin.
+		Expect(store.MarkRepairUncertain(ctx, start, scopecache.RepairFailure{Code: scopecache.RepairFailureStaleFence, Message: "mismatched token"})).To(Succeed())
+
 		start, err = store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
 		Expect(err).ToNot(HaveOccurred())
 		repair, err := store.Repair(ctx, scopecache.RepairRequest{
@@ -328,7 +332,9 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 
 		_, err = store.CommitRepair(ctx, commitRequest)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("commit"))
+		// DD-FLEET-016 A2: the first commit consumed the staged status, so a
+		// replayed commit is rejected as a stale fence.
+		Expect(err.Error()).To(ContainSubstring("stale_fence"))
 	})
 
 	It("IT-FMC-CACHE-015 [BR-SCOPE-001]: cleanup examines every stale member before deleting indexed entries", func() {
@@ -413,7 +419,16 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 			Observations:             scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{current}, Complete: true, PageCount: 1, ItemCount: 1},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(secondRepair.CleanupCount).To(Equal(300))
+		// DD-FLEET-016 A2: the staged phase never mutates the live keyspace;
+		// the 300 stale members are removed atomically by the commit swap.
+		Expect(secondRepair.CleanupCount).To(BeZero())
+		secondCommit, err := store.CommitRepair(ctx, scopecache.RepairCommitRequest{
+			Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: fence, Generation: start.Generation, Token: start.Token,
+			ExpectedCount: 1, Proof: secondRepair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(secondCommit.CleanupCount).To(Equal(300))
 
 		By("repairing the formerly populated partition to explicitly verified empty")
 		start, err = store.BeginRepair(ctx, scopecache.BeginRepairRequest{Partition: partition, RegistrationUID: partition.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: fence})
@@ -424,7 +439,7 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 			Observations: scopecache.ValidatedObservationSet{Complete: true, PageCount: 1},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(empty.CleanupCount).To(Equal(1))
+		Expect(empty.CleanupCount).To(BeZero())
 		Expect(empty.EmptyPartitionVerified).To(BeTrue())
 		Expect(empty.RecordTTL.Valid).To(BeFalse())
 		Expect(empty.IndexTTL.Valid).To(BeFalse())
@@ -434,6 +449,7 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(commit.Committed).To(BeTrue())
+		Expect(commit.CleanupCount).To(Equal(1))
 	})
 
 	DescribeTable("IT-FMC-REVIEW-EMPTY-002 [BR-SCOPE-001, BR-SECURITY-016]: empty repair rejects invalid status and interrupted cleanup", func(fault string) {
@@ -462,18 +478,18 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		}
 		for _, key := range server.Keys() {
 			switch {
-			case strings.HasSuffix(key, ":status") && fault == "wrongtype":
+			case strings.HasSuffix(key, ":status:staged") && fault == "wrongtype":
 				server.Del(key)
 				Expect(server.Set(key, "corrupted")).To(Succeed())
-			case strings.HasSuffix(key, ":status") && fault == "invalid-ttl":
+			case strings.HasSuffix(key, ":status:staged") && fault == "invalid-ttl":
 				server.SetTTL(key, 0)
-			case strings.Contains(key, ":record:") && fault == "interrupted":
+			case strings.Contains(key, ":record:staged:") && fault == "interrupted":
 				server.Del(key)
 				Expect(server.Set(key, "corrupted")).To(Succeed())
 			}
 		}
 		if fault == "expired" {
-			server.FastForward(61 * time.Second)
+			server.FastForward(16 * time.Second)
 		}
 		result, err := store.Repair(ctx, scopecache.RepairRequest{
 			Partition: partition, RegistrationUID: "uid", ExpectedRegistryRevision: 1, WriterFence: fence,
@@ -504,17 +520,17 @@ var _ = Describe("Valkey repair lifecycle (BR-SCOPE-001, BR-SECURITY-016)", func
 		})
 		Expect(err).ToNot(HaveOccurred())
 		for _, key := range server.Keys() {
-			if !strings.HasSuffix(key, ":status") {
+			if !strings.HasSuffix(key, ":status:staged") {
 				continue
 			}
 			switch fault {
 			case "residual":
-				_, err := server.ZAdd(strings.TrimSuffix(key, ":status")+":index", 1, "unexpected")
+				_, err := server.ZAdd(strings.TrimSuffix(key, ":status:staged")+":index:staged", 1, "unexpected")
 				Expect(err).ToNot(HaveOccurred())
 			case "wrongtype-index":
-				Expect(server.Set(strings.TrimSuffix(key, ":status")+":index", "corrupted")).To(Succeed())
+				Expect(server.Set(strings.TrimSuffix(key, ":status:staged")+":index:staged", "corrupted")).To(Succeed())
 			default:
-				server.FastForward(61 * time.Second)
+				server.FastForward(16 * time.Second)
 			}
 		}
 		commit, err := store.CommitRepair(ctx, scopecache.RepairCommitRequest{

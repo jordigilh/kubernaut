@@ -38,6 +38,10 @@ func (noOpStatusStore) MarkRepairUncertain(context.Context, scopecache.RepairSta
 	return nil
 }
 
+func (noOpStatusStore) AbandonStaging(context.Context, scopecache.PartitionStateKey, string, uint64, scopecache.WriterFence) error {
+	return nil
+}
+
 func (noOpStatusStore) Repair(context.Context, scopecache.RepairRequest) (scopecache.RepairResult, error) {
 	return scopecache.RepairResult{}, nil
 }

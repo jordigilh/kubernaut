@@ -7,7 +7,26 @@
 **Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Approved atomic source implemented, normally merged with actual main and locally validated at b63d9f7e400bd0caa5259f05aea07a43003feb8e: 9/9 terminal gates, 26/26 critical contracts and 11/11 scoped wiring rows pass. Remote AF amendment remains 0/4 qualified; image-build permission and post-resolution remote gates still block push. Earlier progress records below are historical.
+**Status**: DD-FLEET-016 A2 (staged repair with atomic commit swap) implemented on top of the atomic candidate after live evidence showed 2-4s read outages every 10s repair cycle (~30% unavailability) plus rotation/compound windows; unit, FMC IT (race, real envtest+Valkey, 36/36 incl. restructured IT-AF-FMC-2593-001 and IT-FMC-REPLAY-001) pass. New freeze, three-image rebuild (needs fresh user approval — the frozen86a938fb9 exception does not cover new source), remote journeys and full AF suite revalidation pending. Earlier progress records below are historical.
+
+### DD-FLEET-016 A2: staged repair availability (2026-11-17)
+
+Live diagnostic on `af-fleet-2593-rca` (`rotation-diagnostic/`) proved the
+in-place repair design blocks fenced reads for 2.1-4.2s of every 10s sync
+cycle (~30% total unavailability; 12.8s at rotations; one 2min09s compound
+event). The user approved direction A2: repairs stage a new generation
+(`:status:staged`, `:index:staged`, `:record:staged:*`, 15s TTL) and one
+atomic Lua commit renames the staged keyspace over the live keyspace.
+Contracts: committed clean proof readable during staged repair
+(UT-FMC-STAGED-001..006); refusal preserved when no committed proof exists
+(IT-AF-FMC-2593-001 phase 1); availability during staged repair asserted
+end-to-end (phase 2); lost begin replies abandon the staging fence-scoped
+(`abandon_staging`) so the next cycle recovers immediately; an ambiguous
+commit may cost one cycle of unavailability, never an unmanaged decision;
+stale-member cleanup moved from the staged phase into the atomic swap
+(CommitRepair result now carries CleanupCount); readiness keeps a current
+clean entry during staging and accepts clean→clean generation publication.
+Spike evidence and alternatives: DD-FLEET-016.
 **Branch**: `work/2593-fmc-presence`
 
 ### Atomic local completion and reconciliation phase (2026-11-16)

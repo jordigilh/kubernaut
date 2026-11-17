@@ -275,8 +275,10 @@ func (s *FMCReadinessSnapshot) ReconcileRegistry(snapshot registry.RegistrySnaps
 	return nil
 }
 
-// BeginPartitionRepair records an unavailable repairing state before source
-// collection begins. It always clears clean eligibility for the partition.
+// BeginPartitionRepair records a repairing state only when no committed clean
+// proof exists. Under DD-FLEET-016 A2 the staged repair never invalidates the
+// previous committed proof, so a partition with a current clean entry stays
+// readable while its next repair is staged.
 func (s *FMCReadinessSnapshot) BeginPartitionRepair(key PartitionStateKey, registrationUID string, revision uint64, lease LeaseView, generation uint64) error {
 	if err := validatePartitionInputs(key, registrationUID, revision, lease, generation); err != nil {
 		return err
@@ -286,6 +288,13 @@ func (s *FMCReadinessSnapshot) BeginPartitionRepair(key PartitionStateKey, regis
 	s.ensurePartitions()
 	if s.membership[key] != revision || !sameFence(s.view.Global.Lease.WriterFence, lease.WriterFence) || !s.view.Global.ActiveLeaseValid {
 		return ReadinessError{Code: ReadinessUnavailable, Reason: "repair registration or writer is no longer active"}
+	}
+	if current, ok := s.view.Partitions[key]; ok && current.RegistrationUID == registrationUID &&
+		current.RegistrationRevision == revision && partitionClean(current) &&
+		sameFence(current.WriterFence, lease.WriterFence) {
+		// The committed proof remains valid for the duration of the staged
+		// repair; the commit swap installs the new proof.
+		return nil
 	}
 	s.view.Partitions[key] = PartitionReadiness{
 		Key:                  key,
@@ -314,7 +323,14 @@ func (s *FMCReadinessSnapshot) PublishPartitionClean(key PartitionStateKey, read
 		return ReadinessError{Code: ReadinessUnavailable, Reason: "clean registration or writer is no longer active"}
 	}
 	current, ok := s.view.Partitions[key]
-	if !ok || current.State != PartitionRepairing || current.Generation != readiness.Generation {
+	// DD-FLEET-016 A2: accept both a repairing entry of the same generation
+	// and a still-clean entry of the previous generation (the staged repair
+	// kept it readable); the new proof must match the current registration
+	// and the active writer fence either way.
+	fromRepairing := ok && current.State == PartitionRepairing && current.Generation == readiness.Generation
+	fromClean := ok && partitionClean(current) && sameFence(current.WriterFence, readiness.WriterFence) &&
+		current.RegistrationUID == readiness.RegistrationUID && current.RegistrationRevision == readiness.RegistrationRevision
+	if !fromRepairing && !fromClean {
 		return ReadinessError{Code: ReadinessUnavailable, Reason: "partition is not in the requested repair generation"}
 	}
 	if current.RegistrationRevision != readiness.RegistrationRevision || !sameFence(current.WriterFence, readiness.WriterFence) {

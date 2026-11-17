@@ -1,8 +1,10 @@
--- FMC atomic cache protocol. All reads and mutations use EVALSHA; SCRIPT LOAD
--- is bootstrap/recovery only. Every successful repair carries one full writer
--- fence, registration revision, generation, and opaque token.
+-- FMC atomic cache protocol, DD-FLEET-016 A2 staged variant. All reads and
+-- mutations use EVALSHA; SCRIPT LOAD is bootstrap/recovery only. Repairs
+-- write a STAGED generation (status/index/records under :staged keys with a
+-- TTL) and a single atomic commit swaps the staged keyspace over the live
+-- keyspace. The committed clean proof remains readable for the entire repair;
+-- only a missing committed proof fails closed.
 local op = ARGV[1]
-local status = KEYS[1]
 
 local function now_ms()
   local t = redis.call('TIME')
@@ -22,7 +24,9 @@ local function require_type(key, expected)
   return nil
 end
 
-local function full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token)
+-- full_matches validates the complete writer identity against the STAGED
+-- status hash (KEYS[1] of repair ops).
+local function full_matches(status, registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token)
   return key_type(status) == 'hash'
     and redis.call('HGET', status, 'registration_uid') == tostring(registration_uid)
     and redis.call('HGET', status, 'expected_revision') == tostring(revision)
@@ -34,7 +38,8 @@ local function full_matches(registration_uid, revision, holder_pod_uid, holder_s
     and redis.call('HGET', status, 'repair_token') == tostring(token)
 end
 
-local function read_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation)
+-- read_matches validates the reader's proof against the COMMITTED status.
+local function read_matches(status, registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation)
   return key_type(status) == 'hash'
     and redis.call('HGET', status, 'registration_uid') == tostring(registration_uid)
     and redis.call('HGET', status, 'expected_revision') == tostring(revision)
@@ -49,20 +54,9 @@ local function valid_ttl(now, expires, pttl)
   return expires ~= nil and pttl ~= nil and expires > now and pttl > 0 and math.abs((expires - now) - pttl) <= 2
 end
 
-local function update_expiry(key, field, expires)
-  local current = tonumber(redis.call('HGET', key, field)) or 0
-  if expires > current then
-    redis.call('HSET', key, field, expires)
-    redis.call('PEXPIREAT', key, expires)
-    return expires
-  end
-  local pttl = redis.call('PTTL', key)
-  if pttl <= 0 then
-    redis.call('PEXPIREAT', key, current)
-  end
-  return current
-end
-
+-- begin stages a new repair generation. The committed status (KEYS[1]) is
+-- never mutated; in-flight detection uses only the staged status's existence
+-- so an abandoned repair self-clears via TTL and cannot strand a flag.
 if op == 'begin' then
   local registration_uid = ARGV[2]
   local revision = ARGV[3]
@@ -71,17 +65,23 @@ if op == 'begin' then
   local lease_epoch = ARGV[6]
   local fence = ARGV[7]
   local token = ARGV[8]
-  local type_error = require_type(status, 'hash')
-  if type_error ~= nil then
-    return type_error
+  local staged = KEYS[2]
+  if redis.call('EXISTS', staged) == 1 then
+    if redis.call('HGET', staged, 'state') == 'repairing' then
+      return redis.error_reply('REPAIR_IN_FLIGHT')
+    end
+    -- An explicitly abandoned (uncertain) staging may be replaced.
   end
-  local generation = redis.call('HINCRBY', status, 'generation', 1)
+  local committed_generation = tonumber(redis.call('HGET', KEYS[1], 'generation')) or 0
+  local generation = committed_generation + 1
   if generation <= 0 then
     return redis.error_reply('INVALID_GENERATION')
   end
   local now = now_ms()
-  local status_expires = now + 60000
-  redis.call('HSET', status,
+  -- Staged TTL: bounded well inside the 30s data TTL so a lost-reply
+  -- stranding self-clears before the committed records expire.
+  local staged_expires = now + 15000
+  redis.call('HSET', staged,
     'state', 'repairing',
     'registration_uid', registration_uid,
     'expected_revision', revision,
@@ -96,12 +96,14 @@ if op == 'begin' then
     'observed_count', '0',
     'cleanup_count', '0',
     'repair_reason', '',
-    'status_expires_at_ms', status_expires,
-    'index_expires_at_ms', status_expires)
-  redis.call('PEXPIREAT', status, status_expires)
+    'status_expires_at_ms', staged_expires,
+    'index_expires_at_ms', staged_expires)
+  redis.call('PEXPIREAT', staged, staged_expires)
   return {tostring(generation)}
 end
 
+-- repair_reconcile writes one staged observation. KEYS[1]=staged status,
+-- KEYS[2]=staged record, KEYS[3]=staged index.
 if op == 'repair_reconcile' then
   local registration_uid = ARGV[2]
   local revision = ARGV[3]
@@ -111,16 +113,16 @@ if op == 'repair_reconcile' then
   local fence = ARGV[7]
   local generation = ARGV[8]
   local token = ARGV[9]
-  if not full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
+  local staged = KEYS[1]
+  if redis.call('HGET', staged, 'state') ~= 'repairing' or
+     not full_matches(staged, registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
     return redis.error_reply('STALE_FENCE')
   end
-  local record = KEYS[2]
-  local index = KEYS[3]
-  local record_type_error = require_type(record, 'hash')
-  if record_type_error ~= nil then
-    return record_type_error
+  local type_error = require_type(KEYS[2], 'hash')
+  if type_error ~= nil then
+    return type_error
   end
-  local index_type_error = require_type(index, 'zset')
+  local index_type_error = require_type(KEYS[3], 'zset')
   if index_type_error ~= nil then
     return index_type_error
   end
@@ -131,7 +133,7 @@ if op == 'repair_reconcile' then
   end
   local now = now_ms()
   local expires = now + ttl
-  redis.call('HSET', record,
+  redis.call('HSET', KEYS[2],
     'public_id', public_id,
     'registration_uid', registration_uid,
     'expected_revision', revision,
@@ -147,100 +149,32 @@ if op == 'repair_reconcile' then
     'name', ARGV[15],
     'label_state', ARGV[16],
     'expires_at_ms', expires)
-  redis.call('PEXPIREAT', record, expires)
-  redis.call('ZADD', index, expires, public_id)
-  local status_expires = update_expiry(status, 'status_expires_at_ms', expires)
-  local index_expires = tonumber(redis.call('HGET', status, 'index_expires_at_ms')) or 0
+  redis.call('PEXPIREAT', KEYS[2], expires)
+  redis.call('ZADD', KEYS[3], expires, public_id)
+  redis.call('HINCRBY', staged, 'observed_count', 1)
+  local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
+  local index_expires = tonumber(redis.call('HGET', staged, 'index_expires_at_ms')) or 0
   if expires > index_expires then
     index_expires = expires
-    redis.call('HSET', status, 'index_expires_at_ms', index_expires)
+    redis.call('HSET', staged, 'index_expires_at_ms', index_expires)
   end
-  redis.call('PEXPIREAT', index, index_expires)
-  local record_pttl = redis.call('PTTL', record)
-  local index_pttl = redis.call('PTTL', index)
-  local status_pttl = redis.call('PTTL', status)
-  if not valid_ttl(now, expires, record_pttl) or not valid_ttl(now, index_expires, index_pttl) or not valid_ttl(now, status_expires, status_pttl) then
+  redis.call('PEXPIREAT', KEYS[3], index_expires)
+  local record_pttl = redis.call('PTTL', KEYS[2])
+  local index_pttl = redis.call('PTTL', KEYS[3])
+  local status_pttl = redis.call('PTTL', staged)
+  if not valid_ttl(now, expires, record_pttl) or not valid_ttl(now, index_expires, index_pttl) or not valid_ttl(now, staged_expires, status_pttl) then
     return redis.error_reply('INVALID_PTTL')
   end
-  return {'ok', tostring(now), tostring(expires), tostring(record_pttl), tostring(index_pttl), tostring(status_pttl), tostring(index_expires), tostring(status_expires)}
+  return {'ok', tostring(now), tostring(expires), tostring(record_pttl), tostring(index_pttl), tostring(status_pttl), tostring(index_expires), tostring(staged_expires)}
 end
 
-if op == 'repair_list_members' then
-  local registration_uid = ARGV[2]
-  local revision = ARGV[3]
-  local holder_pod_uid = ARGV[4]
-  local holder_session_uid = ARGV[5]
-  local lease_epoch = ARGV[6]
-  local fence = ARGV[7]
-  local generation = ARGV[8]
-  local token = ARGV[9]
-  local cursor = tonumber(ARGV[10]) or 0
-  if not full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
-    return redis.error_reply('STALE_FENCE')
-  end
-  if key_type(KEYS[2]) == 'none' then
-    return {'-1'}
-  end
-  if key_type(KEYS[2]) ~= 'zset' then
-    return redis.error_reply('WRONG_TYPE_ZSET')
-  end
-  local members = redis.call('ZRANGE', KEYS[2], 0, -1)
-  if #members > 10000 then
-    return redis.error_reply('INDEX_BOUNDS')
-  end
-  table.sort(members)
-  if cursor < 0 then
-    cursor = 0
-  end
-  if cursor >= #members then
-    return {'-1'}
-  end
-  local next_cursor = cursor + 256
-  if next_cursor >= #members then
-    next_cursor = -1
-  end
-  local reply = {tostring(next_cursor)}
-  local last = cursor + 255
-  if last >= #members then
-    last = #members - 1
-  end
-  for i = cursor, last do
-    table.insert(reply, members[i + 1])
-  end
-  return reply
-end
-
-if op == 'cleanup_member' then
-  local registration_uid = ARGV[2]
-  local revision = ARGV[3]
-  local holder_pod_uid = ARGV[4]
-  local holder_session_uid = ARGV[5]
-  local lease_epoch = ARGV[6]
-  local fence = ARGV[7]
-  local generation = ARGV[8]
-  local token = ARGV[9]
-  local member = ARGV[10]
-  if not full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
-    return redis.error_reply('STALE_FENCE')
-  end
-  local removed = redis.call('ZREM', KEYS[2], member)
-  if key_type(KEYS[3]) ~= 'none' then
-    if key_type(KEYS[3]) ~= 'hash' then
-      return redis.error_reply('WRONG_TYPE_HASH')
-    end
-    redis.call('DEL', KEYS[3])
-  end
-  return {'ok', tostring(removed)}
-end
-
--- DD-FLEET-013 C1: empty is a fenced, server-proven partition state, not a
--- fabricated record/index TTL or a marker resource.
+-- repair_finalize_empty proves a complete-empty staged partition without
+-- fabricating record/index TTLs. KEYS[1]=staged status, KEYS[2]=staged index.
 if op == 'repair_finalize_empty' then
-  if not full_matches(ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
+  local staged = KEYS[1]
+  if redis.call('HGET', staged, 'state') ~= 'repairing' or
+     not full_matches(staged, ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
     return redis.error_reply('STALE_FENCE')
-  end
-  if redis.call('HGET', status, 'state') ~= 'repairing' then
-    return redis.error_reply('COMMIT_REJECTED')
   end
   local index_type = key_type(KEYS[2])
   if index_type ~= 'none' and index_type ~= 'zset' then
@@ -250,15 +184,126 @@ if op == 'repair_finalize_empty' then
     return redis.error_reply('RESIDUAL_MEMBERS')
   end
   local now = now_ms()
-  local expires = tonumber(redis.call('HGET', status, 'status_expires_at_ms'))
-  local pttl = redis.call('PTTL', status)
+  local expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms'))
+  local pttl = redis.call('PTTL', staged)
   if not valid_ttl(now, expires, pttl) then
     return redis.error_reply('TTL_MISMATCH')
   end
-  redis.call('HSET', status, 'empty_verified', '1')
+  redis.call('HSET', staged, 'empty_verified', '1')
   return {'ok', tostring(now), tostring(expires), tostring(pttl)}
 end
 
+-- commit swaps the staged keyspace over the live keyspace in one atomic
+-- invocation. KEYS[1]=committed status, KEYS[2]=staged status,
+-- KEYS[3]=live index, KEYS[4]=staged index. ARGV[11]=live record key prefix,
+-- ARGV[12]=staged record key prefix.
+if op == 'commit' then
+  local registration_uid = ARGV[2]
+  local revision = ARGV[3]
+  local holder_pod_uid = ARGV[4]
+  local holder_session_uid = ARGV[5]
+  local lease_epoch = ARGV[6]
+  local fence = ARGV[7]
+  local generation = ARGV[8]
+  local token = ARGV[9]
+  local staged = KEYS[2]
+  if redis.call('HGET', staged, 'state') ~= 'repairing' or
+     not full_matches(staged, registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
+    return redis.error_reply('STALE_FENCE')
+  end
+  local expected_count = tonumber(ARGV[10])
+  if expected_count == nil or expected_count < 0 then
+    return redis.error_reply('COMMIT_REJECTED')
+  end
+  local live_index_type = key_type(KEYS[3])
+  local staged_index_type = key_type(KEYS[4])
+  if live_index_type ~= 'none' and live_index_type ~= 'zset' then
+    return redis.error_reply('WRONG_TYPE_ZSET')
+  end
+  if staged_index_type ~= 'none' and staged_index_type ~= 'zset' then
+    return redis.error_reply('WRONG_TYPE_ZSET')
+  end
+  local staged_count = 0
+  if staged_index_type == 'zset' then
+    staged_count = redis.call('ZCARD', KEYS[4])
+  end
+  if staged_count ~= expected_count then
+    return redis.error_reply('COUNT_MISMATCH')
+  end
+  -- Proof flags: record/index/status TTL validity and (for empty) the staged
+  -- empty-partition finalization. ARGV[13..16,19] mirror the prior contract.
+  for i = 13, 16 do
+    if ARGV[i] ~= '1' then
+      return redis.error_reply('COMMIT_REJECTED')
+    end
+  end
+  if ARGV[19] ~= '1' then return redis.error_reply('COMMIT_REJECTED') end
+  if expected_count == 0 then
+    if ARGV[20] ~= '1' or ARGV[17] ~= '0' or ARGV[18] ~= '0' or redis.call('HGET', staged, 'empty_verified') ~= '1' then
+      return redis.error_reply('COMMIT_REJECTED')
+    end
+  elseif ARGV[17] ~= '1' or ARGV[18] ~= '1' or ARGV[20] == '1' then
+    return redis.error_reply('COMMIT_REJECTED')
+  end
+  local live_prefix = ARGV[11]
+  local staged_prefix = ARGV[12]
+  -- Remove live members absent from the staged observation set.
+  local cleanup_count = 0
+  local staged_members = {}
+  if staged_index_type == 'zset' then
+    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
+    for _, m in ipairs(members) do staged_members[m] = true end
+  end
+  if live_index_type == 'zset' then
+    local live_members = redis.call('ZRANGE', KEYS[3], 0, -1)
+    if #live_members > 10000 then
+      return redis.error_reply('INDEX_BOUNDS')
+    end
+    for _, m in ipairs(live_members) do
+      if not staged_members[m] then
+        redis.call('DEL', live_prefix .. m)
+        cleanup_count = cleanup_count + 1
+      end
+    end
+  end
+  -- Rename staged records into their live keys, then swap the index.
+  if staged_index_type == 'zset' then
+    local members = redis.call('ZRANGE', KEYS[4], 0, -1)
+    for _, m in ipairs(members) do
+      redis.call('RENAME', staged_prefix .. m, live_prefix .. m)
+    end
+    redis.call('RENAME', KEYS[4], KEYS[3])
+  else
+    redis.call('DEL', KEYS[3])
+  end
+  -- Install the committed clean status.
+  local now = now_ms()
+  local status_expires = now + 60000
+  local index_expires = tonumber(redis.call('HGET', staged, 'index_expires_at_ms')) or status_expires
+  redis.call('HSET', KEYS[1],
+    'state', 'clean',
+    'clean_commit', '1',
+    'registration_uid', registration_uid,
+    'expected_revision', revision,
+    'holder_pod_uid', holder_pod_uid,
+    'holder_session_uid', holder_session_uid,
+    'lease_epoch', lease_epoch,
+    'fence', fence,
+    'generation', generation,
+    'repair_token', token,
+    'empty_verified', redis.call('HGET', staged, 'empty_verified'),
+    'observed_count', expected_count,
+    'cleanup_count', cleanup_count,
+    'repair_reason', '',
+    'status_expires_at_ms', status_expires,
+    'index_expires_at_ms', index_expires)
+  redis.call('PEXPIREAT', KEYS[1], status_expires)
+  redis.call('DEL', staged)
+  return {'ok', tostring(cleanup_count), tostring(revision), tostring(generation), tostring(fence), token}
+end
+
+-- read_verified serves ONLY the committed clean proof. KEYS[1]=committed
+-- status, KEYS[2]=live index, KEYS[3]=live record. Staged state is invisible.
 if op == 'read_verified' then
   local registration_uid = ARGV[2]
   local revision = ARGV[3]
@@ -268,6 +313,7 @@ if op == 'read_verified' then
   local fence = ARGV[7]
   local generation = ARGV[8]
   local public_id = ARGV[9]
+  local status = KEYS[1]
   if key_type(status) == 'none' then
     return {'missing'}
   end
@@ -277,7 +323,7 @@ if op == 'read_verified' then
   if redis.call('HGET', status, 'state') ~= 'clean' or redis.call('HGET', status, 'clean_commit') ~= '1' then
     return {'missing'}
   end
-  if not read_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation) then
+  if not read_matches(status, registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation) then
     return {'missing'}
   end
   local record = KEYS[3]
@@ -319,69 +365,43 @@ if op == 'read_verified' then
   return {'ok', label_state, tostring(now), tostring(expires), tostring(record_pttl), tostring(status_expires), tostring(status_pttl), tostring(index_expires), tostring(index_pttl), tostring(generation), tostring(fence), tostring(revision)}
 end
 
-if op == 'commit' then
-  local registration_uid = ARGV[2]
-  local revision = ARGV[3]
-  local holder_pod_uid = ARGV[4]
-  local holder_session_uid = ARGV[5]
-  local lease_epoch = ARGV[6]
-  local fence = ARGV[7]
-  local generation = ARGV[8]
-  local token = ARGV[9]
-  local expected_count = tonumber(ARGV[10])
-  local observed_count = tonumber(ARGV[11])
-  local cleanup_count = tonumber(ARGV[12])
-  if not full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
+-- mark_uncertain abandons a staged repair so the next begin can replace it.
+if op == 'mark_uncertain' then
+  local staged = KEYS[1]
+  if redis.call('HGET', staged, 'state') ~= 'repairing' or
+     not full_matches(staged, ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
     return redis.error_reply('STALE_FENCE')
   end
-  if redis.call('HGET', status, 'state') ~= 'repairing' or expected_count == nil or observed_count == nil or cleanup_count == nil or expected_count ~= observed_count or cleanup_count < 0 then
-    return redis.error_reply('COMMIT_REJECTED')
-  end
-  for i = 13, 16 do
-    if ARGV[i] ~= '1' then
-      return redis.error_reply('COMMIT_REJECTED')
-    end
-  end
-  if ARGV[19] ~= '1' then return redis.error_reply('COMMIT_REJECTED') end
-  if expected_count == 0 then
-    if ARGV[20] ~= '1' or ARGV[17] ~= '0' or ARGV[18] ~= '0' or redis.call('HGET', status, 'empty_verified') ~= '1' then
-      return redis.error_reply('COMMIT_REJECTED')
-    end
-    local index_type = key_type(KEYS[2])
-    if index_type ~= 'none' and index_type ~= 'zset' then return redis.error_reply('WRONG_TYPE_ZSET') end
-    if index_type == 'zset' and redis.call('ZCARD', KEYS[2]) ~= 0 then return redis.error_reply('RESIDUAL_MEMBERS') end
-  elseif ARGV[17] ~= '1' or ARGV[18] ~= '1' or ARGV[20] == '1' then
-    return redis.error_reply('COMMIT_REJECTED')
-  end
-  local now = now_ms()
-  local status_expires = tonumber(redis.call('HGET', status, 'status_expires_at_ms'))
-  local status_pttl = redis.call('PTTL', status)
-  if not valid_ttl(now, status_expires, status_pttl) then
-    return redis.error_reply('TTL_MISMATCH')
-  end
-  redis.call('HSET', status,
-    'state', 'clean',
-    'clean_commit', '1',
-    'observed_count', observed_count,
-    'cleanup_count', cleanup_count,
-    'repair_reason', '')
-  return {'ok', tostring(revision), tostring(generation), tostring(fence), token}
+  redis.call('HSET', staged, 'state', 'uncertain', 'clean_commit', '0', 'repair_reason', ARGV[11], 'failure_code', ARGV[10])
+  return {'ok'}
 end
 
-if op == 'mark_uncertain' then
-  local registration_uid = ARGV[2]
-  local revision = ARGV[3]
-  local holder_pod_uid = ARGV[4]
-  local holder_session_uid = ARGV[5]
-  local lease_epoch = ARGV[6]
-  local fence = ARGV[7]
-  local generation = ARGV[8]
-  local token = ARGV[9]
-  if not full_matches(registration_uid, revision, holder_pod_uid, holder_session_uid, lease_epoch, fence, generation, token) then
+-- abandon_staging lets the current fence holder abandon an in-flight staged
+-- repair whose token was lost (ambiguous begin reply). Only the complete
+-- writer fence and registration identity are required; the unknown
+-- generation/token are deliberately not validated. A non-repairing or absent
+-- staging is a no-op.
+if op == 'abandon_staging' then
+  local staged = KEYS[1]
+  if key_type(staged) == 'none' then
+    return {'ok', 'absent'}
+  end
+  if key_type(staged) ~= 'hash' then
+    return redis.error_reply('WRONG_TYPE_HASH')
+  end
+  if redis.call('HGET', staged, 'state') ~= 'repairing' then
+    return {'ok', 'not_repairing'}
+  end
+  if redis.call('HGET', staged, 'registration_uid') ~= tostring(ARGV[2]) or
+     redis.call('HGET', staged, 'expected_revision') ~= tostring(ARGV[3]) or
+     redis.call('HGET', staged, 'holder_pod_uid') ~= tostring(ARGV[4]) or
+     redis.call('HGET', staged, 'holder_session_uid') ~= tostring(ARGV[5]) or
+     redis.call('HGET', staged, 'lease_epoch') ~= tostring(ARGV[6]) or
+     redis.call('HGET', staged, 'fence') ~= tostring(ARGV[7]) then
     return redis.error_reply('STALE_FENCE')
   end
-  redis.call('HSET', status, 'state', 'uncertain', 'clean_commit', '0', 'repair_reason', ARGV[11], 'failure_code', ARGV[10])
-  return {'ok'}
+  redis.call('HSET', staged, 'state', 'uncertain', 'clean_commit', '0', 'repair_reason', 'abandoned by writer after ambiguous begin', 'failure_code', 'ambiguous_write')
+  return {'ok', 'abandoned'}
 end
 
 return redis.error_reply('UNKNOWN_OPERATION')

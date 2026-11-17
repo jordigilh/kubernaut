@@ -331,9 +331,12 @@ type RepairCommitResult struct {
 	ProvenGeneration         uint64
 	ProvenWriterFence        WriterFence
 	Token                    RepairToken
-	Committed                bool
-	CleanCommit              bool
-	Failure                  RepairFailure
+	// CleanupCount reports live members removed by the atomic commit swap
+	// (DD-FLEET-016 A2); the staged phase never mutates the live keyspace.
+	CleanupCount int
+	Committed    bool
+	CleanCommit  bool
+	Failure      RepairFailure
 }
 
 type FencedReadRequest struct {

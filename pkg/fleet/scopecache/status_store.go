@@ -40,8 +40,6 @@ type ValkeyStatusStore struct {
 	scripts *ScriptManager
 }
 
-const maxRepairIndexMembers = 10000
-
 // NewValkeyStatusStore creates a status store backed by Valkey.
 func NewValkeyStatusStore(client *redis.Client) (*ValkeyStatusStore, error) {
 	scripts, err := NewScriptManager(client)
@@ -86,12 +84,15 @@ func (s *ValkeyStatusStore) Close() error {
 	return s.client.Close()
 }
 
+// BeginRepair stages a new repair generation. The committed status is not
+// mutated; an in-flight repair is detected via the staged status's existence
+// (DD-FLEET-016 A2) and self-clears through its TTL when abandoned.
 func (s *ValkeyStatusStore) BeginRepair(ctx context.Context, request BeginRepairRequest) (RepairStartResult, error) {
 	if err := validateBeginRepairRequest(request); err != nil {
 		return RepairStartResult{}, repairFailureError(RepairFailureInvalidRequest, err, false)
 	}
 	token := RepairToken{Value: uuid.NewString()}
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition)},
 		"begin", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, token.Value)
@@ -122,7 +123,7 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 		return "", repairReconcileProof{}, repairFailureError(RepairFailureRecordInvalid, err, false)
 	}
 	items, err := s.evalMutation(ctx,
-		[]string{statusKey(request.Partition), recordKey(request.Partition, publicID), indexKey(request.Partition)},
+		[]string{stagedStatusKey(request.Partition), stagedRecordKey(request.Partition, publicID), stagedIndexKey(request.Partition)},
 		"repair_reconcile", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
@@ -139,64 +140,26 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 	return publicID, proof, nil
 }
 
-func (s *ValkeyStatusStore) cleanupRepairMembers(ctx context.Context, request RepairRequest, seen map[string]struct{}) (int, error) {
-	cursor := 0
-	allMembers := make([]string, 0)
-	for {
-		items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), indexKey(request.Partition)},
-			"repair_list_members", request.RegistrationUID, request.ExpectedRegistryRevision,
-			request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
-			request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
-			request.Token.Value, cursor)
-		if err != nil {
-			return 0, err
-		}
-		next, members, err := parseRepairMembers(items)
-		if err != nil {
-			return 0, repairFailureError(RepairFailureIndexInvalid, err, false)
-		}
-		allMembers = append(allMembers, members...)
-		if next < 0 {
-			break
-		}
-		if next <= cursor {
-			return 0, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("repair member cursor did not advance"), false)
-		}
-		cursor = next
+// AbandonStaging lets the current writer fence abandon an in-flight staged
+// repair whose token was lost (ambiguous begin reply). Without this, a
+// lost-reply begin would stall repairs until the staged TTL expires.
+func (s *ValkeyStatusStore) AbandonStaging(ctx context.Context, partition PartitionStateKey, registrationUID string, revision uint64, fence WriterFence) error {
+	if err := partition.Validate(); err != nil {
+		return repairFailureError(RepairFailureInvalidRequest, err, false)
 	}
-
-	cleanupCount := 0
-	for _, member := range allMembers {
-		if _, exists := seen[member]; exists {
-			continue
-		}
-		count, err := s.cleanupRepairMember(ctx, request, member)
-		if err != nil {
-			return cleanupCount, err
-		}
-		cleanupCount += count
+	if err := fence.Validate(); err != nil {
+		return repairFailureError(RepairFailureInvalidRequest, err, false)
 	}
-	return cleanupCount, nil
-}
-
-func (s *ValkeyStatusStore) cleanupRepairMember(ctx context.Context, request RepairRequest, member string) (int, error) {
-	items, err := s.evalMutation(ctx,
-		[]string{statusKey(request.Partition), indexKey(request.Partition), recordKey(request.Partition, member)},
-		"cleanup_member", request.RegistrationUID, request.ExpectedRegistryRevision,
-		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
-		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
-		request.Token.Value, member)
+	items, err := s.evalMutation(ctx, []string{stagedStatusKey(partition)},
+		"abandon_staging", registrationUID, revision,
+		fence.HolderPodUID, fence.HolderSessionUID, fence.LeaseEpoch, fence.Fence)
 	if err != nil {
-		return 0, err
+		return classifyRepairError(err)
 	}
-	count, err := scriptNativeInt(items, 1)
-	if err != nil {
-		return 0, repairFailureError(RepairFailureIndexInvalid, err, false)
+	if len(items) == 0 || scriptString(items, 0) != "ok" {
+		return repairFailureError(RepairFailureAmbiguousWrite, fmt.Errorf("abandon staging was not acknowledged"), false)
 	}
-	if count < 0 || count > 1 {
-		return 0, repairFailureError(RepairFailureIndexInvalid, fmt.Errorf("cleanup count is out of bounds"), false)
-	}
-	return count, nil
+	return nil
 }
 
 func (s *ValkeyStatusStore) MarkRepairUncertain(ctx context.Context, start RepairStartResult, failure RepairFailure) error {
@@ -206,7 +169,7 @@ func (s *ValkeyStatusStore) MarkRepairUncertain(ctx context.Context, start Repai
 	if failure.Code == RepairFailureNone {
 		return repairFailureError(RepairFailureInvalidRequest, fmt.Errorf("repair failure code is required"), false)
 	}
-	items, err := s.evalMutation(ctx, []string{statusKey(start.Partition)},
+	items, err := s.evalMutation(ctx, []string{stagedStatusKey(start.Partition)},
 		"mark_uncertain", start.RegistrationUID, start.ExpectedRegistryRevision,
 		start.WriterFence.HolderPodUID, start.WriterFence.HolderSessionUID,
 		start.WriterFence.LeaseEpoch, start.WriterFence.Fence, start.Generation,
@@ -260,11 +223,9 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 		result.StatusTTL = proof.statusTTL
 	}
 
-	cleanupCount, err := s.cleanupRepairMembers(ctx, request, seen)
-	if err != nil {
-		return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
-	}
-	result.CleanupCount = cleanupCount
+	// DD-FLEET-016 A2: stale-member cleanup happens atomically inside the
+	// commit swap; the staged phase never mutates the live keyspace.
+	result.CleanupCount = 0
 	if result.ExpectedCount == 0 {
 		proof, err := s.finalizeEmptyRepair(ctx, request)
 		if err != nil {
@@ -287,7 +248,7 @@ func hasCleanRepairProof(result RepairResult) bool {
 }
 
 func (s *ValkeyStatusStore) finalizeEmptyRepair(ctx context.Context, request RepairRequest) (TTLPTTLValidation, error) {
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), indexKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{stagedStatusKey(request.Partition), stagedIndexKey(request.Partition)},
 		"repair_finalize_empty", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation, request.Token.Value)
@@ -330,12 +291,17 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 		result.Failure = RepairFailure{Code: RepairFailureCommitRejected, Message: err.Error()}
 		return result, repairFailureError(RepairFailureCommitRejected, err, false)
 	}
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), indexKey(request.Partition)},
+	// DD-FLEET-016 A2: the commit is an atomic swap of the staged keyspace
+	// over the live keyspace. ARGV[10]=expected count, [11]=live record
+	// prefix, [12]=staged record prefix, [13..]=proof flags per the Lua
+	// contract.
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), indexKey(request.Partition), stagedIndexKey(request.Partition)},
 		"commit", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
-		request.Token.Value, request.ExpectedCount, request.Proof.ObservedCount,
-		request.Proof.CleanupCount, boolArg(request.Proof.RecordValid), boolArg(request.Proof.IndexValid),
+		request.Token.Value, request.ExpectedCount,
+		recordKeyPrefix(request.Partition), stagedRecordKeyPrefix(request.Partition),
+		boolArg(request.Proof.RecordValid), boolArg(request.Proof.IndexValid),
 		boolArg(request.Proof.StatusValid), boolArg(request.Proof.RecordIndexChecksValid),
 		boolArg(request.Proof.RecordTTL.Valid), boolArg(request.Proof.IndexTTL.Valid),
 		boolArg(request.Proof.StatusTTL.Valid), boolArg(request.Proof.EmptyPartitionVerified))
@@ -346,6 +312,11 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 	if len(items) == 0 || scriptString(items, 0) != "ok" {
 		result.Failure = RepairFailure{Code: RepairFailureCommitRejected, Message: "commit was not acknowledged"}
 		return result, repairFailureError(RepairFailureCommitRejected, fmt.Errorf("commit was not acknowledged"), false)
+	}
+	if len(items) > 1 {
+		if cleanupCount, err := scriptNativeInt(items, 1); err == nil && cleanupCount >= 0 {
+			result.CleanupCount = cleanupCount
+		}
 	}
 	result.ProvenRegistryRevision = request.Proof.ProvenRegistryRevision
 	result.Committed = true
@@ -499,7 +470,29 @@ func indexKey(partition PartitionStateKey) string {
 }
 
 func recordKey(partition PartitionStateKey, publicID string) string {
-	return partitionPrefix(partition) + ":record:" + publicID
+	return recordKeyPrefix(partition) + publicID
+}
+
+func recordKeyPrefix(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":record:"
+}
+
+// Staged keys carry the in-flight repair generation (DD-FLEET-016 A2). Their
+// TTL bounds the lifetime of an abandoned repair.
+func stagedStatusKey(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":status:staged"
+}
+
+func stagedIndexKey(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":index:staged"
+}
+
+func stagedRecordKey(partition PartitionStateKey, publicID string) string {
+	return stagedRecordKeyPrefix(partition) + publicID
+}
+
+func stagedRecordKeyPrefix(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":record:staged:"
 }
 
 func partitionPrefix(partition PartitionStateKey) string {
@@ -616,28 +609,6 @@ func parseRepairReconcile(items []interface{}) (repairReconcileProof, error) {
 		indexTTL:         ttlValidation(now, indexExpires, indexPTTL),
 		statusTTL:        ttlValidation(now, statusExpires, statusPTTL),
 	}, nil
-}
-
-func parseRepairMembers(items []interface{}) (int, []string, error) {
-	if len(items) == 0 {
-		return -1, nil, fmt.Errorf("empty repair member response")
-	}
-	next, err := scriptNativeInt(items, 0)
-	if err != nil {
-		return -1, nil, fmt.Errorf("invalid repair member cursor: %w", err)
-	}
-	if next < -1 || next > maxRepairIndexMembers {
-		return -1, nil, fmt.Errorf("repair member cursor is out of bounds")
-	}
-	members := make([]string, 0, len(items)-1)
-	for index := 1; index < len(items); index++ {
-		member := scriptString(items, index)
-		if member == "" {
-			return -1, nil, fmt.Errorf("empty repair index member")
-		}
-		members = append(members, member)
-	}
-	return next, members, nil
 }
 
 func ttlValidation(serverNow, expiresAt, pttl int64) TTLPTTLValidation {

@@ -152,6 +152,7 @@ type CycleStore interface {
 type StatusStore interface {
 	BeginRepair(context.Context, BeginRepairRequest) (RepairStartResult, error)
 	MarkRepairUncertain(context.Context, RepairStartResult, RepairFailure) error
+	AbandonStaging(ctx context.Context, partition PartitionStateKey, registrationUID string, revision uint64, fence WriterFence) error
 	Repair(context.Context, RepairRequest) (RepairResult, error)
 	CommitRepair(context.Context, RepairCommitRequest) (RepairCommitResult, error)
 	ReadVerified(context.Context, FencedReadRequest) (FencedReadResult, error)

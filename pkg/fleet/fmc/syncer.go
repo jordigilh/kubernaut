@@ -376,11 +376,11 @@ func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.Partition
 			WriterFence:              fence,
 		})
 		if beginErr != nil {
-			// Begin may have executed even though its reply was lost. Retire
-			// the previous clean proof while still holding the registration
-			// guard, before another guarded begin/clean publication can run.
-			if invalidateErr := s.readiness.InvalidatePartition(partition, "begin repair was not acknowledged"); invalidateErr != nil {
-				s.logger.Error(invalidateErr, "Failed to invalidate unacknowledged repair", "cluster", cluster.ID)
+			// DD-FLEET-016 A2: a failed or unacknowledged begin strands only
+			// the staged status. Abandon it fence-scoped so the next cycle can
+			// begin immediately; the committed clean proof stays readable.
+			if abandonErr := s.statusStore.AbandonStaging(ctx, partition, cluster.RegistrationUID, snapshot.Revision, fence); abandonErr != nil {
+				s.logger.Error(abandonErr, "failed to abandon unacknowledged repair staging", "cluster", cluster.ID)
 			}
 			return beginErr
 		}
@@ -417,8 +417,9 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		if committed {
 			return
 		}
+		// DD-FLEET-016 A2: an uncommitted repair only abandons the staging;
+		// the committed proof and readiness remain available to readers.
 		s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureSourceIncomplete, Message: "repair did not commit"})
-		_ = s.readiness.InvalidatePartition(partition, "repair did not commit")
 	}()
 
 	observations, err := s.collectRepairObservations(ctx, cluster)
