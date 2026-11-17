@@ -2,20 +2,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -30,6 +37,66 @@ import (
 )
 
 var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func() {
+	DescribeTable("IT-AF-ROUTE-010 / IT-AF-PRES-007 [BR-SCOPE-001]: production dependency factory, action and exact inventory retain enum authority",
+		func(state scope.ScopeState, source scope.ScopeSource, status int, expected inventory.State) {
+			resource := inventory.Resource{ClusterID: "hub", Version: "v1", Kind: "Pod", Namespace: "payments", Name: "api",
+				Scope: inventory.Scope{Included: true, ResourceLabel: inventory.LabelTrue, NamespaceLabel: inventory.LabelAbsent, Source: inventory.ScopeSourceResourceLabel}}
+			resource.ID = inventory.CanonicalResourceID(resource.Identity())
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				defer GinkgoRecover()
+				Expect(request.Header.Get("Authorization")).To(Equal("Bearer scope-test"))
+				w.Header().Set("Content-Type", "application/json")
+				if request.URL.Path == fmc.ScopeCheckPath {
+					w.WriteHeader(status)
+					Expect(json.NewEncoder(w).Encode(scope.ScopeResult{State: state, Provenance: source})).To(Succeed())
+					return
+				}
+				Expect(json.NewEncoder(w).Encode(resource)).To(Succeed())
+			}))
+			defer server.Close()
+			token := filepath.Join(GinkgoT().TempDir(), "token")
+			Expect(os.WriteFile(token, []byte("scope-test"), 0o600)).To(Succeed())
+			cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendFMC, Endpoint: server.URL, TokenPath: token}}
+			scheme := runtime.NewScheme()
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			deps := &backendDeps{k8sTypedClient: crfake.NewClientBuilder().WithScheme(scheme).Build()}
+			Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
+			Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
+			if expected != inventory.StateSuccess {
+				result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: deps.k8sTypedClient, ControllerNS: "kubernaut-system", ScopeChecker: deps.ScopeChecker},
+					&tools.CreateRRArgs{ClusterID: "hub", APIVersion: "v1", Kind: "Pod", Namespace: "payments", Name: "api", Description: "scope contract"}, "alice")
+				Expect(err).To(HaveOccurred())
+				Expect(result.RRID).To(BeEmpty())
+				if state == scope.ScopeVerifiedUnmanaged {
+					Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+				} else {
+					Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
+					Expect(err.Error()).NotTo(ContainSubstring("Add label"))
+					Expect(err.Error()).NotTo(ContainSubstring("not managed"))
+				}
+				var requests remediationv1.RemediationRequestList
+				Expect(deps.k8sTypedClient.List(context.Background(), &requests)).To(Succeed())
+				Expect(requests.Items).To(BeEmpty())
+			}
+			service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{RemoteInventory: deps.RemoteInventory, ScopeChecker: deps.ScopeChecker, Authorizer: projectionAllow{}})
+			Expect(err).NotTo(HaveOccurred())
+			result, err := service.GetInventory(context.Background(), &auth.UserIdentity{Username: "alice"}, inventory.Filters{ClusterID: "hub"}, resource.ID)
+			if expected == inventory.StateSuccess {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ID).To(Equal(resource.ID))
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(policyread.StateOf(err)).To(Equal(expected))
+				Expect(result).To(Equal(inventory.Resource{}))
+			}
+		},
+		Entry("verified managed", scope.ScopeVerifiedManaged, scope.ScopeSourceResourceLabel, 200, inventory.StateSuccess),
+		Entry("only verified unmanaged is NotFound", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceResourceLabel, 200, inventory.StateNotFound),
+		Entry("unavailable has no row", scope.ScopeUnavailable, scope.ScopeSourceUnavailable, 503, inventory.StateUnavailable),
+		Entry("unsupported has no row", scope.ScopeUnsupported, scope.ScopeSourceUnavailable, 422, inventory.StateUnavailable),
+		Entry("invalid has no row", scope.ScopeInvalid, scope.ScopeSourceUnavailable, 422, inventory.StateUnavailable),
+		Entry("unauthorized has no row", scope.ScopeUnauthorized, scope.ScopeSourceUnavailable, 403, inventory.StateUnavailable),
+	)
 	DescribeTable("IT-AF-2593-REGISTRY-003 [BR-SCOPE-001]: matching managed registry and ACM identity permits scope evaluation",
 		func(gatewayType registry.MCPGatewayType, gvr schema.GroupVersionResource, apiVersion, kind, listKind string) {
 			registration := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -50,9 +117,9 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 			deps := &backendDeps{FleetClusterRegistry: clusterRegistry, k8sTypedClient: crfake.NewClientBuilder().Build()}
 			cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}}
 			Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
-			managed, err := deps.ScopeChecker.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "local-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+			managed, err := deps.ScopeChecker.Check(context.Background(), scope.ResourceIdentity{ClusterID: "local-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		},
 		Entry("Envoy AI Gateway", registry.GatewayEAIGW, registry.BackendGVR, "gateway.envoyproxy.io/v1alpha1", "Backend", "BackendList"),
 		Entry("Kuadrant", registry.GatewayKuadrant, registry.MCPServerRegistrationGVR, "mcp.kuadrant.io/v1", "MCPServerRegistration", "MCPServerRegistrationList"),
@@ -95,10 +162,10 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: server.URL}}
 		Expect(buildScopeCheckerDeps(cfg, deps, logr.Discard())).To(Succeed())
 		target := scope.ResourceIdentity{ClusterID: "other-cluster", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"}
-		managed, err := deps.ScopeChecker.IsManagedResource(context.Background(), target)
-		Expect(managed).To(BeFalse(), "an unregistered cluster is not an authorized ACM target")
-		Expect(err).To(HaveOccurred(), "canonical checking must explain the unregistered target")
-		Expect(managed).To(BeFalse())
+		managed, err := deps.ScopeChecker.Check(context.Background(), target)
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable), "an unregistered cluster is not an observed unmanaged target")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
 	It("IT-AF-2584-ACM-FAIL-CLOSED [BR-SECURITY-016]: production ACM wiring returns unavailable for Console inventory", func() {
 		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: "https://acm.example", TokenPath: "/unused/token"}}

@@ -18,8 +18,12 @@ package gateway_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +31,7 @@ import (
 
 	"github.com/go-logr/logr"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	gatewaypkg "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -59,7 +64,7 @@ import (
 // ========================================
 
 // mockScopeChecker is a configurable mock for the ScopeChecker interface.
-// It allows tests to control the IsManagedResource return value.
+// It allows tests to control the Check return value.
 type mockScopeChecker struct {
 	managed    bool
 	err        error
@@ -73,14 +78,14 @@ type mockScopeChecker struct {
 	}
 }
 
-func (m *mockScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (m *mockScopeChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	m.callCount++
 	m.lastParams.namespace = resource.Namespace
 	m.lastParams.group = resource.Group
 	m.lastParams.version = resource.Version
 	m.lastParams.kind = resource.Kind
 	m.lastParams.name = resource.Name
-	return m.managed, m.err
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[m.managed], Provenance: scope.ScopeSourceResourceLabel}, m.err
 }
 
 // newTestGatewayServer creates a Gateway server for unit tests with the given scope checker.
@@ -188,6 +193,50 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		// Create fake K8s client with test namespace
 		k8sClient = newTestK8sClient(testNamespace)
 	})
+
+	DescribeTable("IT-GW-PRES-004 [BR-SCOPE-002]: constructor/factory/HTTP scope controls actual RR creation",
+		func(state scope.ScopeState, provenance scope.ScopeSource, status int, expectedStatus string, failed bool) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				defer GinkgoRecover()
+				Expect(request.Header.Get("Authorization")).To(Equal("Bearer scope-test"))
+				Expect(request.URL.Query().Get("cluster")).To(Equal("hub"))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				Expect(json.NewEncoder(w).Encode(scope.ScopeResult{State: state, Provenance: provenance})).To(Succeed())
+			}))
+			defer backend.Close()
+			token := filepath.Join(GinkgoT().TempDir(), "token")
+			Expect(os.WriteFile(token, []byte("scope-test"), 0o600)).To(Succeed())
+			checker, err := fleet.NewScopeChecker(scope.NewManager(k8sClient), fleet.FleetConfig{Enabled: true, Backend: fleet.BackendFMC, Endpoint: backend.URL, TokenPath: token}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+			server, err := newTestGatewayServer(k8sClient, metricsInstance, checker)
+			Expect(err).NotTo(HaveOccurred())
+			signal, err := parsePrometheusSignal(ctx, testNamespace, "ScopeOutcome", "api")
+			Expect(err).NotTo(HaveOccurred())
+			signal.ClusterID = "hub"
+			signal.Resource.APIVersion = "v1"
+			response, err := server.ProcessSignal(ctx, signal)
+			if failed {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(response.Status).To(Equal(expectedStatus))
+			}
+			var requests remediationv1alpha1.RemediationRequestList
+			Expect(k8sClient.List(ctx, &requests)).To(Succeed())
+			if state == scope.ScopeVerifiedManaged {
+				Expect(requests.Items).To(HaveLen(1))
+			} else {
+				Expect(requests.Items).To(BeEmpty())
+			}
+		},
+		Entry("only verified managed creates", scope.ScopeVerifiedManaged, scope.ScopeSourceResourceLabel, 200, string(gatewaypkg.StatusCreated), false),
+		Entry("verified unmanaged cleanly rejects", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceResourceLabel, 200, string(gatewaypkg.StatusRejected), false),
+		Entry("unavailable fails scope", scope.ScopeUnavailable, scope.ScopeSourceUnavailable, 503, "", true),
+		Entry("unsupported fails scope", scope.ScopeUnsupported, scope.ScopeSourceUnavailable, 422, "", true),
+		Entry("invalid fails scope", scope.ScopeInvalid, scope.ScopeSourceUnavailable, 422, "", true),
+		Entry("unauthorized fails scope", scope.ScopeUnauthorized, scope.ScopeSourceUnavailable, 403, "", true),
+	)
 
 	// ========================================
 	// UT-GW-002-001: Reject signal from unmanaged namespace
@@ -398,10 +447,10 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		By("4. Verify scope checker error is propagated (not a rejection)")
 		Expect(err).To(HaveOccurred(),
 			"BR-SCOPE-002: Scope checker errors must be propagated as errors, not rejections")
-		Expect(err.Error()).To(ContainSubstring("scope validation failed"),
+		Expect(err.Error()).To(ContainSubstring("scope validation unavailable"),
 			"BR-SCOPE-002: Error must include context about scope validation")
-		Expect(err.Error()).To(ContainSubstring("API unavailable"),
-			"BR-SCOPE-002: Error must wrap the original scope checker error")
+		Expect(err.Error()).NotTo(ContainSubstring("API unavailable"),
+			"BR-SCOPE-002: backend diagnostics stay in internal logs")
 		Expect(response).To(BeNil(),
 			"BR-SCOPE-002: No response should be returned on scope checker error")
 	})

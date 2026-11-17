@@ -41,6 +41,7 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/jordigilh/kubernaut/internal/version"
@@ -89,13 +90,21 @@ func (d *fmcDeps) close() {
 	if d.mcpReadiness != nil {
 		d.mcpReadiness.Stop()
 	}
-	d.clusterRegistry.Stop()
-	_ = d.cacheReader.Close()
-	_ = d.writer.Close()
+	if d.clusterRegistry != nil {
+		d.clusterRegistry.Stop()
+	}
+	if d.cacheReader != nil {
+		_ = d.cacheReader.Close()
+	}
+	if d.writer != nil {
+		_ = d.writer.Close()
+	}
 	if d.statusStore != nil {
 		_ = d.statusStore.Close()
 	}
-	_ = d.mcpClient.Close()
+	if d.mcpClient != nil {
+		_ = d.mcpClient.Close()
+	}
 }
 
 func (d *fmcDeps) Ready() bool {
@@ -179,7 +188,11 @@ func buildFMCK8sClients(logger logr.Logger) (dynamic.Interface, kubernetes.Inter
 	k8sCfg.QPS = 1000.0
 	k8sCfg.Burst = 2000
 
-	dynClient, err := dynamic.NewForConfig(k8sCfg)
+	// DD-FLEET-015: LIST/establishment are bounded by the registry owner.
+	// An HTTP client-wide 30s timeout would also truncate established WATCHes.
+	watchCfg := rest.CopyConfig(k8sCfg)
+	watchCfg.Timeout = 0
+	dynClient, err := dynamic.NewForConfig(watchCfg)
 	if err != nil {
 		logger.Error(err, "Failed to create dynamic Kubernetes client")
 		os.Exit(1)
@@ -254,27 +267,29 @@ func buildFMCRegistryDependencies(
 	reg *prometheus.Registry,
 	statusStore *scopecache.ValkeyStatusStore,
 	logger logr.Logger,
-) (registry.ClusterRegistry, registry.CurrentRegistrationGuard, *scopecache.FMCReadinessSnapshot) {
+) (registry.ClusterRegistry, registry.CurrentRegistrationGuard, *scopecache.FMCReadinessSnapshot, error) {
 	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.MCPGateway.GatewayType), dynClient, registry.RegistryConfig{
 		Namespace: cfg.MCPGateway.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
 	if err != nil {
 		logger.Error(err, "Failed to create cluster registry", "gatewayType", cfg.MCPGateway.GatewayType)
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("create cluster registry: %w", err)
 	}
 	registrationGuard, ok := clusterRegistry.(registry.CurrentRegistrationGuard)
 	if !ok {
-		logger.Error(fmt.Errorf("cluster registry does not provide registration guard"), "Failed to create FMC registration guard")
-		os.Exit(1)
+		clusterRegistry.Stop()
+		return nil, nil, nil, fmt.Errorf("cluster registry does not provide registration guard")
 	}
 	if err := clusterRegistry.Start(ctx); err != nil {
 		logger.Error(err, "Failed to start cluster registry")
-		os.Exit(1)
+		clusterRegistry.Stop()
+		return nil, nil, nil, fmt.Errorf("start cluster registry: %w", err)
 	}
 	readinessSnapshot, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
 	if err != nil {
 		logger.Error(err, "Failed to create FMC readiness snapshot")
-		os.Exit(1)
+		clusterRegistry.Stop()
+		return nil, nil, nil, err
 	}
 	if err := readinessSnapshot.PublishGlobal(scopecache.FMCGlobalReadiness{
 		RegistryInitialSync:      clusterRegistry.Ready(),
@@ -288,9 +303,10 @@ func buildFMCRegistryDependencies(
 		},
 	}); err != nil {
 		logger.Error(err, "Failed to initialize FMC readiness snapshot")
-		os.Exit(1)
+		clusterRegistry.Stop()
+		return nil, nil, nil, err
 	}
-	return clusterRegistry, registrationGuard, readinessSnapshot
+	return clusterRegistry, registrationGuard, readinessSnapshot, nil
 }
 
 func buildFMCWriterCoordinator() scopecache.LeaseCoordinator {
@@ -331,33 +347,34 @@ func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Log
 	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics)
 }
 
-func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
+func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*fmcDeps, error) {
 	reg := prometheus.NewRegistry()
 	metrics := fmc.NewMetrics(reg)
 	mcpClient, mcpReadiness := buildFMCMCPDependencies(ctx, cfg, logger)
 	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
 	writer, cacheReader, statusStore := buildFMCValkeyDependencies(ctx, cfg, logger)
-	clusterRegistry, registrationGuard, readinessSnapshot := buildFMCRegistryDependencies(ctx, cfg, dynClient, reg, statusStore, logger)
-
 	writerCoordinator := buildFMCWriterCoordinator()
 
 	deps := &fmcDeps{
-		reg:               reg,
-		metrics:           metrics,
-		mcpClient:         mcpClient,
-		mcpReadiness:      mcpReadiness,
-		writer:            writer,
-		cacheReader:       cacheReader,
-		statusStore:       statusStore,
-		lease:             writerCoordinator,
-		readiness:         readinessSnapshot,
-		clusterRegistry:   clusterRegistry,
-		registrationGuard: registrationGuard,
-		k8sClientset:      k8sClientset,
-		releaseNamespace:  releaseNamespace,
+		reg:              reg,
+		metrics:          metrics,
+		mcpClient:        mcpClient,
+		mcpReadiness:     mcpReadiness,
+		writer:           writer,
+		cacheReader:      cacheReader,
+		statusStore:      statusStore,
+		lease:            writerCoordinator,
+		k8sClientset:     k8sClientset,
+		releaseNamespace: releaseNamespace,
 	}
+	clusterRegistry, registrationGuard, readinessSnapshot, err := buildFMCRegistryDependencies(ctx, cfg, dynClient, reg, statusStore, logger)
+	if err != nil {
+		deps.close()
+		return nil, err
+	}
+	deps.clusterRegistry, deps.registrationGuard, deps.readiness = clusterRegistry, registrationGuard, readinessSnapshot
 	deps.syncer = buildFMCSyncer(cfg, deps, logger)
-	return deps
+	return deps, nil
 }
 
 // fmcServers bundles the federated scope-checking API server (ADR-068), the
@@ -550,7 +567,7 @@ func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Lo
 // client reports readiness, then blocks until a shutdown signal or a server
 // failure is observed, gracefully shutting down all three HTTP servers
 // before returning.
-func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan os.Signal, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
+func runFMCServers(ctx context.Context, cancel context.CancelFunc, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
 	if deps.mcpReadiness != nil {
 		deps.mcpReadiness.Start(ctx)
 		_ = deps.Ready()
@@ -592,7 +609,7 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 	logger.Info("FMC readiness evaluated", "ready", currentReady, "mcpConnected", deps.mcpClient.Ready(), "registryReady", deps.clusterRegistry.Ready(), "syncReady", deps.syncer.Ready())
 
 	select {
-	case <-sigCh:
+	case <-ctx.Done():
 		logger.Info("Received shutdown signal")
 	case err := <-apiErrors:
 		logger.Error(err, "API server failed")
@@ -653,11 +670,10 @@ func run() int {
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// DD-FLEET-015: shutdown must cancel synchronous dependency startup too,
+	// not wait until runFMCServers begins consuming signals.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	// DD-PLATFORM-009: answer kubelet's startupProbe/livenessProbe truthfully
 	// while wireFMCDependencies' blocking MCP Gateway connection
@@ -671,17 +687,24 @@ func run() int {
 		}
 	}()
 
-	deps := wireFMCDependencies(ctx, cfg, logger)
-	defer deps.close()
+	deps, dependencyErr := wireFMCDependencies(ctx, cfg, logger)
 
 	bootstrapShutdownCtx, bootstrapShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := bootstrapHealth.Shutdown(bootstrapShutdownCtx); err != nil {
 		logger.Error(err, "bootstrap health server shutdown failed")
 	}
 	bootstrapShutdownCancel()
+	if dependencyErr != nil {
+		if ctx.Err() != nil {
+			return 0
+		}
+		logger.Error(dependencyErr, "Failed to construct FMC dependencies")
+		return 1
+	}
+	defer deps.close()
 
 	servers := buildFMCServers(cfg, deps, logger)
 
-	runFMCServers(ctx, cancel, sigCh, deps, servers, logger)
+	runFMCServers(ctx, cancel, deps, servers, logger)
 	return 0
 }

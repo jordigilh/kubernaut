@@ -337,12 +337,18 @@ func (s *Service) authorizeInventoryTarget(ctx context.Context, user *auth.UserI
 	if s.dependencies.ScopeChecker == nil {
 		return stateError(inventory.StateUnavailable, errors.New("remote scope checker unavailable"))
 	}
-	managed, err := s.dependencies.ScopeChecker.IsManagedResource(ctx, resource.Identity())
+	result, err := s.dependencies.ScopeChecker.Check(ctx, resource.Identity())
 	if err != nil {
 		return stateError(inventory.StateUnavailable, err)
 	}
-	if !managed {
+	if err := result.Validate(); err != nil {
+		return stateError(inventory.StateUnavailable, err)
+	}
+	if result.State == scope.ScopeVerifiedUnmanaged {
 		return stateError(inventory.StateNotFound, inventory.ErrNotFound)
+	}
+	if result.State != scope.ScopeVerifiedManaged {
+		return stateError(inventory.StateUnavailable, inventory.ErrUnavailable)
 	}
 	return nil
 }

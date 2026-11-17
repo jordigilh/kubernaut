@@ -98,7 +98,7 @@ type Config struct {
 }
 
 // DefaultResourceKinds lists the resource kinds FMC syncs by default.
-// Namespace is included so scopecache.Client.IsManagedResource can fall back
+// Namespace is included so scopecache.Client.Check can fall back
 // to a namespace-level kubernaut.ai/managed label when a resource itself is
 // unlabeled -- mirroring pkg/shared/scope.Manager's 2-level hierarchy for the
 // local cluster (ADR-053, Issue #2311). Without it, fleet scope checks were

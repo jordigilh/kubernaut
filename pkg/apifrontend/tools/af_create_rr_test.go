@@ -1106,7 +1106,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "scope infra error", APIVersion: "apps/v1",
 			}, "carol")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue(),
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue(),
 				"a scope-infrastructure error must fail closed, not silently allow RR creation")
 		})
 
@@ -1122,7 +1122,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "no scope checker configured", APIVersion: "apps/v1",
 			}, "carol")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
 
 			var list remediationv1.RemediationRequestList
 			Expect(tc.List(context.Background(), &list, crclient.InNamespace(kubernautSystem))).To(Succeed())

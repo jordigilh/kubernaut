@@ -4,11 +4,32 @@
 
 **Test Plan Identifier**: TP-2593-v1.0
 **Feature**: Fail-closed FMC resource presence, typed scope states, and Valkey recovery
-**Version**: 1.5
+**Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: Singleton implementation amendment — local build/lint/unit validation and CI fixture/source alignment complete; final run `43748753311` passed the source, build, lint, unit, security, license, operator-artifact, integration, and CEL lanes, plus `WorkflowExecution`, `apifrontend-fleet`, and unaffected E2E lanes. Fleet failed after 46/48 specs (27 passed, 19 failed, 2 skipped); FMC EAIGW and FMC Kuadrant each failed setup before specs during a `0 of 1 updated replicas are available` rollout wait; downstream summary and merge gate failed. Final qualification remains pending, with no source or scope expansion authorized.
+**Status**: Approved owned-WATCH/enum-only source implemented locally; normal-main reconciliation and post-resolution gates pending. Remote AF amendment remains 0/4 qualified. Historical evidence below remains source-attributed, not qualification of the current candidate.
 **Branch**: `work/2593-fmc-presence`
+
+### Atomic local completion and reconciliation phase (2026-11-16)
+
+The user explicitly authorizes local candidate commits followed by a normal merge
+of actual refreshed main from a clean preserved tree. No push, image build,
+remote execution/cluster change, reset/stash/discard, rebase, force push or new
+branch/worktree is authorized. All seven 004 code paths remain byte-identical to
+the incoming source. The complete producer/consumer enum replacement, local
+presence semantics, strict public v1 codec, typed ACM observations and owned
+WATCH source are now present. Existing boolean fixtures and known deferred-target/
+empty-Fleet-attribution expectations are migrated; the TLS E2E now creates an
+explicitly opted-in namespaced Service without weakening CA/auth/TLS assertions.
+
+Pre-merge local build and affected package/command/factory race suites pass;
+the real repair-window IT passed after a second RED exposed the outer
+`ErrResourceNotManaged` prefix, which was replaced by `ErrScopeUnavailable` only
+for nonauthoritative states/errors. Current-source post-merge IT, build, repository
+compilation, full lint, make test, 26-contract and eleven-wiring assessment remain
+mandatory before local completion credit. The raw selected IT case count is not
+the 26-contract denominator. See REVIEW_FIX's atomic completion appendix for exact
+source-attributed results. No image/artifact reuse or remote pass is implied.
 
 > This repository-versioned file is the active bounded implementation and test authority
 > for #2593. It contains the approved fast-path boundary, approval-pending constraints,
@@ -18,6 +39,199 @@
 > activity, deployment, release, GitHub update, ACM Search qualification, or ACM Console
 > inventory. Functional scenarios, denominators, wiring rows, and public v1 boundaries are
 > unchanged.
+
+### Approved bounded AF contract amendment (2026-11-16)
+
+User approved: **Record corrected contracts, implement deterministic regression
+coverage, validate remotely alongside the already-approved enum migration**, with
+no added conditions. This amendment is recorded before its test edits. It does
+not authorize a functional image build, a production availability redesign, a
+push before remote qualification, or weaker parser/auth/grounding assertions.
+
+Authority: BR-SCOPE-001, BR-INTEGRATION-065, BR-FLEET-054 and
+BR-INTERACTIVE-004; ADR-068 runtime fail-closed and creation-vs-takeover clauses;
+DD-FLEET-012/013 begin-before-collection and guarded-clean protocol. Ordinary
+refresh currently enters repair; a still-live old record is not authorization.
+No uninterrupted-scope-availability requirement or old-generation serving
+protocol is introduced. DD-FLEET-015's unavailable-vs-unmanaged consumer migration
+remains approved but incomplete, and correcting its message alone does not prove
+an admitted successful investigation.
+
+Four critical contracts are assessed separately (required **4/4**); three amend
+existing AF scenarios, and only the repair-window scenario is additive. These
+are not extra credit toward the existing 26-contract/11-wiring denominator:
+
+| Contract | Proving scenario / file | Required outcome |
+|---|---|---|
+| Repair-window refusal | `IT-AF-FMC-2593-001`, extend `test/integration/fleetmetadatacache/fmc_broker_readiness_test.go` | A test-owned external MCP collection barrier holds a real Syncer after real BeginRepair. Real Valkey/readiness/FMC HTTP/client/AF handler refuse as unavailable, not unmanaged; no new RR, KA start or fabricated RCA. Release collection; require guarded clean and a separate verified managed check. |
+| Grounded structured success | Existing `E2E-AF-FLEET-2462-002`, extend `fleet_mode_e2e_test.go` | Before presentation, current request/context has genuine investigation content bound to its RR and session; HTTP 200/EOF or an error stream is insufficient. Retain >512 fixture, structured RCA/options, media/parser/auth assertions. |
+| Progressive admitted success | Existing `E2E-AF-FLEET-2462-003` | A single admitted investigation proves current binding and genuine early RCA/summary. Refusal is a failing success prerequisite, not silently accepted and not retried until green. |
+| Existing-RR lease contention | Existing `E2E-AF-FLEET-2462-004` plus existing selector support | Preserve first-caller action=start barrier; bind the current caller's RR/session, not retained warm state. Caller two uses that authoritative existing rr_id, not resource creation args. Require session_active and no synthetic findings; never accept arbitrary unavailable/conflict. Preserve separate resource-admission coverage. |
+
+Production wiring is unchanged: existing Syncer → external observed reader →
+Valkey/readiness → FMC handler/client → AF investigation entry point. The new IT
+extends the existing `IT-AF-PRES-007` action wiring proof; it does not add a new
+production component or count the same wiring twice. Only external MCP/KA/K8s/
+Valkey dependencies may be controlled. No production Ready flip, reservation API,
+sleep, broader retry, fence change or weakened grounding is permitted.
+
+TDD budget: RED 45 minutes (deterministic refusal and honest success prerequisites),
+GREEN remains part of the approved atomic enum batch; REFACTOR 15 minutes
+(consolidate test binding/stream checks where needed). Local build/lint/affected
+compilation follow. Remote first-failing cases and the complete affected AF suite
+must use an exact immutable candidate and retain hashes, images, seeds, process
+count and explicit fresh/warm journey state. Old CI application images can provide
+baseline/test-harness evidence only. If candidate application images are necessary,
+request a bounded functional-image exception **before building**; the prior single
+logging-only exception is consumed. Keep the isolated cluster live.
+
+Initial status: **0/4 newly qualified contracts**; no new RED/GREEN result or exact
+candidate remote pass yet. The original CI 002/004 exclusive RCA remains **85%**;
+the nine later same-request repairing rejections remain **98%**. The latter cannot
+retroactively close the former. Preserve all pre-existing partial WATCH/enum work.
+
+Bounded handoff: **0/4 qualified**. The real repair-window IT is RED locally and
+remotely on unavailable-vs-unmanaged wording; remote observed-repair suite is
+8 pass / 1 fail. Two bounded focused old-image AF runs are each 0 pass / 2 fail;
+test-authoring errors and corrected binding semantics are documented explicitly
+in REVIEW_FIX. The final binding correction is locally compiled/linted only.
+004's authoritative existing-rr_id/current-first-caller correction is unfinished;
+no complete affected AF suite or atomic production-candidate pass is claimed.
+Local build, affected test compilation and full lint pass. No push/image build.
+
+### Scenario 004 bounded local completion (2026-11-16)
+
+The approved 004 amendment is now implemented **in test source only**. Unique
+caller contexts and live emitted task/RR IDs replace target-based retained-session
+selection. An exact RR/session with a post-start KA correlation is required;
+pre-invocation correlations cannot supply new start proof. Terminal refusal,
+JSON-RPC error and EOF fail promptly. Reader ownership is cancel → close → bounded
+join. Caller two's new request-local external-LLM fixture emits only the captured
+existing `rr_id`; it never falls back to resource-creation arguments. Visible
+session_active guidance must belong to caller two and the exact RR, with no early
+RCA, summary, confidence or causal-chain artifacts. Resource admission, 002/003,
+structured >512 data, parser/media/auth assertions remain required separately.
+
+Local Ginkgo helper/provider RED/GREEN, race, source build, affected compilation
+and lint evidence are recorded in REVIEW_FIX's **004 local completion** appendix.
+These are test-precondition/fixture proofs, not a live AF journey. Amendment
+qualification remains **0/4**. The WATCH/enum atomic candidate is still incomplete;
+no functional image build or full candidate freeze is authorized or claimed.
+
+Additional mandatory pre-push gate: resolve the PR's actual conflicts via a
+reviewed normal merge only after preserving/completing the dirty atomic work.
+No merge/rebase/stash/reset was performed in this phase. Refresh main/head again
+before reconciliation. Every required candidate check, including helios08's first
+failing cases and affected suites, must pass **after conflict resolution**; earlier
+pre-merge evidence does not qualify the resolved source.
+
+### Approved owned-WATCH / enum-only amendment (2026-11-16)
+
+**Superseding publication gate (2026-11-16):** user requires the actual
+first-failing tests and relevant affected suites to pass on `helios08` against
+the exact complete candidate with operator/dependency provenance **before any
+push**. Local checks are necessary but insufficient. Recovery has reproduced
+the three enum REDs and current CI's IT-FLEET-VALKEY-007 remotely; the recovered
+WATCH package/command race suites pass remotely. No final-candidate pass or
+publication is claimed. The current AF Fleet `partition_unavailable` subcause
+remains below 90% RCA confidence; affected implementation/publication is paused
+for escalation. Exact evidence, candidate hashes and unknowns are recorded in
+`REVIEW_FIX_2026-11-16.md` under replacement-agent recovery. No proof, parser,
+grounding, authorization or workflow gate may be weakened to obtain green CI.
+
+The user explicitly selected **Approve amended implementation (Recommended)**
+without added conditions after independent review. DD-FLEET-015 records the
+selected alternatives and exact contract. This approval supersedes boolean
+retention and typed-wire approval holds in the historical amendment at lines
+463–491 and current-contract clauses in §2.2, §4.3, §5.2/5.4, §6.2, §9, §11,
+§15 and §17. Historical execution records are retained, not rewritten. The
+unreleased v1 route/media stay unchanged; public and owned internal boolean
+scope compatibility is removed atomically. No migration/backfill or mixed-version
+support is required. DD-FLEET-011/012/013/014 and DD-AF-018 boundaries remain.
+
+Preflight: expected clean base 2cda8b1ecfdfe51c4ac8e00ce0c1136dd84eaa7d.
+Readiness audit must assess scoped build/lint, Ginkgo scenario proof, all wiring,
+fail-closed safety, controls and regressions; no whole-service GA claim. Confidence
+must remain ≥90%; a new critical semantic choice requires escalation.
+
+TDD schedule: RED wiring/logic 90 minutes; WATCH GREEN 90 minutes; typed GREEN
+120 minutes; REFACTOR 45 minutes (consolidate existing lifecycle and scope
+validation/error boundaries, not new components); validation 45–120 minutes.
+Total estimate: 6–8 hours plus CI. No GREEN claim until all required proof passes.
+
+#### Critical contract denominator: 26 (all required)
+
+| ID | Contract |
+|---|---|
+| W01 | Complete paginated authoritative LIST + confirmed current WATCH; include readiness Gate dispatch |
+| W02 | LIST-only cannot restore readiness while WATCH denied; include Gate dispatch |
+| W03 | Observed closure/error/410 retires readiness and epoch before publication |
+| W04 | Missed deletion and same-name UID recreation repaired by fresh LIST |
+| W05 | Stale epoch/global-generation publication rejected |
+| W06 | Unchanged/unrelated registration and connection changes preserve per-registration revision |
+| W07 | Quiet/empty WATCH automatically recovers, including readiness Gate dispatch |
+| W08 | Bounded backoff/cancellation/join; real production shutdown signal during LIST-success/WATCH-denied startup, no later retry |
+| S01 | Explicit observed resource true |
+| S02 | Explicit observed resource false |
+| S03 | Observed namespace inheritance, including namespace false provenance |
+| S04 | Present target plus sufficient observed absent opt-in yields none |
+| S05 | Missing target unavailable, never namespace fallback |
+| S06 | Missing namespace evidence unavailable |
+| S07 | Backend failure remains unavailable/error |
+| S08 | Invalid/duplicate labels cannot inherit |
+| S09 | Typed backend authorization denial |
+| S10 | Deferred cluster-scoped target; internal Namespace inheritance remains |
+| S11 | Strict authoritative GVK and exact unambiguous Search identity |
+| S12 | Fleet attribution, unknown registration, enabled-without-endpoint factory rejection |
+| S13 | Valid enum/provenance roundtrip; no public diagnostics |
+| S14 | Missing/unknown enum and invalid provenance rejected |
+| S15 | Duplicate/unknown/null/wrong-type/malformed/trailing wire rejected |
+| S16 | Media/status/body mismatch rejected; bounded transient-only retries |
+| S17 | GW/RO distinguish verified unmanaged from unavailable before RR/WFE |
+| S18 | AF action refusal and exact-inventory boundary; no Console ACM fallback |
+
+Scenario IDs extend existing proving cases rather than inflate the denominator.
+Coverage is passing proving contracts / 26, critical 26/26. Previous scoped replay,
+deferred-target, fencing, GVK and source completeness regressions remain required.
+
+#### Supplemental wiring manifest: eleven required rows
+
+| Component | Production entry point | Wiring location | IT ID |
+|---|---|---|---|
+| EAIGW owner | EAIGWRegistry.Start | registry owned LIST/WATCH supervisor | IT-FMC-WATCH-2637-001 |
+| Kuadrant owner | KuadrantRegistry.Start | same shared supervisor | IT-FMC-WATCH-2637-002 |
+| FMC lifecycle | buildFMCRegistryDependencies/runFMCServers | startup signals, fmcDeps.Ready/close | IT-FMC-WATCH-2637-003 |
+| Registry readiness | AF/EM/SP serviceReady | registry → ClusterRegistryProber → readiness.Gate; both real registries and external HTTP | IT-FMC-WATCH-2637-004 |
+| Local scope | non-Fleet factory | scope.Manager.Check | IT-SCOPE-TYPED-018 |
+| FMC remote scope | Fleet factory | handler → strict HTTP client | IT-FMC-PRES-003 / IT-SCOPE-TYPED-021 |
+| ACM remote scope | Fleet factory | acm.Client.Check → exact Search observations | IT-SCOPE-TYPED-020 |
+| Gateway scope | Gateway constructor | validateScope → RR decision | IT-GW-PRES-004 |
+| RO scope | buildRoutingEngine | checkScope → WFE decision | IT-RO-PRES-005 |
+| AF action | AF backend dependencies | checkRRScope → action refusal | IT-AF-PRES-007 |
+| AF exact inventory | factory → Service.GetInventory | authorizeInventoryTarget | IT-AF-ROUTE-010 |
+
+These IDs are planned, not passing claims. A fake-ready toggle, manual Probe or
+registry-only cancellation is not recovery/startup wiring proof. Preserve command
+AF backend_deps, EM main and SP main prober installation and migrate the old
+LIST-refresh prober expectation. Bootstrap health remains available during startup.
+
+Public acceptance: GET /api/v1/scope/check application/json serializes only state
+and provenance. 200 verified states; 503 unavailable; 400 invalid request identity/
+GVK; 422 invalid observation/unsupported target; 403 typed backend denial.
+Middleware 401/403/500 and 405 remain unchanged. Strict bounded single-object
+decoding rejects unknown/duplicate fields (including managed), invalid state/source
+combinations and status mismatches. Three attempts/two seconds maximum, transient
+transport/unavailable only. No success/body-error retry or default unmanaged.
+
+Evidence ownership: implementer records immutable RED/GREEN results and actual
+26-contract/11-row numerators; parent performs a fresh independent review and
+exact-artifact CI afterward. Required local gates: scoped UT/IT with race, build,
+repository test compilation, full lint, make test, whitespace/anti-pattern review.
+Existing CI authorizes final E2E for both WATCH recovery lanes, Fleet GW/RO, AF
+no-fallback and real TokenReview/SAR E2E-FMC-AUTH-018. No unrelated cluster work.
+Applicable AC-4/AC-6/SI-10 and existing SC-8 TLS controls; no new FMC audit events.
+AF/RO audit and external inventory gates remain separate. Rollback is an atomic
+reviewed revert; no partial protocol rollback or bool compatibility shim.
 
 ### Bounded CI round 12 — operator dependency/schema alignment (2026-11-16)
 
@@ -460,7 +674,11 @@ baseline, GREEN still requires production wiring and passing RED tests, and fina
 qualification/evidence gates remain pending. Expected implementation changes are
 reviewed per RED/GREEN/REFACTOR; no second pre-RED review cycle is introduced.
 
-### Amendment note: user-approved pre-GA v1/no-migration and internal repair/Lease decision
+### Historical amendment: pre-GA v1/no-migration and internal repair/Lease decision
+
+The following 2026-11-13 public-boolean retention/typed-extension hold is
+superseded by DD-FLEET-015's explicit 2026-11-16 enum-only v1 approval. Its
+internal fencing and no-migration boundaries remain applicable.
 
 > **v0.9 amendment / user-approved pre-GA v1/no-migration and internal repair/Lease decision (2026-11-13):** FMC v1
 > has not reached GA. #2593 is an atomic pre-release replacement in the unreleased source
@@ -595,9 +813,9 @@ does not waive these gates for GREEN completion, qualification, or release:
   proof-bearing fenced-read, full-fence LeaseSession, and epoch-scoped loss/rearm
   contract in §5.4.3. External design-decision recording and final evidence ownership
   remain pending.
-- An explicit BR/ADR/API-owner disposition for any typed unavailable/verified extension of
-  the public v1 scope response. Until approved, the only asserted public response member is
-  `ScopeCheckResponse.Managed` / `managed` with ordinary `application/json`.
+- DD-FLEET-015 records the explicit approved typed v1 disposition: only `state`
+  and `provenance`, ordinary `application/json`, no `managed` compatibility.
+  This approval is complete; implementation and current-artifact proof remain required.
 - The versioned target-kind/RBAC matrix and rendered deployment evidence.
 - A scoped real-Kind E2E authorization run for `E2E-FMC-AUTH-018`, or an explicit
   approved risk acceptance that defers BR-SECURITY-016/017 E2E evidence.
@@ -672,12 +890,12 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 | Cache writer | Fenced singleton writer using a process-local coordinator and monotonic fence; Kubernetes Lease takeover is deferred | Approved singleton implementation amendment; multi-replica fencing remains future work |
 | Incarnation | Registered gateway object's `metadata.uid`; target UID is an additional field only if exposed | Approved internal replacement contract; external registry/architecture record pending |
 | Expiry time | Valkey server `TIME`, `PEXPIREAT`, and `PTTL`; no application-clock authority | Approved internal replacement contract; Step 0 external design record pending |
-| GVK | Explicit schema-propagated group/version; no remote `InferGVK` | Pending BR/ADR and schema approval |
+| GVK | Explicit schema-propagated group/version; no remote `InferGVK` | DD-FLEET-014/015 approved; retain schema and owner handoff proof |
 | Invalid labels | Invalid resource/namespace label is typed invalid/unavailable; it is not absent and cannot inherit namespace scope | Pending ADR-053 amendment |
 | Cluster-scoped target | No namespace inheritance; no `verified_managed` cluster-scoped remediation claim until FR-SCOPE-004 is separately approved | Pending BR-SCOPE-001 decision |
 | Inventory vocabulary | Existing `pkg/fleet/inventory.Page` states plus `CompletenessComplete/Partial` | #2584/#2600 conditional; not implemented here |
 | AF boundary | Local list/policy scope; existing exact/get; non-local Console list/policy scope unavailable | Approved by DD-AF-018 unless separately amended |
-| Public FMC scope API | `GET /api/v1/scope/check`; ordinary `application/json`; `ScopeCheckResponse.Managed` / `managed` is the asserted response contract; no public v2 route or media token | ADR-068/current approved baseline; any typed unavailable/verified v1 extension requires BR/ADR/API-owner approval before RED |
+| Public FMC scope API | `GET /api/v1/scope/check`; ordinary `application/json`; enum-only `state` and `provenance`; no `managed`, public v2 route or media token | Explicit amended implementation approval, DD-FLEET-015, 2026-11-16 |
 
 ---
 
@@ -704,9 +922,9 @@ PASS for this source-only amendment requires all of the following:
 1. All 12 UT scenarios and all 4 in-scope IT-owned business scenarios pass.
 2. All 19 in-scope implementation wiring rows pass through production dispatch.
 3. Every in-scope P0 scenario passes; all 15 critical scenarios are proven.
-4. The public contract remains the ADR-068 v1 route with ordinary `application/json` and
-   `ScopeCheckResponse.Managed` / `managed`; no unapproved typed response extension or
-   public v2 route/media is asserted.
+4. The public contract retains the v1 route with ordinary `application/json` and
+   uses only the approved enum `state` and `provenance` members; no boolean
+   compatibility shim or public v2 route/media is asserted (DD-FLEET-015).
 5. Internal typed scope, MCP completeness, status/TTL/fence, writer-coordinator/readiness/repair,
    registry incarnation/revision, GVK, invalid-label, direct ACM and DD-AF-018 boundaries
    are proven through the applicable source and wiring tests.
@@ -819,14 +1037,14 @@ internal script contract in the approved test dependency. The `fmc_v2_atomic.lua
 does not create a public v2 API or media contract, and no deployment or Valkey
 qualification claim is made by this plan.
 
-**Public FMC v1 contract and approval gate.** The authoritative public scope route is
-`GET /api/v1/scope/check` from ADR-068. Its ordinary `application/json` response is
-represented by `ScopeCheckResponse.Managed` / the `managed` member. This amendment does
-not require a public v2 route, a custom media token, a migration inventory, mixed-version
-or old-client compatibility, rollback compatibility, cutover, backfill, or a migration
-evidence packet. If the pre-GA implementation needs a typed unavailable/verified extension
-on the v1 response, the BR/ADR/API owner must approve the exact schema before RED; this
-plan names no additional public fields. `IT-FMC-MIGRATION-017` is retained below only as
+**Public FMC v1 contract (DD-FLEET-015).** The authoritative public scope route is
+`GET /api/v1/scope/check` from ADR-068. The 2026-11-16 explicit approval replaces
+the public boolean and old typed-wire approval hold with exactly `state` and
+`provenance` in ordinary `application/json`. The exact states/status/provenance,
+strict decoder, retry and consumer contracts are defined in DD-FLEET-015 and the
+active amendment above. No managed compatibility, public v2 route, custom media
+token, migration inventory, mixed-version/old-client/rollback compatibility,
+cutover, backfill or migration packet is required. `IT-FMC-MIGRATION-017` is retained below only as
 an explicit N/A/out-of-scope identifier with zero credit; its prior v0.7 migration meaning
 is historical and superseded.
 
@@ -1618,7 +1836,7 @@ zero credit and is not part of any active denominator.
 | Production path | Required proof |
 |---|---|
 | `cmd/fleetmetadatacache` wiring | Lease, status store, registry, Valkey, readiness, repair, and syncer lifecycle |
-| `pkg/fleet/fmc/handler.go` | ADR-068 v1 scope HTTP, ordinary JSON, `ScopeCheckResponse.Managed`, auth middleware, and the approval gate for any typed response extension |
+| `pkg/fleet/fmc/handler.go` | DD-FLEET-015 approved enum-only v1 scope HTTP, ordinary JSON, exact state/provenance/status mapping and unchanged auth middleware |
 | `pkg/gateway` | Scope result propagation and no RR on unavailable |
 | `pkg/remediationorchestrator` | Scope result propagation, block/retry distinction, direct ACM regression |
 | `pkg/apifrontend/tools` | Explicit APIVersion before scope check; no unavailable-to-unmanaged conversion |
@@ -1793,7 +2011,7 @@ FMC/GW/RO/AF rows, four typed-scope contract seams, and one AIAnalysis/GVK hando
 | `IT-FMC-CACHE-003` | Valkey test configuration → FMC clients | Platform owner | Internal protocol, TLS/ACL boundary and failure behavior; no deployment qualification claim |
 | `IT-FMC-CACHE-004` | Typed status store → syncer → handler/readers | FMC owner | Lifecycle, registry loss, repair, stale fence, readiness |
 | `IT-FMC-CACHE-005` | `wireFMCDependencies` → process-local writer coordinator → `syncer.Run` | FMC owner | Generated process/session identity, epoch-to-Valkey fence equality, and singleton acquire/release; Kubernetes Lease RBAC and takeover are out of scope |
-| `IT-FMC-PRES-003` | `fmc.Handler.RegisterRoutes` → v1 scope client | FMC owner | `/api/v1/scope/check`, ordinary `application/json`, `ScopeCheckResponse.Managed` / `managed`; any typed unavailable/verified extension is gated by BR/ADR/API-owner approval and no public v2 route/media is allowed |
+| `IT-FMC-PRES-003` | `fmc.Handler.RegisterRoutes` → v1 scope client | FMC owner | `/api/v1/scope/check`, ordinary `application/json`, enum-only `state`/`provenance` per approved DD-FLEET-015; no `managed` compatibility or public v2 route/media |
 | `IT-FMC-PRES-009` | HTTP validation → canonical identity → cache | Scope/API owner | Invalid, duplicate, unsupported, collision rejection |
 | `IT-FMC-PRES-010` | NormalizedSignal → RR → SP → RO/AF → FMC | SP/API owner | Schema, generated CRD, full GVK propagation |
 | `IT-FMC-AUTH-011` | Rendered target roles/config → collector and MCP target caller | Operator/security owner | Fixed/dynamic/admin kind matrix, wildcard/subresource tests |
@@ -1803,9 +2021,9 @@ FMC/GW/RO/AF rows, four typed-scope contract seams, and one AIAnalysis/GVK hando
 | `IT-FMC-AUTH-008` | TokenReview/SAR and actual caller identities | Security/operator owner | FMC, Gateway, RO, MCP, Search, AF identity matrix |
 | `IT-FMC-MIGRATION-017` | N/A — superseded v0.7 migration identifier retained for disposition traceability only | `#2593` coordinator; FMC/API-owner approval required before RED | Zero credit; no migration inventory, rollout/cutover, mixed-version, old-client, rollback-compatibility, backfill, or migration evidence requirement |
 | `IT-AF-ROUTE-010` | AF local/exact/tool routes, `policyread.Service.authorizeInventoryTarget`, and FMC/ACM separation | AF owner | Typed remote scope unavailable/unsupported/error is state-only and never `NotFound`, `managed:false`, allow, or local fallback; no remote Console list route; direct ACM remains separate |
-| `IT-SCOPE-TYPED-018` | `pkg/shared/scope/manager.go:Manager.Resolve/IsManagedResource` → local typed scope result | Scope/API owner | Explicit true/false/absent/invalid, namespaced/cluster scope, unavailable and no fallback |
-| `IT-SCOPE-TYPED-019` | `pkg/fleet/federated_checker.go:NewFederatedScopeChecker/Remote/IsManagedResource` → local/remote typed routing | Fleet owner | Empty `ClusterID` is local only outside fleet mode; unknown cluster is unavailable; remote states preserve typed outcomes |
-| `IT-SCOPE-TYPED-020` | `pkg/fleet/acm/client.go:Client.IsManagedResource` → direct ACM typed adapter | ACM/RO owner | Direct ACM remains separate; authenticated/unauthorized/unavailable/verified states are not collapsed |
+| `IT-SCOPE-TYPED-018` | `pkg/shared/scope/manager.go:Manager.Check` via non-Fleet factory → local typed scope result | Scope/API owner | Explicit true/false/absent/invalid, deferred cluster targets, unavailable and no fallback |
+| `IT-SCOPE-TYPED-019` | `pkg/fleet/federated_checker.go:NewFederatedScopeChecker/Remote/Check` → explicitly attributed remote routing | Fleet owner | Empty `ClusterID` is local only outside fleet mode; unknown cluster is unavailable; remote states preserve typed outcomes |
+| `IT-SCOPE-TYPED-020` | `pkg/fleet/acm/client.go:Client.Check` → direct ACM typed adapter | ACM/RO owner | Direct ACM remains separate; authenticated/unauthorized/unavailable/verified states are not collapsed |
 | `IT-SCOPE-TYPED-021` | `pkg/fleet/scope_factory.go:NewScopeChecker` → backend selection and caller contract | Fleet/GW/RO owner | FMC, ACM, local and unsupported backend routes return the agreed typed result |
 | `IT-FMC-GVK-022` | `pkg/aianalysis/handlers/analyzing.go` → AI history/policy reader → explicit GVK identity | AI/SignalProcessing owner | AIAnalysis and SignalProcessing paths retain GVK; remote missing GVK is unavailable; no `InferGVK` fallback |
 
@@ -1980,7 +2198,7 @@ qualification evidence during this source-only phase.
 | Rendered identity/RBAC and target-kind matrix | Operator/security owner | Missing | Source collection and auth ITs blocked | Attach rendered manifests, SAR/TokenReview and MCP label-bearing evidence |
 | SignalProcessing GVK schema/generated artifacts | SignalProcessing API owner | Missing | Remote exact scope/history unavailable | Update schema, generated CRDs/assets, and pass generation diff |
 | AIAnalysis GVK handoff and remote-history contract | AI/SignalProcessing owner | Missing | AI history/remote exact scope may infer the wrong kind | Update `analyzing.go` and policy/history readers; add explicit AI GVK IT; reject remote `InferGVK` |
-| Public FMC v1 contract and typed-extension approval | FMC/API owner | v1 baseline fixed; typed extension pending | Route/media/schema drift or invented fields block GREEN | Reconcile the source draft to ADR-068 `/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed`; approve any typed extension before use |
+| Public FMC v1 contract | FMC/API owner | Enum-only replacement approved under DD-FLEET-015 | Route/media/schema drift or invented fields block GREEN | `/api/v1/scope/check`, ordinary `application/json`, exactly `state` and `provenance`; no boolean compatibility |
 | Typed scope seam wiring | Scope/Fleet/ACM owners | Missing | Boolean implementations can collapse unavailable or backend identity states | Add and pass `IT-SCOPE-TYPED-018`–`IT-SCOPE-TYPED-021` |
 | #2584/#2600 Page contract and AF boundary | AF owner | External/conditional | No FMC inventory rows or AF remote list/policy scope | Keep unavailable/no rows; attach separate approved evidence |
 | Kind authentication E2E | Security/operator owner | Pending authorization | BR-SECURITY-016/017 E2E assessment is incomplete | Authorize and run `E2E-FMC-AUTH-018`, or attach approved risk acceptance |
@@ -2091,21 +2309,19 @@ failure.
 
 ## 15. Existing source/test consumers requiring updates
 
-The following inventory was produced by exact fixed-string searches for
-`/api/v2/scope/check`, `application/vnd.kubernaut.fmc.scope.v2+json`, `ScopeCheckPath`,
-and `ScopeCheckMediaType`. The current dirty source/test consumers are **unaccepted v2
-route/media assertions or wiring**, not v1 evidence. They are the RED input/acceptance list:
-RED defines and tests the conversion against the approved public v1 contract (`GET
-/api/v1/scope/check`, ordinary `application/json`, and `ScopeCheckResponse.Managed` /
-`managed`), GREEN converts the unreleased source and all listed consumers atomically before
-production-composition credit, and REFACTOR cleans up. Any typed
-unavailable/verified response extension remains approval-gated. This documentation
-amendment makes no source/test change and grants no v1 coverage credit to these rows
-before conversion.
+The historical discovery inventory below records earlier draft inputs, including
+unaccepted v2 experiments and boolean callers. Those descriptions and line numbers
+are not current-source claims. DD-FLEET-015 now authorizes the atomic unreleased
+v1 replacement: `GET /api/v1/scope/check`, ordinary `application/json`, exactly
+`state` and `provenance`, with the approved status mapping. No boolean compatibility,
+v2 route/media or mixed-version contract is retained. Each relevant consumer must
+be migrated and proven through production composition before GREEN credit; the
+26-contract/eleven-wiring amendment and source-attributed execution evidence above
+govern acceptance. Historical R13 test names do not authorize v2.
 
-| Existing location | Current assertion | Required RED/GREEN update | Reason |
+| Existing location | Historical discovery input | Required RED/GREEN update | Reason |
 |---|---|---|---|
-| `pkg/fleet/fmc/handler.go:34-35,76,91,209,228` | Current production route registration, v2 media constant, typed response, and media negotiation | Replace the dirty v2 route/media implementation with the approved v1 route, ordinary `application/json`, and `Managed` / `managed`; any typed extension requires prior approval | Public contract and fail-closed boundary |
+| `pkg/fleet/fmc/handler.go` | Current handwritten v1 HTTP response | Replace the boolean with the approved enum-only `ScopeResult` state/provenance wire and exact status mapping; no shim or v2 | Public contract and fail-closed boundary, DD-FLEET-015 |
 | `pkg/fleet/fmc/http_client.go:164,173,284` | Current client builds `ScopeCheckPath`, sends `ScopeCheckMediaType`, and validates v2 media | Convert the client to the approved v1 route and ordinary JSON; preserve typed internal fail-closed handling without inventing a wire schema | Public client contract |
 | `pkg/fleet/fmc/handler_test.go:104-105,150-258` | Literal v2 paths and v2 media through the shared request helper | Convert every route/media assertion to the approved v1 contract; retain fail-closed unknown/invalid behavior and do not claim current v1 coverage | Handler route/media proof |
 | `pkg/fleet/fmc/http_client_test.go:64-70,83-299` | Literal v2 path and repeated v2 media response/Accept fixtures | Convert all fixtures and assertions to ordinary v1 JSON; any typed extension follows the approved schema only | Client contract and fail-closed safety |
@@ -2122,7 +2338,7 @@ before conversion.
 | `test/integration/remediationorchestrator/scope_blocking_integration_test.go` | Routing-block event assertion checks only discriminator/RR name | Assert persisted `RoutingBlockedData`, actor/action/outcome, correlation ID and complete routing reconstruction | External RO audit gate |
 | `test/infrastructure/fleet_api_diagnostics_test.go:250-263` | Current diagnostic assertion resolves `fmc.ScopeCheckPath` and checks v2-shaped responses | Convert the endpoint path/media and response assertions to the approved v1 ordinary-JSON contract; no public v2 negotiation or migration evidence | Public v1 contract |
 | `test/infrastructure/fleet_e2e.go:3920-3925` | Current E2E probe builds `fmc.ScopeCheckPath` and sends `fmc.ScopeCheckMediaType` | Convert the probe to the approved v1 route and ordinary JSON; E2E remains separately authorized and receives no migration credit | Public v1 contract; E2E authorization |
-| `test/e2e/fleetmetadatacache/shared/helpers.go:38-63` | Shared helper calls the current constant route/media and decodes typed `ScopeCheckResponse` | Convert the serving-path helper to approved v1 ordinary JSON and `Managed` / `managed`; no v2 helper or old-route rejection requirement | Public v1 contract |
+| `test/e2e/fleetmetadatacache/shared/helpers.go` | Shared serving-path wire decoder | Decode approved enum-only v1 state/provenance; reject boolean compatibility and malformed/status-mismatched bodies | Public v1 contract, DD-FLEET-015 |
 | `pkg/apifrontend/policyread/service.go:333-347` | Remote boolean scope result maps `false` to `NotFound` | Consume typed `ScopeResult`; only verified unmanaged maps to existing not-found behavior, while unavailable/unsupported/error is state-only with no row/allow/local fallback; prove through the planned AF production-path IT | AF typed-scope wiring |
 | `pkg/aianalysis/handlers/analyzing.go` and `pkg/apifrontend/policyread/service.go` | AI target/history loses or infers GVK | Add explicit GVK serialization and remote missing-GVK unavailable tests | AIAnalysis GVK handoff |
 
@@ -2161,6 +2377,16 @@ approved contract changes; all scenario IDs remain visible.
 | 1.5 | 2026-11-15 | Final CI run `43748753311` validated PR head `7358a29f4f540a6c808e479be27cd61407f5237b` through merge ref `9c6bfe574edeeed94c651b19e0c01718bff53e47`: source/build/integration, `WorkflowExecution`, `apifrontend-fleet`, and unaffected E2E lanes passed; Fleet recorded 27 passed, 19 failed, and 2 skipped specs, while FMC EAIGW and Kuadrant each failed setup at the FMC rollout wait. Artifacts and unresolved `.44` Valkey attribution are recorded above; no source or scope change is authorized. |
 
 ## 17. Current status
+
+### Active 2026-11-16 amendment
+
+DD-FLEET-015 is approved; the historical status below does not qualify this
+amendment. Owned-WATCH implementation and initial focused proof are in progress.
+Enum-only scope has three reproduced RED contracts; its implementation is pending.
+The coordinated batch has not been committed/pushed and has no current CI claim.
+No 26/26 critical or 11/11 supplemental wiring completion is claimed.
+
+### Historical singleton slice status
 
 - RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
 - GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease

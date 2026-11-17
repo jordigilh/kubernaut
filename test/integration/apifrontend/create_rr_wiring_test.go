@@ -86,8 +86,8 @@ func defaultTestTriagerIT(namespace, kind, name string, clusterID ...string) *se
 
 type alwaysManagedScopeCheckerIT struct{}
 
-func (alwaysManagedScopeCheckerIT) IsManagedResource(context.Context, sharedscope.ResourceIdentity) (bool, error) {
-	return true, nil
+func (alwaysManagedScopeCheckerIT) Check(context.Context, sharedscope.ResourceIdentity) (sharedscope.ScopeResult, error) {
+	return sharedscope.ScopeResult{State: sharedscope.ScopeVerifiedManaged, Provenance: sharedscope.ScopeSourceResourceLabel}, nil
 }
 
 func alwaysManagedScopeChecker() sharedscope.ScopeChecker {

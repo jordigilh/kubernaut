@@ -38,8 +38,8 @@ import (
 // local scope checker never claims a resource as managed.
 type localAlwaysFalse struct{}
 
-func (l *localAlwaysFalse) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return false, nil
+func (l *localAlwaysFalse) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedUnmanaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // IT-ACM-054-001
@@ -119,11 +119,11 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 	// AC-4 Information Flow Enforcement: proves that the production factory
 	// correctly dispatches through acm.Client to the ACM Search backend, and
 	// the positive scope decision flows back through FederatedScopeChecker.
-	Describe("IT-ACM-054-001 [AC-4]: factory BackendACM dispatches through acm.Client", func() {
+	Describe("IT-SCOPE-TYPED-020 / IT-ACM-054-001 [AC-4]: factory BackendACM dispatches through acm.Client", func() {
 		It("Sub-case A: managed resource (count=1) returns managed=true through full factory path", func() {
 			nextCount = 1
 
-			managed, err := fedChecker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := fedChecker.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east",
 				Group:     "apps",
 				Version:   "v1",
@@ -132,7 +132,7 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 				Name:      "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"AC-4: managed resource must return true through factory -> "+
 					"FederatedScopeChecker -> acm.Client -> GraphQL server path")
 		})
@@ -140,7 +140,7 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 		It("Sub-case B: unmanaged resource (count=0) returns managed=false through full factory path", func() {
 			nextCount = 0
 
-			managed, err := fedChecker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := fedChecker.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east",
 				Group:     "apps",
 				Version:   "v1",
@@ -148,27 +148,27 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 				Namespace: "orphan-ns",
 				Name:      "no-such-deploy",
 			})
-			Expect(err).To(HaveOccurred(), "an empty Search result is not an authoritative unmanaged decision")
-			Expect(managed).To(BeFalse(),
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 				"AC-4: absent resource must return false through the full production path")
 		})
 
 		It("IT-ACM-2584-SCOPE-001: canonical factory dispatch preserves backend errors", func() {
 			nextStatus = http.StatusForbidden
 			DeferCleanup(func() { nextStatus = 0 })
-			target := scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "default", Name: "nginx"}
-			managed, err := fedChecker.IsManagedResource(context.Background(), target)
-			Expect(managed).To(BeFalse())
-			Expect(err).To(HaveOccurred())
+			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
+			managed, err := fedChecker.Check(context.Background(), target)
+			Expect(managed.State).To(Equal(scope.ScopeUnauthorized))
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("IT-ACM-2592-EMPTY-001 [BR-SECURITY-016]: distinguishes an unverified Search miss from an authoritative scope decision", func() {
 			nextCount = 0
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
 
-			managed, err := fedChecker.IsManagedResource(context.Background(), target)
-			Expect(managed).To(BeFalse())
-			Expect(err).To(HaveOccurred(), "an empty Search result can be caused by restricted visibility and must not be reported as a verified absence")
+			managed, err := fedChecker.Check(context.Background(), target)
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("IT-ACM-2592-EMPTY-002 [BR-SCOPE-001]: does not treat an invisible namespace as an unmanaged decision", func() {
@@ -199,7 +199,7 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 						return
 					}
 				}
-				if _, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx"}]}]}}`); err != nil {
+				if _, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx","label":""}]}]}}`); err != nil {
 					GinkgoWriter.Printf("write resource response: %v\n", err)
 				}
 			}))
@@ -208,9 +208,9 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 			Expect(err).NotTo(HaveOccurred())
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"}
 
-			managed, err := checker.IsManagedResource(context.Background(), target)
-			Expect(managed).To(BeFalse())
-			Expect(err).To(HaveOccurred(), "namespace inheritance cannot be decided from an authorization-filtered empty result")
+			managed, err := checker.Check(context.Background(), target)
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
@@ -247,7 +247,7 @@ var _ = Describe("ACM Search Factory Bearer-Token Auth (BR-INTEGRATION-065, #155
 		checker, err := fleet.NewScopeChecker(&localAlwaysFalse{}, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 
-		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		_, err = checker.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())

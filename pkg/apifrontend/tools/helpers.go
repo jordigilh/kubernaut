@@ -58,6 +58,10 @@ var ErrInvalidInput = errors.New("invalid input")
 // (#2025, main-tracking clone of #2022).
 var ErrResourceNotManaged = errors.New("resource not managed by kubernaut")
 
+// ErrScopeUnavailable distinguishes missing scope authority from an observed
+// unmanaged target. DD-FLEET-015: it must never prompt an opt-in label change.
+var ErrScopeUnavailable = errors.New("scope validation unavailable")
+
 // maxToolOutputBytes is the maximum serialized output size for tool results.
 // Matches the 16KB threshold used by session.MaxToolResultBytes for
 // in-memory session size safety.

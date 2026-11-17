@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -171,14 +170,18 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 	It("E2E-AF-FLEET-2462-003 [BR-AI-056, BR-INTEGRATION-065]: progressive investigation emits early RCA and investigation summary", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
+		contextID := fleetAFUniqueTaskID("ctx-fleet-af-progressive-2462")
 		resp, err := fleetA2AStream(ctx, authToken,
-			a2aMessageStream(fleetAFUniqueTaskID("fleet-af-progressive"), "fleet progressive investigate"))
+			a2aMessageStreamWithContext(fleetAFUniqueTaskID("fleet-af-progressive"), contextID, "fleet progressive investigate"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+		events := readFleetAFEvents(resp)
+		requireFleetAFGroundedInvestigation(ctx, contextID, events)
 
 		earlyRCAFound, earlySeverity, earlyConfidence, summaryFound := false, false, false, false
-		for _, event := range readFleetAFEvents(resp) {
+		for _, event := range events {
 			metadata := event.Metadata
 			if metadata != nil && metadata["schema"] == "early_rca" {
 				earlyRCAFound = true
@@ -204,74 +207,58 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 	It("E2E-AF-FLEET-2462-004 [BR-INTERACTIVE-004, BR-INTEGRATION-065]: concurrent session_active response carries visible status guidance", func() {
 		firstCtx, firstCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer firstCancel()
-		firstStarted := make(chan error, 1)
-		go func() {
-			resp, err := fleetA2AStream(firstCtx, authToken,
-				a2aMessageStream(fleetAFUniqueTaskID("fleet-af-session-active-first"), "fleet session active investigate"))
-			if err != nil {
-				firstStarted <- err
-				return
+		firstContextID := fleetAFUniqueTaskID("ctx-fleet-af-session-active-first")
+		binding := fleetAFInvocation{ContextID: firstContextID, PreviouslyStarted: make(map[string]bool)}
+		var before investigationsessionv1alpha1.InvestigationSessionList
+		Expect(fleetAFK8sClient.List(firstCtx, &before, client.InNamespace(e2eNamespace))).To(Succeed())
+		for _, session := range before.Items {
+			if session.Status.KACorrelationID != "" {
+				ref := session.Spec.RemediationRequestRef
+				binding.PreviouslyStarted[ref.Namespace+"/"+ref.Name] = true
 			}
-			firstStarted <- nil
-			defer func() { _ = resp.Body.Close() }()
-			_, _ = io.Copy(io.Discard, resp.Body)
-		}()
-
-		select {
-		case err := <-firstStarted:
-			Expect(err).NotTo(HaveOccurred(), "first Fleet investigation stream must start")
-		case <-time.After(15 * time.Second):
-			Fail("first Fleet investigation did not begin streaming within 15 seconds")
 		}
-		// APIF's interactive Fleet path uses a direct MCP session. It does not
-		// create an AgentSession CRD; status.kaCorrelationID is written only
-		// after KA action=start succeeds and the driver lease is acquired. A
-		// fixed delay can let both callers race through readiness, which makes
-		// session_active belong to the wrong SSE stream.
-		By("waiting for the first Fleet caller's KA correlation after action=start")
-		Eventually(func() bool {
-			var sessions investigationsessionv1alpha1.InvestigationSessionList
-			if err := fleetAFK8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
-				return false
-			}
-			for i := range sessions.Items {
-				session := &sessions.Items[i]
-				if session.Status.KACorrelationID == "" || session.Spec.RemediationRequestRef.Name == "" {
-					continue
-				}
-				var rr remediationv1alpha1.RemediationRequest
-				if err := fleetAFK8sClient.Get(context.Background(), client.ObjectKey{
-					Namespace: session.Spec.RemediationRequestRef.Namespace,
-					Name:      session.Spec.RemediationRequestRef.Name,
-				}, &rr); err != nil {
-					continue
-				}
-				target := rr.Spec.TargetResource
-				if target.Kind == "Pod" && target.Namespace == "fleet-session-active-e2e" &&
-					target.Name == "fleet-session-active-target" {
-					return true
-				}
-			}
-			return false
-		}, 90*time.Second, time.Second).Should(BeTrue(),
-			"the first Fleet caller must complete action=start before the second caller starts")
+		// Keep the original 15-second response-header budget without giving the
+		// live stream itself a 15-second lifetime.
+		headerDeadline := time.AfterFunc(15*time.Second, firstCancel)
+		firstResponse, err := fleetA2AStream(firstCtx, authToken,
+			a2aMessageStreamWithContext(fleetAFUniqueTaskID("fleet-af-session-active-first"), firstContextID, "fleet session active investigate"))
+		headerDeadline.Stop()
+		Expect(err).NotTo(HaveOccurred())
+		updates, readerDone := readFleetAFLive(firstCtx, firstResponse.Body)
+		DeferCleanup(func() {
+			firstCancel()
+			Expect(firstResponse.Body.Close()).To(Succeed())
+			Eventually(readerDone, 5*time.Second).Should(BeClosed(), "cancel, close and join the owned stream reader")
+		})
+		Expect(firstResponse.StatusCode).To(Equal(http.StatusOK))
+		Expect(firstResponse.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+
+		By("binding this live context/task to its exact RR and post-start KA correlation")
+		barrierCtx, barrierCancel := context.WithTimeout(firstCtx, 90*time.Second)
+		defer barrierCancel()
+		binding, err = waitFleetAFCurrentStart(barrierCtx, binding, updates, fleetAFK8sClient, e2eNamespace)
+		Expect(err).NotTo(HaveOccurred(), "a completed refusal or retained session cannot satisfy action=start")
+		var request remediationv1alpha1.RemediationRequest
+		Expect(fleetAFK8sClient.Get(firstCtx, client.ObjectKey{Namespace: e2eNamespace, Name: binding.RRID}, &request)).To(Succeed())
+		Expect(request.Spec.ClusterID).To(Equal("hub"))
+		Expect(request.Spec.TargetResource.Kind).To(Equal("Pod"))
+		Expect(request.Spec.TargetResource.Namespace).To(Equal("fleet-session-active-e2e"))
+		Expect(request.Spec.TargetResource.Name).To(Equal("fleet-session-active-target"))
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer secondCancel()
+		secondContextID := fleetAFUniqueTaskID("ctx-fleet-af-session-active-second")
+		Expect(secondContextID).NotTo(Equal(firstContextID))
 		resp, err := fleetA2AStream(secondCtx, authToken,
-			a2aMessageStream(fleetAFUniqueTaskID("fleet-af-session-active-second"), "fleet session active investigate"))
+			a2aMessageStreamWithContext(fleetAFUniqueTaskID("fleet-af-session-active-second"), secondContextID,
+				"fleet lease contention investigate rr_id="+binding.RRID))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-		foundStatus := false
-		for _, event := range readFleetAFEvents(resp) {
-			if fleetAFHasSessionActiveStatus(event) {
-				foundStatus = true
-				break
-			}
-		}
-		Expect(foundStatus).To(BeTrue(), "AC-4: rejected concurrent caller must receive session_active status guidance")
+		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+		binding.ContextID = secondContextID
+		Expect(validateFleetAFLeaseGuidance(readFleetAFEvents(resp), binding)).To(Succeed(),
+			"AC-4: exact existing-RR caller must receive session_active, without synthetic findings")
 	})
 
 	It("E2E-AF-FLEET-2462-005 [BR-FLEET-054, BR-INTEGRATION-065]: unregistered cluster identity fails closed despite a same-named hub target", func() {
@@ -380,8 +367,93 @@ func groundFleetAFSession(ctx context.Context, token, prompt, contextID string) 
 	Expect(err).NotTo(HaveOccurred(), "Fleet AF grounding call must succeed")
 	defer func() { _ = resp.Body.Close() }()
 	Expect(resp.StatusCode).To(Equal(http.StatusOK))
-	_, err = io.Copy(io.Discard, resp.Body)
-	Expect(err).NotTo(HaveOccurred(), "grounding stream must reach EOF")
+	Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+	requireFleetAFGroundedInvestigation(ctx, contextID, readFleetAFEvents(resp))
+}
+
+// BR-INTEGRATION-065 / BR-FLEET-054: transport success is not investigation
+// success. A refusal must fail this prerequisite before a presentation is sent.
+// Bind genuine content to this stream, then its RR and persisted RR session.
+// A retained target-matching session alone cannot satisfy the live content proof.
+func requireFleetAFGroundedInvestigation(ctx context.Context, contextID string, events []a2aSSEEvent) {
+	var rrID, taskID string
+	for _, event := range events {
+		if event.Status != nil {
+			Expect(event.Status.State).NotTo(Equal("failed"), "an error stream is not successful grounding")
+		}
+		if event.Kind != statusUpdate || event.Metadata == nil {
+			continue
+		}
+		id, _ := event.Metadata["rr_id"].(string)
+		if id == "" {
+			continue
+		}
+		Expect(event.ContextID).To(Equal(contextID), "grounding must belong to the requested A2A context")
+		Expect(event.TaskID).NotTo(BeEmpty())
+		if rrID != "" {
+			Expect(id).To(Equal(rrID), "one grounding request must not mix RR bindings")
+			Expect(event.TaskID).To(Equal(taskID))
+		}
+		rrID, taskID = id, event.TaskID
+	}
+	Expect(rrID).NotTo(BeEmpty(), "admitted-success prerequisite: this request must bind an RR; a scope refusal is not grounded success")
+
+	grounded := false
+	for _, event := range events {
+		if !fleetAFHasInvestigationSummary(event) {
+			continue
+		}
+		Expect(event.ContextID).To(Equal(contextID))
+		Expect(event.TaskID).To(Equal(taskID))
+		for _, part := range event.Artifact.Parts {
+			if len(part.Data) == 0 {
+				continue
+			}
+			var summary struct {
+				SessionID string `json:"session_id"`
+				Summary   string `json:"summary"`
+				RCA       struct {
+					Severity    string   `json:"severity"`
+					Confidence  *float64 `json:"confidence"`
+					CausalChain []string `json:"causal_chain"`
+				} `json:"rca"`
+			}
+			Expect(json.Unmarshal(part.Data, &summary)).To(Succeed())
+			// The investigation_summary wire schema uses session_id for the RR,
+			// not for KA's separate correlation-session identifier.
+			Expect(summary.SessionID).To(Equal(rrID))
+			Expect(summary.Summary).NotTo(BeEmpty(), "genuine investigation findings are required before presentation")
+			Expect(summary.RCA.Severity).NotTo(BeEmpty())
+			Expect(summary.RCA.Confidence).NotTo(BeNil())
+			// A genuine KA RCA may have no causal-chain entries. The production
+			// emitter retains an honest in-progress placeholder in that case;
+			// the separate structured-decision fixture still requires all three
+			// real causal-chain entries and >512 bytes after presentation.
+			grounded = true
+		}
+	}
+	Expect(grounded).To(BeTrue(), "admitted-success prerequisite: a successful current investigation_summary is required; HTTP 200/EOF or an error stream is insufficient")
+
+	var sessions investigationsessionv1alpha1.InvestigationSessionList
+	Expect(fleetAFK8sClient.List(ctx, &sessions, client.InNamespace(e2eNamespace))).To(Succeed())
+	var current *investigationsessionv1alpha1.InvestigationSession
+	for i := range sessions.Items {
+		session := &sessions.Items[i]
+		if session.Spec.RemediationRequestRef.Namespace == e2eNamespace && session.Spec.RemediationRequestRef.Name == rrID {
+			Expect(current).To(BeNil(), "the current stream's exact RR must identify one session")
+			current = session
+		}
+	}
+	// The direct-MCP signaler writes synthetic a2a-<rr_id> into A2ATaskID;
+	// it is not the streaming task ID. Current-task evidence comes from the
+	// context/task/RR/content checks above, not from reinterpreting that field.
+	Expect(current).NotTo(BeNil(), "this stream's grounded RR must have a persisted InvestigationSession")
+	Expect(current.Status.KACorrelationID).NotTo(BeEmpty(), "KA action=start must have succeeded for the current session")
+	var request remediationv1alpha1.RemediationRequest
+	Expect(fleetAFK8sClient.Get(ctx, client.ObjectKey{
+		Namespace: current.Spec.RemediationRequestRef.Namespace, Name: rrID,
+	}, &request)).To(Succeed())
+	Expect(request.Spec.ClusterID).To(Equal("hub"))
 }
 
 func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
@@ -428,25 +500,11 @@ func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 
 func readFleetAFEvents(resp *http.Response) []a2aSSEEvent {
 	var events []a2aSSEEvent
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(strings.TrimRight(scanner.Text(), "\r"))
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" || !strings.HasPrefix(data, "{") {
-			continue
-		}
-		var envelope struct {
-			Result a2aSSEEvent `json:"result"`
-		}
-		if err := json.Unmarshal([]byte(data), &envelope); err == nil && envelope.Result.Kind != "" {
-			events = append(events, envelope.Result)
-		}
-	}
-	Expect(scanner.Err()).NotTo(HaveOccurred(), "Fleet AF SSE stream must parse to EOF")
+	err := scanFleetAFEvents(resp.Body, func(event a2aSSEEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	Expect(err).NotTo(HaveOccurred(), "Fleet AF SSE must parse to EOF without malformed JSON or JSON-RPC errors")
 	return events
 }
 
@@ -467,21 +525,6 @@ func fleetAFHasInvestigationSummary(event a2aSSEEvent) bool {
 			if _, hasSummary := data["summary"]; hasSummary {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func fleetAFHasSessionActiveStatus(event a2aSSEEvent) bool {
-	if event.Kind != statusUpdate || event.Metadata == nil || event.Metadata["type"] != "status" {
-		return false
-	}
-	if event.Status == nil || event.Status.Message == nil {
-		return false
-	}
-	for _, part := range event.Status.Message.Parts {
-		if strings.Contains(part.Text, "already in progress") {
-			return true
 		}
 	}
 	return false

@@ -19,9 +19,15 @@ package fmc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
@@ -31,7 +37,7 @@ import (
 // Issue #54 fleet E2E RCA (CI run 30464667745): FMC's handler distinguishes
 // a failed check (503 -- e.g. Valkey "context canceled" under resource
 // pressure) from a completed check that determined "not managed" (200).
-// IsManagedResource retries only the former: a small, bounded number of
+// Check retries only the former: a small, bounded number of
 // attempts with exponential backoff, wrapped in a hard wall-clock ceiling.
 // This sits on Gateway/RO's synchronous alert-ingestion path, so the ceiling
 // is deliberately short (seconds, not the 45s a test's own outer retry
@@ -93,35 +99,31 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 	return c
 }
 
-// IsManagedResource checks whether a resource is in-scope by calling FMC's
-// /api/v1/scope/check endpoint. A transient failure (5xx / transport error)
-// is retried a bounded number of times with backoff (see scopeCheckMaxAttempts,
-// scopeCheckRetryCeiling); a definitive response (200, whether managed true
-// or false) is never retried. Exhausted or non-retryable failures are returned
-// so callers can distinguish an unavailable scope backend from an unmanaged
-// resource.
-func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+// Check calls the enum-only /api/v1/scope/check boundary. Valid unavailable
+// responses and transient transport failures have bounded retry; verified,
+// invalid, unsupported, denied and protocol outcomes are never retried.
+func (c *HTTPClient) Check(ctx context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
 	reqURL := c.buildScopeCheckURL(r)
 
 	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)
 	defer cancel()
 
 	for attempt := int32(1); attempt <= scopeCheckMaxAttempts; attempt++ {
-		managed, final, retryable := c.attemptScopeCheck(ctx, reqURL)
-		if final {
-			return managed, nil
+		result, retryable, err := c.attemptScopeCheck(ctx, reqURL)
+		if ctx.Err() != nil {
+			return failedScope(), ctx.Err()
 		}
 		if !retryable || attempt == scopeCheckMaxAttempts {
-			return false, fmt.Errorf("fmc scope check failed")
+			return result, err
 		}
 
 		select {
 		case <-ctx.Done():
-			return false, fmt.Errorf("fmc scope check canceled: %w", ctx.Err())
+			return failedScope(), fmt.Errorf("fmc scope check canceled: %w", ctx.Err())
 		case <-time.After(scopeCheckBackoff.Calculate(attempt)):
 		}
 	}
-	return false, fmt.Errorf("fmc scope check failed")
+	return failedScope(), fmt.Errorf("fmc scope check failed")
 }
 
 // buildScopeCheckURL constructs the FMC scope-check request URL for a resource.
@@ -137,39 +139,99 @@ func (c *HTTPClient) buildScopeCheckURL(r scope.ResourceIdentity) string {
 	return c.baseURL + ScopeCheckPath + "?" + params.Encode()
 }
 
-// attemptScopeCheck performs a single scope-check HTTP round-trip.
-//
-// final=true means the response is a definitive answer (200 OK, decoded
-// successfully) that must not be retried, regardless of the managed value.
-// retryable=true means the failure looks transient (transport error, or a
-// 5xx indicating FMC's own check failed rather than completed) and is worth
-// a bounded retry. A non-retryable failure (e.g. 4xx, or a malformed 200
-// body) ends the attempt loop immediately.
-func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (managed, final, retryable bool) {
+// attemptScopeCheck performs one strict round-trip. Only a completed unavailable
+// domain result or a transient transport error is eligible for bounded retry.
+func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (scope.ScopeResult, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return false, false, false
+		return failedScope(), false, fmt.Errorf("build scope request: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, false, true // transport error: transient, worth a retry
+		return failedScope(), ctx.Err() == nil && transientScopeTransport(err), fmt.Errorf("execute scope request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= http.StatusInternalServerError {
-		return false, false, true // 5xx: FMC's check failed (e.g. transient backend error), worth a retry
+	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		return failedScope(), false, fmt.Errorf("scope protocol: invalid media type")
 	}
-	if resp.StatusCode != http.StatusOK {
-		return false, false, false // e.g. 4xx: caller-side problem, not transient -- fail fast
+	result, err := DecodeScopeResponse(resp.Body)
+	if err != nil {
+		return failedScope(), false, err
 	}
+	status := scopeStatus(result.State)
+	if result.State == scope.ScopeInvalid && resp.StatusCode == http.StatusBadRequest {
+		status = http.StatusBadRequest
+	}
+	if resp.StatusCode != status {
+		return failedScope(), false, fmt.Errorf("scope protocol: status and state mismatch")
+	}
+	return result, result.State == scope.ScopeUnavailable, nil
+}
 
-	var result ScopeCheckResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false, false, false // malformed 200 body: not transient -- fail fast
+func transientScopeTransport(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) {
+		return true
 	}
+	var networkError net.Error
+	return errors.As(err, &networkError) && networkError.Timeout()
+}
 
-	return result.Managed, true, false
+func failedScope() scope.ScopeResult {
+	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}
+}
+
+// DecodeScopeResponse rejects duplicate keys as well as unknown/missing members. A
+// struct decoder alone accepts duplicates and null strings, which is unsafe.
+// Serving-path qualification helpers use this same bounded production decoder.
+func DecodeScopeResponse(body io.Reader) (scope.ScopeResult, error) {
+	data, err := io.ReadAll(io.LimitReader(body, 4097))
+	if err != nil || len(data) > 4096 {
+		return failedScope(), fmt.Errorf("scope protocol: response exceeds read boundary")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return failedScope(), fmt.Errorf("scope protocol: expected object")
+	}
+	values := make(map[string]string, 2)
+	for decoder.More() {
+		if err := readScopeMember(decoder, values); err != nil {
+			return failedScope(), err
+		}
+	}
+	if _, err = decoder.Token(); err != nil {
+		return failedScope(), fmt.Errorf("scope protocol: malformed object")
+	}
+	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
+		return failedScope(), fmt.Errorf("scope protocol: trailing data")
+	}
+	result := scope.ScopeResult{State: scope.ScopeState(values["state"]), Provenance: scope.ScopeSource(values["provenance"])}
+	if err := result.Validate(); err != nil {
+		return failedScope(), err
+	}
+	return result, nil
+}
+
+func readScopeMember(decoder *json.Decoder, values map[string]string) error {
+	token, err := decoder.Token()
+	key, ok := token.(string)
+	if err != nil || !ok || (key != "state" && key != "provenance") {
+		return fmt.Errorf("scope protocol: unknown member")
+	}
+	if _, duplicate := values[key]; duplicate {
+		return fmt.Errorf("scope protocol: duplicate member")
+	}
+	value, err := decoder.Token()
+	text, ok := value.(string)
+	if err != nil || !ok {
+		return fmt.Errorf("scope protocol: expected string")
+	}
+	values[key] = text
+	return nil
 }
 
 // Ping checks connectivity to FMC's API by calling ReadyzPath on the same

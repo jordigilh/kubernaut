@@ -363,12 +363,12 @@ type recordingScopeChecker struct {
 	err      error
 }
 
-func (s *recordingScopeChecker) IsManagedResource(_ context.Context, identity scope.ResourceIdentity) (bool, error) {
+func (s *recordingScopeChecker) Check(_ context.Context, identity scope.ResourceIdentity) (scope.ScopeResult, error) {
 	s.identity = identity
 	if s.err != nil {
-		return false, s.err
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, s.err
 	}
-	return true, nil
+	return scope.ScopeResult{State: scope.ScopeVerifiedManaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 func (s *inventoryStub) List(context.Context, inventory.Filters) (inventory.Page, error) {

@@ -326,6 +326,8 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Issue #1332: AF A2A tests need the mock LLM to call kubernaut_remediate
 	// when the user message contains "create a remediation request" (priority 0.9).
 	r.Register(afCreateRRScenario())
+	// BR-INTERACTIVE-004 / #2593: request-local existing-RR contention caller.
+	r.Register(&afExistingRRScenario{})
 
 	// TC-E2E-STREAM-03: slow variant of kubernaut_remediate that delays 5s on
 	// the second LLM turn, giving the test time to disconnect mid-execution.

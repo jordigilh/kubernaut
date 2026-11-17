@@ -27,7 +27,6 @@ import (
 
 // Compile-time interface compliance.
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
-var _ scope.TypedScopeChecker = (*FederatedScopeChecker)(nil)
 
 // ClusterLookup checks whether a cluster is known to Kubernaut's fleet registry.
 // Implemented by EAIGWRegistry/KuadrantRegistry via the adapter below.
@@ -47,9 +46,9 @@ func WithClusterLookup(lookup ClusterLookup) FederatedScopeCheckerOption {
 	}
 }
 
-// FederatedScopeChecker implements scope.ScopeChecker by routing checks:
-//   - Empty ClusterID (local hub): delegates to the local ScopeChecker (always scope.Manager)
-//   - Non-empty ClusterID (remote): hierarchical check:
+// FederatedScopeChecker implements scope.ScopeChecker for attributed Fleet checks:
+//   - Empty ClusterID: invalid; never assumes local scope
+//   - Non-empty ClusterID (including hub): hierarchical remote check:
 //     1. Cluster managed? (via ClusterLookup, if configured)
 //     2. Resource managed? (via remote ScopeChecker backend adapter)
 //
@@ -60,7 +59,7 @@ func WithClusterLookup(lookup ClusterLookup) FederatedScopeCheckerOption {
 //   - Rancher client (Rancher environments)
 //
 // FederatedScopeChecker has no knowledge of Valkey, HTTP, or any specific backend.
-// It is purely a local/remote router with an optional cluster-level gate.
+// The non-Fleet factory returns the local checker without this wrapper.
 //
 // References: ADR-068, BR-INTEGRATION-065
 type FederatedScopeChecker struct {
@@ -70,9 +69,8 @@ type FederatedScopeChecker struct {
 	logger        logr.Logger
 }
 
-// NewFederatedScopeChecker creates a federated checker that routes by ClusterID.
-// localChecker handles hub cluster checks (always scope.Manager).
-// remoteChecker handles remote cluster checks (backend-specific adapter).
+// NewFederatedScopeChecker creates an attributed Fleet checker.
+// remoteChecker handles every explicit cluster ID (backend-specific adapter).
 // Options can add a ClusterLookup for cluster-level precondition checking.
 func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteChecker scope.ScopeChecker, logger logr.Logger, opts ...FederatedScopeCheckerOption) *FederatedScopeChecker {
 	f := &FederatedScopeChecker{
@@ -95,76 +93,38 @@ func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
 	return f.remote
 }
 
-// IsManagedResource implements scope.ScopeChecker.
-// Routes by ClusterID: empty -> local checker, non-empty -> hierarchical remote check.
-//
-// For remote clusters the check is hierarchical (AC-3):
-//  1. Cluster check: is the cluster known? (via ClusterLookup, if configured)
-//  2. Resource check: is the resource managed? (via remote backend)
-func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	if resource.ClusterID == "" {
-		return f.local.IsManagedResource(ctx, resource)
-	}
-	if _, err := scope.GVKForIdentity(resource, true); err != nil {
-		f.logger.V(1).Info("remote scope check rejected: explicit GVK required",
-			"cluster", resource.ClusterID, "kind", resource.Kind, "error", err)
-		return false, fmt.Errorf("fleet scope: remote target GVK is unavailable: %w", err)
-	}
-
-	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
-		f.logger.V(1).Info("cluster not in registry, scope check cannot be completed",
-			"cluster", resource.ClusterID)
-		return false, fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
-	}
-
-	managed, err := f.remote.IsManagedResource(ctx, resource)
-	if err != nil {
-		f.logger.V(1).Info("remote scope check failed",
-			"cluster", resource.ClusterID, "namespace", resource.Namespace,
-			"kind", resource.Kind, "name", resource.Name, "error", err)
-		return false, err
-	}
-	return managed, nil
-}
-
-// Check is the typed federated scope contract. A remote backend must expose
-// TypedScopeChecker; falling back to its legacy boolean method would make an
-// unavailable remote result indistinguishable from verified_unmanaged.
+// Check dispatches only explicitly attributed Fleet requests to the statically
+// typed remote backend. Non-Fleet requests use the local checker at the factory.
+// DD-FLEET-015 forbids an empty Fleet attribution from falling back locally.
 func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
+	if err := ctx.Err(); err != nil {
+		return unavailableScopeResult("scope_canceled"), err
+	}
 	if resource.ClusterID == "" {
-		if typed, ok := f.local.(scope.TypedScopeChecker); ok {
-			return typed.Check(ctx, resource)
-		}
-		managed, err := f.local.IsManagedResource(ctx, resource)
-		if err != nil {
-			return unavailableScopeResult("local_scope_check_failed"), err
-		}
-		return legacyScopeResult(managed), nil
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: "missing_cluster_attribution"}, nil
 	}
 
 	if _, err := scope.GVKForIdentity(resource, true); err != nil {
-		return scope.ScopeResult{
+		return scope.ScopeResult{ //nolint:nilerr // DD-FLEET-015: invalid GVK is a completed domain outcome
 			State:      scope.ScopeInvalid,
 			Provenance: scope.ScopeSourceUnavailable,
 			Reason:     "invalid_remote_gvk",
-		}, fmt.Errorf("fleet scope: remote target GVK is unavailable: %w", err)
+		}, nil
 	}
 	if f.clusterLookup != nil && !f.clusterLookup.IsKnownCluster(resource.ClusterID) {
-		return unavailableScopeResult("cluster_unknown"), fmt.Errorf("fleet scope: cluster is not registered or registry is unavailable")
+		return unavailableScopeResult("cluster_unknown"), nil
 	}
-	typed, ok := f.remote.(scope.TypedScopeChecker)
-	if !ok {
-		return unavailableScopeResult("remote_typed_scope_unavailable"), fmt.Errorf("fleet scope: remote checker does not implement typed scope")
+	result, err := f.remote.Check(ctx, resource)
+	if ctx.Err() != nil {
+		return unavailableScopeResult("scope_canceled"), ctx.Err()
 	}
-	return typed.Check(ctx, resource)
-}
-
-func legacyScopeResult(managed bool) scope.ScopeResult {
-	state := scope.ScopeVerifiedUnmanaged
-	if managed {
-		state = scope.ScopeVerifiedManaged
+	if err != nil {
+		return unavailableScopeResult("remote_scope_failed"), err
 	}
-	return scope.ScopeResult{State: state, Managed: &managed, Provenance: scope.ScopeSourceLegacy}
+	if err := result.Validate(); err != nil {
+		return unavailableScopeResult("remote_protocol_error"), fmt.Errorf("fleet scope: %w", err)
+	}
+	return result, nil
 }
 
 func unavailableScopeResult(reason string) scope.ScopeResult {

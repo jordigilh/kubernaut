@@ -104,17 +104,13 @@ var _ = Describe("IT-REG-GW-005 [SI-4]: authoritative registry health refresh", 
 		_, found := reg.Get(name)
 		Expect(found).To(BeFalse())
 
-		By("creating a managed Backend after the initial informer sync")
+		By("creating a managed Backend after the owned WATCH is established")
 		createBackend(ctx, name)
-		Expect(reg.Probe(ctx)).To(Succeed())
-		_, found = reg.Get(name)
-		Expect(found).To(BeTrue(), "SI-4: an authoritative refresh must discover new managed clusters")
+		Eventually(func() bool { _, found := reg.Get(name); return found }, 5*time.Second).Should(BeTrue(), "SI-4: the owned WATCH must discover new managed clusters")
 
-		By("deleting the Backend and refreshing again")
+		By("deleting the Backend through the established WATCH")
 		deleteBackend(ctx, name)
-		Expect(reg.Probe(ctx)).To(Succeed())
-		_, found = reg.Get(name)
-		Expect(found).To(BeFalse(), "SI-4: an authoritative refresh must remove deleted managed clusters")
+		Eventually(func() bool { _, found := reg.Get(name); return found }, 5*time.Second).Should(BeFalse(), "SI-4: the owned WATCH must remove deleted managed clusters")
 	})
 
 	It("refreshes Kuadrant registry membership after Kubernetes API changes", func() {
@@ -128,16 +124,12 @@ var _ = Describe("IT-REG-GW-005 [SI-4]: authoritative registry health refresh", 
 		_, found := reg.Get(name)
 		Expect(found).To(BeFalse())
 
-		By("creating a managed MCPServerRegistration after the initial informer sync")
+		By("creating a managed MCPServerRegistration after the owned WATCH is established")
 		createMCPServerRegistration(ctx, name)
-		Expect(reg.Probe(ctx)).To(Succeed())
-		_, found = reg.Get(name)
-		Expect(found).To(BeTrue(), "SI-4: an authoritative refresh must discover new managed clusters")
+		Eventually(func() bool { _, found := reg.Get(name); return found }, 5*time.Second).Should(BeTrue(), "SI-4: the owned WATCH must discover new managed clusters")
 
-		By("deleting the MCPServerRegistration and refreshing again")
+		By("deleting the MCPServerRegistration through the established WATCH")
 		deleteMCPServerRegistration(ctx, name)
-		Expect(reg.Probe(ctx)).To(Succeed())
-		_, found = reg.Get(name)
-		Expect(found).To(BeFalse(), "SI-4: an authoritative refresh must remove deleted managed clusters")
+		Eventually(func() bool { _, found := reg.Get(name); return found }, 5*time.Second).Should(BeFalse(), "SI-4: the owned WATCH must remove deleted managed clusters")
 	})
 })

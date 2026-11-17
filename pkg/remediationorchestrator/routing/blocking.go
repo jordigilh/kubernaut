@@ -827,7 +827,18 @@ func (r *RoutingEngine) checkScopeForResource(ctx context.Context, rr *remediati
 			return false, fmt.Errorf("target GVK is unavailable: %w", err)
 		}
 	}
-	return r.scopeChecker.IsManagedResource(ctx, identity)
+	result, err := r.scopeChecker.Check(ctx, identity)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "scope backend execution failed")
+		return false, fmt.Errorf("scope validation unavailable")
+	}
+	if err := result.Validate(); err != nil {
+		return false, err
+	}
+	if result.State != scope.ScopeVerifiedManaged && result.State != scope.ScopeVerifiedUnmanaged {
+		return false, fmt.Errorf("scope validation unavailable")
+	}
+	return result.State == scope.ScopeVerifiedManaged, nil
 }
 
 // calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.

@@ -24,10 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -38,23 +34,6 @@ func newTestWatcher() *EAIGWRegistry {
 		ChannelSize:  8,
 		ResyncPeriod: time.Minute,
 	}, nil, logger)
-}
-
-// Captures an old indexer result, then deterministically interleaves a handler
-// before startup publication, without sleeps or production test hooks.
-type interleavedIndexer struct {
-	cache.Indexer
-	once func()
-}
-
-func (i *interleavedIndexer) List() []interface{} {
-	items := i.Indexer.List()
-	if i.once != nil {
-		run := i.once
-		i.once = nil
-		run()
-	}
-	return items
 }
 
 func newBackendUnstructured(name, endpoint string) *unstructured.Unstructured {
@@ -98,55 +77,41 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 		})
 	})
 
-	Describe("Probe", func() {
-		It("UT-REG-REVIEW-EA-003 [BR-INTEGRATION-065]: startup does not resurrect an entry deleted after the indexer read", func() {
+	Describe("Session publication", func() {
+		It("W05 UT-REG-REVIEW-EA-003 [BR-INTEGRATION-065]: stale LIST cannot resurrect an intervening deletion", func() {
 			old := newBackendUnstructured("east", "https://old")
-			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
-			Expect(indexer.Add(old)).To(Succeed())
 			w.onAdd(old)
-			interleaved := &interleavedIndexer{Indexer: indexer, once: func() {
-				w.onDelete(old)
-				Expect(indexer.Delete(old)).To(Succeed())
-			}}
-			Expect(w.seedFromIndexer(context.Background(), interleaved)).To(Succeed())
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := ExtractClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onDelete(old)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
 			Expect(w.List()).To(BeEmpty())
-			Expect(w.Ready()).To(BeTrue())
 		})
 
-		It("UT-REG-REVIEW-EA-005 [BR-INTEGRATION-065]: startup does not claim watch health from a stale seed after watch failure", func() {
-			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
-			interleaved := &interleavedIndexer{Indexer: indexer, once: func() { w.markWatchUnhealthy(errors.New("startup watch failure")) }}
-			Expect(w.seedFromIndexer(context.Background(), interleaved)).NotTo(Succeed())
-			Expect(w.Ready()).To(BeFalse())
-		})
-
-		DescribeTable("UT-REG-REVIEW-EA-004 [BR-INTEGRATION-065]: in-flight refresh cannot undo lifecycle invalidation", func(stop bool) {
-			old := newBackendUnstructured("east", "https://old")
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), old)
-			w.client, w.started, w.ready = client, true, true
-			w.onAdd(old)
-			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				if stop {
-					w.Stop()
-				} else {
-					w.markWatchUnhealthy(errors.New("watch failed during refresh"))
-				}
-				return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
-			})
-			Expect(w.Probe(context.Background())).NotTo(Succeed())
+		DescribeTable("W05 UT-REG-REVIEW-EA-004/005 [BR-INTEGRATION-065]: stale publication cannot undo lifecycle retirement", func(stop bool) {
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			if stop {
+				w.Stop()
+			} else {
+				w.invalidate(errors.New("watch failed"))
+			}
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{})).NotTo(Succeed())
 			Expect(w.Ready()).To(BeFalse())
 		}, Entry("stop", true), Entry("watch failure", false))
-		It("UT-REG-REVIEW-EA-001 [BR-INTEGRATION-065]: stale refresh cannot overwrite an intervening update", func() {
+
+		It("W05 UT-REG-REVIEW-EA-001 [BR-INTEGRATION-065]: stale LIST cannot overwrite an intervening update", func() {
 			old := newBackendUnstructured("east", "https://old")
 			updated := newBackendUnstructured("east", "https://new")
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), old)
-			w.client, w.started, w.ready = client, true, true
 			w.onAdd(old)
-			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				w.onUpdate(old, updated)
-				return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
-			})
-			Expect(w.Probe(context.Background())).To(Succeed())
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := ExtractClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onUpdate(old, updated)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
 			current, found := w.Get("east")
 			Expect(found).To(BeTrue())
 			Expect(current.MCPEndpoint).To(Equal("https://new"))
@@ -156,64 +121,15 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 			east := newBackendUnstructured("east", "https://east")
 			west := newBackendUnstructured("west", "https://west")
 			w.onAdd(east)
+			w.ready = true // Handler-unit fixture; external HTTP tests prove health.
 			snapshot, found := w.Snapshot("east")
 			Expect(found).To(BeTrue())
 			w.onAdd(west)
 			w.onUpdate(east, east.DeepCopy())
 			Expect(w.WithCurrent(context.Background(), "east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error { return nil })).To(Succeed())
 		})
-		It("UT-REG-EAIGW-012 [BR-INTEGRATION-065, SI-4]: rejects a probe before initial sync", func() {
-			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry has not completed initial sync"))
-			Expect(w.Ready()).To(BeFalse())
-		})
-
-		It("UT-REG-EAIGW-013 [BR-INTEGRATION-065, SI-4]: rejects a probe after the registry stops", func() {
-			w.Stop()
-
-			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry stopped"))
-		})
-
-		It("UT-REG-EAIGW-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
-			w = NewEAIGWRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))
-			w.started = true
-
-			Expect(w.Probe(context.Background())).To(Succeed())
-			Expect(w.Ready()).To(BeTrue())
-			info, found := w.Get("prod-east")
-			Expect(found).To(BeTrue())
-			Expect(info.MCPEndpoint).To(Equal("https://mcp.example.com/prod-east"))
-		})
-
-		It("UT-REG-EAIGW-011 [SI-4]: marks readiness false when the authoritative API is unavailable", func() {
-			w.started = true
-			w.ready = true
-			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-				runtime.NewScheme(),
-				map[schema.GroupVersionResource]string{BackendGVR: "BackendList"},
-			)
-			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				return true, nil, errors.New("api unavailable")
-			})
-			w.client = client
-
-			Expect(w.Probe(context.Background())).To(MatchError(ContainSubstring("refresh fleet cluster registry")))
-			Expect(w.Ready()).To(BeFalse())
-		})
-
-		It("UT-REG-EAIGW-014 [SI-4]: installs the informer watch error handler during startup wiring", func() {
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
-			stopCh := make(chan struct{})
-			defer close(stopCh)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			err := startInformerAndSeed(ctx, client, EAIGWRegistryConfig{
-				ResyncPeriod: time.Minute,
-				onWatchError: func(error) {},
-			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh)
-			Expect(err).ToNot(HaveOccurred())
-		})
+		// Former LIST-only Probe recovery/startup specs are replaced by
+		// IT-FMC-WATCH-2637-001/002/004 against the real external HTTP boundary.
 
 		It("UT-REG-EAIGW-015 [AC-3]: rejects stale delete and old revision commits after same-name recreation", func() {
 			oldRegistration := newBackendUnstructured("prod-east", "https://old.example")
@@ -221,6 +137,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 			newRegistration.SetUID("backend-prod-east-recreated")
 
 			w.onAdd(oldRegistration)
+			w.ready = true
 			oldSnapshot, found := w.Snapshot("prod-east")
 			Expect(found).To(BeTrue())
 
@@ -239,6 +156,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 			first := newBackendUnstructured("prod-east", "https://old.example")
 			second := newBackendUnstructured("prod-east", "https://new.example")
 			w.onAdd(first)
+			w.ready = true
 			snapshot, found := w.Snapshot("prod-east")
 			Expect(found).To(BeTrue())
 			w.onUpdate(first, second)

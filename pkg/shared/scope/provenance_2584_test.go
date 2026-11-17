@@ -39,7 +39,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
-		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
+		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue), "already-fetched namespace metadata remains diagnostic only")
 	})
 
 	It("does not inherit namespace scope for cluster-scoped resources", func() {
@@ -79,7 +79,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
-		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
+		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateAbsent), "invalid resource label prevents the namespace lookup")
 		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 	})
 })

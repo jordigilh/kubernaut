@@ -19,13 +19,12 @@ package registry
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/cache"
 )
 
 // MCPServerRegistrationGVR is the GroupVersionResource for Kuadrant's MCPServerRegistration CRD.
@@ -44,17 +43,7 @@ type KuadrantRegistry struct {
 	metrics *Metrics
 	logger  logr.Logger
 
-	mu                    sync.RWMutex
-	clusters              map[string]ClusterInfo
-	revision              uint64 // global refresh mutation generation, not a registration proof
-	registrationRevisions map[string]uint64
-	ready                 bool
-	watchError            error
-	started               bool
-
-	eventCh chan ClusterEvent
-	stopCh  chan struct{}
-	stopped bool
+	registryWatchState
 }
 
 // NewKuadrantRegistry creates a new KuadrantRegistry.
@@ -66,14 +55,9 @@ func NewKuadrantRegistry(client dynamic.Interface, cfg EAIGWRegistryConfig, metr
 		cfg.ChannelSize = defaultChannelSize
 	}
 	return &KuadrantRegistry{
-		client:                client,
-		config:                cfg,
-		metrics:               metrics,
-		logger:                logger.WithName("kuadrant-registry"),
-		clusters:              make(map[string]ClusterInfo),
-		registrationRevisions: make(map[string]uint64),
-		eventCh:               make(chan ClusterEvent, cfg.ChannelSize),
-		stopCh:                make(chan struct{}),
+		client: client, config: cfg, metrics: metrics,
+		logger:             logger.WithName("kuadrant-registry"),
+		registryWatchState: newRegistryWatchState(cfg.ChannelSize),
 	}
 }
 
@@ -124,6 +108,12 @@ func (w *KuadrantRegistry) WithCurrent(ctx context.Context, clusterID, registrat
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.stopped || !w.ready {
+		return fmt.Errorf("fleet cluster registry is not healthy")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, ok := w.clusters[clusterID]
 	if !ok {
 		return fmt.Errorf("cluster %q is not registered", clusterID)
@@ -144,78 +134,37 @@ func (w *KuadrantRegistry) Ready() bool {
 	return w.ready
 }
 
-func (w *KuadrantRegistry) markWatchUnhealthy(err error) {
-	w.mu.Lock()
-	w.ready = false
-	w.watchError = err
-	w.revision++
-	w.mu.Unlock()
-	w.logger.Error(err, "fleet cluster registry watch failed")
-}
-
-// Probe refreshes the registry from the authoritative API and restores
-// readiness after a transient informer/watch failure.
-func (w *KuadrantRegistry) Probe(ctx context.Context) error {
-	w.mu.RLock()
-	started, stopped, generation := w.started, w.stopped, w.revision
-	w.mu.RUnlock()
-	refreshed, err := probeClusters(ctx, w.client, w.config.Namespace, MCPServerRegistrationGVR, started, stopped, w.trackableClusterInfo)
-	if err != nil {
-		w.markWatchUnhealthy(err)
-		return err
-	}
-	w.mu.Lock()
-	publish, err := refreshMayPublish(generation, w.revision, w.stopped, w.ready)
-	if !publish {
-		w.mu.Unlock()
-		return err
-	}
-	publishRegistrations(&w.clusters, refreshed, w.registrationRevisions, &w.revision)
-	w.ready = true
-	w.watchError = nil
-	w.mu.Unlock()
-	return nil
-}
-
 // Start begins watching Kuadrant MCPServerRegistration CRDs.
 func (w *KuadrantRegistry) Start(ctx context.Context) error {
-	config := w.config
-	config.onWatchError = w.markWatchUnhealthy
-	config.seed = func(indexer cache.Indexer) error { return w.seedFromIndexer(ctx, indexer) }
-	err := startInformerAndSeed(ctx, w.client, config, MCPServerRegistrationGVR,
-		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
-		w.stopCh)
-	if err != nil {
-		return err
-	}
-
-	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("KuadrantRegistry started and synced", "clusters", len(w.List()))
-	return nil
-}
-
-func (w *KuadrantRegistry) seedFromIndexer(ctx context.Context, indexer cache.Indexer) error {
-	return seedRegistry(ctx, indexer, &w.mu, &w.revision, &w.stopped, w.trackableClusterInfo, func(seeded map[string]ClusterInfo) error {
-		if w.watchError != nil {
-			return fmt.Errorf("registry watch failed during startup: %w", w.watchError)
-		}
-		publishRegistrations(&w.clusters, seeded, w.registrationRevisions, &w.revision)
-		w.ready, w.started = true, true
-		return nil
+	return w.session.start(ctx, registryWatchConfig{
+		client: w.client, gvr: MCPServerRegistrationGVR, config: w.config,
+		trackable: w.trackableClusterInfo, logger: w.logger,
+		publish: watchPublication{begin: w.begin, install: w.install, invalidate: w.invalidate, apply: w.applyWatchEvent},
 	})
 }
 
-func (w *KuadrantRegistry) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.stopped {
-		return
+func (w *KuadrantRegistry) applyWatchEvent(event watch.Event) error {
+	if event.Type == watch.Bookmark {
+		return nil
 	}
-	w.stopped = true
-	w.ready = false
-	w.revision++
-	close(w.stopCh)
-	close(w.eventCh)
+	if event.Type == watch.Deleted {
+		w.onDelete(event.Object)
+		return nil
+	}
+	obj, ok := event.Object.(*unstructured.Unstructured)
+	if !ok {
+		return fmt.Errorf("fleet registry event has invalid object type")
+	}
+	if isKuadrantDisabled(obj) || obj.GetLabels()[ManagedLabel] != managedLabelValue {
+		w.removeIfCurrent(obj)
+		return nil
+	}
+	w.onAdd(obj)
+	return nil
+}
+
+func (w *KuadrantRegistry) Stop() {
+	w.stop()
 	w.logger.Info("KuadrantRegistry stopped")
 }
 
@@ -250,7 +199,7 @@ func (w *KuadrantRegistry) trackableClusterInfo(u *unstructured.Unstructured) (C
 	}
 
 	labels := u.GetLabels()
-	if labels[ManagedLabel] != "true" {
+	if labels[ManagedLabel] != managedLabelValue {
 		return ClusterInfo{}, false
 	}
 
@@ -271,25 +220,7 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 	}
 
 	if isKuadrantDisabled(u) {
-		id := u.GetName()
-		w.mu.Lock()
-		info, existed := w.clusters[id]
-		if existed && info.RegistrationUID != string(u.GetUID()) {
-			w.mu.Unlock()
-			return
-		}
-		delete(w.clusters, id)
-		delete(w.registrationRevisions, id)
-		if existed {
-			w.revision++
-		}
-		clusterCount := len(w.clusters)
-		w.mu.Unlock()
-		if existed {
-			w.metrics.NilSafeSetClusters(float64(clusterCount))
-			w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
-			w.logger.Info("cluster disabled, removing", "id", id)
-		}
+		w.removeIfCurrent(u)
 		return
 	}
 
@@ -327,30 +258,11 @@ func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
 }
 
 func (w *KuadrantRegistry) onDelete(obj interface{}) {
-	handleDeletedCluster(obj, &w.mu, func() (map[string]ClusterInfo, map[string]uint64) { return w.clusters, w.registrationRevisions }, &w.revision, w.metrics, w.logger, w.emit)
+	handleDeletedCluster(obj, &w.mu, w.currentMaps, &w.revision, w.metrics, w.logger, w.emit)
 }
 
 func (w *KuadrantRegistry) removeIfCurrent(obj interface{}) {
-	u, ok := obj.(*unstructured.Unstructured)
-	if !ok {
-		return
-	}
-	id := u.GetName()
-	uid := string(u.GetUID())
-	w.mu.Lock()
-	info, existed := w.clusters[id]
-	if !existed || uid == "" || info.RegistrationUID != uid {
-		w.mu.Unlock()
-		return
-	}
-	delete(w.clusters, id)
-	delete(w.registrationRevisions, id)
-	w.revision++
-	clusterCount := len(w.clusters)
-	w.mu.Unlock()
-	w.metrics.NilSafeSetClusters(float64(clusterCount))
-	w.metrics.NilSafeIncReconcile()
-	w.emit(ClusterEvent{Type: EventDeleted, Cluster: info})
+	w.onDelete(obj)
 }
 
 func (w *KuadrantRegistry) emit(event ClusterEvent) {

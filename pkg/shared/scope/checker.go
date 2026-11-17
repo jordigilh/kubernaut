@@ -16,7 +16,10 @@ limitations under the License.
 
 package scope
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // ScopeState is the typed outcome of a scope evaluation. Only the two
 // verified states are authoritative business decisions; every other state is
@@ -34,20 +37,32 @@ const (
 
 // ScopeResult carries a typed scope outcome across a boundary that otherwise
 // cannot safely represent cache misses, source uncertainty, or invalid input
-// as managed=false. Managed is non-nil only for the two verified states.
+// as managed=false. DD-FLEET-015: only state and determining observation cross
+// the wire; bounded diagnostics stay internal.
 type ScopeResult struct {
 	State      ScopeState  `json:"state"`
-	Managed    *bool       `json:"managed"`
-	Provenance ScopeSource `json:"provenance,omitempty"`
-	Reason     string      `json:"reason,omitempty"`
-	Retryable  bool        `json:"retryable,omitempty"`
+	Provenance ScopeSource `json:"provenance"`
+	Reason     string      `json:"-"`
+	Retryable  bool        `json:"-"`
 }
 
-// TypedScopeChecker is the additive typed contract used by FMC's internal
-// presence-aware scope path. ScopeChecker remains the existing boolean
-// compatibility seam until all GW/RO/AF callers are migrated.
-type TypedScopeChecker interface {
-	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
+// Validate rejects unknown states and fabricated observation provenance.
+func (r ScopeResult) Validate() error {
+	switch r.State {
+	case ScopeVerifiedManaged:
+		if r.Provenance == ScopeSourceResourceLabel || r.Provenance == ScopeSourceNamespaceLabel {
+			return nil
+		}
+	case ScopeVerifiedUnmanaged:
+		if r.Provenance == ScopeSourceResourceLabel || r.Provenance == ScopeSourceNamespaceLabel || r.Provenance == ScopeSourceNone {
+			return nil
+		}
+	case ScopeUnavailable, ScopeUnsupported, ScopeInvalid, ScopeUnauthorized:
+		if r.Provenance == ScopeSourceUnavailable {
+			return nil
+		}
+	}
+	return fmt.Errorf("scope protocol: invalid state or provenance")
 }
 
 // ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
@@ -90,11 +105,9 @@ type ResourceIdentity struct {
 //	ADR-053: Resource Scope Management Architecture
 //	ADR-068: Federated Control Plane Interface
 type ScopeChecker interface {
-	// IsManagedResource returns an evaluated managed decision. A false result
-	// with a nil error means the resource is verified as unmanaged; an error
-	// means the scope decision could not be completed and must remain visible
-	// to the caller.
-	IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
+	// Check returns a completed, validated domain outcome with nil error.
+	// Execution/protocol errors always override any accompanying result.
+	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
 }
 
 // Compile-time interface compliance: Manager implements ScopeChecker.

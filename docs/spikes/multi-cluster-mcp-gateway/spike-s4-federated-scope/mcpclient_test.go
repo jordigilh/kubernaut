@@ -36,9 +36,9 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			local := &mockScopeChecker{managed: true}
 			checker := mcpclient.NewFederatedScopeChecker(local, nil, "", logr.Discard())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 	})
 
@@ -51,9 +51,9 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 	})
 
@@ -67,9 +67,9 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 	})
 
@@ -83,9 +83,9 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
 		})
 	})
 
@@ -99,9 +99,9 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 	})
 
@@ -112,7 +112,7 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			_, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
+			_, err := checker.Check(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("checking namespace"))
 		})
@@ -156,8 +156,8 @@ type mockScopeChecker struct {
 	err     error
 }
 
-func (m *mockScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return m.managed, m.err
+func (m *mockScopeChecker) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[m.managed], Provenance: scope.ScopeSourceResourceLabel}, m.err
 }
 
 type mockMCPResourceClient struct {

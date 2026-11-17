@@ -494,12 +494,19 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		}
 	}
 
-	managed, err := s.scopeChecker.IsManagedResource(ctx, identity)
+	result, err := s.scopeChecker.Check(ctx, identity)
 	if err != nil {
-		return nil, fmt.Errorf("scope validation failed: %w", err)
+		logger.Error(err, "scope backend execution failed")
+		return nil, fmt.Errorf("scope validation unavailable")
+	}
+	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	if result.State != scope.ScopeVerifiedManaged && result.State != scope.ScopeVerifiedUnmanaged {
+		return nil, fmt.Errorf("scope validation unavailable")
 	}
 
-	if managed {
+	if result.State == scope.ScopeVerifiedManaged {
 		logger.V(1).Info("Scope check passed: resource is managed",
 			"namespace", signal.Namespace,
 			"kind", signal.Resource.Kind,

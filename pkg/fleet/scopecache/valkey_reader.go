@@ -66,10 +66,8 @@ func (v *ValkeyCacheReader) Exists(ctx context.Context, key string) (bool, error
 	return result > 0, nil
 }
 
-// Read returns the presence-aware observation stored by the FMC writer. The
-// legacy value "1" remains readable as a verified managed observation for
-// compatibility with existing direct test/setup writers; new sync cycles use
-// the explicit label-state values.
+// Read returns an explicit presence-aware label observation. Existence alone
+// and legacy values cannot establish a determining label observation.
 func (v *ValkeyCacheReader) Read(ctx context.Context, key string) (CachedObservation, error) {
 	value, err := v.client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
@@ -81,7 +79,7 @@ func (v *ValkeyCacheReader) Read(ctx context.Context, key string) (CachedObserva
 
 	var labelState scope.LabelState
 	switch value {
-	case "1", string(scope.LabelStateTrue):
+	case string(scope.LabelStateTrue):
 		labelState = scope.LabelStateTrue
 	case string(scope.LabelStateFalse):
 		labelState = scope.LabelStateFalse
@@ -90,7 +88,7 @@ func (v *ValkeyCacheReader) Read(ctx context.Context, key string) (CachedObserva
 	case string(scope.LabelStateInvalid):
 		labelState = scope.LabelStateInvalid
 	default:
-		return CachedObservation{State: RecordUncertain}, fmt.Errorf("scopecache: unknown cache label state %q", value)
+		return CachedObservation{State: RecordUncertain}, fmt.Errorf("scopecache: unknown cache label state")
 	}
 	return CachedObservation{State: RecordVerifiedPresent, LabelState: labelState}, nil
 }

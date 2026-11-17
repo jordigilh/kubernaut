@@ -97,7 +97,7 @@ var _ = Describe("UT-FLEET-VALKEY-WRITE: ValkeyWriter", func() {
 
 			Expect(mr.Exists("fleet:cluster-a:v1:Pod:default:nginx")).To(BeTrue())
 			val, _ := mr.Get("fleet:cluster-a:v1:Pod:default:nginx")
-			Expect(val).To(Equal("1"))
+			Expect(val).To(Equal("true"), "the writer records the actual observed label state, not existence-only compatibility")
 		})
 	})
 

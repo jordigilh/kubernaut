@@ -39,6 +39,10 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // generateTestCA creates a self-signed CA cert/key pair for the FMC
@@ -92,6 +96,24 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		local = &mockLocalChecker{managed: map[string]bool{}}
 	})
 
+	It("IT-SCOPE-TYPED-018 [BR-SCOPE-001]: non-Fleet factory dispatches actual local presence and namespace evidence", func() {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "payments", Labels: map[string]string{scope.ManagedLabelKey: "true"}}},
+			&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "present", Namespace: "payments"}},
+		).Build()
+		checker, err := fleet.NewScopeChecker(scope.NewManager(reader), fleet.FleetConfig{Enabled: false}, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+		result, err := checker.Check(context.Background(), scope.ResourceIdentity{Version: "v1", Kind: "Pod", Namespace: "payments", Name: "present"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceNamespaceLabel))
+		result, err = checker.Check(context.Background(), scope.ResourceIdentity{Version: "v1", Kind: "Pod", Namespace: "payments", Name: "missing"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
+	})
+
 	It("UT-FLEET-FAC-001: disabled fleet returns local checker unchanged", func() {
 		cfg := fleet.FleetConfig{Enabled: false}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
@@ -100,12 +122,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			"disabled fleet must return the exact same local checker instance")
 	})
 
-	It("UT-FLEET-FAC-002: enabled fleet with empty endpoint and non-FMC backend returns local checker", func() {
+	It("UT-FLEET-FAC-002: enabled fleet with empty endpoint is a configuration error", func() {
 		cfg := fleet.FleetConfig{Enabled: true, Backend: "acm", Endpoint: ""}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
-		Expect(err).ToNot(HaveOccurred())
-		Expect(checker).To(BeIdenticalTo(local),
-			"empty endpoint for non-FMC backend must fall back to local checker")
+		Expect(err).To(HaveOccurred())
+		Expect(checker).To(BeNil())
 	})
 
 	It("UT-FLEET-FAC-003 [AC-4]: BackendFMC with HTTP endpoint returns FederatedScopeChecker using FMC HTTP client", func() {
@@ -186,10 +207,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 
-		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+		result, err := checker.Check(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
-		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
 
 		Expect(gotAuthHeader).To(Equal("Bearer test-acm-token"),
 			"SC-7/IA-5: factory-composed ACM client must authenticate every request "+
@@ -216,10 +238,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 
-		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+		result, err := checker.Check(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
-		Expect(err).To(HaveOccurred(), "the factory must preserve ACM Search visibility errors")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
 
 		Expect(sawRequest).To(BeTrue(), "request must still reach the ACM endpoint")
 		Expect(gotAuthHeader).To(BeEmpty(),
@@ -236,7 +259,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 
 			trustedServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			trustedServer.TLS = &tls.Config{Certificates: []tls.Certificate{leafCert}} //nolint:gosec // test-only, MinVersion inherited
 			trustedServer.StartTLS()
@@ -261,24 +284,24 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"SC-8/IA-5: the factory-built CA-verified transport must trust a server cert "+
 					"signed by the configured CA and successfully read the managed:true response")
 
 			// MITM rejection: a server presenting a cert NOT signed by the
 			// configured CA -- even though it returns the identical
 			// managed:true JSON body -- must be rejected at the TLS layer.
-			// Since IsManagedResource preserves transport errors, the error here
+			// Since Check preserves transport errors, the error here
 			// proves that CA verification rejected the untrusted certificate
 			// (the happy-path assertion above proves the JSON-decode path
 			// would otherwise return true for this exact body).
 			untrustedServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			defer untrustedServer.Close()
 
@@ -292,11 +315,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			checkerUntrusted, err := fleet.NewScopeChecker(local, cfgUntrusted, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
-			managedUntrusted, err := checkerUntrusted.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+			managedUntrusted, err := checkerUntrusted.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(), "transport/cert errors must propagate")
-			Expect(managedUntrusted).To(BeFalse(),
+			Expect(managedUntrusted.State).To(Equal(scope.ScopeUnavailable),
 				"SC-8/IA-5: a server cert not signed by the configured CA must be rejected "+
 					"(MITM protection), even though the response body is identical to the trusted case")
 		})
@@ -304,7 +327,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		It("IT-FMC-1683-B-002 [AC-4]: without TLSCAFile, the FMC branch uses a plain (non-CA-pinned) client, matching pre-#1683 behavior", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			defer server.Close()
 
@@ -318,11 +341,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"AC-4: without TLSCAFile configured, the FMC branch must remain backward-compatible "+
 					"with plain-HTTP FMC endpoints (no regression for existing non-TLS deployments)")
 		})
@@ -341,7 +364,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotAuthHeader = r.Header.Get("Authorization")
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			defer server.Close()
 
@@ -357,11 +380,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 
 			Expect(gotAuthHeader).To(Equal("Bearer test-fmc-sa-token"),
 				"IA-2/AC-3: the factory-composed FMC client must authenticate every scope-check "+
@@ -373,7 +396,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				sawRequest = true
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			defer server.Close()
 
@@ -388,11 +411,11 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
-			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx",
+			managed, err := checker.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(), "transport/auth errors must propagate to the caller")
-			Expect(managed).To(BeFalse(),
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 				"IA-2/AC-3: a missing/unreadable SA token must fail safe to unmanaged, never fall back to an unauthenticated request")
 			Expect(sawRequest).To(BeFalse(),
 				"AC-3: the FMC endpoint must never receive a request with no Authorization header")

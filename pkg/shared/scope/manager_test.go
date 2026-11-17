@@ -151,9 +151,9 @@ var _ = Describe("Scope Manager", func() {
 			pod := makePod("production", "api-pod", nil)
 			setup(ns, pod)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Pod", Name: "api-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Pod", Name: "api-pod"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Resource without label should inherit managed from namespace")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Resource without label should inherit managed from namespace")
 		})
 
 		// UT-SCOPE-001-002: Resource label explicit opt-in
@@ -165,9 +165,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns, deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "staging", Kind: "Deployment", Name: "payment-api"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "staging", Kind: "Deployment", Name: "payment-api"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Resource with explicit opt-in should be managed regardless of namespace")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Resource with explicit opt-in should be managed regardless of namespace")
 		})
 
 		// UT-SCOPE-001-003: Resource label explicit opt-out
@@ -181,9 +181,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns, deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Deployment", Name: "legacy-app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Deployment", Name: "legacy-app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Resource with explicit opt-out should override namespace")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged), "Resource with explicit opt-out should override namespace")
 		})
 
 		// UT-SCOPE-001-004: No resource label — inherit from namespace
@@ -195,9 +195,9 @@ var _ = Describe("Scope Manager", func() {
 			deploy := makeDeployment("monitored", "web-app", nil) // no managed label
 			setup(ns, deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "monitored", Kind: "Deployment", Name: "web-app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "monitored", Kind: "Deployment", Name: "web-app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Resource without label should fall through to namespace")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Resource without label should fall through to namespace")
 		})
 
 		// UT-SCOPE-001-005: Namespace label managed
@@ -205,12 +205,11 @@ var _ = Describe("Scope Manager", func() {
 			ns := makeNamespace("managed-ns", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
 			})
-			setup(ns)
-			// Resource does not exist — fall through to namespace check
+			setup(ns, makeDeployment("managed-ns", "app", nil))
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "Deployment", Name: "app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "Deployment", Name: "app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Namespace with managed label should make resources managed")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Namespace with managed label should make resources managed")
 		})
 
 		// UT-SCOPE-001-006: Namespace label unmanaged
@@ -218,11 +217,11 @@ var _ = Describe("Scope Manager", func() {
 			ns := makeNamespace("unmanaged-ns", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueFalse,
 			})
-			setup(ns)
+			setup(ns, makeDeployment("unmanaged-ns", "app", nil))
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "Deployment", Name: "app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "Deployment", Name: "app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Namespace with unmanaged label should make resources unmanaged")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged), "Namespace with unmanaged label should make resources unmanaged")
 		})
 
 		// UT-SCOPE-001-007: No labels anywhere — safe default unmanaged
@@ -231,9 +230,9 @@ var _ = Describe("Scope Manager", func() {
 			pod := makePod("bare-ns", "bare-pod", nil)
 			setup(ns, pod)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "bare-ns", Kind: "Pod", Name: "bare-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "bare-ns", Kind: "Pod", Name: "bare-pod"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "No labels anywhere should default to unmanaged (safe default)")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged), "No labels anywhere should default to unmanaged (safe default)")
 		})
 
 		// UT-SCOPE-001-008: Resource opt-out overrides namespace opt-in
@@ -246,9 +245,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns, deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "Deployment", Name: "excluded-app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "Deployment", Name: "excluded-app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Resource opt-out (false) should override namespace opt-in (true)")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged), "Resource opt-out (false) should override namespace opt-in (true)")
 		})
 
 		// UT-SCOPE-001-009: Resource opt-in overrides namespace opt-out
@@ -261,9 +260,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns, deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "Deployment", Name: "special-app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "Deployment", Name: "special-app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Resource opt-in (true) should override namespace opt-out (false)")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Resource opt-in (true) should override namespace opt-out (false)")
 		})
 	})
 
@@ -277,21 +276,21 @@ var _ = Describe("Scope Manager", func() {
 		It("UT-SCOPE-001-010: should return unmanaged when namespace does not exist", func() {
 			setup() // empty cluster
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "nonexistent-ns", Kind: "Deployment", Name: "app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "nonexistent-ns", Kind: "Deployment", Name: "app"})
 			Expect(err).ToNot(HaveOccurred(), "Namespace not found should not be an error")
-			Expect(managed).To(BeFalse(), "Nonexistent namespace should be unmanaged")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable), "Missing observations cannot verify unmanaged")
 		})
 
 		// UT-SCOPE-001-011: Resource not found — check namespace only
-		It("UT-SCOPE-001-011: should fall through to namespace when resource is not found", func() {
+		It("UT-SCOPE-001-011: missing resource cannot inherit a managed namespace", func() {
 			ns := makeNamespace("existing-ns", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
 			})
 			setup(ns) // namespace exists, resource does NOT
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "existing-ns", Kind: "Deployment", Name: "nonexistent-app"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "existing-ns", Kind: "Deployment", Name: "nonexistent-app"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Resource not found should inherit from namespace")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable), "Missing target must not inherit")
 		})
 
 		// UT-SCOPE-001-012: Invalid label value
@@ -304,9 +303,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns, pod)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "ns-with-valid", Kind: "Pod", Name: "weird-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "ns-with-valid", Kind: "Pod", Name: "weird-pod"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "invalid resource label must not be treated as absent")
+			Expect(managed.State).To(Equal(scope.ScopeInvalid), "invalid resource label must not be treated as absent")
 		})
 
 		// UT-SCOPE-001-016: Resource lookup non-NotFound error — fail closed.
@@ -326,9 +325,9 @@ var _ = Describe("Scope Manager", func() {
 				},
 			}, ns, pod)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "error-ns", Kind: "Pod", Name: "error-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "error-ns", Kind: "Pod", Name: "error-pod"})
 			Expect(err).To(HaveOccurred(), "Non-NotFound resource error must fail closed")
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 
 		// UT-SCOPE-001-017: Namespace lookup non-NotFound error
@@ -343,26 +342,26 @@ var _ = Describe("Scope Manager", func() {
 					}
 					return c.Get(ctx, key, obj, opts...)
 				},
-			}, ns)
+			}, ns, makePod("ns-error", "nonexistent-pod", nil))
 
 			// Resource "nonexistent-pod" does not exist -> falls through to namespace check -> error
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "ns-error", Kind: "Pod", Name: "nonexistent-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "ns-error", Kind: "Pod", Name: "nonexistent-pod"})
 			Expect(err).To(HaveOccurred(), "Non-NotFound namespace error must be propagated")
 			Expect(err.Error()).To(ContainSubstring("connection refused"))
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 
 		// UT-SCOPE-001-018: Namespace with invalid label value (not "true" or "false")
-		It("UT-SCOPE-001-018: should treat invalid namespace label value as unset (default unmanaged)", func() {
+		It("UT-SCOPE-001-018: invalid observed namespace label is invalid, not absent", func() {
 			ns := makeNamespace("ns-invalid-label", map[string]string{
 				scope.ManagedLabelKey: "enabled", // invalid value
 			})
-			setup(ns)
+			setup(ns, makePod("ns-invalid-label", "some-pod", nil))
 
 			// Resource does not exist -> falls through to namespace -> invalid value -> default
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "ns-invalid-label", Kind: "Pod", Name: "some-pod"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "ns-invalid-label", Kind: "Pod", Name: "some-pod"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Invalid namespace label value should fall through to default unmanaged")
+			Expect(managed.State).To(Equal(scope.ScopeInvalid))
 		})
 	})
 
@@ -380,9 +379,9 @@ var _ = Describe("Scope Manager", func() {
 			setup(ns)
 
 			// "Unknown" is not in kindToGroup — resource check should be skipped entirely
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Unknown", Name: "test-resource"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Unknown", Name: "test-resource"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Unknown kind should skip resource check and inherit from namespace")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable), "Unknown kind cannot establish target presence")
 		})
 
 		// UT-SCOPE-001-020: Forbidden error on resource lookup — fail closed.
@@ -404,9 +403,9 @@ var _ = Describe("Scope Manager", func() {
 				},
 			}, ns)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "rbac-ns", Kind: "Pod", Name: "restricted-pod"})
-			Expect(err).To(HaveOccurred(), "Forbidden error must fail closed")
-			Expect(managed).To(BeFalse())
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "rbac-ns", Kind: "Pod", Name: "restricted-pod"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed.State).To(Equal(scope.ScopeUnauthorized))
 		})
 
 		// UT-SCOPE-001-021: "No matches for kind" error — graceful fallthrough
@@ -432,9 +431,9 @@ var _ = Describe("Scope Manager", func() {
 			}, ns)
 
 			// Test a known kind (Pod) where the API server returns an unusual "no matches" error
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "kind-ns", Kind: "Pod", Name: "custom-thing"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "kind-ns", Kind: "Pod", Name: "custom-thing"})
 			Expect(err).ToNot(HaveOccurred(), "No-matches error should NOT propagate — graceful fallthrough")
-			Expect(managed).To(BeTrue(), "Should inherit from namespace when resource returns no-matches error")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable), "Unresolvable target cannot inherit")
 		})
 
 		// UT-SCOPE-001-022: Unknown kind with managed namespace returns managed
@@ -444,9 +443,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "CustomWidget", Name: "my-widget"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "managed-ns", Kind: "CustomWidget", Name: "my-widget"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Unknown kind should inherit managed from namespace")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 
 		// UT-SCOPE-001-023: Unknown kind with unmanaged namespace returns unmanaged
@@ -456,9 +455,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(ns)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "CustomWidget", Name: "my-widget"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "unmanaged-ns", Kind: "CustomWidget", Name: "my-widget"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Unknown kind should inherit unmanaged from namespace")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 	})
 
@@ -475,9 +474,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(node)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-01"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-01"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Cluster-scoped resource with managed label should be managed")
+			Expect(managed.State).To(Equal(scope.ScopeUnsupported))
 		})
 
 		// UT-SCOPE-001-014: Cluster-scoped resource without label — no namespace fallback
@@ -485,9 +484,9 @@ var _ = Describe("Scope Manager", func() {
 			node := makeNode("worker-02", nil) // no labels
 			setup(node)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-02"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-02"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Cluster-scoped resource without label should be unmanaged (no NS fallback)")
+			Expect(managed.State).To(Equal(scope.ScopeUnsupported))
 		})
 
 		// UT-SCOPE-001-015: Cluster-scoped resource with opt-out label
@@ -497,9 +496,9 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(node)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-03"})
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{Kind: "Node", Name: "worker-03"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(), "Cluster-scoped resource with opt-out label should be unmanaged")
+			Expect(managed.State).To(Equal(scope.ScopeUnsupported))
 		})
 	})
 
@@ -510,7 +509,7 @@ var _ = Describe("Scope Manager", func() {
 			Expect(checker).ToNot(BeNil())
 		})
 
-		It("UT-SCOPE-RI-002 [AC-4]: IsManagedResource accepts ResourceIdentity and resolves managed resource", func() {
+		It("UT-SCOPE-RI-002 [AC-4]: Check accepts ResourceIdentity and resolves managed resource", func() {
 			deploy := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nginx",
@@ -520,7 +519,7 @@ var _ = Describe("Scope Manager", func() {
 			}
 			setup(deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{
 				Namespace: "production",
 				Kind:      "Deployment",
 				Name:      "nginx",
@@ -528,10 +527,10 @@ var _ = Describe("Scope Manager", func() {
 				Version:   "v1",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 
-		It("UT-SCOPE-RI-003 [AC-4]: IsManagedResource with empty Group/Version infers from Kind", func() {
+		It("UT-SCOPE-RI-003 [AC-4]: Check with empty Group/Version infers from Kind", func() {
 			deploy := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "redis",
@@ -541,23 +540,24 @@ var _ = Describe("Scope Manager", func() {
 			}
 			setup(deploy)
 
-			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := mgr.Check(ctx, scope.ResourceIdentity{
 				Namespace: "default",
 				Kind:      "Deployment",
 				Name:      "redis",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(), "Empty Group/Version should infer from Kind like existing Manager behavior")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "Empty Group/Version should infer from Kind like existing Manager behavior")
 		})
 
-		It("UT-SCOPE-RI-004 [AC-4]: IsManagedResource with ClusterID set on local Manager returns error", func() {
-			_, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+		It("UT-SCOPE-RI-004 [AC-4]: Check with ClusterID set on local Manager returns error", func() {
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "prod-east",
 				Namespace: "default",
 				Kind:      "Pod",
 				Name:      "nginx",
 			})
-			Expect(err).To(HaveOccurred(), "Local Manager cannot resolve remote clusters")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid))
 		})
 
 		It("UT-SCOPE-RI-005 [SI-10]: ResourceIdentity struct validates required fields", func() {

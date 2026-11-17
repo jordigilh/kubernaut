@@ -122,7 +122,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
 			Group:     "apps",
 			Version:   "v1",
@@ -131,12 +131,12 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			Name:      "redis-master",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"IT-FLEET-VALKEY-004: FederatedScopeChecker must find managed resource via Valkey")
 	})
 
 	It("IT-FLEET-VALKEY-005: FederatedScopeChecker reports an unobserved remote resource as unavailable", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
 			Group:     "apps",
 			Version:   "v1",
@@ -144,9 +144,9 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			Namespace: "orphan-ns",
 			Name:      "no-such-deploy",
 		})
-		Expect(err).To(HaveOccurred(),
+		Expect(err).NotTo(HaveOccurred(),
 			"a cache miss is unavailable and must not be reported as verified unmanaged")
-		Expect(managed).To(BeFalse(),
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 			"IT-FLEET-VALKEY-005: unavailable scope must never be reported as managed")
 	})
 
@@ -175,7 +175,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		// The resource is verified present but carries no managed label; only
 		// its managed namespace should authorize it.
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
 			Version:   "v1",
 			Kind:      "Pod",
@@ -183,7 +183,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			Name:      "worker-5f74bb54f7-28jpv",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"IT-FLEET-VALKEY-006: a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources through the real Valkey-backed chain, same as local (ADR-053 parity)")
 	})
 
@@ -198,7 +198,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.SetObservation(ctx, nodeKey, scope.LabelStateAbsent, 30*time.Second)).To(Succeed())
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
 			Version:   "v1",
 			Kind:      "Node",
@@ -206,7 +206,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			Name:      "worker-node-7",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse(),
+		Expect(managed.State).To(Equal(scope.ScopeUnsupported),
 			"IT-FLEET-VALKEY-007: Node is cluster-scoped and must only ever be resolved from its own resource-level label")
 	})
 })

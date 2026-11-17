@@ -62,7 +62,7 @@ var _ = Describe("Status-store scope cache client (BR-SCOPE-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeUnsupported))
-		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	},
 		Entry("Node", "Node", ""),
 		Entry("PersistentVolume", "PersistentVolume", ""),
@@ -70,7 +70,7 @@ var _ = Describe("Status-store scope cache client (BR-SCOPE-001)", func() {
 		Entry("unknown cluster-scoped kind", "CustomClusterResource", ""),
 		Entry("known cluster-scoped kind cannot gain scope from a supplied namespace", "Node", "default"),
 	)
-	It("UT-FMC-CACHE-015 [BR-SCOPE-001]: does not panic when legacy IsManaged is called without a reader", func() {
+	It("UT-FMC-CACHE-015 [BR-SCOPE-001]: unknown registration returns unavailable without a reader", func() {
 		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
 		Expect(err).ToNot(HaveOccurred())
 		registryClient := registry.NewEAIGWRegistry(nil, registry.EAIGWRegistryConfig{}, nil, logr.Discard())
@@ -78,10 +78,11 @@ var _ = Describe("Status-store scope cache client (BR-SCOPE-001)", func() {
 		client, err := scopecache.NewClientWithStatusStore(noOpStatusStore{}, registryClient, readiness)
 		Expect(err).ToNot(HaveOccurred())
 
-		var callErr error
+		var result scope.ScopeResult
 		Expect(func() {
-			_, callErr = client.IsManaged(context.Background(), "cluster-a", "apps", "v1", "Deployment", "default", "web")
+			result, err = client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "cluster-a", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "web"})
 		}).ToNot(Panic())
-		Expect(callErr).To(MatchError(ContainSubstring("unsupported")))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeUnavailable))
 	})
 })

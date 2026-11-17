@@ -32,6 +32,10 @@ func handleDeletedCluster(
 	id := u.GetName()
 	mu.Lock()
 	clusters, revisions := currentClusters()
+	if clusters == nil {
+		mu.Unlock()
+		return
+	}
 	info, existed := clusters[id]
 	if existed && info.RegistrationUID != string(u.GetUID()) {
 		mu.Unlock()

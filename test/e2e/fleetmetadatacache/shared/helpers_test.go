@@ -38,6 +38,7 @@ var _ = Describe("BR-SCOPE-001: missing-target isolation assertions", func() {
 		func(body string, managed bool) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				defer GinkgoRecover()
+				w.Header().Set("Content-Type", "application/json")
 				_, err := w.Write([]byte(body))
 				Expect(err).NotTo(HaveOccurred())
 			}))
@@ -45,8 +46,8 @@ var _ = Describe("BR-SCOPE-001: missing-target isolation assertions", func() {
 			h := &Harness{Ctx: context.Background(), FMCHTTPClient: server.Client(), FMCAPIBaseURL: server.URL}
 			Expect(ScopeCheck(Default, h, "prod-east", "", "v1", "Service", "test", "present")).To(Equal(managed))
 		},
-		Entry("present managed", `{"managed":true}`, true),
-		Entry("present unmanaged", `{"managed":false}`, false),
+		Entry("present managed", `{"state":"verified_managed","provenance":"resource-label"}`, true),
+		Entry("present unmanaged", `{"state":"verified_unmanaged","provenance":"resource-label"}`, false),
 	)
 
 	DescribeTable("UT-FMC-E2E-003: requires unavailable without a managed decision",
@@ -70,8 +71,8 @@ var _ = Describe("BR-SCOPE-001: missing-target isolation assertions", func() {
 				Expect(failures).NotTo(BeEmpty())
 			}
 		},
-		Entry("missing target", http.StatusServiceUnavailable, `{"error":"resource unavailable"}`, true),
-		Entry("production http.Error unavailable body", http.StatusServiceUnavailable, "scope check temporarily unavailable\n", true),
+		Entry("missing target", http.StatusServiceUnavailable, `{"state":"unavailable","provenance":"unavailable"}`, true),
+		Entry("legacy http.Error body rejected", http.StatusServiceUnavailable, "scope check temporarily unavailable\n", false),
 		Entry("unrecognized plain text is not the unavailable contract", http.StatusServiceUnavailable, "unexpected proxy error", false),
 		Entry("verified false is not absence", http.StatusOK, `{"managed":false}`, false),
 		Entry("verified true is not absence", http.StatusOK, `{"managed":true}`, false),

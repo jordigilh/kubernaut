@@ -28,13 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// CacheReader abstracts the cache read operations for scope checking.
-// Production implementation uses Valkey; tests use in-memory maps.
-type CacheReader interface {
-	// Exists checks if the given key exists in the cache.
-	Exists(ctx context.Context, key string) (bool, error)
-}
-
 // RecordState describes whether a cache entry is a verified observation or
 // merely missing/uncertain. A missing entry is not verified unmanaged.
 type RecordState string
@@ -52,9 +45,7 @@ type CachedObservation struct {
 	LabelState scope.LabelState
 }
 
-// ObservationReader is the additive cache-read seam used by the typed FMC
-// contract. Legacy CacheReader implementations remain usable as positive-only
-// compatibility readers, but cannot establish a verified resource absence.
+// ObservationReader is the required presence-aware cache-read boundary.
 type ObservationReader interface {
 	Read(ctx context.Context, key string) (CachedObservation, error)
 }
@@ -67,14 +58,14 @@ type RegistrationUIDResolver func(clusterID string) (string, bool)
 // Client provides scope checking against the Fleet Metadata Cache in Valkey.
 // Key format: kubernaut:managed:{clusterID}:{group}/{version}/{kind}:{namespace}/{name}
 type Client struct {
-	reader       CacheReader
+	reader       ObservationReader
 	statusStore  StatusStore
 	registration registry.CurrentRegistrationGuard
 	readiness    *FMCReadinessSnapshot
 }
 
-// NewClient creates a scope cache client backed by the given CacheReader.
-func NewClient(reader CacheReader) *Client {
+// NewClient creates a scope cache client backed by actual observations.
+func NewClient(reader ObservationReader) *Client {
 	return &Client{reader: reader}
 }
 
@@ -93,67 +84,21 @@ func NewClientWithStatusStore(statusStore StatusStore, registration registry.Cur
 	return &Client{statusStore: statusStore, registration: registration, readiness: readiness}, nil
 }
 
-// IsManaged checks if a resource on a remote cluster is labeled kubernaut.ai/managed=true.
-// Returns (true, nil) if managed, (false, nil) if not found (cache miss treated as unmanaged).
-func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind, namespace, name string) (bool, error) {
-	if c == nil || c.reader == nil {
-		return false, fmt.Errorf("scopecache: IsManaged is unsupported for status-store clients")
-	}
-	key, err := BuildKey(clusterID, group, version, kind, namespace, name)
-	if err != nil {
-		return false, err
-	}
-	return c.reader.Exists(ctx, key)
-}
-
-// IsManagedResource implements scope.ScopeChecker for remote cluster scope checks.
-// Delegates to the underlying IsManaged with fields extracted from ResourceIdentity.
-//
-// Per the scope.ResourceIdentity contract (pkg/shared/scope/checker.go), Group
-// and Version are optional and MUST be inferred from Kind when empty. Callers
-// such as Gateway's validateScope (pkg/gateway/server.go) intentionally leave
-// them empty -- alert-derived signals carry only a Kind label, never an
-// apiVersion. pkg/fleet/fmc/syncer.go, however, writes cache keys using the
-// resource's real GVK read from the K8s API (e.g. "apps/v1" for Deployment).
-// Without this inference the read-side key would never match the write-side
-// key, causing every federated scope check to permanently and deterministically
-// resolve to "not managed" (Issue #54 SOC2 gap RCA, CI run 28495045499).
-//
-// 2-level hierarchy (Issue #2311): if the resource itself isn't cached as
-// managed, fall back to checking whether its namespace is, mirroring
-// pkg/shared/scope.Manager's hierarchy for the local/hub cluster (ADR-053).
-// pkg/fleet/fmc/syncer.go now syncs Namespace objects carrying the label for
-// exactly this purpose. Without this fallback, fleet scope checks were
-// silently stricter than local ones: a namespace-only kubernaut.ai/managed
-// label worked on the hub but never on a managed remote cluster. Cluster-
-// scoped kinds (e.g. Node) have no namespace to inherit from and are never
-// eligible for the fallback, same as scope.Manager.
-func (c *Client) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	result, err := c.Check(ctx, resource)
-	if err != nil {
-		return false, err
-	}
-	if result.State != scope.ScopeVerifiedManaged && result.State != scope.ScopeVerifiedUnmanaged {
-		return false, fmt.Errorf("scopecache: scope unavailable: %s", result.Reason)
-	}
-	if result.Managed == nil {
-		return false, fmt.Errorf("scopecache: scope result %q has no managed value", result.State)
-	}
-	return *result.Managed, nil
-}
-
 // Check evaluates a resource using the presence-aware cache contract. A
 // resource cache miss, expiry, backend error, invalid label, or uncertain
 // record never falls through to a managed namespace. Namespace inheritance is
 // considered only after the resource itself is verified present and unlabeled.
 func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
+	if ctx.Err() != nil {
+		return unavailableResult("scope_canceled"), ctx.Err()
+	}
 	gvk, err := scope.GVKForIdentity(resource, true)
 	if err != nil {
-		return scope.ScopeResult{
+		return scope.ScopeResult{ //nolint:nilerr // DD-FLEET-015: invalid GVK is a completed domain outcome
 			State:      scope.ScopeInvalid,
 			Provenance: scope.ScopeSourceUnavailable,
 			Reason:     "invalid_resource_gvk",
-		}, err
+		}, nil
 	}
 	// BR-SCOPE-001 FR-SCOPE-004 / #2593: cluster-scoped remediation
 	// remains deferred. This target boundary deliberately does not apply to
@@ -170,11 +115,11 @@ func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (sc
 
 	resourceKey, err := BuildKey(resource.ClusterID, gvk.Group, gvk.Version, gvk.Kind, resource.Namespace, resource.Name)
 	if err != nil {
-		return scope.ScopeResult{
+		return scope.ScopeResult{ //nolint:nilerr // DD-FLEET-015: invalid identity is a completed domain outcome
 			State:      scope.ScopeInvalid,
 			Provenance: scope.ScopeSourceUnavailable,
 			Reason:     "invalid_resource_identity",
-		}, err
+		}, nil
 	}
 	resourceRecord, err := c.readObservation(ctx, resourceKey)
 	if err != nil {
@@ -277,7 +222,9 @@ func (c *Client) mapFencedRecord(ctx context.Context, request FencedReadRequest,
 		switch namespaceRecord.Record.LabelState {
 		case scope.LabelStateTrue:
 			return verifiedResult(true, scope.ScopeSourceNamespaceLabel), nil
-		case scope.LabelStateFalse, scope.LabelStateAbsent:
+		case scope.LabelStateFalse:
+			return verifiedResult(false, scope.ScopeSourceNamespaceLabel), nil
+		case scope.LabelStateAbsent:
 			return verifiedResult(false, scope.ScopeSourceNone), nil
 		case scope.LabelStateInvalid:
 			return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: "invalid_namespace_label"}, nil
@@ -357,7 +304,9 @@ func (c *Client) checkNamespaceObservation(ctx context.Context, resource scope.R
 	switch nsRecord.LabelState {
 	case scope.LabelStateTrue:
 		return verifiedResult(true, scope.ScopeSourceNamespaceLabel), nil
-	case scope.LabelStateFalse, scope.LabelStateAbsent:
+	case scope.LabelStateFalse:
+		return verifiedResult(false, scope.ScopeSourceNamespaceLabel), nil
+	case scope.LabelStateAbsent:
 		return verifiedResult(false, scope.ScopeSourceNone), nil
 	case scope.LabelStateInvalid:
 		return scope.ScopeResult{
@@ -371,21 +320,10 @@ func (c *Client) checkNamespaceObservation(ctx context.Context, resource scope.R
 }
 
 func (c *Client) readObservation(ctx context.Context, key string) (CachedObservation, error) {
-	if reader, ok := c.reader.(ObservationReader); ok {
-		return reader.Read(ctx, key)
-	}
 	if c.reader == nil {
 		return CachedObservation{State: RecordUncertain}, fmt.Errorf("scopecache: cache reader is nil")
 	}
-	exists, err := c.reader.Exists(ctx, key)
-	if err != nil {
-		return CachedObservation{State: RecordUncertain}, err
-	}
-	if !exists {
-		return CachedObservation{State: RecordMissing}, nil
-	}
-	// The legacy existence-only reader can prove only a positive label.
-	return CachedObservation{State: RecordVerifiedPresent, LabelState: scope.LabelStateTrue}, nil
+	return c.reader.Read(ctx, key)
 }
 
 func verifiedResult(managed bool, provenance scope.ScopeSource) scope.ScopeResult {
@@ -395,7 +333,6 @@ func verifiedResult(managed bool, provenance scope.ScopeSource) scope.ScopeResul
 	}
 	return scope.ScopeResult{
 		State:      state,
-		Managed:    &managed,
 		Provenance: provenance,
 	}
 }

@@ -32,8 +32,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -49,21 +55,25 @@ import (
 // Only the external MCP endpoint is controlled. DD-FLEET-013; AC-4/AC-6, SI-10.
 var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)", Label("fmc", "broker-readiness"), func() {
 	var (
-		ctx         context.Context
-		cancel      context.CancelFunc
-		cluster     string
-		namespace   string
-		clusterReg  *registry.EAIGWRegistry
-		store       *scopecache.ValkeyStatusStore
-		readiness   *scopecache.FMCReadinessSnapshot
-		coordinator *scopecache.ProcessWriterCoordinator
-		syncer      *fmc.Syncer
-		checker     *scopecache.Client
-		available   atomic.Bool
-		empty       atomic.Bool
-		deferred    atomic.Bool
-		calls       atomic.Int32
-		proxy       *redisfault.Proxy
+		ctx               context.Context
+		cancel            context.CancelFunc
+		cluster           string
+		namespace         string
+		clusterReg        *registry.EAIGWRegistry
+		store             *scopecache.ValkeyStatusStore
+		readiness         *scopecache.FMCReadinessSnapshot
+		coordinator       *scopecache.ProcessWriterCoordinator
+		syncer            *fmc.Syncer
+		checker           *scopecache.Client
+		available         atomic.Bool
+		empty             atomic.Bool
+		deferred          atomic.Bool
+		namespaceFalse    atomic.Bool
+		calls             atomic.Int32
+		proxy             *redisfault.Proxy
+		holdCollection    atomic.Bool
+		collectionEntered chan struct{}
+		releaseCollection chan struct{}
 	)
 
 	BeforeEach(func() {
@@ -72,7 +82,11 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		available.Store(false)
 		empty.Store(false)
 		deferred.Store(false)
+		namespaceFalse.Store(false)
 		calls.Store(0)
+		holdCollection.Store(false)
+		collectionEntered = make(chan struct{}, 1)
+		releaseCollection = make(chan struct{})
 		cluster = "broker-" + uuid.NewString()
 		namespace = cluster
 		kube, err := kubernetes.NewForConfig(restConfig)
@@ -82,8 +96,19 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		DeferCleanup(func() {
 			Expect(kube.CoreV1().Namespaces().Delete(context.Background(), namespace, metav1.DeleteOptions{})).To(Succeed())
 		})
-		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster(cluster), mockgw.WithListResourcesHandler(func(callCtx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			calls.Add(1)
+			if holdCollection.Load() {
+				select {
+				case collectionEntered <- struct{}{}:
+				default:
+				}
+				select {
+				case <-releaseCollection:
+				case <-callCtx.Done():
+					return nil, callCtx.Err()
+				}
+			}
 			if !available.Load() {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "observation temporarily unavailable"}}}, nil
 			}
@@ -102,6 +127,9 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 					metadata = map[string]interface{}{"name": "observed", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}}
 					if args.Kind == "Namespace" {
 						metadata["name"] = "default"
+					}
+					if args.Kind == "Namespace" && namespaceFalse.Load() {
+						metadata["labels"] = map[string]interface{}{"kubernaut.ai/managed": "false"}
 					}
 				}
 				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{{"apiVersion": "v1", "kind": args.Kind, "metadata": metadata}}}}, nil
@@ -149,6 +177,100 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(err).ToNot(HaveOccurred())
 	})
 
+	It("IT-AF-FMC-2593-001 [BR-SCOPE-001, BR-INTEGRATION-065]: real repair-window refusal is unavailable, never unmanaged or an admitted investigation", func() {
+		available.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		key := scopecache.PartitionStateKey{ClusterID: cluster, RegistrationUID: info.RegistrationUID}
+		before := readiness.View().Partitions[key]
+		Expect(before.State).To(Equal(scopecache.PartitionClean))
+		Expect(before.CleanCommit).To(BeTrue())
+
+		// Control only the external observation boundary, not production readiness.
+		// SyncCluster must publish its actual new repair generation before arriving.
+		holdCollection.Store(true)
+		repairDone := make(chan error, 1)
+		go func() { repairDone <- syncer.SyncCluster(ctx, info) }()
+		released := false
+		joined := false
+		DeferCleanup(func() {
+			if !released {
+				close(releaseCollection)
+			}
+			if !joined {
+				cancel()
+				Eventually(repairDone, 5*time.Second).Should(Receive())
+			}
+		})
+		Eventually(collectionEntered, 5*time.Second).Should(Receive())
+		during := readiness.View().Partitions[key]
+		Expect(during.State).To(Equal(scopecache.PartitionRepairing))
+		Expect(during.Generation).To(BeNumerically(">", before.Generation))
+		Expect(during.CleanCommit).To(BeFalse())
+		Expect(syncer.Ready()).To(BeFalse())
+
+		mux := http.NewServeMux()
+		fmc.NewHandler(checker, clusterReg, logr.Discard()).RegisterRoutes(mux)
+		server := httptest.NewServer(mux)
+		DeferCleanup(server.Close)
+		response, err := http.Get(server.URL + fmc.ScopeCheckPath + "?cluster=" + cluster + "&version=v1&kind=Pod&namespace=default&name=observed")
+		Expect(err).NotTo(HaveOccurred())
+		body, err := io.ReadAll(response.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(response.StatusCode).To(Equal(http.StatusServiceUnavailable))
+		Expect(string(body)).NotTo(ContainSubstring(`"managed"`))
+
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		rrClient, err := crclient.New(restConfig, crclient.Options{Scheme: scheme})
+		Expect(err).NotTo(HaveOccurred())
+		var starts atomic.Int32
+		kaClient := &ka.MockMCPClient{StartInvestigationFn: func(context.Context, ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+			starts.Add(1)
+			return nil, fmt.Errorf("unexpected KA start during repair")
+		}}
+		actionCtx := auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "repair-window-sre", Groups: []string{"sre"}})
+		result, refusal := tools.HandleInvestigationMCPWithRegistry(actionCtx, &tools.InvestigateConfig{
+			MCPClient: kaClient, Client: rrClient, Namespace: namespace,
+			ScopeChecker: fmc.NewHTTPClient(server.URL),
+		}, tools.InvestigateMCPArgs{APIVersion: "v1", Kind: "Pod", Namespace: "default", Name: "observed", ClusterID: cluster}, true, "repair-window-sre")
+		Expect(refusal).To(HaveOccurred())
+		Expect(result.RRID).To(BeEmpty())
+		Expect(result.SessionID).To(BeEmpty())
+		Expect(result.RCA).To(BeNil(), "a refusal must not fabricate investigation findings")
+		Expect(result.Summary).To(BeEmpty())
+		Expect(starts.Load()).To(BeZero())
+		var requests remediationv1.RemediationRequestList
+		Expect(rrClient.List(ctx, &requests, crclient.InNamespace(namespace))).To(Succeed())
+		Expect(requests.Items).To(BeEmpty(), "repair-window refusal must persist no RR")
+
+		// A distinct successful scope check follows guarded complete publication;
+		// never replay the rejected AF investigation until it happens to succeed.
+		close(releaseCollection)
+		released = true
+		Eventually(repairDone, 5*time.Second).Should(Receive(BeNil()))
+		joined = true
+		after := readiness.View().Partitions[key]
+		Expect(after.State).To(Equal(scopecache.PartitionClean))
+		Expect(after.CleanCommit).To(BeTrue())
+		Expect(after.Generation).To(Equal(during.Generation))
+		Expect(after.WriterFence).To(Equal(during.WriterFence))
+		Expect(syncer.Ready()).To(BeTrue())
+		verified, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(verified.State).To(Equal(scope.ScopeVerifiedManaged))
+		managed, err := fmc.NewHTTPClient(server.URL).Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
+
+		// DD-FLEET-015: repair refusal is unavailable, never opt-in advice.
+		Expect(refusal.Error()).To(ContainSubstring("unavailable"))
+		Expect(refusal.Error()).NotTo(ContainSubstring("Add label"))
+		Expect(refusal.Error()).NotTo(ContainSubstring("not managed"))
+	})
+
 	DescribeTable("IT-FMC-REPLAY-001 [BR-SCOPE-001]: lost replies require fresh repair through production wiring", func(verb string) {
 		available.Store(true)
 		info, found := clusterReg.Get(cluster)
@@ -163,7 +285,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(syncer.Ready()).To(BeFalse(), "a lost reply must invalidate the old clean readiness proof")
 		result, _ := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
 		Expect(result.State).To(Equal(scope.ScopeUnavailable))
-		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(), "only a fresh complete repair may restore clean state")
 		Expect(syncer.Ready()).To(BeTrue())
 		result, err = checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
@@ -182,7 +304,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		result, err := checker.Check(ctx, node)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeUnsupported))
-		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 		mux := http.NewServeMux()
 		fmc.NewHandler(checker, clusterReg, logr.Discard()).RegisterRoutes(mux)
 		server := httptest.NewServer(mux)
@@ -192,15 +314,21 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		body, err := io.ReadAll(response.Body)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(response.Body.Close()).To(Succeed())
-		Expect(response.StatusCode).To(Equal(http.StatusServiceUnavailable))
+		Expect(response.StatusCode).To(Equal(http.StatusUnprocessableEntity))
 		Expect(string(body)).NotTo(ContainSubstring("managed"))
 		remote := fmc.NewHTTPClient(server.URL)
-		managed, err := remote.IsManagedResource(ctx, node)
-		Expect(err).To(HaveOccurred())
-		Expect(managed).To(BeFalse())
-		managed, err = remote.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		managed, err := remote.Check(ctx, node)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeUnsupported))
+		managed, err = remote.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(), "internal Namespace observations must remain available for inheritance")
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "internal Namespace observations must remain available for inheritance")
+		namespaceFalse.Store(true)
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		managed, err = remote.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
+		Expect(managed.Provenance).To(Equal(scope.ScopeSourceNamespaceLabel), "S03: fenced namespace false is a determining label observation, not absent opt-in")
 	})
 
 	It("IT-FMC-BROKER-001 [BR-SCOPE-001, BR-INTEGRATION-065]: successful connection cannot authorize a resource until real observations commit", func() {
@@ -225,7 +353,15 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		foreign := "foreign-" + uuid.NewString()
 		createBackend(ctx, foreign)
 		DeferCleanup(deleteBackend, context.Background(), foreign)
-		Eventually(func() error { return clusterReg.Probe(ctx) }, 5*time.Second).Should(Succeed())
+		// Observe a later in-namespace WATCH update as a progress barrier. A
+		// direct Get immediately after the foreign Create would be vacuous.
+		generation := clusterReg.SnapshotAll().Generation
+		own, err := dynClient.Resource(registry.BackendGVR).Namespace(namespace).Get(ctx, cluster, metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		own.SetAnnotations(map[string]string{"watch-barrier": uuid.NewString()})
+		_, err = dynClient.Resource(registry.BackendGVR).Namespace(namespace).Update(ctx, own, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() uint64 { return clusterReg.SnapshotAll().Generation }, 5*time.Second).Should(BeNumerically(">", generation))
 		_, found := clusterReg.Get(foreign)
 		Expect(found).To(BeFalse(), "a parallel fixture's writer must not discover or repair this fixture's partitions")
 	})
@@ -269,7 +405,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
 		Expect(err).To(MatchError("scopecache: fenced-read proof changed"))
 		Expect(result.State).To(Equal(scope.ScopeUnavailable))
-		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
 
 	It("IT-FMC-REVIEW-RETIRE-001 [BR-SCOPE-001]: Run reconciles a failed retired partition without a delivered deletion event", func() {

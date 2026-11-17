@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // ParseAPIVersion converts the Kubernetes wire representation into the group
@@ -66,6 +67,11 @@ func ApplyAPIVersion(identity ResourceIdentity, apiVersion string) (ResourceIden
 func GVKForIdentity(identity ResourceIdentity, requireExplicit bool) (schema.GroupVersionKind, error) {
 	if identity.Kind == "" {
 		return schema.GroupVersionKind{}, fmt.Errorf("scope: resource kind is required")
+	}
+	if len(validation.IsCIdentifier(identity.Kind)) != 0 ||
+		(identity.Group != "" && len(validation.IsDNS1123Subdomain(identity.Group)) != 0) ||
+		(identity.Version != "" && len(validation.IsDNS1035Label(identity.Version)) != 0) {
+		return schema.GroupVersionKind{}, fmt.Errorf("scope: invalid resource gvk")
 	}
 	if identity.Group == "" && identity.Version == "" {
 		if requireExplicit {

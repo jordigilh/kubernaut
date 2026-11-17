@@ -134,7 +134,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 	// Namespace has kubernaut.ai/managed=true label → scope.Manager returns true.
 	// This proves the local path was invoked because the namespace only exists in envtest,
 	// not in Valkey.
-	It("IT-GW-FLEET-011: should dispatch to IsManaged when signal has empty ClusterID", func() {
+	It("IT-GW-FLEET-011: Fleet empty attribution fails scope instead of falling back to local", func() {
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "LocalHighMem",
 			Namespace:    testNamespace,
@@ -143,10 +143,8 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Severity:     "warning",
 		})
 
-		response, err := gwServer.ProcessSignal(ctx, signal)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(response.Status).To(Equal(gateway.StatusCreated),
-			"IT-GW-FLEET-011: managed resource on local cluster must be accepted (proves local path invoked)")
+		_, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).To(HaveOccurred(), "DD-FLEET-015: an enabled Fleet checker cannot infer local attribution")
 	})
 
 	// IT-GW-FLEET-012: Fleet signal rejected when resource is not managed on remote cluster.

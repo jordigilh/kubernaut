@@ -18,7 +18,7 @@ package fmc_test
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -33,7 +33,7 @@ import (
 
 // flakyRoundTripper fails the first failCount requests with a transport-level
 // error (simulating a dropped connection / dial failure), then delegates to
-// the real transport. Used to test IsManagedResource's retry-on-transport-error
+// the real transport. Used to test Check's retry-on-transport-error
 // path deterministically, without relying on real network flakiness.
 type flakyRoundTripper struct {
 	failCount int32
@@ -44,7 +44,7 @@ type flakyRoundTripper struct {
 func (f *flakyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	n := f.attempts.Add(1)
 	if n <= f.failCount {
-		return nil, fmt.Errorf("simulated transport error (attempt %d)", n)
+		return nil, io.ErrUnexpectedEOF
 	}
 	return f.delegate.RoundTrip(req)
 }
@@ -64,46 +64,46 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 	It("UT-FMC-HC-001 [AC-4]: returns managed=true when FMC responds with managed=true", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"managed":true}`))
+			_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 		}))
 		client = fmc.NewHTTPClient(server.URL)
 
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Group: "apps", Version: "v1",
 			Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 	})
 
 	It("UT-FMC-HC-002 [AC-4]: returns managed=false when FMC responds with managed=false", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"managed":false}`))
+			_, _ = w.Write([]byte(`{"state":"verified_unmanaged","provenance":"resource-label"}`))
 		}))
 		client = fmc.NewHTTPClient(server.URL)
 
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Group: "apps", Version: "v1",
 			Kind: "Deployment", Namespace: "default", Name: "missing",
 		})
 
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
 	})
 
 	DescribeTable("UT-FMC-HC-003..005 [SC-7]: surfaces backend errors from the canonical scope check",
 		func(setupServer func() string) {
 			client = fmc.NewHTTPClient(setupServer())
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred(),
 				"canonical scope checks must preserve backend failures")
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		},
 		Entry("connection refused", func() string {
 			return "http://127.0.0.1:1"
@@ -128,11 +128,11 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedQuery = r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"managed":false}`))
+			_, _ = w.Write([]byte(`{"state":"verified_unmanaged","provenance":"resource-label"}`))
 		}))
 		client = fmc.NewHTTPClient(server.URL)
 
-		_, _ = client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		_, _ = client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "cluster with spaces",
 			Kind:      "Deployment",
 			Name:      "name/with/slashes",
@@ -180,7 +180,7 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 	})
 
 	Describe("WithHTTPClient [#1683, SC-8]", func() {
-		// Ping (unlike IsManagedResource) surfaces transport errors directly,
+		// Ping (unlike Check) surfaces transport errors directly,
 		// so it's the clearest way to prove the *injected* client -- not the
 		// package's own 5s-timeout default -- is actually what governs the
 		// request: a slow server combined with a much shorter injected
@@ -207,15 +207,15 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		It("UT-FMC-HC-012: NewHTTPClient without options preserves the package's own default client", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 	})
 
@@ -241,20 +241,22 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		It("UT-FMC-HC-013 [SC-7]: retries on 503 and succeeds once FMC recovers, without exhausting all attempts", func() {
 			server = httptest.NewServer(countingHandler(func(w http.ResponseWriter, _ *http.Request, n int32) {
 				if n < 2 {
+					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"state":"unavailable","provenance":"unavailable"}`))
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 			Expect(atomic.LoadInt32(&requestCount)).To(Equal(int32(2)),
 				"must retry exactly once after the transient 503 before succeeding")
 		})
@@ -262,17 +264,17 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		It("UT-FMC-HC-014 [SC-7]: retries on a transport error and succeeds once the connection recovers", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":true}`))
+				_, _ = w.Write([]byte(`{"state":"verified_managed","provenance":"resource-label"}`))
 			}))
 			flaky := &flakyRoundTripper{failCount: 1, delegate: http.DefaultTransport}
 			client = fmc.NewHTTPClient(server.URL, fmc.WithHTTPClient(&http.Client{Transport: flaky}))
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 			Expect(flaky.attempts.Load()).To(Equal(int32(2)),
 				"must retry exactly once after the transient transport error before succeeding")
 		})
@@ -280,16 +282,16 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		It("UT-FMC-HC-015 [SC-7]: does NOT retry a definitive 200 managed=false response", func() {
 			server = httptest.NewServer(countingHandler(func(w http.ResponseWriter, _ *http.Request, _ int32) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"managed":false}`))
+				_, _ = w.Write([]byte(`{"state":"verified_unmanaged","provenance":"resource-label"}`))
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "missing",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
 			Expect(atomic.LoadInt32(&requestCount)).To(Equal(int32(1)),
 				"a completed check that determined not-managed is a final answer, not a failure to retry")
 		})
@@ -300,31 +302,32 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred())
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 			Expect(atomic.LoadInt32(&requestCount)).To(Equal(int32(1)),
 				"a 4xx is a client-side problem, not a transient backend failure -- must fail fast, not retry")
 		})
 
 		It("UT-FMC-HC-017 [SC-7]: gives up after a bounded number of attempts when 503 persists -- does not retry forever", func() {
 			server = httptest.NewServer(countingHandler(func(w http.ResponseWriter, _ *http.Request, _ int32) {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"state":"unavailable","provenance":"unavailable"}`))
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
 			start := time.Now()
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 			elapsed := time.Since(start)
 
-			Expect(err).To(HaveOccurred(),
-				"exhausted retries must preserve the backend failure")
-			Expect(managed).To(BeFalse())
+			Expect(err).NotTo(HaveOccurred(), "completed unavailable is a domain result")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 			finalCount := atomic.LoadInt32(&requestCount)
 			Expect(finalCount).To(BeNumerically(">", 1),
 				"must have retried at least once")
@@ -336,7 +339,9 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 
 		It("UT-FMC-HC-018 [SC-7]: honors a short caller context deadline instead of exhausting its own retry budget", func() {
 			server = httptest.NewServer(countingHandler(func(w http.ResponseWriter, _ *http.Request, _ int32) {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"state":"unavailable","provenance":"unavailable"}`))
 			}))
 			client = fmc.NewHTTPClient(server.URL)
 
@@ -344,13 +349,13 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			defer cancel()
 
 			start := time.Now()
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
 			})
 			elapsed := time.Since(start)
 
 			Expect(err).To(HaveOccurred())
-			Expect(managed).To(BeFalse())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 			Expect(elapsed).To(BeNumerically("<", 1*time.Second),
 				"a short caller-provided context deadline must cut the retry loop short, not run to its own internal ceiling")
 		})

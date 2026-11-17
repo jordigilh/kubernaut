@@ -240,8 +240,8 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	if err != nil {
 		return CreateRRResult{}, fmt.Errorf("%w: target GVK: %w", ErrInvalidInput, err)
 	}
-	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, targetIdentity, d.ClusterLister); !managed {
-		return CreateRRResult{}, fmt.Errorf("%w: %s", ErrResourceNotManaged, msg)
+	if err := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, targetIdentity, d.ClusterLister); err != nil {
+		return CreateRRResult{}, err
 	}
 
 	resolvedSeverity, triageResult, err := resolveCreateRRSeverity(ctx, d, args)

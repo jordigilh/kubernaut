@@ -185,7 +185,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			"AC-3: managed resource on remote cluster must NOT be blocked")
 	})
 
-	It("IT-RO-054-FLEET-002 [AC-3]: should route empty ClusterID to local scope.Manager", func() {
+	It("IT-RO-054-FLEET-002 [AC-3]: Fleet empty attribution blocks without a local fallback", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-local", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
@@ -196,8 +196,10 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		}
 
 		condition := engine.CheckUnmanagedResource(ctx, rr)
-		Expect(condition).To(BeNil(),
-			"AC-3: managed resource on local cluster (managed namespace) must NOT be blocked")
+		Expect(condition).NotTo(BeNil())
+		Expect(condition.Blocked).To(BeTrue())
+		Expect(condition.Message).To(ContainSubstring("unavailable"))
+		Expect(condition.Message).NotTo(ContainSubstring("Add label"))
 	})
 
 	It("IT-RO-054-FLEET-003 [AC-3]: should block RR when remote scope returns unmanaged", func() {

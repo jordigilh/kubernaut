@@ -3939,16 +3939,17 @@ func CheckFleetResourceScope(ctx context.Context, nodeName, kubeconfigPath, name
 	if output.truncated {
 		return false, fmt.Errorf("fmc scope response exceeded its byte limit: %s", text)
 	}
-	var response struct {
-		Managed *bool `json:"managed"`
-	}
-	if err := json.Unmarshal([]byte(text), &response); err != nil {
+	response, err := fmc.DecodeScopeResponse(strings.NewReader(text))
+	if err != nil {
 		return false, fmt.Errorf("decode fmc scope response: %w: %s", err, text)
 	}
-	if response.Managed == nil {
-		return false, fmt.Errorf("fmc scope response is missing an explicit managed boolean")
+	if err := response.Validate(); err != nil {
+		return false, err
 	}
-	return *response.Managed, nil
+	if response.State != scope.ScopeVerifiedManaged && response.State != scope.ScopeVerifiedUnmanaged {
+		return false, fmt.Errorf("fmc scope response is unavailable")
+	}
+	return response.State == scope.ScopeVerifiedManaged, nil
 }
 
 func validateFleetScopeProbe(nodeName, namespace, token string, resource scope.ResourceIdentity) error {

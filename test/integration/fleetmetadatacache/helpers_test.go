@@ -98,8 +98,8 @@ func deleteMCPServerRegistration(ctx context.Context, name string) {
 // isolating the remote (Valkey/FMC) path under test.
 type localAlwaysFalse struct{}
 
-func (l *localAlwaysFalse) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return false, nil
+func (l *localAlwaysFalse) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedUnmanaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // Issue #1993 (ADR-068 gap closure, IA-2/AC-3): test-only helpers for

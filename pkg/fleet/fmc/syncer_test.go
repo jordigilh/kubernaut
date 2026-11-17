@@ -243,7 +243,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 		// Issue #2311: without syncing Namespace objects too, a namespace
 		// labeled kubernaut.ai/managed=true with unlabeled resources inside
 		// it never populates a namespace-level cache entry for
-		// scopecache.Client.IsManagedResource's fallback to consult, so the
+		// scopecache.Client.Check's fallback to consult, so the
 		// fleet scope-check hierarchy silently degrades to "resource label
 		// only" -- stricter than the documented (and local-cluster-honored)
 		// 2-level hierarchy (ADR-053).
@@ -290,7 +290,7 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			expectedKey, keyErr := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "demo-checkout")
 			Expect(keyErr).ToNot(HaveOccurred())
 			Expect(writer.keysWritten).To(ContainElement(expectedKey),
-				"a labeled Namespace must be written to the cache so IsManagedResource's namespace fallback can find it")
+				"a labeled Namespace must be written to the cache so Check's namespace fallback can find it")
 		})
 	})
 

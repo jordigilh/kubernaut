@@ -41,13 +41,11 @@ import (
 // exercises FMC's actual HTTP API end to end. Gateway-agnostic: FMC's own
 // REST contract never varies by which gateway fronts kube-mcp-server.
 func ScopeCheck(g Gomega, h *Harness, clusterID, group, version, kind, namespace, name string) bool {
-	resp := scopeCheckResponse(g, h, scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: kind, Namespace: namespace, Name: name})
-	defer func() { _ = resp.Body.Close() }()
-	g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "scope check should return 200")
-
-	var body fmc.ScopeCheckResponse
-	g.Expect(json.NewDecoder(resp.Body).Decode(&body)).To(Succeed())
-	return body.Managed
+	result, err := fmc.NewHTTPClient(h.FMCAPIBaseURL, fmc.WithHTTPClient(h.FMCHTTPClient)).Check(h.Ctx,
+		scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: kind, Namespace: namespace, Name: name})
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.State).To(BeElementOf(scope.ScopeVerifiedManaged, scope.ScopeVerifiedUnmanaged))
+	return result.State == scope.ScopeVerifiedManaged
 }
 
 // ScopeCheckUnavailable preserves BR-SCOPE-001/DD-FLEET-013: an absent target
@@ -58,14 +56,11 @@ func ScopeCheckUnavailable(g Gomega, h *Harness, identity scope.ResourceIdentity
 	g.Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable), "missing target must be unavailable")
 	raw, err := io.ReadAll(resp.Body)
 	g.Expect(err).NotTo(HaveOccurred())
-	// Handler.ScopeCheck uses http.Error for unavailable results, not the
-	// JSON success response. Match that exact body; arbitrary text is not proof.
-	if string(raw) == "scope check temporarily unavailable\n" {
-		return
-	}
-	var body map[string]json.RawMessage
-	g.Expect(json.Unmarshal(raw, &body)).To(Succeed())
-	g.Expect(body).NotTo(HaveKey("managed"), "unavailable must not assert a managed decision")
+	body, err := fmc.DecodeScopeResponse(strings.NewReader(string(raw)))
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(body.Validate()).To(Succeed())
+	g.Expect(body.State).To(Equal(scope.ScopeUnavailable))
+	g.Expect(body.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 }
 
 func scopeCheckResponse(g Gomega, h *Harness, identity scope.ResourceIdentity) *http.Response {

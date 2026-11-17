@@ -722,6 +722,10 @@ func deleteTestNamespace(ns string) {
 // ADR-057: RR is created in ROControllerNamespace; targetNamespace is for Spec.TargetResource
 // (scope validation). Child CRDs (SP, AI, WE) are created by RO in rr.Namespace = ROControllerNamespace.
 func createRemediationRequest(targetNamespace, name string) *remediationv1.RemediationRequest {
+	// DD-FLEET-015: this happy-path fixture needs an observed target before
+	// namespace inheritance can authorize routing. Negative presence tests build
+	// their own requests; do not fabricate scope decisions in the checker.
+	helpers.EnsureTestDeployment(ctx, k8sClient, targetNamespace, "test-app")
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -741,9 +745,10 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 			SignalType: "alert",
 			TargetType: "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "test-app",
-				Namespace: targetNamespace,
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "test-app",
+				Namespace:  targetNamespace,
 			},
 			FiringTime:   now,
 			ReceivedTime: now,

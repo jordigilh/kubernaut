@@ -56,9 +56,9 @@ func NewValkeyWriter(addr string, opts ...ValkeyOption) *ValkeyWriter {
 	}
 }
 
-// Set writes a key with the given TTL. The value is "1" (existence-only semantics).
+// Set records an observed explicit true label with the given TTL.
 func (v *ValkeyWriter) Set(ctx context.Context, key string, ttl time.Duration) error {
-	return v.client.Set(ctx, key, "1", ttl).Err()
+	return v.SetObservation(ctx, key, scope.LabelStateTrue, ttl)
 }
 
 // SetObservation writes a presence-aware label state for a source observation.
