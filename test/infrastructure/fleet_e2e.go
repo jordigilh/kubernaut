@@ -242,8 +242,15 @@ const (
 	gatewayAPICRDsURL        = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
 	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.8.0"
 	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.8.0"
-	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
-	istioHelmVersion         = "1.30.2"
+	// istioHelmRepoURL is Istio's current chart repository. The previously
+	// used https://istio-release.storage.googleapis.com/charts bucket stopped
+	// serving anonymous reads (403 AccessDenied on index.yaml, 2026-11-17),
+	// which turned every Gateway-Kuadrant E2E lane red at "istio base install
+	// failed: kubectl apply failed: exit status 1" / "no objects passed to
+	// apply". blob.istio.io is what istio.io's Helm install guide documents
+	// today; it redirects to the same objects on istio-release.r2.istio.io.
+	istioHelmRepoURL = "https://blob.istio.io/istio-release/charts"
+	istioHelmVersion = "1.30.2"
 	// traefikHelmRepoURL: ingress controller for manual setup-e2e-fleet-infra
 	// Console access only (SetupFleetCoreInfrastructure). ingress-nginx was
 	// considered but is EOL (best-effort maintenance ended March 2026, no
@@ -1918,7 +1925,13 @@ func installKuadrantIstioControlPlane(ctx context.Context, kubeconfigPath string
 	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer, "istiod", "istiod", "istio-system", append(istioHelmInstallArgs(), "--set", "global.proxy.autoInject=disabled", "--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false")...); err != nil {
 		return fmt.Errorf("istio istiod install failed: %w", err)
 	}
-	if err := waitForDeployment(ctx, "istiod", "istio-system", kubeconfigPath, 180*time.Second, writer); err != nil {
+	// istiod gets a longer budget than the sibling rollout waits: during
+	// Istio's 2026-11-17 distribution migration, registry.istio.io returned
+	// intermittent 403s on the anonymous token endpoint, and kubelet's
+	// ImagePullBackOff retries burned ~170s before the pull succeeded. The
+	// old 180s budget turned that transient upstream hiccup into a lane-wide
+	// "istiod rollout failed".
+	if err := waitForDeployment(ctx, "istiod", "istio-system", kubeconfigPath, 300*time.Second, writer); err != nil {
 		return fmt.Errorf("istiod rollout failed: %w", err)
 	}
 	return nil

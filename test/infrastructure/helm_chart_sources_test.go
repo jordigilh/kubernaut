@@ -70,7 +70,7 @@ var _ = Describe("fleet demo Helm chart sources [BR-PLATFORM-014]", func() {
 
 	It("UT-INFRA-FLEETDEMO-HELM-003: resolves Istio directly from its repository URL", func() {
 		Expect(istioHelmInstallArgs()).To(Equal([]string{
-			"--repo", "https://istio-release.storage.googleapis.com/charts",
+			"--repo", "https://blob.istio.io/istio-release/charts",
 			"--version", "1.30.2",
 		}))
 	})
