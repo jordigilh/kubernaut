@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
@@ -213,6 +214,10 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(result.RRID).NotTo(BeEmpty())
 			Expect(result.AlreadyExists).To(BeFalse())
 			Expect(result.Message).To(ContainSubstring("created"))
+
+			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
+			Expect(created.Finalizers).To(ContainElement(cancellation.RemediationRequestFinalizer),
+				"the API frontend must install the cancellation finalizer before RR creation")
 		})
 
 		It("UT-AF-1282-MIN-002: empty kind rejected", func() {

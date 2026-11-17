@@ -85,6 +85,12 @@ var _ = Describe("SignalProcessingCreator", func() {
 						Name:      "sp-test-remediation",
 						Namespace: "default",
 					},
+					Spec: signalprocessingv1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1.ObjectReference{
+							Name:      "test-remediation",
+							Namespace: "default",
+						},
+					},
 				}
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingSP).Build()
 				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)

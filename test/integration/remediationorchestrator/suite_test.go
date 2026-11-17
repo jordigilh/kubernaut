@@ -741,9 +741,10 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 			SignalType: "alert",
 			TargetType: "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "test-app",
-				Namespace: targetNamespace,
+				Kind:       "Deployment",
+				APIVersion: "apps/v1",
+				Name:       "test-app",
+				Namespace:  targetNamespace,
 			},
 			FiringTime:   now,
 			ReceivedTime: now,

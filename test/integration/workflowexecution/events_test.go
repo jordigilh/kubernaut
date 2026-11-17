@@ -96,7 +96,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {
@@ -152,7 +152,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			}()
 
 			By("Creating a WFE with invalid spec (empty ContainerImage)")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Failed phase")
 			Eventually(func() string {
@@ -182,7 +182,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 
 			By("Creating first WFE and completing it to activate cooldown")
 			wfe1 := eventJobWFE("events-cooldown-1", targetResource)
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			Eventually(func() string {
 				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
@@ -206,7 +206,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 
 			By("Creating second WFE for SAME target (within cooldown)")
 			wfe2 := eventJobWFE("events-cooldown-2", targetResource)
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 			defer func() {
 				cleanupJobWFE(wfe1)
@@ -236,7 +236,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 			}()
 
 			By("Creating a WFE with executionEngine=job")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
 			Eventually(func() string {

@@ -35,6 +35,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -106,6 +107,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 		ctx = context.Background()
 		scheme = runtime.NewScheme()
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 	})
 
@@ -136,7 +138,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -211,7 +213,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -279,7 +281,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -357,7 +359,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -426,7 +428,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -505,7 +507,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -582,7 +584,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 
@@ -650,7 +652,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis).
 				Build()
 

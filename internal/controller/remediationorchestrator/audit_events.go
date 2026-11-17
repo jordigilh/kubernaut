@@ -32,6 +32,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 )
 
+const cancellationAuditServiceActorType = "service"
+
 // ========================================
 // AUDIT EVENT EMISSION (DD-AUDIT-003)
 // ========================================
@@ -325,14 +327,16 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 	// Per universal standard: All services use RemediationRequest.Name for audit correlation
 	correlationID := rr.Name
 
-	event, err := r.auditManager.BuildPhaseTransitionEvent(
-		correlationID,
-		rr.Namespace,
-		rr.Name,
-		rr.Spec.ClusterID,
-		fromPhase,
-		toPhase,
-	)
+	event, err := r.auditManager.BuildPhaseTransitionEvent(roaudit.PhaseTransitionEventParams{
+		CorrelationID: correlationID,
+		Namespace:     rr.Namespace,
+		RRName:        rr.Name,
+		ClusterName:   rr.Spec.ClusterID,
+		FromPhase:     fromPhase,
+		ToPhase:       toPhase,
+		RRUID:         string(rr.UID),
+		RequestID:     rr.Status.GetCancellation().RequestID,
+	})
 	if err != nil {
 		logger.Error(err, "Failed to build phase transition audit event")
 		return
@@ -341,6 +345,92 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store phase transition audit event")
 	}
+}
+
+// emitCancellationLifecycleAudit records a correlated cancellation observation
+// using the existing typed orchestrator.lifecycle.transitioned payload. The
+// deterministic stage ID makes this safe to call from every retry/reconcile.
+func (r *Reconciler) emitCancellationLifecycleAudit(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	stage string,
+	fromPhase string,
+	toPhase string,
+) {
+	r.emitCancellationAudit(ctx, rr, stage, fromPhase, toPhase, "", nil)
+}
+
+func (r *Reconciler) emitCancellationFailureAudit(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	stage string,
+	fromPhase string,
+	toPhase string,
+	failurePhase string,
+	failure error,
+) {
+	r.emitCancellationAudit(ctx, rr, stage, fromPhase, toPhase, failurePhase, failure)
+}
+
+func (r *Reconciler) emitCancellationAudit(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	stage string,
+	fromPhase string,
+	toPhase string,
+	failurePhase string,
+	failure error,
+) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil || r.auditManager == nil {
+		logger.Error(fmt.Errorf("cancellation audit dependencies are nil"),
+			"Cannot record cancellation lifecycle audit event",
+			"remediationRequest", rr.Name,
+			"stage", stage)
+		return
+	}
+
+	actorType, actorID := cancellationAuditActor(rr)
+	event, err := r.auditManager.BuildCancellationLifecycleEvent(roaudit.CancellationLifecycleEventParams{
+		CorrelationID: rr.Name,
+		Namespace:     rr.Namespace,
+		RRName:        rr.Name,
+		RRUID:         string(rr.UID),
+		RequestID:     rr.Status.GetCancellation().RequestID,
+		ClusterName:   rr.Spec.ClusterID,
+		Stage:         stage,
+		FromPhase:     fromPhase,
+		ToPhase:       toPhase,
+		FailurePhase:  failurePhase,
+		Failure:       failure,
+		ActorType:     actorType,
+		ActorID:       actorID,
+	})
+	if err != nil {
+		logger.Error(err, "Failed to build cancellation lifecycle audit event", "stage", stage)
+		return
+	}
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store cancellation lifecycle audit event", "stage", stage)
+	}
+}
+
+func cancellationAuditActor(rr *remediationv1.RemediationRequest) (string, string) {
+	if rr.Status.Cancellation != nil {
+		switch rr.Status.Cancellation.Source {
+		case remediationv1.CancellationSourceUser:
+			if rr.Status.Cancellation.RequestedBy != "" {
+				return "user", rr.Status.Cancellation.RequestedBy
+			}
+		case remediationv1.CancellationSourceDeletion:
+			return cancellationAuditServiceActorType, "kubernetes-api"
+		case remediationv1.CancellationSourceSystem:
+			if rr.Status.Cancellation.RequestedBy != "" {
+				return cancellationAuditServiceActorType, rr.Status.Cancellation.RequestedBy
+			}
+		}
+	}
+	return cancellationAuditServiceActorType, roaudit.ServiceName
 }
 
 // emitCompletionAudit emits an audit event for remediation completion.

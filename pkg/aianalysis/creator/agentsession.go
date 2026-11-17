@@ -32,6 +32,7 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 )
 
 // AgentSessionCreator creates AgentSession CRDs from AIAnalysis, replacing
@@ -80,6 +81,10 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 	existing := &agentsessionv1.AgentSession{}
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: analysis.Namespace}, existing)
 	if err == nil {
+		if err := validateExistingAgentSessionIdentity(analysis, existing); err != nil {
+			logger.Error(err, "Refusing to reuse AgentSession from another AIAnalysis incarnation")
+			return nil, err
+		}
 		logger.V(1).Info("AgentSession already exists, reusing", "name", name)
 		return existing, nil
 	}
@@ -113,19 +118,42 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 		return nil, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
-	if err := c.client.Create(ctx, as); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			// Concurrent create (e.g. two reconciles racing) -- re-fetch
-			// rather than erroring, preserving idempotency.
-			if getErr := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: analysis.Namespace}, existing); getErr == nil {
-				return existing, nil
-			}
-		}
-		return nil, fmt.Errorf("failed to create AgentSession: %w", err)
+	createErr := c.client.Create(ctx, as)
+	if createErr == nil {
+		logger.Info("Created AgentSession", "name", name)
+		return as, nil
+	}
+	if !apierrors.IsAlreadyExists(createErr) {
+		return nil, fmt.Errorf("failed to create AgentSession: %w", createErr)
 	}
 
-	logger.Info("Created AgentSession", "name", name)
-	return as, nil
+	// Concurrent create (e.g. two reconciles racing) -- re-fetch rather than
+	// erroring, preserving idempotency.
+	if getErr := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: analysis.Namespace}, existing); getErr != nil {
+		return nil, fmt.Errorf("failed to create AgentSession: %w", createErr)
+	}
+	if validateErr := validateExistingAgentSessionIdentity(analysis, existing); validateErr != nil {
+		return nil, validateErr
+	}
+	return existing, nil
+}
+
+func validateExistingAgentSessionIdentity(
+	analysis *aianalysisv1.AIAnalysis,
+	session *agentsessionv1.AgentSession,
+) error {
+	if analysis.UID == "" {
+		return fmt.Errorf("cannot verify existing AgentSession: AIAnalysis UID is required")
+	}
+	if !cancellation.MatchesCancellationIdentity(
+		cancellation.ParentIdentity{Name: analysis.Name, Namespace: analysis.Namespace, UID: analysis.UID},
+		cancellation.ReferenceIdentity{},
+		session.OwnerReferences,
+		"AIAnalysis",
+	) {
+		return fmt.Errorf("existing AgentSession identity mismatch: %w", cancellation.ErrIdentityMismatch)
+	}
+	return nil
 }
 
 // DeleteForRetry deletes as so that the next reconcile's GetOrCreate call
@@ -168,7 +196,7 @@ func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessi
 }
 
 // DeleteForCascadeCancel deletes the deterministically-named AgentSession
-// (as-<rrName>) for the given RemediationRequest on external cascade-cancel
+// (as-<rrName>) for the given AIAnalysis on external cascade-cancel
 // (#1421 ParentCancelled), replacing AA's retired direct IS write
 // (K8sISPhaseUpdater.SetTerminalPhase) with an AgentSession delete (#2214 /
 // DD-AA-KA-001 Amendment). This lets two independent, already-proven
@@ -181,13 +209,36 @@ func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessi
 // Idempotent: a NotFound (e.g. the AgentSession was never created, or a
 // concurrent cascade-cancel already deleted it) is not an error, mirroring
 // DeleteForRetry's contract.
-func (c *AgentSessionCreator) DeleteForCascadeCancel(ctx context.Context, rrName, namespace string) error {
-	name := fmt.Sprintf("as-%s", rrName)
-	as := &agentsessionv1.AgentSession{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+
+func (c *AgentSessionCreator) DeleteForCascadeCancel(ctx context.Context, analysis *aianalysisv1.AIAnalysis) error {
+	if analysis == nil || analysis.Spec.RemediationRequestRef.Name == "" {
+		return fmt.Errorf("cannot cascade-cancel AgentSession without an AIAnalysis parent reference")
 	}
-	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete AgentSession %s/%s for cascade-cancel: %w", namespace, name, err)
+	name := fmt.Sprintf("as-%s", analysis.Spec.RemediationRequestRef.Name)
+	as := &agentsessionv1.AgentSession{}
+	key := client.ObjectKey{Name: name, Namespace: analysis.Namespace}
+	if err := c.client.Get(ctx, key, as); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get AgentSession %s/%s for cascade-cancel: %w", analysis.Namespace, name, err)
+	}
+	if !cancellation.MatchesCancellationIdentity(
+		cancellation.ParentIdentity{Name: analysis.Name, Namespace: analysis.Namespace, UID: analysis.UID},
+		cancellation.ReferenceIdentity{},
+		as.OwnerReferences,
+		"AIAnalysis",
+	) {
+		return fmt.Errorf("validate AgentSession owner for cascade-cancel: %w", cancellation.ErrIdentityMismatch)
+	}
+
+	deleteOptions := &client.DeleteOptions{}
+	if as.UID != "" {
+		uid := as.UID
+		deleteOptions.Preconditions = &metav1.Preconditions{UID: &uid}
+	}
+	if err := c.client.Delete(ctx, as, deleteOptions); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete AgentSession %s/%s for cascade-cancel: %w", analysis.Namespace, name, err)
 	}
 	return nil
 }

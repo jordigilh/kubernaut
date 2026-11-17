@@ -32,6 +32,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -95,6 +96,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 		// Setup scheme with AIAnalysis CRD
 		scheme = runtime.NewScheme()
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 		// Create fake recorder for events
 		recorder = record.NewFakeRecorder(10)
@@ -124,7 +126,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 			// Create fake K8s client (ADR-004)
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(testAnalysis).
+				WithObjects(testAnalysis, &remediationv1.RemediationRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"}}).
 				WithStatusSubresource(testAnalysis). // Enable status subresource
 				Build()
 
@@ -151,13 +153,13 @@ var _ = Describe("AIAnalysis Controller", func() {
 
 			// Create reconciler
 			reconciler = &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
 				AnalyzingHandler: analyzingHandler,
-				AuditClient:     auditClient,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 

@@ -68,6 +68,12 @@ var approvalDecisionMappings = map[string]ApprovalDecisionMapping{
 		PayloadEventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected, // Expired uses Rejected discriminator
 		DiscriminatorWrapper: api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData,
 	},
+	"Cancelled": {
+		Action:               ActionCancelled,
+		Outcome:              api.AuditEventRequestEventOutcomeFailure,
+		PayloadEventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalCancelled,
+		DiscriminatorWrapper: api.NewAuditEventRequestEventDataOrchestratorApprovalCancelledAuditEventRequestEventData,
+	},
 }
 
 // GetApprovalDecisionMapping returns the mapping for a given decision.

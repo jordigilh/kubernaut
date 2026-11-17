@@ -279,14 +279,16 @@ pull it instead: `git checkout release/vX.Y && git pull origin release/vX.Y`.
 Dependabot's `target-branch` option does not support wildcards
 ([dependabot/dependabot-core#6890](https://github.com/dependabot/dependabot-core/issues/6890)
 is still open), so `.github/dependabot.yml` cannot express "all `release/**`
-branches" the way `ci-pipeline.yml`/`codeql.yml` do. Each actively maintained
-maintenance branch needs its own explicit `updates:` block per ecosystem
+branches" in one rule. Each actively maintained maintenance branch needs its
+own explicit `updates:` block per ecosystem
 (gomod, github-actions, docker).
 
 When you create a new `release/vX.Y` maintenance branch (Step 1 above), add
-three new blocks to `.github/dependabot.yml` — copy the existing
-`release/v1.5` blocks and change `target-branch` and the commit-message
-suffix to match the new branch (e.g. `deps(vX.Y)`).
+three new blocks to `.github/dependabot.yml` using the `main` blocks as the
+template. Add `target-branch` and change the commit-message suffix to match
+the new branch (e.g. `deps(vX.Y)`). The repository currently supports only
+`main`, so add these blocks only when the maintenance branch is explicitly
+supported.
 
 When a maintenance branch stops receiving patches (superseded by a newer
 minor, or end-of-support), remove its three blocks from `dependabot.yml` in

@@ -110,6 +110,36 @@ type Executor interface {
 	Engine() string
 }
 
+// StopState describes the independently verified state of an external
+// execution resource during cooperative cancellation.
+type StopState string
+
+const (
+	// StopStateStopped means the backend is terminal or no longer exists after
+	// a verified stop request.
+	StopStateStopped StopState = "Stopped"
+	// StopStateRunning means the backend is still executing.
+	StopStateRunning StopState = "Running"
+	// StopStateUnknown means the controller cannot prove either outcome.
+	StopStateUnknown StopState = "Unknown"
+)
+
+// StopVerification is the result of checking whether an external execution
+// resource has stopped. Unknown is never treated as Stopped.
+type StopVerification struct {
+	State   StopState
+	Message string
+}
+
+// CancellableExecutor is the optional executor capability required by issue
+// #2588. RequestStop must be idempotent; VerifyStopped must provide positive
+// evidence before the WorkflowExecution acknowledges cancellation.
+type CancellableExecutor interface {
+	Executor
+	RequestStop(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error
+	VerifyStopped(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (StopVerification, error)
+}
+
 // EphemeralResourceCleaner is an optional executor capability for deleting
 // short-lived supporting resources without deleting the execution resource
 // itself (BR-WE-015, ASVS V7.1.1).

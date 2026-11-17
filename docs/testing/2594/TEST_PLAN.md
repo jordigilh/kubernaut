@@ -2,12 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-2594-v1.0  
-**Feature**: Update the Kuadrant fleet registry and active fixtures to use `mcp.kuadrant.io/v1`.  
-**Version**: 1.0  
-**Created**: 2026-11-03  
-**Author**: OpenCode  
-**Status**: Active  
+**Test Plan Identifier**: TP-2594-v1.0
+**Feature**: Update the Kuadrant fleet registry and active fixtures to use `mcp.kuadrant.io/v1`.
+**Version**: 1.0
+**Created**: 2026-11-03
+**Author**: OpenCode
+**Status**: Active
 **Branch**: `openchamber/issue-2594-kuadrant-v1`
 
 ---

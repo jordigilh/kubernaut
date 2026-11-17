@@ -69,7 +69,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Creating WorkflowExecution for concurrent test")
 			targetResource := "test-namespace/deployment/concurrent-test"
 			wfe := conflictWFE("concurrent-race", targetResource)
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for initial PipelineRun creation")
 			var initialPR *tektonv1.PipelineRun
@@ -170,7 +170,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			externalPRName := pr.Name
 
 			By("Now creating the WorkflowExecution (after PipelineRun exists)")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Verifying controller detects existing PipelineRun and adopts it")
 			Eventually(func() string {
@@ -205,7 +205,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Creating first WorkflowExecution")
 			targetResource := "test-namespace/deployment/conflict-test"
 			wfe1 := conflictWFE("conflict-wfe1", targetResource)
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for first WFE to create PipelineRun")
 			Eventually(func() error {
@@ -215,7 +215,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			By("Creating second WorkflowExecution for SAME target resource")
 			wfe2 := conflictWFE("conflict-wfe2", targetResource)
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe2)).To(Succeed())
 
 			By("Verifying second WFE is marked Failed/Deduplicated")
 			Eventually(func() string {

@@ -268,7 +268,7 @@ rules:
   resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
-  resources: ["remediationapprovalrequests/finalizers"]
+  resources: ["remediationrequests/finalizers", "remediationapprovalrequests/finalizers"]
   verbs: ["update"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["signalprocessings"]

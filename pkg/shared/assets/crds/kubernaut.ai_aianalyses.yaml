@@ -562,6 +562,12 @@ spec:
                 required:
                 - approvalRequired
                 type: object
+              cancellationRetryCount:
+                description: |-
+                  CancellationRetryCount records persisted retries while waiting for
+                  AgentSession shutdown during parent cancellation.
+                format: int32
+                type: integer
               completedAt:
                 format: date-time
                 type: string
@@ -1023,6 +1029,7 @@ spec:
                 - Pending
                 - Investigating
                 - Analyzing
+                - Cancelling
                 - Completed
                 - Failed
                 - Cancelled

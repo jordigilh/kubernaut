@@ -261,7 +261,7 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 	wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixture("Failure classification fixture", "tekton")
 
 	By("Creating WorkflowExecution")
-	Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+	Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 	DeferCleanup(func() {
 		_ = k8sClient.Delete(ctx, wfe)
 	})

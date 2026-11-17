@@ -240,6 +240,12 @@ spec:
                 - AlertDecayTimeout
                 - Unrecoverable
                 type: string
+              cancellationRetryCount:
+                description: |-
+                  CancellationRetryCount records persisted retries while the assessment
+                  transitions through the cancellation handshake.
+                format: int32
+                type: integer
               completedAt:
                 description: CompletedAt is the timestamp when the assessment finished.
                 format: date-time
@@ -365,6 +371,7 @@ spec:
                 - WaitingForPropagation
                 - Stabilizing
                 - Assessing
+                - Cancelling
                 - Completed
                 - Failed
                 - Cancelled

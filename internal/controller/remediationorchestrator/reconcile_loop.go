@@ -61,15 +61,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Fetch the RemediationRequest
 	rr := &remediationv1.RemediationRequest{}
 	if err := r.client.Get(ctx, req.NamespacedName, rr); err != nil {
-		if apierrors.IsNotFound(err) {
-			if cleanupErr := r.reconcileOrphanedApprovalRequest(ctx, req.NamespacedName, logger); cleanupErr != nil {
-				return ctrl.Result{}, cleanupErr
-			}
-			logger.V(1).Info("RemediationRequest not found, likely deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to fetch RemediationRequest")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, r.handleRemediationRequestGetError(ctx, req.NamespacedName, err, logger)
 	}
 
 	// Record reconcile duration on exit (only if metrics are available)
@@ -80,12 +72,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		).Observe(time.Since(startTime).Seconds())
 	}()
 
+	// Issue #2588: retain the parent while child controllers observe the
+	// cancellation request and acknowledge verified shutdown. Existing deleting
+	// RRs are processed below even if they predate this finalizer.
+	if err := r.ensureCancellationFinalizer(ctx, rr); err != nil {
+		logger.Error(err, "Failed to add RemediationRequest cancellation finalizer")
+		return ctrl.Result{}, err
+	}
+
 	// RAR deletion must be handled before terminal housekeeping or phase
 	// dispatch. A terminating approval request must not be consumed by the
 	// approval handler, and its finalizer is released only after the parent is
 	// either safely failed, already terminal, or authoritatively gone.
 	if result, handled, err := r.reconcileApprovalRequestDeletion(ctx, rr, logger); handled {
 		return result, err
+	}
+
+	if cancellationRequested(rr) {
+		return r.reconcileCancellation(ctx, rr, logger)
 	}
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
@@ -144,6 +148,47 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// here, the phase is genuinely unknown.
 	logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
 	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
+}
+
+func (r *Reconciler) handleRemediationRequestGetError(ctx context.Context, key client.ObjectKey, err error, logger logr.Logger) error {
+	if apierrors.IsNotFound(err) {
+		if cleanupErr := r.reconcileOrphanedApprovalRequest(ctx, key, logger); cleanupErr != nil {
+			return cleanupErr
+		}
+		logger.V(1).Info("RemediationRequest not found, likely deleted")
+		return nil
+	}
+	logger.Error(err, "Failed to fetch RemediationRequest")
+	return err
+}
+
+func (r *Reconciler) ensureCancellationFinalizer(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		// Ordinary terminal outcomes must not retain the cancellation finalizer:
+		// otherwise a later retention deletion would be misread as a new
+		// cancellation request and regress the terminal phase. A terminal
+		// Cancelled RR with cancellation status is the one exception: it may be
+		// retrying finalizer removal after cancellation completion.
+		cancellationCleanupPending := rr.Status.OverallPhase == remediationv1.PhaseCancelled && rr.Status.Cancellation != nil
+		if !cancellationCleanupPending && controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
+			controllerutil.RemoveFinalizer(rr, remediationRequestCancellationFinalizer)
+			return r.client.Update(ctx, rr)
+		}
+		return nil
+	}
+	if !rr.DeletionTimestamp.IsZero() || controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer) {
+		return nil
+	}
+	controllerutil.AddFinalizer(rr, remediationRequestCancellationFinalizer)
+	return r.client.Update(ctx, rr)
+}
+
+func cancellationRequested(rr *remediationv1.RemediationRequest) bool {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
+		return rr.Status.OverallPhase == remediationv1.PhaseCancelled &&
+			controllerutil.ContainsFinalizer(rr, remediationRequestCancellationFinalizer)
+	}
+	return rr.Status.OverallPhase == remediationv1.PhaseCancelling || !rr.DeletionTimestamp.IsZero()
 }
 
 // checkGlobalTimeout evaluates BR-ORCH-027's global remediation timeout
@@ -337,12 +382,18 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 		// Non-fatal: continue to return
 	}
 
-	// #1421: Cascade terminal phase to non-terminal child CRDs.
+	// #1421: Cascade legacy terminal phase to non-terminal child CRDs.
+	// Issue #2588 cancellation is excluded when the RR carries cancellation
+	// status, because child controllers own their stop request, backend
+	// verification, and status acknowledgement. Preserve the pre-2588 cascade
+	// for legacy Cancelled RRs that have no cancellation status.
 	// Kubernetes-native parent-manages-children: RO is responsible for
 	// transitioning children to a terminal state when the parent RR terminates.
 	// Per-child errors are logged internally by cascadeTerminalToChildren and
 	// never fail the parent reconcile.
-	r.cascadeTerminalToChildren(ctx, rr)
+	if rr.Status.OverallPhase != remediationv1.PhaseCancelled || rr.Status.Cancellation == nil {
+		r.cascadeTerminalToChildren(ctx, rr)
+	}
 
 	// BR-ORCH-044: Track routing decision - no action needed
 	r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()

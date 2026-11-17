@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
@@ -236,6 +237,10 @@ var _ = SynchronizedBeforeSuite(
 		err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
 		err = rwv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
+		// BR-2588: E2E-WE-2588-002 creates parent RemediationRequest objects
+		// directly, so the suite client must be able to serialize them.
+		err = remediationv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
 		err = tektonv1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
