@@ -69,7 +69,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/downloa
 ### 3. Install Istio (Gateway API provider, mesh disabled)
 
 ```bash
-helm repo add istio https://blob.istio.io/istio-release/charts
+helm repo add --force-update istio https://blob.istio.io/istio-release/charts
 helm install istio-base istio/base -n istio-system --create-namespace --wait
 helm install istiod istio/istiod -n istio-system --wait \
   --set global.proxy.autoInject=disabled \

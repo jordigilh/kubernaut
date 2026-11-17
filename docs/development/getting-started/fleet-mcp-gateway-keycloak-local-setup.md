@@ -380,7 +380,7 @@ kubectl rollout status deployment/kube-mcp-server -n mcp-system --timeout=120s
 ```bash
 # Gateway API + Istio (data plane) — see fleet_e2e.go Phase 1 for full detail
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml
-helm repo add istio https://blob.istio.io/istio-release/charts && helm repo update
+helm repo add --force-update istio https://blob.istio.io/istio-release/charts && helm repo update
 kubectl create namespace istio-system
 helm template istio-base istio/base -n istio-system --version 1.30.2 | kubectl apply -f -
 helm template istiod istio/istiod -n istio-system --version 1.30.2 \
