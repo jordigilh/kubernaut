@@ -13,7 +13,6 @@ import (
 	"time"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
@@ -458,11 +457,6 @@ func (s *Service) readStreamingHistory(ctx context.Context, source StreamingHist
 	}); err != nil {
 		return nil, fmt.Errorf("list AIAnalysis history: %w", err)
 	}
-	if err := source.ForEachSignalProcessing(ctx, func(record spv1.SignalProcessing) error {
-		return s.addSignalProcessingHistoryRecord(record, targets, index, workingSet)
-	}); err != nil {
-		return nil, fmt.Errorf("list SignalProcessing history: %w", err)
-	}
 	return index, nil
 }
 
@@ -473,15 +467,6 @@ func (s *Service) readLegacyHistory(ctx context.Context, targets map[string]stru
 	}
 	for _, record := range aiRecords {
 		if err := s.addAIHistoryRecord(record, targets, index, workingSet); err != nil {
-			return nil, err
-		}
-	}
-	spRecords, err := s.dependencies.History.ListSignalProcessing(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list SignalProcessing history: %w", err)
-	}
-	for _, record := range spRecords {
-		if err := s.addSignalProcessingHistoryRecord(record, targets, index, workingSet); err != nil {
 			return nil, err
 		}
 	}
@@ -502,12 +487,6 @@ func (s *Service) addAIHistoryRecord(record aianalysisv1.AIAnalysis, targets map
 		evaluation.Decision = string(policy.Decision)
 	}
 	return s.addHistoricalRecord(index, targets, historicalRecord{target: identity, evaluation: evaluation}, workingSet)
-}
-
-func (s *Service) addSignalProcessingHistoryRecord(record spv1.SignalProcessing, targets map[string]struct{}, index historyIndex, workingSet *retainedWorkingSet) error {
-	// SignalProcessing does not persist an apiVersion, so its target cannot be
-	// matched safely to an inventory identity.
-	return nil
 }
 
 func (s *Service) addHistoricalRecord(index historyIndex, targets map[string]struct{}, record historicalRecord, workingSet *retainedWorkingSet) error {
