@@ -36,7 +36,7 @@ import (
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func() {
+var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 	DescribeTable("IT-AF-ROUTE-010 / IT-AF-PRES-007 [BR-SCOPE-001]: production dependency factory, action and exact inventory retain enum authority",
 		func(state scope.ScopeState, source scope.ScopeSource, status int, expected inventory.State) {
 			resource := inventory.Resource{ClusterID: "hub", Version: "v1", Kind: "Pod", Namespace: "payments", Name: "api",

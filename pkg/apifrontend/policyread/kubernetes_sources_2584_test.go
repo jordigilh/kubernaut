@@ -52,11 +52,11 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		Expect(policies[0].Type).To(Equal("aiAnalysis"))
 		Expect(policies[0].ConfigMapName).To(Equal("custom-ai-policy"))
 		Expect(policies[0].ConfigMapKey).To(Equal("approval.rego"))
-		Expect(policies[0].Revision).To(HavePrefix("sha256:"))
+		Expect(policies[0].Revision).To(MatchRegexp(`^sha256:[0-9a-f]{64}$`))
 		Expect(policies[1].Type).To(Equal("signalProcessing"))
 		Expect(policies[1].ConfigMapName).To(Equal("custom-signal-policy"))
 		Expect(policies[1].ConfigMapKey).To(Equal("policy.rego"))
-		Expect(policies[1].Revision).To(HavePrefix("sha256:"))
+		Expect(policies[1].Revision).To(MatchRegexp(`^sha256:[0-9a-f]{64}$`))
 		// The revision is a digest: the policy source itself is never projected.
 		Expect(policies[0].Revision).NotTo(ContainSubstring("package approval"))
 		Expect(policies[1].Revision).NotTo(ContainSubstring("package signal"))

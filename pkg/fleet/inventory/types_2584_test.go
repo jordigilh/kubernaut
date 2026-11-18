@@ -15,7 +15,7 @@ func TestInventoryContract(t *testing.T) {
 	RunSpecs(t, "Inventory Contract Suite")
 }
 
-var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contract", func() {
+var _ = Describe("BR-SCOPE-001: canonical inventory contract", func() {
 	It("UT-AF-2584-005 [BR-SCOPE-001, FedRAMP SI-10]: applies a bounded default limit and rejects a widening exact filter", func() {
 		normalized, err := (inventory.Filters{ClusterID: "local"}).Normalize()
 		Expect(err).NotTo(HaveOccurred())
@@ -25,7 +25,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 		Expect(err).To(MatchError(ContainSubstring("resource_id cannot be combined")))
 	})
 
-	DescribeTable("rejects unbounded or malformed caller input", func(filters inventory.Filters) {
+	DescribeTable("UT-AF-2584-005 [FedRAMP SI-10]: rejects unbounded or malformed caller input", func(filters inventory.Filters) {
 		_, err := filters.Normalize()
 		Expect(err).To(HaveOccurred())
 		Expect(err).To(MatchError(ContainSubstring("invalid inventory filter")))

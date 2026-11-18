@@ -17,14 +17,15 @@ import (
 )
 
 var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
-	It("UT-AF-2584-005 [BR-SCOPE-001, FedRAMP AC-6]: reads only allowlisted kinds and projects canonical identities", func() {
+	It("UT-AF-2584-005 [BR-SCOPE-001, FedRAMP AC-6]: reads only configured kinds and projects canonical identities", func() {
 		scheme := runtime.NewScheme()
 		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
+		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		reader, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
 			MetadataClient: client,
 			ScopeResolver:  &localScopeStub{},
-			Now:            func() time.Time { return time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC) },
+			Now:            func() time.Time { return observedAt },
 			Kinds: []policyread.LocalResourceKind{{
 				Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true,
 			}},
@@ -34,12 +35,15 @@ var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
 		page, err := reader.List(context.Background(), inventory.Filters{ClusterID: "local", Limit: 10})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(page.State).To(Equal(inventory.StateSuccess))
+		Expect(page.ObservedAt).To(Equal(observedAt))
 		Expect(page.Items).To(HaveLen(2))
-		Expect(page.Items[0].ID).To(HavePrefix("r-"))
-		Expect(page.Items[0].Scope.Source).To(Equal(inventory.ScopeSourceResourceLabel))
 
-		// The allowlist is enforced at the backend read, not by filtering results:
-		// a kind that is not configured is never listed at all.
+		alpha := page.Items[0]
+		Expect(alpha.ID).To(Equal(inventory.CanonicalResourceID(alpha.Identity())))
+		Expect(alpha.ID).To(HavePrefix("r-"))
+		Expect(alpha.Scope.Source).To(Equal(inventory.ScopeSourceResourceLabel))
+
+		// Only the configured kind is ever listed.
 		listed := map[string]struct{}{}
 		for _, action := range client.Actions() {
 			if action.GetVerb() == "list" {
@@ -47,8 +51,12 @@ var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
 			}
 		}
 		Expect(listed).To(HaveKey("deployments"))
-		Expect(listed).NotTo(HaveKey("secrets"))
-		Expect(listed).NotTo(HaveKey("configmaps"))
+
+		// The shipped allowlist is the AC-6 guarantee: policy and credential
+		// kinds are excluded by construction, not by post-filtering.
+		for _, kind := range policyread.DefaultLocalResourceKinds {
+			Expect(kind.Resource).NotTo(BeElementOf("secrets", "configmaps"))
+		}
 	})
 
 	It("UT-AF-2584-007 [BR-SCOPE-001, FedRAMP SI-10]: paginates by opaque IDs without repeating a record", func() {

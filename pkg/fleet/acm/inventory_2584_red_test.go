@@ -439,6 +439,7 @@ var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func()
 
 	It("UT-FLEET-2584-ACM-EMPTY-001 [BR-API-001, SI-10]: reports an applied empty Search as a complete empty page", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			defer GinkgoRecover()
 			_, err := io.WriteString(w, emptySearchResponse)
 			Expect(err).NotTo(HaveOccurred())
 		}))

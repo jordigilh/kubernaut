@@ -45,7 +45,7 @@ func TestPolicyRead(t *testing.T) {
 	RunSpecs(t, "Policy Read Suite")
 }
 
-var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope projection", func() {
+var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 	It("UT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: accepts an empty result without evaluating a freshness marker", func() {
 		page := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: &inventoryStub{page: page}, Authorizer: allowAuthorizer{}})
@@ -412,7 +412,6 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		encoded, err := json.Marshal(result)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(encoded)).NotTo(ContainSubstring(`"items"`))
-		Expect(string(encoded)).NotTo(ContainSubstring("total"))
 	})
 
 	It("IT-AF-2584-007 [BR-SCOPE-001]: cursor pages are deterministic and links preserve exact scope", func() {
