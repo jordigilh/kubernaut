@@ -768,9 +768,11 @@ precondition** to the scope check pipeline:
 ```
 1. Cluster managed?  (ClusterLookup.IsKnownCluster)
 2. Resource managed? (ScopeChecker.IsManagedResource — local or remote)
-   *(Superseded by #2662: the `IsManagedResource` boolean lanes are deleted; the typed `Check`/`Resolve` contracts above carry this hierarchy.)*
 3. Namespace managed? (implicit in resource scope check)
 ```
+
+> **Superseded (#2662):** the `IsManagedResource` boolean lanes are deleted; the typed `Check`/`Resolve` contracts carry this hierarchy.
+
 
 The `ClusterLookup` interface is injected via `WithClusterLookup` option on
 `NewFederatedScopeChecker`. The production implementation uses

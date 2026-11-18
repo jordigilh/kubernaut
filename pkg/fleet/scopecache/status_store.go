@@ -216,7 +216,16 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 	for _, observation := range request.Observations.Items {
 		publicID, proof, err := s.repairObservation(ctx, request, observation)
 		if err != nil {
-			return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
+			// #2660 review: repairObservation already returns typed failures
+			// (record_invalid, ttl_invalid); prefer the typed code instead
+			// of re-deriving one from the message text, which collapsed
+			// record_invalid to commit_rejected.
+			code := repairFailureCode(err)
+			var typed RepairFailureError
+			if errors.As(err, &typed) {
+				code = typed.Failure.Code
+			}
+			return failRepairResult(result, code, err, repairFailureRetryable(err))
 		}
 		if _, exists := seen[publicID]; exists {
 			return failRepairResult(result, RepairFailureCountMismatch, fmt.Errorf("duplicate repair resource %q", publicID), false)

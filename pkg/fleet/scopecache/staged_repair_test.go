@@ -598,6 +598,37 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			"a pre-write TTL mismatch must never unwrap to ErrStaleFence")
 	})
 
+	It("UT-FMC-STAGED-015 [BR-SCOPE-001, #2660 review]: a record-invalid observation keeps its typed failure code", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		// A cluster-scoped kind carrying a namespace passes the weak
+		// ResourceIdentity.Validate but fails the canonical identity rules
+		// inside repairObservation, which returns a typed record_invalid
+		// failure. Repair must keep that code instead of re-deriving a
+		// code from the message text (which collapsed it to
+		// commit_rejected).
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		identity, observation := f.identity("checkout", "true")
+		identity.Kind = "Node"
+		identity.Namespace = "default"
+		observation.Identity = identity
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).To(HaveOccurred(), "a cluster-scoped kind with a namespace must fail the canonical identity rules")
+		var failure scopecache.RepairFailureError
+		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be a typed repair failure, got: %v", err)
+		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureRecordInvalid),
+			"a record-invalid observation must keep its typed code, not collapse to commit_rejected")
+	})
+
 	It("UT-FMC-STAGED-012 [BR-SCOPE-001, #2660 m1]: a non-eligible commit proof is still rejected while the reserved slots stay unenforced", func() {
 		f := newStagedRepairFixture()
 		DeferCleanup(f.server.Close)
