@@ -252,6 +252,31 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
 		Expect(reader.listCalls).To(Equal(0))
 	})
+
+	It("IT-AF-2584-005 [FedRAMP SI-10, AC-4]: rejects filters and IDs that would widen the result", func() {
+		reader := &consoleInventoryStub{page: successfulPage()}
+		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
+
+		// A non-local cluster is refused without falling back to the hub cluster.
+		crossCluster := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=prod-east", http.NoBody)
+		crossCluster = crossCluster.WithContext(auth.WithUserIdentity(crossCluster.Context(), &auth.UserIdentity{Username: "alice"}))
+		crossRecorder := httptest.NewRecorder()
+		readHandler.ServeHTTP(crossRecorder, crossCluster)
+		Expect(crossRecorder.Code).To(Equal(http.StatusServiceUnavailable))
+		Expect(crossRecorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
+		Expect(reader.listCalls).To(Equal(0), "a remote cluster must not fall back to the local reader")
+
+		// A guessed opaque ID returns not_found without existence detail.
+		guessedID := "r-" + strings.Repeat("0", 64)
+		guessed := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources/"+guessedID+"?cluster_id=local", http.NoBody)
+		guessed.SetPathValue("resourceID", guessedID)
+		guessed = guessed.WithContext(auth.WithUserIdentity(guessed.Context(), &auth.UserIdentity{Username: "alice"}))
+		guessedRecorder := httptest.NewRecorder()
+		readHandler.ServeHTTP(guessedRecorder, guessed)
+		Expect(guessedRecorder.Code).To(Equal(http.StatusNotFound))
+		Expect(guessedRecorder.Body.String()).To(ContainSubstring(`"state":"not_found"`))
+		Expect(guessedRecorder.Body.String()).NotTo(ContainSubstring("checkout"))
+	})
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {

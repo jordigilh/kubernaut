@@ -7,7 +7,7 @@
 **Version**: 1.9
 **Created**: 2026-11-01
 **Author**: Kubernaut Team
-**Status**: Implementation complete on branch; scoped AF validation passed; cross-repository qualification pending
+**Status**: Implementation landed via #2604; scoped AF validation passed with one declared P0 row PARTIAL (§5.5); cross-repository qualification pending
 **Branch**: `work/2584-policyread` (evidence correction; implementation originally landed via #2604)
 
 > Production code and tests are present on this branch. Authorization, historical-source,
@@ -230,6 +230,12 @@ contains only the state, status, request ID, and a safe generic message.
 **FAIL** is any P0 failure, any cross-scope or sensitive-data leak, any partial/stale
 response containing records, any unapproved contract deviation, or any A2A/MCP regression.
 
+> **Declared P0 gap (2026-11-18).** `IT-AF-2584-006` is PARTIAL, and it is one of the four
+> `**Priority**: P0` test cases in §9, so the 100% P0 gate above is **NOT met** by this evidence
+> set. The unproven sub-cases are ConfigMap permission denial, unavailable source, and incomplete
+> join. This is recorded, not waived, and no release claim rests on this plan; the implementation
+> itself landed via #2604.
+
 ### 5.6 Suspension and Resumption
 
 Suspend RED/GREEN when the operator contract is unavailable, required CRDs cannot be
@@ -334,7 +340,7 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 | `IT-AF-2584-002` | The authenticated inventory read serializes the documented wire shape (state, completeness, item identity) | **PASS** — handler serialization spec. There is no envtest provenance join in this release; provenance is proven by `UT-AF-2584-003`/`UT-AF-2584-004` and link/scope by `IT-AF-2584-007` |
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
 | `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
-| `IT-AF-2584-005` | Invalid filters, cross-cluster IDs, cross-namespace IDs, and guessed direct IDs cannot widen the result | **PASS** — filter, opaque-ID, and target-denial tests |
+| `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader |
 | `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable (`IT-AF-2584-006`), missing/invalid ConfigMap references (`UT-AF-2584-001`, `UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: ConfigMap permission denial, unavailable source, incomplete join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
 | `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
@@ -395,11 +401,13 @@ does not inherit the namespace label. Re-run with resource label absent and asse
 
 **Given** a real router, verified user identity, one allowed resource, one denied
 resource, and SAR reactions for capability and target checks.
-**When** the caller requests the denied resource, a cross-namespace filter, and a
-guessed opaque ID.
-**Then** the server returns the documented forbidden/not-found state without `items`,
-`total`, `nextCursor`, resource labels, policy names, or provenance. Existing allowed
-reads remain available to the same user.
+**When** the caller requests the denied resource, a non-local cluster, and a guessed
+opaque ID.
+**Then** the server returns the documented forbidden / unavailable / not-found state
+without `items`, `total`, `nextCursor`, resource labels, policy names, or provenance, and
+does not consult the local reader for a remote cluster. Existing allowed reads remain
+available to the same user. Cross-namespace authorization is not exercised end-to-end
+here; namespace narrowing is applied by the local reader.
 
 ### IT-AF-2584-006: Fail-closed source states
 
@@ -844,7 +852,7 @@ cancellation, projection discard, retained-byte exhaustion, shared List/Get conc
 cancellation, pre-write response rejection, and production-router local dispatch. They do not
 qualify ACM/FMC list visibility or completeness; that gate remains closed.
 
-## 16.4 Prior-art disposition (the seven `_2584_*` drafts, issued with PR #2665)
+### 16.5 Prior-art disposition (the seven `_2584_*` drafts, issued with PR #2665)
 
 The seven uncommitted files in the `v16-acm-inventory` worktree were reviewed against `origin/main`
 at `52acac9ab`. No delta was applied; this is the record of why, so the judgement is auditable.
@@ -853,9 +861,9 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 |---|---|---|---|
 | `pkg/shared/scope/gvk.go` | Optional group/version, no `ErrInvalidIdentity`, `requireExplicit` flag | Superseded | #2592 (`e498b2df8`) enforces explicit GVK with DNS-1123/1035 validation |
 | `pkg/shared/scope/checker.go` | `Check` returns a boolean; no `ScopeResult.Validate` | Superseded | #2592 / DD-FLEET-015 typed contract |
-| `pkg/shared/scope/manager.go` | Lacks `Resolve()` / `Resolution` provenance | Superseded | #2604 added structured resolution; main is 117 lines larger |
+| `pkg/shared/scope/manager.go` | Reintroduces Kind-only inference (`InferGVK`) and drops the presence-first typed lane (`resolveObserved`, `localScopeLookupFailure`) | Superseded | Verified at `52acac9ab`: main and draft both have `Resolve()`; draft is 375 lines vs main 434. #2592 forbids Kind inference and DD-FLEET-015 requires the presence-first lane |
 | `pkg/shared/scope/manager_test.go` | Pre-#2592 Kind-inference specs (`UT-SCOPE-RI-003`) | Superseded | Contradicts the explicit-GVK contract |
-| `pkg/shared/scope/provenance_2584_test.go` | 85 lines smaller than main | Superseded | Main carries the newer provenance specs |
+| `pkg/shared/scope/provenance_2584_test.go` | 81 net lines smaller than main (85 vs 166) | Superseded | Main carries the newer provenance specs, including the typed-lane cases |
 | `pkg/apifrontend/policyread/local_inventory.go` | `CanonicalResourceIDChecked`; `page.Validate()` in `Get` | Not applied | Identity is always representable (`Kinds` comes from the fixed default allowlist, never a caller) and `list()` builds valid pages while `readInventoryPage` already validates — unreachable defensive code, which AGENTS.md forbids adding tests for |
 | `pkg/fleet/acm/inventory.go` | Explicit complete empty page instead of `StateOnly(StateEmpty)` | **Deferred to #2661 (G10)** | A real latent defect, not dead code: the internal `StateEmpty` + `CompletenessPartial` envelope fails `Page.validateEmpty`. It has no operator impact today because `inventoryResultPage` rebuilds the returned page and the remote Console list is gated, and its correct shape is DD-FLEET-017's to decide |
 
@@ -871,5 +879,5 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 | 1.5 | 2026-11-04 | Local metadata-only inventory containment, client-go page-allocation limitation, bounded working set, cancellation/concurrency guard, response-size guard, and local-only list contract recorded |
 | 1.6 | 2026-11-05 | Added the 16 MiB decrypted Kubernetes response-body containment test and documented its HTTPS-preserving, non-RSS-complete scope |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |
-| 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 spec added; `IT-AF-2584-006/009` narrowed to what is proven; DD-FLEET-017/ADR-068 references marked pending #2661; version and branch fields corrected |
 | 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration; tests now require resolved AIA/SP policy name/key fields in the service runtime ConfigMaps and fail closed when references are missing |
+| 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 spec added; `IT-AF-2584-006/009` narrowed to what is proven; DD-FLEET-017/ADR-068 references marked pending #2661; version and branch fields corrected |
