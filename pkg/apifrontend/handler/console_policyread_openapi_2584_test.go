@@ -107,9 +107,9 @@ var _ = Describe("IT-AF-2584-011: Console read OpenAPI contract", func() {
 		scopeSchema := consoleResponseSchema(doc, "/api/v1/console/policies/scope", "application/json", http.StatusOK)
 		Expect(scopeSchema.VisitJSON(scopeBody)).To(Succeed())
 
-		// A malformed request must use the documented RFC 9457 envelope. That
-		// schema is intentionally extensible (RFC 9457 §3.2), so this asserts the
-		// concrete members rather than unknown-member rejection.
+		// A malformed request must use the documented RFC 9457 envelope. The
+		// schema now declares its required members and rejects unknown ones, so
+		// this asserts both the concrete values and the strict shape.
 		problemRecorder := httptest.NewRecorder()
 		problemReq := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local&cluster_id=other", http.NoBody)
 		problemReq.Header.Set("X-Request-ID", "req-2584-openapi")
@@ -124,9 +124,10 @@ var _ = Describe("IT-AF-2584-011: Console read OpenAPI contract", func() {
 		Expect(problemBody).To(HaveKeyWithValue("status", float64(http.StatusBadRequest)))
 		Expect(problemBody).To(HaveKeyWithValue("detail", "invalid Console read filter"))
 		Expect(problemBody).To(HaveKeyWithValue("request_id", "req-2584-openapi"))
-		// Shape smoke test only: ProblemDetail declares no required members and
-		// no additionalProperties:false, so the member assertions above are the
-		// contract. Declaring them is a codegen-affecting follow-up.
 		Expect(problemSchema.VisitJSON(problemBody)).To(Succeed())
+
+		// Undocumented members are a contract violation, not an extension point.
+		problemBody["undocumented_field"] = "leaked"
+		Expect(problemSchema.VisitJSON(problemBody)).NotTo(Succeed())
 	})
 })

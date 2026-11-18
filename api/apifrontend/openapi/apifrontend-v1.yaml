@@ -920,8 +920,12 @@ components:
       description: >
         RFC 9457 Problem Details structure used for structured error responses.
         Used by authentication failure (401), rate limiting (429), MCP disabled
-        (501), and readiness probe (503) responses.
+        (501), and readiness probe (503) responses. The request_id member is an
+        RFC 9457 §3.2 extension member carrying the AF request identifier for
+        log correlation.
       type: object
+      required: [type, title, status]
+      additionalProperties: false
       properties:
         type:
           type: string
@@ -934,3 +938,6 @@ components:
           type: string
         instance:
           type: string
+        request_id:
+          type: string
+          description: Bounded request identifier from AF middleware (RFC 9457 §3.2 extension member).
