@@ -119,6 +119,22 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("observed empty projections prove absence", "", "", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceNone),
 	)
 
+	// #2592 (CodeRabbit round 5): an invalid resource label is an invalid
+	// resolution, not a verified unmanaged decision — the typed lane surfaces
+	// it as ScopeInvalid so authorization fails closed instead of laundering
+	// managed=false through ScopeVerifiedUnmanaged.
+	It("UT-ACM-2592-LABEL-001 [BR-SCOPE-001, AC-6]: invalid label is invalid, never verified unmanaged", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "ConfigMap", "namespace": "payments", "name": "checkout", "label": "kubernaut.ai/managed=invalid"}
+			Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
+		}))
+		client = acm.NewClient(server.URL)
+		result, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid),
+			"an invalid managed label must fail closed as an invalid resolution")
+	})
+
 	DescribeTable("UT-ACM-2592-001 [BR-SECURITY-016]: empty Search results do not prove an unmanaged target",
 		func(missingNamespace bool) {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

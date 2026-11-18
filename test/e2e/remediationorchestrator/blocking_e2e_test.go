@@ -150,9 +150,10 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "app",
-					Namespace: nsB,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "app",
+					Namespace:  nsB,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

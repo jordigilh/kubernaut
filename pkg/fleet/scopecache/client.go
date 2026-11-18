@@ -92,7 +92,7 @@ func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (sc
 	if ctx.Err() != nil {
 		return unavailableResult("scope_canceled"), ctx.Err()
 	}
-	gvk, err := scope.GVKForIdentity(resource, true)
+	gvk, err := scope.GVKForIdentity(resource)
 	if err != nil {
 		return scope.ScopeResult{ //nolint:nilerr // DD-FLEET-015: invalid GVK is a completed domain outcome
 			State:      scope.ScopeInvalid,
@@ -355,6 +355,10 @@ var ErrEmptyClusterID = errors.New("scopecache: clusterID must not be empty")
 // ErrEmptyKind is returned when kind is empty.
 var ErrEmptyKind = errors.New("scopecache: kind must not be empty")
 
+// ErrEmptyVersion is returned when version is empty (#2592: the strict-GVK
+// contract forbids building a cache key for a Kind-only identity).
+var ErrEmptyVersion = errors.New("scopecache: version must not be empty")
+
 // ErrEmptyName is returned when name is empty.
 var ErrEmptyName = errors.New("scopecache: name must not be empty")
 
@@ -369,6 +373,9 @@ func BuildKey(clusterID, group, version, kind, namespace, name string) (string, 
 	}
 	if name == "" {
 		return "", ErrEmptyName
+	}
+	if version == "" {
+		return "", ErrEmptyVersion
 	}
 	gvr := fmt.Sprintf("%s/%s/%s", group, version, kind)
 	nsName := fmt.Sprintf("%s/%s", namespace, name)

@@ -103,7 +103,10 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		h.writeScope(w, http.StatusBadRequest, scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
-	if _, err := scope.GVKForIdentity(resource, true); err != nil {
+	// #2592 (SI-10): a missing or partial GVK is a permanent input defect and
+	// must be a 400, never a retryable 503 or a final managed=false. Group is
+	// optional (core API); version is mandatory.
+	if _, err := scope.GVKForIdentity(resource); err != nil {
 		h.writeScope(w, http.StatusBadRequest, scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
@@ -111,6 +114,11 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if _, known := h.registry.Get(resource.ClusterID); !known || !h.registry.Ready() {
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
+		// A cluster missing from the registry is an unavailable check, not a
+		// completed managed=false determination — the two must stay
+		// distinguishable on the wire (SC-7), mirroring the checker-error
+		// lane below. Gateway/RO's HTTPClient retries with backoff and fails
+		// safe if retries are exhausted.
 		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}

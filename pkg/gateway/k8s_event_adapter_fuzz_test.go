@@ -43,12 +43,14 @@ import (
 // Run locally with: go test ./pkg/gateway/ -run=^$ -fuzz=FuzzKubernetesEventAdapterParse
 func FuzzKubernetesEventAdapterParse(f *testing.F) {
 	seeds := []string{
-		`{"type": "Warning", "reason": "OOMKilled", "message": "Container killed due to memory limit", "involvedObject": {"kind": "Pod", "namespace": "production", "name": "payment-api-789"}}`,
+		`{"type": "Warning", "reason": "OOMKilled", "message": "Container killed due to memory limit", "involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "production", "name": "payment-api-789"}}`,
 		`{"type": "Normal", "reason": "Scheduled"}`,
 		`{}`,
 		`not json`,
 		`{"involvedObject": null}`,
-		`{"type": "Warning", "involvedObject": {"kind": "", "namespace": "", "name": ""}}`,
+		`{"type": "Warning", "involvedObject": {"apiVersion": "v1",
+					"kind": "", "namespace": "", "name": ""}}`,
 	}
 	for _, seed := range seeds {
 		f.Add([]byte(seed))

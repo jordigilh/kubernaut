@@ -91,9 +91,10 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: testNamespace, // Use test namespace (has kubernaut.ai/managed=true); "default" is unmanaged and blocks routing
+					Kind:       "Pod",
+					APIVersion: "v1",
+					Name:       "test-pod",
+					Namespace:  testNamespace, // Use test namespace (has kubernaut.ai/managed=true); "default" is unmanaged and blocks routing
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

@@ -719,9 +719,10 @@ func fpPostSignalToGateway(reason, podName, podNamespace string) string {
 		"reason":  reason,
 		"message": fmt.Sprintf("E2E injected signal: %s", reason),
 		"involvedObject": map[string]interface{}{
-			"kind":      "Pod",
-			"name":      podName,
-			"namespace": podNamespace,
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"name":       podName,
+			"namespace":  podNamespace,
 		},
 		"metadata": map[string]interface{}{
 			"name":      fmt.Sprintf("e2e-signal-%d", now.UnixNano()),

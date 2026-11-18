@@ -260,7 +260,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 			// BUSINESS OUTCOME: Warning event parsed → RO can select workflow
 			// Authority: BR-GATEWAY-181 - Event Type passed through as-is
 			payload := []byte(`{
-				"involvedObject": {"kind": "Pod", "name": "payment-api-789", "namespace": "production"},
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "payment-api-789", "namespace": "production"},
 				"reason": "BackOff",
 				"type": "Warning",
 				"message": "Back-off restarting failed container"
@@ -286,7 +287,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 			// SignalProcessing Rego policies determine severity downstream
 			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := []byte(`{
-				"involvedObject": {"kind": "Pod", "name": "api-server", "namespace": "prod"},
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "api-server", "namespace": "prod"},
 				"reason": "OOMKilled",
 				"type": "Error",
 				"message": "Container exceeded memory limit"
@@ -314,7 +316,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 		It("filters Normal events - informational, not actionable", func() {
 			// BUSINESS OUTCOME: Normal events (pod created, scheduled) don't trigger remediation
 			payload := []byte(`{
-				"involvedObject": {"kind": "Pod", "name": "test", "namespace": "default"},
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "test", "namespace": "default"},
 				"reason": "Created",
 				"type": "Normal"
 			}`)
@@ -328,7 +331,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 
 		It("rejects unsupported event types", func() {
 			payload := []byte(`{
-				"involvedObject": {"kind": "Pod", "name": "test", "namespace": "default"},
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "test", "namespace": "default"},
 				"reason": "Unknown",
 				"type": "CustomType"
 			}`)

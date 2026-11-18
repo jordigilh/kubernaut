@@ -82,6 +82,28 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// K8s Event → Gateway → AI can identify WHAT resource needs remediation
 		})
 
+		// #2592: an event without a well-formed involvedObject.apiVersion must
+		// be rejected at parse — owner resolution would otherwise infer the
+		// GVK from Kind and fabricate an identity that passes the strict gate.
+		It("UT-GW-2592-EVT-001 [BR-SCOPE-001, AC-4, SI-10]: rejects events without involvedObject.apiVersion", func() {
+			k8sEvent := []byte(`{
+				"type": "Warning",
+				"reason": "OOMKilled",
+				"message": "Container killed due to memory limit",
+				"involvedObject": {
+					"kind": "Pod",
+					"namespace": "production",
+					"name": "payment-api-789"
+				}
+			}`)
+
+			_, err := adapter.Parse(ctx, k8sEvent)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("involvedObject.apiVersion"),
+				"the error must name the missing field for the event source to fix")
+		})
+
 		It("identifies Node failures for cluster-level remediation", func() {
 			// Business scenario: Node running out of disk space
 			// Expected: AI can cordon node, drain pods, or alert ops team
@@ -90,6 +112,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "DiskPressure",
 				"message": "Node has insufficient disk space",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Node",
 					"name": "worker-node-3"
 				}
@@ -117,6 +140,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "FailedCreate",
 				"message": "Failed to create pod for deployment: ImagePullBackOff",
 				"involvedObject": {
+					"apiVersion": "apps/v1",
 					"kind": "Deployment",
 					"namespace": "staging",
 					"name": "api-service"
@@ -129,6 +153,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(signal.Resource.Kind).To(Equal(deployment),
 				"AI chooses rollback strategy for Deployments")
+			Expect(signal.Resource.APIVersion).To(Equal("apps/v1"),
+				"the registered Deployment GVK must survive parsing (#2066)")
 			Expect(signal.SignalName).To(Equal("FailedCreate"),
 				"AI needs failure type to determine root cause")
 
@@ -149,6 +175,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "BackOff",
 				"message": "Back-off restarting failed container",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Pod",
 					"namespace": "production",
 					"name": "crashloop-pod"
@@ -174,6 +201,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "Started",
 				"message": "Container started successfully",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Pod",
 					"namespace": "production",
 					"name": "healthy-pod"
@@ -220,7 +248,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 		// Scenario 2: Missing failure reason
 		Entry("missing reason → AI cannot understand failure type",
-			`{"type": "Warning", "involvedObject": {"kind": "Pod", "name": "test"}}`,
+			`{"type": "Warning", "involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "test"}}`,
 			"missing reason",
 			"AI needs failure reason for root cause analysis"),
 
@@ -238,7 +267,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 		// Scenario 5: Missing resource name
 		Entry("missing name → AI cannot target kubectl commands",
-			`{"type": "Warning", "reason": "Failed", "involvedObject": {"kind": "Pod"}}`,
+			`{"type": "Warning", "reason": "Failed", "involvedObject": {"apiVersion": "v1",
+					"kind": "Pod"}}`,
 			"missing involvedObject.name field",
 			"AI needs resource name for kubectl targeting"),
 	)
@@ -255,6 +285,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"reason": "OOMKilled",
 				"message": "Container killed due to memory limit",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Pod",
 					"namespace": "production",
 					"name": "payment-api-789"
@@ -288,7 +319,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			k8sEvent := []byte(`{
 				"type": "Warning",
 				"reason": "BackOff",
-				"involvedObject": {"kind": "Pod", "name": "test"}
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "name": "test"}
 			}`)
 
 			signal, err := adapter.Parse(ctx, k8sEvent)
@@ -312,12 +344,14 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			event1 := []byte(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
-				"involvedObject": {"kind": "Pod", "namespace": "prod", "name": "api"}
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "prod", "name": "api"}
 			}`)
 			event2 := []byte(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
-				"involvedObject": {"kind": "Pod", "namespace": "prod", "name": "api"}
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "prod", "name": "api"}
 			}`)
 
 			signal1, _ := adapter.Parse(ctx, event1)
@@ -337,12 +371,14 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			eventPod1 := []byte(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
-				"involvedObject": {"kind": "Pod", "namespace": "prod", "name": "api-1"}
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "prod", "name": "api-1"}
 			}`)
 			eventPod2 := []byte(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
-				"involvedObject": {"kind": "Pod", "namespace": "prod", "name": "api-2"}
+				"involvedObject": {"apiVersion": "v1",
+					"kind": "Pod", "namespace": "prod", "name": "api-2"}
 			}`)
 
 			signal1, _ := adapter.Parse(ctx, eventPod1)
@@ -395,6 +431,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"type": "Warning",
 				"reason": "OOMKilled",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Pod",
 					"namespace": "test",
 					"name": "test-pod"

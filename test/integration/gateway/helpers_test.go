@@ -1383,6 +1383,9 @@ type SignalBuilder struct {
 	Labels       map[string]string
 	Annotations  map[string]string
 	ClusterID    string
+	// ResourceAPIVersion overrides the kind-based default apiVersion that
+	// createNormalizedSignal resolves (#2592: strict identity contract).
+	ResourceAPIVersion string
 }
 
 // createNormalizedSignal creates a NormalizedSignal for integration tests
@@ -1603,7 +1606,8 @@ func createK8sEvent(eventType, reason, namespace, name string) []byte {
 		"involvedObject": {
 			"kind": "Pod",
 			"name": "%s",
-			"namespace": "%s"
+			"namespace": "%s",
+			"apiVersion": "v1"
 		},
 		"message": "Test K8s event",
 		"firstTimestamp": "2026-01-16T12:00:00Z",

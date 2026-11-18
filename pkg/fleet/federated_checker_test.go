@@ -147,6 +147,49 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
 	})
+
+	It("UT-FLEET-2592-GVK-001 [SI-10]: rejects a remote identity without explicit Group and Version", func() {
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid_remote_gvk"))
+	})
+
+	It("UT-FLEET-2592-TYPED-001 [BR-SCOPE-001, AC-4]: preserves a verified remote decision in the typed contract", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		Expect(result.Managed).NotTo(BeNil())
+		Expect(*result.Managed).To(BeTrue())
+	})
+
+	It("UT-FLEET-2592-TYPED-002 [BR-SCOPE-001, SI-10]: returns invalid for an ambiguous remote identity", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).NotTo(HaveOccurred(), "an invalid identity is a completed domain result, not an execution failure")
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+	})
 })
 
 // mockClusterLookup implements fleet.ClusterLookup for testing.

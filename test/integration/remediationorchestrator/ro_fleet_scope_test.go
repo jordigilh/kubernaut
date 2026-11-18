@@ -189,7 +189,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-local", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
-				TargetResource: remediationv1.ResourceIdentifier{
+				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
 					Kind: "Deployment", Name: "web-app", Namespace: testNamespace,
 				},
 			},

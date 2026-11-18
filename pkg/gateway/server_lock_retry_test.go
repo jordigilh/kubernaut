@@ -69,10 +69,10 @@ func (m *mockLockManager) ReleaseLock(ctx context.Context, lockKey string) error
 
 var _ = Describe("ADR-052 Addendum 001: Exponential Backoff with Jitter for Lock Retry", func() {
 	var (
-		ctx          context.Context
-		cancel       context.CancelFunc
-		lockManager  *mockLockManager
-		testSignal   *types.NormalizedSignal
+		ctx         context.Context
+		cancel      context.CancelFunc
+		lockManager *mockLockManager
+		testSignal  *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
@@ -81,7 +81,7 @@ var _ = Describe("ADR-052 Addendum 001: Exponential Backoff with Jitter for Lock
 		lockManager = &mockLockManager{}
 
 		testSignal = &types.NormalizedSignal{
-			SignalName:   "TestAlert",
+			SignalName:  "TestAlert",
 			Fingerprint: "test-fingerprint-123",
 			Severity:    "critical",
 			SourceType:  "alert",

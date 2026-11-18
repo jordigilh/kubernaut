@@ -479,6 +479,16 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
+	rejectInvalidIdentity := func(err error) (*ProcessingResponse, error) {
+		logger.Info("Signal rejected: target resource identity is missing or invalid",
+			"namespace", signal.Namespace,
+			"kind", signal.Resource.Kind,
+			"name", signal.Resource.Name,
+			"error", err)
+		s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonInvalidTargetIdentity).Inc()
+		return NewInvalidTargetIdentityResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
+	}
+
 	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
@@ -486,12 +496,20 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		Name:      signal.Resource.Name,
 	}, signal.Resource.APIVersion)
 	if err != nil {
-		return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
-	}
-	if signal.ClusterID != "" {
-		if _, err := scope.GVKForIdentity(identity, true); err != nil {
-			return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
+		// A missing or malformed apiVersion is a permanent signal-quality
+		// defect (#2592, SI-10): reject and count it instead of surfacing a
+		// retryable 5xx error to the webhook sender. The identity is never
+		// inferred from Kind.
+		if errors.Is(err, scope.ErrInvalidIdentity) {
+			return rejectInvalidIdentity(err)
 		}
+		return nil, fmt.Errorf("scope validation failed: target identity: %w", err)
+	}
+	if _, err := scope.GVKForIdentity(identity); err != nil {
+		if errors.Is(err, scope.ErrInvalidIdentity) {
+			return rejectInvalidIdentity(err)
+		}
+		return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
 	}
 
 	result, err := s.scopeChecker.Check(ctx, identity)

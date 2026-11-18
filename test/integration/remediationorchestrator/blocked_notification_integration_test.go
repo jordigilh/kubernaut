@@ -78,6 +78,7 @@ var _ = Describe("Issue #803: Blocked NotificationRequest Integration Tests", La
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind: "Deployment", Name: "test-app", Namespace: testNamespace,
+					APIVersion: "apps/v1",
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

@@ -106,9 +106,10 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "e2e-test-app",
-						Namespace: testNamespace, // workload namespace
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "e2e-test-app",
+						Namespace:  testNamespace, // workload namespace
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

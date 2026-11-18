@@ -232,6 +232,9 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	// RR object creation that follow — RO's CheckUnmanagedResource would
 	// otherwise catch this downstream, but only after wasting a Prometheus
 	// triage round-trip and an RR CRD create/delete cycle.
+	// #2592: the pre-check identity carries the validated apiVersion so the
+	// strict-GVK contract is enforced here exactly as RO enforces it — a
+	// Kind-only identity would be rejected by every real checker (B1).
 	targetIdentity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: args.ClusterID,
 		Namespace: args.Namespace,
@@ -239,7 +242,7 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		Name:      args.Name,
 	}, args.APIVersion)
 	if err != nil {
-		return CreateRRResult{}, fmt.Errorf("%w: target GVK: %w", ErrInvalidInput, err)
+		return CreateRRResult{}, fmt.Errorf("%w: target identity: %w", ErrInvalidInput, err)
 	}
 	if err := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, targetIdentity, d.ClusterLister); err != nil {
 		return CreateRRResult{}, err
@@ -307,10 +310,11 @@ func validateCreateRRArgs(d *ToolDeps, args *CreateRRArgs) error {
 	if args.Name == "" {
 		return fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
 	}
-	if args.APIVersion != "" {
-		if err := validate.APIVersion(args.APIVersion); err != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidInput, err)
-		}
+	// #2592/SI-10: an explicit apiVersion is mandatory. RO rejects RRs whose
+	// target identity cannot be established, so accepting an empty value here
+	// would only defer a permanent failure to routing.
+	if err := validate.APIVersion(args.APIVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.ClusterID(args.ClusterID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
@@ -520,17 +524,16 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 }
 
 // buildTypedTargetResource constructs the typed ResourceIdentifier for the RR CRD spec.
-// Includes apiVersion when available (#1372). Omits namespace for cluster-scoped resources.
+// apiVersion is always set: validateCreateRRArgs rejects an empty value (#2592).
+// Omits namespace for cluster-scoped resources.
 func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifier {
 	ri := remediationv1.ResourceIdentifier{
-		Kind: args.Kind,
-		Name: args.Name,
+		Kind:       args.Kind,
+		Name:       args.Name,
+		APIVersion: args.APIVersion,
 	}
 	if args.Namespace != "" {
 		ri.Namespace = args.Namespace
-	}
-	if args.APIVersion != "" {
-		ri.APIVersion = args.APIVersion
 	}
 	return ri
 }

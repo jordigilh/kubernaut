@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -94,6 +95,22 @@ func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit
 	if err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "scope validation failed — rejecting RR creation (fail-closed)",
 			"cluster", clusterCtx, "namespace", target.Namespace, "kind", target.Kind, "name", target.Name)
+		// #2592: a missing/malformed target identity is a request defect, not
+		// an unmanaged resource — the message must point at api_version, not
+		// at resource labels (mirrors RO's CheckUnmanagedResource branch).
+		if errors.Is(err, scope.ErrInvalidIdentity) {
+			detail := map[string]string{
+				"namespace": target.Namespace,
+				"kind":      target.Kind,
+				"name":      target.Name,
+				"reason":    "invalid_target_identity",
+			}
+			message := fmt.Sprintf("Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
+				"Provide api_version (e.g. \"apps/v1\") for the target resource; identity is never inferred from Kind.",
+				target.Namespace, target.Kind, target.Name, clusterCtx, err)
+			emitScopeRejected(ctx, auditor, username, target, detail)
+			return fmt.Errorf("%w: %s", ErrInvalidInput, message)
+		}
 	}
 	if err == nil && result.State == scope.ScopeVerifiedManaged {
 		return nil

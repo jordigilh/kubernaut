@@ -802,8 +802,9 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind: "Node",
-					Name: "worker-1",
+					Kind:       "Node",
+					APIVersion: "v1",
+					Name:       "worker-1",
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

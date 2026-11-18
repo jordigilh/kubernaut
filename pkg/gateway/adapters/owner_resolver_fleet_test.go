@@ -24,6 +24,10 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -123,6 +127,42 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			Expect(signal).ToNot(BeNil())
 			Expect(signal.ClusterID).To(Equal("prod-east"),
 				"remote signal must preserve ClusterID")
+		})
+
+		It("UT-GW-2592-FP-003 [BR-SCOPE-001, AC-4, SI-10]: remote owner resolution preserves the owner's apiVersion", func() {
+			scheme := runtime.NewScheme()
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			Expect(appsv1.AddToScheme(scheme)).To(Succeed())
+
+			controller := true
+			remoteReader := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(
+					&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Name: "payment-api", Namespace: "default",
+					}},
+					&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+						Name: "nginx-abc", Namespace: "default",
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion: "apps/v1", Kind: "Deployment",
+							Name: "payment-api", Controller: &controller,
+						}},
+					}},
+				).
+				Build()
+
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry(), logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"remote-cluster": remoteReader},
+			})
+
+			signal, err := adapter.Parse(ctx, buildAlertPayload("remote-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal).ToNot(BeNil())
+			Expect(signal.Resource.Kind).To(Equal("Deployment"))
+			Expect(signal.Resource.Name).To(Equal("payment-api"))
+			Expect(signal.Resource.APIVersion).To(Equal("apps/v1"),
+				"the remote K8sOwnerResolver must carry the ownerReference apiVersion into the signal target")
 		})
 
 		It("UT-GW-2430-001 [AC-4, AC-6, SI-10, ASVS V4.1.5]: Parse fails closed for an unregistered Fleet cluster", func() {

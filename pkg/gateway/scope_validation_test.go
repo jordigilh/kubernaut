@@ -70,9 +70,10 @@ type mockScopeChecker struct {
 	err        error
 	callCount  int
 	lastParams struct {
-		namespace string
+		clusterID string
 		group     string
 		version   string
+		namespace string
 		kind      string
 		name      string
 	}
@@ -80,6 +81,9 @@ type mockScopeChecker struct {
 
 func (m *mockScopeChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	m.callCount++
+	m.lastParams.clusterID = resource.ClusterID
+	m.lastParams.group = resource.Group
+	m.lastParams.version = resource.Version
 	m.lastParams.namespace = resource.Namespace
 	m.lastParams.group = resource.Group
 	m.lastParams.version = resource.Version
@@ -496,8 +500,9 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 			Severity:    "critical",
 			Namespace:   "", // cluster-scoped: no namespace
 			Resource: types.ResourceIdentifier{
-				Kind: "Node",
-				Name: "worker-1",
+				APIVersion: "v1",
+				Kind:       "Node",
+				Name:       "worker-1",
 			},
 		}
 
@@ -552,6 +557,72 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		By("6. Verify scope checker was called exactly 3 times")
 		Expect(mockScope.callCount).To(Equal(3),
 			"BR-SCOPE-002: Scope checker must be called once per signal")
+	})
+
+	It("UT-GW-2592-GVK-001 [AC-4, SI-10]: passes the exact remote GVK from the signal to scope checking", func() {
+		mockScope := &mockScopeChecker{managed: true}
+		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, mockScope)
+		Expect(err).ToNot(HaveOccurred())
+
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "DeploymentAlert", "nginx")
+		Expect(err).ToNot(HaveOccurred())
+		signal.ClusterID = "prod-east"
+		signal.Resource = types.ResourceIdentifier{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+			Namespace:  "default",
+			Name:       "nginx",
+		}
+
+		_, err = gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(mockScope.lastParams.clusterID).To(Equal("prod-east"))
+		Expect(mockScope.lastParams.group).To(Equal("apps"))
+		Expect(mockScope.lastParams.version).To(Equal("v1"))
+	})
+
+	It("UT-GW-2592-GVK-002 [AC-4, SI-10]: rejects a remote signal without APIVersion before scope checking", func() {
+		mockScope := &mockScopeChecker{managed: true}
+		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, mockScope)
+		Expect(err).ToNot(HaveOccurred())
+
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "AmbiguousAlert", "nginx")
+		Expect(err).ToNot(HaveOccurred())
+		signal.ClusterID = "prod-east"
+		signal.Resource = types.ResourceIdentifier{
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		}
+
+		initialValue := getMetricValue(metricsInstance.SignalsRejectedTotal, gatewaypkg.RejectionReasonInvalidTargetIdentity)
+
+		response, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred(),
+			"a missing apiVersion is a permanent signal-quality defect and must be a counted rejection, not a retryable 5xx")
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(response.Rejection).ToNot(BeNil())
+		Expect(response.Rejection.Reason).To(Equal(gatewaypkg.RejectionReasonInvalidTargetIdentity))
+		Expect(mockScope.callCount).To(BeZero())
+		Expect(getMetricValue(metricsInstance.SignalsRejectedTotal, gatewaypkg.RejectionReasonInvalidTargetIdentity)).
+			To(Equal(initialValue+1),
+				"BR-SCOPE-002/AC-4: identity rejections must be observable in SignalsRejectedTotal")
+	})
+
+	It("UT-GW-2592-GVK-003 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects a local signal without APIVersion", func() {
+		checker := &mockScopeChecker{managed: true}
+		server, err := newTestGatewayServer(k8sClient, metricsInstance, checker)
+		Expect(err).NotTo(HaveOccurred())
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "AmbiguousLocal", "nginx")
+		Expect(err).NotTo(HaveOccurred())
+		signal.Resource.APIVersion = ""
+		response, err := server.ProcessSignal(ctx, signal)
+		Expect(err).NotTo(HaveOccurred(),
+			"local identity defects must also be counted rejections, not errors")
+		Expect(response).ToNot(BeNil())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(response.Rejection.Reason).To(Equal(gatewaypkg.RejectionReasonInvalidTargetIdentity))
+		Expect(checker.callCount).To(BeZero())
 	})
 })
 

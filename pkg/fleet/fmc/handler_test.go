@@ -163,6 +163,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			Entry("missing cluster", "/api/v1/scope/check?kind=Deployment&name=nginx"),
 			Entry("missing kind", "/api/v1/scope/check?cluster=prod-east&name=nginx"),
 			Entry("missing name", "/api/v1/scope/check?cluster=prod-east&kind=Deployment"),
+			Entry("missing version (#2592)", "/api/v1/scope/check?cluster=prod-east&kind=Deployment&name=nginx&group=apps"),
+			Entry("group without version (#2592)", "/api/v1/scope/check?cluster=prod-east&kind=Deployment&name=nginx&group=apps&version="),
 		)
 
 		It("UT-FMC-API-006 [SI-10]: rejects non-GET method on scope check endpoint", func() {
@@ -200,7 +202,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 		It("UT-FMC-API-015 [SI-10]: excessively long cluster param does not panic or produce incorrect result", func() {
 			longCluster := strings.Repeat("a", 10000)
-			w := doGet(mux, "/api/v1/scope/check?cluster="+longCluster+"&kind=Deployment&name=nginx")
+			w := doGet(mux, "/api/v1/scope/check?cluster="+longCluster+"&version=v1&kind=Deployment&name=nginx")
 
 			Expect(w.Code).To(Equal(http.StatusBadRequest))
 			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeInvalid))
@@ -213,7 +215,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeInvalid))
 		})
 
-		It("UT-FMC-API-020 [SC-7]: returns managed=false for unknown cluster without hitting cache", func() {
+		It("UT-FMC-API-020 [SC-7]: unknown cluster returns 503, distinguishable from a genuine managed=false", func() {
 			reg.clusters = []registry.ClusterInfo{
 				{ID: "prod-east"},
 			}
@@ -235,7 +237,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 				"known cluster with cached resource must return managed=true")
 		})
 
-		It("UT-FMC-API-022 [SC-7]: empty registry rejects all clusters", func() {
+		It("UT-FMC-API-022 [SC-7]: empty registry rejects all clusters as unavailable", func() {
 			reg.clusters = nil
 			checker.managed["prod-east/apps/v1/Deployment/default/nginx"] = true
 

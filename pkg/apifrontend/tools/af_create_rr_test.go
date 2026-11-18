@@ -11,6 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -28,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -231,6 +234,66 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Namespace: "prod", Kind: "Deployment", Name: "", Description: "x", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
+		})
+
+		It("UT-AF-2592-GVK-001 [BR-SCOPE-001, AC-4, SI-10]: empty api_version rejected at input validation", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web"), ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x", APIVersion: "",
+			}, "user")
+			Expect(err).To(MatchError(ContainSubstring("invalid input")))
+			Expect(err).To(MatchError(ContainSubstring("api_version")),
+				"#2592: RO cannot scope-check a Kind-only identity, so AF must reject it at the source")
+		})
+
+		// UT-AF-2592-GVK-002 is the CHECKPOINT-W wiring proof for the pre-check
+		// identity fix (B1): it runs the REAL scope.Manager (not a stub) through
+		// HandleCreateRR, proving the validated apiVersion is applied before the
+		// pre-check and that a real checker resolves the exact GVK.
+		It("UT-AF-2592-GVK-002 [BR-SCOPE-001, AC-4, SI-10]: pre-check passes the validated apiVersion to a real scope.Manager", func() {
+			scheme := runtime.NewScheme()
+			Expect(appsv1.AddToScheme(scheme)).To(Succeed())
+			realChecker := scope.NewManager(fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(
+					&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: "prod", Name: "web",
+						Labels: map[string]string{"kubernaut.ai/managed": "true"},
+					}},
+					// Present with an explicit opt-out label: a verified
+					// unmanaged target under the union's presence-first Check
+					// lane (a merely absent target is observation_missing).
+					&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: "prod", Name: "unmanaged-web",
+						Labels: map[string]string{"kubernaut.ai/managed": "false"},
+					}},
+				).
+				Build())
+			tc := newTypedFakeClient()
+
+			// Managed target with an explicit valid GVK: the real Manager must
+			// resolve apps/v1/Deployment prod/web as managed and let the flow
+			// proceed. It then fails at severity triage (nil Triager, fail-closed
+			// DD-AF-010) — that failure is the proof the scope gate PASSED.
+			// ClusterID is empty: the local Manager rejects non-empty cluster IDs.
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client: tc, ControllerNS: "prod", Triager: nil, ScopeChecker: realChecker,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x", APIVersion: "apps/v1",
+			}, "user")
+			Expect(err).To(MatchError(ContainSubstring("severity triage")),
+				"a real Manager must accept the explicit-GVK managed target; failing at triage proves the gate passed")
+
+			// Unmanaged target with the same valid GVK: rejected by the real
+			// Manager at the pre-check, before any triage or RR creation.
+			_, err = tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client: tc, ControllerNS: "prod", Triager: nil, ScopeChecker: realChecker,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "unmanaged-web", Description: "x", APIVersion: "apps/v1",
+			}, "user")
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue(),
+				"a real Manager must reject the unmanaged target at the pre-check (B1 wiring proof)")
+			Expect(err).To(MatchError(ContainSubstring("not managed by Kubernaut")))
 		})
 
 		It("UT-AF-1282-MIN-004: long description truncated not rejected", func() {

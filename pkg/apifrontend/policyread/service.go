@@ -496,7 +496,10 @@ func (s *Service) readLegacyHistory(ctx context.Context, targets map[string]stru
 
 func (s *Service) addAIHistoryRecord(record aianalysisv1.AIAnalysis, targets map[string]struct{}, index historyIndex, workingSet *retainedWorkingSet) error {
 	target := record.Spec.AnalysisRequest.SignalContext.TargetResource
-	identity := identityFromAI(record, target)
+	identity, err := identityFromAI(record, target)
+	if err != nil {
+		return nil //nolint:nilerr // Unidentifiable history is intentionally omitted.
+	}
 	evaluation := HistoricalEvaluation{Source: "AIAnalysis", ObservedAt: objectTime(record.CreationTimestamp, record.Status.CompletedAt)}
 	if record.Status.Approval != nil && record.Status.Approval.ApprovalContext != nil && record.Status.Approval.ApprovalContext.PolicyEvaluation != nil {
 		policy := record.Status.Approval.ApprovalContext.PolicyEvaluation
@@ -508,13 +511,9 @@ func (s *Service) addAIHistoryRecord(record aianalysisv1.AIAnalysis, targets map
 }
 
 func (s *Service) addSignalProcessingHistoryRecord(record spv1.SignalProcessing, targets map[string]struct{}, index historyIndex, workingSet *retainedWorkingSet) error {
-	target := record.Spec.Signal.TargetResource
-	identity := identityFromSignalProcessing(record, target)
-	evaluation := HistoricalEvaluation{Source: "SignalProcessing", ObservedAt: objectTime(record.CreationTimestamp, record.Status.CompletionTime)}
-	if record.Status.SignalClassification != nil {
-		evaluation.PolicyHash = bounded(record.Status.SignalClassification.PolicyHash, 128)
-	}
-	return s.addHistoricalRecord(index, targets, historicalRecord{target: identity, evaluation: evaluation}, workingSet)
+	// SignalProcessing does not persist an apiVersion, so its target cannot be
+	// matched safely to an inventory identity.
+	return nil
 }
 
 func (s *Service) addHistoricalRecord(index historyIndex, targets map[string]struct{}, record historicalRecord, workingSet *retainedWorkingSet) error {
@@ -543,34 +542,18 @@ func (s *Service) addHistoricalRecord(index historyIndex, targets map[string]str
 	return nil
 }
 
-func identityFromAI(record aianalysisv1.AIAnalysis, target aianalysisv1.TargetResource) scope.ResourceIdentity {
-	group, version := parseAPIVersion(target.APIVersion)
-	if group == "" && version == "" {
-		gvk := scope.InferGVK(target.Kind)
-		group, version = gvk.Group, gvk.Version
+func identityFromAI(record aianalysisv1.AIAnalysis, target aianalysisv1.TargetResource) (scope.ResourceIdentity, error) {
+	group, version, err := scope.ParseAPIVersion(target.APIVersion)
+	if err != nil {
+		return scope.ResourceIdentity{}, err
 	}
 	clusterID := record.Spec.ClusterID
 	if clusterID == "" {
 		clusterID = LocalClusterID
 	}
-	return scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
-}
-
-func identityFromSignalProcessing(record spv1.SignalProcessing, target spv1.ResourceIdentifier) scope.ResourceIdentity {
-	gvk := scope.InferGVK(target.Kind)
-	clusterID := record.Spec.Signal.ClusterID
-	if clusterID == "" {
-		clusterID = LocalClusterID
-	}
-	return scope.ResourceIdentity{ClusterID: clusterID, Group: gvk.Group, Version: gvk.Version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
-}
-
-func parseAPIVersion(apiVersion string) (string, string) {
-	parts := strings.SplitN(apiVersion, "/", 2)
-	if len(parts) == 1 {
-		return "", parts[0]
-	}
-	return parts[0], parts[1]
+	identity := scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
+	_, err = scope.GVKForIdentity(identity)
+	return identity, err
 }
 
 func objectTime(created metav1.Time, completed *metav1.Time) time.Time {

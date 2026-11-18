@@ -110,7 +110,7 @@ func (c *HTTPClient) Check(ctx context.Context, r scope.ResourceIdentity) (scope
 	if r.ClusterID == "" || r.Name == "" {
 		return invalid, nil
 	}
-	if _, err := scope.GVKForIdentity(r, true); err != nil {
+	if _, err := scope.GVKForIdentity(r); err != nil {
 		return invalid, nil //nolint:nilerr // DD-FLEET-015: missing/invalid remote GVK is a completed input-domain outcome
 	}
 	reqURL := c.buildScopeCheckURL(r)

@@ -89,6 +89,14 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	})
 
 	Describe("Check (scope.ScopeChecker)", func() {
+		It("UT-FLEET-SC-2592 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects a missing GVK even when the namespace is managed", func() {
+			key, err := scopecache.BuildKey("remote", "", "v1", "Namespace", "", "default")
+			Expect(err).NotTo(HaveOccurred())
+			reader.store[key] = true
+			result, err := client.Check(ctx, scope.ResourceIdentity{ClusterID: "remote", Kind: "Pod", Namespace: "default", Name: "p"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid), "identity is never inferred from Kind")
+		})
 		It("UT-FLEET-SC-009: Client implements scope.ScopeChecker", func() {
 			var checker scope.ScopeChecker = client
 			Expect(checker).ToNot(BeNil())
@@ -131,7 +139,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 		It("UT-FMC-PRES-008 [SI-10]: missing remote GVK cannot use a core-v1 fallback", func() {
 			key, err := scopecache.BuildKey("loopback-cluster", "", "v1", "Pod", "kubernaut-system", "web-0")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred())
 			reader.store[key] = true
 
 			managed, err := client.Check(ctx, scope.ResourceIdentity{
@@ -222,6 +230,10 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	})
 
 	Describe("BuildKey", func() {
+		It("UT-FLEET-SC-2592-KEY [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects missing version", func() {
+			_, err := scopecache.BuildKey("prod-east", "apps", "", "Deployment", "default", "nginx")
+			Expect(err).To(HaveOccurred())
+		})
 		It("UT-FLEET-SC-003: produces expected key format", func() {
 			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())

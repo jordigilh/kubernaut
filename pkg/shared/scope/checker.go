@@ -41,7 +41,8 @@ const (
 // the wire; bounded diagnostics stay internal.
 type ScopeResult struct {
 	State      ScopeState  `json:"state"`
-	Provenance ScopeSource `json:"provenance"`
+	Managed    *bool       `json:"managed,omitempty"`
+	Provenance ScopeSource `json:"provenance,omitempty"`
 	Reason     string      `json:"-"`
 	Retryable  bool        `json:"-"`
 }
@@ -65,13 +66,20 @@ func (r ScopeResult) Validate() error {
 	return fmt.Errorf("scope protocol: invalid state or provenance")
 }
 
+// TypedScopeChecker is an additive contract preserved from main (#2647) for
+// consumers that reference the typed lane explicitly. ScopeChecker itself is
+// the typed contract (DD-FLEET-015); IsManagedResource remains a boolean
+// convenience method on *Manager.
+type TypedScopeChecker interface {
+	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
+}
+
 // ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
 // Replaces positional string parameters across all scope checking interfaces.
 //
 // ClusterID is empty for local/hub cluster resources.
-// Group and Version are optional only for local compatibility callers. Remote
-// checks must provide the explicit group/version because Kind alone is not a
-// unique Kubernetes identity.
+// Version is required; Group is empty only for the core API group. Kind alone
+// is not a unique Kubernetes identity.
 //
 // References: ADR-068 (Federated Control Plane Interface), SI-10 (Input Validation)
 type ResourceIdentity struct {
@@ -112,3 +120,5 @@ type ScopeChecker interface {
 
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
+var _ TypedScopeChecker = (*Manager)(nil)
+var _ TypedScopeChecker = (*Manager)(nil)

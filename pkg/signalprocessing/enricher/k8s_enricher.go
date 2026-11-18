@@ -628,5 +628,5 @@ func remoteTargetGVK(signal *signalprocessingv1alpha1.SignalData) (schema.GroupV
 		Kind:      signal.TargetResource.Kind,
 		Namespace: signal.TargetResource.Namespace,
 		Name:      signal.TargetResource.Name,
-	}, true)
+	})
 }

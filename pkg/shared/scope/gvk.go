@@ -17,40 +17,73 @@ limitations under the License.
 package scope
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
+// ErrInvalidIdentity is the sentinel for target-identity validation failures
+// (missing, partial, or malformed Group/Version/APIVersion). Callers use
+// errors.Is to distinguish a permanent request defect from transient scope
+// infrastructure failures. Reference: SI-10.
+var ErrInvalidIdentity = errors.New("scope: invalid resource identity")
+
+// coreVersionRE matches core (slash-less) Kubernetes API versions:
+// v1, v2, v1beta1, v1alpha2, ... A slash-less value that fails this pattern
+// (e.g. "apps") is a group name, not a core version, and must be rejected
+// rather than accepted as core.
+var coreVersionRE = regexp.MustCompile(`^v[0-9]+((alpha|beta)[0-9]+)?$`)
+
 // ParseAPIVersion converts the Kubernetes wire representation into the group
 // and version fields used by ResourceIdentity. Core resources use "v1" and
-// return an empty group. An empty or malformed value is never a valid explicit
-// identity.
+// return an empty group. An empty, malformed, or version-less value is never a
+// valid identity. Grouped resources follow Kubernetes CRD version syntax
+// (DNS1035 labels, e.g. "example.com/stable"); the slash-less core form keeps
+// the strict v<N> rule so a group name can never masquerade as a core version.
 func ParseAPIVersion(apiVersion string) (string, string, error) {
 	apiVersion = strings.TrimSpace(apiVersion)
 	if apiVersion == "" {
-		return "", "", fmt.Errorf("scope: apiVersion is required")
+		return "", "", fmt.Errorf("%w: apiVersion is required", ErrInvalidIdentity)
 	}
 
 	groupVersion, err := schema.ParseGroupVersion(apiVersion)
-	if err != nil || groupVersion.Version == "" {
-		if err != nil {
-			return "", "", fmt.Errorf("scope: invalid apiVersion %q: %w", apiVersion, err)
-		}
-		return "", "", fmt.Errorf("scope: invalid apiVersion %q", apiVersion)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q: %w", ErrInvalidIdentity, apiVersion, err)
+	}
+	if groupVersion.Version == "" || (strings.Contains(apiVersion, "/") && groupVersion.Group == "") {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
+	}
+	if !validGroupVersion(groupVersion.Group, groupVersion.Version, apiVersion) {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
 	}
 	return groupVersion.Group, groupVersion.Version, nil
 }
 
-// ApplyAPIVersion copies an explicit Kubernetes apiVersion into a resource
-// identity. An empty value is preserved for local compatibility callers; a
-// remote caller must subsequently use GVKForIdentity with requireExplicit=true.
-func ApplyAPIVersion(identity ResourceIdentity, apiVersion string) (ResourceIdentity, error) {
-	if strings.TrimSpace(apiVersion) == "" {
-		return identity, nil
+// validGroupVersion checks group and version syntax. The empty group is valid
+// (core API) for both forms; a non-empty group must be a DNS1123 subdomain.
+// Grouped versions may be any DNS1035 label (Kubernetes CRD requirement —
+// e.g. "stable"); slash-less input must be a strict core v<N> version.
+func validGroupVersion(group, version, original string) bool {
+	if group != "" {
+		if errs := validation.IsDNS1123Subdomain(group); len(errs) > 0 {
+			return false
+		}
 	}
+	if strings.Contains(original, "/") {
+		return len(validation.IsDNS1035Label(version)) == 0
+	}
+	return coreVersionRE.MatchString(version)
+}
+
+// ApplyAPIVersion parses an explicit Kubernetes apiVersion into a resource
+// identity. An empty value is an identity error: since #2592 the scope
+// contract requires an explicit apiVersion, and callers must not construct a
+// Kind-only identity.
+func ApplyAPIVersion(identity ResourceIdentity, apiVersion string) (ResourceIdentity, error) {
 	group, version, err := ParseAPIVersion(apiVersion)
 	if err != nil {
 		return ResourceIdentity{}, err
@@ -60,31 +93,33 @@ func ApplyAPIVersion(identity ResourceIdentity, apiVersion string) (ResourceIden
 	return identity, nil
 }
 
-// GVKForIdentity returns the exact GVK for an identity. Local callers may
-// request the historical Kind-only inference by passing requireExplicit=false.
-// Remote callers must pass true: a missing or partial GVK is unavailable and
-// must not be guessed from Kind.
-func GVKForIdentity(identity ResourceIdentity, requireExplicit bool) (schema.GroupVersionKind, error) {
-	if identity.Kind == "" {
-		return schema.GroupVersionKind{}, fmt.Errorf("scope: resource kind is required")
+// GVKForIdentity returns the exact GVK without inferring it from Kind.
+func GVKForIdentity(identity ResourceIdentity) (schema.GroupVersionKind, error) {
+	kind := strings.TrimSpace(identity.Kind)
+	if kind == "" {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: resource kind is required", ErrInvalidIdentity)
 	}
-	if len(validation.IsCIdentifier(identity.Kind)) != 0 ||
-		(identity.Group != "" && len(validation.IsDNS1123Subdomain(identity.Group)) != 0) ||
-		(identity.Version != "" && len(validation.IsDNS1035Label(identity.Version)) != 0) {
-		return schema.GroupVersionKind{}, fmt.Errorf("scope: invalid resource gvk")
+
+	group := strings.TrimSpace(identity.Group)
+	version := strings.TrimSpace(identity.Version)
+	if group == "" && version == "" {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: explicit group/version is required for %q", ErrInvalidIdentity, kind)
 	}
-	if identity.Group == "" && identity.Version == "" {
-		if requireExplicit {
-			return schema.GroupVersionKind{}, fmt.Errorf("scope: explicit group/version is required for %q", identity.Kind)
+	if version == "" {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: resource version is required for %q", ErrInvalidIdentity, kind)
+	}
+	// Defense in depth for directly-constructed identities (SI-10): the same
+	// syntax rules ParseAPIVersion enforces on the wire form apply to the
+	// individual components, so a malformed group or version cannot launder
+	// itself into a valid GVK through the struct fields.
+	if group != "" {
+		if errs := validation.IsDNS1123Subdomain(group); len(errs) > 0 {
+			return schema.GroupVersionKind{}, fmt.Errorf("%w: invalid group %q: %s", ErrInvalidIdentity, group, strings.Join(errs, ", "))
 		}
-		return InferGVK(identity.Kind), nil
 	}
-	if identity.Version == "" {
-		return schema.GroupVersionKind{}, fmt.Errorf("scope: resource version is required for %q", identity.Kind)
+	if len(validation.IsDNS1035Label(version)) > 0 {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: invalid version %q", ErrInvalidIdentity, version)
 	}
-	return schema.GroupVersionKind{
-		Group:   identity.Group,
-		Version: identity.Version,
-		Kind:    identity.Kind,
-	}, nil
+
+	return schema.GroupVersionKind{Group: group, Version: version, Kind: kind}, nil
 }

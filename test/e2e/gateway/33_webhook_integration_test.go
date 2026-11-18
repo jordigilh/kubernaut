@@ -343,6 +343,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				"reason": "OOMKilled",
 				"message": "Container killed due to out of memory",
 				"involvedObject": {
+					"apiVersion": "v1",
 					"kind": "Pod",
 					"namespace": "%s",
 					"name": "payment-processor-42"
@@ -510,7 +511,11 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				return 0
 			}, "30s", "1s").Should(Equal(http.StatusCreated),
 				"Warning event should create CRD")
-			defer func() { if resp != nil && resp.Body != nil { _ = resp.Body.Close() } }()
+			defer func() {
+				if resp != nil && resp.Body != nil {
+					_ = resp.Body.Close()
+				}
+			}()
 
 			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
 			var gwResp GatewayResponse

@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // severityUnknown is the fallback severity label when a signal source does not
@@ -184,6 +185,13 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	}
 	if event.InvolvedObject.Name == "" {
 		return nil, fmt.Errorf("missing involvedObject.name field")
+	}
+	// #2592: an event without a well-formed involvedObject.apiVersion must be
+	// rejected here. Letting it through would send a Kind-only identity into
+	// owner resolution, which infers the GVK from its static kind map —
+	// fabricating an identity that would then pass the strict scope gate.
+	if _, _, err := scope.ParseAPIVersion(event.InvolvedObject.APIVersion); err != nil {
+		return nil, fmt.Errorf("invalid involvedObject.apiVersion %q: %w", event.InvolvedObject.APIVersion, err)
 	}
 
 	// 3. Filter event types (business logic: only Warning/Error need remediation)

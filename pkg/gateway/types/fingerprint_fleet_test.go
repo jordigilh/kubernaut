@@ -17,6 +17,10 @@ limitations under the License.
 package types_test
 
 import (
+	"context"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -83,5 +87,50 @@ var _ = Describe("Cluster-Aware Fingerprint (BR-INTEGRATION-065)", func() {
 			Expect(legacyFP).To(Equal(clusterAwareFP),
 				"ResolveFingerprint must delegate to cluster-aware variant with empty clusterID")
 		})
+
+		// #2592: owner resolution must preserve the resolved apiVersion —
+		// discovered live on SNO-a: every production Pod alert lost its GVK
+		// here because the owner ResourceIdentifier was rebuilt without it,
+		// and the strict scope gate then (correctly) rejected the signal.
+		It("UT-GW-2592-FP-001 [BR-SCOPE-001, AC-4, SI-10]: owner resolution preserves the resolved apiVersion", func() {
+			resolver := &apiVersionAwareFakeResolver{}
+			pod := types.ResourceIdentifier{Namespace: "production", Kind: "Pod", Name: "pod-abc", APIVersion: "v1"}
+
+			fp, resolved, err := types.ResolveFingerprintWithCluster(context.Background(), "", resolver, pod, logr.Discard())
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(fp).NotTo(BeEmpty())
+			Expect(resolved.Kind).To(Equal("Deployment"))
+			Expect(resolved.Name).To(Equal("payment-api"))
+			Expect(resolved.APIVersion).To(Equal("apps/v1"),
+				"the owner's apiVersion from the resolver must survive into the signal target (strict-GVK contract)")
+		})
+
+		It("UT-GW-2592-FP-002 [BR-SCOPE-001, AC-4, SI-10]: legacy resolvers without apiVersion leave it empty, never guessed", func() {
+			resolver := &legacyFakeResolver{}
+			pod := types.ResourceIdentifier{Namespace: "production", Kind: "Pod", Name: "pod-abc", APIVersion: "v1"}
+
+			_, resolved, err := types.ResolveFingerprintWithCluster(context.Background(), "", resolver, pod, logr.Discard())
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolved.APIVersion).To(BeEmpty(),
+				"a legacy resolver cannot supply the owner GVK; the identity stays empty so the strict gate rejects it (fail-closed)")
+		})
 	})
 })
+
+// apiVersionAwareFakeResolver implements the APIVersion-carrying owner
+// resolution the production K8sOwnerResolver provides (DD-FLEET-014).
+type apiVersionAwareFakeResolver struct{}
+
+func (f *apiVersionAwareFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, _ sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Kind: "Deployment", Name: "payment-api", APIVersion: "apps/v1"}, nil
+}
+
+// legacyFakeResolver supplies an owner entry without an apiVersion: the
+// identity stays incomplete so the strict scope gate rejects it (fail-closed).
+type legacyFakeResolver struct{}
+
+func (f *legacyFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, _ sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Kind: "Deployment", Name: "payment-api"}, nil
+}

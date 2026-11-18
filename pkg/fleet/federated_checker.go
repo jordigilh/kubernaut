@@ -27,6 +27,7 @@ import (
 
 // Compile-time interface compliance.
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
+var _ scope.TypedScopeChecker = (*FederatedScopeChecker)(nil)
 
 // ClusterLookup checks whether a cluster is known to Kubernaut's fleet registry.
 // Implemented by EAIGWRegistry/KuadrantRegistry via the adapter below.
@@ -93,6 +94,28 @@ func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
 	return f.remote
 }
 
+// IsManagedResource is the boolean compatibility lane kept from main
+// (#2647). It routes by ClusterID through the typed lane and collapses the
+// outcome: only a verified managed=true returns true; every other outcome
+// (verified unmanaged, invalid, unsupported, unavailable) fails closed as
+// false with the distinguishing error where one exists.
+func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	result, err := f.Check(ctx, resource)
+	if err != nil {
+		return false, err
+	}
+	if result.State == scope.ScopeVerifiedManaged {
+		return true, nil
+	}
+	if result.State == scope.ScopeVerifiedUnmanaged {
+		return false, nil
+	}
+	if result.Reason != "" {
+		return false, fmt.Errorf("fleet scope: check did not complete: %s", result.Reason)
+	}
+	return false, fmt.Errorf("fleet scope: check did not complete: %s", result.State)
+}
+
 // Check dispatches only explicitly attributed Fleet requests to the statically
 // typed remote backend. Non-Fleet requests use the local checker at the factory.
 // DD-FLEET-015 forbids an empty Fleet attribution from falling back locally.
@@ -104,7 +127,7 @@ func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.Resour
 		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: "missing_cluster_attribution"}, nil
 	}
 
-	if _, err := scope.GVKForIdentity(resource, true); err != nil {
+	if _, err := scope.GVKForIdentity(resource); err != nil {
 		return scope.ScopeResult{ //nolint:nilerr // DD-FLEET-015: invalid GVK is a completed domain outcome
 			State:      scope.ScopeInvalid,
 			Provenance: scope.ScopeSourceUnavailable,
@@ -124,9 +147,14 @@ func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.Resour
 	if err := result.Validate(); err != nil {
 		return unavailableScopeResult("remote_protocol_error"), fmt.Errorf("fleet scope: %w", err)
 	}
+	if result.State == scope.ScopeVerifiedManaged || result.State == scope.ScopeVerifiedUnmanaged {
+		managed := result.State == scope.ScopeVerifiedManaged
+		result.Managed = &managed
+	}
 	return result, nil
 }
 
 func unavailableScopeResult(reason string) scope.ScopeResult {
 	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: reason, Retryable: true}
 }
+

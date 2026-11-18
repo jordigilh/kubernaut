@@ -87,7 +87,7 @@ func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.Sco
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
 		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil
 	}
-	if _, err := scope.GVKForIdentity(r, true); err != nil {
+	if _, err := scope.GVKForIdentity(r); err != nil {
 		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil //nolint:nilerr // DD-FLEET-015: invalid input is a completed domain outcome
 	}
 	if r.Namespace == "" || scope.IsClusterScopedKind(r.Kind) {

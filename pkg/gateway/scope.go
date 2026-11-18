@@ -29,8 +29,13 @@ const StatusRejected = "rejected"
 
 // RejectionReason constants for structured rejection responses.
 const (
-	RejectionReasonUnmanagedResource        = "unmanaged_resource"
+	RejectionReasonUnmanagedResource          = "unmanaged_resource"
 	RejectionReasonScopeCheckerNotInitialized = "scope_checker_not_initialized"
+	// RejectionReasonInvalidTargetIdentity marks a signal whose target resource
+	// identity is missing or malformed (e.g. no apiVersion, #1040/#2066). This
+	// is a permanent signal-quality defect, not a scope-infrastructure failure:
+	// it must be rejected and counted, not retried as a 5xx.
+	RejectionReasonInvalidTargetIdentity = "invalid_target_identity"
 )
 
 // RejectionResponse contains the details of a scope rejection.
@@ -73,6 +78,31 @@ func NewRejectedResponse(namespace, kind, name string) *ProcessingResponse {
 			Message:  fmt.Sprintf("Resource %s is not in Kubernaut's management scope", resourceRef),
 			Resource: resourceRef,
 			Action:   action,
+		},
+	}
+}
+
+// NewInvalidTargetIdentityResponse creates a ProcessingResponse for signals
+// whose target resource identity cannot be established (missing or malformed
+// apiVersion). Unlike an unmanaged rejection, the corrective action targets the
+// signal source, not the resource labels.
+//
+// BR-SCOPE-002/AC-4: the signal is rejected before any scope backend is called.
+func NewInvalidTargetIdentityResponse(namespace, kind, name string) *ProcessingResponse {
+	resourceRef := fmt.Sprintf("%s:%s:%s", namespace, kind, name)
+	if namespace == "" {
+		resourceRef = fmt.Sprintf("%s:%s", kind, name)
+	}
+
+	return &ProcessingResponse{
+		Status:  StatusRejected,
+		Message: fmt.Sprintf("Signal rejected: target resource %s has no valid apiVersion", resourceRef),
+		Rejection: &RejectionResponse{
+			Status:   StatusRejected,
+			Reason:   RejectionReasonInvalidTargetIdentity,
+			Message:  fmt.Sprintf("Target resource %s cannot be uniquely identified: apiVersion is missing or malformed", resourceRef),
+			Resource: resourceRef,
+			Action:   "Fix the signal source so the target apiVersion is resolved (issues #1040, #2066); Kubernaut does not infer resource identity from Kind",
 		},
 	}
 }

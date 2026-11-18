@@ -18,6 +18,7 @@ package shared
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // Ginkgo DSL dot-import convention
@@ -79,11 +80,11 @@ func LeastPrivilege(h *Harness, v Variant) bool {
 			}, Timeout, Interval).Should(Succeed())
 		})
 
-		It("returns managed=false for a resource in an unregistered cluster (SC-7 boundary enforcement)", func() {
+		It("returns an unavailable check (503) for a resource in an unregistered cluster (SC-7 boundary enforcement)", func() {
 			Eventually(func(g Gomega) {
-				managed := ScopeCheck(g, h, "totally-unknown-cluster", "", "v1", "Service", testNS.Name, "anything")
-				g.Expect(managed).To(BeFalse(),
-					"scope check against an unregistered cluster must fail closed")
+				status := ScopeCheckStatus(g, h, "totally-unknown-cluster", "", "v1", "Service", testNS.Name, "anything")
+				g.Expect(status).To(Equal(http.StatusServiceUnavailable),
+					"#2592: an unregistered cluster is an unavailable check on the wire, never an authoritative managed=false")
 			}, Timeout, Interval).Should(Succeed())
 		})
 
