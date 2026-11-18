@@ -176,6 +176,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Wait for reconciliation to occur
@@ -222,6 +223,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Wait for phase transition (Pending → Processing)

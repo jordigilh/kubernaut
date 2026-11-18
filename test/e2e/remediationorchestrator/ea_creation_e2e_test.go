@@ -36,6 +36,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E-RO-EA-001: EffectivenessAssessment CRD Creation on Completed Remediation
@@ -90,7 +91,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")
@@ -332,7 +333,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("2. Waiting for RO to create SignalProcessing CRD")

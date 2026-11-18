@@ -166,7 +166,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Description: "scope checker integration rejection",
 		}, "it-user")
 		Expect(err).To(HaveOccurred())
-		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue(), "DD-FLEET-015: an unavailable checker is a scope-unavailable outcome, not a not-managed determination")
 	})
 
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {

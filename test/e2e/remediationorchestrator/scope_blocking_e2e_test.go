@@ -87,7 +87,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to block the RR with UnmanagedResource reason")
@@ -147,7 +147,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to process the RR (should NOT be blocked for scope)")
@@ -213,7 +213,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for RR to be blocked with UnmanagedResource")

@@ -319,10 +319,24 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 	// a fingerprint matching the current (non-cluster-aware) algorithm. This ensures
 	// zero regression for existing users who are not using multi-cluster federation.
 	//
+	// #2593 (DD-FLEET-015) adaptation: this Describe's main gwServer is wired with
+	// an ENABLED FederatedScopeChecker, which by contract rejects unattributed
+	// signals (see IT-GW-FLEET-011). Users "not using multi-cluster federation"
+	// run the Gateway with Fleet disabled — the local scope checker — so the
+	// backward-compat scenario is exercised against a non-fleet server here.
 	It("IT-GW-FLEET-003: should create RR with empty clusterID when no cluster label present", func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("IT-GW-FLEET-003: Backward compatibility (no cluster label)")
+		testLogger.Info("IT-GW-FLEET-003: Backward compatibility (no cluster label, Fleet disabled)")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		By("Creating a Gateway server with the local (non-fleet) scope checker")
+		localConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+		localServer, err := gateway.NewServerForTesting(gateway.ServerTestDeps{
+			Config: localConfig, Logger: testLogger, MetricsInstance: metrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			CtrlClient: k8sClient, AuditStore: sharedAuditStore, ScopeChecker: scope.NewManager(k8sClient),
+			Authenticator: suiteAuthenticator, Authorizer: suiteAuthorizer,
+		})
+		Expect(err).ToNot(HaveOccurred(), "Failed to create local Gateway server")
 
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "PodCrashLoop",
@@ -335,7 +349,7 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		signal.Resource.APIVersion = appsAPIVersion
 		// ClusterID is intentionally NOT set (zero value) to test backward compat
 
-		response, err := gwServer.ProcessSignal(ctx, signal)
+		response, err := localServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred(), "ProcessSignal should succeed without cluster label")
 		Expect(response.Status).To(Equal("created"),
 			"Signal without cluster label should still create an RR")

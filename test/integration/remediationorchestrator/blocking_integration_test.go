@@ -31,6 +31,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // ========================================
@@ -247,6 +248,9 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			}
 
 			// When: Creating RR
+			// #2593 (DD-FLEET-015): create the target before the RR so scope
+			// can observe it.
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Then: RR should not be blocked (unique fingerprint = no prior failures)
@@ -391,7 +395,10 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 // createRemediationRequestWithFingerprint creates an RR with a specific fingerprint.
 // ADR-057: RR is created in ROControllerNamespace; targetNamespace is for Spec.TargetResource.
+// #2593 (DD-FLEET-015): the target Deployment must be observed before scope can
+// authorize routing, so create it in the managed target namespace.
 func createRemediationRequestWithFingerprint(targetNamespace, name, fingerprint string) *remediationv1.RemediationRequest {
+	helpers.EnsureTestDeployment(ctx, k8sClient, targetNamespace, "test-app")
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{

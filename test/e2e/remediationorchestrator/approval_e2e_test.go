@@ -121,7 +121,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 
 			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
@@ -229,7 +229,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 			correlationID = testRR.Name
 
 			// Create RAR (RAR lives in same namespace as RR per RO controller)

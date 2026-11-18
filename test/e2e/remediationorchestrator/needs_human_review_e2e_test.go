@@ -30,6 +30,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E Tests for BR-KA-197: Human Review Required Flag
@@ -90,7 +91,7 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
@@ -243,7 +244,7 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
