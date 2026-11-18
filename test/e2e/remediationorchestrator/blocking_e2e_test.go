@@ -159,7 +159,7 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Completing SP so the RR reaches AI analysis")

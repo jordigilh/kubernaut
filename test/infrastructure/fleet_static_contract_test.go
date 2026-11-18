@@ -19,6 +19,7 @@ package infrastructure
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,6 +39,25 @@ var _ = Describe("Fleet demo host-port isolation", func() {
 		Expect(os.Setenv(demoHostPortOffsetEnv, "20000")).To(Succeed())
 		Expect(fleetGatewayHostPort(31975)).To(Equal(51975))
 		Expect(31975).To(BeNumerically("<", 32768))
+	})
+})
+
+var _ = Describe("Standalone FMC target-read RBAC ordering", func() {
+	It("UT-FMC-E2E-002 [BR-SCOPE-001] [BR-SECURITY-016]: grants exchanged identity reads before waiting for FMC readiness", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleetmetadatacache_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+
+		text := string(source)
+		start := strings.Index(text, "func runFMCFleetCorePhase(")
+		end := strings.Index(text, "\n// applyExchangedIdentityRBAC binds")
+		Expect(start).To(BeNumerically(">=", 0))
+		Expect(end).To(BeNumerically(">", start))
+		phase := text[start:end]
+		rbacIndex := strings.Index(phase, "applyExchangedIdentityRBAC(")
+		deploymentIndex := strings.Index(phase, "deployFMCFleetCore(")
+		Expect(rbacIndex).To(BeNumerically(">=", 0), "the exchanged target-read identity must be authorized")
+		Expect(deploymentIndex).To(BeNumerically(">=", 0), "the standalone fixture must deploy FMC")
+		Expect(rbacIndex).To(BeNumerically("<", deploymentIndex), "FMC rollout requires clean observations, so target-read RBAC must already exist")
 	})
 })
 
@@ -62,6 +82,15 @@ var _ = Describe("Thanos Querier release contract", func() {
 })
 
 var _ = Describe("Fleet static operator contract", func() {
+	It("UT-FLEET-2593-001 [BR-INTEGRATION-054]: gives the remote enrichment Pod fixture its actual core API version", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "e2e", "fleet", "02_sp_remote_enrichment_test.go"))
+		Expect(err).NotTo(HaveOccurred())
+		target := regexp.MustCompile(`(?s)TargetResource: signalprocessingv1.ResourceIdentifier\{([^}]+)\}`).FindSubmatch(source)
+		Expect(target).To(HaveLen(2))
+		Expect(string(target[1])).To(MatchRegexp(`APIVersion:\s*"v1"`))
+		Expect(string(target[1])).To(MatchRegexp(`Kind:\s*"Pod"`))
+	})
+
 	It("UT-2492-CR-STATIC-001 [BR-FLEET-004]: renders the checked-in Fleet CR without dynamic EAIGW names", func() {
 		fixture := filepath.Join(getProjectRoot(), "test", "fixtures", "operator", "kubernaut-fleet.yaml")
 		manifest, err := RenderStaticOperatorCRManifest(fixture, nil)
@@ -95,6 +124,14 @@ var _ = Describe("Fleet static operator contract", func() {
 })
 
 var _ = Describe("EAIGW stable Service alias", func() {
+	It("UT-FMC-E2E-001 [BR-INTEGRATION-065]: does not require pod identity in the FMC deployment manifest", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleet_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).NotTo(ContainSubstring("- name: POD_UID"))
+		Expect(text).NotTo(ContainSubstring("fieldPath: metadata.uid"))
+	})
+
 	It("UT-2492-CR-STATIC-005 [BR-FLEET-004]: gives FMC's MCP client the gateway CA", func() {
 		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fleet_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())

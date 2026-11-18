@@ -495,7 +495,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 					Namespace:  "prod",
 				}, "user")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
 		})
 	})
 

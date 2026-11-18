@@ -50,17 +50,15 @@ func RESTMapperFromContext(ctx context.Context) meta.RESTMapper {
 // Addendum "Point 3"). target is passed as a scope.ResourceIdentity
 // (rather than four separate positional strings) to stay within this
 // package's argument-count convention (revive argument-limit) and because
-// it is exactly the shape checker.IsManagedResource already expects.
+// it is exactly the shape checker.Check already expects.
 //
 // A nil checker means management scope cannot be verified. RR creation fails
 // closed in that case; callers must never create a RemediationRequest without
 // proving that its target is managed by Kubernaut.
 //
-// On a scope-infrastructure error, fails closed (managed=false), mirroring
-// RO's CheckUnmanagedResource fail-closed behavior
-// (pkg/remediationorchestrator/routing/blocking.go) — callers cannot
-// distinguish "explicitly unmanaged" from "scope check errored" because both
-// must equally prevent RR creation.
+// DD-FLEET-015: only verified managed permits creation. Verified unmanaged
+// carries existing opt-in guidance; all other states, protocol failures and
+// execution errors return ErrScopeUnavailable without label-change advice.
 //
 // On rejection, the message mirrors RO's exact wording (blocking.go) so an
 // agent gets identical guidance whether rejected here (fail-fast) or
@@ -71,7 +69,7 @@ func RESTMapperFromContext(ctx context.Context) meta.RESTMapper {
 // (#2362). Nil-safe: a nil lister (fleet disabled, single cluster) preserves
 // the legacy message byte-for-byte -- with no remotes, local is the only
 // possible cluster and there is nothing to disambiguate.
-func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit.Emitter, username string, target scope.ResourceIdentity, lister ClusterLister) (managed bool, message string) {
+func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit.Emitter, username string, target scope.ResourceIdentity, lister ClusterLister) error {
 	clusterCtx := "local"
 	if target.ClusterID != "" {
 		clusterCtx = target.ClusterID
@@ -87,14 +85,16 @@ func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit
 		logr.FromContextOrDiscard(ctx).Error(nil, "scope validation unavailable — rejecting RR creation (fail-closed)",
 			"cluster", clusterCtx, "namespace", target.Namespace, "kind", target.Kind, "name", target.Name)
 		emitScopeRejected(ctx, auditor, username, target, detail)
-		return false, "scope validation unavailable; refusing to create a remediation request"
+		return fmt.Errorf("%w; refusing to create a remediation request", ErrScopeUnavailable)
 	}
 
-	managed, err := checker.IsManagedResource(ctx, target)
+	result, err := checker.Check(ctx, target)
+	if err == nil {
+		err = result.Validate()
+	}
 	if err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "scope validation failed — rejecting RR creation (fail-closed)",
 			"cluster", clusterCtx, "namespace", target.Namespace, "kind", target.Kind, "name", target.Name)
-		managed = false
 		// #2592: a missing/malformed target identity is a request defect, not
 		// an unmanaged resource — the message must point at api_version, not
 		// at resource labels (mirrors RO's CheckUnmanagedResource branch).
@@ -105,15 +105,19 @@ func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit
 				"name":      target.Name,
 				"reason":    "invalid_target_identity",
 			}
-			message = fmt.Sprintf("Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
+			message := fmt.Sprintf("Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
 				"Provide api_version (e.g. \"apps/v1\") for the target resource; identity is never inferred from Kind.",
 				target.Namespace, target.Kind, target.Name, clusterCtx, err)
 			emitScopeRejected(ctx, auditor, username, target, detail)
-			return false, message
+			return fmt.Errorf("%w: %s", ErrInvalidInput, message)
 		}
 	}
-	if managed {
-		return true, ""
+	if err == nil && result.State == scope.ScopeVerifiedManaged {
+		return nil
+	}
+	if err != nil || result.State != scope.ScopeVerifiedUnmanaged {
+		emitScopeRejected(ctx, auditor, username, target, map[string]string{"namespace": target.Namespace, "kind": target.Kind, "name": target.Name, "reason": "scope validation unavailable"})
+		return fmt.Errorf("%w; refusing to create a remediation request", ErrScopeUnavailable)
 	}
 
 	detail := map[string]string{
@@ -124,20 +128,20 @@ func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit
 	if target.ClusterID == "" {
 		if ids := knownRemoteClusterIDs(lister); len(ids) > 0 {
 			detail["candidate_clusters"] = strings.Join(ids, ",")
-			message = fmt.Sprintf("Resource %s/%s/%s has no cluster attribution; cannot determine "+
+			message := fmt.Sprintf("Resource %s/%s/%s has no cluster attribution; cannot determine "+
 				"which of [local hub, %s] it belongs to. Specify cluster_id (e.g. from the alert's "+
 				"cluster label); not acting.", target.Namespace, target.Kind, target.Name,
 				strings.Join(ids, ", "))
 			emitScopeRejected(ctx, auditor, username, target, detail)
-			return false, message
+			return fmt.Errorf("%w: %s", ErrResourceNotManaged, message)
 		}
 	}
 
-	message = fmt.Sprintf("Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
+	message := fmt.Sprintf("Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
 		"Add label kubernaut.ai/managed=true to namespace or resource.", target.Namespace, target.Kind, target.Name, clusterCtx)
 
 	emitScopeRejected(ctx, auditor, username, target, detail)
-	return false, message
+	return fmt.Errorf("%w: %s", ErrResourceNotManaged, message)
 }
 
 // knownRemoteClusterIDs returns the sorted IDs of fleet clusters known to

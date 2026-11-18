@@ -43,12 +43,12 @@ type mockScopeChecker struct {
 
 var _ scope.ScopeChecker = (*mockScopeChecker)(nil)
 
-func (m *mockScopeChecker) IsManagedResource(_ context.Context, r scope.ResourceIdentity) (bool, error) {
+func (m *mockScopeChecker) Check(_ context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if m.err != nil {
-		return false, m.err
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, m.err
 	}
 	key := fmt.Sprintf("%s/%s/%s/%s/%s/%s", r.ClusterID, r.Group, r.Version, r.Kind, r.Namespace, r.Name)
-	return m.managed[key], nil
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[m.managed[key]], Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // mockClusterRegistry implements registry.ClusterRegistry for testing.
@@ -113,8 +113,8 @@ func doPost(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
 	return w
 }
 
-func decodeScopeCheck(w *httptest.ResponseRecorder) fmc.ScopeCheckResponse {
-	var resp fmc.ScopeCheckResponse
+func decodeScopeCheck(w *httptest.ResponseRecorder) scope.ScopeResult {
+	var resp scope.ScopeResult
 	ExpectWithOffset(1, json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
 	return resp
 }
@@ -145,14 +145,14 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
 			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeTrue())
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 
 		It("UT-FMC-API-002 [AC-4, SC-7]: scope check returns managed=false for out-of-scope resource", func() {
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=missing")
 
 			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse())
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeVerifiedUnmanaged))
 		})
 
 		DescribeTable("UT-FMC-API-003..005 [SI-10]: rejects incomplete scope queries with missing required params",
@@ -196,7 +196,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&version=v1&kind=Pod&namespace=default&name=nginx")
 
 			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeTrue(),
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeVerifiedManaged),
 				"core group resources (empty group) must be queryable")
 		})
 
@@ -204,16 +204,15 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			longCluster := strings.Repeat("a", 10000)
 			w := doGet(mux, "/api/v1/scope/check?cluster="+longCluster+"&version=v1&kind=Deployment&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
-				"oversized unknown-cluster input must not panic and must surface as an unavailable check, not managed=false")
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeInvalid))
 		})
 
 		It("UT-FMC-API-016 [SI-10]: special characters in params handled safely", func() {
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&kind=Deployment&name=../../etc/passwd&namespace=default&group=apps&version=v1")
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse(),
-				"path-traversal-like input must not cause errors and must return unmanaged")
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeInvalid))
 		})
 
 		It("UT-FMC-API-020 [SC-7]: unknown cluster returns 503, distinguishable from a genuine managed=false", func() {
@@ -224,8 +223,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=unknown-cluster&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
-				"#2592: an unregistered cluster is an unavailable check, not a completed managed=false determination")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeUnavailable))
 		})
 
 		It("UT-FMC-API-021 [AC-4]: returns managed=true for known cluster with cached resource", func() {
@@ -234,7 +233,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
 			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeTrue(),
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeVerifiedManaged),
 				"known cluster with cached resource must return managed=true")
 		})
 
@@ -244,8 +243,9 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
-				"with an empty registry every cluster is an unavailable check, not managed=false")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(decodeScopeCheck(w).State).To(Equal(scope.ScopeUnavailable),
+				"with empty registry, all clusters must be rejected")
 		})
 	})
 

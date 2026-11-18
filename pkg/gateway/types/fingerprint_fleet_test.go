@@ -18,13 +18,13 @@ package types_test
 
 import (
 	"context"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 )
 
 var _ = Describe("Cluster-Aware Fingerprint (BR-INTEGRATION-065)", func() {
@@ -119,21 +119,18 @@ var _ = Describe("Cluster-Aware Fingerprint (BR-INTEGRATION-065)", func() {
 	})
 })
 
-// apiVersionAwareFakeResolver implements the APIVersion-aware owner resolution
-// the production K8sOwnerResolver provides.
+// apiVersionAwareFakeResolver implements the APIVersion-carrying owner
+// resolution the production K8sOwnerResolver provides (DD-FLEET-014).
 type apiVersionAwareFakeResolver struct{}
 
-func (f *apiVersionAwareFakeResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
-	return "Deployment", "payment-api", nil
+func (f *apiVersionAwareFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, _ sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Kind: "Deployment", Name: "payment-api", APIVersion: "apps/v1"}, nil
 }
 
-func (f *apiVersionAwareFakeResolver) ResolveTopLevelOwnerWithAPIVersion(_ context.Context, _, _, _ string) (ownerchain.OwnerResolution, error) {
-	return ownerchain.OwnerResolution{Kind: "Deployment", Name: "payment-api", APIVersion: "apps/v1"}, nil
-}
-
-// legacyFakeResolver implements only the original OwnerResolver interface.
+// legacyFakeResolver supplies an owner entry without an apiVersion: the
+// identity stays incomplete so the strict scope gate rejects it (fail-closed).
 type legacyFakeResolver struct{}
 
-func (f *legacyFakeResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
-	return "Deployment", "payment-api", nil
+func (f *legacyFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, _ sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Kind: "Deployment", Name: "payment-api"}, nil
 }

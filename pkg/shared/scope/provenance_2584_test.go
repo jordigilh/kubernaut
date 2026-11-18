@@ -31,7 +31,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
 	})
 
-	It("UT-SCOPE-2592-LABEL-001 [BR-SCOPE-001]: treats an invalid resource label as unavailable and never inherits namespace scope", func() {
+	It("UT-FMC-PRES-001 [BR-SCOPE-001]: treats an invalid resource label as unavailable and never inherits namespace scope", func() {
 		resolved := scope.ResolveLabels(
 			map[string]string{scope.ManagedLabelKey: "enabled"},
 			map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
@@ -41,7 +41,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
-		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue))
+		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateTrue), "already-fetched namespace metadata remains diagnostic only")
 	})
 
 	It("does not inherit namespace scope for cluster-scoped resources", func() {
@@ -81,11 +81,12 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resolved.Included).To(BeFalse())
 		Expect(resolved.ResourceLabel).To(Equal(scope.LabelStateInvalid))
-		// The invalid resource label is decisive: the namespace is not read,
-		// so a namespace infrastructure error can never mask the invalid-label
-		// outcome (CodeRabbit #2592 round 5).
-		Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateAbsent))
-		Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
+	// The invalid resource label is decisive: the namespace is not read,
+	// so a namespace infrastructure error can never mask the invalid-label
+	// outcome (#2592 round 5); ours also documents that the namespace lookup
+	// is prevented entirely.
+	Expect(resolved.NamespaceLabel).To(Equal(scope.LabelStateAbsent), "invalid resource label prevents the namespace lookup")
+	Expect(resolved.Source).To(Equal(scope.ScopeSourceUnavailable))
 	})
 
 	It("UT-SCOPE-2592-TYPED-001 [BR-SCOPE-001]: returns verified unmanaged with a boolean decision", func() {
@@ -115,11 +116,15 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 	It("UT-SCOPE-2592-TYPED-002 [BR-SCOPE-001, SI-10]: returns invalid without an authorization boolean for an invalid label", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		// The target is present and unlabeled so the spec exercises the invalid
+		// namespace label under the union's presence-first typed Check lane
+		// (a missing target would surface as observation_missing instead).
 		k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 				Name:   "payments",
 				Labels: map[string]string{scope.ManagedLabelKey: "enabled"},
 			}},
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "checkout", Namespace: "payments"}},
 		).Build()
 
 		result, err := scope.NewManager(k8sClient).Check(context.Background(), scope.ResourceIdentity{

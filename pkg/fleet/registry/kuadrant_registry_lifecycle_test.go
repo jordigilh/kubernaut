@@ -18,16 +18,11 @@ package registry
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -46,6 +41,7 @@ func newMCPServerRegistrationUnstructured(name, prefix string, labels map[string
 		"kind":       "MCPServerRegistration",
 		"metadata": map[string]interface{}{
 			"name":      name,
+			"uid":       "registration-" + name,
 			"namespace": "kuadrant-system",
 			"labels":    labels,
 		},
@@ -70,34 +66,46 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 		w.Stop()
 	})
 
-	Describe("Probe", func() {
-		It("UT-REG-KUA-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newMCPServerRegistrationUnstructured("prod-east", "prod_east_", map[string]interface{}{ManagedLabel: "true"}))
-			w = NewKuadrantRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))
-			w.started = true
-
-			Expect(w.Probe(context.Background())).To(Succeed())
-			Expect(w.Ready()).To(BeTrue())
-			info, found := w.Get("prod-east")
+	Describe("Session publication", func() {
+		It("W05 UT-REG-REVIEW-KUA-003 [BR-INTEGRATION-065]: stale LIST cannot replace an intervening update", func() {
+			old := newMCPServerRegistrationUnstructured("east", "old_", map[string]interface{}{ManagedLabel: "true"})
+			updated := newMCPServerRegistrationUnstructured("east", "new_", map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(old)
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := extractKuadrantClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onUpdate(old, updated)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
+			current, found := w.Get("east")
 			Expect(found).To(BeTrue())
-			Expect(info.ToolPrefix).To(Equal("prod_east_"))
+			Expect(current.ToolPrefix).To(Equal("new_"))
+		})
+		It("UT-REG-REVIEW-KUA-001 [BR-INTEGRATION-065]: stale refresh cannot restore an intervening deletion", func() {
+			old := newMCPServerRegistrationUnstructured("east", "east_", map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(old)
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := extractKuadrantClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onDelete(old)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
+			_, found := w.Get("east")
+			Expect(found).To(BeFalse())
 		})
 
-		It("UT-REG-KUA-011 [BR-INTEGRATION-065, SI-4]: marks readiness false when the authoritative API is unavailable", func() {
-			w.started = true
-			w.ready = true
-			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-				runtime.NewScheme(),
-				map[schema.GroupVersionResource]string{MCPServerRegistrationGVR: "MCPServerRegistrationList"},
-			)
-			client.PrependReactor("list", "mcpserverregistrations", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				return true, nil, errors.New("api unavailable")
-			})
-			w.client = client
-
-			Expect(w.Probe(context.Background())).To(MatchError(ContainSubstring("refresh fleet cluster registry")))
-			Expect(w.Ready()).To(BeFalse())
+		It("UT-REG-REVIEW-KUA-002 [BR-INTEGRATION-065]: unrelated and identical updates preserve a registration proof", func() {
+			east := newMCPServerRegistrationUnstructured("east", "east_", map[string]interface{}{ManagedLabel: "true"})
+			west := newMCPServerRegistrationUnstructured("west", "west_", map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(east)
+			w.ready = true // Handler-unit fixture, not WATCH recovery evidence.
+			snapshot, found := w.Snapshot("east")
+			Expect(found).To(BeTrue())
+			w.onAdd(west)
+			w.onUpdate(east, east.DeepCopy())
+			Expect(w.WithCurrent(context.Background(), "east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error { return nil })).To(Succeed())
 		})
+		// LIST-only recovery tests moved to the production HTTP/Gate journeys.
 	})
 
 	Describe("extractKuadrantClusterInfo", func() {

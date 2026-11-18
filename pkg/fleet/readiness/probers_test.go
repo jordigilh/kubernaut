@@ -149,21 +149,21 @@ var _ = Describe("ClusterRegistryProber", func() {
 		Expect(p.Probe(context.Background())).To(HaveOccurred())
 	})
 
-	It("UT-FLEET-READY-020 [BR-INTEGRATION-065, SI-4]: Probe refreshes a registry that supports authoritative health checks", func() {
+	It("UT-FLEET-READY-020 [BR-INTEGRATION-065, SI-4]: a LIST refresher cannot substitute for WATCH health", func() {
 		registry := &refreshingClusterRegistry{}
 		p := &readiness.ClusterRegistryProber{Registry: registry}
 
-		Expect(p.Probe(context.Background())).To(Succeed())
-		Expect(registry.probeCalls).To(Equal(1))
+		Expect(p.Probe(context.Background())).NotTo(Succeed())
+		Expect(registry.probeCalls).To(BeZero())
 	})
 
-	It("UT-FLEET-READY-021 [BR-INTEGRATION-065, SI-4]: Probe propagates an authoritative registry refresh failure", func() {
-		registry := &refreshingClusterRegistry{probeErr: errors.New("registry api unavailable")}
+	It("UT-FLEET-READY-021 [BR-INTEGRATION-065, SI-4]: healthy WATCH does not invoke a separate LIST refresher", func() {
+		registry := &refreshingClusterRegistry{ready: true, probeErr: errors.New("registry api unavailable")}
 		p := &readiness.ClusterRegistryProber{Registry: registry}
 
 		err := p.Probe(context.Background())
-		Expect(err).To(MatchError("registry api unavailable"))
-		Expect(registry.probeCalls).To(Equal(1))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(registry.probeCalls).To(BeZero())
 	})
 })
 

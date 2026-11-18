@@ -132,9 +132,9 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 
-			var result fmc.ScopeCheckResponse
+			var result scope.ScopeResult
 			Expect(json.Unmarshal(body, &result)).To(Succeed())
-			Expect(result.Managed).To(BeTrue(),
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged),
 				"IT-FMC-054-001: resource seeded in Valkey on a known cluster must return managed=true through the production HTTP path")
 		})
 	})
@@ -156,7 +156,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		It("returns managed=true when resource exists in Valkey", func() {
 			httpClient := fmc.NewHTTPClient(server.URL)
 
-			managed, err := httpClient.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := httpClient.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "it-cluster",
 				Group:     "apps",
 				Version:   "v1",
@@ -165,14 +165,14 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				Name:      "redis-primary",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"IT-FMC-054-010: HTTPClient must return managed=true for a resource seeded in Valkey through the real FMC HTTP stack")
 		})
 
-		It("returns managed=false when resource does not exist in Valkey", func() {
+		It("returns an unavailable error when resource presence is not observed in Valkey", func() {
 			httpClient := fmc.NewHTTPClient(server.URL)
 
-			managed, err := httpClient.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := httpClient.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "it-cluster",
 				Group:     "apps",
 				Version:   "v1",
@@ -180,9 +180,10 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				Namespace: "orphan-ns",
 				Name:      "no-such-deploy",
 			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(),
-				"IT-FMC-054-010: HTTPClient must return managed=false for an absent resource")
+			Expect(err).NotTo(HaveOccurred(),
+				"a Valkey cache miss must remain unavailable rather than becoming verified unmanaged")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
+				"IT-FMC-054-010: unavailable scope checks must fail closed")
 		})
 	})
 
@@ -203,7 +204,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		It("returns an observable error for unknown cluster even when Valkey key exists", func() {
 			httpClient := fmc.NewHTTPClient(server.URL)
 
-			managed, err := httpClient.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := httpClient.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "unknown-cluster",
 				Group:     "apps",
 				Version:   "v1",
@@ -211,10 +212,9 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 				Namespace: "default",
 				Name:      "nginx",
 			})
-			Expect(err).To(HaveOccurred(),
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 				"IT-FMC-054-020 (#2592): an unregistered cluster is an unavailable check, never a verified managed=false")
-			Expect(managed).To(BeFalse(),
-				"fail-closed on unavailable checks")
 
 			By("Verifying the Valkey key still exists (cache was not the rejection reason)")
 			exists, err := redisClient.Exists(ctx, valkeyKey).Result()

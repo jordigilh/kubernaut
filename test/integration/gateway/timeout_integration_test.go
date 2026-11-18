@@ -82,10 +82,21 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 				},
 			}
 
+			// #2593 (DD-FLEET-015): presence-first scope checking — the scope
+			// lane Gets the signaled target before any decision, so the
+			// fixture pods must exist in the fake client for the request to
+			// progress past scope to the delayed List that triggers the 504.
+			timeoutPod := func(name string) *corev1.Pod {
+				return &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "kubernaut-system"},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.10"}}},
+				}
+			}
+
 			// Fake client with interceptor that introduces 200ms delay on List
 			slowClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(ns).
+				WithObjects(ns, timeoutPod("test-pod-timeout"), timeoutPod("test-pod-detail")).
 				WithInterceptorFuncs(interceptor.Funcs{
 					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 						select {

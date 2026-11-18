@@ -33,8 +33,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -195,28 +193,19 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		testLogger.Info("Test 21e: CRD Spec Field Population")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testLogger.Info("Step 1: Create managed Node resource for scope validation")
-		node := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "worker-node-01",
-				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, node)).To(Succeed())
-		DeferCleanup(func() {
-			_ = k8sClient.Delete(ctx, node)
-		})
-
-		testLogger.Info("Step 1b: Create signal with rich metadata")
+		testLogger.Info("Step 1: Create signal with rich metadata")
+		// #2593 (DD-FLEET-015): cluster-scoped targets (Node) are
+		// ScopeUnsupported in the Gateway's presence-first scope lane, so this
+		// field-population fixture now targets a namespaced Pod instead. The
+		// createNormalizedSignal helper creates the real target (worker-pod-01)
+		// in the managed test namespace.
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "DiskPressure",
 			Namespace:    testNamespace,
 			Severity:     "warning",
 			Source:       "kubernetes-events",
-			Kind:         "Node",
-			ResourceName: "worker-node-01",
+			Kind:         "Pod",
+			ResourceName: "worker-pod-01",
 			Labels: map[string]string{
 				"zone":          "us-west-2a",
 				"instance_type": "m5.xlarge",
@@ -247,8 +236,8 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		Expect(diskPressureCRD.Spec.SignalName).To(Equal("DiskPressure"))
 		Expect(diskPressureCRD.Spec.Severity).To(Equal("warning"))
 		Expect(diskPressureCRD.Spec.TargetResource.Namespace).To(Equal(testNamespace))
-		Expect(diskPressureCRD.Spec.TargetResource.Kind).To(Equal("Node"))
-		Expect(diskPressureCRD.Spec.TargetResource.Name).To(Equal("worker-node-01"))
+		Expect(diskPressureCRD.Spec.TargetResource.Kind).To(Equal("Pod"))
+		Expect(diskPressureCRD.Spec.TargetResource.Name).To(Equal("worker-pod-01"))
 		Expect(diskPressureCRD.Spec.SignalSource).To(Equal("kubernetes-events"))
 		Expect(diskPressureCRD.Spec.SignalLabels).To(HaveKeyWithValue("zone", "us-west-2a"))
 		Expect(diskPressureCRD.Spec.SignalLabels).To(HaveKeyWithValue("instance_type", "m5.xlarge"))

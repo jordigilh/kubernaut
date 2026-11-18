@@ -641,6 +641,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-184 #1045: Fingerprint must be SHA256(ns:Pod:payment-api-...)")
 
 			By("6. Process through full pipeline and verify CRD has correct target")
+			// #2593 (DD-FLEET-015): create the signaled target so scope can observe it.
+			ensureSignalTarget(ctx, testNamespace, "Pod", "payment-api-7f86bb8877-4hv68")
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.Status).To(Equal("created"))
@@ -737,6 +739,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint))
 
 			By("5. Process through full pipeline and verify CRD targets the correct Job")
+			// #2593 (DD-FLEET-015): create the signaled target so scope can observe it.
+			ensureSignalTarget(ctx, testNamespace, "Pod", "kube-state-metrics-abc123")
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.Status).To(Equal("created"))
@@ -877,6 +881,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-004 #1067: Fingerprint must NOT match Namespace-based divergent fingerprint")
 
 			By("6. Process through full pipeline and verify CRD has correct target")
+			// #2593 (DD-FLEET-015): create the signaled target so scope can observe it.
+			ensureSignalTarget(ctx, testNamespace, "Pod", "crashing-pod-abc")
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.Status).To(Equal("created"))
@@ -980,6 +986,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"#2066 Track 3a: involvedObject.apiVersion must be captured by the adapter")
 
 			By("4. Process signal through the full Gateway pipeline")
+			// #2593 (DD-FLEET-015): create the signaled target so scope can observe it.
+			ensureSignalTarget(ctx, testNamespace, "Pod", "apiversion-track3a-pod")
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.Status).To(Equal("created"))
@@ -1027,6 +1035,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"#2066 Track 3b: unambiguous Deployment kind must resolve apiVersion deterministically from discovery")
 
 			By("3. Process signal through the full Gateway pipeline")
+			// #2593 (DD-FLEET-015): create the signaled target so scope can observe it.
+			ensureSignalTarget(ctx, testNamespace, "Deployment", "apiversion-track3b-deploy")
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.Status).To(Equal("created"))

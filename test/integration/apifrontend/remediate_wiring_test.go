@@ -59,7 +59,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			APIVersion:  "apps/v1",
 		}, "it-user")
 		Expect(err).To(HaveOccurred())
-		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue(), "DD-FLEET-015: an unavailable checker is a scope-unavailable outcome, not a not-managed determination")
 	})
 
 	It("IT-AF-1332-W02: HandleRemediate does NOT create InvestigationSession", func() {

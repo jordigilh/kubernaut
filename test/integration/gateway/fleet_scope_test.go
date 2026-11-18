@@ -63,12 +63,18 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", gatewayRedisPort)
 
-		By("Seeding shared Redis with managed resources for prod-east only")
-		// Cache key uses the explicit GVK written by the FMC syncer.
+		By("Seeding shared Redis with managed and verified-unmanaged resources")
+		// Cache keys use the real GVK ("apps/v1" for Deployment/StatefulSet)
+		// matching what pkg/fleet/fmc/syncer.go writes from the K8s API. Remote
+		// callers provide the same explicit GVK so Kind-only identity cannot be
+		// guessed across API groups.
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "remote-ns", "api-server")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
+		unmanagedKey, err := scopecache.BuildKey("staging-west", "apps", "v1", "StatefulSet", "other-ns", "redis")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writer.SetObservation(ctx, unmanagedKey, scope.LabelStateFalse, 5*time.Minute)).To(Succeed())
 		_ = writer.Close()
 
 		By("Creating real FMC HTTP stack")
@@ -116,6 +122,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Namespace:    "remote-ns",
 			ResourceKind: "Deployment",
 			ResourceName: "api-server",
+			APIVersion:   "apps/v1",
 			Severity:     "critical",
 			ClusterID:    "prod-east",
 		})
@@ -131,7 +138,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 	// Namespace has kubernaut.ai/managed=true label → scope.Manager returns true.
 	// This proves the local path was invoked because the namespace only exists in envtest,
 	// not in Valkey.
-	It("IT-GW-FLEET-011: should dispatch to IsManaged when signal has empty ClusterID", func() {
+	It("IT-GW-FLEET-011: Fleet empty attribution fails scope instead of falling back to local", func() {
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "LocalHighMem",
 			Namespace:    testNamespace,
@@ -141,10 +148,8 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 		})
 		signal.Resource.APIVersion = "v1"
 
-		response, err := gwServer.ProcessSignal(ctx, signal)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(response.Status).To(Equal(gateway.StatusCreated),
-			"IT-GW-FLEET-011: managed resource on local cluster must be accepted (proves local path invoked)")
+		_, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).To(HaveOccurred(), "DD-FLEET-015: an enabled Fleet checker cannot infer local attribution")
 	})
 
 	// IT-GW-FLEET-012: Fleet signal rejected when resource is not managed on remote cluster.
@@ -156,6 +161,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 			Namespace:    "other-ns",
 			ResourceKind: "StatefulSet",
 			ResourceName: "redis",
+			APIVersion:   "apps/v1",
 			Severity:     "warning",
 			ClusterID:    "staging-west",
 		})

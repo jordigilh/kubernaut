@@ -36,20 +36,25 @@ import (
 
 func createBackend(ctx context.Context, name string) {
 	GinkgoHelper()
+	createBackendInNamespace(ctx, "default", name)
+}
+
+func createBackendInNamespace(ctx context.Context, namespace, name string) {
+	GinkgoHelper()
 	backend := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "gateway.envoyproxy.io/v1alpha1",
 			"kind":       "Backend",
 			"metadata": map[string]interface{}{
 				"name":      name,
-				"namespace": "default",
+				"namespace": namespace,
 				"labels": map[string]interface{}{
 					"kubernaut.ai/managed": "true",
 				},
 			},
 		},
 	}
-	_, err := dynClient.Resource(registry.BackendGVR).Namespace("default").Create(ctx, backend, metav1.CreateOptions{})
+	_, err := dynClient.Resource(registry.BackendGVR).Namespace(namespace).Create(ctx, backend, metav1.CreateOptions{})
 	Expect(err).ToNot(HaveOccurred(), "Backend %s should be created in envtest", name)
 }
 
@@ -93,8 +98,8 @@ func deleteMCPServerRegistration(ctx context.Context, name string) {
 // isolating the remote (Valkey/FMC) path under test.
 type localAlwaysFalse struct{}
 
-func (l *localAlwaysFalse) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return false, nil
+func (l *localAlwaysFalse) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedUnmanaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // Issue #1993 (ADR-068 gap closure, IA-2/AC-3): test-only helpers for

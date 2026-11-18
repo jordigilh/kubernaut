@@ -63,9 +63,9 @@ func caReloaderTransportOrNil(backendName, caFile string) (http.RoundTripper, er
 
 // NewScopeChecker creates a scope.ScopeChecker appropriate for the given FleetConfig.
 //
-// When fleet is disabled (or no endpoint configured), returns the local checker unchanged.
-// When fleet is enabled, wraps the local checker with a FederatedScopeChecker that
-// routes local checks to scope.Manager and remote checks to the configured backend.
+// When Fleet is disabled, returns the local checker unchanged. Enabled Fleet
+// requires a resolved endpoint and explicit cluster attribution, including hub;
+// it never falls back to local scope when attribution or configuration is missing.
 //
 // Options:
 //   - WithClusterRegistry: adds cluster-level precondition (3-level hierarchy)
@@ -82,7 +82,7 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 
 	endpoint := cfg.EffectiveEndpoint()
 	if endpoint == "" {
-		return localChecker, nil
+		return nil, fmt.Errorf("fleet: enabled scope backend requires an endpoint")
 	}
 
 	o := &scopeCheckerOptions{}

@@ -84,9 +84,10 @@ var _ = Describe("SP Remote Enrichment via MCP Gateway (BR-INTEGRATION-054)", fu
 		signal := &signalprocessingv1.SignalData{
 			ClusterID: "prod-east-1",
 			TargetResource: signalprocessingv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "api-server",
-				Namespace: "prod",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "prod",
 			},
 		}
 

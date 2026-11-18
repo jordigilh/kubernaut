@@ -90,6 +90,13 @@ var _ = Describe("UT-FLEET-VALKEY-READ: ValkeyCacheReader", func() {
 		mr.Close()
 	})
 
+	It("UT-FMC-CACHE-016 [BR-SCOPE-001]: legacy existence values are not scope observations", func() {
+		Expect(mr.Set("legacy", "1")).To(Succeed())
+		observation, err := reader.Read(ctx, "legacy")
+		Expect(err).To(HaveOccurred())
+		Expect(observation.State).To(Equal(scopecache.RecordUncertain))
+	})
+
 	Describe("Exists", func() {
 		It("UT-FLEET-VALKEY-READ-001: should return true for existing key", func() {
 			_ = mr.Set("fleet:cluster-a:v1:Pod:default:nginx", "1")

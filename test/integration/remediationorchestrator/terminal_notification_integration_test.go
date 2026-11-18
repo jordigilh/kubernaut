@@ -85,6 +85,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				ReceivedTime: now,
 			},
 		}
+		ensureRRTarget(rr)
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 		By("Waiting for controller to fully process the RR (reach Processing phase)")
@@ -214,6 +215,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				ReceivedTime: now,
 			},
 		}
+		ensureRRTarget(rr)
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 		By("Waiting for controller to fully process the RR (reach Processing phase)")

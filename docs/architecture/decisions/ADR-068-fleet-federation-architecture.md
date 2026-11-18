@@ -51,7 +51,21 @@ resulting group/version to the shared checker. A missing, partial, or malformed
 `APIVersion` is rejected before a scope backend is called or a remediation is
 authorized — for remote **and** local targets alike, since no previous
 instances are supported: Kind-only identity is never inferred anywhere in the
-authorization path. API Frontend's `create_rr` tool enforces the same
+authorization path.
+
+**GVK determination (#2592 amendment)**: *determination from live discovery is
+not inference.* When a signal arrives at the Gateway scope gate with a Kind but
+no `apiVersion` (its adapter could not determine one), the gate DETERMINES the
+GVK from the same `APIResourceRegistry` discovery snapshot the Prometheus
+adapter uses (#2066): the Kind's GVR is used when — and only when — discovery
+maps it to exactly one group/version, the generic Kubernetes types (Deployment,
+Pod, ...) being the canonical case. A Kind that no discovered resource serves,
+or that a CRD or external resource shares with another group (multiple
+candidates), cannot be determined and is rejected and counted as
+`invalid_target_identity`; the gate never guesses and no existence probe runs
+in the authorization path. RO keeps the stricter parse-only boundary: RRs are
+persisted documents whose `spec.targetResource.apiVersion` the author must
+supply. API Frontend's `create_rr` tool enforces the same
 requirement at its input boundary so unidentifiable RRs are not created.
 
 Gateway distinguishes the two rejection outcomes observably: an unmanaged
@@ -450,7 +464,7 @@ Therefore:
 
 | Risk | Mitigation |
 |------|-----------|
-| Valkey unavailable | FederatedScopeChecker returns `false` (fail-safe: rejects unmanaged) |
+| Valkey unavailable | `Check` returns `unavailable` or an execution error; GW/RO/AF fail closed without asserting verified unmanaged (DD-FLEET-015) |
 | MCP Gateway down | ResilientClient reconnects with backoff; fail-closed readiness gate (see below) flips `/readyz` to `NotReady` and removes the pod from service |
 | Stale cache (resource label removed) | TTL-based expiry (45s); false positive window bounded |
 | OAuth2 IdP unreachable | TokenTimeout (10s) prevents indefinite hangs |
@@ -888,9 +902,19 @@ type ResourceIdentity struct {
 // construction time based on fleet.backend config. Zero changes to consumers
 // when swapping backends.
 type ScopeChecker interface {
-    IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
+    Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
 }
 ```
+
+**Approved pre-GA replacement (2026-11-16, DD-FLEET-015):** `ScopeResult` carries
+only `state` and determining-observation `provenance` on the wire. States are
+`verified_managed`, `verified_unmanaged`, `unavailable`, `unsupported`, `invalid`
+and `unauthorized`. Only verified managed authorizes action. Completed domain
+outcomes return nil error; execution/cancellation/protocol errors override any
+result. Target presence precedes inheritance; missing target/namespace evidence
+is unavailable, invalid labels cannot inherit, and cluster-scoped target checks
+remain unsupported. Boolean compatibility is removed atomically. Earlier dated
+boolean examples/qualification records are historical, not the current contract.
 
 **What this replaced** (all removed):
 
@@ -911,8 +935,12 @@ scopeChecker, err := fleet.NewScopeChecker(localChecker, cfg.Fleet, logger)
 ```go
 // pkg/fleet/scope_factory.go — as-built (verified against source 2026-07-26)
 func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger, opts ...ScopeCheckerOption) (scope.ScopeChecker, error) {
-    if !cfg.Enabled || cfg.EffectiveEndpoint() == "" {
+    if !cfg.Enabled {
         return localChecker, nil // single-cluster / fleet disabled: no regression
+    }
+    endpoint := cfg.EffectiveEndpoint()
+    if endpoint == "" {
+        return nil, fmt.Errorf("fleet: enabled scope backend requires an endpoint")
     }
     switch cfg.effectiveBackend() {
     case BackendFMC:
@@ -935,14 +963,14 @@ and `local.NewChecker` — none of the last three ever existed (`pkg/fleet/contr
 has never been created; see the Implementation Status table below, which correctly
 marks Rancher and Clusterpedia `Planned (v1.6)`). The real factory instead: takes
 the caller's own local checker (typically `scope.Manager`) as a required parameter
-and returns it unchanged when fleet is disabled/unconfigured — that's what provides
+and returns it unchanged when fleet is disabled — that's what provides
 the "no regression" guarantee, not a `case "local"` branch; and only dispatches to
 `BackendFMC`/`BackendACM` today, wrapping the selected remote checker together with
 `localChecker` via `NewFederatedScopeChecker(...)`.
 
-Each implementation handles the `ClusterID` routing internally:
-- `ClusterID == ""` → local K8s API check (resource/namespace label lookup)
-- `ClusterID != ""` → backend-specific remote check (FMC REST, ACM GraphQL, etc.)
+Current routing (DD-FLEET-015): the disabled-Fleet factory uses local K8s scope.
+With Fleet enabled, empty attribution is invalid and every explicit registered ID,
+including `hub`, uses the selected remote backend. No local fallback is allowed.
 
 Single-cluster deployments use `backend: "local"` (or omit `fleet` config entirely) —
 no regression, no FMC/Valkey dependency.
@@ -962,7 +990,7 @@ MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query t
 | **Service** | `cmd/fmc/` — HTTP server + MCP poller + Valkey cache |
 | **Storage** | Valkey (co-owned with DataStorage) — internal to FMC, not exposed to consumers |
 | **Read API** | REST endpoint for scope checks and cluster listing |
-| **Latency** | p95 < 1ms (Valkey EXISTS behind the API) |
+| **Read authority** | Complete observed target/namespace metadata with UID, registration revision, writer fence, generation and valid TTL proof; existence alone cannot authorize |
 | **Staleness** | Bounded by sync interval (default 30s) + TTL (45s) |
 | **Dependencies** | MCP Gateway, Valkey, MCP Server per cluster |
 | **Config** | `fleet.backend: "fmc"`, `fleet.fmc.endpoint: "http://fmc.kubernaut-system.svc:8080"` |
@@ -971,9 +999,10 @@ MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query t
 
 ```
 GET /api/v1/scope/check?cluster={clusterID}&group={group}&version={version}&namespace={ns}&kind={kind}&name={name}
-→ 200 {"managed": true}  or  {"managed": false}
+→ 200 {"state":"verified_managed","provenance":"resource-label"}
+→ 200 {"state":"verified_unmanaged","provenance":"namespace-label"}
 → 400 missing or partial GVK (version mandatory; group optional for the core API) — #2592, SI-10
-→ 503 cluster not registered, or scope check failed (unavailable, never an authoritative managed=false)
+→ 503 {"state":"unavailable","provenance":"unavailable"} (cluster not registered, or scope check failed — never an authoritative managed=false)
 
 GET /api/v1/clusters
 → 200 {"clusters": [{"id": "prod-east", "name": "Production East"}, ...]}
@@ -981,6 +1010,14 @@ GET /api/v1/clusters
 GET /healthz
 → 200 OK
 ```
+
+The scope response is ordinary `application/json`, exactly two required members,
+with no `managed` or diagnostics. Invalid request identity/GVK uses 400; invalid
+observed labels or unsupported targets use 422; typed backend denial uses 403.
+Middleware 401/403/500 and non-GET 405 remain separate. The strict bounded client
+rejects duplicate/unknown/missing/null/wrong-type members, trailing data and
+state/provenance/status mismatches. At most three attempts within two seconds
+apply only to transient transport failures or valid unavailable responses.
 
 **FMC connectivity requirements**:
 

@@ -30,6 +30,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E-RO-106-001: Proactive Signal Mode Propagation
@@ -93,7 +94,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")
@@ -187,7 +188,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")

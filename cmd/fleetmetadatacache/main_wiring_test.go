@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -67,16 +66,31 @@ const osAssignedAddr = "127.0.0.1:0"
 // pyramid invariant (AGENTS.md).
 
 // fakeClusterRegistry is a minimal registry.ClusterRegistry stub. These
-// wiring tests only prove HTTP/TLS routing (buildFMCServers), never
+// wiring tests prove HTTP/TLS routing and readiness propagation, never
 // cluster-list business logic (that is fmc.Handler's job, covered by
 // pkg/fleet/fmc/handler_test.go).
-type fakeClusterRegistry struct{}
+type fakeClusterRegistry struct {
+	clusters []registry.ClusterInfo
+}
 
 var _ registry.ClusterRegistry = (*fakeClusterRegistry)(nil)
 
-func (f *fakeClusterRegistry) List() []registry.ClusterInfo { return nil }
+func (f *fakeClusterRegistry) List() []registry.ClusterInfo { return f.clusters }
 func (f *fakeClusterRegistry) Get(string) (registry.ClusterInfo, bool) {
 	return registry.ClusterInfo{}, false
+}
+func (f *fakeClusterRegistry) Snapshot(string) (registry.RegistrationSnapshot, bool) {
+	return registry.RegistrationSnapshot{}, false
+}
+func (f *fakeClusterRegistry) SnapshotAll() registry.RegistrySnapshot {
+	result := registry.RegistrySnapshot{Generation: 1}
+	for _, info := range f.clusters {
+		result.Registrations = append(result.Registrations, registry.RegistrationSnapshot{Info: info, Revision: 1})
+	}
+	return result
+}
+func (f *fakeClusterRegistry) WithCurrent(context.Context, string, string, uint64, func(registry.ClusterInfo) error) error {
+	return nil
 }
 func (f *fakeClusterRegistry) WatchClusters() <-chan registry.ClusterEvent { return nil }
 func (f *fakeClusterRegistry) Ready() bool                                 { return true }
@@ -109,11 +123,42 @@ const unreachableValkeyAddr = "127.0.0.1:1"
 // (covered by pkg/shared/auth/k8s_auth_test.go and the real envtest-backed
 // IT-FMC-1993-* cases in test/integration/fleetmetadatacache).
 func testFMCDeps(k8sClientset kubernetes.Interface, valkeyAddr string) *fmcDeps {
+	statusStore, err := scopecache.NewValkeyStatusStoreAt(valkeyAddr)
+	Expect(err).ToNot(HaveOccurred())
+	readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+	Expect(err).ToNot(HaveOccurred())
+	fence := scopecache.WriterFence{
+		HolderPodUID:     "test-pod",
+		HolderSessionUID: "test-session",
+		LeaseEpoch:       1,
+		Fence:            1,
+	}
+	Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+		MCPInitialSync:       true,
+		RegistryInitialSync:  true,
+		RegistryWatchHealthy: true,
+		ValkeyReady:          true,
+		Lease: scopecache.LeaseView{
+			Policy:         scopecache.LeasePolicyProcessWideRequired,
+			Active:         true,
+			Valid:          true,
+			Epoch:          1,
+			SessionUID:     "test-session",
+			WriterFence:    fence,
+			HeartbeatAt:    time.Now().UTC(),
+			HeartbeatValid: true,
+		},
+		ActiveLeaseValid: true,
+		LeasePolicy:      scopecache.LeasePolicyProcessWideRequired,
+	})).To(Succeed())
 	return &fmcDeps{
-		cacheReader:      scopecache.NewValkeyCacheReader(valkeyAddr),
-		clusterRegistry:  &fakeClusterRegistry{},
-		k8sClientset:     k8sClientset,
-		releaseNamespace: "kubernaut-system",
+		cacheReader:       scopecache.NewValkeyCacheReader(valkeyAddr),
+		statusStore:       statusStore,
+		readiness:         readiness,
+		clusterRegistry:   &fakeClusterRegistry{},
+		registrationGuard: &fakeClusterRegistry{},
+		k8sClientset:      k8sClientset,
+		releaseNamespace:  "kubernaut-system",
 	}
 }
 
@@ -227,12 +272,53 @@ var _ = Describe("buildValkeyTLSConfig (DD-PLATFORM-006 Decision Area 13 follow-
 	})
 })
 
+var _ = Describe("FMC readiness production wiring (BR-SCOPE-001)", func() {
+	It("IT-FMC-READINESS-001 [BR-SCOPE-001]: keeps a registered cluster unavailable when the writer lease is not acquired", func() {
+		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+			MCPInitialSync:       true,
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			Lease: scopecache.LeaseView{
+				Policy: scopecache.LeasePolicyProcessWideRequired,
+			},
+			LeasePolicy: scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		deps := &fmcDeps{
+			clusterRegistry: &fakeClusterRegistry{clusters: []registry.ClusterInfo{{
+				ID:              "registered-cluster",
+				RegistrationUID: "registration-uid",
+			}}},
+			readiness: readiness,
+		}
+
+		Expect(deps.Ready()).To(BeFalse(),
+			"a registered cluster whose sync has not acquired the required writer lease must keep FMC unready")
+	})
+})
+
+var _ = Describe("FMC writer production composition (BR-SCOPE-001)", func() {
+	It("IT-FMC-CACHE-005 [BR-SCOPE-001]: passes the process-local coordinator through the production syncer dependency seam", func() {
+		// wireFMCDependencies uses buildFMCWriterCoordinator and then
+		// buildFMCSyncer uses this exact dependency composition helper.
+		coordinator := buildFMCWriterCoordinator()
+		deps := &fmcDeps{lease: coordinator}
+
+		syncerDeps := buildFMCSyncerDependencies(deps)
+		Expect(coordinator).To(BeAssignableToTypeOf(&scopecache.ProcessWriterCoordinator{}))
+		Expect(syncerDeps.Lease).To(BeIdenticalTo(coordinator))
+	})
+})
+
 var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065)", func() {
 	var (
 		certDir string
 		cfg     *fmcconfig.ServiceConfig
 		deps    *fmcDeps
-		ready   atomic.Bool
 	)
 
 	BeforeEach(func() {
@@ -244,7 +330,6 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		cfg.Server.TLS.CertDir = certDir
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
-		ready.Store(true)
 	})
 
 	AfterEach(func() {
@@ -255,7 +340,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
 
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, deps, logr.Discard())
 		Expect(servers.api.TLSConfig).NotTo(BeNil(),
 			"SC-8: API server must be TLS-configured when a cert is mounted (ConfigureRequiredTLS)")
 
@@ -293,8 +378,9 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
 		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
+		Expect(readyDeps.statusStore.LoadScript(context.Background())).To(Succeed())
 
-		servers := buildFMCServers(cfg, readyDeps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, readyDeps, logr.Discard())
 		ln, addr := listenOn()
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
 		defer func() { _ = servers.api.Close() }()
@@ -320,8 +406,9 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		Expect(err).ToNot(HaveOccurred(), "miniredis should start so /readyz's backend ping has something real to succeed against")
 		defer mr.Close()
 		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
+		Expect(readyDeps.statusStore.LoadScript(context.Background())).To(Succeed())
 
-		servers := buildFMCServers(cfg, readyDeps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, readyDeps, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
 		go func() { _ = servers.api.ServeTLS(apiLn, "", "") }()
@@ -364,7 +451,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 	})
 
 	It("IT-FMC-1683-A-004 [AC-4, DD-FLEET-004]: /healthz (liveness) is served exclusively on the dedicated health port, not the API port", func() {
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, deps, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
 		go func() { _ = servers.api.ServeTLS(apiLn, "", "") }()
@@ -395,7 +482,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 	})
 
 	It("IT-FMC-2275-001 [AC-6, BR-PLATFORM-012]: pprof is 404 on the health port by default (secure-by-default), and reachable once Debug.PprofEnabled is set", func() {
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, deps, logr.Discard())
 
 		healthLn, healthAddr := listenOn()
 		go func() { _ = servers.health.Serve(healthLn) }()
@@ -409,7 +496,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 				"unlike buildFMCServers' pre-#2275 hardcoded enableProfiling=true")
 
 		cfg.Debug.PprofEnabled = true
-		enabledServers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		enabledServers := buildFMCServers(cfg, deps, logr.Discard())
 
 		enabledLn, enabledAddr := listenOn()
 		go func() { _ = enabledServers.health.Serve(enabledLn) }()
@@ -428,7 +515,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
 
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, deps, logr.Discard())
 		ln, addr := listenOn()
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
 		defer func() { _ = servers.api.Close() }()

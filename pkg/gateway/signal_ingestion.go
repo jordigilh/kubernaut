@@ -489,34 +489,61 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewInvalidTargetIdentityResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
-	resourceIdentity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
+	// #2592 GVK determination: a signal whose adapter could not supply an
+	// apiVersion gets one DETERMINED from API discovery when — and only when —
+	// the Kind maps to exactly one discovered group/version (e.g. a generic
+	// Kubernetes type like Deployment) and no CRD/external resource shares the
+	// Kind. Ambiguous or unknown Kinds are rejected below: never guessed.
+	apiVersion := signal.Resource.APIVersion
+	if apiVersion == "" && s.apiResourceRegistry != nil {
+		if determined := s.apiResourceRegistry.DetermineKindAPIVersion(signal.Resource.Kind); determined != "" {
+			logger.Info("Determined target GVK from API discovery (#2592)",
+				"kind", signal.Resource.Kind, "apiVersion", determined)
+			// Persist the determination back onto the signal: the RR carries
+			// signal.Resource.APIVersion into spec.targetResource, and RO's
+			// strict identity gate re-parses it there — an authorization-only
+			// determination would strand the RR as permanently blocked.
+			signal.Resource.APIVersion = determined
+			apiVersion = determined
+		}
+	}
+
+	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
 		Namespace: signal.Namespace,
 		Name:      signal.Resource.Name,
-	}, signal.Resource.APIVersion)
+	}, apiVersion)
 	if err != nil {
-		// A missing or malformed apiVersion is a permanent signal-quality
-		// defect (SI-10): reject and count it instead of surfacing a retryable
-		// 5xx error to the webhook sender.
+		// A missing or malformed apiVersion that could not be determined is a
+		// permanent signal-quality defect (#2592, SI-10): reject and count it
+		// instead of surfacing a retryable 5xx error to the webhook sender.
+		// The identity is never guessed from Kind.
 		if errors.Is(err, scope.ErrInvalidIdentity) {
 			return rejectInvalidIdentity(err)
 		}
-		return nil, fmt.Errorf("scope validation: target resource identity: %w", err)
+		return nil, fmt.Errorf("scope validation failed: target identity: %w", err)
 	}
-	if _, err := scope.GVKForIdentity(resourceIdentity); err != nil {
+	if _, err := scope.GVKForIdentity(identity); err != nil {
 		if errors.Is(err, scope.ErrInvalidIdentity) {
 			return rejectInvalidIdentity(err)
 		}
-		return nil, fmt.Errorf("scope validation: target resource identity: %w", err)
+		return nil, fmt.Errorf("scope validation failed: target GVK: %w", err)
 	}
 
-	managed, err := s.scopeChecker.IsManagedResource(ctx, resourceIdentity)
+	result, err := s.scopeChecker.Check(ctx, identity)
 	if err != nil {
-		return nil, fmt.Errorf("scope validation failed: %w", err)
+		logger.Error(err, "scope backend execution failed")
+		return nil, fmt.Errorf("scope validation unavailable")
+	}
+	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	if result.State != scope.ScopeVerifiedManaged && result.State != scope.ScopeVerifiedUnmanaged {
+		return nil, fmt.Errorf("scope validation unavailable")
 	}
 
-	if managed {
+	if result.State == scope.ScopeVerifiedManaged {
 		logger.V(1).Info("Scope check passed: resource is managed",
 			"namespace", signal.Namespace,
 			"kind", signal.Resource.Kind,

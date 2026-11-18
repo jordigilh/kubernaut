@@ -57,6 +57,7 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "prod-east-1",
+					"uid":       "backend-prod-east-1",
 					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
@@ -85,6 +86,7 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "",
+					"uid":       "backend-empty-name",
 					"namespace": "kubernaut-system",
 				},
 			},
@@ -102,6 +104,7 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "prod-east-1",
+					"uid":       "backend-prod-east-1",
 					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
@@ -126,6 +129,7 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "dev-local",
+					"uid":       "backend-dev-local",
 					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
@@ -169,6 +173,7 @@ var _ = Describe("EAIGWRegistry.Start (BR-INTEGRATION-065)", func() {
 					"kind":       "Backend",
 					"metadata": map[string]interface{}{
 						"name":      fmt.Sprintf("cluster-%d", i),
+						"uid":       fmt.Sprintf("backend-cluster-%d", i),
 						"namespace": "kubernaut-system",
 						"labels": map[string]interface{}{
 							"kubernaut.ai/managed": "true",

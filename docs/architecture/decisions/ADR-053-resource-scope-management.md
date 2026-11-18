@@ -5,6 +5,16 @@
 **Deciders**: Platform Team, Gateway Team, RemediationOrchestrator Team
 **Confidence**: 95%
 
+> **Approved pre-GA amendment (2026-11-16):**
+> [DD-FLEET-015](DD-FLEET-015-owned-watch-and-enum-scope.md) supersedes this ADR's
+> older boolean checker, missing-target/namespace fallback and invalid-label
+> examples. `ScopeChecker.Check` returns enum state/provenance; only verified
+> managed authorizes action. Missing observation evidence is unavailable, invalid
+> labels cannot inherit, and cluster-scoped target authorization stays deferred.
+> AF uses `ErrResourceNotManaged` only for verified unmanaged and
+> `ErrScopeUnavailable` for missing/invalid/unsupported/denied authority or errors.
+> Existing-RR takeover remains distinct from new-RR admission under ADR-068.
+
 > **Note (2026-02-24)**: [ADR-057](ADR-057-crd-namespace-consolidation.md) supersedes this ADR's
 > implicit assumption that CRDs are created in the signal/workload namespace. Per ADR-057, **all
 > kubernaut CRDs are created in the controller namespace** (`kubernaut-system`). The target resource

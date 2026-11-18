@@ -41,17 +41,18 @@ limitations under the License.
 // alert volume. The Manager implements the ScopeChecker interface for DI (see checker.go).
 //
 //	mgr := scope.NewManager(cachedClient) // Gateway + RO: informer-backed reads
-//	managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Group: "apps", Version: "v1", Namespace: "production", Kind: "Deployment", Name: "payment-api"})
+//	result, err := mgr.Check(ctx, scope.ResourceIdentity{Group: "apps", Version: "v1", Namespace: "production", Kind: "Deployment", Name: "payment-api"})
 package scope
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -224,7 +225,10 @@ func labelState(labels map[string]string) LabelState {
 
 // Resolve reads the local resource and namespace metadata and returns the
 // effective managed-scope decision with provenance. Remote identities are
-// rejected because the local Manager cannot inspect another cluster.
+// rejected because the local Manager cannot inspect another cluster. A
+// resource that is not found still resolves through namespace inheritance
+// (ADR-053); the typed Check contract is the presence-first lane and reports
+// such targets as observation_missing instead.
 func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resolution, error) {
 	if resource.ClusterID != "" {
 		return Resolution{}, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
@@ -249,28 +253,66 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 	return m.resolveWithResourceLabels(ctx, resource, nil, clusterScoped)
 }
 
-// Check implements the additive typed scope contract. The existing
-// IsManagedResource method remains available for consumers that only need the
-// boolean decision; this method keeps invalid and unavailable outcomes
-// distinct from verified unmanaged.
-func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error) {
-	resolution, err := m.Resolve(ctx, resource)
+// resolveObserved is the presence-first lookup backing the typed Check lane
+// (DD-FLEET-015): the target resource must be observed before inheritance is
+// considered, so a NotFound is an observation error, never a silent namespace
+// fallthrough. Resolve and IsManagedResource keep the ADR-053 inheritance
+// semantics for inventory and boolean consumers.
+func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity) (Resolution, error) {
+	gvk, err := GVKForIdentity(resource)
 	if err != nil {
-		// A target-identity defect is permanent, not retryable: report it as
-		// invalid so the typed contract never suggests a retry will help.
-		if errors.Is(err, ErrInvalidIdentity) {
-			return ScopeResult{
-				State:      ScopeInvalid,
-				Provenance: ScopeSourceUnavailable,
-				Reason:     "invalid_target_identity",
-			}, err
-		}
-		return ScopeResult{
-			State:      ScopeUnavailable,
-			Provenance: ScopeSourceUnavailable,
-			Reason:     "scope_lookup_error",
-			Retryable:  true,
-		}, err
+		return Resolution{}, err
+	}
+	obj := &metav1.PartialObjectMetadata{}
+	obj.SetGroupVersionKind(gvk)
+	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
+	defer cancel()
+	if err := m.client.Get(lookupCtx, client.ObjectKey{Namespace: resource.Namespace, Name: resource.Name}, obj); err != nil {
+		return Resolution{}, err
+	}
+	// Namespace evidence requirement (DD-FLEET-015): a present unlabeled
+	// target may inherit only from an OBSERVED namespace. Unlike the ADR-053
+	// inheritance lane (ResolveWithResourceLabels), a namespace that cannot be
+	// read — including NotFound — is missing evidence, never a decisive
+	// unmanaged outcome.
+	resourceState := labelState(obj.GetLabels())
+	if resourceState == LabelStateTrue || resourceState == LabelStateFalse || resourceState == LabelStateInvalid {
+		return resolveLabelStates(resourceState, LabelStateAbsent, false), nil
+	}
+	ns := &metav1.PartialObjectMetadata{}
+	ns.SetGroupVersionKind(namespaceGVK)
+	nsCtx, nsCancel := context.WithTimeout(ctx, scopeLookupTimeout)
+	defer nsCancel()
+	if err := m.client.Get(nsCtx, client.ObjectKey{Name: resource.Namespace}, ns); err != nil {
+		return Resolution{}, fmt.Errorf("scope: resolve Namespace metadata: %w", err)
+	}
+	return resolveLabelStates(resourceState, labelState(ns.GetLabels()), false), nil
+}
+
+// Check implements DD-FLEET-015: target presence precedes inheritance.
+// The typed contract keeps invalid, unavailable and unsupported outcomes
+// distinct from verified unmanaged; IsManagedResource remains available for
+// boolean consumers.
+func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable}, err
+	}
+	if resource.ClusterID != "" || resource.Kind == "" || resource.Name == "" {
+		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: "invalid_resource_identity"}, nil
+	}
+	if _, err := GVKForIdentity(resource); err != nil {
+		// A target-identity defect is permanent, not retryable.
+		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: "invalid_target_identity"}, nil //nolint:nilerr // DD-FLEET-015: completed invalid input is a domain result, not an execution failure
+	}
+	if resource.Namespace == "" || isClusterScoped(resource.Kind) {
+		return ScopeResult{State: ScopeUnsupported, Provenance: ScopeSourceUnavailable, Reason: "cluster_scoped_target_unsupported"}, nil
+	}
+	resolution, err := m.resolveObserved(ctx, resource)
+	if ctx.Err() != nil {
+		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable}, ctx.Err()
+	}
+	if err != nil {
+		return localScopeLookupFailure(err)
 	}
 	if resolution.Source == ScopeSourceUnavailable {
 		return ScopeResult{
@@ -279,7 +321,6 @@ func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeRe
 			Reason:     resolution.Reason,
 		}, nil
 	}
-
 	managed := resolution.Included
 	state := ScopeVerifiedUnmanaged
 	if managed {
@@ -290,6 +331,16 @@ func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeRe
 		Managed:    &managed,
 		Provenance: resolution.Source,
 	}, nil
+}
+
+func localScopeLookupFailure(err error) (ScopeResult, error) {
+	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return ScopeResult{State: ScopeUnauthorized, Provenance: ScopeSourceUnavailable, Reason: "scope_access_denied"}, nil
+	}
+	if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
+		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable, Reason: "observation_missing", Retryable: true}, nil
+	}
+	return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable, Reason: "scope_lookup_error", Retryable: true}, err
 }
 
 // ResolveWithResourceLabels resolves scope using metadata already fetched for

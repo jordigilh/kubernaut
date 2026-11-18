@@ -19,11 +19,15 @@ package scopecache
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// ValkeyCacheReader implements CacheReader using a Valkey (Redis-compatible) client.
+// ValkeyCacheReader implements ObservationReader using a Valkey-compatible client.
 type ValkeyCacheReader struct {
 	client *redis.Client
 }
@@ -42,7 +46,7 @@ func WithTLSConfig(tlsConfig *tls.Config) ValkeyOption {
 	}
 }
 
-// NewValkeyCacheReader creates a CacheReader backed by Valkey.
+// NewValkeyCacheReader creates an observation reader backed by Valkey.
 func NewValkeyCacheReader(addr string, opts ...ValkeyOption) *ValkeyCacheReader {
 	redisOpts := &redis.Options{Addr: addr}
 	for _, opt := range opts {
@@ -60,6 +64,33 @@ func (v *ValkeyCacheReader) Exists(ctx context.Context, key string) (bool, error
 		return false, err
 	}
 	return result > 0, nil
+}
+
+// Read returns an explicit presence-aware label observation. Existence alone
+// and legacy values cannot establish a determining label observation.
+func (v *ValkeyCacheReader) Read(ctx context.Context, key string) (CachedObservation, error) {
+	value, err := v.client.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return CachedObservation{State: RecordMissing}, nil
+	}
+	if err != nil {
+		return CachedObservation{State: RecordUncertain}, err
+	}
+
+	var labelState scope.LabelState
+	switch value {
+	case string(scope.LabelStateTrue):
+		labelState = scope.LabelStateTrue
+	case string(scope.LabelStateFalse):
+		labelState = scope.LabelStateFalse
+	case string(scope.LabelStateAbsent):
+		labelState = scope.LabelStateAbsent
+	case string(scope.LabelStateInvalid):
+		labelState = scope.LabelStateInvalid
+	default:
+		return CachedObservation{State: RecordUncertain}, fmt.Errorf("scopecache: unknown cache label state")
+	}
+	return CachedObservation{State: RecordVerifiedPresent, LabelState: labelState}, nil
 }
 
 // Ping checks connectivity to the Valkey backend.

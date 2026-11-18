@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -77,7 +78,7 @@ func seedMetricsWithRemediation() {
 		},
 	}
 
-	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+	helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 
 	// Wait for RR to be processed (any phase transition)
 	Eventually(func() remediationv1.RemediationPhase {

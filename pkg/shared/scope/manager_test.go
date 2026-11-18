@@ -391,6 +391,21 @@ var _ = Describe("Scope Manager", func() {
 
 	Describe("Unknown Kind Resilience", func() {
 
+		// DD-FLEET-015 (branch #2593): the typed Check lane is presence-first —
+		// a missing target is an unavailable observation, never a silent
+		// namespace-inheritance fallthrough (Resolve/IsManagedResource keep the
+		// ADR-053 inheritance semantics asserted above).
+		It("UT-SCOPE-001-011-CHECK [BR-SCOPE-001]: typed Check on a missing resource cannot inherit a managed namespace", func() {
+			ns := makeNamespace("existing-ns", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			setup(ns) // namespace exists, resource does NOT
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Namespace: "existing-ns", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nonexistent-app"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeUnavailable), "Missing target must not inherit")
+		})
+
 		It("UT-SCOPE-001-019 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects unknown Kind without GVK", func() {
 			ns := makeNamespace("production", map[string]string{
 				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
@@ -582,6 +597,48 @@ var _ = Describe("Scope Manager", func() {
 			Expect(ri.ClusterID).To(BeEmpty())
 			Expect(ri.Group).To(BeEmpty())
 			Expect(ri.Version).To(BeEmpty())
+		})
+
+		It("UT-SCOPE-RI-002-CHECK [AC-4]: Check accepts ResourceIdentity and resolves managed resource", func() {
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nginx",
+					Namespace: "production",
+					Labels:    map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
+				},
+			}
+			setup(deploy)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{
+				Namespace: "production",
+				Kind:      "Deployment",
+				Name:      "nginx",
+				Group:     "apps",
+				Version:   "v1",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		})
+
+		It("UT-SCOPE-RI-003-CHECK [BR-SCOPE-001, AC-4, AC-6, SI-10]: typed Check rejects a Kind-only identity", func() {
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{
+				Namespace: "default",
+				Kind:      "Deployment",
+				Name:      "redis",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid), "identity is never inferred from Kind")
+		})
+
+		It("UT-SCOPE-RI-004-CHECK [AC-4]: Check with ClusterID set on local Manager returns invalid", func() {
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{
+				ClusterID: "prod-east",
+				Namespace: "default",
+				Kind:      "Pod",
+				Name:      "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid))
 		})
 	})
 })

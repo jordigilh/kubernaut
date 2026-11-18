@@ -235,14 +235,17 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	// #2592: the pre-check identity carries the validated apiVersion so the
 	// strict-GVK contract is enforced here exactly as RO enforces it — a
 	// Kind-only identity would be rejected by every real checker (B1).
-	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
-		ClusterID: args.ClusterID, Namespace: args.Namespace, Kind: args.Kind, Name: args.Name,
+	targetIdentity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
+		ClusterID: args.ClusterID,
+		Namespace: args.Namespace,
+		Kind:      args.Kind,
+		Name:      args.Name,
 	}, args.APIVersion)
 	if err != nil {
 		return CreateRRResult{}, fmt.Errorf("%w: target identity: %w", ErrInvalidInput, err)
 	}
-	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, identity, d.ClusterLister); !managed {
-		return CreateRRResult{}, fmt.Errorf("%w: %s", ErrResourceNotManaged, msg)
+	if err := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, targetIdentity, d.ClusterLister); err != nil {
+		return CreateRRResult{}, err
 	}
 
 	resolvedSeverity, triageResult, err := resolveCreateRRSeverity(ctx, d, args)

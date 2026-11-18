@@ -78,13 +78,8 @@ type ClusterRegistry interface {
 	Ready() bool
 }
 
-type clusterRegistryRefresher interface {
-	Probe(context.Context) error
-}
-
 // ClusterRegistryProber probes a Fleet cluster registry's watch health.
-// Registry implementations that support Probe perform an authoritative API
-// refresh, allowing readiness to recover after an informer/watch failure.
+// DD-FLEET-015: only the session owner may restore WATCH health.
 type ClusterRegistryProber struct {
 	Registry ClusterRegistry
 }
@@ -92,10 +87,7 @@ type ClusterRegistryProber struct {
 var _ Prober = (*ClusterRegistryProber)(nil)
 
 // Probe implements Prober.
-func (p *ClusterRegistryProber) Probe(ctx context.Context) error {
-	if refresher, ok := p.Registry.(clusterRegistryRefresher); ok {
-		return refresher.Probe(ctx)
-	}
+func (p *ClusterRegistryProber) Probe(_ context.Context) error {
 	if !p.Registry.Ready() {
 		return fmt.Errorf("fleet cluster registry not ready")
 	}

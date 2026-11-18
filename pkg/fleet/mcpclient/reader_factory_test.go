@@ -56,7 +56,10 @@ var _ = Describe("mcpReaderFactory.ReaderFor reconnect-on-failure (issue #2317 g
 	})
 
 	It("UT-READERFACTORY-RECONN-001: ReaderFor recovers via reconnect after the underlying session dies mid-lifetime", func() {
-		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+		gw := mockgw.NewMockGateway(
+			mockgw.WithMultiCluster("prod-east"),
+			mockgw.WithStructuredContent(validPodItems("default")),
+		)
 		defer gw.Close()
 
 		cfg := mcpclient.DefaultResilienceConfig()

@@ -138,14 +138,14 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		deleteBackend(context.Background(), "e2e-cluster")
 	})
 
-	Describe("E2E-FMC-054-001 [AC-4, SC-7]: Full factory-to-Valkey journey", func() {
+	Describe("IT-FMC-PRES-003 / IT-SCOPE-TYPED-021 / E2E-FMC-054-001 [AC-4, SC-7]: Full factory-to-Valkey journey", func() {
 		It("Sub-case A: managed resource (Valkey key exists, cluster known) returns managed=true", func() {
 			key, err := scopecache.BuildKey("e2e-cluster", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 			defer redisClient.Del(ctx, key)
 
-			managed, err := fedChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := fedChecker.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "e2e-cluster",
 				Group:     "apps",
 				Version:   "v1",
@@ -154,13 +154,13 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 				Name:      "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"E2E-FMC-054-001A: managed resource on a known cluster must return true "+
 					"through the full factory -> FederatedScopeChecker -> HTTPClient -> FMC handler -> EAIGWRegistry -> Valkey path")
 		})
 
-		It("Sub-case B: unmanaged resource (Valkey key absent) returns managed=false", func() {
-			managed, err := fedChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+		It("Sub-case B: unobserved resource (Valkey key absent) is unavailable", func() {
+			managed, err := fedChecker.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "e2e-cluster",
 				Group:     "apps",
 				Version:   "v1",
@@ -168,9 +168,10 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 				Namespace: "orphan-ns",
 				Name:      "no-such-deploy",
 			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse(),
-				"E2E-FMC-054-001B: absent resource must return false through the full production path")
+			Expect(err).NotTo(HaveOccurred(),
+				"an absent Valkey observation must remain unavailable through the production path")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
+				"E2E-FMC-054-001B: unavailable scope checks must fail closed")
 		})
 	})
 })

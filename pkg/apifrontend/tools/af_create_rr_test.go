@@ -255,10 +255,19 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 			realChecker := scope.NewManager(fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-					Namespace: "prod", Name: "web",
-					Labels: map[string]string{"kubernaut.ai/managed": "true"},
-				}}).
+				WithObjects(
+					&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: "prod", Name: "web",
+						Labels: map[string]string{"kubernaut.ai/managed": "true"},
+					}},
+					// Present with an explicit opt-out label: a verified
+					// unmanaged target under the union's presence-first Check
+					// lane (a merely absent target is observation_missing).
+					&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: "prod", Name: "unmanaged-web",
+						Labels: map[string]string{"kubernaut.ai/managed": "false"},
+					}},
+				).
 				Build())
 			tc := newTypedFakeClient()
 
@@ -1165,7 +1174,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "scope infra error", APIVersion: "apps/v1",
 			}, "carol")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue(),
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue(),
 				"a scope-infrastructure error must fail closed, not silently allow RR creation")
 		})
 
@@ -1181,7 +1190,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "no scope checker configured", APIVersion: "apps/v1",
 			}, "carol")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
 
 			var list remediationv1.RemediationRequestList
 			Expect(tc.List(context.Background(), &list, crclient.InNamespace(kubernautSystem))).To(Succeed())

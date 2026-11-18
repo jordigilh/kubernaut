@@ -86,7 +86,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
@@ -147,7 +147,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -214,7 +214,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -282,7 +282,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -350,7 +350,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Waiting for RO to create child SignalProcessing with owner reference")
@@ -426,7 +426,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Waiting for RO first reconciliation before updating status")

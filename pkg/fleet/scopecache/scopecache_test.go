@@ -45,6 +45,18 @@ func (m *mockCacheReader) Exists(_ context.Context, key string) (bool, error) {
 	return val, nil
 }
 
+func (m *mockCacheReader) Read(_ context.Context, key string) (scopecache.CachedObservation, error) {
+	value, exists := m.store[key]
+	if !exists {
+		return scopecache.CachedObservation{State: scopecache.RecordMissing}, nil
+	}
+	label := scope.LabelStateFalse
+	if value {
+		label = scope.LabelStateTrue
+	}
+	return scopecache.CachedObservation{State: scopecache.RecordVerifiedPresent, LabelState: label}, nil
+}
+
 var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	var (
 		ctx    context.Context
@@ -58,43 +70,44 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		client = scopecache.NewClient(reader)
 	})
 
-	Describe("IsManaged (Valkey cache lookup)", func() {
+	Describe("Check (observed Valkey metadata)", func() {
 		It("UT-FLEET-SC-001: returns true for managed resource", func() {
 			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[key] = true
 
-			managed, err := client.IsManaged(ctx, "prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			managed, err := client.Check(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 
-		It("UT-FLEET-SC-002: returns error for cache miss", func() {
-			_, err := client.IsManaged(ctx, "prod-west", "apps", "v1", "Deployment", "default", "redis")
-			Expect(err).To(HaveOccurred())
+		It("UT-FLEET-SC-002: returns unavailable for cache miss", func() {
+			result, err := client.Check(ctx, scope.ResourceIdentity{ClusterID: "prod-west", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "redis"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeUnavailable))
 		})
 	})
 
-	Describe("IsManagedResource (scope.ScopeChecker)", func() {
-		It("UT-FLEET-SC-2592 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects missing GVK even when the namespace is managed", func() {
+	Describe("Check (scope.ScopeChecker)", func() {
+		It("UT-FLEET-SC-2592 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects a missing GVK even when the namespace is managed", func() {
 			key, err := scopecache.BuildKey("remote", "", "v1", "Namespace", "", "default")
 			Expect(err).NotTo(HaveOccurred())
 			reader.store[key] = true
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "remote", Kind: "Pod", Namespace: "default", Name: "p"})
-			Expect(err).To(HaveOccurred())
-			Expect(managed).To(BeFalse())
+			result, err := client.Check(ctx, scope.ResourceIdentity{ClusterID: "remote", Kind: "Pod", Namespace: "default", Name: "p"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid), "identity is never inferred from Kind")
 		})
 		It("UT-FLEET-SC-009: Client implements scope.ScopeChecker", func() {
 			var checker scope.ScopeChecker = client
 			Expect(checker).ToNot(BeNil())
 		})
 
-		It("UT-FLEET-SC-010: IsManagedResource delegates to IsManaged with ResourceIdentity fields", func() {
+		It("UT-FLEET-SC-010: Check delegates to IsManaged with ResourceIdentity fields", func() {
 			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[key] = true
 
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "prod-east",
 				Group:     "apps",
 				Version:   "v1",
@@ -103,16 +116,40 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 				Name:      "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 
-		It("UT-FLEET-SC-012 [BR-SCOPE-001, AC-4, AC-6, SI-10]: accepts an explicit core GVK", func() {
+		It("UT-FMC-PRES-008 [SI-10]: remote scope checks require explicit GVK", func() {
+			key, err := scopecache.BuildKey("loopback-cluster", "apps", "v1", "Deployment", "kubernaut-system", "memory-eater")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[key] = true
+
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
+				ClusterID: "loopback-cluster",
+				Group:     "apps",
+				Version:   "v1",
+				Kind:      "Deployment",
+				Namespace: "kubernaut-system",
+				Name:      "memory-eater",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
+				"the exact explicit GVK must match the syncer-written key")
+		})
+
+		It("UT-FMC-PRES-008 [SI-10]: missing remote GVK cannot use a core-v1 fallback", func() {
 			key, err := scopecache.BuildKey("loopback-cluster", "", "v1", "Pod", "kubernaut-system", "web-0")
 			Expect(err).NotTo(HaveOccurred())
 			reader.store[key] = true
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "loopback-cluster", Version: "v1", Kind: "Pod", Namespace: "kubernaut-system", Name: "web-0"})
+
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
+				ClusterID: "loopback-cluster",
+				Kind:      "Pod",
+				Namespace: "kubernaut-system",
+				Name:      "web-0",
+			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeInvalid))
 		})
 
 		// Issue #2311: fleet (remote-cluster) scope checks must honor the same
@@ -124,32 +161,32 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		// selector can't match "resources whose namespace has this label"),
 		// so every such resource was permanently rejected as unmanaged on
 		// fleet clusters despite working correctly on the hub.
-		It("UT-FLEET-SC-013 [Issue #2311]: IsManagedResource falls back to the namespace-level label when the resource-level key is not cached", func() {
+		It("UT-FMC-CACHE-001 [BR-SCOPE-001]: cache miss does not fall back to a managed namespace", func() {
 			nsKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "demo-checkout")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[nsKey] = true
 			// Deliberately do NOT set the resource-level key -- the pod itself
 			// carries no label, only its namespace does.
 
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
 				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "demo-checkout",
 				Name:      "worker-5f74bb54f7-28jpv",
 			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
-				"a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources, same as local")
+			Expect(err).NotTo(HaveOccurred(), "a completed missing-observation outcome is not an execution error")
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
+				"a managed namespace must not authorize a resource whose presence is unverified")
 		})
 
-		It("UT-FLEET-SC-014 [Issue #2311]: IsManagedResource prefers the resource-level label over the namespace fallback when both are cached", func() {
+		It("UT-FLEET-SC-014 [Issue #2311]: Check prefers the resource-level label over the namespace fallback when both are cached", func() {
 			resKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Pod", "demo-checkout", "worker-1")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[resKey] = true
 			// No namespace-level key needed -- resource-level hit should short-circuit.
 
-			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
 				Version:   "v1",
 				Kind:      "Pod",
@@ -157,21 +194,22 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 				Name:      "worker-1",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 		})
 
-		It("UT-FLEET-SC-015 [Issue #2311]: IsManagedResource returns unmanaged when neither the resource nor its namespace is cached", func() {
-			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
+		It("UT-FMC-CACHE-002 [BR-SCOPE-001]: cache miss is observable instead of verified unmanaged", func() {
+			managed, err := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
 				Version:   "v1",
 				Kind:      "Pod",
 				Namespace: "unmanaged-ns",
 				Name:      "orphan",
 			})
-			Expect(managed).To(BeFalse())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 
-		It("UT-FLEET-SC-016 [Issue #2311]: IsManagedResource does not fall back to a namespace for cluster-scoped kinds, mirroring scope.Manager", func() {
+		It("UT-FLEET-SC-016 [Issue #2311]: Check does not fall back to a namespace for cluster-scoped kinds, mirroring scope.Manager", func() {
 			// A coincidentally-matching "namespace" key must never be
 			// consulted for a cluster-scoped resource (e.g. Node) -- it has
 			// no namespace to inherit from (ADR-053).
@@ -179,14 +217,14 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[nsKey] = true
 
-			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
+			managed, _ := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
 				Version:   "v1",
 				Kind:      "Node",
 				Namespace: "",
 				Name:      "worker-node-1",
 			})
-			Expect(managed).To(BeFalse(),
+			Expect(managed.State).To(Equal(scope.ScopeUnsupported),
 				"Node is cluster-scoped and must only ever check its own resource-level label")
 		})
 	})

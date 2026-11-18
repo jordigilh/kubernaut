@@ -195,7 +195,7 @@ func postWithFleetAuth(url string, body io.Reader) (*http.Response, error) {
 // Root cause (Issue #54 SOC2 gap RCA, CI run 28495045499): every fleet E2E
 // alert carries a non-empty cluster label, so Gateway's scope check
 // (pkg/gateway/server.go validateScope) routes through
-// pkg/fleet.FederatedScopeChecker.IsManagedResource, which for non-empty
+// pkg/fleet.FederatedScopeChecker.Check, which for non-empty
 // ClusterID ALWAYS delegates to the remote FleetMetadataCache (FMC) HTTP
 // backend (pkg/fleet/fmc/http_client.go) -- never the local K8s informer
 // cache (pkg/shared/scope/manager.go), which only applies to empty

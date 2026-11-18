@@ -47,6 +47,7 @@ import (
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -712,6 +713,37 @@ func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 
+// ensureRRTarget creates the real resource referenced by an RR fixture's
+// spec.targetResource (#2593, DD-FLEET-015 presence-first scope checking: a
+// missing target is ScopeUnavailable("observation_missing") and the RR can
+// never progress past routing). The target is created unlabeled so it inherits
+// the managed-namespace scope decision.
+func ensureRRTarget(rr *remediationv1.RemediationRequest) {
+	t := rr.Spec.TargetResource
+	if t.Namespace == "" || t.Name == "" {
+		return
+	}
+	switch t.Kind {
+	case "Pod":
+		helpers.EnsureTestPod(ctx, k8sClient, t.Namespace, t.Name)
+	case "Deployment":
+		helpers.EnsureTestDeployment(ctx, k8sClient, t.Namespace, t.Name)
+	case "StatefulSet":
+		sts := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: t.Name, Namespace: t.Namespace},
+			Spec: appsv1.StatefulSetSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": t.Name}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": t.Name}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.10"}}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sts)).To(SatisfyAny(Succeed(), MatchError(ContainSubstring("already exists"))),
+			"failed to create StatefulSet target %s/%s", t.Namespace, t.Name)
+	}
+}
+
 // deleteTestNamespace cleans up a test namespace.
 // Delegates to shared helpers.DeleteTestNamespace.
 func deleteTestNamespace(ns string) {
@@ -722,6 +754,10 @@ func deleteTestNamespace(ns string) {
 // ADR-057: RR is created in ROControllerNamespace; targetNamespace is for Spec.TargetResource
 // (scope validation). Child CRDs (SP, AI, WE) are created by RO in rr.Namespace = ROControllerNamespace.
 func createRemediationRequest(targetNamespace, name string) *remediationv1.RemediationRequest {
+	// DD-FLEET-015: this happy-path fixture needs an observed target before
+	// namespace inheritance can authorize routing. Negative presence tests build
+	// their own requests; do not fabricate scope decisions in the checker.
+	helpers.EnsureTestDeployment(ctx, k8sClient, targetNamespace, "test-app")
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -741,8 +777,8 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 			SignalType: "alert",
 			TargetType: "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:       "Deployment",
 				APIVersion: "apps/v1",
+				Kind:       "Deployment",
 				Name:       "test-app",
 				Namespace:  targetNamespace,
 			},
