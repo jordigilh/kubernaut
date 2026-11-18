@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-logr/logr"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
@@ -74,18 +73,22 @@ type CurrentPolicySource interface {
 
 // HistorySource returns the existing CRD records used for bounded, exact-target
 // historical projection. Implementations must not fetch arbitrary objects.
+//
+// SignalProcessing history is deliberately not part of this source: the SP CRD
+// does not persist targetResource.apiVersion, so its targets cannot be safely
+// matched to inventory identities. SP history is fail-closed skipped since
+// #2592, and the dead SP reads were dropped in #2651. See DD-AF-018 §4.
 type HistorySource interface {
 	ListAIAnalysis(ctx context.Context) ([]aianalysisv1.AIAnalysis, error)
-	ListSignalProcessing(ctx context.Context) ([]spv1.SignalProcessing, error)
 }
 
 // StreamingHistorySource is the bounded history seam used by the production
 // Kubernetes source. Each callback receives one decoded record and may stop
 // the traversal with an error; implementations must page and discard backend
-// lists rather than retain the complete source collection.
+// lists rather than retain the complete source collection. SignalProcessing
+// is not traversed for the reason documented on HistorySource (#2592, #2651).
 type StreamingHistorySource interface {
 	ForEachAIAnalysis(ctx context.Context, visit func(aianalysisv1.AIAnalysis) error) error
-	ForEachSignalProcessing(ctx context.Context, visit func(spv1.SignalProcessing) error) error
 }
 
 // Authorizer combines named capability SARs with exact local target SARs.

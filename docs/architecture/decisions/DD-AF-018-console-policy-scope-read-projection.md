@@ -249,6 +249,14 @@ grants the AF ServiceAccount only `get` and `list` on `signalprocessings`, with 
 RBAC tests and no write verbs. If a required source cannot be read completely, AF returns
 a state-only failure response rather than partial records.
 
+> **Amendment (2026-11-16, #2651):** SignalProcessing history is no longer fetched at all.
+> The SP CRD does not persist `targetResource.apiVersion`, so SP targets cannot be safely
+> matched to inventory identities; SP history has been fail-closed skipped since #2592,
+> and #2651 dropped the dead SP reads (including request failures on SP fetch errors)
+> from both the streaming and legacy history-collection paths. Reading and discarding
+> records that could never be projected was contrary to data minimization / least
+> privilege (AC-6); not fetching them is the narrower behavior.
+
 ### 5. The projection is typed, sanitized, and fail-closed
 
 The response contains typed resource identity, scope/provenance, current policy identity
@@ -400,6 +408,11 @@ The approved v1 contract includes complete historical reads where the fields exi
 operator therefore grants only AF `get/list` access, and AF fails closed when a required
 history source is unavailable.
 
+> **Amendment (2026-11-16, #2651):** The "complete historical reads" premise of this
+> rejection is superseded: #2592 established that SP records cannot be safely identity-
+> matched (the CRD lacks `targetResource.apiVersion`), and #2651 removed the SP history
+> fetches. Not fetching unmatchable records is not silent degradation of a usable source.
+
 ## Consequences
 
 ### Positive
@@ -428,6 +441,8 @@ history source is unavailable.
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
 - Historical matching remains bounded by existing CRD fields until a separately approved
   index exists.
+  (#2651 amendment: the SignalProcessing portion of historical matching was removed —
+  see §4 above; AIAnalysis history matching is unchanged.)
 - The Console must map explicit AF read states rather than treating every non-200 as empty.
 
 ## Wiring Manifest
@@ -440,7 +455,7 @@ history source is unavailable.
 | Managed inventory exact read | `.../managed-resources/{resourceID}` | AF router and projection service | IT-AF-2584-005 |
 | User/capability/target authorization | Authenticated Console request | AF auth adapter and SAR checker | IT-AF-2584-004/005 |
 | Fleet inventory projection | Remote Console exact/get read | FMC and ACM control-plane adapters | IT-FLEET-2584-001/002 |
-| SignalProcessing history | Policy projection | AF typed client plus operator RBAC | IT-AF-2584-003/006 |
+| SignalProcessing history | Policy projection | AF typed client plus operator RBAC | ~~IT-AF-2584-003/006~~ removed by #2651 (SP history not fetched; see §4) |
 | Typed read audit events | Every authenticated read outcome | AF audit registry/adapter and DataStorage union | IT-AF-2584-010/011 |
 
 ## Implementation Status
