@@ -940,4 +940,4 @@ components:
           type: string
         request_id:
           type: string
-          description: Bounded request identifier from AF middleware (RFC 9457 §3.2 extension member).
+          description: Bounded request identifier from AF middleware, present when the emitter has a request context (RFC 9457 §3.2 extension member).

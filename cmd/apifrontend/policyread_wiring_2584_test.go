@@ -213,23 +213,34 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 		Expect(deps.RemoteInventory).To(BeNil())
 	})
 
-	It("IT-AF-2584-009 [BR-API-001]: keeps existing A2A and MCP routes serving alongside the Console read routes", func() {
-		_, router, err := buildRouterConfig(testRouterBuildParams(&dualToolConsoleAuthorizer{}))
+	It("IT-AF-2584-009 [BR-API-001]: keeps existing A2A and MCP routes mounted alongside the Console read routes", func() {
+		params := testRouterBuildParams(&dualToolConsoleAuthorizer{})
+		// Distinct bodies prove each path reaches the handler mounted for it,
+		// not merely that some handler answered 200.
+		params.MCPHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Mounted-By", "mcp")
+			w.WriteHeader(http.StatusOK)
+		})
+		params.A2AHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Mounted-By", "a2a")
+			w.WriteHeader(http.StatusOK)
+		})
+		_, router, err := buildRouterConfig(params)
 		Expect(err).NotTo(HaveOccurred())
 
-		// The agentic routes stay mounted and reachable after the Console read
-		// routes register. This fixture uses a pass-through auth middleware, so
-		// it proves route registration and precedence only; the authenticated
+		// The agentic surface keeps serving after the Console read routes are
+		// registered on the same router. This fixture uses a pass-through auth
+		// middleware, so it proves mounting and dispatch only; the authenticated
 		// chain is covered by the router-wiring container.
 		mcpRecorder := httptest.NewRecorder()
 		router.ServeHTTP(mcpRecorder, httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
 		Expect(mcpRecorder.Code).To(Equal(http.StatusOK))
+		Expect(mcpRecorder.Header().Get("X-Mounted-By")).To(Equal("mcp"))
 
-		accessRecorder := httptest.NewRecorder()
-		accessReq := httptest.NewRequest(http.MethodGet, "/a2a/access", http.NoBody)
-		accessReq = accessReq.WithContext(auth.WithUserIdentity(accessReq.Context(), &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}))
-		router.ServeHTTP(accessRecorder, accessReq)
-		Expect(accessRecorder.Code).To(Equal(http.StatusOK))
+		a2aRecorder := httptest.NewRecorder()
+		router.ServeHTTP(a2aRecorder, httptest.NewRequest(http.MethodPost, "/a2a/invoke", http.NoBody))
+		Expect(a2aRecorder.Code).To(Equal(http.StatusOK))
+		Expect(a2aRecorder.Header().Get("X-Mounted-By")).To(Equal("a2a"))
 
 		// The Console routes are additive: they answer on their own paths and
 		// reject an unauthenticated caller instead of widening the router.

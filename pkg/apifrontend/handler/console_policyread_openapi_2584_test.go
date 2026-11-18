@@ -16,6 +16,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/httputil"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/requestid"
 )
@@ -129,5 +130,37 @@ var _ = Describe("IT-AF-2584-011: Console read OpenAPI contract", func() {
 		// Undocumented members are a contract violation, not an extension point.
 		problemBody["undocumented_field"] = "leaked"
 		Expect(problemSchema.VisitJSON(problemBody)).NotTo(Succeed())
+	})
+
+	It("IT-AF-2584-011 [BR-API-001, FedRAMP SI-10]: every problem+json emitter produces a schema-valid envelope", func() {
+		doc := loadConsoleOpenAPI()
+		schema := consoleResponseSchema(doc, "/api/v1/console/inventory/managed-resources", "application/problem+json", http.StatusBadRequest)
+
+		emitters := []struct {
+			name  string
+			write func(http.ResponseWriter)
+		}{
+			{"401 unauthorized", func(w http.ResponseWriter) {
+				httputil.WriteProblem(w, http.StatusUnauthorized, "Unauthorized", "authentication required")
+			}},
+			{"429 rate limited", func(w http.ResponseWriter) {
+				httputil.WriteProblem(w, http.StatusTooManyRequests, "Too Many Requests", "rate limit exceeded")
+			}},
+			{"501 mcp disabled", func(w http.ResponseWriter) {
+				httputil.WriteProblemWithType(w, http.StatusNotImplemented, "about:blank", "Not Implemented", "mcp disabled", "")
+			}},
+			{"503 unavailable", func(w http.ResponseWriter) {
+				httputil.WriteProblemFull(w, &httputil.ProblemDetail{
+					Type: "about:blank", Title: "Service Unavailable", Status: http.StatusServiceUnavailable,
+					Detail: "draining", RequestID: "req-2584-emitter",
+				})
+			}},
+		}
+		for _, emitter := range emitters {
+			recorder := httptest.NewRecorder()
+			emitter.write(recorder)
+			Expect(recorder.Header().Get("Content-Type")).To(Equal("application/problem+json"), emitter.name)
+			Expect(schema.VisitJSON(decodeConsoleBody(recorder))).To(Succeed(), emitter.name)
+		}
 	})
 })

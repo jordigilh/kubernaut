@@ -456,6 +456,59 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 			"/api/v1/console/inventory/managed-resources/" + first.Items[0].ID + "?cluster_id=local"))
 	})
 
+	It("UT-AF-2584-009 [BR-SECURITY-016, FedRAMP SI-10]: the policy-scope projection exposes only allowlisted fields", func() {
+		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+		resource := inventory.Resource{
+			ID: policyReadTestResourceID, ClusterID: "local", Group: "apps", Version: "v1",
+			Kind: "Deployment", Namespace: "payments", Name: "checkout",
+			Scope: inventory.Scope{Included: true},
+		}
+		page := inventory.Page{
+			State: inventory.StateSuccess, ObservedAt: observedAt,
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system", BasePath: "/api/v1/console"}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{{
+				Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego",
+				Revision:  "sha256:" + strings.Repeat("a", 64),
+				Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"},
+			}}},
+			History:    &historyStub{},
+			Authorizer: allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"})
+		Expect(err).NotTo(HaveOccurred())
+
+		encoded, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		var document map[string]any
+		Expect(json.Unmarshal(encoded, &document)).To(Succeed())
+
+		// The projection is an allowlist, not a filter: any field added to the
+		// response types without updating this contract fails here.
+		Expect(keysOf(document)).To(ConsistOf("apiVersion", "kind", "state", "observedAt", "freshness", "completeness", "items"))
+		items, ok := document["items"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(items).To(HaveLen(1))
+		item, ok := items[0].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(keysOf(item)).To(ConsistOf("id", "resource", "currentPolicies", "inventoryLink"))
+		policies, ok := item["currentPolicies"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(policies).To(HaveLen(1))
+		policy, ok := policies[0].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(keysOf(policy)).To(ConsistOf("type", "configMapName", "configMapKey", "revision", "threshold"))
+
+		// Policy source text, tokens and arbitrary payloads never appear.
+		Expect(string(encoded)).NotTo(ContainSubstring("package approval"))
+		Expect(string(encoded)).NotTo(ContainSubstring("secret"))
+	})
+
 	It("UT-AF-2584-008 [BR-API-001]: maps malformed exact backend identity to unavailable", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
@@ -472,6 +525,16 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 
 func user(name string, serviceAccount bool) *auth.UserIdentity {
 	return &auth.UserIdentity{Username: name, IsServiceAccount: serviceAccount}
+}
+
+// keysOf reports the exact field set of a decoded JSON object, so allowlist
+// assertions fail when a new field is added to a response type.
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 type inventoryStub struct {
