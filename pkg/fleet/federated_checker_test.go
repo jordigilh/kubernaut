@@ -28,6 +28,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
+// mockLocalChecker is the local-lane stub used by factory tests (the
+// federated checker itself no longer accepts a local checker, #2660 m7).
 type mockLocalChecker struct {
 	managed map[string]bool
 }
@@ -53,20 +55,16 @@ func (m *mockRemoteChecker) Check(_ context.Context, resource scope.ResourceIden
 var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 	var (
 		ctx    context.Context
-		local  *mockLocalChecker
 		remote *mockRemoteChecker
 		fc     *fleet.FederatedScopeChecker
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		local = &mockLocalChecker{managed: map[string]bool{
-			"default/Deployment/nginx": true,
-		}}
 		remote = &mockRemoteChecker{managed: map[string]bool{
 			"prod-east/default/Deployment/nginx": true,
 		}}
-		fc = fleet.NewFederatedScopeChecker(local, remote, logr.Discard())
+		fc = fleet.NewFederatedScopeChecker(remote, logr.Discard())
 	})
 
 	// Readiness gate Wave 2 (#1553): GW's readiness wiring needs to reach the
@@ -201,16 +199,12 @@ func (m *mockClusterLookup) IsKnownCluster(clusterID string) bool {
 var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", func() {
 	var (
 		ctx     context.Context
-		local   *mockLocalChecker
 		remote  *mockRemoteChecker
 		cluster *mockClusterLookup
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		local = &mockLocalChecker{managed: map[string]bool{
-			"default/Deployment/nginx": true,
-		}}
 		remote = &mockRemoteChecker{managed: map[string]bool{
 			"prod-east/default/Deployment/nginx": true,
 		}}
@@ -220,7 +214,7 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 	})
 
 	It("UT-SCOPE-P1-001 [AC-3]: rejects resource from unknown cluster", func() {
-		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
+		fc := fleet.NewFederatedScopeChecker(remote, logr.Discard(),
 			fleet.WithClusterLookup(cluster))
 
 		managed, err := fc.Check(ctx, scope.ResourceIdentity{
@@ -237,7 +231,7 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 	})
 
 	It("UT-SCOPE-P1-002 [AC-3]: passes resource from known cluster to remote checker", func() {
-		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
+		fc := fleet.NewFederatedScopeChecker(remote, logr.Discard(),
 			fleet.WithClusterLookup(cluster))
 
 		managed, err := fc.Check(ctx, scope.ResourceIdentity{
@@ -254,7 +248,7 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 	})
 
 	It("UT-SCOPE-P1-003 [AC-3]: skips cluster check when no ClusterLookup is configured", func() {
-		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard())
+		fc := fleet.NewFederatedScopeChecker(remote, logr.Discard())
 
 		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "any-cluster",

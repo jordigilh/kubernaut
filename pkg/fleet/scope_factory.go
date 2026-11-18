@@ -129,7 +129,7 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 			Timeout:   5 * time.Second,
 			Transport: transport,
 		}))
-		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
+		return NewFederatedScopeChecker(remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
 		// #1556: ACM Search mandatorily requires bearer-token auth.
 		// FleetConfig.Validate() hard-requires cfg.TokenPath for BackendACM, so
@@ -156,7 +156,7 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 			}))
 		}
 		remoteChecker := acm.NewClient(endpoint, acmOpts...)
-		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
+		return NewFederatedScopeChecker(remoteChecker, logger, checkerOpts...), nil
 	default:
 		return nil, fmt.Errorf("fleet: unsupported backend %q", backend)
 	}

@@ -64,7 +64,6 @@ func WithClusterLookup(lookup ClusterLookup) FederatedScopeCheckerOption {
 //
 // References: ADR-068, BR-INTEGRATION-065
 type FederatedScopeChecker struct {
-	local         scope.ScopeChecker
 	remote        scope.ScopeChecker
 	clusterLookup ClusterLookup
 	logger        logr.Logger
@@ -73,9 +72,12 @@ type FederatedScopeChecker struct {
 // NewFederatedScopeChecker creates an attributed Fleet checker.
 // remoteChecker handles every explicit cluster ID (backend-specific adapter).
 // Options can add a ClusterLookup for cluster-level precondition checking.
-func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteChecker scope.ScopeChecker, logger logr.Logger, opts ...FederatedScopeCheckerOption) *FederatedScopeChecker {
+//
+// There is deliberately no local checker parameter: DD-FLEET-015 forbids an
+// empty or unknown Fleet attribution from falling back to local scope, and a
+// stored-but-unused local checker implied exactly that fallback.
+func NewFederatedScopeChecker(remoteChecker scope.ScopeChecker, logger logr.Logger, opts ...FederatedScopeCheckerOption) *FederatedScopeChecker {
 	f := &FederatedScopeChecker{
-		local:  localChecker,
 		remote: remoteChecker,
 		logger: logger.WithName("federated-scope"),
 	}
