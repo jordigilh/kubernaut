@@ -7,7 +7,16 @@
 **Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: DD-FLEET-016 A2 re-qualified at 58dc999e1 (review-fix freeze) on
+**Status**: DD-FLEET-016 A2 re-qualified at 1fb6d74c0 (post-main-merge head:
+merge 3589fc829 integrating #2647/#2657 + #2592 GVK determination 9dfb15176)
+on the live cluster af-fleet-2593-rca (helios08): FMC IT ok (race, 67.9s), full
+AF Fleet suite 11/11 PASS (4 procs, seed 1794866481, 116.7s), scope
+availability 219/219 polls HTTP 200 (100%) under full suite load, zero-pod FMC
+transition to image tag 2593-a2-1fb6d74c0. Local gates on the merged head:
+build 0, 135/135 pkg suites, lint 0. The 58dc999e1 record below covers the
+review-fix freeze in isolation.
+
+DD-FLEET-016 A2 re-qualified at 58dc999e1 (review-fix freeze) on
 the live cluster af-fleet-2593-rca (helios08): FMC IT ok (race, 67s), full AF
 Fleet suite 11/11 PASS (4 procs, seed 1794866481, 102.6s), scope availability
 197/197 polls HTTP 200 (100%) under full suite load, zero-pod FMC transition to
