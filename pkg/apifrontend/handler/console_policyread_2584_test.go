@@ -236,6 +236,22 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).NotTo(ContainSubstring("checkout"))
 		Expect(reader.listCalls).To(Equal(0))
 	})
+
+	It("IT-AF-2584-004 [BR-SECURITY-016, FedRAMP AC-4/AC-6]: returns a state-only denial when the endpoint capability is missing", func() {
+		reader := &consoleInventoryStub{page: successfulPage()}
+		readHandler := newConsoleReadHandler(capabilityDeniedAuthorizer{}, reader)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
+		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
+		recorder := httptest.NewRecorder()
+
+		readHandler.ServeHTTP(recorder, req)
+
+		Expect(recorder.Code).To(Equal(http.StatusForbidden))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"forbidden"`))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring("checkout"))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
+		Expect(reader.listCalls).To(Equal(0))
+	})
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {
@@ -248,7 +264,20 @@ func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.I
 	return handler.NewConsolePolicyReadHandler(service, logrDiscard())
 }
 
+// capabilityDeniedAuthorizer grants the target but not the endpoint capability,
+// modelling a caller that authenticates but lacks the named read capability.
+type capabilityDeniedAuthorizer struct{}
+
+func (capabilityDeniedAuthorizer) Check(context.Context, string, []string, string) (bool, error) {
+	return false, nil
+}
+
+func (capabilityDeniedAuthorizer) CheckTarget(context.Context, string, []string, auth.TargetAccess) (bool, error) {
+	return true, nil
+}
+
 func successfulPage() inventory.Page {
+
 	observedAt := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	return inventory.Page{
 		State:        inventory.StateSuccess,
