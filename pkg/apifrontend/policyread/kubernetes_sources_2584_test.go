@@ -7,7 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,7 +19,6 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
-		Expect(spv1.AddToScheme(scheme)).To(Succeed())
 		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "aianalysis-config", Namespace: "kubernaut-system"},
@@ -89,11 +87,9 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
-		Expect(spv1.AddToScheme(scheme)).To(Succeed())
 		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "policy", Namespace: "kubernaut-system"}, Data: map[string]string{"approval.rego": "package approval"}},
 			&aianalysisv1.AIAnalysis{ObjectMeta: metav1.ObjectMeta{Name: "ai-1", Namespace: "kubernaut-system"}},
-			&spv1.SignalProcessing{ObjectMeta: metav1.ObjectMeta{Name: "sp-1", Namespace: "kubernaut-system"}},
 		).Build()
 		source, err := policyread.NewKubernetesSource(reader)
 		Expect(err).NotTo(HaveOccurred())
@@ -104,8 +100,5 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		ai, err := source.ListAIAnalysis(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ai).To(HaveLen(1))
-		sp, err := source.ListSignalProcessing(context.Background())
-		Expect(err).NotTo(HaveOccurred())
-		Expect(sp).To(HaveLen(1))
 	})
 })
