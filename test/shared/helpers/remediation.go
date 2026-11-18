@@ -45,7 +45,7 @@ func CreateRemediationRequestWithTarget(ctx context.Context, k8sClient client.Cl
 		switch target.Kind {
 		case "Pod":
 			EnsureTestPod(ctx, k8sClient, target.Namespace, target.Name)
-		case "Deployment":
+		case fixtureKindDeployment:
 			EnsureTestDeployment(ctx, k8sClient, target.Namespace, target.Name)
 		}
 	}
@@ -142,9 +142,13 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 // testAPIVersionForKind maps a fixture kind to its apiVersion, mirroring what
 // production adapters resolve via API discovery (#2592: RRs must carry an
 // explicit targetResource.apiVersion).
+// fixtureKindDeployment is the shared literal for the default RR target kind
+// (goconst: used by the target-ensure switch and testAPIVersionForKind).
+const fixtureKindDeployment = "Deployment"
+
 func testAPIVersionForKind(kind string) string {
 	switch kind {
-	case "Deployment", "StatefulSet", "ReplicaSet", "DaemonSet":
+	case fixtureKindDeployment, "StatefulSet", "ReplicaSet", "DaemonSet":
 		return "apps/v1"
 	case "Job", "CronJob":
 		return "batch/v1"

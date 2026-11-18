@@ -1426,7 +1426,7 @@ func ensureSignalTarget(ctx context.Context, namespace, kind, name string) {
 		sharedhelpers.EnsureTestPod(ctx, c, namespace, name)
 	case "Deployment":
 		sharedhelpers.EnsureTestDeployment(ctx, c, namespace, name)
-	case "StatefulSet", "DaemonSet", "ReplicaSet":
+	case fixtureKindStatefulSet, fixtureKindDaemonSet, fixtureKindReplicaSet:
 		ensureAppsWorkload(ctx, c, namespace, kind, name)
 	case "Job":
 		ensureJob(ctx, c, namespace, name)
@@ -1488,7 +1488,7 @@ func ensureAppsWorkload(ctx context.Context, c client.Client, namespace, kind, n
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 			Spec:       appsv1.StatefulSetSpec{Template: template, Selector: &metav1.LabelSelector{MatchLabels: podLabels}},
 		}
-	case "DaemonSet":
+	case fixtureKindDaemonSet:
 		obj = &appsv1.DaemonSet{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 			Spec:       appsv1.DaemonSetSpec{Template: template, Selector: &metav1.LabelSelector{MatchLabels: podLabels}},
@@ -1642,11 +1642,19 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 	return signal
 }
 
+// fixtureKindDaemonSet is the shared literal for the apps workload fixture
+// kinds (goconst: used by ensureSignalTarget and fixtureAPIVersionForKind).
+const (
+	fixtureKindDaemonSet   = "DaemonSet"
+	fixtureKindReplicaSet  = "ReplicaSet"
+	fixtureKindStatefulSet = "StatefulSet"
+)
+
 // fixtureAPIVersionForKind maps a fixture kind to its default apiVersion,
 // mirroring what production adapters resolve via API discovery (#2592).
 func fixtureAPIVersionForKind(kind string) string {
 	switch kind {
-	case "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet":
+	case "Deployment", fixtureKindStatefulSet, fixtureKindDaemonSet, fixtureKindReplicaSet:
 		return "apps/v1"
 	case "Job", "CronJob":
 		return "batch/v1"
