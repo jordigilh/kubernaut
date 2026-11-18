@@ -254,17 +254,28 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 	})
 
 	It("IT-AF-2584-005 [FedRAMP SI-10, AC-4]: rejects filters and IDs that would widen the result", func() {
-		reader := &consoleInventoryStub{page: successfulPage()}
-		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
+		local := &consoleInventoryStub{page: successfulPage()}
+		remote := &consoleInventoryStub{page: successfulPage()}
+		// Both backends are wired so the non-local probe can distinguish "the
+		// service refused the request" from "no remote reader was configured".
+		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory:  local,
+			RemoteInventory: remote,
+			CurrentPolicies: &consoleCurrentPolicyStub{},
+			Authorizer:      &consoleAuthorizer{allow: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		readHandler := handler.NewConsolePolicyReadHandler(service, logrDiscard())
 
-		// A non-local cluster is refused without falling back to the hub cluster.
+		// A non-local cluster is refused: neither backend is consulted.
 		crossCluster := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=prod-east", http.NoBody)
 		crossCluster = crossCluster.WithContext(auth.WithUserIdentity(crossCluster.Context(), &auth.UserIdentity{Username: "alice"}))
 		crossRecorder := httptest.NewRecorder()
 		readHandler.ServeHTTP(crossRecorder, crossCluster)
 		Expect(crossRecorder.Code).To(Equal(http.StatusServiceUnavailable))
 		Expect(crossRecorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
-		Expect(reader.listCalls).To(Equal(0), "a remote cluster must not fall back to the local reader")
+		Expect(local.listCalls).To(Equal(0), "a remote cluster must not fall back to the local hub reader")
+		Expect(remote.listCalls).To(Equal(0), "a non-local list must be refused before remote dispatch")
 
 		// A guessed opaque ID returns not_found without existence detail.
 		guessedID := "r-" + strings.Repeat("0", 64)

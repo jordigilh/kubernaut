@@ -498,7 +498,7 @@ contract exists.
 |---|---|---|
 | Test plan | `docs/tests/2584/TEST_PLAN.md` | Approved test strategy and traceability |
 | Implementation plan | `docs/tests/2584/IMPLEMENTATION_PLAN.md` | Approved TDD and wiring plan |
-| AF unit suites | `pkg/apifrontend/{policyread,auth,scope}/` | Business and security decision tests |
+| AF unit suites | `pkg/apifrontend/{policyread,auth}/`, `pkg/shared/scope/` | Business and security decision tests |
 | AF integration suites | `pkg/apifrontend/handler/`, `cmd/apifrontend/` or `test/integration/apifrontend/` | Real production-path wiring tests |
 | Fleet control-plane suites | `pkg/fleet/fmc/`, `pkg/fleet/acm/` | Sanitized exact/detail transport and fail-closed behavior; Console list remains gated |
 | OpenAPI contract | `api/apifrontend/openapi/apifrontend-v1.yaml` | Versioned route/schema contract |
@@ -540,7 +540,7 @@ unit-only handler calls.
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
 | Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007, UT-AF-2584-003/004 | **PASS** |
-| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003/006 | **PASS** |
+| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003 | **PASS** — the failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
 | ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | UT-ACM-2593-IDENTITY-001, UT-ACM-2593-UNION-001, IT-AF-2584-008 | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
@@ -860,12 +860,12 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 | File | Delta vs main | Disposition | Basis |
 |---|---|---|---|
 | `pkg/shared/scope/gvk.go` | Optional group/version, no `ErrInvalidIdentity`, `requireExplicit` flag | Superseded | #2592 (`e498b2df8`) enforces explicit GVK with DNS-1123/1035 validation |
-| `pkg/shared/scope/checker.go` | `Check` returns a boolean; no `ScopeResult.Validate` | Superseded | #2592 / DD-FLEET-015 typed contract |
+| `pkg/shared/scope/checker.go` | `ScopeChecker` is the boolean `IsManagedResource` seam; no `ScopeResult.Validate`, so an invalid state can cross the wire as a decision | Superseded | #2592 / DD-FLEET-015 typed contract |
 | `pkg/shared/scope/manager.go` | Reintroduces Kind-only inference (`InferGVK`) and drops the presence-first typed lane (`resolveObserved`, `localScopeLookupFailure`) | Superseded | Verified at `52acac9ab`: main and draft both have `Resolve()`; draft is 375 lines vs main 434. #2592 forbids Kind inference and DD-FLEET-015 requires the presence-first lane |
 | `pkg/shared/scope/manager_test.go` | Pre-#2592 Kind-inference specs (`UT-SCOPE-RI-003`) | Superseded | Contradicts the explicit-GVK contract |
 | `pkg/shared/scope/provenance_2584_test.go` | 81 net lines smaller than main (85 vs 166) | Superseded | Main carries the newer provenance specs, including the typed-lane cases |
 | `pkg/apifrontend/policyread/local_inventory.go` | `CanonicalResourceIDChecked`; `page.Validate()` in `Get` | Not applied | Identity is always representable (`Kinds` comes from the fixed default allowlist, never a caller) and `list()` builds valid pages while `readInventoryPage` already validates — unreachable defensive code, which AGENTS.md forbids adding tests for |
-| `pkg/fleet/acm/inventory.go` | Explicit complete empty page instead of `StateOnly(StateEmpty)` | **Deferred to #2661 (G10)** | A real latent defect, not dead code: the internal `StateEmpty` + `CompletenessPartial` envelope fails `Page.validateEmpty`. It has no operator impact today because `inventoryResultPage` rebuilds the returned page and the remote Console list is gated, and its correct shape is DD-FLEET-017's to decide |
+| `pkg/fleet/acm/inventory.go` | Two hunks: an explicit complete empty page instead of `StateOnly(StateEmpty)`, and `CanonicalResourceIDChecked` replacing `CanonicalResourceID` + `ValidateResourceID` | **Deferred to #2661 (G10)** | A real latent defect, not dead code: the internal `StateEmpty` + `CompletenessPartial` envelope fails `Page.validateEmpty`. It has no operator impact today because `inventoryResultPage` rebuilds the returned page and the remote Console list is gated, and its correct shape is DD-FLEET-017's to decide |
 
 ## 17. Changelog
 
@@ -880,4 +880,4 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 | 1.6 | 2026-11-05 | Added the 16 MiB decrypted Kubernetes response-body containment test and documented its HTTPS-preserving, non-RSS-complete scope |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |
 | 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration; tests now require resolved AIA/SP policy name/key fields in the service runtime ConfigMaps and fail closed when references are missing |
-| 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 spec added; `IT-AF-2584-006/009` narrowed to what is proven; DD-FLEET-017/ADR-068 references marked pending #2661; version and branch fields corrected |
+| 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 and widening probes added; `IT-AF-2584-006/009` narrowed to what is proven; §5.5 records the declared P0 gap and §16.5 the seven-draft disposition; DD-FLEET-017/ADR-068 references marked pending #2661; version, branch and changelog fields maintained |
