@@ -173,8 +173,6 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
-		Expect(result.Managed).NotTo(BeNil())
-		Expect(*result.Managed).To(BeTrue())
 	})
 
 	It("UT-FLEET-2592-TYPED-002 [BR-SCOPE-001, SI-10]: returns invalid for an ambiguous remote identity", func() {
@@ -187,7 +185,6 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 
 		Expect(err).NotTo(HaveOccurred(), "an invalid identity is a completed domain result, not an execution failure")
 		Expect(result.State).To(Equal(scope.ScopeInvalid))
-		Expect(result.Managed).To(BeNil())
 		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
 })

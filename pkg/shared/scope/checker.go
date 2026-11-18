@@ -37,11 +37,11 @@ const (
 
 // ScopeResult carries a typed scope outcome across a boundary that otherwise
 // cannot safely represent cache misses, source uncertainty, or invalid input
-// as managed=false. DD-FLEET-015: only state and determining observation cross
-// the wire; bounded diagnostics stay internal.
+// as managed=false. DD-FLEET-015: only State and Provenance cross the wire;
+// Reason and Retryable are bounded internal diagnostics, and there is no
+// boolean "managed" member for consumers to bypass the typed state.
 type ScopeResult struct {
 	State      ScopeState  `json:"state"`
-	Managed    *bool       `json:"managed,omitempty"`
 	Provenance ScopeSource `json:"provenance,omitempty"`
 	Reason     string      `json:"-"`
 	Retryable  bool        `json:"-"`
@@ -120,5 +120,4 @@ type ScopeChecker interface {
 
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
-var _ TypedScopeChecker = (*Manager)(nil)
 var _ TypedScopeChecker = (*Manager)(nil)

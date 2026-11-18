@@ -328,7 +328,6 @@ func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeRe
 	}
 	return ScopeResult{
 		State:      state,
-		Managed:    &managed,
 		Provenance: resolution.Source,
 	}, nil
 }

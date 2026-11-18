@@ -325,7 +325,6 @@ var _ = Describe("Scope Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.State).To(Equal(scope.ScopeInvalid),
 				"an empty label value must be invalid (fail-closed), not absent (inheritable)")
-			Expect(result.Managed).To(BeNil())
 		})
 
 		// UT-SCOPE-001-016: Resource lookup non-NotFound error — fail closed.

@@ -147,10 +147,6 @@ func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.Resour
 	if err := result.Validate(); err != nil {
 		return unavailableScopeResult("remote_protocol_error"), fmt.Errorf("fleet scope: %w", err)
 	}
-	if result.State == scope.ScopeVerifiedManaged || result.State == scope.ScopeVerifiedUnmanaged {
-		managed := result.State == scope.ScopeVerifiedManaged
-		result.Managed = &managed
-	}
 	return result, nil
 }
 

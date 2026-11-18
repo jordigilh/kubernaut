@@ -108,8 +108,6 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeVerifiedUnmanaged))
-		Expect(result.Managed).NotTo(BeNil())
-		Expect(*result.Managed).To(BeFalse())
 		Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
 	})
 
@@ -133,7 +131,6 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeInvalid))
-		Expect(result.Managed).To(BeNil())
 		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 		Expect(result.Reason).To(Equal("invalid_namespace_label"))
 	})
@@ -150,7 +147,6 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", f
 
 		Expect(err).To(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeUnavailable))
-		Expect(result.Managed).To(BeNil())
 		Expect(result.Retryable).To(BeTrue())
 	})
 })
