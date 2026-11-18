@@ -111,7 +111,10 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, known := h.registry.Get(resource.ClusterID); !known || !h.registry.Ready() {
+	if _, known := h.registry.Get(resource.ClusterID); !known {
+		// #2660 n5: unknown cluster and registry-not-ready are different
+		// operational causes; keep them distinguishable in the log and the
+		// internal Reason instead of one shared message.
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
 		// A cluster missing from the registry is an unavailable check, not a
@@ -119,7 +122,17 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		// distinguishable on the wire (SC-7), mirroring the checker-error
 		// lane below. Gateway/RO's HTTPClient retries with backoff and fails
 		// safe if retries are exhausted.
-		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable})
+		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{
+			State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "cluster_unknown",
+		})
+		return
+	}
+	if !h.registry.Ready() {
+		h.logger.V(1).Info("scope check rejected: fleet registry not ready",
+			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
+		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{
+			State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "registry_not_ready",
+		})
 		return
 	}
 
