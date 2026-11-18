@@ -142,6 +142,11 @@ type Server struct {
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 	scopeChecker  scope.ScopeChecker                 // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
+	// apiResourceRegistry (#2592): discovery snapshot used by the scope gate
+	// to DETERMINE the GVK of a Kind-only signal when the kind maps to
+	// exactly one discovered group/version. nil = determination unavailable,
+	// the gate fails closed (reject and count).
+	apiResourceRegistry *adapters.APIResourceRegistry
 	// fleetReadinessGate reflects Fleet dependency (MCP Gateway / scope-check
 	// backend) reachability (#1553, ADR-068, BR-INTEGRATION-065). nil when
 	// Fleet is disabled, in which case readinessHandler skips the check
@@ -226,6 +231,13 @@ func (s *Server) ScopeChecker() scope.ScopeChecker {
 // Production code (cmd/gateway/main.go) calls this once at startup, after
 // starting the gate, when Fleet is enabled. Must be called before the HTTP
 // server starts accepting readiness probes.
+// SetAPIResourceRegistry wires the discovery-backed API resource registry
+// (#2592) used for GVK determination at the scope gate. Callers that build the
+// registry for their adapters (cmd/gateway) pass the same instance.
+func (s *Server) SetAPIResourceRegistry(registry *adapters.APIResourceRegistry) {
+	s.apiResourceRegistry = registry
+}
+
 func (s *Server) SetFleetReadinessGate(gate *readiness.Gate) {
 	s.fleetReadinessGate = gate
 }

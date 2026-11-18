@@ -338,6 +338,22 @@ func (r *APIResourceRegistry) KindToGVRCandidates(kind string) ([]schema.GroupVe
 	return candidates, ok
 }
 
+// DetermineKindAPIVersion implements the #2592 GVK-determination contract for
+// the scope gate: a Kind with no explicit apiVersion is DETERMINED from API
+// discovery only when it maps to exactly one discovered group/version — e.g. a
+// generic Kubernetes type like Deployment — and no CRD or external resource
+// shares the Kind (a shared Kind yields multiple candidates). Zero or multiple
+// candidates return "" so the caller fails closed instead of guessing. This is
+// determination from live cluster state, not inference: the same discovery
+// snapshot the Prometheus adapter's resolveCandidateGVR uses (#2066).
+func (r *APIResourceRegistry) DetermineKindAPIVersion(kind string) string {
+	candidates, ok := r.KindToGVRCandidates(kind)
+	if !ok || len(candidates) != 1 {
+		return ""
+	}
+	return formatAPIVersion(candidates[0])
+}
+
 // TierForKind returns the priority tier for a given Kind.
 // Tier 1 = controllers (highest priority), Tier 2 = managed, Tier 3 = leaf.
 // Unknown kinds default to Tier 2.

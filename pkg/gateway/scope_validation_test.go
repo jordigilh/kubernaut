@@ -44,6 +44,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -607,6 +609,90 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		Expect(getMetricValue(metricsInstance.SignalsRejectedTotal, gatewaypkg.RejectionReasonInvalidTargetIdentity)).
 			To(Equal(initialValue+1),
 				"BR-SCOPE-002/AC-4: identity rejections must be observable in SignalsRejectedTotal")
+	})
+
+	It("UT-GW-2592-DET-001 [BR-SCOPE-001, AC-4, SI-10]: determines the GVK for a Kind-only signal when discovery is unambiguous", func() {
+		checker := &mockScopeChecker{managed: true}
+		server, err := newTestGatewayServer(k8sClient, metricsInstance, checker)
+		Expect(err).NotTo(HaveOccurred())
+		// #2592 contract: a generic Kubernetes type with exactly one
+		// discovered group/version (and no CRD/external resource sharing the
+		// Kind) is DETERMINED from API discovery, not guessed.
+		server.SetAPIResourceRegistry(adapters.NewTestAPIResourceRegistry())
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "DeterminedAlert", "nginx")
+		Expect(err).NotTo(HaveOccurred())
+		signal.Resource = types.ResourceIdentifier{
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		}
+
+		response, err := server.ProcessSignal(ctx, signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusCreated),
+			"a uniquely-determined GVK must pass the identity gate and continue processing")
+		Expect(checker.callCount).To(Equal(1),
+			"the determined identity must reach the scope checker")
+		Expect(checker.lastParams.group).To(Equal("apps"))
+		Expect(checker.lastParams.version).To(Equal("v1"))
+	})
+
+	It("UT-GW-2592-DET-002 [BR-SCOPE-001, AC-4, SI-10]: rejects a Kind-only signal whose Kind is ambiguous across groups or CRDs", func() {
+		checker := &mockScopeChecker{managed: true}
+		server, err := newTestGatewayServer(k8sClient, metricsInstance, checker)
+		Expect(err).NotTo(HaveOccurred())
+		// "Route" is served by two groups: determining the GVK would be a
+		// guess, so the signal must be rejected and counted.
+		cs := fakeclientset.NewSimpleClientset()
+		fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+		Expect(ok).To(BeTrue())
+		fd.Resources = []*metav1.APIResourceList{
+			{GroupVersion: "route.openshift.io/v1", APIResources: []metav1.APIResource{
+				{Name: "routes", SingularName: "route", Kind: "Route", Namespaced: true},
+			}},
+			{GroupVersion: "serving.knative.dev/v1", APIResources: []metav1.APIResource{
+				{Name: "routes", SingularName: "route", Kind: "Route", Namespaced: true},
+			}},
+		}
+		registry, err := adapters.NewAPIResourceRegistry(fd)
+		Expect(err).NotTo(HaveOccurred())
+		server.SetAPIResourceRegistry(registry)
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "AmbiguousKindAlert", "edge")
+		Expect(err).NotTo(HaveOccurred())
+		signal.Resource = types.ResourceIdentifier{
+			Kind:      "Route",
+			Namespace: "default",
+			Name:      "edge",
+		}
+
+		initialValue := getMetricValue(metricsInstance.SignalsRejectedTotal, gatewaypkg.RejectionReasonInvalidTargetIdentity)
+		response, err := server.ProcessSignal(ctx, signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(response.Rejection.Reason).To(Equal(gatewaypkg.RejectionReasonInvalidTargetIdentity))
+		Expect(checker.callCount).To(BeZero())
+		Expect(getMetricValue(metricsInstance.SignalsRejectedTotal, gatewaypkg.RejectionReasonInvalidTargetIdentity)).
+			To(Equal(initialValue + 1))
+	})
+
+	It("UT-GW-2592-DET-003 [BR-SCOPE-001, AC-4, SI-10]: rejects a Kind-only signal when no discovery registry is wired", func() {
+		checker := &mockScopeChecker{managed: true}
+		server, err := newTestGatewayServer(k8sClient, metricsInstance, checker)
+		Expect(err).NotTo(HaveOccurred())
+		signal, err := parsePrometheusSignal(ctx, testNamespace, "NoRegistryAlert", "nginx")
+		Expect(err).NotTo(HaveOccurred())
+		signal.Resource = types.ResourceIdentifier{
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		}
+
+		response, err := server.ProcessSignal(ctx, signal)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(response.Rejection.Reason).To(Equal(gatewaypkg.RejectionReasonInvalidTargetIdentity))
+		Expect(checker.callCount).To(BeZero(),
+			"without discovery the gate fails closed; it must not guess")
 	})
 
 	It("UT-GW-2592-GVK-003 [BR-SCOPE-001, AC-4, AC-6, SI-10]: rejects a local signal without APIVersion", func() {

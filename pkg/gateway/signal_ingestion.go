@@ -489,17 +489,31 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewInvalidTargetIdentityResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
+	// #2592 GVK determination: a signal whose adapter could not supply an
+	// apiVersion gets one DETERMINED from API discovery when — and only when —
+	// the Kind maps to exactly one discovered group/version (e.g. a generic
+	// Kubernetes type like Deployment) and no CRD/external resource shares the
+	// Kind. Ambiguous or unknown Kinds are rejected below: never guessed.
+	apiVersion := signal.Resource.APIVersion
+	if apiVersion == "" && s.apiResourceRegistry != nil {
+		if determined := s.apiResourceRegistry.DetermineKindAPIVersion(signal.Resource.Kind); determined != "" {
+			logger.Info("Determined target GVK from API discovery (#2592)",
+				"kind", signal.Resource.Kind, "apiVersion", determined)
+			apiVersion = determined
+		}
+	}
+
 	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
 		Namespace: signal.Namespace,
 		Name:      signal.Resource.Name,
-	}, signal.Resource.APIVersion)
+	}, apiVersion)
 	if err != nil {
-		// A missing or malformed apiVersion is a permanent signal-quality
-		// defect (#2592, SI-10): reject and count it instead of surfacing a
-		// retryable 5xx error to the webhook sender. The identity is never
-		// inferred from Kind.
+		// A missing or malformed apiVersion that could not be determined is a
+		// permanent signal-quality defect (#2592, SI-10): reject and count it
+		// instead of surfacing a retryable 5xx error to the webhook sender.
+		// The identity is never guessed from Kind.
 		if errors.Is(err, scope.ErrInvalidIdentity) {
 			return rejectInvalidIdentity(err)
 		}

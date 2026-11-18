@@ -51,7 +51,21 @@ resulting group/version to the shared checker. A missing, partial, or malformed
 `APIVersion` is rejected before a scope backend is called or a remediation is
 authorized — for remote **and** local targets alike, since no previous
 instances are supported: Kind-only identity is never inferred anywhere in the
-authorization path. API Frontend's `create_rr` tool enforces the same
+authorization path.
+
+**GVK determination (#2592 amendment)**: *determination from live discovery is
+not inference.* When a signal arrives at the Gateway scope gate with a Kind but
+no `apiVersion` (its adapter could not determine one), the gate DETERMINES the
+GVK from the same `APIResourceRegistry` discovery snapshot the Prometheus
+adapter uses (#2066): the Kind's GVR is used when — and only when — discovery
+maps it to exactly one group/version, the generic Kubernetes types (Deployment,
+Pod, ...) being the canonical case. A Kind that no discovered resource serves,
+or that a CRD or external resource shares with another group (multiple
+candidates), cannot be determined and is rejected and counted as
+`invalid_target_identity`; the gate never guesses and no existence probe runs
+in the authorization path. RO keeps the stricter parse-only boundary: RRs are
+persisted documents whose `spec.targetResource.apiVersion` the author must
+supply. API Frontend's `create_rr` tool enforces the same
 requirement at its input boundary so unidentifiable RRs are not created.
 
 Gateway distinguishes the two rejection outcomes observably: an unmanaged
