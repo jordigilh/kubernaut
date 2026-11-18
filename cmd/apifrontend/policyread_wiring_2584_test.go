@@ -194,7 +194,7 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
 		Expect(deps.RemoteInventory).NotTo(BeNil())
 	})
-	It("constructs local typed policy/history and inventory sources from AF clients", func() {
+	It("IT-AF-2584-001 [BR-API-001]: constructs local typed policy/history and inventory sources from AF clients", func() {
 		scheme := runtime.NewScheme()
 		Expect(v1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
@@ -211,6 +211,29 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		Expect(deps.PolicySource).NotTo(BeNil())
 		Expect(deps.HistorySource).NotTo(BeNil())
 		Expect(deps.RemoteInventory).To(BeNil())
+	})
+
+	It("IT-AF-2584-009 [BR-API-001]: keeps existing A2A and MCP routes serving alongside the Console read routes", func() {
+		_, router, err := buildRouterConfig(testRouterBuildParams(&dualToolConsoleAuthorizer{}))
+		Expect(err).NotTo(HaveOccurred())
+
+		// The agentic surface keeps serving after the Console read routes are
+		// registered on the same authenticated router.
+		mcpRecorder := httptest.NewRecorder()
+		router.ServeHTTP(mcpRecorder, httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
+		Expect(mcpRecorder.Code).To(Equal(http.StatusOK))
+
+		accessRecorder := httptest.NewRecorder()
+		accessReq := httptest.NewRequest(http.MethodGet, "/a2a/access", http.NoBody)
+		accessReq = accessReq.WithContext(auth.WithUserIdentity(accessReq.Context(), &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}))
+		router.ServeHTTP(accessRecorder, accessReq)
+		Expect(accessRecorder.Code).To(Equal(http.StatusOK))
+
+		// The Console routes are additive: they answer on their own paths and
+		// reject an unauthenticated caller instead of widening the router.
+		consoleRecorder := httptest.NewRecorder()
+		router.ServeHTTP(consoleRecorder, httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody))
+		Expect(consoleRecorder.Code).To(Equal(http.StatusUnauthorized))
 	})
 })
 

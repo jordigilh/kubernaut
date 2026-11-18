@@ -16,8 +16,42 @@ import (
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection", func() {
-	It("UT-AF-2584-005, UT-AF-2584-007, IT-AF-2584-007 [BR-SCOPE-001]: uses the allowlist, preserves scope provenance, and paginates by opaque IDs", func() {
+var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
+	It("UT-AF-2584-005 [BR-SCOPE-001, FedRAMP AC-6]: reads only allowlisted kinds and projects canonical identities", func() {
+		scheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
+		reader, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
+			MetadataClient: client,
+			ScopeResolver:  &localScopeStub{},
+			Now:            func() time.Time { return time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC) },
+			Kinds: []policyread.LocalResourceKind{{
+				Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true,
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		page, err := reader.List(context.Background(), inventory.Filters{ClusterID: "local", Limit: 10})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(page.State).To(Equal(inventory.StateSuccess))
+		Expect(page.Items).To(HaveLen(2))
+		Expect(page.Items[0].ID).To(HavePrefix("r-"))
+		Expect(page.Items[0].Scope.Source).To(Equal(inventory.ScopeSourceResourceLabel))
+
+		// The allowlist is enforced at the backend read, not by filtering results:
+		// a kind that is not configured is never listed at all.
+		listed := map[string]struct{}{}
+		for _, action := range client.Actions() {
+			if action.GetVerb() == "list" {
+				listed[action.GetResource().Resource] = struct{}{}
+			}
+		}
+		Expect(listed).To(HaveKey("deployments"))
+		Expect(listed).NotTo(HaveKey("secrets"))
+		Expect(listed).NotTo(HaveKey("configmaps"))
+	})
+
+	It("UT-AF-2584-007 [BR-SCOPE-001, FedRAMP SI-10]: paginates by opaque IDs without repeating a record", func() {
 		scheme := runtime.NewScheme()
 		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
@@ -36,10 +70,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection"
 		Expect(err).NotTo(HaveOccurred())
 		Expect(page1.State).To(Equal(inventory.StateSuccess))
 		Expect(page1.Items).To(HaveLen(1))
-		Expect(page1.Items[0].Scope.Source).To(Equal(inventory.ScopeSourceResourceLabel))
-		Expect(page1.Items[0].ID).To(HavePrefix("r-"))
 		Expect(page1.NextCursor).NotTo(BeEmpty())
-		Expect(page1.Items[0].Name).NotTo(Equal("should-not-appear"))
 
 		page2, err := reader.List(context.Background(), inventory.Filters{ClusterID: "local", Limit: 1, Cursor: page1.NextCursor})
 		Expect(err).NotTo(HaveOccurred())

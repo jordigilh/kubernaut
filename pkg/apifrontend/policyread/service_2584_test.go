@@ -26,6 +26,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	metadatafake "k8s.io/client-go/metadata/fake"
 )
 
 var policyReadTestResourceID = inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
@@ -149,7 +151,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
-	It("UT-AF-2584-006, UT-AF-2584-009, IT-AF-2584-003 [BR-SCOPE-001, FedRAMP AC-4, AC-6, SI-10]: projects only exact historical metadata", func() {
+	It("IT-AF-2584-003 [BR-SCOPE-001, FedRAMP AC-4, AC-6, SI-10]: joins current policy metadata with bounded historical evaluation", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
 			ID:         policyReadTestResourceID,
@@ -302,7 +304,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items).To(BeEmpty())
 	})
 
-	DescribeTable("rejects non-interactive callers before inventory reads", func(identity *auth.UserIdentity) {
+	DescribeTable("UT-AF-2584-010 [BR-SECURITY-016]: rejects non-interactive callers before inventory reads", func(identity *auth.UserIdentity) {
 		reader := &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: reader, Authorizer: allowAuthorizer{}})
 		Expect(err).NotTo(HaveOccurred())
@@ -379,6 +381,80 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 		Expect(authorizer.calls).To(BeZero())
+	})
+
+	It("IT-AF-2584-006 [BR-AI-085, FedRAMP SI-10]: returns a state-only failure when runtime policy metadata is unavailable", func() {
+		resource := inventory.Resource{
+			ID:        policyReadTestResourceID,
+			ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment",
+			Namespace: "payments", Name: "checkout",
+			Scope: inventory.Scope{Included: true},
+		}
+		page := inventory.Page{
+			State:        inventory.StateSuccess,
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory:  &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{err: errors.New("configmaps \"aianalysis-config\" is forbidden")},
+			Authorizer:      allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"})
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(result.State).To(Equal(inventory.StateUnavailable))
+		Expect(result.Items).To(BeEmpty())
+		Expect(result.NextCursor).To(BeEmpty())
+
+		encoded, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).NotTo(ContainSubstring(`"items"`))
+		Expect(string(encoded)).NotTo(ContainSubstring("total"))
+	})
+
+	It("IT-AF-2584-007 [BR-SCOPE-001]: cursor pages are deterministic and links preserve exact scope", func() {
+		scheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
+		reader, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
+			MetadataClient: client,
+			ScopeResolver:  &localScopeStub{},
+			Now:            func() time.Time { return time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC) },
+			Kinds: []policyread.LocalResourceKind{{
+				Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true,
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		svc, err := policyread.NewService(policyread.Config{BasePath: "/api/v1/console"}, policyread.Dependencies{
+			LocalInventory:  reader,
+			CurrentPolicies: &currentPolicyStub{},
+			History:         &historyStub{},
+			Authorizer:      allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		filters := inventory.Filters{ClusterID: "local", Limit: 1}
+		first, err := svc.ListPolicyScope(context.Background(), user("alice", false), filters)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(first.Items).To(HaveLen(1))
+		Expect(first.NextCursor).To(Equal(first.Items[0].ID))
+
+		repeated, err := svc.ListPolicyScope(context.Background(), user("alice", false), filters)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(repeated.Items).To(HaveLen(1))
+		Expect(repeated.Items[0].ID).To(Equal(first.Items[0].ID))
+
+		second, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local", Limit: 1, Cursor: first.NextCursor})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(second.Items).To(HaveLen(1))
+		Expect(second.Items[0].ID).NotTo(Equal(first.Items[0].ID))
+		Expect(second.NextCursor).To(BeEmpty())
+
+		Expect(first.Items[0].InventoryLink).To(Equal(
+			"/api/v1/console/inventory/managed-resources/" + first.Items[0].ID + "?cluster_id=local"))
 	})
 
 	It("UT-AF-2584-008 [BR-API-001]: maps malformed exact backend identity to unavailable", func() {

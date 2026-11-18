@@ -222,6 +222,20 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"not_found"`))
 		Expect(recorder.Body.String()).NotTo(ContainSubstring("sensitive-target"))
 	})
+
+	It("UT-AF-2584-010 [BR-SECURITY-016, FedRAMP AC-6]: rejects a request without a verified identity before reading inventory", func() {
+		reader := &consoleInventoryStub{page: successfulPage()}
+		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
+		recorder := httptest.NewRecorder()
+
+		readHandler.ServeHTTP(recorder, req)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring("checkout"))
+		Expect(reader.listCalls).To(Equal(0))
+	})
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {
@@ -249,7 +263,7 @@ func successfulPage() inventory.Page {
 			Kind:      "Deployment",
 			Namespace: "payments",
 			Name:      "checkout",
-			Scope:     inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue},
+			Scope:     inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue, NamespaceLabel: inventory.LabelAbsent},
 		}},
 	}
 }
