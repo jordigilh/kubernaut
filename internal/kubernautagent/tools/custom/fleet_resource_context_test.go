@@ -265,6 +265,68 @@ var _ = Describe("UT-KA-FLEET-032: overlayK8sClient (BR-INTEGRATION-1489)", func
 			Expect(chain[0].Name).To(Equal("vm-1"))
 			Expect(chain[0].APIVersion).To(Equal("kubevirt.io/v1"),
 				"UT-KA-FLEET-032: verified CRD target GVK must survive owner resolution")
+			// #2649 seed-verify: the CRD-kind passthrough is no longer blind —
+			// the supplied GVK is fetched once through the overlay and must be
+			// observed with the supplied apiVersion.
+			Expect(getTool.calls).To(Equal(1),
+				"the resolver seeds the entry GVK from the supplied apiVersion (#2649) and verifies it with one fetch")
+			Expect(getTool.capturedArgs["apiVersion"]).To(Equal("kubevirt.io/v1"),
+				"the verification fetch must carry the supplied apiVersion")
+		})
+
+		// #2649: GetOwnerChain must thread its apiVersion parameter into the
+		// owner resolver so the level-0 fetch uses the target-cluster-verified
+		// GVK instead of the static kind-to-group map.
+		It("UT-GW-2649-FP-002 [BR-GATEWAY-004, BR-SCOPE-001, AC-4, SI-10]: threads the supplied apiVersion into the resolver for a mapped kind", func() {
+			getTool := &fakeGetTool{
+				responseJSON: `{"apiVersion":"custom.example/v1","kind":"Deployment","metadata":{"name":"payment-api","namespace":"production"}}`,
+			}
+			c := custom.NewOverlayK8sClient(getTool, logr.Discard())
+
+			chain, err := c.GetOwnerChain(context.Background(), "Deployment", "payment-api", "production", "custom.example/v1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(getTool.capturedArgs["apiVersion"]).To(Equal("custom.example/v1"),
+				"the level-0 fetch must carry the supplied apiVersion even though the static map maps Deployment to apps/v1")
+			Expect(chain).To(HaveLen(1))
+			Expect(chain[0].Kind).To(Equal("Deployment"))
+			Expect(chain[0].Name).To(Equal("payment-api"))
+			Expect(chain[0].APIVersion).To(Equal("custom.example/v1"),
+				"the threaded GVK must survive into the returned chain entry")
+		})
+
+		It("UT-GW-2649-FP-003 [BR-SCOPE-001, AC-4, SI-10]: threads the supplied apiVersion into the resolver for an unknown kind", func() {
+			// #2649 seed-verify: the unknown-kind passthrough verifies the
+			// supplied GVK with a fetch, so the fixture must serve the object
+			// (a NotFound variant is covered by UT-GW-2649-FP-004).
+			getTool := &fakeGetTool{
+				responseJSON: `{"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine","metadata":{"name":"vm-9","namespace":"default"}}`,
+			}
+			c := custom.NewOverlayK8sClient(getTool, logr.Discard())
+
+			chain, err := c.GetOwnerChain(context.Background(), "VirtualMachine", "vm-9", "default", "kubevirt.io/v1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(getTool.calls).To(Equal(1),
+				"unknown kinds with a supplied apiVersion are verified with exactly one fetch")
+			Expect(getTool.capturedArgs["apiVersion"]).To(Equal("kubevirt.io/v1"),
+				"the verification fetch must carry the supplied apiVersion")
+			Expect(chain).To(HaveLen(1))
+			Expect(chain[0].APIVersion).To(Equal("kubevirt.io/v1"),
+				"the supplied apiVersion must seed the passthrough resolution for unknown kinds")
+		})
+
+		It("UT-GW-2649-FP-004 [BR-SCOPE-001, AC-4, SI-10]: a NotFound target fails closed with no cross-group substitution", func() {
+			getTool := &fakeGetTool{
+				err: apierrors.NewNotFound(schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachines"}, "vm-9"),
+			}
+			c := custom.NewOverlayK8sClient(getTool, logr.Discard())
+
+			_, err := c.GetOwnerChain(context.Background(), "VirtualMachine", "vm-9", "default", "kubevirt.io/v1")
+			Expect(err).To(HaveOccurred(),
+				"a supplied GVK that cannot be observed on the target cluster must fail closed, never be re-resolved via the kind map")
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+				"the underlying NotFound must remain detectable through the wrap")
+			Expect(getTool.calls).To(Equal(1),
+				"no second lookup under a different API group may be attempted")
 		})
 	})
 

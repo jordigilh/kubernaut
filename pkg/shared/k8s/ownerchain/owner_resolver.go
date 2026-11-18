@@ -34,6 +34,7 @@ import (
 	"github.com/go-logr/logr"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -293,6 +294,13 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwnerWithAPIVersion(ctx context.Contex
 // ResolveTopLevelOwnerIdentity carries source and owner-reference GVK authority
 // through the existing traversal (DD-FLEET-014). Static kind tables are never
 // authority for this entry point; an absent initial version requires discovery.
+//
+// #2649: every stop that fires without having fetched the resource it returns
+// (the CRD gate at any level, and the Service early-return when the
+// Service→Pod rewrite cannot proceed) is VERIFIED with one bounded fetch
+// under the current GVK before the identity is returned; a NotFound or fetch
+// error fails closed wrapping the underlying error verbatim — the identity is
+// never returned unverified, and never substituted across API groups.
 func (r *K8sOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
 	if resource.APIVersion == "" && r.registry != nil {
 		if gvr, known := r.registry.KindToGVR(resource.Kind); known {
@@ -304,24 +312,87 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, res
 		r.logger.Error(err, "Missing or invalid source GVK")
 		return sharedtypes.OwnerChainEntry{}, err
 	}
-	current := resource
 
-	// #1029 Use Case 3: Service targets are Prometheus scrape infrastructure labels,
-	// not workloads. Traverse Service → selector → Pods → ownerRefs to find the
-	// actual backing workload before entering the normal ownerReference chain.
-	if current.Kind == "Service" && current.APIVersion == corev1.SchemeGroupVersion.String() {
-		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, current.Namespace, current.Name)
-		if resolved {
-			current.Kind, current.Name = podKind, podName
-			current.APIVersion = corev1.SchemeGroupVersion.String()
-			gvk = corev1.SchemeGroupVersion.WithKind(podKind)
-		} else {
-			return current, nil
-		}
+	current, gvk, state, err := r.resolveServiceEntry(ctx, resource, gvk)
+	if err != nil {
+		return sharedtypes.OwnerChainEntry{}, err
 	}
+	if state == serviceEntryPassthrough {
+		return current, nil
+	}
+	return r.traverseOwnerIdentityChain(ctx, current, gvk)
+}
 
+// serviceEntryState classifies the outcome of the #1029 Service entry
+// handling in ResolveTopLevelOwnerIdentity (#2649).
+type serviceEntryState int
+
+const (
+	// serviceEntryNone: not a core v1 Service — traversal continues from the
+	// caller-supplied identity unchanged.
+	serviceEntryNone serviceEntryState = iota
+	// serviceEntryRewritten: the Service→Pod rewrite succeeded — traversal
+	// continues from the selected Pod under a forced core v1 identity.
+	serviceEntryRewritten
+	// serviceEntryPassthrough: the rewrite could not proceed and the Service
+	// identity has been verified — the caller returns it as the resolution.
+	serviceEntryPassthrough
+)
+
+// resolveServiceEntry applies the #1029 Service→Pod rewrite to the entry
+// identity when it is an exact core v1 Service: Service targets are
+// Prometheus scrape infrastructure labels, not workloads, so the selector is
+// resolved to a backing Pod and traversal continues from it under a forced
+// core v1 identity (the rewrite read core v1 objects, so the Pod is known to
+// be core v1 — a colliding registry mapping can neither redirect its fetch
+// nor stop traversal at the CRD gate).
+//
+// #2649: when the rewrite cannot proceed, the Service identity would be
+// returned without ever having been fetched. It is verified with one bounded
+// fetch under the current GVK (resolveServiceToWorkload already attempted a
+// core v1 Service fetch — a NotFound there means this passthrough would be a
+// ghost, made explicit here); a NotFound or fetch error fails closed instead
+// of the Service being passed through or substituted across API groups.
+func (r *K8sOwnerResolver) resolveServiceEntry(
+	ctx context.Context,
+	current sharedtypes.OwnerChainEntry,
+	gvk schema.GroupVersionKind,
+) (sharedtypes.OwnerChainEntry, schema.GroupVersionKind, serviceEntryState, error) {
+	if current.Kind != "Service" || current.APIVersion != corev1.SchemeGroupVersion.String() {
+		return current, gvk, serviceEntryNone, nil
+	}
+	podKind, podName, resolved := r.resolveServiceToWorkload(ctx, current.Namespace, current.Name)
+	if resolved {
+		current.Kind, current.Name = podKind, podName
+		current.APIVersion = corev1.SchemeGroupVersion.String()
+		return current, corev1.SchemeGroupVersion.WithKind(podKind), serviceEntryRewritten, nil
+	}
+	if verifyErr := r.verifyPassthroughIdentity(ctx, current, gvk); verifyErr != nil {
+		return sharedtypes.OwnerChainEntry{}, schema.GroupVersionKind{}, serviceEntryNone, verifyErr
+	}
+	return current, gvk, serviceEntryPassthrough, nil
+}
+
+// traverseOwnerIdentityChain drives the ownerReference traversal for
+// ResolveTopLevelOwnerIdentity: each level fetches the current resource under
+// gvk, follows the controller ownerReference, and re-derives the GVK from the
+// advanced identity (fail-closed via ownerIdentityGVK, including at the last
+// permitted depth). Extracted to keep ResolveTopLevelOwnerIdentity's
+// cognitive complexity low.
+//
+// #2649: the CRD-gate stop (traverseOneOwnerLevel returning
+// verifyPassthrough) fires BEFORE fetching the current resource, at any
+// level — including owners reached via ownerReferences, whose existence was
+// never confirmed. The passthrough identity is verified with one bounded
+// fetch under the current GVK; a ghost target fails closed wrapping the
+// underlying error verbatim instead of being returned as a resolved
+// identity.
+func (r *K8sOwnerResolver) traverseOwnerIdentityChain(
+	ctx context.Context,
+	current sharedtypes.OwnerChainEntry,
+	gvk schema.GroupVersionKind,
+) (sharedtypes.OwnerChainEntry, error) {
 	foundOwner := false
-
 	for i := 0; i < MaxOwnerChainDepth; i++ {
 		step := r.traverseOneOwnerLevel(ctx, current.Namespace, gvk, current.Name, foundOwner, i)
 		if step.err != nil {
@@ -330,6 +401,7 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, res
 		if step.advanced {
 			current.Kind, current.Name, current.APIVersion = step.nextKind, step.nextName, step.nextAPIVersion
 			// Validate at the transition, including the last permitted depth.
+			var err error
 			gvk, err = ownerIdentityGVK(current)
 			if err != nil {
 				r.logger.Error(err, "Missing or invalid owner GVK")
@@ -338,15 +410,61 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, res
 			foundOwner = true
 		}
 		if step.stop {
+			if step.verifyPassthrough {
+				if verifyErr := r.verifyPassthroughIdentity(ctx, current, gvk); verifyErr != nil {
+					return sharedtypes.OwnerChainEntry{}, verifyErr
+				}
+			}
 			break
 		}
 	}
-
 	r.logger.V(1).Info("Owner resolution complete",
-		"inputKind", resource.Kind, "inputName", resource.Name,
 		"resolvedKind", current.Kind, "resolvedName", current.Name,
+		"resolvedAPIVersion", current.APIVersion,
 		"foundOwner", foundOwner)
 	return current, nil
+}
+
+// verifyPassthroughIdentity verifies, with ONE bounded fetch under the given
+// GVK, that a resource whose traversal stopped without being fetched actually
+// exists (#2649) — the CRD-gate stop in traverseOneOwnerLevel and the Service
+// early-return both fire before any GET of the resource they return.
+// Fail-closed contract:
+//   - found (directly or after a typed NotFound cache-miss retry through the
+//     fallback reader) → nil: the caller may return the verified identity
+//   - NotFound or any other error → an error wrapping the underlying error
+//     verbatim; a remote REST-mapping error (e.g. 'no matches for kind "Foo"
+//     in version "example.com/v1"') must stay diagnosable, so no "not found"
+//     claim is ever synthesized here, and the resource is never substituted
+//     by a same-named resource from another API group.
+func (r *K8sOwnerResolver) verifyPassthroughIdentity(
+	ctx context.Context,
+	identity sharedtypes.OwnerChainEntry,
+	gvk schema.GroupVersionKind,
+) error {
+	key := client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}
+	obj := &metav1.PartialObjectMetadata{}
+	obj.SetGroupVersionKind(gvk)
+	err := r.getResourceMetadata(ctx, key, obj)
+	if err != nil && apierrors.IsNotFound(err) && r.fallbackReader != nil {
+		// The informer cache may lag (or not watch this group); retry a typed
+		// NotFound through the bounded direct-reader helper before concluding
+		// the resource is gone.
+		r.logger.Info("Passthrough verification cache miss, retrying with direct API reader",
+			"kind", identity.Kind, "name", identity.Name, "gvk", gvk.String(), "error", err)
+		retryObj := &metav1.PartialObjectMetadata{}
+		retryObj.SetGroupVersionKind(gvk)
+		err = r.getResourceMetadataFallback(ctx, key, retryObj)
+	}
+	if err != nil {
+		r.logger.V(1).Info("Passthrough verification failed, failing closed",
+			"kind", identity.Kind, "name", identity.Name, "gvk", gvk.String(), "error", err)
+		return fmt.Errorf("failed to verify owner passthrough for %s/%s under gvk %s: %w",
+			identity.Kind, identity.Name, gvk.String(), err)
+	}
+	r.logger.V(1).Info("Passthrough verified",
+		"kind", identity.Kind, "name", identity.Name, "gvk", gvk.String())
+	return nil
 }
 
 func ownerIdentityGVK(identity sharedtypes.OwnerChainEntry) (schema.GroupVersionKind, error) {
@@ -367,6 +485,11 @@ type ownerStepResult struct {
 	nextName       string
 	nextAPIVersion string
 	err            error // non-nil: caller must abort and propagate this error
+	// verifyPassthrough marks stops that fired BEFORE fetching the current
+	// resource (the CRD gate): the identity-path caller must verify the
+	// passthrough with one bounded fetch before returning it (#2649). The
+	// kind-only compatibility path ignores it (pre-#2649 behavior preserved).
+	verifyPassthrough bool
 }
 
 // traverseOneOwnerLevel performs one level of owner-chain traversal: resolve
@@ -386,9 +509,11 @@ func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 
 	// CRD kinds (not in core/apps/batch/autoscaling/policy) have
 	// unpredictable owner chains — stop traversal (#1029 Option C).
+	// #2649: this stop fires before any GET of the current resource, so the
+	// identity-path caller must verify the passthrough before returning it.
 	if gvk.Group != "" && gvk.Group != "apps" && gvk.Group != "batch" && gvk.Group != "autoscaling" && gvk.Group != "policy" {
 		logger.V(1).Info("CRD kind, stopping traversal", "kind", currentKind, "level", level)
-		return ownerStepResult{stop: true}
+		return ownerStepResult{stop: true, verifyPassthrough: true}
 	}
 
 	obj := &metav1.PartialObjectMetadata{}

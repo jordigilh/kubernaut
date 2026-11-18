@@ -1836,6 +1836,62 @@ fields for services that need remote K8s reads via the MCP Gateway.
 
 ## References
 
+### Amendment: fleet owner-chain identity threading and verified passthrough (#2649, 2026-11-18)
+
+Rebased onto #2593: input-identity threading is carried by
+`ownerchain.K8sOwnerResolver.ResolveTopLevelOwnerIdentity(ctx,
+sharedtypes.OwnerChainEntry)` — the single identity-carrying entry point on
+both `types.OwnerResolver` (Gateway fingerprinting) and the shared resolver.
+`ResolveFingerprintWithCluster` passes `resource.APIVersion` into the entry;
+the resolver fills an empty version from its registry when one is configured,
+and `ownerIdentityGVK` fails closed on a missing or malformed GVK at entry and
+at every owner transition (#2592, SI-10). The earlier #2649 draft's
+5-arg `ResolveTopLevelOwnerWithAPIVersion` seed plumbing, the
+`OwnerResolverWithAPIVersion` structural interface and the native-core
+fallback machinery were dropped in favor of this design.
+
+#2649 contributes two increments on top of it:
+
+- **Fleet threading** (`overlayK8sClient.GetOwnerChain`): the
+  target-cluster-verified apiVersion from enrichment is threaded into the
+  resolver entry, so the level-0 fetch uses the observed group instead of the
+  static kind-to-group map. The post-hoc `if owner.APIVersion == ""` backfill
+  that previously lived in `GetOwnerChain` is deleted — the resolver seeds
+  from the entry instead. Because `ResolveTopLevelOwnerIdentity` requires a
+  non-empty apiVersion and the fleet resolver has no registry to derive one,
+  callers that legitimately pass "" (`resource_context.go`, which has no
+  enrichment-verified version) resolve it through the shared
+  `ownerchain.KindToGroup` table first; an unknown kind with no derivable
+  version fails closed rather than returning a kind-only identity.
+- **Verified passthrough at stop points**: main's #2593 returns UNVERIFIED
+  identities at two stops that fire before any GET of the resource they
+  return. Both now issue ONE bounded verification fetch under the current
+  GVK (`verifyPassthroughIdentity`, with the typed-NotFound fallback-reader
+  retry) and fail closed wrapping the underlying error verbatim — the
+  identity is never returned unverified and never substituted by a
+  same-named resource from another API group:
+  - the Service early-return, when the core v1 Service→Pod rewrite (#1029)
+    cannot proceed (a NotFound inside the rewrite means the early return
+    would be a ghost);
+  - the CRD-gate stop, at any level — including owners reached via
+    ownerReferences, whose existence was previously never confirmed.
+
+Residual risks (accepted):
+
+- **Ambiguous kinds upstream**: where
+  `PrometheusAdapter.resolveCandidateGVR` returns "" (multi-group ambiguity,
+  `pkg/gateway/adapters/prometheus_adapter.go`), the local resolver derives
+  the entry GVK from its registry mapping while the fleet/remote resolver
+  (no registry) fails closed. Ambiguity is audit-logged upstream; propagating
+  candidate sets is out of scope for #2649.
+- **Fail-closed on stale identities (fleet/remote resolver)**: on
+  no-fallbackReader paths (`resolverForCluster` remote config,
+  `overlayK8sClient`), a well-formed but stale identity, or a CRD-kind owner
+  that no longer exists, fails closed (error returned) where the static map
+  previously resolved successfully. This is the intended consequence of the
+  fail-closed decision: a wrong-group resolution is worse than a dropped
+  signal.
+
 - Issue #54: Multi-cluster federation
 - ADR-064: Multi-Cluster MCP Gateway (deferred direct-connect approach)
 - ADR-065: Fleet Cluster Identity on RR
