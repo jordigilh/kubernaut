@@ -471,13 +471,18 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		// does not evict the keys written by the first, legitimate
 		// reconcile, so the assertion is set-equality, not emptiness) and
 		// the failure is a stale fence: the writer must begin a new repair.
+		// The rejected reconcile uses a DISTINCT resource name: a guard
+		// regression that wrote anyway would add a new staged record/index
+		// member and break key-set equality — reusing the original name
+		// would overwrite the existing record and hide the write.
+		_, lateObservation := f.identity("checkout-late", "true")
 		keysBefore := f.server.Keys()
 		observedCountBefore := f.stagedObservedCount()
 		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(61 * time.Second))
 		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
 			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
-			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{lateObservation}, Complete: true, PageCount: 1, ItemCount: 1},
 		})
 		Expect(err).To(HaveOccurred(), "a staging past its total lifetime cap must not accept further reconciliation")
 		var failure scopecache.RepairFailureError
