@@ -132,7 +132,15 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 		observation.Identity.Kind, observation.Identity.Namespace, observation.Identity.Name,
 		string(observation.LabelState), observation.TTL.Milliseconds())
 	if err != nil {
-		return publicID, repairReconcileProof{}, err
+		// #2660 m2: classify the script reply here so Repair()'s
+		// failure-code derivation sees the fence sentinel instead of the raw
+		// server error string. STAGED_EXPIRED is a terminal staging expiry:
+		// the writer must begin a new repair, exactly like a stale fence. A
+		// post-write TTL check failure (INVALID_PTTL/TTL_MISMATCH) is
+		// genuinely ambiguous because the staged writes already landed, so
+		// it keeps ErrAmbiguousWrite rather than the previous message-derived
+		// ttl_invalid guess.
+		return publicID, repairReconcileProof{}, classifyScriptError(err)
 	}
 	proof, err := parseRepairReconcile(items)
 	if err != nil {
@@ -315,7 +323,13 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 		boolArg(request.Proof.StatusTTL.Valid), boolArg(request.Proof.EmptyPartitionVerified),
 		refreshTTLMillis)
 	if err != nil {
-		result.Failure = repairFailureFromError(err)
+		// #2660 m2: classify BEFORE deriving the failure. Deriving from the
+		// raw server error silently degraded a stale-fence commit (e.g. a
+		// staging that expired between reconcile and commit) into
+		// commit_rejected, because only the classified error carries
+		// ErrStaleFence.
+		classified := classifyScriptError(err)
+		result.Failure = repairFailureFromError(classified)
 		return result, classifyRepairError(err)
 	}
 	if len(items) == 0 || scriptString(items, 0) != "ok" {
@@ -449,7 +463,11 @@ func classifyScriptError(err error) error {
 	if errors.Is(err, ErrScriptUnavailable) || errors.Is(err, ErrAmbiguousWrite) || errors.Is(err, ErrStaleFence) {
 		return err
 	}
-	if strings.Contains(err.Error(), "STALE_FENCE") {
+	// #2660 m2: STAGED_EXPIRED means the staging outlived its total lifetime
+	// cap and the writer must begin a new repair, exactly like a stale fence.
+	// The Lua guard rejects before any staged write, so nothing is stranded;
+	// both replies fold into ErrStaleFence and RepairFailureStaleFence.
+	if strings.Contains(err.Error(), "STALE_FENCE") || strings.Contains(err.Error(), "STAGED_EXPIRED") {
 		return fmt.Errorf("%w: %w", ErrStaleFence, err)
 	}
 	if strings.Contains(err.Error(), "TTL_MISMATCH") || strings.Contains(err.Error(), "INVALID_PTTL") {

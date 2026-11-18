@@ -72,8 +72,8 @@ if op == 'begin' then
   -- Replacing an abandoned (uncertain) or expired staging: its residual
   -- staged index/records must be cleared first. A partially reconciled
   -- repair that was abandoned or whose status expired while its records
-  -- (30s TTL) still live would otherwise contaminate the new generation's
-  -- commit count validation.
+  -- (the configured data TTL, default 45s) still live would otherwise
+  -- contaminate the new generation's commit count validation.
   local old_index = KEYS[3]
   local old_index_type = key_type(old_index)
   if old_index_type == 'zset' then
@@ -95,8 +95,8 @@ if op == 'begin' then
     return redis.error_reply('INVALID_GENERATION')
   end
   local now = now_ms()
-  -- Staged TTL: bounded well inside the 30s data TTL so a lost-reply
-  -- stranding self-clears before the committed records expire. The total
+  -- Staged TTL: bounded well inside the configured data TTL (default 45s) so
+  -- a lost-reply stranding self-clears before the committed records expire. The total
   -- staged lifetime is separately capped at 60s (created_at_ms below): a
   -- fence holder that keeps reconciling without committing cannot keep the
   -- staging alive indefinitely, preserving bounded self-healing.
@@ -153,13 +153,28 @@ if op == 'repair_reconcile' then
     return redis.error_reply('INVALID_TTL')
   end
   local now = now_ms()
+  local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
+  local created_at = tonumber(redis.call('HGET', staged, 'created_at_ms')) or now
+  -- #2660 m2: past the created_at + 60s total lifetime cap the staging is
+  -- TERMINALLY expired. Reject before any staged record/index write. On a
+  -- compliant TTL-honoring server the fence check above reads the key first
+  -- and reports STALE_FENCE; this guard only fires when the staged status
+  -- SURVIVED past the cap (non-evicting/clock-skewed servers). Transition it
+  -- out of 'repairing' and bound it so the next begin reclaims it in one
+  -- cycle: begin's gate blocks only state=='repairing', while its residue
+  -- cleanup (staged index/records) runs regardless of state. Without the
+  -- transition the staging would keep rejecting later reconciles with the
+  -- same terminal error until its TTL finally lapsed.
+  if created_at + 60000 <= now then
+    redis.call('HSET', staged, 'state', 'expired')
+    redis.call('PEXPIREAT', staged, now + 15000)
+    return redis.error_reply('STAGED_EXPIRED')
+  end
   -- Roll the staged status TTL forward on each reconcile: an actively
   -- progressing repair survives, while an idle or stranded staging still
   -- self-clears 15s after its last activity. The roll is capped at
   -- created_at + 60s so a fence holder that reconciles without committing
   -- can never keep the staging alive indefinitely.
-  local staged_expires = tonumber(redis.call('HGET', staged, 'status_expires_at_ms')) or 0
-  local created_at = tonumber(redis.call('HGET', staged, 'created_at_ms')) or now
   local rolled = math.min(now + 15000, created_at + 60000)
   if rolled > staged_expires then
     staged_expires = rolled
@@ -266,13 +281,14 @@ if op == 'commit' then
   if staged_count ~= expected_count then
     return redis.error_reply('COUNT_MISMATCH')
   end
-  -- Proof flags: record/index/status TTL validity and (for empty) the staged
-  -- empty-partition finalization. ARGV[13..16,19] mirror the prior contract.
-  for i = 13, 16 do
-    if ARGV[i] ~= '1' then
-      return redis.error_reply('COMMIT_REJECTED')
-    end
-  end
+  -- Proof flags: the TTL triple and empty-partition finalization below are
+  -- the real commit proof. ARGV[13..16] (record/index/status structural
+  -- flags) are RESERVED and deliberately unchecked (#2660 m1): a successful
+  -- repair_reconcile IS the structural proof -- the flags are compile-time
+  -- constants on the writer side (Go's ValidateForCommit and
+  -- hasCleanRepairProof reject any non-eligible proof before the script is
+  -- invoked), so a Lua-side rejection loop over them could never fire. The
+  -- slots are kept to avoid renumbering ARGV[17..21].
   if ARGV[19] ~= '1' then return redis.error_reply('COMMIT_REJECTED') end
   if expected_count == 0 then
     if ARGV[20] ~= '1' or ARGV[17] ~= '0' or ARGV[18] ~= '0' or redis.call('HGET', staged, 'empty_verified') ~= '1' then
@@ -434,7 +450,13 @@ end
 -- mark_uncertain abandons a staged repair so the next begin can replace it.
 if op == 'mark_uncertain' then
   local staged = KEYS[1]
-  if redis.call('HGET', staged, 'state') ~= 'repairing' or
+  local state = redis.call('HGET', staged, 'state')
+  -- #2660 m2: an 'expired' marker is accepted too. The reconcile guard
+  -- transitions a past-cap staging out of 'repairing' before replying
+  -- STAGED_EXPIRED; the syncer defer still marks the failure afterwards, and
+  -- rejecting that with STALE_FENCE would make the defer log a spurious
+  -- error for an already-terminal staging.
+  if (state ~= 'repairing' and state ~= 'expired') or
      not full_matches(staged, ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
     return redis.error_reply('STALE_FENCE')
   end

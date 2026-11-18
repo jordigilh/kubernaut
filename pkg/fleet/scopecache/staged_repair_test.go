@@ -16,6 +16,8 @@ package scopecache_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -429,6 +431,98 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		read, readErr := f.read(start2, replacementIdentity)
 		Expect(readErr).ToNot(HaveOccurred())
 		Expect(read.State).To(Equal(scopecache.ReadVerified), "residue from an expired staging must not contaminate the replacement generation")
+	})
+
+	It("UT-FMC-STAGED-011 [BR-SCOPE-001, #2660 m2]: a reconcile past the lifetime cap is a terminal stale-fence expiry that the next begin reclaims", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		_, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Past the created_at + 60s total staged lifetime cap the staging is
+		// terminally expired. The rejection must happen BEFORE any staged
+		// write: no NEW staged record or index keys may appear (miniredis
+		// does not evict the keys written by the first, legitimate
+		// reconcile, so the assertion is set-equality, not emptiness) and
+		// the failure is a stale fence: the writer must begin a new repair.
+		keysBefore := f.server.Keys()
+		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(61 * time.Second))
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).To(HaveOccurred(), "a staging past its total lifetime cap must not accept further reconciliation")
+		var failure scopecache.RepairFailureError
+		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be a typed repair failure, got: %v", err)
+		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
+			"a terminally expired staging requires a new begin, exactly like a stale fence")
+		Expect(f.server.Keys()).To(Equal(keysBefore),
+			"a past-cap reconcile must not write any new staged record or index keys")
+
+		// The guard also transitions the staging out of 'repairing' into a
+		// TTL-bounded 'expired' marker, so begin's gate (state=='repairing')
+		// no longer blocks and its residue cleanup reclaims the staging in
+		// ONE cycle. This is the distinct case from a TTL-honoring server,
+		// where the key is already gone before the guard runs.
+		restart, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred(), "an expired staging marker must not block the next begin")
+		Expect(restart.Token.Value).ToNot(Equal(start.Token.Value), "the reclaimed staging must be a fresh repair attempt")
+	})
+
+	It("UT-FMC-STAGED-013 [BR-SCOPE-001, #2660 m2]: a commit against a gone staging keeps stale-fence fidelity", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		_, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// The staging expires (TTL bound or restitution) between the
+		// reconcile and the commit. The commit must report a stale fence, not
+		// a generic rejected/ambiguous write: the syncer keys its retry and
+		// its MarkRepairUncertain code on this.
+		stagedStatus := ""
+		for _, key := range f.server.Keys() {
+			if strings.HasSuffix(key, ":status:staged") {
+				stagedStatus = key
+			}
+		}
+		Expect(stagedStatus).ToNot(BeEmpty(), "the fixture must have a staged status key")
+		f.server.Del(stagedStatus)
+
+		result, err := f.store.CommitRepair(f.ctx, scopecache.RepairCommitRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			ExpectedCount: 1, Proof: repair,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, scopecache.ErrStaleFence)).To(BeTrue(),
+			"a commit against a gone staging must unwrap to ErrStaleFence, got: %v", err)
+		Expect(result.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
+			"the result must carry the typed stale-fence code, not commit_rejected")
 	})
 
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
