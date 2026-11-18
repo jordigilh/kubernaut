@@ -55,9 +55,9 @@ deployed default.
 
 ## Fleet scope lanes (#2660)
 
-Three scope-surface changes land together. None of them alters an
-authorization decision; they remove lanes that had no reader and record the
-already-approved deferred-target boundary.
+Three scope-surface changes land together. Two remove lanes that had no
+reader; the third — cluster-scoped targets — is a behavior change already
+approved as the DD-FLEET-015 deferred-target boundary (see below).
 
 ### Cluster-scoped targets remain unsupported
 

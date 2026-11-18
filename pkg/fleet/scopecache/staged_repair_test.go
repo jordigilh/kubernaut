@@ -487,7 +487,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(f.server.Keys()).To(Equal(keysBefore),
 			"a past-cap reconcile must not write any new staged record or index keys")
 		Expect(f.stagedObservedCount()).To(Equal(observedCountBefore),
-			"a past-cap reconcile must not mutate the existing staging (observed_count unchanged)")
+			"a past-cap reconcile must not write staged records or indices (observed_count unchanged)")
 
 		// The guard also transitions the staging out of 'repairing' into a
 		// TTL-bounded 'expired' marker, so begin's gate (state=='repairing')
@@ -569,6 +569,33 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be a typed repair failure, got: %v", err)
 		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
 			"an empty-partition repair against a gone staging requires a new begin, exactly like a stale fence")
+
+		// The fence/ttl split is deliberate: a TTL mismatch in the empty
+		// finalization is a PRE-write rejection, so it must stay ttl_invalid
+		// and never unwrap to ErrStaleFence. Force it by corrupting the
+		// staged status's expiry field on a fresh staging.
+		start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		client := redis.NewClient(&redis.Options{Addr: f.server.Addr()})
+		DeferCleanup(func() { _ = client.Close() })
+		for _, key := range f.server.Keys() {
+			if strings.HasSuffix(key, ":status:staged") {
+				Expect(client.HSet(f.ctx, key, "status_expires_at_ms", 1).Err()).ToNot(HaveOccurred())
+			}
+		}
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start2.Generation, Token: start2.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: nil, Complete: true, PageCount: 1, ItemCount: 0},
+		})
+		Expect(err).To(HaveOccurred(), "a corrupted staged expiry must fail the empty finalization")
+		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be a typed repair failure, got: %v", err)
+		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureTTLInvalid),
+			"a pre-write TTL mismatch stays ttl_invalid; only the fence token maps to stale_fence")
+		Expect(errors.Is(err, scopecache.ErrStaleFence)).To(BeFalse(),
+			"a pre-write TTL mismatch must never unwrap to ErrStaleFence")
 	})
 
 	It("UT-FMC-STAGED-012 [BR-SCOPE-001, #2660 m1]: a non-eligible commit proof is still rejected while the reserved slots stay unenforced", func() {

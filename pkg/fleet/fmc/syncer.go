@@ -501,12 +501,16 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 }
 
 // repairUncertainFailure classifies a begin-lane error into the failure code
-// recorded with MarkRepairUncertain (#2660 m3). The guard's registration
-// sentinel and a fence loss are the only classifiable cases; everything else
-// keeps the historical invalid_request fallback.
+// recorded with MarkRepairUncertain (#2660 m3). A typed repair failure wins
+// first (BeginRepair succeeded but readiness failed, e.g.); then the guard's
+// registration sentinel and a fence loss; everything else keeps the
+// historical invalid_request fallback.
 func repairUncertainFailure(err error) scopecache.RepairFailure {
 	code := scopecache.RepairFailureInvalidRequest
+	var typed scopecache.RepairFailureError
 	switch {
+	case errors.As(err, &typed):
+		code = typed.Failure.Code
 	case errors.Is(err, registry.ErrRegistrationChanged):
 		code = scopecache.RepairFailureStaleRegistration
 	case errors.Is(err, scopecache.ErrStaleFence):

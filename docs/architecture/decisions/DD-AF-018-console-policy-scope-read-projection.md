@@ -96,6 +96,8 @@ only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
 enable remote inventory list projection. The shared `IsManagedResource` contract
+*(superseded by #2662: the boolean lane is deleted; the typed `ScopeChecker.Check`
+contract is the canonical scope surface)*
 is canonical and preserves backend errors so callers can distinguish an unavailable
 scope backend from an unmanaged resource.
 

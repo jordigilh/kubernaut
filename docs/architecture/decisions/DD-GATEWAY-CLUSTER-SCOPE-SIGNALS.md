@@ -108,7 +108,9 @@ This is a smaller change than "support across all services" initially sounded li
 
 #### The Gap
 
-`ClusterScope` pseudo-resources have no backing K8s object and frequently no namespace. `scope.Manager.IsManagedResource` has nothing to check a label on: `checkResourceLabel` skips unknown kinds (`kind` not in `kindToGroup`), and `namespace == ""` immediately short-circuits to the cluster-scoped-unmanaged-default branch (`pkg/shared/scope/manager.go:177-180`). Under Alternatives 1B/2B alone, there is no way for an operator to opt a cluster into `ClusterScope` signals at all -- every one would be rejected as unmanaged, defeating the purpose of admitting them in the first place.
+`ClusterScope` pseudo-resources have no backing K8s object and frequently no namespace. `scope.Manager.IsManagedResource` *(deleted by #2662 in favor of the typed
+`Check` lane; the historical analysis below is preserved as written)* has nothing
+to check a label on: `checkResourceLabel` skips unknown kinds (`kind` not in `kindToGroup`), and `namespace == ""` immediately short-circuits to the cluster-scoped-unmanaged-default branch (`pkg/shared/scope/manager.go:177-180`). Under Alternatives 1B/2B alone, there is no way for an operator to opt a cluster into `ClusterScope` signals at all -- every one would be rejected as unmanaged, defeating the purpose of admitting them in the first place.
 
 #### Alternative 3A: Reuse `kubernaut.ai/managed` on a well-known namespace (`kube-system` or the controller namespace) -- REJECTED
 

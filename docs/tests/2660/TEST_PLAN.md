@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-2660-v1.0
 **Feature**: Staged-repair expiry, failure-code fidelity, deferred abandon context, readiness error lanes, dead-lane removal
-**Version**: 1.1
+**Version**: 1.2
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
 **Status**: Active
@@ -192,6 +192,7 @@ Branch `work/2660-fmc-followup` based on `0e086e065` (origin/main).
 |-------|-------------|----------|------|---------|--------|
 | BR-SCOPE-001 | Terminal staged expiry fails typed and does not strand orphans | P0 | Unit | UT-FMC-STAGED-011 | Pass |
 | BR-SCOPE-001 | Commit against gone staging keeps stale-fence fidelity | P0 | Unit | UT-FMC-STAGED-013 | Pass |
+| BR-SCOPE-001 | Empty-partition fence/ttl split keeps failure fidelity | P0 | Unit | UT-FMC-STAGED-014 | Pass |
 | BR-SCOPE-001 | Reserved proof slots stay unenforced (regression guard) | P1 | Unit | UT-FMC-STAGED-012 | Pass |
 | BR-SCOPE-001 | Repair failure code reaches MarkRepairUncertain | P0 | Unit | UT-FMC-PRES-013 | Pass |
 | BR-SCOPE-001 | Commit/registration failure codes reach MarkRepairUncertain | P0 | Unit | UT-FMC-PRES-014 | Pass |
@@ -212,8 +213,9 @@ Status legend: Pending / RED / GREEN / REFACTORED / Pass.
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | `UT-FMC-STAGED-011` | A reconcile 61s past `created_at` fails with `RepairFailureError.Code == stale_fence`, writes no new staged keys (set equality), and an immediate `BeginRepair` succeeds (the TTL-bounded `expired` marker reopens begin's gate) | Pass |
-| `UT-FMC-STAGED-012` | Direct EVALSHA of the production script: a commit with a reserved proof slot set to `0` and a non-empty staging is rejected (`COMMIT_REJECTED`), then the all-valid control commit succeeds | Pass |
+| `UT-FMC-STAGED-012` | Direct EVALSHA of the production script, two cases: (a) a non-empty commit with `ARGV[17]='0'` (record-TTL proof) is rejected `COMMIT_REJECTED`; (b) a commit with the reserved structural slot `ARGV[13]='0'` succeeds — the m1 guarantee that repair_reconcile success IS the structural proof (re-instating the deleted pre-validation loop would fail this case) | Pass |
 | `UT-FMC-STAGED-013` | `CommitRepair` against a deleted/expired staging returns `Failure.Code == stale_fence` and `errors.Is(err, scopecache.ErrStaleFence)` | Pass |
+| `UT-FMC-STAGED-014` | Empty-partition finalization: a gone staging reports `stale_fence` (was `commit_rejected`); a corrupted `status_expires_at_ms` reports `ttl_invalid` and does not unwrap to `ErrStaleFence` (pre-write rejection) | Pass |
 | `UT-FMC-PRES-013` | `Repair` failing with `count_mismatch` makes `MarkRepairUncertain` receive `count_mismatch` | Pass |
 | `UT-FMC-PRES-014` | (a) typed commit `Failure.Code == stale_fence` and (b) guard rejection via `registry.ErrRegistrationChanged` both reach `MarkRepairUncertain` as `stale_fence` / `stale_registration` | Pass |
 | `UT-FMC-PRES-015` | A clean commit followed by a failed clean-partition publish does **not** call `MarkRepairUncertain` | Pass |
@@ -263,21 +265,26 @@ absent, so the post-write `INVALID_PTTL` reply is message-derived as
 ### UT-FMC-STAGED-013: commit-lane stale-fence fidelity
 
 - **Given** a begun + reconciled staging
+- **When** the staged keys are deleted (expired) and `CommitRepair` runs
+- **Then** `Failure.Code == stale_fence` and `errors.Is(err, ErrStaleFence)`.
 
-### UT-FMC-STAGED-014: empty-partition stale-fence fidelity (review follow-up)
+Expected RED: `CommitRepair` derives `Failure` from the raw server error, so the
+code is `commit_rejected`, and `errors.Is` is false.
+
+### UT-FMC-STAGED-014: empty-partition fence/ttl fidelity (review follow-up)
 
 - **Given** a begun staging with **zero** observations whose staged status key
   has been reaped (FastForward past the 15s staged TTL)
 - **When** `Repair` runs the empty-partition finalization
 - **Then** it fails with `Failure.Code == RepairFailureStaleFence` (the raw
   `STALE_FENCE` reply previously fell through to `commit_rejected`).
+- **Given** a second begun staging whose `status_expires_at_ms` is corrupted
+- **When** `Repair` runs the empty-partition finalization
+- **Then** it fails with `Failure.Code == RepairFailureTTLInvalid` and does
+  NOT unwrap to `ErrStaleFence` (a pre-write TTL mismatch is not a fence loss).
 
-Expected RED: `Expected <stale_fence> to equal <commit_rejected>`.
-- **When** the staged keys are deleted (expired) and `CommitRepair` runs
-- **Then** `Failure.Code == stale_fence` and `errors.Is(err, ErrStaleFence)`.
-
-Expected RED: `CommitRepair` derives `Failure` from the raw server error, so the
-code is `commit_rejected`, and `errors.Is` is false.
+Expected RED: `Expected <stale_fence> to equal <commit_rejected>`; the
+TTL_MISMATCH case pins the deliberate fence/ttl split.
 
 ### UT-FMC-PRES-013: repair failure code fidelity
 
@@ -375,7 +382,10 @@ make lint-test-patterns lint-business-integration lint-tdd-compliance
 ## 15. Existing Tests Requiring Updates
 
 - `pkg/shared/scope/manager_test.go`: 26 `IsManagedResource` call sites move to
-  `Resolve` / `Check` / `ResolveWithResourceLabels` lanes.
+  `Resolve` / `Check` lanes (the three Node scenarios were later moved from
+  `ResolveWithResourceLabels` to `Resolve` by the review follow-up, so no test
+  uses the pre-fetched-labels lane; it keeps its production caller in
+  `pkg/apifrontend/policyread/local_inventory.go`).
 - `pkg/fleet/federated_checker_test.go`: `UT-FLEET-2592-GVK-001` and the
   `NewFederatedScopeChecker` call sites; `Managed` assertions deleted.
 - `pkg/fleet/fmc/syncer_red_test.go`: fake guard returns the sentinel;
@@ -390,3 +400,4 @@ make lint-test-patterns lint-business-integration lint-tdd-compliance
 | 1.0 | 2026-11-18 | Initial plan for #2660 deferred findings |
 | 1.1 | 2026-11-18 | Implementation complete: matrix and scenarios marked Pass; n4 gained the helper's positive Pod/Deployment and cluster-scoped no-op scenarios |
 | 1.2 | 2026-11-18 | Post-implementation review follow-up: UT-FMC-STAGED-014 (empty-partition stale-fence fidelity, RED: `commit_rejected`), STAGED-012 reserved-slot acceptance case, STAGED-011 `observed_count` no-mutation assertion, Node scenarios moved to the `Resolve` lane |
+| 1.3 | 2026-11-18 | Review round 2: STAGED-014 gains the TTL_MISMATCH pre-write case (fence/ttl split pinned); begin-lane typed failures preferred in `repairUncertainFailure`; STAGED-012 matrix row restated as its two real cases; version/matrix alignment |

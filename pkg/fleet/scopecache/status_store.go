@@ -243,7 +243,8 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 			// commit_rejected). Only the fence token is classified here:
 			// TTL_MISMATCH stays ttl_invalid because the empty finalization
 			// rejects before any write, so nothing is ambiguous.
-			return failRepairResult(result, repairFailureCode(classifyFenceError(err)), classifyFenceError(err), repairFailureRetryable(err))
+			classified := classifyFenceError(err)
+			return failRepairResult(result, repairFailureCode(classified), classified, repairFailureRetryable(classified))
 		}
 		result.StatusTTL = proof
 		result.EmptyPartitionVerified = true
