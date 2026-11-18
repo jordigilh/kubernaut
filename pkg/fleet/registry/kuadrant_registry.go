@@ -116,10 +116,10 @@ func (w *KuadrantRegistry) WithCurrent(ctx context.Context, clusterID, registrat
 	}
 	info, ok := w.clusters[clusterID]
 	if !ok {
-		return fmt.Errorf("cluster %q is not registered", clusterID)
+		return fmt.Errorf("%w: cluster %q is not registered", ErrRegistrationChanged, clusterID)
 	}
 	if info.RegistrationUID != registrationUID || w.registrationRevisions[clusterID] != expectedRevision {
-		return fmt.Errorf("cluster %q registration changed", clusterID)
+		return fmt.Errorf("%w: cluster %q registration changed", ErrRegistrationChanged, clusterID)
 	}
 	return callback(info)
 }

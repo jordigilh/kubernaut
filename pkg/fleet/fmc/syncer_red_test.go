@@ -19,6 +19,7 @@ package fmc_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -38,6 +39,12 @@ type fencedRegistry struct {
 	current  registry.ClusterInfo
 	revision uint64
 	events   chan registry.ClusterEvent
+
+	// onWithCurrent, when set, runs at the start of every WithCurrent call
+	// with the 1-based call number. Tests use it to rotate the registration
+	// revision at a specific guard (e.g. only the commit or publish guard).
+	onWithCurrent func(call int)
+	withCurrentCalls int
 }
 
 func newFencedRegistry(current registry.ClusterInfo, revision uint64) *fencedRegistry {
@@ -73,8 +80,12 @@ func (r *fencedRegistry) SnapshotAll() registry.RegistrySnapshot {
 }
 
 func (r *fencedRegistry) WithCurrent(_ context.Context, clusterID, registrationUID string, expectedRevision uint64, callback func(registry.ClusterInfo) error) error {
+	r.withCurrentCalls++
+	if r.onWithCurrent != nil {
+		r.onWithCurrent(r.withCurrentCalls)
+	}
 	if clusterID != r.current.ID || registrationUID != r.current.RegistrationUID || expectedRevision != r.revision {
-		return context.Canceled
+		return fmt.Errorf("%w: cluster %q registration changed", registry.ErrRegistrationChanged, clusterID)
 	}
 	return callback(r.current)
 }
@@ -122,10 +133,30 @@ func (r *lifecycleReader) ListObserved(_ context.Context, request observation.Li
 
 type lifecycleStatusStore struct {
 	repairRequest *scopecache.RepairRequest
-	uncertainErr  error
+
+	// Recorded repair outcomes.
+	uncertainErr      error
+	uncertainFailures []scopecache.RepairFailure
+	abandonCtxErr     error
+
+	// Fault injection. Typed failures mirror the real store, which always
+	// populates Result.Failure alongside the error; a bare error alone would
+	// be classified from the sentinel lane instead.
+	beginErr      error
+	onBegin       func()
+	repairErr     error
+	repairFailure *scopecache.RepairFailure
+	commitErr     error
+	commitFailure *scopecache.RepairFailure
 }
 
 func (s *lifecycleStatusStore) BeginRepair(_ context.Context, request scopecache.BeginRepairRequest) (scopecache.RepairStartResult, error) {
+	if s.onBegin != nil {
+		s.onBegin()
+	}
+	if s.beginErr != nil {
+		return scopecache.RepairStartResult{}, s.beginErr
+	}
 	return scopecache.RepairStartResult{
 		Partition:                request.Partition,
 		RegistrationUID:          request.RegistrationUID,
@@ -136,17 +167,35 @@ func (s *lifecycleStatusStore) BeginRepair(_ context.Context, request scopecache
 	}, nil
 }
 
-func (s *lifecycleStatusStore) MarkRepairUncertain(ctx context.Context, _ scopecache.RepairStartResult, _ scopecache.RepairFailure) error {
+func (s *lifecycleStatusStore) MarkRepairUncertain(ctx context.Context, _ scopecache.RepairStartResult, failure scopecache.RepairFailure) error {
 	s.uncertainErr = ctx.Err()
+	s.uncertainFailures = append(s.uncertainFailures, failure)
 	return nil
 }
 
-func (s *lifecycleStatusStore) AbandonStaging(context.Context, scopecache.PartitionStateKey, string, uint64, scopecache.WriterFence) error {
+func (s *lifecycleStatusStore) AbandonStaging(ctx context.Context, _ scopecache.PartitionStateKey, _ string, _ uint64, _ scopecache.WriterFence) error {
+	s.abandonCtxErr = ctx.Err()
 	return nil
 }
 
 func (s *lifecycleStatusStore) Repair(_ context.Context, request scopecache.RepairRequest) (scopecache.RepairResult, error) {
 	s.repairRequest = &request
+	if s.repairErr != nil {
+		result := scopecache.RepairResult{
+			Partition:                request.Partition,
+			RegistrationUID:          request.RegistrationUID,
+			ExpectedRegistryRevision: request.ExpectedRegistryRevision,
+			WriterFence:              request.WriterFence,
+			ProvenRegistryRevision:   request.ExpectedRegistryRevision,
+			ProvenGeneration:         request.Generation,
+			ProvenWriterFence:        request.WriterFence,
+			Token:                    request.Token,
+		}
+		if s.repairFailure != nil {
+			result.Failure = *s.repairFailure
+		}
+		return result, s.repairErr
+	}
 	count := len(request.Observations.Items)
 	return scopecache.RepairResult{
 		Partition:                request.Partition,
@@ -172,7 +221,7 @@ func (s *lifecycleStatusStore) Repair(_ context.Context, request scopecache.Repa
 }
 
 func (s *lifecycleStatusStore) CommitRepair(_ context.Context, request scopecache.RepairCommitRequest) (scopecache.RepairCommitResult, error) {
-	return scopecache.RepairCommitResult{
+	result := scopecache.RepairCommitResult{
 		Partition:                request.Partition,
 		RegistrationUID:          request.RegistrationUID,
 		ExpectedRegistryRevision: request.ExpectedRegistryRevision,
@@ -181,9 +230,16 @@ func (s *lifecycleStatusStore) CommitRepair(_ context.Context, request scopecach
 		ProvenGeneration:         request.Generation,
 		ProvenWriterFence:        request.WriterFence,
 		Token:                    request.Token,
-		Committed:                true,
-		CleanCommit:              true,
-	}, nil
+	}
+	if s.commitErr != nil {
+		if s.commitFailure != nil {
+			result.Failure = *s.commitFailure
+		}
+		return result, s.commitErr
+	}
+	result.Committed = true
+	result.CleanCommit = true
+	return result, nil
 }
 
 func (s *lifecycleStatusStore) ReadVerified(context.Context, scopecache.FencedReadRequest) (scopecache.FencedReadResult, error) {
@@ -224,7 +280,7 @@ var _ = Describe("FMC lifecycle handoff (BR-SCOPE-001, BR-INTEGRATION-065)", fun
 		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
 		stale := current
 		stale.ToolPrefix = "stale__"
-		registryClient := newFencedRegistry(current, 7)
+		registryClient := newFencedRegistry(current, 3)
 		statusStore := &lifecycleStatusStore{}
 		lease := &lifecycleLease{
 			fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
@@ -284,5 +340,95 @@ var _ = Describe("FMC lifecycle handoff (BR-SCOPE-001, BR-INTEGRATION-065)", fun
 		defer cancel()
 		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
 		Expect(statusStore.uncertainErr).ToNot(HaveOccurred())
+	})
+
+	It("UT-FMC-PRES-013 [BR-SCOPE-001, #2660 m3]: a typed repair failure reaches MarkRepairUncertain", func() {
+		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
+		registryClient := newFencedRegistry(current, 7)
+		failure := scopecache.RepairFailure{Code: scopecache.RepairFailureCountMismatch, Message: "staged count differs"}
+		statusStore := &lifecycleStatusStore{
+			repairFailure: &failure,
+			repairErr:     scopecache.RepairFailureError{Failure: failure},
+		}
+		lease := &lifecycleLease{
+			fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
+			lost:  make(chan struct{}),
+		}
+		reader := &lifecycleReader{pageCounts: map[string]int{"Pod": 1}}
+		syncer := newLifecycleSyncer(registryClient, fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+			return reader, nil
+		}), statusStore, lease, []string{"Pod"})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.uncertainFailures).To(HaveLen(1), "a started repair that fails must mark the staging uncertain")
+		Expect(statusStore.uncertainFailures[0].Code).To(Equal(scopecache.RepairFailureCountMismatch),
+			"the real repair failure code must not be collapsed to source_incomplete")
+	})
+
+	It("UT-FMC-PRES-014 [BR-SCOPE-001, #2660 m3]: commit failures carry their typed or guard-derived code", func() {
+		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
+		newSyncer := func(registryClient *fencedRegistry, statusStore *lifecycleStatusStore) *fmc.Syncer {
+			lease := &lifecycleLease{
+				fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
+				lost:  make(chan struct{}),
+			}
+			reader := &lifecycleReader{pageCounts: map[string]int{"Pod": 1}}
+			return newLifecycleSyncer(registryClient, fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+				return reader, nil
+			}), statusStore, lease, []string{"Pod"})
+		}
+
+		// (a) the store returns a typed Failure alongside its error.
+		registryClient := newFencedRegistry(current, 7)
+		failure := scopecache.RepairFailure{Code: scopecache.RepairFailureStaleFence, Message: "staged key is gone"}
+		statusStore := &lifecycleStatusStore{
+			commitFailure: &failure,
+			commitErr:     scopecache.RepairFailureError{Failure: failure},
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		Expect(newSyncer(registryClient, statusStore).SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.uncertainFailures).To(HaveLen(1))
+		Expect(statusStore.uncertainFailures[0].Code).To(Equal(scopecache.RepairFailureStaleFence))
+
+		// (b) the commit guard rejects because the registration moved.
+		registryClient = newFencedRegistry(current, 7)
+		registryClient.onWithCurrent = func(call int) {
+			if call == 2 { // 1 = begin, 2 = commit
+				registryClient.revision++
+			}
+		}
+		statusStore = &lifecycleStatusStore{}
+		Expect(newSyncer(registryClient, statusStore).SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.uncertainFailures).To(HaveLen(1))
+		Expect(statusStore.uncertainFailures[0].Code).To(Equal(scopecache.RepairFailureStaleRegistration),
+			"a registry guard rejection must not be reported as source_incomplete")
+	})
+
+	It("UT-FMC-PRES-015 [BR-SCOPE-001, #2660 m3]: a clean commit followed by a publish failure is not marked uncertain", func() {
+		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
+		registryClient := newFencedRegistry(current, 7)
+		registryClient.onWithCurrent = func(call int) {
+			if call == 3 { // 1 = begin, 2 = commit, 3 = publish clean
+				registryClient.revision++
+			}
+		}
+		statusStore := &lifecycleStatusStore{}
+		lease := &lifecycleLease{
+			fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
+			lost:  make(chan struct{}),
+		}
+		reader := &lifecycleReader{pageCounts: map[string]int{"Pod": 1}}
+		syncer := newLifecycleSyncer(registryClient, fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+			return reader, nil
+		}), statusStore, lease, []string{"Pod"})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.uncertainFailures).To(BeEmpty(),
+			"the cache already committed clean; a readiness publish failure must not mark the deleted staging uncertain")
 	})
 })

@@ -266,7 +266,7 @@ func currentRegistrationGuard(reg registry.ClusterRegistry) (registry.CurrentReg
 func verifyRepairRegistration(guard registry.CurrentRegistrationGuard, cluster registry.ClusterInfo, snapshot registry.RegistrationSnapshot) error {
 	latest, found := guard.Snapshot(cluster.ID)
 	if !found || latest.Info.RegistrationUID != cluster.RegistrationUID || latest.Revision != snapshot.Revision {
-		return fmt.Errorf("cluster %s registration changed during repair collection", cluster.ID)
+		return fmt.Errorf("%w: cluster %s registration changed during repair collection", registry.ErrRegistrationChanged, cluster.ID)
 	}
 	return nil
 }
@@ -399,27 +399,33 @@ func (s *Syncer) markRepairUncertain(ctx context.Context, start scopecache.Repai
 
 // repairPartition performs the only production lifecycle that can publish a
 // clean partition. BeginRepair runs before any MCP source collection.
-func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterInfo, snapshot registry.RegistrationSnapshot, fence scopecache.WriterFence) (scopecache.RepairResult, error) {
+func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterInfo, snapshot registry.RegistrationSnapshot, fence scopecache.WriterFence) (result scopecache.RepairResult, retErr error) {
 	guard, err := currentRegistrationGuard(s.registry)
 	if err != nil {
+		// #2660 m3: no repair staging exists on this path (no start token),
+		// so nothing is marked uncertain; it deliberately keeps the
+		// unclassified fallback (source_incomplete) instead of a repair code.
 		return scopecache.RepairResult{}, err
 	}
 	partition := scopecache.PartitionStateKey{ClusterID: cluster.ID, RegistrationUID: cluster.RegistrationUID}
 	start, err := s.beginRepair(ctx, partition, cluster, snapshot, fence)
 	if err != nil {
 		if start.Token.Value != "" {
-			s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureInvalidRequest, Message: err.Error()})
+			s.markRepairUncertain(ctx, start, cluster.ID, repairUncertainFailure(err))
 		}
 		return scopecache.RepairResult{}, err
 	}
-	committed := false
+	var commitFailure scopecache.RepairFailure
+	cacheCommitted := false
 	defer func() {
-		if committed {
+		if cacheCommitted {
 			return
 		}
 		// DD-FLEET-016 A2: an uncommitted repair only abandons the staging;
-		// the committed proof and readiness remain available to readers.
-		s.markRepairUncertain(ctx, start, cluster.ID, scopecache.RepairFailure{Code: scopecache.RepairFailureSourceIncomplete, Message: "repair did not commit"})
+		// the committed proof and readiness remain available to readers. The
+		// recorded code is the real typed failure when one exists (#2660 m3):
+		// source_incomplete is only the fallback for an unclassified error.
+		s.markRepairUncertain(ctx, start, cluster.ID, repairUncertainFailureFromResult(result, commitFailure, retErr))
 	}()
 
 	observations, err := s.collectRepairObservations(ctx, cluster)
@@ -430,6 +436,12 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		return scopecache.RepairResult{}, err
 	}
 	if err := s.lease.Verify(ctx, fence); err != nil {
+		// #2660 m3: only a fence sentinel means the lease/fence was lost.
+		// Validation and API errors stay unclassified so an API outage never
+		// masquerades as lease loss.
+		if errors.Is(err, scopecache.ErrStaleFence) {
+			return scopecache.RepairResult{}, fmt.Errorf("%w: verify FMC writer fence before repair: %w", scopecache.ErrStaleFence, err)
+		}
 		return scopecache.RepairResult{}, fmt.Errorf("verify FMC writer fence before repair: %w", err)
 	}
 	repairResult, err := s.statusStore.Repair(ctx, scopecache.RepairRequest{
@@ -460,16 +472,57 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		Proof:                    repairResult,
 	})
 	if err != nil {
+		commitFailure = commitResult.Failure
 		return repairResult, err
 	}
 	if !commitResult.Committed || !commitResult.CleanCommit {
 		return repairResult, fmt.Errorf("repair commit did not publish clean state")
 	}
+	// #2660 m3: the cache is already clean. A later readiness publish failure
+	// must not mark the (now deleted) staged key uncertain.
+	cacheCommitted = true
 	if err := s.publishCleanPartition(ctx, cluster, start, repairResult, commitResult); err != nil {
 		return repairResult, err
 	}
-	committed = true
 	return repairResult, nil
+}
+
+// repairUncertainFailure classifies a begin-lane error into the failure code
+// recorded with MarkRepairUncertain (#2660 m3). The guard's registration
+// sentinel and a fence loss are the only classifiable cases; everything else
+// keeps the historical invalid_request fallback.
+func repairUncertainFailure(err error) scopecache.RepairFailure {
+	code := scopecache.RepairFailureInvalidRequest
+	switch {
+	case errors.Is(err, registry.ErrRegistrationChanged):
+		code = scopecache.RepairFailureStaleRegistration
+	case errors.Is(err, scopecache.ErrStaleFence):
+		code = scopecache.RepairFailureLeaseLost
+	}
+	return scopecache.RepairFailure{Code: code, Message: err.Error()}
+}
+
+// repairUncertainFailureFromResult picks the failure code recorded when a
+// started repair does not reach a clean commit (#2660 m3). Typed repair and
+// commit failures win over error classification; source_incomplete remains the
+// fallback so an unclassified error is never silently discarded.
+func repairUncertainFailureFromResult(result scopecache.RepairResult, commitFailure scopecache.RepairFailure, err error) scopecache.RepairFailure {
+	code := scopecache.RepairFailureSourceIncomplete
+	switch {
+	case result.Failure.Code != scopecache.RepairFailureNone:
+		code = result.Failure.Code
+	case commitFailure.Code != scopecache.RepairFailureNone:
+		code = commitFailure.Code
+	case errors.Is(err, registry.ErrRegistrationChanged):
+		code = scopecache.RepairFailureStaleRegistration
+	case errors.Is(err, scopecache.ErrStaleFence):
+		code = scopecache.RepairFailureLeaseLost
+	}
+	message := "repair did not commit"
+	if err != nil {
+		message = err.Error()
+	}
+	return scopecache.RepairFailure{Code: code, Message: message}
 }
 
 type repairObservationCollection struct {

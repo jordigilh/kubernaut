@@ -22,6 +22,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync"
 
@@ -46,6 +47,12 @@ type ClusterInfo struct {
 	// Namespace where the MCP Gateway CRD was found.
 	Namespace string
 }
+
+// ErrRegistrationChanged reports that the requested registration incarnation
+// or revision is no longer current. Callers use errors.Is to classify the
+// failure (e.g. the FMC repair lanes map it to stale_registration) instead of
+// matching message text.
+var ErrRegistrationChanged = errors.New("cluster registration changed")
 
 // RegistrationSnapshot is an immutable view of one current registry entry and
 // its per-registration revision (DD-FLEET-013).
