@@ -202,14 +202,6 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		// PolicyEvaluation is persisted in the RCA result's investigation data in
 		// production; this fixture uses the public status shape and checks that
 		// absent fields remain absent rather than being inferred.
-		sp := spv1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{Name: "sp-checkout", CreationTimestamp: metav1.Time{Time: observedAt.Add(-2 * time.Minute)}},
-			Spec: spv1.SignalProcessingSpec{Signal: spv1.SignalData{
-				ClusterID:      "",
-				TargetResource: spv1.ResourceIdentifier{Kind: "Deployment", Namespace: "payments", Name: "checkout"},
-			}},
-			Status: spv1.SignalProcessingStatus{CompletionTime: &metav1.Time{Time: observedAt.Add(-90 * time.Second)}, SignalClassification: &spv1.SignalClassification{PolicyHash: "sp-policy-hash"}},
-		}
 
 		svc, err := policyread.NewService(policyread.Config{
 			Namespace: "kubernaut-system",
@@ -220,7 +212,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
 				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
 			}},
-			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}, sp: []spv1.SignalProcessing{sp}},
+			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}},
 			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -244,6 +236,56 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(string(encoded)).NotTo(ContainSubstring("package signal"))
 		Expect(string(encoded)).NotTo(ContainSubstring("secret"))
 		Expect(string(encoded)).NotTo(ContainSubstring("total"))
+	})
+
+	It("does not fetch SignalProcessing history when projecting policy scope [BR-SAFETY-001, #2651]", func() {
+		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+		resource := inventory.Resource{
+			ID:         policyReadTestResourceID,
+			ClusterID:  "local",
+			Group:      "apps",
+			Version:    "v1",
+			Kind:       "Deployment",
+			Namespace:  "payments",
+			Name:       "checkout",
+			Scope:      inventory.Scope{Included: true},
+			ObservedAt: observedAt,
+		}
+		page := inventory.Page{
+			State:        inventory.StateSuccess,
+			ObservedAt:   observedAt,
+			Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: observedAt},
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		ai := aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "ai-checkout", CreationTimestamp: metav1.Time{Time: observedAt.Add(-time.Minute)}},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				AnalysisRequest: aianalysisv1.AnalysisRequest{SignalContext: aianalysisv1.SignalContextInput{
+					TargetResource: aianalysisv1.TargetResource{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"},
+				}},
+			},
+		}
+		history := &historyStub{ai: []aianalysisv1.AIAnalysis{ai}}
+		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system"}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
+			}},
+			History:    history,
+			Authorizer: allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), &auth.UserIdentity{Username: "alice"}, inventory.Filters{ClusterID: "local"})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(inventory.StateSuccess))
+		Expect(result.Items).To(HaveLen(1))
+		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
+		// UT-AF-2651-002 [BR-SAFETY-001, #2651]: SP history is never fetched; its
+		// records cannot be safely matched (see #2592) so the dead reads are gone.
+		Expect(history.spCalls).To(BeZero())
 	})
 
 	It("returns a state-only stale result without records", func() {
@@ -402,8 +444,8 @@ func (s *currentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]poli
 }
 
 type historyStub struct {
-	ai []aianalysisv1.AIAnalysis
-	sp []spv1.SignalProcessing
+	ai      []aianalysisv1.AIAnalysis
+	spCalls int
 }
 
 func (s *historyStub) ListAIAnalysis(context.Context) ([]aianalysisv1.AIAnalysis, error) {
@@ -411,7 +453,8 @@ func (s *historyStub) ListAIAnalysis(context.Context) ([]aianalysisv1.AIAnalysis
 }
 
 func (s *historyStub) ListSignalProcessing(context.Context) ([]spv1.SignalProcessing, error) {
-	return s.sp, nil
+	s.spCalls++
+	return nil, nil
 }
 
 type allowAuthorizer struct{}

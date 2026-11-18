@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
@@ -44,7 +43,7 @@ var _ = Describe("BR-SAFETY-001: bounded policy history", func() {
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Items).To(HaveLen(1))
-		Expect(history.streamCalls).To(Equal(2))
+		Expect(history.streamCalls).To(Equal(1))
 		Expect(history.legacyCalls).To(BeZero())
 	})
 
@@ -79,25 +78,12 @@ func (s *streamingHistoryStub) ListAIAnalysis(context.Context) ([]aianalysisv1.A
 	return nil, nil
 }
 
-func (s *streamingHistoryStub) ListSignalProcessing(context.Context) ([]spv1.SignalProcessing, error) {
-	s.legacyCalls++
-	return nil, nil
-}
-
 func (s *streamingHistoryStub) ForEachAIAnalysis(_ context.Context, visit func(aianalysisv1.AIAnalysis) error) error {
 	s.streamCalls++
 	if s.streamErr != nil {
 		return s.streamErr
 	}
 	return visit(aianalysisv1.AIAnalysis{})
-}
-
-func (s *streamingHistoryStub) ForEachSignalProcessing(_ context.Context, visit func(spv1.SignalProcessing) error) error {
-	s.streamCalls++
-	if s.streamErr != nil {
-		return s.streamErr
-	}
-	return visit(spv1.SignalProcessing{})
 }
 
 var _ policyread.HistorySource = (*streamingHistoryStub)(nil)
