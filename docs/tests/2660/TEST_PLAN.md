@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-2660-v1.0
 **Feature**: Staged-repair expiry, failure-code fidelity, deferred abandon context, readiness error lanes, dead-lane removal
-**Version**: 1.5
+**Version**: 1.6
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
 **Status**: Active
@@ -110,10 +110,25 @@ plus a dead `local` field are removed.
 
 ### 4.2 Features Not to be Tested
 
-- **Remote AF re-qualification of the embedded Lua script: DEFERRED.** The
-  protocol in `docs/tests/2593/TEST_PLAN.md` applies (live kind cluster
-  `af-fleet-2593-rca` on `helios08`, image `2593-a2-1fb6d74c0`). It is flagged
-  in the PR body and is not run in this branch.
+- **Remote AF re-qualification of the embedded Lua script: SUPERSEDED by the
+  local TDD gate.** The per-change remote protocol from
+  `docs/tests/2593/TEST_PLAN.md` is replaced for Lua *semantic* changes by the
+  local pyramid, which now covers both server classes the remote run covered:
+  - UT (`UT-FMC-STAGED-011..015`, miniredis): the past-cap guard's
+    non-evicting branch (a `SetTime` clock that does not reap keys), the
+    `expired`-marker one-cycle reclaim, the reserved-slot contract, and the
+    fence/ttl/typed-code splits.
+  - IT (`IT-FMC-STAGED-001`, real Valkey via the FMC IT suite): the
+    TTL-honoring branch — a stranded staging expires on the real server, a
+    repair against it reports typed `stale_fence`, and the next production
+    cycle reclaims the staging and publishes a clean proof. This is the
+    behavioral proof the remote AF run previously provided, now CI-owned.
+  Remote AF re-qualification remains required only for (a) release-time image
+  rollout of a changed script digest (deployment/availability verification,
+  owned by the release process) and (b) changes to the script's ARGV/wire
+  contract rather than its semantics. Note: the `af-fleet-2593-rca` kind
+  cluster on helios08 no longer exists; recreating it is only necessary under
+  (a) or (b).
 - New registry scenarios for the `addCluster` refactor (behavior-preserving;
   existing registry tests are reused per the user's condition).
 - Any broader GA certification.
@@ -200,6 +215,7 @@ Branch `work/2660-fmc-followup` based on `0e086e065` (origin/main).
 | BR-SCOPE-001 | Commit against gone staging keeps stale-fence fidelity | P0 | Unit | UT-FMC-STAGED-013 | Pass |
 | BR-SCOPE-001 | Empty-partition fence/ttl split keeps failure fidelity | P0 | Unit | UT-FMC-STAGED-014 | Pass |
 | BR-SCOPE-001 | Record-invalid observation keeps its typed failure code | P1 | Unit | UT-FMC-STAGED-015 | Pass |
+| BR-SCOPE-001 | Stranded staging expires on real Valkey; next cycle reclaims | P0 | Integration | IT-FMC-STAGED-001 | Pass |
 | BR-SCOPE-001 | Reserved proof slots stay unenforced (regression guard) | P1 | Unit | UT-FMC-STAGED-012 | Pass |
 | BR-SCOPE-001 | Repair failure code reaches MarkRepairUncertain | P0 | Unit | UT-FMC-PRES-013 | Pass |
 | BR-SCOPE-001 | Commit/registration failure codes reach MarkRepairUncertain | P0 | Unit | UT-FMC-PRES-014 | Pass |
@@ -246,12 +262,20 @@ Notes:
 ### Tier 2: Integration Tests
 
 Existing `make test-integration-fleetmetadatacache` remains the regression
-gate; no new IT wiring point is introduced by this series.
+gate; no new IT wiring point is introduced by this series. One new spec was
+added to close the real-server gap the remote AF run previously covered:
+
+- `IT-FMC-STAGED-001` [BR-SCOPE-001, #2660 m2]: a staging stranded with the
+  writer fence (never reconciled, never committed) expires on the real Valkey
+  server after its 15s TTL; a `Repair` against it fails typed
+  `stale_fence` (the compliant-server branch — the fence check reads the gone
+  key before any cap logic); the next `SyncCluster` reclaims the staging and
+  publishes a clean proof a fenced read can authorize against.
 
 ### Tier Skip Rationale
 
-No E2E: nothing crosses a new service boundary, and the Lua ensures change is
-gated on the deferred remote re-qualification described in §4.2.
+No E2E: nothing crosses a new service boundary; the Lua semantics are gated by
+the UT+IT pyramid described in §4.2.
 
 ---
 
@@ -421,3 +445,4 @@ make lint-test-patterns lint-business-integration lint-tdd-compliance
 | 1.3 | 2026-11-18 | Review round 2: STAGED-014 gains the TTL_MISMATCH pre-write case (fence/ttl split pinned); STAGED-012 matrix row restated as its two real cases; version/matrix alignment |
 | 1.4 | 2026-11-18 | Review round 3: UT-FMC-STAGED-015 (record-invalid keeps its typed code, RED: `commit_rejected`); unreachable begin-lane typed case removed from `repairUncertainFailure`; ADR-053/DD-AF-018 annotations repositioned |
 | 1.5 | 2026-11-18 | Review round 4: BeginRepair zero-result contract documented on the StatusStore interface; STAGED-015 case block added; deliberate commit-vs-reconcile staging-cap asymmetry recorded (§4.3) |
+| 1.6 | 2026-11-18 | Remote AF re-qualification superseded by the local TDD gate (§4.2): IT-FMC-STAGED-001 adds the real-Valkey stranded-staging expiry / stale-fence / self-heal proof; #2588 cancellation E2E race stabilized |
