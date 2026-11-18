@@ -116,6 +116,7 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		// operational causes; keep them distinguishable in the log and the
 		// internal Reason instead of one shared message.
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
+			"reason", "cluster_unknown",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
 		// A cluster missing from the registry is an unavailable check, not a
 		// completed managed=false determination — the two must stay
@@ -129,6 +130,7 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.registry.Ready() {
 		h.logger.V(1).Info("scope check rejected: fleet registry not ready",
+			"reason", "registry_not_ready",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
 		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{
 			State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "registry_not_ready",

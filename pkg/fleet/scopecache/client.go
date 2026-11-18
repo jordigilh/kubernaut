@@ -199,14 +199,10 @@ func (c *Client) recheckFencedRead(
 	currentProof, proofErr := c.readiness.PartitionReady(partition, snapshot.Info.RegistrationUID, snapshot.Revision,
 		proof.WriterFence, proof.Generation)
 	if proofErr != nil {
-		var readinessErr ReadinessError
-		if errors.As(proofErr, &readinessErr) && readinessErr.Code == ReadinessInvalid {
-			// Defensive: site 1 validated the identity before this callback,
-			// so an invalid proof here can only mean the readiness snapshot
-			// was corrupted between the two reads.
-			return unavailableResult("partition_invalid"), proofErr
-		}
-		return unavailableResult("partition_unavailable"), nil
+		// Defensive: site 1 validated the identity before this callback, so
+		// an invalid proof here can only mean the readiness snapshot was
+		// corrupted between the two reads. Same discrimination as site 1.
+		return readinessScopeFailure(proofErr)
 	}
 	if !readMatchesProof(record, currentProof) {
 		return unavailableResult("registration_changed"), fmt.Errorf("scopecache: fenced-read proof changed")
