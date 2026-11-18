@@ -91,6 +91,17 @@ without it even with the CRD fix.
 | Branch CRD schema sync | FP E2E infrastructure | test/infrastructure/fullpipeline_e2e.go | E2E-FP-1189-001 (helios08) |
 | Wall-clock wait bound | RO cancellation coordination | internal/controller/remediationorchestrator/cancellation.go | UT-RO-2588-015/018/019/020 |
 
+CRD schema sync removal: the test-side branch-CRD override (introduced for
+runs 43971993157–44009101345 and proven in runs 44102965122 and 44109676919)
+has been reverted pending the operator go.mod dependency update. The operator
+must pin kubernaut commit 5364b99a057883747d5d343e56555a9f6e4822d0 (whose
+embedded CRDs are identical to e376fcc3b2a3b20959b2cf20f3cb7c529523f1ff, the
+last CRD-touching commit) so its embedded CRDs natively carry the #2588
+schema. Until that pin lands, the fullpipeline lane is expected to fail on
+fresh clusters with the original cancellation-write rejection; the override
+is deliberately not reintroduced to avoid masking operator/kubernaut CRD
+divergence.
+
 Requirement: `docs/requirements/BR-ORCH-048-bounded-cancellation-waits.md`.
 
 RED/GREEN: UT-RO-2588-015..021 written before the bound; the reconcile-path
