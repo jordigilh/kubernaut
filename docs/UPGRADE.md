@@ -52,3 +52,36 @@ requires review under the sample rule; a separate rule requires review when the
 score is missing; a permissive rule allows a missing score. Adapt and test these
 examples as part of the operator's own policy rather than treating them as a
 deployed default.
+
+## Fleet scope lanes (#2660)
+
+Three scope-surface changes land together. None of them alters an
+authorization decision; they remove lanes that had no reader and record the
+already-approved deferred-target boundary.
+
+### Cluster-scoped targets remain unsupported
+
+BR-SCOPE-001 FR-SCOPE-004 (approved DD-FLEET-015 amendment): a
+cluster-scoped remediation target (`Namespace == ""` or a known cluster-scoped
+kind such as `Node`/`PersistentVolume`) returns `ScopeUnsupported` with reason
+`cluster_scoped_target_unsupported` on both the local and the fleet scope
+lanes. Hub `Node`/`PersistentVolume` remediation that previously worked through
+a label no longer resolves as managed. This is a documented behavior change, not
+a regression: the target boundary is deferred until fleet cluster-scoped support
+is designed.
+
+### Both `IsManagedResource` boolean lanes are removed
+
+`scope.Manager.IsManagedResource` and `fleet.FederatedScopeChecker.IsManagedResource`
+are deleted. They had no production callers and collapsed the typed outcome
+(`invalid`, `unsupported`, `unavailable`) into `false`, which is exactly the
+ambiguity DD-FLEET-015 removes. Use `Check` and branch on `ScopeState`.
+
+### `ScopeResult.Managed` is removed
+
+The field was written by the local manager and the federated checker but read
+nowhere. There is **no wire change**: the FMC scope-result decoder already
+admits only `state` and `provenance` (DD-FLEET-015), so a future writer of
+`managed` would have failed every scope check with a strict-decode error.
+Consumers must read `State` (`ScopeVerifiedManaged` / `ScopeVerifiedUnmanaged`)
+and `Provenance`.
