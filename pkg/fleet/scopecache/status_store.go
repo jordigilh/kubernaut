@@ -238,7 +238,12 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 	if result.ExpectedCount == 0 {
 		proof, err := s.finalizeEmptyRepair(ctx, request)
 		if err != nil {
-			return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
+			// #2660 review: repair_finalize_empty's STALE_FENCE must surface
+			// as stale_fence (the raw reply falls through to
+			// commit_rejected). Only the fence token is classified here:
+			// TTL_MISMATCH stays ttl_invalid because the empty finalization
+			// rejects before any write, so nothing is ambiguous.
+			return failRepairResult(result, repairFailureCode(classifyFenceError(err)), classifyFenceError(err), repairFailureRetryable(err))
 		}
 		result.StatusTTL = proof
 		result.EmptyPartitionVerified = true
@@ -458,6 +463,21 @@ func (s *ValkeyStatusStore) evalMutation(ctx context.Context, keys []string, arg
 	return s.scripts.eval(ctx, keys, args...)
 }
 
+// classifyFenceError wraps only the stale-fence script tokens (STALE_FENCE,
+// STAGED_EXPIRED) as ErrStaleFence, leaving every other reply untouched. It
+// is used on script paths whose non-fence rejections are pre-write and must
+// keep their message-derived codes (e.g. repair_finalize_empty's
+// TTL_MISMATCH stays ttl_invalid).
+func classifyFenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "STALE_FENCE") || strings.Contains(err.Error(), "STAGED_EXPIRED") {
+		return fmt.Errorf("%w: %w", ErrStaleFence, err)
+	}
+	return err
+}
+
 func classifyScriptError(err error) error {
 	if err == nil {
 		return nil
@@ -469,8 +489,8 @@ func classifyScriptError(err error) error {
 	// cap and the writer must begin a new repair, exactly like a stale fence.
 	// The Lua guard rejects before any staged write, so nothing is stranded;
 	// both replies fold into ErrStaleFence and RepairFailureStaleFence.
-	if strings.Contains(err.Error(), "STALE_FENCE") || strings.Contains(err.Error(), "STAGED_EXPIRED") {
-		return fmt.Errorf("%w: %w", ErrStaleFence, err)
+	if fenceClassified := classifyFenceError(err); errors.Is(fenceClassified, ErrStaleFence) {
+		return fenceClassified
 	}
 	if strings.Contains(err.Error(), "TTL_MISMATCH") || strings.Contains(err.Error(), "INVALID_PTTL") {
 		return fmt.Errorf("%w: %w", ErrAmbiguousWrite, err)

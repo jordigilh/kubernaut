@@ -526,6 +526,34 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			"the result must carry the typed stale-fence code, not commit_rejected")
 	})
 
+	It("UT-FMC-STAGED-014 [BR-SCOPE-001, #2660 review]: an empty-partition repair against a gone staging keeps stale-fence fidelity", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		// An empty partition never runs repair_reconcile; its only script
+		// call is repair_finalize_empty. When the staging is gone by then,
+		// the failure must still be classified stale_fence (the writer must
+		// begin a new repair), not the generic commit_rejected the raw
+		// STALE_FENCE reply currently falls through to.
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		f.server.FastForward(16 * time.Second)
+
+		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: nil, Complete: true, PageCount: 1, ItemCount: 0},
+		})
+		Expect(err).To(HaveOccurred(), "a repair against a gone staging must fail closed")
+		var failure scopecache.RepairFailureError
+		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be a typed repair failure, got: %v", err)
+		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
+			"an empty-partition repair against a gone staging requires a new begin, exactly like a stale fence")
+	})
+
 	It("UT-FMC-STAGED-012 [BR-SCOPE-001, #2660 m1]: a non-eligible commit proof is still rejected while the reserved slots stay unenforced", func() {
 		f := newStagedRepairFixture()
 		DeferCleanup(f.server.Close)
