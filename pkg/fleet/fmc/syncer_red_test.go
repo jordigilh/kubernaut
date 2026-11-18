@@ -43,7 +43,7 @@ type fencedRegistry struct {
 	// onWithCurrent, when set, runs at the start of every WithCurrent call
 	// with the 1-based call number. Tests use it to rotate the registration
 	// revision at a specific guard (e.g. only the commit or publish guard).
-	onWithCurrent func(call int)
+	onWithCurrent    func(call int)
 	withCurrentCalls int
 }
 
@@ -430,5 +430,30 @@ var _ = Describe("FMC lifecycle handoff (BR-SCOPE-001, BR-INTEGRATION-065)", fun
 		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
 		Expect(statusStore.uncertainFailures).To(BeEmpty(),
 			"the cache already committed clean; a readiness publish failure must not mark the deleted staging uncertain")
+	})
+
+	It("UT-FMC-PRES-016 [BR-SCOPE-001, #2660 m4]: a begin failure abandons the staging on a detached context", func() {
+		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
+		registryClient := newFencedRegistry(current, 7)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		statusStore := &lifecycleStatusStore{
+			beginErr: errors.New("begin reply lost"),
+			// Cancel from INSIDE begin: a pre-cancelled context never reaches
+			// BeginRepair because the registry guard rejects it first.
+			onBegin: cancel,
+		}
+		lease := &lifecycleLease{
+			fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
+			lost:  make(chan struct{}),
+		}
+		reader := &lifecycleReader{pageCounts: map[string]int{"Pod": 1}}
+		syncer := newLifecycleSyncer(registryClient, fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+			return reader, nil
+		}), statusStore, lease, []string{"Pod"})
+
+		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.abandonCtxErr).ToNot(HaveOccurred(),
+			"the abandon must not inherit the cancelled request context, or the staging is stranded for its TTL")
 	})
 })

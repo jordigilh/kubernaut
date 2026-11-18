@@ -379,7 +379,14 @@ func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.Partition
 			// DD-FLEET-016 A2: a failed or unacknowledged begin strands only
 			// the staged status. Abandon it fence-scoped so the next cycle can
 			// begin immediately; the committed clean proof stays readable.
-			if abandonErr := s.statusStore.AbandonStaging(ctx, partition, cluster.RegistrationUID, snapshot.Revision, fence); abandonErr != nil {
+			// #2660 m4: use a detached cleanup context -- the most likely
+			// begin failure is request cancellation, and inheriting that
+			// cancellation would fail the abandon too, stranding the staging
+			// for its full TTL.
+			abandonCtx, abandonCancel := repairCleanupContext(ctx)
+			abandonErr := s.statusStore.AbandonStaging(abandonCtx, partition, cluster.RegistrationUID, snapshot.Revision, fence)
+			abandonCancel()
+			if abandonErr != nil {
 				s.logger.Error(abandonErr, "failed to abandon unacknowledged repair staging", "cluster", cluster.ID)
 			}
 			return beginErr
@@ -390,11 +397,18 @@ func (s *Syncer) beginRepair(ctx context.Context, partition scopecache.Partition
 }
 
 func (s *Syncer) markRepairUncertain(ctx context.Context, start scopecache.RepairStartResult, clusterID string, failure scopecache.RepairFailure) {
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	cleanupCtx, cleanupCancel := repairCleanupContext(ctx)
 	defer cleanupCancel()
 	if err := s.statusStore.MarkRepairUncertain(cleanupCtx, start, failure); err != nil {
 		s.logger.Error(err, "failed to mark FMC repair uncertain", "cluster", clusterID)
 	}
+}
+
+// repairCleanupContext detaches best-effort repair cleanup (abandon, uncertain
+// marking) from the request context so a cancelled request cannot strand the
+// staging for its full TTL, and bounds it with a short timeout.
+func repairCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
 
 // repairPartition performs the only production lifecycle that can publish a
