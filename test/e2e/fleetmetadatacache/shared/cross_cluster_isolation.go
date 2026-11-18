@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // Ginkgo DSL dot-import convention
 	. "github.com/onsi/gomega"    //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
 
@@ -76,10 +78,8 @@ func CrossClusterIsolation(h *Harness, v Variant) bool {
 			}, SyncTimeout, Interval).Should(Succeed())
 
 			Consistently(func(g Gomega) {
-				g.Expect(ScopeCheck(g, h, "loopback-cluster", "", "v1", "Service", h.Namespace, svcName)).To(BeFalse(),
-					"a remote-cluster-only resource must never be visible through loopback-cluster's (primary-backed) scope")
-				g.Expect(ScopeCheck(g, h, "prod-west", "", "v1", "Service", h.Namespace, svcName)).To(BeFalse(),
-					"a remote-cluster-only resource must never be visible through prod-west's (primary-backed) scope")
+				ScopeCheckUnavailable(g, h, scope.ResourceIdentity{ClusterID: "loopback-cluster", Version: "v1", Kind: "Service", Namespace: h.Namespace, Name: svcName})
+				ScopeCheckUnavailable(g, h, scope.ResourceIdentity{ClusterID: "prod-west", Version: "v1", Kind: "Service", Namespace: h.Namespace, Name: svcName})
 			}, 10*time.Second, Interval).Should(Succeed())
 		})
 
@@ -103,16 +103,17 @@ func CrossClusterIsolation(h *Harness, v Variant) bool {
 			Eventually(func(g Gomega) {
 				g.Expect(ScopeCheck(g, h, "loopback-cluster", "", "v1", "Service", h.Namespace, svcName)).To(BeTrue(),
 					"a resource created only in the primary cluster must be reported managed via loopback-cluster")
+				g.Expect(ScopeCheck(g, h, "prod-west", "", "v1", "Service", h.Namespace, svcName)).To(BeTrue(),
+					"the other primary-backed registration must also report the present resource managed")
 			}, SyncTimeout, Interval).Should(Succeed())
 
 			// This is the regression-sensitive assertion (DD-TEST-013): before
 			// the cross-cluster bridge, prod-east shared the primary cluster's
 			// API server, so a primary-only resource was trivially visible
-			// here too. It must now report false, proving prod-east's
+			// here too. It must now report unavailable, proving prod-east's
 			// backend is genuinely a different control plane.
 			Consistently(func(g Gomega) {
-				g.Expect(ScopeCheck(g, h, "prod-east", "", "v1", "Service", h.Namespace, svcName)).To(BeFalse(),
-					"a primary-cluster-only resource must never be visible through prod-east's (remote-backed) scope -- otherwise prod-east is not a genuinely separate control plane")
+				ScopeCheckUnavailable(g, h, scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Service", Namespace: h.Namespace, Name: svcName})
 			}, 10*time.Second, Interval).Should(Succeed())
 		})
 	})

@@ -113,17 +113,17 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-deployment",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-deployment",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
 
-			err := k8sClient.Create(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 
 			correlationID = rr.Name // DD-AUDIT-CORRELATION-001: All services use rr.Name (not UID)
 			GinkgoWriter.Printf("✅ Created RemediationRequest: %s (correlation_id=%s)\n", rr.Name, correlationID)
@@ -151,7 +151,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// WHEN: Operator modifies TimeoutConfig (simulates kubectl edit)
 			// ========================================
 			// Re-fetch the latest RR to avoid conflicts with controller updates
-			err = k8sClient.Get(ctx, client.ObjectKey{
+			err := k8sClient.Get(ctx, client.ObjectKey{
 				Namespace: controllerNamespace,
 				Name:      "rr-gap8-webhook",
 			}, rr)

@@ -76,14 +76,16 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: testNamespace,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  testNamespace,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
+		ensureRRTarget(rr)
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 		By("Waiting for controller to fully process the RR (reach Processing phase)")
@@ -204,14 +206,16 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: testNamespace,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  testNamespace,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
+		ensureRRTarget(rr)
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 		By("Waiting for controller to fully process the RR (reach Processing phase)")

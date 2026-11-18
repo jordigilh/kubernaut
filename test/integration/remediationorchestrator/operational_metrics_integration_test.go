@@ -167,14 +167,16 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Wait for reconciliation to occur
@@ -212,14 +214,16 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Wait for phase transition (Pending → Processing)

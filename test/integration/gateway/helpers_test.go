@@ -20,12 +20,16 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -43,6 +47,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Suite-level namespace tracking for batch cleanup
@@ -395,6 +400,9 @@ func SendWebhookWithAuth(url string, payload []byte, token string) WebhookRespon
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // GeneratePrometheusAlert creates a Prometheus AlertManager webhook payload
+// #2593 (DD-FLEET-015): when the payload references a concrete resource in a
+// concrete namespace, also ensure that target exists so the signaled resource
+// is observable for presence-first scope checking.
 func GeneratePrometheusAlert(opts PrometheusAlertOptions) []byte {
 	// Set defaults
 	if opts.Severity == "" {
@@ -402,6 +410,10 @@ func GeneratePrometheusAlert(opts PrometheusAlertOptions) []byte {
 	}
 	if opts.Namespace == "" {
 		opts.Namespace = "default"
+	}
+
+	if opts.Namespace != "" && opts.Resource.Kind != "" && opts.Resource.Name != "" {
+		ensureSignalTarget(ctx, opts.Namespace, opts.Resource.Kind, opts.Resource.Name)
 	}
 
 	// Build labels
@@ -1377,11 +1389,168 @@ type SignalBuilder struct {
 	ResourceKind string
 	Name         string // Alias for ResourceName
 	ResourceName string
+	APIVersion   string
 	Severity     string
 	Source       string // Source adapter name
 	Labels       map[string]string
 	Annotations  map[string]string
 	ClusterID    string
+	// ResourceAPIVersion overrides the kind-based default apiVersion that
+	// createNormalizedSignal resolves (#2592: strict identity contract).
+	ResourceAPIVersion string
+	// SkipTargetCreation opts out of the default fixture behavior that creates
+	// the signal's real target resource before the signal is handed to
+	// ProcessSignal (#2593, DD-FLEET-015: presence-first scope checking — a
+	// missing target is ScopeUnavailable("observation_missing")). Set to true
+	// only in specs that deliberately exercise a missing/unobservable target.
+	SkipTargetCreation bool
+}
+
+// ensureSignalTarget creates the real target resource referenced by a signal
+// fixture in the given namespace (#2593, DD-FLEET-015 presence-first scope
+// checking). The namespace fixtures already carry kubernaut.ai/managed=true,
+// so an unlabeled target inherits managed scope. Objects that already exist
+// are left untouched (scope-filtering specs create labeled pods themselves and
+// must keep deciding their own labels).
+//
+// Supported kinds: Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job,
+// CronJob, Service, ConfigMap. Unknown kinds are skipped so exotic fixtures
+// keep their own setup responsibility.
+func ensureSignalTarget(ctx context.Context, namespace, kind, name string) {
+	c := signalTargetClient()
+	if c == nil || namespace == "" || kind == "" || name == "" {
+		return
+	}
+	switch kind {
+	case "Pod":
+		sharedhelpers.EnsureTestPod(ctx, c, namespace, name)
+	case "Deployment":
+		sharedhelpers.EnsureTestDeployment(ctx, c, namespace, name)
+	case fixtureKindStatefulSet, fixtureKindDaemonSet, fixtureKindReplicaSet:
+		ensureAppsWorkload(ctx, c, namespace, kind, name)
+	case "Job":
+		ensureJob(ctx, c, namespace, name)
+	case "CronJob":
+		ensureCronJob(ctx, c, namespace, name)
+	case "Service":
+		sharedhelpers.EnsureTestService(ctx, c, namespace, name)
+	case "ConfigMap":
+		ensureConfigMap(ctx, c, namespace, name)
+	}
+}
+
+// signalTargetClientOnce guards lazy creation of signalTargetClient.
+var signalTargetClientOnce sync.Once
+
+// signalTargetClientCached caches the target-creation client.
+var signalTargetClientCached client.Client
+
+// signalTargetClient returns a client whose scheme covers the workload kinds
+// ensureSignalTarget creates (the suite client's scheme only registers
+// core/apps/rbac/remediation types, not batch). Returns nil when the envtest
+// config is unavailable (standalone test runs without suite setup).
+func signalTargetClient() client.Client {
+	signalTargetClientOnce.Do(func() {
+		cfg, ok := suiteK8sConfig.(*rest.Config)
+		if !ok || cfg == nil {
+			return
+		}
+		scheme := k8sruntime.NewScheme()
+		if err := corev1.AddToScheme(scheme); err != nil {
+			return
+		}
+		if err := appsv1.AddToScheme(scheme); err != nil {
+			return
+		}
+		if err := batchv1.AddToScheme(scheme); err != nil {
+			return
+		}
+		c, err := client.New(cfg, client.Options{Scheme: scheme})
+		if err != nil {
+			return
+		}
+		signalTargetClientCached = c
+	})
+	return signalTargetClientCached
+}
+
+// ensureAppsWorkload creates a minimal StatefulSet/DaemonSet/ReplicaSet.
+func ensureAppsWorkload(ctx context.Context, c client.Client, namespace, kind, name string) {
+	podLabels := map[string]string{"app": name}
+	template := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.10"}}},
+	}
+	var obj client.Object
+	switch kind {
+	case "StatefulSet":
+		obj = &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec:       appsv1.StatefulSetSpec{Template: template, Selector: &metav1.LabelSelector{MatchLabels: podLabels}},
+		}
+	case fixtureKindDaemonSet:
+		obj = &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec:       appsv1.DaemonSetSpec{Template: template, Selector: &metav1.LabelSelector{MatchLabels: podLabels}},
+		}
+	case "ReplicaSet":
+		replicas := int32(1)
+		obj = &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec:       appsv1.ReplicaSetSpec{Replicas: &replicas, Template: template, Selector: &metav1.LabelSelector{MatchLabels: podLabels}},
+		}
+	default:
+		return
+	}
+	if err := c.Create(ctx, obj); err != nil && !errors.IsAlreadyExists(err) {
+		Fail(fmt.Sprintf("failed to create test %s %s/%s: %v", kind, namespace, name, err))
+	}
+}
+
+// ensureJob creates a minimal batch/v1 Job.
+func ensureJob(ctx context.Context, c client.Client, namespace, name string) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.10"}}, RestartPolicy: corev1.RestartPolicyNever},
+			},
+		},
+	}
+	if err := c.Create(ctx, job); err != nil && !errors.IsAlreadyExists(err) {
+		Fail(fmt.Sprintf("failed to create test Job %s/%s: %v", namespace, name, err))
+	}
+}
+
+// ensureCronJob creates a minimal batch/v1 CronJob.
+func ensureCronJob(ctx context.Context, c client.Client, namespace, name string) {
+	cron := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: batchv1.CronJobSpec{
+			Schedule: "0 0 * * *",
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.10"}}, RestartPolicy: corev1.RestartPolicyNever},
+					},
+				},
+			},
+		},
+	}
+	if err := c.Create(ctx, cron); err != nil && !errors.IsAlreadyExists(err) {
+		Fail(fmt.Sprintf("failed to create test CronJob %s/%s: %v", namespace, name, err))
+	}
+}
+
+// ensureConfigMap creates a minimal core/v1 ConfigMap.
+func ensureConfigMap(ctx context.Context, c client.Client, namespace, name string) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       map[string]string{"fixture": "true"},
+	}
+	if err := c.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
+		Fail(fmt.Sprintf("failed to create test ConfigMap %s/%s: %v", namespace, name, err))
+	}
 }
 
 // createNormalizedSignal creates a NormalizedSignal for integration tests
@@ -1414,6 +1583,28 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		builder.Source = "prometheus-adapter"
 	}
 
+	// #2592 strict identity contract: resolve an explicit apiVersion from the
+	// kind when the fixture does not provide one. Servers built via
+	// NewServerForTesting have no adapter registry to determine it at
+	// ingestion time, and a signal without an apiVersion is rejected as
+	// invalid_target_identity before scope is ever consulted.
+	apiVersion := builder.APIVersion
+	if apiVersion == "" {
+		apiVersion = builder.ResourceAPIVersion
+	}
+	if apiVersion == "" {
+		apiVersion = fixtureAPIVersionForKind(builder.ResourceKind)
+	}
+
+	// #2593 (DD-FLEET-015): the typed scope lane requires the target resource
+	// to be observed before any scope decision, so create the real target in
+	// the signal's namespace. Remote (fleet) signals are resolved against the
+	// FMC cache rather than the local API, so no local object is created.
+	// Specs that deliberately test missing targets set SkipTargetCreation.
+	if !builder.SkipTargetCreation && builder.ClusterID == "" {
+		ensureSignalTarget(ctx, builder.Namespace, builder.ResourceKind, builder.ResourceName)
+	}
+
 	// Generate fingerprint
 	fingerprint := generateFingerprint(builder.AlertName, builder.Namespace, builder.ResourceKind, builder.ResourceName)
 
@@ -1434,9 +1625,10 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		Namespace:   builder.Namespace,
 		ClusterID:   builder.ClusterID,
 		Resource: types.ResourceIdentifier{
-			Kind:      builder.ResourceKind,
-			Name:      builder.ResourceName,
-			Namespace: builder.Namespace, // Set resource namespace
+			APIVersion: apiVersion,
+			Kind:       builder.ResourceKind,
+			Name:       builder.ResourceName,
+			Namespace:  builder.Namespace, // Set resource namespace
 		},
 		Labels:       builder.Labels,
 		Annotations:  builder.Annotations,
@@ -1448,6 +1640,27 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 	}
 
 	return signal
+}
+
+// fixtureKindDaemonSet is the shared literal for the apps workload fixture
+// kinds (goconst: used by ensureSignalTarget and fixtureAPIVersionForKind).
+const (
+	fixtureKindDaemonSet   = "DaemonSet"
+	fixtureKindReplicaSet  = "ReplicaSet"
+	fixtureKindStatefulSet = "StatefulSet"
+)
+
+// fixtureAPIVersionForKind maps a fixture kind to its default apiVersion,
+// mirroring what production adapters resolve via API discovery (#2592).
+func fixtureAPIVersionForKind(kind string) string {
+	switch kind {
+	case "Deployment", fixtureKindStatefulSet, fixtureKindDaemonSet, fixtureKindReplicaSet:
+		return "apps/v1"
+	case "Job", "CronJob":
+		return "batch/v1"
+	default:
+		return "v1" // core: Pod, Node, Service, ConfigMap, ...
+	}
 }
 
 // generateFingerprint generates a deterministic fingerprint for a signal (integration test helper)
@@ -1545,14 +1758,18 @@ func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload
 // Used for testing Gateway adapter pass-through behavior
+// #2593: also ensures the referenced target pod exists (presence-first scope).
 func createPrometheusAlert(namespace, alertName, severity, correlationID string) []byte {
+	ensureSignalTarget(ctx, namespace, "Pod", "test-pod-123")
 	return createPrometheusAlertForPod(namespace, alertName, severity, correlationID, "test-pod-123")
 }
 
 // createPrometheusAlertForPod creates a Prometheus AlertManager webhook payload targeting a specific pod.
 // Use this when tests need different resources to produce different fingerprints (Issue #63:
 // alertname is excluded from fingerprint, so different alertnames for the same pod produce the same fingerprint).
+// #2593: also ensures the referenced target pod exists (presence-first scope).
 func createPrometheusAlertForPod(namespace, alertName, severity, correlationID, podName string) []byte {
+	ensureSignalTarget(ctx, namespace, "Pod", podName)
 	payload := fmt.Sprintf(`{
 		"alerts": [{
 			"labels": {
@@ -1575,7 +1792,9 @@ func createPrometheusAlertForPod(namespace, alertName, severity, correlationID, 
 
 // createPrometheusAlertWithoutSeverity creates a Prometheus alert without severity label
 // Used for testing BR-GATEWAY-181 default behavior when severity is missing
+// #2593: also ensures the referenced target pod exists (presence-first scope).
 func createPrometheusAlertWithoutSeverity(namespace, alertName string) []byte {
+	ensureSignalTarget(ctx, namespace, "Pod", "test-pod-123")
 	payload := fmt.Sprintf(`{
 		"alerts": [{
 			"labels": {
@@ -1594,14 +1813,17 @@ func createPrometheusAlertWithoutSeverity(namespace, alertName string) []byte {
 
 // createK8sEvent creates a Kubernetes Event payload
 // Used for testing Gateway K8s Event adapter pass-through behavior (BR-GATEWAY-181)
+// #2593: also ensures the referenced target pod exists (presence-first scope).
 func createK8sEvent(eventType, reason, namespace, name string) []byte {
+	ensureSignalTarget(ctx, namespace, "Pod", name)
 	payload := fmt.Sprintf(`{
 		"type": "%s",
 		"reason": "%s",
 		"involvedObject": {
 			"kind": "Pod",
 			"name": "%s",
-			"namespace": "%s"
+			"namespace": "%s",
+			"apiVersion": "v1"
 		},
 		"message": "Test K8s event",
 		"firstTimestamp": "2026-01-16T12:00:00Z",

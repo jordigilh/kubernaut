@@ -17,6 +17,7 @@ limitations under the License.
 package shared
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -28,6 +29,8 @@ import (
 	. "github.com/onsi/gomega"    //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // TLSPortSplit proves the full production topology for Issue #1683's TLS +
@@ -59,9 +62,17 @@ import (
 func TLSPortSplit(h *Harness, v Variant) bool {
 	return Describe(fmt.Sprintf("%s: FMC presents TLS on the API port with an unauthenticated readyz alongside the dedicated health port", v.ScenarioPrefix()), func() {
 		It("E2E-FMC-1683-016 [SC-8,SC-13,AC-4]: real TLS handshake + unauthenticated readyz on both ports + cipher-version restriction", func() {
+			// DD-FLEET-015 defers Namespace as a target. Use a real, explicitly
+			// opted-in namespaced Service; retain the full CA/auth/TLS assertions.
+			target := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("%s-tls-scope-%d", v.ResourcePrefix(), time.Now().UnixNano()), Namespace: h.Namespace,
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 80}}}}
+			Expect(h.K8sClient.Create(h.Ctx, target)).To(Succeed())
+			DeferCleanup(func() { Expect(h.K8sClient.Delete(context.Background(), target)).To(Succeed()) })
 			By("Confirming FMC's real API port completes a CA-verified TLS scope-check call")
 			Eventually(func(g Gomega) {
-				ScopeCheck(g, h, "loopback-cluster", "", "v1", "Namespace", "", "kube-system")
+				g.Expect(ScopeCheck(g, h, "loopback-cluster", "", "v1", "Service", target.Namespace, target.Name)).To(BeTrue())
 			}, Timeout, Interval).Should(Succeed(),
 				"SC-8: a CA-trusting client must complete real scope-check calls over the TLS-protected API port")
 

@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -45,6 +46,11 @@ func (m *mockOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace,
 		return m.resolveFunc(ctx, namespace, kind, name)
 	}
 	return "", "", fmt.Errorf("no resolve function configured")
+}
+
+func (m *mockOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	kind, name, err := m.ResolveTopLevelOwner(ctx, resource.Namespace, resource.Kind, resource.Name)
+	return sharedtypes.OwnerChainEntry{Namespace: resource.Namespace, Kind: kind, Name: name}, err
 }
 
 // newK8sEventJSON creates a K8s event JSON payload for testing

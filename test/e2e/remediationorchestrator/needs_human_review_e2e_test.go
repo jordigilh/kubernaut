@@ -30,6 +30,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E Tests for BR-KA-197: Human Review Required Flag
@@ -81,15 +82,16 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					SignalType:        "mock_rca_incomplete", // Mock LLM detects this keyword
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod-rca-incomplete",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod-rca-incomplete",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
@@ -233,15 +235,16 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 					SignalType:        "oomkilled", // Mock LLM detects this keyword → needs_human_review=false
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod-oomkilled",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod-oomkilled",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")

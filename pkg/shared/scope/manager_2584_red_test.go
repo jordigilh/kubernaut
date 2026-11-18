@@ -38,6 +38,7 @@ var _ = Describe("BR-SCOPE-001: metadata-backed scope precedence", func() {
 		mgr := scope.NewManager(k8sClient)
 
 		resolved, err := mgr.ResolveWithResourceLabels(context.Background(), scope.ResourceIdentity{
+			Group: "apps", Version: "v1",
 			Namespace: "payments",
 			Kind:      "Deployment",
 			Name:      "checkout",
@@ -57,6 +58,7 @@ var _ = Describe("BR-SCOPE-001: metadata-backed scope precedence", func() {
 		mgr := scope.NewManager(k8sClient)
 
 		resolved, err := mgr.ResolveWithResourceLabels(context.Background(), scope.ResourceIdentity{
+			Group: "apps", Version: "v1",
 			Namespace: "payments",
 			Kind:      "Deployment",
 			Name:      "checkout",
@@ -81,6 +83,7 @@ var _ = Describe("BR-SCOPE-001: metadata-backed scope precedence", func() {
 			Build()
 
 		_, err := scope.NewManager(k8sClient).Resolve(context.Background(), scope.ResourceIdentity{
+			Group: "apps", Version: "v1",
 			Namespace: "payments",
 			Kind:      "Deployment",
 			Name:      "checkout",

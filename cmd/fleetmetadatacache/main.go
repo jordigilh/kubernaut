@@ -25,11 +25,11 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,15 +37,15 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/jordigilh/kubernaut/internal/version"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
@@ -64,14 +64,18 @@ import (
 // FMC startup: the resilient MCP Gateway client, the Valkey read/write
 // clients, the cluster registry, and the metadata syncer.
 type fmcDeps struct {
-	reg             *prometheus.Registry
-	metrics         *fmc.Metrics
-	mcpClient       *mcpclient.ResilientClient
-	mcpReadiness    *readiness.Gate
-	writer          *fmc.ValkeyWriter
-	cacheReader     *scopecache.ValkeyCacheReader
-	clusterRegistry registry.ClusterRegistry
-	syncer          *fmc.Syncer
+	reg               *prometheus.Registry
+	metrics           *fmc.Metrics
+	mcpClient         *mcpclient.ResilientClient
+	mcpReadiness      *readiness.Gate
+	writer            *fmc.ValkeyWriter
+	cacheReader       *scopecache.ValkeyCacheReader
+	statusStore       *scopecache.ValkeyStatusStore
+	lease             scopecache.LeaseCoordinator
+	readiness         *scopecache.FMCReadinessSnapshot
+	clusterRegistry   registry.ClusterRegistry
+	registrationGuard registry.CurrentRegistrationGuard
+	syncer            *fmc.Syncer
 
 	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): TokenReview/SAR auth for
 	// the GW/RO -> FMC scope-check API. k8sClientset backs auth.NewK8sAuthenticator
@@ -86,17 +90,63 @@ func (d *fmcDeps) close() {
 	if d.mcpReadiness != nil {
 		d.mcpReadiness.Stop()
 	}
-	d.clusterRegistry.Stop()
-	_ = d.cacheReader.Close()
-	_ = d.writer.Close()
-	_ = d.mcpClient.Close()
+	if d.clusterRegistry != nil {
+		d.clusterRegistry.Stop()
+	}
+	if d.cacheReader != nil {
+		_ = d.cacheReader.Close()
+	}
+	if d.writer != nil {
+		_ = d.writer.Close()
+	}
+	if d.statusStore != nil {
+		_ = d.statusStore.Close()
+	}
+	if d.mcpClient != nil {
+		_ = d.mcpClient.Close()
+	}
+}
+
+func (d *fmcDeps) Ready() bool {
+	if d == nil || d.clusterRegistry == nil || d.readiness == nil {
+		return false
+	}
+	if snapshotter, ok := d.clusterRegistry.(registry.RegistrySnapshotter); ok {
+		if err := d.readiness.ReconcileRegistry(snapshotter.SnapshotAll()); err != nil {
+			return false
+		}
+	} else {
+		return false
+	}
+	global := d.readiness.View().Global
+	if d.mcpReadiness != nil {
+		global.MCPInitialSync = d.mcpReadiness.Ready()
+	}
+	if d.clusterRegistry != nil {
+		global.RegistryInitialSync = d.clusterRegistry.Ready()
+		global.RegistryWatchHealthy = d.clusterRegistry.Ready()
+	}
+	if d.statusStore != nil {
+		global.ScriptReady = d.statusStore.ScriptReady()
+		global.ValkeyReady = true
+	}
+	if err := d.readiness.PublishGlobal(global); err != nil {
+		return false
+	}
+	ready, err := d.readiness.ServiceReady()
+	if err != nil || !ready {
+		return false
+	}
+	return d.syncer == nil || d.syncer.Ready()
 }
 
 // wireFMCDependencies connects to the MCP Gateway (with reloadable OAuth2
 // transport), the Kubernetes API (for the dynamic client used by the
 // cluster registry), and Valkey (read/write), then constructs and starts
-// the cluster registry and metadata syncer. MCP connectivity failures are
-// retained as a disconnected client so readiness and reconnect can recover.
+// the cluster registry and metadata syncer. The current singleton deployment
+// uses a process-local writer coordinator, so Kubernetes Lease RBAC is not
+// required. MCP connectivity failures are retained as a disconnected client
+// so readiness and reconnect can recover.
 // buildValkeyTLSConfig constructs the *tls.Config for FMC's Valkey client
 // connection (DD-PLATFORM-006 Decision Area 13 follow-up, round-16 RCA): the
 // chart's own Valkey is TLS-only (Decision Area 8), and unlike the
@@ -138,7 +188,11 @@ func buildFMCK8sClients(logger logr.Logger) (dynamic.Interface, kubernetes.Inter
 	k8sCfg.QPS = 1000.0
 	k8sCfg.Burst = 2000
 
-	dynClient, err := dynamic.NewForConfig(k8sCfg)
+	// DD-FLEET-015: LIST/establishment are bounded by the registry owner.
+	// An HTTP client-wide 30s timeout would also truncate established WATCHes.
+	watchCfg := rest.CopyConfig(k8sCfg)
+	watchCfg.Timeout = 0
+	dynClient, err := dynamic.NewForConfig(watchCfg)
 	if err != nil {
 		logger.Error(err, "Failed to create dynamic Kubernetes client")
 		os.Exit(1)
@@ -159,10 +213,7 @@ func buildFMCK8sClients(logger logr.Logger) (dynamic.Interface, kubernetes.Inter
 	return dynClient, k8sClientset, releaseNamespace
 }
 
-func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
-	reg := prometheus.NewRegistry()
-	metrics := fmc.NewMetrics(reg)
-
+func buildFMCMCPDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*mcpclient.ResilientClient, *readiness.Gate) {
 	reloadCfg := mcpclient.ReloadableOAuth2Config{
 		TokenURL:         cfg.OAuth2.TokenURL,
 		ClientIDPath:     cfg.OAuth2.CredentialsDir + "/client-id",
@@ -184,68 +235,146 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	if err != nil {
 		logger.Error(err, "Failed to connect to MCP Gateway; retaining disconnected client for readiness recovery")
 	}
-	mcpReadiness := readiness.NewGate(
+	return mcpClient, readiness.NewGate(
 		5*time.Second,
 		logger,
-		// DD-FLEET-010: a reconnect probe must allow the configured MCP
-		// handshake budget. DiscoverProbeTimeout bounds only the optional
-		// server/discover sub-request, not the complete reconnect operation.
 		&readiness.MCPClientProber{Client: mcpClient, Timeout: resilienceCfg.ConnectTimeout},
 	)
+}
 
-	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
-
+func buildFMCValkeyDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*fmc.ValkeyWriter, *scopecache.ValkeyCacheReader, *scopecache.ValkeyStatusStore) {
 	valkeyTLSConfig := buildValkeyTLSConfig(cfg.Valkey.TLS, logger)
 	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr, fmc.WithTLSConfig(valkeyTLSConfig))
 	cacheReader := scopecache.NewValkeyCacheReader(cfg.Valkey.Addr, scopecache.WithTLSConfig(valkeyTLSConfig))
+	statusStore, err := scopecache.NewValkeyStatusStoreAt(cfg.Valkey.Addr, func(options *redis.Options) {
+		options.TLSConfig = valkeyTLSConfig
+	})
+	if err != nil {
+		logger.Error(err, "Failed to create FMC Valkey status store")
+		os.Exit(1)
+	}
+	if err := statusStore.LoadScript(ctx); err != nil {
+		logger.Error(err, "Failed to load FMC Valkey atomic script")
+		os.Exit(1)
+	}
+	return writer, cacheReader, statusStore
+}
 
+func buildFMCRegistryDependencies(
+	ctx context.Context,
+	cfg *fmcconfig.ServiceConfig,
+	dynClient dynamic.Interface,
+	reg *prometheus.Registry,
+	statusStore *scopecache.ValkeyStatusStore,
+	logger logr.Logger,
+) (registry.ClusterRegistry, registry.CurrentRegistrationGuard, *scopecache.FMCReadinessSnapshot, error) {
 	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.MCPGateway.GatewayType), dynClient, registry.RegistryConfig{
 		Namespace: cfg.MCPGateway.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
 	if err != nil {
 		logger.Error(err, "Failed to create cluster registry", "gatewayType", cfg.MCPGateway.GatewayType)
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("create cluster registry: %w", err)
+	}
+	registrationGuard, ok := clusterRegistry.(registry.CurrentRegistrationGuard)
+	if !ok {
+		clusterRegistry.Stop()
+		return nil, nil, nil, fmt.Errorf("cluster registry does not provide registration guard")
 	}
 	if err := clusterRegistry.Start(ctx); err != nil {
 		logger.Error(err, "Failed to start cluster registry")
-		os.Exit(1)
+		clusterRegistry.Stop()
+		return nil, nil, nil, fmt.Errorf("start cluster registry: %w", err)
 	}
+	readinessSnapshot, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+	if err != nil {
+		logger.Error(err, "Failed to create FMC readiness snapshot")
+		clusterRegistry.Stop()
+		return nil, nil, nil, err
+	}
+	if err := readinessSnapshot.PublishGlobal(scopecache.FMCGlobalReadiness{
+		RegistryInitialSync:      clusterRegistry.Ready(),
+		RegistryWatchHealthy:     clusterRegistry.Ready(),
+		RegisteredPartitionCount: len(clusterRegistry.List()),
+		ScriptReady:              statusStore.ScriptReady(),
+		ValkeyReady:              true,
+		LeasePolicy:              scopecache.LeasePolicyProcessWideRequired,
+		Lease: scopecache.LeaseView{
+			Policy: scopecache.LeasePolicyProcessWideRequired,
+		},
+	}); err != nil {
+		logger.Error(err, "Failed to initialize FMC readiness snapshot")
+		clusterRegistry.Stop()
+		return nil, nil, nil, err
+	}
+	return clusterRegistry, registrationGuard, readinessSnapshot, nil
+}
 
+func buildFMCWriterCoordinator() scopecache.LeaseCoordinator {
+	return scopecache.NewProcessWriterCoordinator()
+}
+
+func buildFMCSyncerDependencies(deps *fmcDeps) fmc.Dependencies {
+	return fmc.Dependencies{
+		Registry:    deps.clusterRegistry,
+		Readers:     nil,
+		Writer:      deps.writer,
+		StatusStore: deps.statusStore,
+		Lease:       deps.lease,
+		Readiness:   deps.readiness,
+	}
+}
+
+func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) *fmc.Syncer {
 	syncerConfig := fmc.Config{
 		SyncInterval:       cfg.Sync.Interval,
 		KeyTTL:             cfg.Sync.KeyTTL,
 		ResourceKinds:      cfg.Sync.ResourceKinds,
 		WaitForBrokerReady: cfg.Sync.WaitForBrokerReady,
 	}
-
-	sessionProvider := mcpClient.SessionProvider()
-	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
+	sessionProvider := deps.mcpClient.SessionProvider()
+	readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, cluster registry.ClusterInfo) (mcpclient.ObservedReader, error) {
 		// WithReconnect: SessionProvider() alone only re-reads whatever session
-		// mcpClient currently holds -- it cannot repair a session that died from
-		// a protocol-level error (e.g. a malformed response during a startup
-		// race with the MCP Gateway broker's config reload). Without this, a
-		// single early failure permanently breaks every sync cycle for the rest
-		// of the FMC pod's lifetime, even after the Gateway becomes healthy.
-		opts := []mcpclient.Option{mcpclient.WithReconnect(mcpClient.Reconnect)}
-		if info, found := clusterRegistry.Get(clusterID); found && info.ToolPrefix != "" {
-			opts = append(opts, mcpclient.WithToolPrefix(info.ToolPrefix))
+		// mcpClient currently holds; it cannot repair a session that died from a
+		// protocol-level error during a startup race with broker config reload.
+		opts := []mcpclient.Option{mcpclient.WithReconnect(deps.mcpClient.Reconnect)}
+		if cluster.ToolPrefix != "" {
+			opts = append(opts, mcpclient.WithToolPrefix(cluster.ToolPrefix))
 		}
-		return mcpclient.NewFromSessionProvider(sessionProvider, clusterID, opts...), nil
+		return mcpclient.NewFromSessionProvider(sessionProvider, cluster.ID, opts...), nil
 	})
-	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
+	syncerDeps := buildFMCSyncerDependencies(deps)
+	syncerDeps.Readers = readerFactory
+	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics)
+}
 
-	return &fmcDeps{
+func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*fmcDeps, error) {
+	reg := prometheus.NewRegistry()
+	metrics := fmc.NewMetrics(reg)
+	mcpClient, mcpReadiness := buildFMCMCPDependencies(ctx, cfg, logger)
+	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
+	writer, cacheReader, statusStore := buildFMCValkeyDependencies(ctx, cfg, logger)
+	writerCoordinator := buildFMCWriterCoordinator()
+
+	deps := &fmcDeps{
 		reg:              reg,
 		metrics:          metrics,
 		mcpClient:        mcpClient,
 		mcpReadiness:     mcpReadiness,
 		writer:           writer,
 		cacheReader:      cacheReader,
-		clusterRegistry:  clusterRegistry,
-		syncer:           syncer,
+		statusStore:      statusStore,
+		lease:            writerCoordinator,
 		k8sClientset:     k8sClientset,
 		releaseNamespace: releaseNamespace,
 	}
+	clusterRegistry, registrationGuard, readinessSnapshot, err := buildFMCRegistryDependencies(ctx, cfg, dynClient, reg, statusStore, logger)
+	if err != nil {
+		deps.close()
+		return nil, err
+	}
+	deps.clusterRegistry, deps.registrationGuard, deps.readiness = clusterRegistry, registrationGuard, readinessSnapshot
+	deps.syncer = buildFMCSyncer(cfg, deps, logger)
+	return deps, nil
 }
 
 // fmcServers bundles the federated scope-checking API server (ADR-068), the
@@ -256,7 +385,6 @@ type fmcServers struct {
 	api          *http.Server
 	health       *http.Server
 	metrics      *http.Server
-	ready        *atomic.Bool
 	certReloader *sharedtls.CertReloader
 	tlsCertDir   string
 }
@@ -275,10 +403,14 @@ func livenessHandler(w http.ResponseWriter, _ *http.Request) {
 
 // buildFMCServers constructs the federated scope-checking API server
 // (ADR-068, Issue #493 conditional TLS), the dedicated health-probe server
-// (Issue #753), and the Prometheus metrics server from cfg and deps. ready
-// backs the /readyz handler's liveness signal.
-func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.Bool, logger logr.Logger) *fmcServers {
-	scopeClient := scopecache.NewClient(deps.cacheReader)
+// (Issue #753), and the Prometheus metrics server from cfg and deps. The
+// shared readiness snapshot backs both /readyz registrations.
+func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) *fmcServers {
+	scopeClient, err := scopecache.NewClientWithStatusStore(deps.statusStore, deps.registrationGuard, deps.readiness)
+	if err != nil {
+		logger.Error(err, "Failed to create FMC scope cache client")
+		os.Exit(1)
+	}
 	apiHandler := fmc.NewHandler(scopeClient, deps.clusterRegistry, logger)
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
@@ -308,7 +440,7 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	// else (the real scope-check/clusters API) still goes through
 	// authMiddleware via the "/" delegation below.
 	topMux := http.NewServeMux()
-	topMux.HandleFunc(fmc.ReadyzPath, fmc.ReadyzHandler(ready.Load, deps.cacheReader))
+	topMux.HandleFunc(fmc.ReadyzPath, fmc.ReadyzHandler(deps.Ready, deps.cacheReader))
 	topMux.Handle("/", authMiddleware.Handler(apiMux))
 
 	apiServer := &http.Server{
@@ -340,7 +472,7 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	healthServer := sharedhealth.NewHealthServer(
 		cfg.Server.HealthAddr,
 		livenessHandler,
-		fmc.ReadyzHandler(ready.Load, deps.cacheReader),
+		fmc.ReadyzHandler(deps.Ready, deps.cacheReader),
 		cfg.Debug.PprofEnabled,
 	)
 
@@ -357,7 +489,6 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 		api:          apiServer,
 		health:       healthServer,
 		metrics:      metricsServer,
-		ready:        ready,
 		certReloader: certReloader,
 		tlsCertDir:   tlsCertDir,
 	}
@@ -436,10 +567,10 @@ func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Lo
 // client reports readiness, then blocks until a shutdown signal or a server
 // failure is observed, gracefully shutting down all three HTTP servers
 // before returning.
-func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan os.Signal, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
+func runFMCServers(ctx context.Context, cancel context.CancelFunc, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
 	if deps.mcpReadiness != nil {
 		deps.mcpReadiness.Start(ctx)
-		servers.ready.Store(deps.mcpReadiness.Ready())
+		_ = deps.Ready()
 		go func() {
 			ticker := time.NewTicker(100 * time.Millisecond)
 			defer ticker.Stop()
@@ -448,7 +579,7 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					servers.ready.Store(deps.mcpReadiness.Ready())
+					_ = deps.Ready()
 				}
 			}
 		}()
@@ -474,11 +605,11 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 		}
 	}()
 
-	servers.ready.Store(deps.mcpClient.Ready())
-	logger.Info("FMC ready", "mcpConnected", deps.mcpClient.Ready())
+	currentReady := deps.Ready()
+	logger.Info("FMC readiness evaluated", "ready", currentReady, "mcpConnected", deps.mcpClient.Ready(), "registryReady", deps.clusterRegistry.Ready(), "syncReady", deps.syncer.Ready())
 
 	select {
-	case <-sigCh:
+	case <-ctx.Done():
 		logger.Info("Received shutdown signal")
 	case err := <-apiErrors:
 		logger.Error(err, "API server failed")
@@ -539,11 +670,10 @@ func run() int {
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// DD-FLEET-015: shutdown must cancel synchronous dependency startup too,
+	// not wait until runFMCServers begins consuming signals.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	// DD-PLATFORM-009: answer kubelet's startupProbe/livenessProbe truthfully
 	// while wireFMCDependencies' blocking MCP Gateway connection
@@ -557,18 +687,24 @@ func run() int {
 		}
 	}()
 
-	deps := wireFMCDependencies(ctx, cfg, logger)
-	defer deps.close()
+	deps, dependencyErr := wireFMCDependencies(ctx, cfg, logger)
 
 	bootstrapShutdownCtx, bootstrapShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := bootstrapHealth.Shutdown(bootstrapShutdownCtx); err != nil {
 		logger.Error(err, "bootstrap health server shutdown failed")
 	}
 	bootstrapShutdownCancel()
+	if dependencyErr != nil {
+		if ctx.Err() != nil {
+			return 0
+		}
+		logger.Error(dependencyErr, "Failed to construct FMC dependencies")
+		return 1
+	}
+	defer deps.close()
 
-	var ready atomic.Bool
-	servers := buildFMCServers(cfg, deps, &ready, logger)
+	servers := buildFMCServers(cfg, deps, logger)
 
-	runFMCServers(ctx, cancel, sigCh, deps, servers, logger)
+	runFMCServers(ctx, cancel, deps, servers, logger)
 	return 0
 }

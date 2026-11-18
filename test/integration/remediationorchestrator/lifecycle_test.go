@@ -77,9 +77,10 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,

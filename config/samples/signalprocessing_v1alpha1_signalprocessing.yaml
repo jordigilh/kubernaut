@@ -36,6 +36,7 @@ spec:
 
   # Target resource
   targetResource:
+    apiVersion: "v1"
     kind: "Pod"
     name: "app-pod-abc123"
     namespace: "production"

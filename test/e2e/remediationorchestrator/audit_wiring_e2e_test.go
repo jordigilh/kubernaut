@@ -106,16 +106,17 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "e2e-test-app",
-						Namespace: testNamespace, // workload namespace
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "e2e-test-app",
+						Namespace:  testNamespace, // workload namespace
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 
 			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
 			// Per universal standard: All services use RemediationRequest.Name for audit correlation

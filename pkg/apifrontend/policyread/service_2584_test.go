@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const policyReadTestResourceID = "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+var policyReadTestResourceID = inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
 
 type policyReadAuditRecorder struct {
 	events []*audit.Event
@@ -45,7 +45,7 @@ func TestPolicyRead(t *testing.T) {
 
 var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope projection", func() {
 	It("UT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: accepts an empty result without evaluating a freshness marker", func() {
-		page := inventory.Page{State: inventory.StateEmpty, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
+		page := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: &inventoryStub{page: page}, Authorizer: allowAuthorizer{}})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -149,7 +149,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
-	It("projects only sanitized current policy and exact historical metadata", func() {
+	It("projects only exact historical metadata [BR-SCOPE-001, AC-4, AC-6, SI-10]", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
 			ID:         policyReadTestResourceID,
@@ -193,17 +193,15 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		}
 		ai.Status.RCAResult.SelectionAssessment = nil
 		ai.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"}
+		missingGVK := *ai.DeepCopy()
+		missingGVK.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = ""
+		invalidGVK := *ai.DeepCopy()
+		invalidGVK.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = "apps/"
+		otherGroup := *ai.DeepCopy()
+		otherGroup.Spec.AnalysisRequest.SignalContext.TargetResource.APIVersion = "other.example/v1"
 		// PolicyEvaluation is persisted in the RCA result's investigation data in
 		// production; this fixture uses the public status shape and checks that
 		// absent fields remain absent rather than being inferred.
-		sp := spv1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{Name: "sp-checkout", CreationTimestamp: metav1.Time{Time: observedAt.Add(-2 * time.Minute)}},
-			Spec: spv1.SignalProcessingSpec{Signal: spv1.SignalData{
-				ClusterID:      "",
-				TargetResource: spv1.ResourceIdentifier{Kind: "Deployment", Namespace: "payments", Name: "checkout"},
-			}},
-			Status: spv1.SignalProcessingStatus{CompletionTime: &metav1.Time{Time: observedAt.Add(-90 * time.Second)}, SignalClassification: &spv1.SignalClassification{PolicyHash: "sp-policy-hash"}},
-		}
 
 		svc, err := policyread.NewService(policyread.Config{
 			Namespace: "kubernaut-system",
@@ -214,7 +212,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
 				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
 			}},
-			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai}, sp: []spv1.SignalProcessing{sp}},
+			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}},
 			Authorizer: allowAuthorizer{},
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -227,7 +225,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Value).To(Equal(0.85))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("runtime-config"))
 		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:ai"))
-		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(2))
+		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
 		Expect(result.Items[0].HistoricalEvaluations[0].Source).To(Equal("AIAnalysis"))
 		Expect(result.Items[0].HistoricalEvaluations[0].MatchedRules).To(ConsistOf("production_requires_review"))
 		Expect(result.Items[0].InventoryLink).To(ContainSubstring("/inventory/managed-resources/" + resource.ID))
@@ -238,6 +236,56 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(string(encoded)).NotTo(ContainSubstring("package signal"))
 		Expect(string(encoded)).NotTo(ContainSubstring("secret"))
 		Expect(string(encoded)).NotTo(ContainSubstring("total"))
+	})
+
+	It("does not fetch SignalProcessing history when projecting policy scope [BR-SAFETY-001, #2651]", func() {
+		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+		resource := inventory.Resource{
+			ID:         policyReadTestResourceID,
+			ClusterID:  "local",
+			Group:      "apps",
+			Version:    "v1",
+			Kind:       "Deployment",
+			Namespace:  "payments",
+			Name:       "checkout",
+			Scope:      inventory.Scope{Included: true},
+			ObservedAt: observedAt,
+		}
+		page := inventory.Page{
+			State:        inventory.StateSuccess,
+			ObservedAt:   observedAt,
+			Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: observedAt},
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		ai := aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "ai-checkout", CreationTimestamp: metav1.Time{Time: observedAt.Add(-time.Minute)}},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				AnalysisRequest: aianalysisv1.AnalysisRequest{SignalContext: aianalysisv1.SignalContextInput{
+					TargetResource: aianalysisv1.TargetResource{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"},
+				}},
+			},
+		}
+		history := &historyStub{ai: []aianalysisv1.AIAnalysis{ai}}
+		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system"}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
+			}},
+			History:    history,
+			Authorizer: allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), &auth.UserIdentity{Username: "alice"}, inventory.Filters{ClusterID: "local"})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(inventory.StateSuccess))
+		Expect(result.Items).To(HaveLen(1))
+		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
+		// UT-AF-2651-002 [BR-SAFETY-001, #2651]: SP history is never fetched; its
+		// records cannot be safely matched (see #2592) so the dead reads are gone.
+		Expect(history.spCalls).To(BeZero())
 	})
 
 	It("returns a state-only stale result without records", func() {
@@ -363,12 +411,12 @@ type recordingScopeChecker struct {
 	err      error
 }
 
-func (s *recordingScopeChecker) IsManagedResource(_ context.Context, identity scope.ResourceIdentity) (bool, error) {
+func (s *recordingScopeChecker) Check(_ context.Context, identity scope.ResourceIdentity) (scope.ScopeResult, error) {
 	s.identity = identity
 	if s.err != nil {
-		return false, s.err
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, s.err
 	}
-	return true, nil
+	return scope.ScopeResult{State: scope.ScopeVerifiedManaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 func (s *inventoryStub) List(context.Context, inventory.Filters) (inventory.Page, error) {
@@ -396,8 +444,8 @@ func (s *currentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]poli
 }
 
 type historyStub struct {
-	ai []aianalysisv1.AIAnalysis
-	sp []spv1.SignalProcessing
+	ai      []aianalysisv1.AIAnalysis
+	spCalls int
 }
 
 func (s *historyStub) ListAIAnalysis(context.Context) ([]aianalysisv1.AIAnalysis, error) {
@@ -405,7 +453,8 @@ func (s *historyStub) ListAIAnalysis(context.Context) ([]aianalysisv1.AIAnalysis
 }
 
 func (s *historyStub) ListSignalProcessing(context.Context) ([]spv1.SignalProcessing, error) {
-	return s.sp, nil
+	s.spCalls++
+	return nil, nil
 }
 
 type allowAuthorizer struct{}

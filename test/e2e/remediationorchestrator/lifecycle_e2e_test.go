@@ -77,15 +77,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNS,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
@@ -137,15 +138,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -203,15 +205,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "risky-pod",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "risky-pod",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -270,15 +273,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "transient-pod",
-						Namespace: testNS,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "transient-pod",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
@@ -337,15 +341,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "cascade-app",
-						Namespace: testNS,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "cascade-app",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Waiting for RO to create child SignalProcessing with owner reference")
@@ -412,15 +417,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "dedup-app",
-						Namespace: testNS,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "dedup-app",
+						Namespace:  testNS,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Waiting for RO first reconciliation before updating status")

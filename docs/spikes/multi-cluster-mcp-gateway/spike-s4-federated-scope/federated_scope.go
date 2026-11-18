@@ -25,8 +25,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-const managedLabel = "kubernaut.ai/managed"
-
 // FederatedScopeChecker implements scope.ScopeChecker by routing scope checks
 // to the local ScopeChecker (informer-backed) or remote MCPResourceClient
 // depending on the cluster context.
@@ -52,37 +50,39 @@ func NewFederatedScopeChecker(local scope.ScopeChecker, remote MCPResourceClient
 	}
 }
 
-// IsManagedResource implements scope.ScopeChecker using the 2-level hierarchy (ADR-053):
+// Check implements scope.ScopeChecker using the 2-level hierarchy (ADR-053):
 //  1. Resource label: kubernaut.ai/managed=true -> managed
 //  2. Namespace label: kubernaut.ai/managed=true -> managed
 //  3. Default: unmanaged (safe default)
 //
 // For remote clusters (clusterPrefix != ""), it uses MCPResourceClient to fetch labels.
 // For local cluster (clusterPrefix == ""), it delegates to the local ScopeChecker.
-func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if f.clusterPrefix == "" {
-		return f.local.IsManagedResource(ctx, resource)
+		return f.local.Check(ctx, resource)
 	}
 
 	namespace, kind, name := resource.Namespace, resource.Kind, resource.Name
 	resourceLabels, err := f.remote.GetLabels(ctx, f.clusterPrefix, kind, namespace, name)
 	if err != nil {
-		f.logger.Info("resource label check failed, falling through to namespace",
-			"kind", kind, "name", name, "namespace", namespace, "error", err)
-	} else if resourceLabels[managedLabel] == "true" {
-		return true, nil
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, err
 	}
-
-	nsLabels, err := f.remote.GetLabels(ctx, f.clusterPrefix, "Namespace", "", namespace)
-	if err != nil {
-		return false, fmt.Errorf("checking namespace %q scope on cluster %s: %w",
-			namespace, f.clusterPrefix, err)
+	resolution := scope.ResolveLabels(resourceLabels, nil, false)
+	if resolution.ResourceLabel == scope.LabelStateAbsent {
+		nsLabels, err := f.remote.GetLabels(ctx, f.clusterPrefix, "Namespace", "", namespace)
+		if err != nil {
+			return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, fmt.Errorf("namespace scope lookup: %w", err)
+		}
+		resolution = scope.ResolveLabels(resourceLabels, nsLabels, false)
 	}
-	if nsLabels[managedLabel] == "true" {
-		return true, nil
+	if resolution.Source == scope.ScopeSourceUnavailable {
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil
 	}
-
-	return false, nil
+	state := scope.ScopeVerifiedUnmanaged
+	if resolution.Included {
+		state = scope.ScopeVerifiedManaged
+	}
+	return scope.ScopeResult{State: state, Provenance: resolution.Source}, nil
 }
 
 // Compile-time interface compliance.

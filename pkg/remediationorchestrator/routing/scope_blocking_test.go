@@ -81,6 +81,10 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 
 	// makeRR creates a test RemediationRequest with the given target resource
 	makeRR := func(namespace, name, kind, targetName string) *remediationv1.RemediationRequest {
+		apiVersion := "v1"
+		if kind == "Deployment" {
+			apiVersion = "apps/v1"
+		}
 		return &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace,
@@ -89,8 +93,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind: kind,
-					Name: targetName,
+					APIVersion: apiVersion,
+					Kind:       kind,
+					Name:       targetName,
 				},
 				SignalFingerprint: "fp-scope-test",
 			},
@@ -110,6 +115,16 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 	// ─────────────────────────────────────────────
 
 	Context("CheckUnmanagedResource", func() {
+		It("UT-RO-2592-LOCAL-GVK [BR-SCOPE-001, AC-4, AC-6, SI-10]: blocks a local target without APIVersion", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.AlwaysManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+			rr.Spec.TargetResource.APIVersion = ""
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).NotTo(BeNil())
+			Expect(blocked.Message).To(ContainSubstring("is missing or invalid"))
+			Expect(blocked.Message).To(ContainSubstring("apiVersion"))
+		})
 
 		// UT-RO-010-001: Block unmanaged resource
 		It("UT-RO-010-001: should block when resource is unmanaged", func() {
@@ -189,7 +204,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			Expect(blocked).ToNot(BeNil(), "BR-SCOPE-013: Scope infra error must block — fail-closed")
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.Message).To(ContainSubstring("Scope validation error"))
-			Expect(blocked.Message).To(ContainSubstring("cache not ready"))
+			Expect(blocked.Message).To(ContainSubstring("scope validation unavailable"))
+			Expect(blocked.Message).NotTo(ContainSubstring("cache not ready"), "backend diagnostics must not escape the internal log boundary")
 			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0),
 				"Should requeue with backoff to retry when scope infra recovers")
 		})
@@ -323,9 +339,9 @@ type capturingScopeChecker struct {
 	onCall  func(namespace, kind, name string)
 }
 
-func (c *capturingScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (c *capturingScopeChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if c.onCall != nil {
 		c.onCall(resource.Namespace, resource.Kind, resource.Name)
 	}
-	return c.managed, nil
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[c.managed], Provenance: scope.ScopeSourceResourceLabel}, nil
 }

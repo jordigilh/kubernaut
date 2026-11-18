@@ -672,6 +672,18 @@ var _ = Describe("fleet external image preload policy", func() {
 	It("UT-INFRA-FLEETDEMO-027 [BR-PLATFORM-014]: preloads external images in CI mode", func() {
 		Expect(shouldPreloadFleetExternalImages("quay.io/kubernaut-ai")).To(BeTrue())
 	})
+
+	It("UT-INFRA-FLEETDEMO-028 [BR-PLATFORM-014]: preloads only images this harness itself pins", func() {
+		images := fleetGatewayPreloadImages()
+
+		Expect(images).To(ConsistOf(KubeMCPServerImage),
+			"kube-mcp-server is the only external image this harness writes into a manifest it controls")
+
+		for _, image := range images {
+			Expect(image).NotTo(ContainSubstring("ghcr.io/kuadrant/"),
+				"Kuadrant's controller comes from the upstream kustomize overlay and its broker/redis come from the controller's own defaults; a local pin here cannot follow them")
+		}
+	})
 })
 
 var _ = Describe("Kuadrant broker TLS wiring", func() {

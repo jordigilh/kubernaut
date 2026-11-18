@@ -394,13 +394,16 @@ var _ = Describe("Controller Shutdown", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
-			// Simulate a "hung" operation that ignores context
+			// Simulate a "hung" operation that ignores context. Gate completion
+			// explicitly so scheduler delays before the select cannot make the
+			// supposedly hung operation win the race.
 			hungDone := make(chan struct{})
+			hungRelease := make(chan struct{})
 			go func() {
-				// This goroutine ignores context - bad practice but tests timeout
-				time.Sleep(500 * time.Millisecond)
+				<-hungRelease
 				close(hungDone)
 			}()
+			defer close(hungRelease)
 
 			// Shutdown should complete via timeout, not waiting for hung goroutine
 			select {

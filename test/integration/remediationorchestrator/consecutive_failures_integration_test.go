@@ -77,14 +77,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  testNamespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// Wait for Processing phase
@@ -126,14 +128,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			// Wait for controller to initialize RR4 (populate status fields)
@@ -174,14 +178,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  testNamespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// Wait for Processing and simulate failure
@@ -218,14 +224,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr3)
 			Expect(k8sClient.Create(ctx, rr3)).To(Succeed())
 
 			// Simulate success (RR would need to complete full workflow - here we just verify it's not Blocked)
@@ -258,14 +266,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  testNamespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -301,14 +311,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			// Wait for controller to initialize RR4
@@ -352,14 +364,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  testNamespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -395,14 +409,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			// Wait for controller to initialize RR4
@@ -443,14 +459,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  testNamespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -486,14 +504,16 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  testNamespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			// Wait for controller to initialize RR4

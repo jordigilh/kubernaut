@@ -32,9 +32,9 @@ type mockLocalChecker struct {
 	managed map[string]bool
 }
 
-func (m *mockLocalChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (m *mockLocalChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	key := resource.Namespace + "/" + resource.Kind + "/" + resource.Name
-	return m.managed[key], nil
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[m.managed[key]], Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 type mockRemoteChecker struct {
@@ -42,12 +42,12 @@ type mockRemoteChecker struct {
 	err     error
 }
 
-func (m *mockRemoteChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (m *mockRemoteChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if m.err != nil {
-		return false, m.err
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, m.err
 	}
 	key := resource.ClusterID + "/" + resource.Namespace + "/" + resource.Kind + "/" + resource.Name
-	return m.managed[key], nil
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[m.managed[key]], Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
@@ -81,65 +81,114 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(checker).ToNot(BeNil())
 	})
 
-	It("UT-FLEET-FC-001: empty ClusterID delegates to local checker", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+	It("UT-FLEET-FC-001: Fleet empty ClusterID cannot fall back to local checker", func() {
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			Namespace: "default",
 			Kind:      "Deployment",
 			Name:      "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed.State).To(Equal(scope.ScopeInvalid))
 	})
 
-	It("UT-FLEET-FC-002: returns false for unmanaged local resource", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+	It("UT-FLEET-FC-002: missing Fleet attribution remains invalid for any target", func() {
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			Namespace: "default",
 			Kind:      "Deployment",
 			Name:      "redis",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse())
+		Expect(managed.State).To(Equal(scope.ScopeInvalid))
 	})
 
 	It("UT-FLEET-FC-003: non-empty ClusterID routes to remote backend", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
 	})
 
 	It("UT-FLEET-FC-004: remote miss returns an evaluated unmanaged result", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "unknown",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
 	})
 
 	It("UT-FLEET-FC-005: remote error is preserved by the canonical checker", func() {
 		remote.err = fmt.Errorf("connection refused")
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable))
+	})
+
+	It("UT-FLEET-2584-SCOPE-001 [BR-SECURITY-016]: preserves remote errors through the federated checker", func() {
+		remote.err = fmt.Errorf("backend unavailable")
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "nginx"})
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable))
+		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
+	})
+
+	It("UT-FLEET-2592-GVK-001 [SI-10]: rejects a remote identity without explicit Group and Version", func() {
 		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
 		})
-		Expect(err).To(HaveOccurred())
+
 		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid_remote_gvk"))
 	})
 
-	It("UT-FLEET-2584-SCOPE-001 [BR-SECURITY-016]: preserves remote errors through the federated checker", func() {
-		remote.err = fmt.Errorf("backend unavailable")
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Name: "nginx"})
-		Expect(managed).To(BeFalse())
-		Expect(err).To(MatchError(ContainSubstring("backend unavailable")))
+	It("UT-FLEET-2592-TYPED-001 [BR-SCOPE-001, AC-4]: preserves a verified remote decision in the typed contract", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+		Expect(result.Managed).NotTo(BeNil())
+		Expect(*result.Managed).To(BeTrue())
+	})
+
+	It("UT-FLEET-2592-TYPED-002 [BR-SCOPE-001, SI-10]: returns invalid for an ambiguous remote identity", func() {
+		result, err := fc.Check(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+
+		Expect(err).NotTo(HaveOccurred(), "an invalid identity is a completed domain result, not an execution failure")
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Managed).To(BeNil())
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
 })
 
@@ -177,14 +226,16 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
 			fleet.WithClusterLookup(cluster))
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "unknown-cluster",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
 		})
-		Expect(err).To(HaveOccurred())
-		Expect(managed).To(BeFalse(),
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 			"resource from unknown cluster must be rejected at cluster level")
 	})
 
@@ -192,28 +243,32 @@ var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", fu
 		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
 			fleet.WithClusterLookup(cluster))
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"resource from known cluster must proceed to resource-level check")
 	})
 
 	It("UT-SCOPE-P1-003 [AC-3]: skips cluster check when no ClusterLookup is configured", func() {
 		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard())
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "any-cluster",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "default",
 			Name:      "nginx",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged),
 			"without cluster lookup, remote check proceeds normally (backward compat)")
 	})
 })

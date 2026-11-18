@@ -78,15 +78,16 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: unmanagedNS,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  unmanagedNS,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to block the RR with UnmanagedResource reason")
@@ -137,15 +138,16 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: managedNS,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  managedNS,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to process the RR (should NOT be blocked for scope)")
@@ -202,15 +204,16 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: ns,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "test-app",
+					Namespace:  ns,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for RR to be blocked with UnmanagedResource")

@@ -53,6 +53,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	audit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
@@ -77,7 +78,10 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	})
 
 	// Helper to create valid RemediationRequest with all required fields
+	// #2593 (DD-FLEET-015): the target Pod must be observed before scope can
+	// authorize routing, so create it in the managed test namespace.
 	newValidRemediationRequest := func(name, fingerprint string) *remediationv1.RemediationRequest {
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
 		now := metav1.Now()
 		return &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -91,9 +95,10 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: testNamespace, // Use test namespace (has kubernaut.ai/managed=true); "default" is unmanaged and blocks routing
+					Kind:       "Pod",
+					APIVersion: "v1",
+					Name:       "test-pod",
+					Namespace:  testNamespace, // Use test namespace (has kubernaut.ai/managed=true); "default" is unmanaged and blocks routing
 				},
 				FiringTime:   now,
 				ReceivedTime: now,

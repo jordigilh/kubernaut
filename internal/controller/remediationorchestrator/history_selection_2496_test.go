@@ -49,6 +49,7 @@ var _ = Describe("DD-KA-2496 RO history producer (BR-KA-016, BR-AUDIT-005, AU-3,
 		// Standalone local scope; remote-cluster isolation is proved separately
 		// through the fleet and authenticated history integration suites.
 		rr.Spec.TargetResource.Name = "test-deployment"
+		rr.Spec.TargetResource.APIVersion = "apps/v1"
 		ai := newAIAnalysisCompleted("ai-history-2496", defaultFixture, rr.Name, 0.94, "5be40179-af71-4139-a630-7fcebe1891ad")
 		ai.Status.GetRCAResult().SelectedWorkflow.WorkflowName = "Restore memory"
 		ai.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.APIVersion = "apps/v1"

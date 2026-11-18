@@ -150,15 +150,16 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "app",
-					Namespace: nsB,
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+					Name:       "app",
+					Namespace:  nsB,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Completing SP so the RR reaches AI analysis")

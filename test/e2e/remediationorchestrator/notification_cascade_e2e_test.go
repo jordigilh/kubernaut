@@ -29,6 +29,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -73,13 +74,14 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 					FiringTime:        now,
 					ReceivedTime:      now,
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNamespace,
 					},
 				},
 			}
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 
 			// Create NotificationRequest with owner reference
 			notif := &notificationv1.NotificationRequest{
@@ -132,13 +134,14 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 					FiringTime:        now,
 					ReceivedTime:      now,
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: testNamespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "test-app",
+						Namespace:  testNamespace,
 					},
 				},
 			}
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 
 			// Create multiple NotificationRequests with owner references
 			notif1 := &notificationv1.NotificationRequest{

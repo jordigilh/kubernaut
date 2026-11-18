@@ -372,14 +372,16 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 						SignalType:        "test-type",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: namespace,
+							Kind:       "Pod",
+							APIVersion: "v1",
+							Name:       "test-pod",
+							Namespace:  namespace,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -416,14 +418,16 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 					SignalType:        "test-type",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: namespace,
+						Kind:       "Pod",
+						APIVersion: "v1",
+						Name:       "test-pod",
+						Namespace:  namespace,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			By("Waiting for RR4 to transition to Blocked")

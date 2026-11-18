@@ -86,6 +86,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind: "Deployment", Name: "test-app", Namespace: testNamespace,
+					APIVersion: "apps/v1",
 				},
 				ClusterID:    clusterID,
 				FiringTime:   now,

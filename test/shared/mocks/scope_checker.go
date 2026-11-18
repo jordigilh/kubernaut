@@ -17,18 +17,18 @@ var _ scope.ScopeChecker = (*ErrorScopeChecker)(nil)
 // should pass through.
 type AlwaysManagedScopeChecker struct{}
 
-// IsManagedResource always returns (true, nil).
-func (m *AlwaysManagedScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return true, nil
+// Check always returns (true, nil).
+func (m *AlwaysManagedScopeChecker) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedManaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // NeverManagedScopeChecker is a mock that always returns managed=false.
 // Use in tests that specifically validate unmanaged resource blocking.
 type NeverManagedScopeChecker struct{}
 
-// IsManagedResource always returns (false, nil).
-func (m *NeverManagedScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
-	return false, nil
+// Check always returns (false, nil).
+func (m *NeverManagedScopeChecker) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedUnmanaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 // ErrorScopeChecker is a mock that always returns an error.
@@ -37,10 +37,10 @@ type ErrorScopeChecker struct {
 	Err error
 }
 
-// IsManagedResource always returns (false, error).
-func (m *ErrorScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
+// Check always returns (false, error).
+func (m *ErrorScopeChecker) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if m.Err != nil {
-		return false, m.Err
+		return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, m.Err
 	}
-	return false, fmt.Errorf("scope infrastructure error")
+	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable}, fmt.Errorf("scope infrastructure error")
 }

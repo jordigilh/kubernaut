@@ -13,7 +13,6 @@ import (
 	"time"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
@@ -337,12 +336,18 @@ func (s *Service) authorizeInventoryTarget(ctx context.Context, user *auth.UserI
 	if s.dependencies.ScopeChecker == nil {
 		return stateError(inventory.StateUnavailable, errors.New("remote scope checker unavailable"))
 	}
-	managed, err := s.dependencies.ScopeChecker.IsManagedResource(ctx, resource.Identity())
+	result, err := s.dependencies.ScopeChecker.Check(ctx, resource.Identity())
 	if err != nil {
 		return stateError(inventory.StateUnavailable, err)
 	}
-	if !managed {
+	if err := result.Validate(); err != nil {
+		return stateError(inventory.StateUnavailable, err)
+	}
+	if result.State == scope.ScopeVerifiedUnmanaged {
 		return stateError(inventory.StateNotFound, inventory.ErrNotFound)
+	}
+	if result.State != scope.ScopeVerifiedManaged {
+		return stateError(inventory.StateUnavailable, inventory.ErrUnavailable)
 	}
 	return nil
 }
@@ -458,11 +463,6 @@ func (s *Service) readStreamingHistory(ctx context.Context, source StreamingHist
 	}); err != nil {
 		return nil, fmt.Errorf("list AIAnalysis history: %w", err)
 	}
-	if err := source.ForEachSignalProcessing(ctx, func(record spv1.SignalProcessing) error {
-		return s.addSignalProcessingHistoryRecord(record, targets, index, workingSet)
-	}); err != nil {
-		return nil, fmt.Errorf("list SignalProcessing history: %w", err)
-	}
 	return index, nil
 }
 
@@ -476,37 +476,21 @@ func (s *Service) readLegacyHistory(ctx context.Context, targets map[string]stru
 			return nil, err
 		}
 	}
-	spRecords, err := s.dependencies.History.ListSignalProcessing(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list SignalProcessing history: %w", err)
-	}
-	for _, record := range spRecords {
-		if err := s.addSignalProcessingHistoryRecord(record, targets, index, workingSet); err != nil {
-			return nil, err
-		}
-	}
 	return index, nil
 }
 
 func (s *Service) addAIHistoryRecord(record aianalysisv1.AIAnalysis, targets map[string]struct{}, index historyIndex, workingSet *retainedWorkingSet) error {
 	target := record.Spec.AnalysisRequest.SignalContext.TargetResource
-	identity := identityFromAI(record, target)
+	identity, err := identityFromAI(record, target)
+	if err != nil {
+		return nil //nolint:nilerr // Unidentifiable history is intentionally omitted.
+	}
 	evaluation := HistoricalEvaluation{Source: "AIAnalysis", ObservedAt: objectTime(record.CreationTimestamp, record.Status.CompletedAt)}
 	if record.Status.Approval != nil && record.Status.Approval.ApprovalContext != nil && record.Status.Approval.ApprovalContext.PolicyEvaluation != nil {
 		policy := record.Status.Approval.ApprovalContext.PolicyEvaluation
 		evaluation.PolicyHash = bounded(policy.PolicyHash, 128)
 		evaluation.MatchedRules = boundedStrings(policy.MatchedRules, 16, 128)
 		evaluation.Decision = string(policy.Decision)
-	}
-	return s.addHistoricalRecord(index, targets, historicalRecord{target: identity, evaluation: evaluation}, workingSet)
-}
-
-func (s *Service) addSignalProcessingHistoryRecord(record spv1.SignalProcessing, targets map[string]struct{}, index historyIndex, workingSet *retainedWorkingSet) error {
-	target := record.Spec.Signal.TargetResource
-	identity := identityFromSignalProcessing(record, target)
-	evaluation := HistoricalEvaluation{Source: "SignalProcessing", ObservedAt: objectTime(record.CreationTimestamp, record.Status.CompletionTime)}
-	if record.Status.SignalClassification != nil {
-		evaluation.PolicyHash = bounded(record.Status.SignalClassification.PolicyHash, 128)
 	}
 	return s.addHistoricalRecord(index, targets, historicalRecord{target: identity, evaluation: evaluation}, workingSet)
 }
@@ -537,34 +521,18 @@ func (s *Service) addHistoricalRecord(index historyIndex, targets map[string]str
 	return nil
 }
 
-func identityFromAI(record aianalysisv1.AIAnalysis, target aianalysisv1.TargetResource) scope.ResourceIdentity {
-	group, version := parseAPIVersion(target.APIVersion)
-	if group == "" && version == "" {
-		gvk := scope.InferGVK(target.Kind)
-		group, version = gvk.Group, gvk.Version
+func identityFromAI(record aianalysisv1.AIAnalysis, target aianalysisv1.TargetResource) (scope.ResourceIdentity, error) {
+	group, version, err := scope.ParseAPIVersion(target.APIVersion)
+	if err != nil {
+		return scope.ResourceIdentity{}, err
 	}
 	clusterID := record.Spec.ClusterID
 	if clusterID == "" {
 		clusterID = LocalClusterID
 	}
-	return scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
-}
-
-func identityFromSignalProcessing(record spv1.SignalProcessing, target spv1.ResourceIdentifier) scope.ResourceIdentity {
-	gvk := scope.InferGVK(target.Kind)
-	clusterID := record.Spec.Signal.ClusterID
-	if clusterID == "" {
-		clusterID = LocalClusterID
-	}
-	return scope.ResourceIdentity{ClusterID: clusterID, Group: gvk.Group, Version: gvk.Version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
-}
-
-func parseAPIVersion(apiVersion string) (string, string) {
-	parts := strings.SplitN(apiVersion, "/", 2)
-	if len(parts) == 1 {
-		return "", parts[0]
-	}
-	return parts[0], parts[1]
+	identity := scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: target.Kind, Namespace: target.Namespace, Name: target.Name}
+	_, err = scope.GVKForIdentity(identity)
+	return identity, err
 }
 
 func objectTime(created metav1.Time, completed *metav1.Time) time.Time {

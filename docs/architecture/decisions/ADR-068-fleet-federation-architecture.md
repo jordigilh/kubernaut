@@ -32,6 +32,113 @@ The fleet setup guide provisions both `hub` and `remote-cluster` registrations a
 is the operational reference for this topology. An empty `ClusterID` no longer
 identifies the hub in fleet mode.
 
+## Amendment (2026-11-16): Bounded ACM scope-safety contract (#2592)
+
+This amendment defines the shared safety boundary for remote scope decisions.
+It applies to BR-SCOPE-001 and the AC-4, AC-6, and SI-10 control objectives.
+
+### Exact remote resource identity
+
+`scope.ResourceIdentity` carries `Group`, `Version`, and `Kind` separately.
+For every non-empty `ClusterID`, `Group` and `Version` are mandatory. Core
+resources use `Version: "v1"` and an empty `Group`; grouped resources use the
+exact Kubernetes API group and version. `Kind` is never used to infer a remote
+GVK, and no discovery call is permitted to fill in a missing or partial GVK.
+
+Gateway and Remediation Orchestrator parse the persisted signal/RR
+`TargetResource.APIVersion` at their production scope boundaries and pass the
+resulting group/version to the shared checker. A missing, partial, or malformed
+`APIVersion` is rejected before a scope backend is called or a remediation is
+authorized — for remote **and** local targets alike, since no previous
+instances are supported: Kind-only identity is never inferred anywhere in the
+authorization path.
+
+**GVK determination (#2592 amendment)**: *determination from live discovery is
+not inference.* When a signal arrives at the Gateway scope gate with a Kind but
+no `apiVersion` (its adapter could not determine one), the gate DETERMINES the
+GVK from the same `APIResourceRegistry` discovery snapshot the Prometheus
+adapter uses (#2066): the Kind's GVR is used when — and only when — discovery
+maps it to exactly one group/version, the generic Kubernetes types (Deployment,
+Pod, ...) being the canonical case. A Kind that no discovered resource serves,
+or that a CRD or external resource shares with another group (multiple
+candidates), cannot be determined and is rejected and counted as
+`invalid_target_identity`; the gate never guesses and no existence probe runs
+in the authorization path. RO keeps the stricter parse-only boundary: RRs are
+persisted documents whose `spec.targetResource.apiVersion` the author must
+supply. API Frontend's `create_rr` tool enforces the same
+requirement at its input boundary so unidentifiable RRs are not created.
+
+Gateway distinguishes the two rejection outcomes observably: an unmanaged
+target is rejected with `unmanaged_resource`, while a missing/malformed
+identity is rejected with `invalid_target_identity` (both counted in
+`SignalsRejectedTotal`); neither is surfaced as a retryable 5xx. RO blocks
+identity-defective RRs with a message naming `spec.targetResource.apiVersion`
+as the field to correct, not label guidance.
+
+**Local GVK surface and RBAC**: because the local Manager now performs a
+metadata-only informer read for *any* kind carrying an explicit GVK (not only
+the static `ScopeGVKs()` allowlist), Gateway/RO RBAC must grant `list`+`watch`
+on the GroupVersionKinds their adapters can legitimately emit. Kinds outside
+the granted surface fail closed with an infrastructure error (informer/RBAC
+failure), which is observable and never silently widens scope.
+
+**Legacy boolean lane (scopecache)**: the additive typed contract is not yet
+consumed by Gateway/RO, which still use the boolean `IsManagedResource` seam.
+The Valkey scopecache lane's semantics differ from ACM Search by design: the
+FMC syncer writes only label-matching resources, so a cache **miss** resolves
+to verified-unmanaged within sync freshness, and `legacyScopeResult` marks that
+provenance as `legacy`. ACM Search remains fail-closed on missing/ambiguous
+identity (observable error), as specified above.
+
+### Label precedence and unavailable outcomes
+
+The shared ADR-053 resolver remains the single label algorithm:
+
+1. A valid resource label (`true` or `false`) is decisive.
+2. A namespaced resource with no resource label may inherit the namespace label.
+3. Cluster-scoped resources never inherit namespace scope.
+4. An invalid managed label is `unavailable`/invalid, not absent; it never falls
+   through to namespace inheritance.
+
+Backend errors, missing/ambiguous Search identity, and insufficient visibility
+remain observable errors. They must not be converted into an authoritative
+`managed=false` result. The additive typed scope contract represents verified
+managed, verified unmanaged, invalid, unavailable, unsupported, and
+unauthorized outcomes; only the two verified states may authorize a decision.
+
+### ACM Search visibility and ownership
+
+The ACM adapter must query and exact-match `cluster`, `apigroup`, `apiversion`,
+`kind`, `namespace`, and `name` for a remote resource. Search existence alone
+does not establish Kubernaut scope. A missing resource or namespace result is
+ambiguous when the caller lacks Search visibility, so the adapter returns an
+observable unavailable error rather than treating the target as unmanaged.
+
+The ACM platform/operator owns Search availability and visibility setup:
+
+- enable the validated fine-grained-RBAC Search mode and `klusterlet-addon-search`
+  collectors;
+- bind the read-only `global-search-user` role to the configured reader
+  ServiceAccount and grant only the required `userpermissions` list access;
+- grant the reader `view` visibility in each managed-cluster namespace that it
+  is authorized to inspect; and
+- provision TLS CA trust, short-lived token rotation, and network policy.
+
+Kubernaut owns the adapter-side exact identity, label-precedence, error, and
+fail-closed behavior. It does not request `cluster-admin`, infer identities,
+fall back to another cluster, or silently widen Search visibility. This bounded
+contract does not enable the separate ACM inventory/Console qualification or
+the dedicated FMC/Search E2E lane.
+
+### Amendment note (2026-11-16): owner-resolution GVK propagation
+
+`ResolveFingerprintWithCluster` now prefers the APIVersion-aware owner-resolution
+extension and carries the resolved owner's `apiVersion` into the signal target.
+The Fleet Gateway path preserves this contract because its reader factory creates
+an `ownerchain.K8sOwnerResolver` for each remote cluster, which implements the
+extension structurally. Legacy resolvers remain fail-closed under the strict GVK
+scope gate rather than guessing an API version.
+
 ## Context
 
 Kubernaut's single-cluster architecture cannot federate remediation across multiple managed clusters. Issue #54 requires:
@@ -357,7 +464,7 @@ Therefore:
 
 | Risk | Mitigation |
 |------|-----------|
-| Valkey unavailable | FederatedScopeChecker returns `false` (fail-safe: rejects unmanaged) |
+| Valkey unavailable | `Check` returns `unavailable` or an execution error; GW/RO/AF fail closed without asserting verified unmanaged (DD-FLEET-015) |
 | MCP Gateway down | ResilientClient reconnects with backoff; fail-closed readiness gate (see below) flips `/readyz` to `NotReady` and removes the pod from service |
 | Stale cache (resource label removed) | TTL-based expiry (45s); false positive window bounded |
 | OAuth2 IdP unreachable | TokenTimeout (10s) prevents indefinite hangs |
@@ -795,9 +902,19 @@ type ResourceIdentity struct {
 // construction time based on fleet.backend config. Zero changes to consumers
 // when swapping backends.
 type ScopeChecker interface {
-    IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
+    Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
 }
 ```
+
+**Approved pre-GA replacement (2026-11-16, DD-FLEET-015):** `ScopeResult` carries
+only `state` and determining-observation `provenance` on the wire. States are
+`verified_managed`, `verified_unmanaged`, `unavailable`, `unsupported`, `invalid`
+and `unauthorized`. Only verified managed authorizes action. Completed domain
+outcomes return nil error; execution/cancellation/protocol errors override any
+result. Target presence precedes inheritance; missing target/namespace evidence
+is unavailable, invalid labels cannot inherit, and cluster-scoped target checks
+remain unsupported. Boolean compatibility is removed atomically. Earlier dated
+boolean examples/qualification records are historical, not the current contract.
 
 **What this replaced** (all removed):
 
@@ -818,8 +935,12 @@ scopeChecker, err := fleet.NewScopeChecker(localChecker, cfg.Fleet, logger)
 ```go
 // pkg/fleet/scope_factory.go — as-built (verified against source 2026-07-26)
 func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger, opts ...ScopeCheckerOption) (scope.ScopeChecker, error) {
-    if !cfg.Enabled || cfg.EffectiveEndpoint() == "" {
+    if !cfg.Enabled {
         return localChecker, nil // single-cluster / fleet disabled: no regression
+    }
+    endpoint := cfg.EffectiveEndpoint()
+    if endpoint == "" {
+        return nil, fmt.Errorf("fleet: enabled scope backend requires an endpoint")
     }
     switch cfg.effectiveBackend() {
     case BackendFMC:
@@ -842,14 +963,14 @@ and `local.NewChecker` — none of the last three ever existed (`pkg/fleet/contr
 has never been created; see the Implementation Status table below, which correctly
 marks Rancher and Clusterpedia `Planned (v1.6)`). The real factory instead: takes
 the caller's own local checker (typically `scope.Manager`) as a required parameter
-and returns it unchanged when fleet is disabled/unconfigured — that's what provides
+and returns it unchanged when fleet is disabled — that's what provides
 the "no regression" guarantee, not a `case "local"` branch; and only dispatches to
 `BackendFMC`/`BackendACM` today, wrapping the selected remote checker together with
 `localChecker` via `NewFederatedScopeChecker(...)`.
 
-Each implementation handles the `ClusterID` routing internally:
-- `ClusterID == ""` → local K8s API check (resource/namespace label lookup)
-- `ClusterID != ""` → backend-specific remote check (FMC REST, ACM GraphQL, etc.)
+Current routing (DD-FLEET-015): the disabled-Fleet factory uses local K8s scope.
+With Fleet enabled, empty attribution is invalid and every explicit registered ID,
+including `hub`, uses the selected remote backend. No local fallback is allowed.
 
 Single-cluster deployments use `backend: "local"` (or omit `fleet` config entirely) —
 no regression, no FMC/Valkey dependency.
@@ -869,7 +990,7 @@ MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query t
 | **Service** | `cmd/fmc/` — HTTP server + MCP poller + Valkey cache |
 | **Storage** | Valkey (co-owned with DataStorage) — internal to FMC, not exposed to consumers |
 | **Read API** | REST endpoint for scope checks and cluster listing |
-| **Latency** | p95 < 1ms (Valkey EXISTS behind the API) |
+| **Read authority** | Complete observed target/namespace metadata with UID, registration revision, writer fence, generation and valid TTL proof; existence alone cannot authorize |
 | **Staleness** | Bounded by sync interval (default 30s) + TTL (45s) |
 | **Dependencies** | MCP Gateway, Valkey, MCP Server per cluster |
 | **Config** | `fleet.backend: "fmc"`, `fleet.fmc.endpoint: "http://fmc.kubernaut-system.svc:8080"` |
@@ -877,8 +998,11 @@ MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query t
 **FMC REST API contract**:
 
 ```
-GET /api/v1/scope/check?cluster={clusterID}&namespace={ns}&kind={kind}&name={name}
-→ 200 {"managed": true}  or  {"managed": false}
+GET /api/v1/scope/check?cluster={clusterID}&group={group}&version={version}&namespace={ns}&kind={kind}&name={name}
+→ 200 {"state":"verified_managed","provenance":"resource-label"}
+→ 200 {"state":"verified_unmanaged","provenance":"namespace-label"}
+→ 400 missing or partial GVK (version mandatory; group optional for the core API) — #2592, SI-10
+→ 503 {"state":"unavailable","provenance":"unavailable"} (cluster not registered, or scope check failed — never an authoritative managed=false)
 
 GET /api/v1/clusters
 → 200 {"clusters": [{"id": "prod-east", "name": "Production East"}, ...]}
@@ -886,6 +1010,14 @@ GET /api/v1/clusters
 GET /healthz
 → 200 OK
 ```
+
+The scope response is ordinary `application/json`, exactly two required members,
+with no `managed` or diagnostics. Invalid request identity/GVK uses 400; invalid
+observed labels or unsupported targets use 422; typed backend denial uses 403.
+Middleware 401/403/500 and non-GET 405 remain separate. The strict bounded client
+rejects duplicate/unknown/missing/null/wrong-type members, trailing data and
+state/provenance/status mismatches. At most three attempts within two seconds
+apply only to transient transport failures or valid unavailable responses.
 
 **FMC connectivity requirements**:
 
@@ -936,6 +1068,8 @@ query scopeCheck($input: [SearchInput]) {
     "input": [{
         "filters": [
             {"property": "kind",      "values": ["Deployment"]},
+            {"property": "apigroup",  "values": ["apps"]},
+            {"property": "apiversion","values": ["v1"]},
             {"property": "name",      "values": ["nginx"]},
             {"property": "namespace", "values": ["production"]},
             {"property": "cluster",   "values": ["prod-east"]},
@@ -944,7 +1078,8 @@ query scopeCheck($input: [SearchInput]) {
         "limit": 1
     }]
 }
-# → count > 0 means managed
+# → one exact, visible, label-qualified identity is required; count alone is not
+# an authorization result when Search visibility is incomplete or ambiguous.
 
 # Cluster listing:
 query listClusters($input: [SearchInput]) {
@@ -995,7 +1130,8 @@ query listClusters($input: [SearchInput]) {
 > and the MCH setting restored. See `docs/tests/2584/TEST_PLAN.md` §16.3.
 
 Kubernaut's ACM adapter queries the Search GraphQL API for resource metadata (name,
-namespace, kind, cluster, labels). ACM Search controls result visibility through two
+namespace, group, version, kind, cluster, labels) and exact-matches the complete
+remote identity before applying the shared label resolver. ACM Search controls result visibility through two
 independent RBAC layers:
 
 1. **K8s RBAC** — standard ClusterRole/ClusterRoleBinding for API access
@@ -1211,6 +1347,12 @@ If `count: 0` is returned despite managed clusters existing, check:
 | `userpermissions` ClusterRole + ClusterRoleBinding | Allows search-api to check SA's permissions | Yes |
 | `view` RoleBinding in managed cluster namespace | Makes SA visible to `userpermissions` API for that cluster | Yes (per cluster) |
 
+The reader identity is owned by the ACM/platform deployment. Kubernaut services
+consume the configured token and CA as read-only client credentials; they do not
+create managed-cluster RoleBindings or modify Search/MCH configuration at
+runtime. A Search response with no visible exact identity is unavailable for
+scope authorization, not proof of an unmanaged resource.
+
 **ACM Search schema verification**: Filter properties (`kind`, `name`, `namespace`, `cluster`,
 `label`) are confirmed in the ACM Search schema (`searchSchema` query returns `allProperties`).
 Label values use `key=value` format per the
@@ -1414,6 +1556,8 @@ Migration status:
 | RBAC (FMC) | Read-only on MCPRoute / Backend CRDs |
 | RBAC (K8s MCP Server) | Read verbs for investigation/sync, write verbs for remediation; gateway OPA gates which callers can invoke write tools |
 | No credential leakage | Kubernaut services hold gateway OAuth2 credentials only; no per-cluster SA tokens or API keys |
+| ACM Search scope visibility (BR-SCOPE-001, AC-6) | Platform-owned reader ServiceAccount with `global-search-user`, `userpermissions:list`, and per-cluster `view` visibility; Kubernaut requests exact cluster/GVK/resource identity and never widens visibility |
+| ACM Search transport (SC-8, IA-5) | TLS CA verification and rotated bearer token are deployment inputs; missing/invalid identity or Search visibility fails closed |
 | Authentication (GW/RO → FMC, Issue #1993) | TokenReview (authenticate ServiceAccount bearer token) + SubjectAccessReview (authorize `get` on `services/fleetmetadatacache-service`) via `pkg/shared/auth`; closes the gap where NetworkPolicy-only segmentation was the sole boundary control |
 | RBAC (GW/RO → FMC client, Issue #1993) | `fmc-scope-check-client` ClusterRole grants only `get` on the named `fleetmetadatacache-service`; bound solely to the `gateway` and `remediationorchestrator-controller` ServiceAccounts (`charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml`) |
 

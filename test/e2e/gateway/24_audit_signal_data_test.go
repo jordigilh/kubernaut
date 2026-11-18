@@ -956,9 +956,10 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"message": "Container exceeded memory limit (cross-type test)",
 				"type":    "Warning",
 				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "payment-service-recurring",
-					"namespace": sharedNamespace,
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"name":       "payment-service-recurring",
+					"namespace":  sharedNamespace,
 				},
 				"source": map[string]interface{}{
 					"component": "kubelet",

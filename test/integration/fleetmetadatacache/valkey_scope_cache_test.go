@@ -116,40 +116,38 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 	})
 
 	It("IT-FLEET-VALKEY-004: FederatedScopeChecker reads through to Valkey for remote cluster", func() {
-		// Issue #54 SOC2 gap RCA: pkg/fleet/fmc/syncer.go always writes cache
-		// keys using the resource's real GVK read from the K8s API ("apps/v1"
-		// for StatefulSet), never an empty group/version. This fixture must
-		// match that production write path -- scope.ResourceIdentity below
-		// intentionally leaves Group/Version empty (as real callers such as
-		// Gateway's validateScope do) and relies on
-		// scopecache.Client.IsManagedResource inferring "apps/v1" from Kind
-		// (see pkg/shared/scope.InferGVK), exactly as scope.Manager already
-		// does for local checks.
+		// Remote scope checks use the exact GVK written by the syncer. Kind-only
+		// inference is retained only for local compatibility callers.
 		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "StatefulSet", "data", "redis-master")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "StatefulSet",
 			Namespace: "data",
 			Name:      "redis-master",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"IT-FLEET-VALKEY-004: FederatedScopeChecker must find managed resource via Valkey")
 	})
 
-	It("IT-FLEET-VALKEY-005: FederatedScopeChecker returns false for unmanaged remote resource", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+	It("IT-FLEET-VALKEY-005: FederatedScopeChecker reports an unobserved remote resource as unavailable", func() {
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
 			Kind:      "Deployment",
 			Namespace: "orphan-ns",
 			Name:      "no-such-deploy",
 		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse(),
-			"IT-FLEET-VALKEY-005: Unmanaged resource must return false from FederatedScopeChecker")
+		Expect(err).NotTo(HaveOccurred(),
+			"a cache miss is unavailable and must not be reported as verified unmanaged")
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable),
+			"IT-FLEET-VALKEY-005: unavailable scope must never be reported as managed")
 	})
 
 	// Issue #2311: pkg/shared/scope.Manager's 2-level hierarchy (ADR-053,
@@ -171,17 +169,21 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		nsKey, err := scopecache.BuildKey("prod-west", "", "v1", "Namespace", "", "demo-checkout")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, nsKey, 30*time.Second)).To(Succeed())
-		// Deliberately do NOT write a resource-level key -- the pod itself
-		// carries no label in this scenario, only its namespace does.
+		resourceKey, err := scopecache.BuildKey("prod-west", "", "v1", "Pod", "demo-checkout", "worker-5f74bb54f7-28jpv")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writer.SetObservation(ctx, resourceKey, scope.LabelStateAbsent, 30*time.Second)).To(Succeed())
+		// The resource is verified present but carries no managed label; only
+		// its managed namespace should authorize it.
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Version:   "v1",
 			Kind:      "Pod",
 			Namespace: "demo-checkout",
 			Name:      "worker-5f74bb54f7-28jpv",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"IT-FLEET-VALKEY-006: a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources through the real Valkey-backed chain, same as local (ADR-053 parity)")
 	})
 
@@ -192,16 +194,19 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		nsKey, err := scopecache.BuildKey("prod-west", "", "v1", "Namespace", "", "worker-node-7")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, nsKey, 30*time.Second)).To(Succeed())
+		nodeKey, err := scopecache.BuildKey("prod-west", "", "v1", "Node", "", "worker-node-7")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writer.SetObservation(ctx, nodeKey, scope.LabelStateAbsent, 30*time.Second)).To(Succeed())
 
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+		managed, err := fc.Check(ctx, scope.ResourceIdentity{
 			ClusterID: "prod-west",
+			Version:   "v1",
 			Kind:      "Node",
 			Namespace: "",
 			Name:      "worker-node-7",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse(),
+		Expect(managed.State).To(Equal(scope.ScopeUnsupported),
 			"IT-FLEET-VALKEY-007: Node is cluster-scoped and must only ever be resolved from its own resource-level label")
 	})
 })
-

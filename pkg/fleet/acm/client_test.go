@@ -47,6 +47,33 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}
 	})
 
+	DescribeTable("UT-ACM-2593-OBS-001 [BR-SCOPE-001]: S06/S11 incomplete or mismatched exact Search evidence cannot authorize",
+		func(old, replacement string, protocolFailure bool) {
+			body := strings.Replace(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`, old, replacement, 1)
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, body)
+			}))
+			result, err := acm.NewClient(server.URL).Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
+			Expect(result.State).To(Equal(scope.ScopeUnavailable))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+			if protocolFailure {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		},
+		Entry("wrong cluster", `"prod-east"`, `"other"`, true),
+		Entry("wrong group", `"apps"`, `"custom.example"`, true),
+		Entry("wrong version", `"apiversion":"v1"`, `"apiversion":"v2"`, true),
+		Entry("wrong kind", `"Deployment"`, `"StatefulSet"`, true),
+		Entry("wrong namespace", `"payments"`, `"other"`, true),
+		Entry("wrong name", `"checkout"`, `"other"`, true),
+		Entry("ambiguous count", `"count":1`, `"count":2`, true),
+		Entry("missing label projection", `,"label":"kubernaut.ai/managed=true"`, ``, false),
+		Entry("null label projection", `"label":"kubernaut.ai/managed=true"`, `"label":null`, false),
+		Entry("wrong label projection type", `"label":"kubernaut.ai/managed=true"`, `"label":true`, false),
+	)
+
 	It("UT-ACM-2584-LIVE-001 [BR-SCOPE-001]: rejects an explicitly unmanaged resource returned by Search", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -54,15 +81,15 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			Expect(err).NotTo(HaveOccurred())
 		}))
 		client = acm.NewClient(server.URL)
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeFalse(), "an explicit false label must override any namespace opt-in")
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged), "an explicit false label must override any namespace opt-in")
 	})
 
 	DescribeTable("UT-ACM-2584-LIVE-005 [BR-SCOPE-001]: resolves live Search resource and namespace labels",
-		func(resourceLabel, namespaceLabel string, expected bool) {
+		func(resourceLabel, namespaceLabel string, expected scope.ScopeState, provenance scope.ScopeSource) {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
 				Expect(err).NotTo(HaveOccurred())
@@ -74,17 +101,39 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 				Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
 			}))
 			client = acm.NewClient(server.URL)
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(managed).To(Equal(expected))
+			Expect(managed.State).To(Equal(expected))
+			Expect(managed.Provenance).To(Equal(provenance))
 		},
-		Entry("explicit true", "other=allowed; kubernaut.ai/managed=true", "", true),
-		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", true),
-		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", false),
-		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", true),
-		Entry("invalid inherits namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", true),
-		Entry("missing labels default unmanaged", "", "", false),
+		Entry("explicit true", "other=allowed; kubernaut.ai/managed=true", "", scope.ScopeVerifiedManaged, scope.ScopeSourceResourceLabel),
+		Entry("explicit true overrides namespace false", "kubernaut.ai/managed=true", "kubernaut.ai/managed=false", scope.ScopeVerifiedManaged, scope.ScopeSourceResourceLabel),
+		Entry("explicit false overrides namespace true", "kubernaut.ai/managed=false", "kubernaut.ai/managed=true", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceResourceLabel),
+		Entry("absent inherits namespace true", "", "kubernaut.ai/managed=true", scope.ScopeVerifiedManaged, scope.ScopeSourceNamespaceLabel),
+		Entry("absent inherits namespace false", "", "kubernaut.ai/managed=false", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceNamespaceLabel),
+		Entry("invalid does not inherit namespace true", "kubernaut.ai/managed=invalid", "kubernaut.ai/managed=true", scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+		Entry("malformed managed label cannot inherit", "kubernaut.ai/managed", "kubernaut.ai/managed=true", scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+		Entry("malformed managed key cannot inherit", "kubernaut.ai/managed =true", "kubernaut.ai/managed=true", scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+		Entry("duplicate does not inherit", "kubernaut.ai/managed=true; kubernaut.ai/managed=true", "kubernaut.ai/managed=true", scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+		Entry("invalid namespace", "", "kubernaut.ai/managed=invalid", scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+		Entry("observed empty projections prove absence", "", "", scope.ScopeVerifiedUnmanaged, scope.ScopeSourceNone),
 	)
+
+	// #2592 (CodeRabbit round 5): an invalid resource label is an invalid
+	// resolution, not a verified unmanaged decision — the typed lane surfaces
+	// it as ScopeInvalid so authorization fails closed instead of laundering
+	// managed=false through ScopeVerifiedUnmanaged.
+	It("UT-ACM-2592-LABEL-001 [BR-SCOPE-001, AC-6]: invalid label is invalid, never verified unmanaged", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			item := map[string]string{"cluster": "prod-east", "apiversion": "v1", "kind": "ConfigMap", "namespace": "payments", "name": "checkout", "label": "kubernaut.ai/managed=invalid"}
+			Expect(json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"searchResult": []interface{}{map[string]interface{}{"count": 1, "items": []interface{}{item}}}}})).To(Succeed())
+		}))
+		client = acm.NewClient(server.URL)
+		result, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid),
+			"an invalid managed label must fail closed as an invalid resolution")
+	})
 
 	DescribeTable("UT-ACM-2592-001 [BR-SECURITY-016]: empty Search results do not prove an unmanaged target",
 		func(missingNamespace bool) {
@@ -93,16 +142,16 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 				Expect(err).NotTo(HaveOccurred())
 				response := `{"data":{"searchResult":[{"count":0,"items":[]}]}}`
 				if missingNamespace && !strings.Contains(string(body), `"Namespace"`) {
-					response = `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"ConfigMap","namespace":"payments","name":"checkout"}]}]}}`
+					response = `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"ConfigMap","namespace":"payments","name":"checkout","label":""}]}]}}`
 				}
 				_, err = io.WriteString(w, response)
 				Expect(err).NotTo(HaveOccurred())
 			}))
 			client = acm.NewClient(server.URL)
 			target := scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"}
-			managed, err := client.IsManagedResource(context.Background(), target)
-			Expect(managed).To(BeFalse())
-			Expect(err).To(HaveOccurred())
+			managed, err := client.Check(context.Background(), target)
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
+			Expect(err).NotTo(HaveOccurred())
 		},
 		Entry("resource not visible", false),
 		Entry("namespace not visible", true),
@@ -114,27 +163,27 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			Expect(err).NotTo(HaveOccurred())
 		}))
 		client = acm.NewClient(server.URL)
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeFalse())
+		Expect(managed.State).To(Equal(scope.ScopeUnsupported))
 	})
 
 	It("UT-ACM-2584-SCOPE-001 [BR-SECURITY-016]: canonical scope checking surfaces Search failures", func() {
 		client = acm.NewClient("http://127.0.0.1:1")
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
-		Expect(managed).To(BeFalse())
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "ConfigMap", Namespace: "payments", Name: "checkout"})
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("UT-ACM-2584-LIVE-006 [BR-SCOPE-001]: infers the GVK when existing callers supply only kind", func() {
+	It("UT-ACM-2584-LIVE-006 [BR-SCOPE-001]: missing explicit GVK is invalid, never inferred", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`))
 			Expect(err).NotTo(HaveOccurred())
 		}))
 		client = acm.NewClient(server.URL)
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed).To(BeTrue())
+		Expect(managed.State).To(Equal(scope.ScopeInvalid))
 	})
 
 	// AC-4: Search existence alone is insufficient; the explicit scope label is required.
@@ -145,13 +194,13 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}))
 		client = acm.NewClient(server.URL)
 
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Group: "apps", Version: "v1",
 			Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 			"AC-4: resource explicitly opted into scope must be reported as managed "+
 				"so the gateway enforces the correct information flow decision")
 	})
@@ -165,13 +214,13 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}))
 		client = acm.NewClient(server.URL)
 
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east", Group: "apps", Version: "v1",
 			Kind: "Deployment", Namespace: "default", Name: "nonexistent",
 		})
 
-		Expect(err).To(HaveOccurred())
-		Expect(managed).To(BeFalse(),
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 			"AC-4: an unverified Search result (count=0) must not become a positive scope decision")
 	})
 
@@ -181,13 +230,13 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		func(setupServer func() string) {
 			client = acm.NewClient(setupServer())
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 
 			Expect(err).To(HaveOccurred(),
 				"SC-7: infrastructure failures must be observable to the caller")
-			Expect(managed).To(BeFalse(),
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 				"SC-7: boundary protection requires unmanaged default when the "+
 					"backend is unreachable or returns an error")
 		},
@@ -219,13 +268,13 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}))
 		client = acm.NewClient(server.URL)
 
-		managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+		managed, err := client.Check(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 		})
 
 		Expect(err).To(HaveOccurred(),
 			"SC-7: GraphQL errors must be observable, not absorbed")
-		Expect(managed).To(BeFalse(),
+		Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 			"SC-7: GraphQL errors must default to unmanaged — the boundary "+
 				"cannot widen due to an authorization or query failure")
 	})
@@ -243,7 +292,7 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		}))
 		client = acm.NewClient(server.URL)
 
-		_, _ = client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+		_, _ = client.Check(context.Background(), scope.ResourceIdentity{
 			ClusterID: "prod-east",
 			Group:     "apps",
 			Version:   "v1",
@@ -388,16 +437,16 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		It("UT-ACM-TLS-001 [SC-8]: should connect to TLS server when CA cert is provided via WithHTTPClient", func() {
 			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
 			}))
 
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(server.Client()))
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"SC-8: TLS connection with valid CA must succeed")
 		})
 
@@ -409,29 +458,29 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 
 			client = acm.NewClient(server.URL)
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).To(HaveOccurred(),
 				"SC-8: TLS failure must be observable to the caller")
-			Expect(managed).To(BeFalse(),
+			Expect(managed.State).To(Equal(scope.ScopeUnavailable),
 				"SC-8: untrusted TLS cert must not allow managed=true — prevents MITM")
 		})
 
 		It("UT-ACM-TLS-003 [SC-8]: WithHTTPClient overrides default transport", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"default","name":"nginx","label":"kubernaut.ai/managed=true"}]}]}}`))
 			}))
 
 			customClient := &http.Client{Timeout: 5 * time.Second}
 			client = acm.NewClient(server.URL, acm.WithHTTPClient(customClient))
 
-			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
-				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			managed, err := client.Check(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "default", Name: "nginx",
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue(),
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged),
 				"SC-8: WithHTTPClient option must be applied correctly")
 		})
 	})

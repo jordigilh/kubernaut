@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	spv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	corev1 "k8s.io/api/core/v1"
 	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
@@ -183,18 +182,6 @@ func (s *KubernetesSource) ListAIAnalysis(ctx context.Context) ([]aianalysisv1.A
 	return records, nil
 }
 
-// ListSignalProcessing returns typed history records for exact-target matching.
-func (s *KubernetesSource) ListSignalProcessing(ctx context.Context) ([]spv1.SignalProcessing, error) {
-	var records []spv1.SignalProcessing
-	if err := s.ForEachSignalProcessing(ctx, func(record spv1.SignalProcessing) error {
-		records = append(records, record)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return records, nil
-}
-
 // ForEachAIAnalysis traverses bounded typed pages and discards each backend
 // page after its records have been handed to the projection callback.
 func (s *KubernetesSource) ForEachAIAnalysis(ctx context.Context, visit func(aianalysisv1.AIAnalysis) error) error {
@@ -212,33 +199,6 @@ func (s *KubernetesSource) ForEachAIAnalysis(ctx context.Context, visit func(aia
 		}
 		nextContinuation := list.Continue
 		if err := validateHistoryContinuation(continuation, nextContinuation, seenContinuations, "AIAnalysis"); err != nil {
-			return err
-		}
-		list.Items = nil
-		if nextContinuation == "" {
-			return nil
-		}
-		continuation = nextContinuation
-	}
-}
-
-// ForEachSignalProcessing traverses bounded typed pages and discards each
-// backend page after its records have been handed to the projection callback.
-func (s *KubernetesSource) ForEachSignalProcessing(ctx context.Context, visit func(spv1.SignalProcessing) error) error {
-	continuation := ""
-	seenContinuations := make(map[string]struct{})
-	for {
-		var list spv1.SignalProcessingList
-		if err := s.reader.List(ctx, &list, &client.ListOptions{Limit: defaultInventoryBackendPageLimit, Continue: continuation}); err != nil {
-			return fmt.Errorf("list SignalProcessing history page: %w", err)
-		}
-		for index := range list.Items {
-			if err := visit(list.Items[index]); err != nil {
-				return err
-			}
-		}
-		nextContinuation := list.Continue
-		if err := validateHistoryContinuation(continuation, nextContinuation, seenContinuations, "SignalProcessing"); err != nil {
 			return err
 		}
 		list.Items = nil

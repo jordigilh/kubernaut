@@ -46,6 +46,7 @@ import (
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 const e2eCancellationFinalizer = "kubernaut.ai/remediationrequest-cancellation"
@@ -69,12 +70,17 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind: "Deployment", Name: "cancel-target", Namespace: targetNamespace,
+					// Issue #2592 scope-safety contract: strict GVK propagation requires
+					// spec.targetResource.apiVersion; without it the deployed RO fails
+					// closed (UnmanagedResource) and never spawns the SignalProcessing
+					// child this spec must acknowledge.
+					APIVersion: "apps/v1",
+					Kind:       "Deployment", Name: "cancel-target", Namespace: targetNamespace,
 				},
 				FiringTime: now, ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = client.IgnoreNotFound(k8sClient.Delete(ctx, rr)) })
 
 		By("waiting for the deployed RO to install its cancellation finalizer")

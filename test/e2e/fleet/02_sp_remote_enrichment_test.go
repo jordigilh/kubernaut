@@ -72,14 +72,17 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 					ClusterID:    "remote-cluster",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      corednsPodName,
-						Namespace: "kube-system",
+						APIVersion: "v1",
+						Kind:       "Pod",
+						Name:       corednsPodName,
+						Namespace:  "kube-system",
 					},
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+		Expect(sp.Spec.Signal.TargetResource.APIVersion).To(Equal("v1"),
+			"BR-INTEGRATION-054: the installed SP schema must preserve the actual remote Pod GVK")
 
 		By("Waiting for KubernetesContext enrichment via MCP gateway (remote cluster)")
 		Eventually(func() bool {

@@ -90,14 +90,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "api-server",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "api-server",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for RO to create SignalProcessing")
@@ -166,14 +168,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "worker-service",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "worker-service",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -241,14 +245,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType:        "pagerduty",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "StatefulSet",
-						Name:      "postgres",
-						Namespace: namespace,
+						Kind:       "StatefulSet",
+						APIVersion: "apps/v1",
+						Name:       "postgres",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -306,14 +312,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType:        "pagerduty",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "cache-service",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "cache-service",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -402,14 +410,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType: "PredictedOOMKill",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "api-server",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "api-server",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for RO to create SignalProcessing")
@@ -474,14 +484,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType: "OOMKilled",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "worker-service",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "worker-service",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate reactive completion")
@@ -551,14 +563,16 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "app",
-						Namespace: namespace,
+						Kind:       "Deployment",
+						APIVersion: "apps/v1",
+						Name:       "app",
+						Namespace:  namespace,
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate 1:1 mapping")
@@ -623,10 +637,12 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind: "Deployment", Name: "api-server", Namespace: namespace,
+						APIVersion: "apps/v1",
 					},
 					FiringTime: now, ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			spName := "sp-" + rrName
