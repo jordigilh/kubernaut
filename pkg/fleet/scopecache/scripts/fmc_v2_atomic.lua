@@ -282,13 +282,13 @@ if op == 'commit' then
     return redis.error_reply('COUNT_MISMATCH')
   end
   -- Proof flags: the TTL triple and empty-partition finalization below are
-  -- the real commit proof. ARGV[13..16] (record/index/status structural
-  -- flags) are RESERVED and deliberately unchecked (#2660 m1): a successful
-  -- repair_reconcile IS the structural proof -- the flags are compile-time
-  -- constants on the writer side (Go's ValidateForCommit and
-  -- hasCleanRepairProof reject any non-eligible proof before the script is
-  -- invoked), so a Lua-side rejection loop over them could never fire. The
-  -- slots are kept to avoid renumbering ARGV[17..21].
+  -- the real commit proof. ARGV[13..16] are RESERVED and deliberately
+  -- unchecked (#2660 m1): RecordValid, IndexValid, StatusValid and
+  -- RecordIndexChecksValid are compile-time constants on the writer side
+  -- (Go's ValidateForCommit and hasCleanRepairProof reject any non-eligible
+  -- proof before the script is invoked), so a Lua-side rejection loop over
+  -- them could never fire. A successful repair_reconcile IS the structural
+  -- proof. The slots are kept to keep 17-21 stable.
   if ARGV[19] ~= '1' then return redis.error_reply('COMMIT_REJECTED') end
   if expected_count == 0 then
     if ARGV[20] ~= '1' or ARGV[17] ~= '0' or ARGV[18] ~= '0' or redis.call('HGET', staged, 'empty_verified') ~= '1' then

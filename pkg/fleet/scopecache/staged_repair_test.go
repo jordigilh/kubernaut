@@ -23,6 +23,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -523,6 +524,82 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			"a commit against a gone staging must unwrap to ErrStaleFence, got: %v", err)
 		Expect(result.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
 			"the result must carry the typed stale-fence code, not commit_rejected")
+	})
+
+	It("UT-FMC-STAGED-012 [BR-SCOPE-001, #2660 m1]: a non-eligible commit proof is still rejected while the reserved slots stay unenforced", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		_, observation := f.identity("checkout", "true")
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{Items: []scopecache.RepairObservation{observation}, Complete: true, PageCount: 1, ItemCount: 1},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Drive the production script directly so the contract under test is
+		// the Lua itself, not the Go wrapper. The fixture's store already
+		// loaded the script, so EVALSHA by digest must resolve.
+		client := redis.NewClient(&redis.Options{Addr: f.server.Addr()})
+		DeferCleanup(func() { _ = client.Close() })
+		manager, err := scopecache.NewScriptManager(client)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(manager.Digest()).ToNot(BeEmpty())
+
+		var stagedStatus, stagedIndex, stagedRecord string
+		for _, key := range f.server.Keys() {
+			switch {
+			case strings.HasSuffix(key, ":status:staged"):
+				stagedStatus = key
+			case strings.HasSuffix(key, ":index:staged"):
+				stagedIndex = key
+			case strings.Contains(key, ":record:staged:"):
+				stagedRecord = key
+			}
+		}
+		Expect(stagedStatus).ToNot(BeEmpty(), "the fixture must have a staged status key")
+		Expect(stagedIndex).ToNot(BeEmpty(), "the fixture must have a staged index key")
+		Expect(stagedRecord).ToNot(BeEmpty(), "the fixture must have a staged record key")
+
+		liveStatus := strings.Replace(stagedStatus, ":staged", "", 1)
+		liveIndex := strings.Replace(stagedIndex, ":staged", "", 1)
+		recordBase, _, found := strings.Cut(stagedRecord, ":record:staged:")
+		Expect(found).To(BeTrue(), "the staged record key must carry the staged record prefix")
+		stagedRecordPrefix := recordBase + ":record:staged:"
+		liveRecordPrefix := strings.Replace(stagedRecordPrefix, ":staged", "", 1)
+
+		refreshTTL := repair.RecordTTL.ExpiresAtMillis - repair.RecordTTL.ServerNowMillis
+		Expect(refreshTTL).To(BeNumerically(">", 0))
+		argv := func(recordTTLFlag string) []interface{} {
+			// [1]=op, [2..9]=identity, [10]=expected count, [11..12]=record
+			// prefixes, [13..16]=reserved structural slots (kept for stable
+			// numbering), [17..20]=proof flags, [21]=refresh TTL millis.
+			return []interface{}{
+				"commit", f.part.RegistrationUID, "1",
+				f.fence.HolderPodUID, f.fence.HolderSessionUID,
+				f.fence.LeaseEpoch, f.fence.Fence, start.Generation, start.Token.Value,
+				1, liveRecordPrefix, stagedRecordPrefix,
+				"1", "1", "1", "1",
+				recordTTLFlag, "1", "1", "0",
+				refreshTTL,
+			}
+		}
+		evalCommit := func(recordTTLFlag string) error {
+			commandArgs := []interface{}{"EVALSHA", manager.Digest(), 4, liveStatus, stagedStatus, liveIndex, stagedIndex}
+			commandArgs = append(commandArgs, argv(recordTTLFlag)...)
+			return client.Do(f.ctx, commandArgs...).Err()
+		}
+
+		// Rejection case FIRST: the control commit consumes the staging.
+		Expect(evalCommit("0")).To(MatchError(ContainSubstring("COMMIT_REJECTED")),
+			"a non-eligible commit proof must still be rejected inside the script")
+		Expect(evalCommit("1")).ToNot(HaveOccurred(), "an all-valid proof must commit")
 	})
 
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {

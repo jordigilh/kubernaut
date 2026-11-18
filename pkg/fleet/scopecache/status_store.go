@@ -302,8 +302,10 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 	}
 	// DD-FLEET-016 A2: the commit is an atomic swap of the staged keyspace
 	// over the live keyspace. ARGV[10]=expected count, [11]=live record
-	// prefix, [12]=staged record prefix, [13..]=proof flags per the Lua
-	// contract.
+	// prefix, [12]=staged record prefix, [13..16]=reserved structural proof
+	// slots (record/index/status/record-index validity -- always "1"; the
+	// real proof is the TTL triple, #2660 m1), [17..20]=proof flags per the
+	// Lua contract.
 	// ARGV[21]: per-record TTL (ms) so the commit refreshes renamed record
 	// expiries from commit time. Derived from the staged reconcile proof;
 	// Repair validates a uniform positive TTL across all observations.
