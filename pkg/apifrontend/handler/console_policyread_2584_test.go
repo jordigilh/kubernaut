@@ -147,7 +147,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(result).To(HaveKey("freshness"))
 		Expect(string(result["state"])).To(Equal(`"empty"`))
 	})
-	It("returns an RFC 7807 error for duplicated filters", func() {
+	It("IT-AF-2584-005 [FedRAMP SI-10]: returns an RFC 7807 error for duplicated filters", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local&cluster_id=other", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -160,7 +160,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring("invalid Console read filter"))
 	})
 
-	It("serializes a successful authenticated inventory page", func() {
+	It("IT-AF-2584-002 [BR-API-001]: serializes a successful authenticated inventory page", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -192,7 +192,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
 	})
 
-	It("rejects service accounts without reading inventory", func() {
+	It("IT-AF-2584-004 [BR-SECURITY-016]: rejects service accounts without reading inventory", func() {
 		reader := &consoleInventoryStub{page: successfulPage()}
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
@@ -206,7 +206,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(reader.listCalls).To(Equal(0))
 	})
 
-	It("maps exact target denial to not_found without leaking the target", func() {
+	It("IT-AF-2584-004 [BR-SECURITY-016]: maps exact target denial to not_found without leaking the target", func() {
 		resource := successfulPage().Items[0]
 		resource.Name = "sensitive-target"
 		reader := &consoleInventoryStub{page: successfulPage(), resource: resource}

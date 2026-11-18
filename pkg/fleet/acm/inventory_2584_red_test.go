@@ -437,6 +437,26 @@ var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func()
 		Expect(resource.ID).To(BeEmpty())
 	})
 
+	It("UT-FLEET-2584-ACM-EMPTY-001 [BR-API-001, SI-10]: reports an applied empty Search as a complete empty page", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, err := io.WriteString(w, emptySearchResponse)
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		DeferCleanup(server.Close)
+
+		page, err := acm.NewClient(server.URL).List(context.Background(), inventory.Filters{ClusterID: "prod-east"})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The AF read boundary validates every reader page before mapping a state.
+		// An empty-but-applied Search must survive that guard as `empty`; claiming
+		// partial completeness here turns a verified empty result into
+		// `unavailable`, which is false operational state.
+		Expect(page.State).To(Equal(inventory.StateEmpty))
+		Expect(page.Completeness).To(Equal(inventory.CompletenessComplete))
+		Expect(page.ObservedAt).NotTo(BeZero())
+		Expect(page.Validate()).To(Succeed())
+	})
+
 })
 
 const testInventoryResourceID = "r-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

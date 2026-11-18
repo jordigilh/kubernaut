@@ -17,7 +17,7 @@ import (
 )
 
 var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection", func() {
-	It("uses the allowlist, preserves scope provenance, and paginates by opaque IDs", func() {
+	It("UT-AF-2584-005, UT-AF-2584-007, IT-AF-2584-007 [BR-SCOPE-001]: uses the allowlist, preserves scope provenance, and paginates by opaque IDs", func() {
 		scheme := runtime.NewScheme()
 		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
@@ -52,7 +52,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: local inventory projection"
 		Expect(resource.ID).To(Equal(page1.Items[0].ID))
 	})
 
-	It("reuses Namespace label resolution within one list operation", func() {
+	It("UT-AF-2584-004 [BR-SCOPE-001]: reuses Namespace label resolution within one list operation", func() {
 		scheme := runtime.NewScheme()
 		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 		namespace := &metav1.PartialObjectMetadata{

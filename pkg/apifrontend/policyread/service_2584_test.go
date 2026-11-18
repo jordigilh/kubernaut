@@ -149,7 +149,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
-	It("projects only exact historical metadata [BR-SCOPE-001, AC-4, AC-6, SI-10]", func() {
+	It("UT-AF-2584-006, UT-AF-2584-009, IT-AF-2584-003 [BR-SCOPE-001, FedRAMP AC-4, AC-6, SI-10]: projects only exact historical metadata", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
 			ID:         policyReadTestResourceID,
@@ -288,7 +288,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(history.spCalls).To(BeZero())
 	})
 
-	It("returns a state-only stale result without records", func() {
+	It("UT-AF-2584-008 [BR-API-001]: returns a state-only stale result without records", func() {
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateStale, Completeness: inventory.CompletenessPartial}},
 			Authorizer:     allowAuthorizer{},
@@ -316,7 +316,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Entry("service account", user("system:serviceaccount:kubernaut-system:af", true)),
 	)
 
-	It("keeps exact backend failures distinct from not-found", func() {
+	It("UT-AF-2584-008 [BR-API-001]: keeps exact backend failures distinct from not-found", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{getErr: inventory.ErrUnavailable},
@@ -329,7 +329,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
 
-	It("maps exact local target authorizer failures to unavailable", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: maps exact local target authorizer failures to unavailable", func() {
 		resourceID := policyReadTestResourceID
 		authorizer := &targetAuthorizer{err: errors.New("subject access review unavailable")}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
@@ -347,7 +347,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(authorizer.target.Resource).To(Equal("deployments"))
 	})
 
-	It("maps exact local target denials to not-found", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: maps exact local target denials to not-found", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{resource: inventory.Resource{
@@ -363,7 +363,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateNotFound))
 	})
 
-	It("fails closed when an exact local resource kind is not allowlisted", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: fails closed when an exact local resource kind is not allowlisted", func() {
 		resourceID := policyReadTestResourceID
 		authorizer := &targetAuthorizer{allowed: true}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
@@ -381,7 +381,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(authorizer.calls).To(BeZero())
 	})
 
-	It("maps malformed exact backend identity to unavailable", func() {
+	It("UT-AF-2584-008 [BR-API-001]: maps malformed exact backend identity to unavailable", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{resource: inventory.Resource{ID: resourceID, ClusterID: "other-cluster", Kind: "Deployment", Version: "v1", Name: "checkout"}},

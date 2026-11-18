@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", func() {
-	It("reads current policy metadata from the operator-generated runtime ConfigMaps", func() {
+	It("UT-AF-2584-001, UT-AF-2584-002 [BR-AI-085, BR-AI-088]: reads current policy metadata from the operator-generated runtime ConfigMaps", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
@@ -47,7 +47,7 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		Expect(policies[1].ConfigMapKey).To(Equal("policy.rego"))
 	})
 
-	It("fails closed when the runtime threshold is missing", func() {
+	It("UT-AF-2584-001 [BR-AI-088]: fails closed when the runtime threshold is missing", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -67,7 +67,7 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		Expect(err).To(MatchError(ContainSubstring("confidenceThreshold")))
 	})
 
-	It("fails closed when the AIAnalysis runtime policy reference is missing", func() {
+	It("UT-AF-2584-002 [BR-AI-085]: fails closed when the AIAnalysis runtime policy reference is missing", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -83,7 +83,7 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		Expect(err).To(MatchError(ContainSubstring("AIAnalysis policy ConfigMap is required")))
 	})
 
-	It("reads only configured ConfigMap keys and lists typed history records", func() {
+	It("UT-AF-2584-006, UT-AF-2584-009 [BR-AI-085]: reads only configured ConfigMap keys and lists typed history records", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
