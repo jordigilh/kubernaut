@@ -46,6 +46,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,11 +70,13 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 		crdClient     ctrl.Client // apiextensions + unstructured capable
 	)
 
-	// crdClientFor2650 builds a client with an apiextensions-capable scheme.
-	// KUBECONFIG is set suite-wide, so config.GetConfig resolves the cluster.
+	// crdClientFor2650 builds a client with an apiextensions + RBAC capable
+	// scheme. KUBECONFIG is set suite-wide, so config.GetConfig resolves the
+	// cluster.
 	crdClientFor2650 := func() ctrl.Client {
 		scheme := runtime.NewScheme()
 		Expect(apiextensionsv1.AddToScheme(scheme)).To(Succeed())
+		Expect(rbacv1.AddToScheme(scheme)).To(Succeed())
 		cfg, err := config.GetConfig()
 		Expect(err).NotTo(HaveOccurred())
 		c, err := ctrl.New(cfg, ctrl.Options{Scheme: scheme})
@@ -81,9 +84,39 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 		return c
 	}
 
+	// grantRouteReadRBAC2650 grants the deployed Gateway's ServiceAccount
+	// get/list/watch on both Route CRD groups. ADR-068 (#2592): the local
+	// scope Manager performs a PartialObjectMetadata informer read for ANY
+	// kind carrying an explicit GVK, and "Gateway/RO RBAC must grant list+watch
+	// on the GroupVersionKinds their adapters can legitimately emit" — without
+	// this grant the exact-GVK scope lookup times out waiting for the informer
+	// to sync and the event is rejected with a 500. This mirrors what a
+	// cluster operator does to make a CRD group remediable.
+	grantRouteReadRBAC2650 := func() {
+		cr := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"},
+			Rules: []rbacv1.PolicyRule{
+				{APIGroups: routeGroups2650, Resources: []string{"routes"}, Verbs: []string{"get", "list", "watch"}},
+			},
+		}
+		Expect(crdClient.Create(ctx, cr)).To(Succeed())
+		binding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"},
+			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "gateway", Namespace: "kubernaut-system"}},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "fp-group-e2e-route-reader"},
+		}
+		Expect(crdClient.Create(ctx, binding)).To(Succeed())
+	}
+
+	revokeRouteReadRBAC2650 := func() {
+		_ = crdClient.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}})
+		_ = crdClient.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}})
+	}
+
 	BeforeAll(func() {
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "fp-group-e2e")
 		crdClient = crdClientFor2650()
+		grantRouteReadRBAC2650()
 
 		// Register both Route CRDs and wait for Established so the Gateway's
 		// exact-GVK scope lookup and owner resolution resolve the kinds.
@@ -132,6 +165,7 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 		if CurrentSpecReport().Failed() {
 			return // preserve state for post-mortem
 		}
+		revokeRouteReadRBAC2650()
 		for _, group := range routeGroups2650 {
 			route := &unstructured.Unstructured{}
 			route.SetGroupVersionKind(schema.GroupVersionKind{Group: group, Version: "v1", Kind: "Route"})
