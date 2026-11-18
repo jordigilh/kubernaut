@@ -19,6 +19,7 @@ package gateway_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -44,6 +45,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -635,6 +638,34 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 			"the determined identity must reach the scope checker")
 		Expect(checker.lastParams.group).To(Equal("apps"))
 		Expect(checker.lastParams.version).To(Equal("v1"))
+
+		By("the determination must be persisted so the RR carries the complete GVK (review C1)")
+		Expect(response.RemediationRequestName).ToNot(BeEmpty())
+		rr := &remediationv1alpha1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, k8stypes.NamespacedName{Name: response.RemediationRequestName, Namespace: "kubernaut-system"}, rr)).To(Succeed())
+		Expect(rr.Spec.TargetResource.APIVersion).To(Equal("apps/v1"),
+			"RO re-parses spec.targetResource.apiVersion under the strict identity gate; an authorization-only determination would strand the RR")
+		Expect(rr.Spec.TargetResource.Kind).To(Equal("Deployment"))
+		Expect(rr.Spec.TargetResource.Name).To(Equal("nginx"))
+	})
+
+	It("UT-GW-2592-DET-004 [BR-SCOPE-001, AC-4, SI-10]: refuses GVK determination from a partially failed discovery snapshot", func() {
+		// Deployment maps to exactly one group here, but discovery FAILED for
+		// one group: the snapshot is incomplete, so a hidden second group
+		// serving the same Kind cannot be excluded and determination must
+		// fail closed (review M1).
+		cs := fakeclientset.NewSimpleClientset()
+		fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+		Expect(ok).To(BeTrue())
+		fd.Resources = []*metav1.APIResourceList{
+			{GroupVersion: "apps/v1", APIResources: []metav1.APIResource{
+				{Name: "deployments", SingularName: "deployment", Kind: "Deployment", Namespaced: true},
+			}},
+		}
+		registry, err := adapters.NewAPIResourceRegistry(&partialDiscoveryFake{fd})
+		Expect(err).NotTo(HaveOccurred(), "partial discovery is tolerated for adapter-side uses")
+		Expect(registry.DetermineKindAPIVersion("Deployment")).To(BeEmpty(),
+			"an incomplete snapshot can hide a second group serving the Kind; determination must not guess")
 	})
 
 	It("UT-GW-2592-DET-002 [BR-SCOPE-001, AC-4, SI-10]: rejects a Kind-only signal whose Kind is ambiguous across groups or CRDs", func() {
@@ -717,4 +748,16 @@ func parsePrometheusSignal(ctx context.Context, namespace, alertName, podName st
 	adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 	payload := createTestSignalPayload(namespace, alertName, podName)
 	return adapter.Parse(ctx, payload)
+}
+
+// partialDiscoveryFake wraps a fake discovery client so
+// ServerGroupsAndResources returns partial results AND an error, mirroring
+// client-go's IsGroupDiscoveryFailedError behavior on real clusters.
+type partialDiscoveryFake struct {
+	discovery.DiscoveryInterface
+}
+
+func (p *partialDiscoveryFake) ServerGroupsAndResources() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+	groups, lists, _ := p.DiscoveryInterface.ServerGroupsAndResources()
+	return groups, lists, errors.New("the server could not find the requested resource (groups failed)")
 }

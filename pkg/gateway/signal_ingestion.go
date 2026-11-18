@@ -499,6 +499,11 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		if determined := s.apiResourceRegistry.DetermineKindAPIVersion(signal.Resource.Kind); determined != "" {
 			logger.Info("Determined target GVK from API discovery (#2592)",
 				"kind", signal.Resource.Kind, "apiVersion", determined)
+			// Persist the determination back onto the signal: the RR carries
+			// signal.Resource.APIVersion into spec.targetResource, and RO's
+			// strict identity gate re-parses it there — an authorization-only
+			// determination would strand the RR as permanently blocked.
+			signal.Resource.APIVersion = determined
 			apiVersion = determined
 		}
 	}
