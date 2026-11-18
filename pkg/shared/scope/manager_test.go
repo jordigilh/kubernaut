@@ -522,8 +522,7 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(node)
 
-			resolution, err := mgr.ResolveWithResourceLabels(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-01"},
-				map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue})
+			resolution, err := mgr.Resolve(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-01"})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.ClusterScoped).To(BeTrue())
 			Expect(resolution.Included).To(BeTrue(), "Cluster-scoped resource with managed label should be managed")
@@ -535,7 +534,7 @@ var _ = Describe("Scope Manager", func() {
 			node := makeNode("worker-02", nil) // no labels
 			setup(node)
 
-			resolution, err := mgr.ResolveWithResourceLabels(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-02"}, nil)
+			resolution, err := mgr.Resolve(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-02"})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.ClusterScoped).To(BeTrue())
 			Expect(resolution.Included).To(BeFalse(), "Cluster-scoped resource without label should be unmanaged (no NS fallback)")
@@ -549,8 +548,7 @@ var _ = Describe("Scope Manager", func() {
 			})
 			setup(node)
 
-			resolution, err := mgr.ResolveWithResourceLabels(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-03"},
-				map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueFalse})
+			resolution, err := mgr.Resolve(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-03"})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.ClusterScoped).To(BeTrue())
 			Expect(resolution.Included).To(BeFalse(), "Cluster-scoped resource with opt-out label should be unmanaged")
