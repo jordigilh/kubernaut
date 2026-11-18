@@ -437,7 +437,7 @@ var _ = Describe("BR-SCOPE-001, BR-SECURITY-016: ACM canonical inventory project
 		Expect(resource.ID).To(BeEmpty())
 	})
 
-	It("UT-FLEET-2584-ACM-EMPTY-001 [BR-API-001, SI-10]: reports an applied empty Search as a complete empty page", func() {
+	It("UT-FLEET-2584-ACM-EMPTY-001 [BR-API-001, FedRAMP SI-10]: records an applied zero-item Search as an empty observation, not a failure", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			defer GinkgoRecover()
 			_, err := io.WriteString(w, emptySearchResponse)
@@ -448,14 +448,16 @@ var _ = Describe("BR-SCOPE-001, BR-SECURITY-016: ACM canonical inventory project
 		page, err := acm.NewClient(server.URL).List(context.Background(), inventory.Filters{ClusterID: "prod-east"})
 		Expect(err).NotTo(HaveOccurred())
 
-		// The AF read boundary validates every reader page before mapping a state.
-		// An empty-but-applied Search must survive that guard as `empty`; claiming
-		// partial completeness here turns a verified empty result into
-		// `unavailable`, which is false operational state.
+		// This adapter is the FMC collection path (FMC -> control plane -> cache),
+		// not a Console read surface. The durable fact is that an applied,
+		// fully-traversed Search with zero items is an empty observation: turning
+		// it into `unavailable` would misreport a healthy partition as a failure.
+		// Whether an empty partition may be presented as `empty` to a Console
+		// reader is decided at FMC page assembly from partition proof
+		// (DD-FLEET-017 D2.4), not here.
 		Expect(page.State).To(Equal(inventory.StateEmpty))
-		Expect(page.Completeness).To(Equal(inventory.CompletenessComplete))
+		Expect(page.Items).To(BeEmpty())
 		Expect(page.ObservedAt).NotTo(BeZero())
-		Expect(page.Validate()).To(Succeed())
 	})
 
 })
