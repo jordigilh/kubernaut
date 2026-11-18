@@ -248,6 +248,31 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 		router.ServeHTTP(consoleRecorder, httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody))
 		Expect(consoleRecorder.Code).To(Equal(http.StatusUnauthorized))
 	})
+
+	It("IT-AF-2584-009 [BR-SECURITY-016, FedRAMP AC-4/AC-6]: keeps both surfaces behind the configured authentication middleware", func() {
+		params := testRouterBuildParams(&dualToolConsoleAuthorizer{})
+		// A distinctive stop code proves the middleware ran: the Console handler
+		// would answer 401 on its own, so 401 could not distinguish the two.
+		params.AuthMiddleware = func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Auth-Middleware", "applied")
+				w.WriteHeader(http.StatusTeapot)
+			})
+		}
+		_, router, err := buildRouterConfig(params)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, probe := range []struct{ method, path string }{
+			{http.MethodPost, "/mcp"},
+			{http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local"},
+			{http.MethodGet, "/api/v1/console/policies/scope?cluster_id=local"},
+		} {
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(probe.method, probe.path, http.NoBody))
+			Expect(recorder.Code).To(Equal(http.StatusTeapot), "%s %s must not bypass the middleware", probe.method, probe.path)
+			Expect(recorder.Header().Get("X-Auth-Middleware")).To(Equal("applied"), probe.path)
+		}
+	})
 })
 
 type projectionAllow struct{}
