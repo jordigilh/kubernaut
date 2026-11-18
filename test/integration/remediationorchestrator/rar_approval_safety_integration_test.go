@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	sharedcancellation "github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	gwhelpers "github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
@@ -471,6 +472,12 @@ var _ = Describe("RAR approval safety production wiring", Label("integration", "
 			Expect(err).NotTo(HaveOccurred())
 			if current.Status.OverallPhase == remediationv1.PhaseCancelling {
 				deliverCancellationNotification(rr.Name)
+				// The SP cancellation acknowledgement is the other half of the
+				// RO-wins-the-race path: this suite deliberately runs no
+				// SignalProcessing controller, so the child would otherwise
+				// hold the finalizer for the full 10-minute cancellation
+				// budget (issue #2588 race, observed on a slow CI runner).
+				acknowledgeSignalProcessingCancellation(rr.Name)
 			}
 			return false
 		}, timeout, interval).Should(BeTrue())
@@ -763,6 +770,26 @@ func setRARSafetyParentPhase(name string, desired remediationv1.RemediationPhase
 // NotificationRequest delivered. This suite deliberately does not start the
 // NR controller, so a parent that entered full cancellation before its test
 // deletion would otherwise wait for a delivery that never happens.
+// acknowledgeSignalProcessingCancellation mirrors the SignalProcessing
+// controller's cancellation acknowledgement (internal/controller/
+// signalprocessing/cancellation.go): terminal phase + CancellationAcknowledged
+// condition, so the parent's cancellation can complete without the child
+// controller running.
+func acknowledgeSignalProcessingCancellation(rrName string) {
+	sp := &signalprocessingv1.SignalProcessing{}
+	key := types.NamespacedName{Name: "sp-" + rrName, Namespace: ROControllerNamespace}
+	if err := k8sManager.GetAPIReader().Get(ctx, key, sp); err != nil {
+		return // not created yet; retry on the next poll tick
+	}
+	if sp.Status.Phase != signalprocessingv1.PhaseCancelled &&
+		sp.Status.Phase != signalprocessingv1.PhaseCompleted &&
+		sp.Status.Phase != signalprocessingv1.PhaseFailed {
+		sp.Status.Phase = signalprocessingv1.PhaseCancelled
+	}
+	sharedcancellation.SetAcknowledged(&sp.Status.Conditions, sp.Generation, "test fixture acknowledgement")
+	_ = k8sClient.Status().Update(ctx, sp)
+}
+
 func deliverCancellationNotification(rrName string) {
 	nr := &notificationv1.NotificationRequest{}
 	key := types.NamespacedName{Name: "nr-cancellation-" + rrName, Namespace: ROControllerNamespace}
