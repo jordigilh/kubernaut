@@ -178,6 +178,7 @@ Tests validate deduplication business outcomes: two cross-group signals → two 
 | BR-GATEWAY-004 | Cross-group fingerprints distinct (GW hash) | P0 | Unit | UT-GW-2650-001..006 | Pending |
 | BR-GATEWAY-004 | Owner-path group seeding | P0 | Unit | UT-GW-2650-007 | Pending |
 | BR-GATEWAY-004 | Cross-group signals → two RRs through ProcessSignal | P0 | Integration | IT-GW-2650-001 | Pending |
+| BR-GATEWAY-004 | Cross-group events → two RRs on deployed Gateway | P0 | E2E | E2E-GW-2650-001 | Pending |
 | BR-GATEWAY-004 | AF create path group dimension | P0 | Unit | UT-AF-2650-001 | Pending |
 | BR-GATEWAY-004 | AF check path group dimension | P0 | Unit | UT-AF-2650-002 | Pending |
 | SI-10 | `api_version` validated on CheckExistingRRArgs | P0 | Unit | UT-AF-2650-003 | Pending |
@@ -225,11 +226,11 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}` (issue-numbered sequences per 
 
 ### Tier 3: E2E Tests
 
-Covered by existing suites via fixture sweep (mock-llm.yaml `api_version` arg, a2a TC-E2E-A2A-T18, fullpipeline `rrFingerprint` helper). No new E2E scenarios.
+Existing suites cover the changed paths via fixture sweep (mock-llm.yaml `api_version` arg, a2a TC-E2E-A2A-T18, fullpipeline `rrFingerprint` helper). Additionally, per the maintainer's #2650 request for cross-group E2E coverage, `E2E-GW-2650-001` (`test/e2e/gateway/40_fingerprint_group_dimension_test.go`) proves the journey on a deployed Gateway: two Route CRDs (route.openshift.io, serving.knative.dev) + same-named standalone Route CRs in a managed namespace, two Warning events with the respective apiVersions → two RRs with distinct fingerprints and correct `TargetResource.APIVersion`.
 
 ### Tier Skip Rationale
 
-- **E2E (new)**: the group dimension is fully proven at UT+IT; existing E2E journeys exercise the changed paths after the fixture sweep.
+- ~~**E2E (new)**: the group dimension is fully proven at UT+IT; existing E2E journeys exercise the changed paths after the fixture sweep.~~ Superseded: E2E-GW-2650-001 added (maintainer request, CodeRabbit follow-up).
 
 ---
 
