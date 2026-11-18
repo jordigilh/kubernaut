@@ -135,6 +135,7 @@ Tests validate deduplication business outcomes: two cross-group signals → two 
 1. All RED tests (UT-GW-2650-001..007, UT-AF-2650-001..003, IT-GW-2650-001, IT-AF-2650-001, parity) pass
 2. `go build ./...`, `golangci-lint run --timeout=5m`, `make test` green; zero regressions
 3. CHECKPOINT W passes: no fingerprint call site left without the group
+4. A passing `E2E-GW-2650-001` run on the deployed Gateway (CI `E2E (gateway)` lane) — the cross-group journey is P0 in the BR coverage matrix and MUST be exercised, not just present
 
 **FAIL** — any P0 test fails, or any pre-existing suite regresses without a fixture-rule justification.
 

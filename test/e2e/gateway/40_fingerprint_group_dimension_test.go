@@ -41,6 +41,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -109,14 +110,22 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 	}
 
 	revokeRouteReadRBAC2650 := func() {
-		// Only NotFound is ignorable; other deletion failures are reported
-		// (a leftover fixed-name RBAC object would break later setup with
-		// AlreadyExists). Both deletions are attempted regardless.
+		// Only NotFound is ignorable. Other deletion failures are collected
+		// and FAIL the suite after both deletions are attempted: a leftover
+		// fixed-name RBAC object would break a rerun on the same cluster
+		// with AlreadyExists, so a silently-passing suite with a leftover
+		// fixture is worse than a failed teardown.
+		var leftovers []string
 		if err := crdClient.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}}); err != nil && !apierrors.IsNotFound(err) {
-			logger.Error(fmt.Errorf("delete ClusterRoleBinding: %w", err), "cleanup: fp-group-e2e-route-reader")
+			logger.Error(err, "cleanup: deleting ClusterRoleBinding fp-group-e2e-route-reader")
+			leftovers = append(leftovers, "ClusterRoleBinding: "+err.Error())
 		}
 		if err := crdClient.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}}); err != nil && !apierrors.IsNotFound(err) {
-			logger.Error(fmt.Errorf("delete ClusterRole: %w", err), "cleanup: fp-group-e2e-route-reader")
+			logger.Error(err, "cleanup: deleting ClusterRole fp-group-e2e-route-reader")
+			leftovers = append(leftovers, "ClusterRole: "+err.Error())
+		}
+		if len(leftovers) > 0 {
+			Fail(fmt.Sprintf("RBAC teardown left fixtures behind (a rerun would fail with AlreadyExists): %s", strings.Join(leftovers, "; ")))
 		}
 	}
 
