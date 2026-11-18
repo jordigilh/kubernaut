@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-2660-v1.0
 **Feature**: Staged-repair expiry, failure-code fidelity, deferred abandon context, readiness error lanes, dead-lane removal
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
 **Status**: Active
@@ -256,13 +256,23 @@ gated on the deferred remote re-qualification described in §4.2.
   RepairFailureStaleFence`; server key set is unchanged; an immediate
   `BeginRepair` succeeds.
 
-Expected RED: `failure.Failure.Code` is `commit_rejected`/`ambiguous_write`
-(today the guard is absent, so the failure is message-derived) — assertion
-`Expected <stale_fence> to equal <...>`.
+Expected RED: `failure.Failure.Code` is `ttl_invalid` (today the guard is
+absent, so the post-write `INVALID_PTTL` reply is message-derived as
+`ttl_invalid`) — assertion `Expected <stale_fence> to equal <ttl_invalid>`.
 
 ### UT-FMC-STAGED-013: commit-lane stale-fence fidelity
 
 - **Given** a begun + reconciled staging
+
+### UT-FMC-STAGED-014: empty-partition stale-fence fidelity (review follow-up)
+
+- **Given** a begun staging with **zero** observations whose staged status key
+  has been reaped (FastForward past the 15s staged TTL)
+- **When** `Repair` runs the empty-partition finalization
+- **Then** it fails with `Failure.Code == RepairFailureStaleFence` (the raw
+  `STALE_FENCE` reply previously fell through to `commit_rejected`).
+
+Expected RED: `Expected <stale_fence> to equal <commit_rejected>`.
 - **When** the staged keys are deleted (expired) and `CommitRepair` runs
 - **Then** `Failure.Code == stale_fence` and `errors.Is(err, ErrStaleFence)`.
 
@@ -327,7 +337,7 @@ origin/main `0e086e065` as the rebase base.
 
 ### 11.2 Execution Order
 
-docs → m2 → m1 → m3 → m4 → m5 → m6+n1 → m7 → m8 → m9+n3 → m10 → n2 → n4 → n5.
+docs → m2 (+n2's Lua comment fixes shipped in the m2 commit) → m1 → m3 → m4 → m5 → m6+n1 → m7 → m8 → m9+n3 → m10 → n4 → n5.
 
 ---
 
@@ -379,3 +389,4 @@ make lint-test-patterns lint-business-integration lint-tdd-compliance
 |---------|------|--------|
 | 1.0 | 2026-11-18 | Initial plan for #2660 deferred findings |
 | 1.1 | 2026-11-18 | Implementation complete: matrix and scenarios marked Pass; n4 gained the helper's positive Pod/Deployment and cluster-scoped no-op scenarios |
+| 1.2 | 2026-11-18 | Post-implementation review follow-up: UT-FMC-STAGED-014 (empty-partition stale-fence fidelity, RED: `commit_rejected`), STAGED-012 reserved-slot acceptance case, STAGED-011 `observed_count` no-mutation assertion, Node scenarios moved to the `Resolve` lane |
