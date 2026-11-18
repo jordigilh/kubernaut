@@ -7,7 +7,19 @@
 **Version**: 1.8
 **Created**: 2026-11-13
 **Author**: Kubernaut Team
-**Status**: DD-FLEET-016 A2 complete and remotely qualified at 7c5d6ac14: full AF Fleet suite 11/11 (4 procs, seed 1794866481) on the live cluster, journeys 002/003/004 and the two-phase refusal journey pass, scope availability 100% under full suite load (195/195 polls) and 99.5% idle (1s blip per 5-min registry rotation). Local gates: build 0, units 0, lint 0, full make test 119/119 suites (7df53edf7 base; 7c delta covered by affected suites). Remaining pre-push gates: fresh independent review, broader changed-service validation decision, main-conflict recheck, final PR-context CI. Earlier progress records below are historical.
+**Status**: DD-FLEET-016 A2 re-qualified at 58dc999e1 (review-fix freeze) on
+the live cluster af-fleet-2593-rca (helios08): FMC IT ok (race, 67s), full AF
+Fleet suite 11/11 PASS (4 procs, seed 1794866481, 102.6s), scope availability
+197/197 polls HTTP 200 (100%) under full suite load, zero-pod FMC transition to
+image tag 2593-a2-58dc999e1. Note: one kind-load attempt failed because the
+node container was OOM-killed (exit 137) by unrelated host load (load avg 642);
+the node was restarted with cluster state intact and the run completed. The
+7c5d6ac14 record below is the original qualification; the 58dc999e1 delta is
+the review-fix series (8307044cc, 6d96080f6, bd3049908, 07c3d3471, 58dc999e1)
+covering abandoned-staging residue cleanup, staged TTL roll with a 60s
+lifetime cap, and their RED/green test proofs.
+
+DD-FLEET-016 A2 complete and remotely qualified at 7c5d6ac14: full AF Fleet suite 11/11 (4 procs, seed 1794866481) on the live cluster, journeys 002/003/004 and the two-phase refusal journey pass, scope availability 100% under full suite load (195/195 polls) and 99.5% idle (1s blip per 5-min registry rotation). Local gates: build 0, units 0, lint 0, full make test 119/119 suites (7df53edf7 base; 7c delta covered by affected suites). Remaining pre-push gates: fresh independent review, broader changed-service validation decision, main-conflict recheck, final PR-context CI. Earlier progress records below are historical.
 
 > Supersession note: the R10/R11 amendment sections below still describe the
 > pre-A2 protocol verbs `repair_list_members` and `cleanup_member`, which
