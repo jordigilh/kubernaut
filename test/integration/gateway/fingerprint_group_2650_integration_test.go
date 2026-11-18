@@ -48,7 +48,9 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway"
@@ -138,6 +140,24 @@ func registerRouteCRDsFor2650() {
 	}
 }
 
+// createRouteCRsFor2650 creates the standalone Route CR instances (one per
+// group, same name, no ownerReferences). Required by the DD-FLEET-015 presence
+// contract merged from #2593: Manager.Check's resolveObserved requires the
+// target to be OBSERVED — a NotFound maps to ScopeUnavailable
+// ("observation_missing"), never a namespace-inheritance fallthrough. The CRs
+// carry no managed label, so scope resolves via the observed managed
+// namespace, exactly like the E2E counterpart.
+func createRouteCRsFor2650(namespace string) {
+	crdClient := crdClientFor2650()
+	for _, group := range []string{"route.openshift.io", "serving.knative.dev"} {
+		route := &unstructured.Unstructured{}
+		route.SetGroupVersionKind(schema.GroupVersionKind{Group: group, Version: "v1", Kind: "Route"})
+		route.SetName("shared-route")
+		route.SetNamespace(namespace)
+		Expect(crdClient.Create(ctx, route)).To(Succeed(), "creating Route CR in group "+group)
+	}
+}
+
 // removeRouteCRDsFor2650 cleans up the test-only CRDs so the shared envtest
 // API server is left as found for other specs. Only NotFound is ignorable;
 // any other deletion failure is reported (a leftover fixed-name CRD would
@@ -163,6 +183,7 @@ var _ = Describe("Fingerprint Group Dimension (#2650, BR-GATEWAY-004)", Ordered,
 		testLogger = logger.WithValues("test", "fingerprint-group-2650-int")
 		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "fp-group-int")
 		registerRouteCRDsFor2650()
+		createRouteCRsFor2650(testNamespace)
 		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 		var err error
 		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, sharedAuditStore)
