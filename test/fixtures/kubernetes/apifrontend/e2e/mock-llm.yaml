@@ -485,6 +485,9 @@ data:
             namespace: "prod"
             kind: "Deployment"
             name: "web"
+            # #2650: api_version is required (the fingerprint includes the
+            # API group); mirrors kubernaut_remediate/investigate's arg docs.
+            api_version: "apps/v1"
 
       - name: "af_list_alerts_prioritized"
         keywords: ["list alerts", "check active alerts", "what alerts are firing"]

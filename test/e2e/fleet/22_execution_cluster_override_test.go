@@ -65,7 +65,7 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		// Issue #54 dedup-fingerprint collision, recurring: the shared
 		// "memory-eater" fixture + "prod-west" is already claimed by
 		// E2E-FLEET-002 (01_signal_ingestion_test.go), which produces the
-		// identical SHA256(clusterID:namespace:kind:name) fingerprint (see
+		// identical SHA256(clusterID:group:namespace:kind:name) fingerprint (see
 		// pkg/gateway/types/fingerprint.go). Every prior fix for this class
 		// (01_/08_/13_/15_) used a dedicated, uniquely-named Deployment
 		// instead of the shared fixture; do the same here.

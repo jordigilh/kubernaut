@@ -380,7 +380,7 @@ func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *Kubernetes
 //   and fingerprints as SHA256(namespace:ownerKind:ownerName), excluding event reason.
 // - If OwnerResolver resolution fails: signal is DROPPED (returns error).
 //   No fallback to resource-level fingerprinting (Issue #282).
-// - If OwnerResolver is nil: uses SHA256(namespace:kind:name), excluding reason.
+// - If OwnerResolver is nil: uses SHA256(group:namespace:kind:name) (#2650 group dimension), excluding reason.
 // Reason is NEVER included in the fingerprint (Issue #227).
 func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*gateway.NormalizedSignal, error) {
     var event corev1.Event

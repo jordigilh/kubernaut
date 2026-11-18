@@ -90,7 +90,7 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Waiting for full pipeline execution (match by signal fingerprint)")
-		fp := rrFingerprint(autoNS, "Deployment", "memory-eater")
+		fp := rrFingerprint(autoNS, "Deployment", "memory-eater", "apps/v1")
 		rrName := fpWaitForRRByFingerprint(fp, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 5*time.Minute)

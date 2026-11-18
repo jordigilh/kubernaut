@@ -116,8 +116,65 @@ var _ = Describe("Cluster-Aware Fingerprint (BR-INTEGRATION-065)", func() {
 			Expect(resolved.APIVersion).To(BeEmpty(),
 				"a legacy resolver cannot supply the owner GVK; the identity stays empty so the strict gate rejects it (fail-closed)")
 		})
+
+		// #2649: the input signal's apiVersion must be threaded into owner
+		// resolution so the resolver seeds the chain's initial GVK from it
+		// instead of guessing the group from the kind name alone (#2593's
+		// ResolveTopLevelOwnerIdentity carries it in the entry).
+		It("UT-GW-2649-FP-001 [BR-GATEWAY-004, BR-SCOPE-001, AC-4, SI-10]: passes the input resource's apiVersion into the resolver entry", func() {
+			resolver := &capturingIdentityResolver{}
+			pod := types.ResourceIdentifier{Namespace: "production", Kind: "Pod", Name: "pod-abc", APIVersion: "v1"}
+
+			_, resolved, err := types.ResolveFingerprintWithCluster(context.Background(), "", resolver, pod, logr.Discard())
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolver.calls).To(Equal(1))
+			Expect(resolver.gotAPIVersion).To(Equal("v1"),
+				"the input signal's apiVersion must reach the resolver entry so it can seed the initial GVK (#2649)")
+			Expect(resolver.gotKind).To(Equal("Pod"))
+			Expect(resolver.gotName).To(Equal("pod-abc"))
+			Expect(resolved.Kind).To(Equal("Deployment"))
+			Expect(resolved.APIVersion).To(Equal("apps/v1"))
+		})
+
+		// A Service-kind signal carries an apiVersion the resolver must
+		// receive so the Service early-return can verify its passthrough
+		// against the observed group instead of fabricating "v1". This spec
+		// pins the fingerprint path's threading contract for the Service kind
+		// specifically (the kind whose resolver branch changes behavior based
+		// on the identity).
+		It("UT-GW-2649-FP-004 [BR-GATEWAY-004, BR-SCOPE-001, AC-4, SI-10]: threads a Service resource's apiVersion into the resolver entry", func() {
+			resolver := &capturingIdentityResolver{}
+			svc := types.ResourceIdentifier{Namespace: "production", Kind: "Service", Name: "edge-svc", APIVersion: "custom.example/v1"}
+
+			_, resolved, err := types.ResolveFingerprintWithCluster(context.Background(), "prod-east", resolver, svc, logr.Discard())
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolver.calls).To(Equal(1))
+			Expect(resolver.gotAPIVersion).To(Equal("custom.example/v1"),
+				"a Service signal's apiVersion must reach the resolver so the passthrough is verified, not fabricated (#2649)")
+			Expect(resolver.gotKind).To(Equal("Service"))
+			Expect(resolved.Kind).To(Equal("Deployment"))
+			Expect(resolved.APIVersion).To(Equal("apps/v1"))
+		})
 	})
 })
+
+// capturingIdentityResolver records the OwnerChainEntry it was called with,
+// proving ResolveFingerprintWithCluster threads the signal's apiVersion into
+// owner resolution (#2649) through #2593's single identity-carrying method.
+type capturingIdentityResolver struct {
+	calls         int
+	gotKind       string
+	gotName       string
+	gotAPIVersion string
+}
+
+func (f *capturingIdentityResolver) ResolveTopLevelOwnerIdentity(_ context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	f.calls++
+	f.gotKind, f.gotName, f.gotAPIVersion = resource.Kind, resource.Name, resource.APIVersion
+	return sharedtypes.OwnerChainEntry{Kind: "Deployment", Name: "payment-api", APIVersion: "apps/v1"}, nil
+}
 
 // apiVersionAwareFakeResolver implements the APIVersion-carrying owner
 // resolution the production K8sOwnerResolver provides (DD-FLEET-014).

@@ -163,14 +163,17 @@ type OwnerReferenceBackfiller interface {
 // Note: parallel tests with the same fingerprint may share flights (by design).
 var rrCreateGroup singleflight.Group
 
-// rrFingerprintWithCluster generates a dedup fingerprint that includes the cluster
-// context. Delegates to gwtypes.CalculateClusterAwareFingerprint to ensure GW and
-// AF produce identical fingerprints for the same resource (CC4.2: audit trail consistency).
-func rrFingerprintWithCluster(clusterID, namespace, kind, name string) string {
+// rrFingerprintWithCluster generates a dedup fingerprint that includes the
+// cluster context and the API-group dimension (#2650). Delegates to
+// gwtypes.CalculateClusterAwareFingerprint to ensure GW and AF produce
+// identical fingerprints for the same resource (CC4.2: audit trail consistency,
+// AC-4 parity per DD-GATEWAY-019 Alternative 2).
+func rrFingerprintWithCluster(clusterID, namespace, kind, name, apiVersion string) string {
 	return gwtypes.CalculateClusterAwareFingerprint(clusterID, gwtypes.ResourceIdentifier{
-		Namespace: namespace,
-		Kind:      kind,
-		Name:      name,
+		Namespace:  namespace,
+		Kind:       kind,
+		Name:       name,
+		APIVersion: apiVersion,
 	})
 }
 
@@ -271,7 +274,7 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	if signalName == "" {
 		signalName = deriveSignalName(ctx, d.DynClient, d.ClusterLister != nil, args.Namespace, args, triageResult)
 	}
-	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
+	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name, args.APIVersion)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
 		return createOrReuseRR(ctx, d, createRRRequest{

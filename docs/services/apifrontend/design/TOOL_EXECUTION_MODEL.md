@@ -144,7 +144,7 @@ Every tool validates inputs before making K8s API calls. Validation is centraliz
 | kubectl_get | kind, name, namespace | Kind validation (PascalCase) |
 | kubectl_list | kind, namespace | label_selector format |
 | kubectl_list_events | namespace | — |
-| af_check_existing_rr | namespace, kind, name | — |
+| af_check_existing_rr | namespace, kind, name, api_version (required, #2650: the dedup fingerprint includes the API group) | — |
 | af_create_rr | kind, name | Description truncated at 2048 chars. Namespace is AF-resolved (K8s downward API), not an LLM arg (#1282) |
 | kubernaut_submit_signal | namespace/name via ParseRRID | — |
 | kubernaut_approve | namespace/name via ParseRRID | — |
@@ -220,7 +220,7 @@ af_create_rr(kind, name, description)  // LLM args
 AF resolves namespace (downward API / config override)
     │
     ▼
-rrFingerprint(resolved_ns, kind, name) → key
+rrFingerprint(resolved_ns, kind, name, api_version) → key
     │
     ▼
 singleflight.Group.Do(key, func() {

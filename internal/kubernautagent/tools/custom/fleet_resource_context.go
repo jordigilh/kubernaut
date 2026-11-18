@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/shared/hash"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // overlayClientReader adapts the fleet overlay's resources_get tools.Tool
@@ -208,15 +209,34 @@ func NewOverlayLabelDetector(getTool tools.Tool, listTool tools.Tool, mapper met
 // validation treats the owner GVK as provenance, not display metadata.
 func (c *overlayK8sClient) GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]enrichment.OwnerChainEntry, error) {
 	resolver := ownerchain.NewK8sOwnerResolver(c.reader, c.logger)
-	owner, err := resolver.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
+	// #2649: the supplied apiVersion is the target-cluster-verified GVK from
+	// enrichment; threading it into the identity-carrying resolver makes the
+	// level-0 fetch use the observed group instead of the static kind-to-group
+	// map, and standalone CRD kinds pass through only after their GVK is
+	// verified to exist (the post-hoc apiVersion backfill that previously
+	// lived here is deleted — the resolver seeds from the entry instead).
+	// ResolveTopLevelOwnerIdentity requires a non-empty apiVersion and the
+	// fleet resolver has no registry to derive one, so callers that
+	// legitimately pass "" (resource_context.go, which has no
+	// enrichment-verified version) resolve it through the shared
+	// ownerchain.KindToGroup table — the same fallback GetSpecHash uses.
+	if apiVersion == "" {
+		if group, known := ownerchain.KindToGroup()[kind]; known {
+			if group == "" {
+				apiVersion = "v1"
+			} else {
+				apiVersion = group + "/v1"
+			}
+		}
+	}
+	owner, err := resolver.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
+		Namespace:  namespace,
+		Kind:       kind,
+		Name:       name,
+		APIVersion: apiVersion,
+	})
 	if err != nil {
 		return nil, err
-	}
-	// The shared resolver intentionally stops before fetching unknown CRD kinds.
-	// For a standalone target, retain the already target-cluster-verified GVK
-	// supplied by enrichment instead of erasing its API version at this boundary.
-	if owner.APIVersion == "" && owner.Kind == kind && owner.Name == name {
-		owner.APIVersion = apiVersion
 	}
 	return []enrichment.OwnerChainEntry{{
 		Kind:       owner.Kind,
