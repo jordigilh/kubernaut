@@ -638,10 +638,10 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				"Two pods from the same Deployment must produce identical fingerprints")
 
 			expectedFP := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: namespace, Kind: deployment, Name: "leaky-app",
+				Namespace: namespace, Kind: deployment, Name: "leaky-app", APIVersion: "apps/v1",
 			})
 			Expect(fpA).To(Equal(expectedFP),
-				"Fingerprint should be SHA256(namespace:Deployment:leaky-app)")
+				"Fingerprint should be SHA256(apps:namespace:Deployment:leaky-app)")
 		})
 	})
 })

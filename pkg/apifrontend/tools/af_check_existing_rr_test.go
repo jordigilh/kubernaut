@@ -15,12 +15,14 @@ import (
 
 // testFingerprint computes a cluster-aware fingerprint for a "Deployment"
 // named "web" (the only kind/name combination used across all callers), in
-// the given namespace.
+// the given namespace. #2650: carries "apps/v1" so the seeded fingerprint and
+// the lookup args (which all pass APIVersion "apps/v1") agree on the group.
 func testFingerprint(ns string) string {
 	return gwtypes.CalculateClusterAwareFingerprint("", gwtypes.ResourceIdentifier{
-		Namespace: ns,
-		Kind:      "Deployment",
-		Name:      "web",
+		Namespace:  ns,
+		Kind:       "Deployment",
+		Name:       "web",
+		APIVersion: "apps/v1",
 	})
 }
 
@@ -55,7 +57,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "web",
+			Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeTrue())
@@ -68,7 +70,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "web",
+			Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeFalse())
@@ -78,7 +80,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient()
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "web",
+			Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeFalse())
@@ -88,7 +90,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient()
 
 		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "", Kind: "Deployment", Name: "web",
+			Namespace: "", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
@@ -97,7 +99,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient()
 
 		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "", Name: "web",
+			Namespace: "prod", Kind: "", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
@@ -106,14 +108,14 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient()
 
 		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "",
+			Namespace: "prod", Kind: "Deployment", Name: "", APIVersion: "apps/v1",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
 	It("UT-AF-052-046: nil client returns ErrK8sUnavailable", func() {
 		_, err := tools.HandleCheckExistingRR(context.Background(), nil, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "web",
+			Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
@@ -127,7 +129,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			go func() {
 				defer wg.Done()
 				_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-					Namespace: "prod", Kind: "Deployment", Name: "web",
+					Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 				})
 				Expect(err).NotTo(HaveOccurred())
 			}()
@@ -140,12 +142,12 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			rrA := newTypedRRWithFingerprint("rr-cluster-a", "Executing")
 			rrA.Spec.ClusterID = "cluster-a"
 			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			client := newTypedFakeClient(rrA)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-b",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1", ClusterID: "cluster-b",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeFalse(),
@@ -156,12 +158,12 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			rrA := newTypedRRWithFingerprint("rr-cluster-a", "Executing")
 			rrA.Spec.ClusterID = "cluster-a"
 			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			client := newTypedFakeClient(rrA)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-a",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1", ClusterID: "cluster-a",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeTrue())
@@ -174,7 +176,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			client := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeTrue())
@@ -192,12 +194,12 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			rrEast := newTypedRRWithFingerprint("rr-east-006", "Executing")
 			rrEast.Spec.ClusterID = "cluster-east-006"
 			rrEast.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-006", gwtypes.ResourceIdentifier{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			client := newTypedFakeClient(rrEast)
 
 			sameClusterResult, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-east-006",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1", ClusterID: "cluster-east-006",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sameClusterResult.Exists).To(BeTrue(),
@@ -205,7 +207,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			Expect(sameClusterResult.ClusterID).To(Equal("cluster-east-006"))
 
 			differentClusterResult, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-west-006",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1", ClusterID: "cluster-west-006",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(differentClusterResult.Exists).To(BeFalse(),
@@ -216,7 +218,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			client := newTypedFakeClient()
 
 			_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: strings.Repeat("a", 254),
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1", ClusterID: strings.Repeat("a", 254),
 			})
 			Expect(err).To(HaveOccurred(),
 				"SI-10: validate.ClusterID must be wired into HandleCheckExistingRR, not dead code")
@@ -229,7 +231,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "other-target",
+			Namespace: "prod", Kind: "Deployment", Name: "other-target", APIVersion: "apps/v1",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeFalse())
@@ -257,7 +259,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			client := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, controllerNS, tools.CheckExistingRRArgs{
-				Namespace: workloadNS, Kind: "Deployment", Name: "web",
+				Namespace: workloadNS, Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeTrue(),
@@ -285,7 +287,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			client := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, controllerNS, tools.CheckExistingRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Namespace: "prod", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeFalse(),

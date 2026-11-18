@@ -236,6 +236,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 
 			expectedFP := gwTypes.CalculateOwnerFingerprint(gwTypes.ResourceIdentifier{
 				Namespace: testNamespace, Kind: "Deployment", Name: "leaky-app",
+				APIVersion: "apps/v1", // #2650: ownerRef-propagated group (apps) is hashed
 			})
 			Expect(signalA.Fingerprint).To(Equal(expectedFP),
 				"Fingerprint should be at Deployment level, not Pod level")

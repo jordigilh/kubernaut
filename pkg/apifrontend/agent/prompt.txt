@@ -170,7 +170,7 @@ After Phase 4 reaches a terminal state, the remediation lifecycle for that RR is
 - kubectl_get: Get a single Kubernetes resource by kind, name, and namespace (Secret .data is redacted)
 - kubectl_list: List Kubernetes resources by kind and namespace with optional label selector (Secret .data is redacted)
 - kubectl_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
-- kubernaut_check_existing_remediation: Check if an active remediation already exists for a target resource
+- kubernaut_check_existing_remediation: Check if an active remediation already exists for a target resource. Requires `namespace`, `api_version`, `kind`, and `name` — always pass the target's `api_version` (e.g. "apps/v1"), since two resources with the same kind/name in different API groups are distinct remediation targets
 - Common phrases: "show me...", "list...", "what's the status of...", "check..."
 
 ### Fix something autonomously (no interaction needed)

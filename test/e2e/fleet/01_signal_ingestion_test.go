@@ -44,7 +44,7 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 	It("should create RR with spec.clusterID when alert has cluster label", func() {
 		// Issue #54 flakiness fix: distinct resource name from E2E-FLEET-002's east
 		// payload below. Both used "memory-eater" + "prod-east", producing an identical
-		// SHA256(clusterID:namespace:kind:name) fingerprint (see
+		// SHA256(clusterID:group:namespace:kind:name) fingerprint (see
 		// pkg/gateway/types/fingerprint.go CalculateClusterAwareFingerprint). Ginkgo
 		// runs these independent Describe blocks across parallel processes with no
 		// ordering guarantee, so the two specs raced for the same dedup slot and

@@ -144,7 +144,8 @@ Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "paymen
 // Both adapters delegate to the shared ResolveFingerprint function (Issue #228).
 // Returns (fingerprint, error). Error means signal must be dropped.
 // Internally produces SHA256(namespace:ownerKind:ownerName) with OwnerResolver,
-// or SHA256(namespace:kind:name) without. alertname is NEVER included.
+// or SHA256(group:namespace:kind:name) without (#2650: the API group from
+// the resource's apiVersion is part of the hash). alertname is NEVER included.
 fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
 if err != nil {
     return nil, fmt.Errorf("dropping signal: %w", err)
@@ -174,7 +175,7 @@ All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplica
 
 **When signals are dropped**: Only when the resource is truly not resolvable — deleted from the API server, RBAC error, or timeout. Standalone resources without ownerReferences are **not** dropped; they are accepted with a resource-level fingerprint.
 
-**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(namespace:kind:name)` is used directly — no owner chain to resolve, so no failure path.
+**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(group:namespace:kind:name)` (#2650 group dimension) is used directly — no owner chain to resolve, so no failure path.
 
 #### Kubernetes Events (Owner-Based Fingerprint)
 
@@ -215,7 +216,7 @@ All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplica
 
 **Owner resolution**: Same three-tier strategy as Prometheus adapter (Issues #282, #284). Signals are only dropped when the resource is truly not resolvable (deleted, RBAC error, timeout). Standalone resources confirmed by the direct API are accepted with resource-level fingerprints. This ensures cross-adapter consistency.
 
-**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(namespace:kind:name)` is used directly (reason excluded, Issue #227).
+**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(group:namespace:kind:name)` (#2650 group dimension) is used directly (reason excluded, Issue #227).
 
 ### Why SHA256 (Not MD5)
 
@@ -513,7 +514,7 @@ func (d *StormDetector) checkPatternStorm(ctx context.Context, alert *gateway.No
 
     affectedResources := make([]gateway.ResourceIdentifier, len(members))
     for i, member := range members {
-        // Parse "namespace:kind:name"
+        // Parse "group:namespace:kind:name" (#2650)
         parts := strings.Split(member, ":")
         if len(parts) == 3 {
             affectedResources[i] = gateway.ResourceIdentifier{
