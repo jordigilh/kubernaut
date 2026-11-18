@@ -76,6 +76,9 @@ is designed.
 are deleted. They had no production callers and collapsed the typed outcome
 (`invalid`, `unsupported`, `unavailable`) into `false`, which is exactly the
 ambiguity DD-FLEET-015 removes. Use `Check` and branch on `ScopeState`.
+`fleet.NewFederatedScopeChecker` no longer accepts a local checker (the dead
+`local` field is gone with it); non-Fleet requests must use the local checker
+at the factory, as the production factory already does.
 
 ### `ScopeResult.Managed` is removed
 

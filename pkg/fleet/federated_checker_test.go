@@ -87,6 +87,7 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Reason).To(Equal("missing_cluster_attribution"))
 	})
 
 	It("UT-FLEET-FC-002: missing Fleet attribution remains invalid for any target", func() {
@@ -97,6 +98,7 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Reason).To(Equal("missing_cluster_attribution"))
 	})
 
 	It("UT-FLEET-FC-003: non-empty ClusterID routes to remote backend", func() {

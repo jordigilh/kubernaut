@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-2660-v1.0
 **Feature**: Staged-repair expiry, failure-code fidelity, deferred abandon context, readiness error lanes, dead-lane removal
-**Version**: 1.4
+**Version**: 1.5
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
 **Status**: Active
@@ -138,6 +138,12 @@ plus a dead `local` field are removed.
 - **`currentRegistrationGuard` failures stay `source_incomplete`.** That path
   runs before a repair staging exists (no start token), so there is nothing to
   classify against a repair failure code.
+- **Commit lane deliberately has no staging-age guard.** `commit` requires
+  `state=repairing` plus a full fence/token match, the FMC flow reconciles
+  immediately before committing, and only a >60s client stall between `Repair`
+  and `CommitRepair` could reach a past-cap staging there — where a fenced,
+  fully-verified commit is still safer than stranding the repair. The lifetime
+  cap bounds a *stuck repairing* staging, which is reconcile's job.
 - **Site-2 `ReadinessInvalid` is defensive.** Site 1 validates identity before
   the callback; an invalid proof inside the callback can only mean a corrupted
   snapshot.
@@ -289,6 +295,15 @@ Expected RED: `Expected <stale_fence> to equal <commit_rejected>`; the
 TTL_MISMATCH case is a characterization guard (no RED — it pins the
 deliberate fence/ttl split).
 
+### UT-FMC-STAGED-015: record-invalid observation keeps its typed code (review follow-up)
+
+- **Given** a begun staging
+- **When** `Repair` receives a cluster-scoped kind carrying a namespace
+  (passes weak identity validation, fails the canonical rules)
+- **Then** `Failure.Code == RepairFailureRecordInvalid`.
+
+Expected RED: `Expected <record_invalid> to equal <commit_rejected>`.
+
 ### UT-FMC-PRES-013: repair failure code fidelity
 
 Expected RED: `MarkRepairUncertain` receives `source_incomplete` instead of
@@ -405,3 +420,4 @@ make lint-test-patterns lint-business-integration lint-tdd-compliance
 | 1.2 | 2026-11-18 | Post-implementation review follow-up: UT-FMC-STAGED-014 (empty-partition stale-fence fidelity, RED: `commit_rejected`), STAGED-012 reserved-slot acceptance case, STAGED-011 `observed_count` no-mutation assertion, Node scenarios moved to the `Resolve` lane |
 | 1.3 | 2026-11-18 | Review round 2: STAGED-014 gains the TTL_MISMATCH pre-write case (fence/ttl split pinned); STAGED-012 matrix row restated as its two real cases; version/matrix alignment |
 | 1.4 | 2026-11-18 | Review round 3: UT-FMC-STAGED-015 (record-invalid keeps its typed code, RED: `commit_rejected`); unreachable begin-lane typed case removed from `repairUncertainFailure`; ADR-053/DD-AF-018 annotations repositioned |
+| 1.5 | 2026-11-18 | Review round 4: BeginRepair zero-result contract documented on the StatusStore interface; STAGED-015 case block added; deliberate commit-vs-reconcile staging-cap asymmetry recorded (§4.3) |
