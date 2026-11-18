@@ -66,6 +66,20 @@ func (f *stagedRepairFixture) identity(name, label string) (scopecache.ResourceI
 	}
 }
 
+func (f *stagedRepairFixture) stagedObservedCount() string {
+	client := redis.NewClient(&redis.Options{Addr: f.server.Addr()})
+	defer func() { _ = client.Close() }()
+	for _, key := range f.server.Keys() {
+		if strings.HasSuffix(key, ":status:staged") {
+			value, err := client.HGet(f.ctx, key, "observed_count").Result()
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			return value
+		}
+	}
+	Fail("the fixture must have a staged status key")
+	return ""
+}
+
 func (f *stagedRepairFixture) commitGeneration(start scopecache.RepairStartResult, observations []scopecache.RepairObservation) scopecache.RepairCommitResult {
 	repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
 		Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
@@ -458,6 +472,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		// reconcile, so the assertion is set-equality, not emptiness) and
 		// the failure is a stale fence: the writer must begin a new repair.
 		keysBefore := f.server.Keys()
+		observedCountBefore := f.stagedObservedCount()
 		f.server.SetTime(time.Unix(1_700_000_000, 0).Add(61 * time.Second))
 		_, err = f.store.Repair(f.ctx, scopecache.RepairRequest{
 			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1,
@@ -471,6 +486,8 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			"a terminally expired staging requires a new begin, exactly like a stale fence")
 		Expect(f.server.Keys()).To(Equal(keysBefore),
 			"a past-cap reconcile must not write any new staged record or index keys")
+		Expect(f.stagedObservedCount()).To(Equal(observedCountBefore),
+			"a past-cap reconcile must not mutate the existing staging (observed_count unchanged)")
 
 		// The guard also transitions the staging out of 'repairing' into a
 		// TTL-bounded 'expired' marker, so begin's gate (state=='repairing')
@@ -604,7 +621,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 
 		refreshTTL := repair.RecordTTL.ExpiresAtMillis - repair.RecordTTL.ServerNowMillis
 		Expect(refreshTTL).To(BeNumerically(">", 0))
-		argv := func(recordTTLFlag string) []interface{} {
+		argv := func(recordTTLFlag, reservedFlag string) []interface{} {
 			// [1]=op, [2..9]=identity, [10]=expected count, [11..12]=record
 			// prefixes, [13..16]=reserved structural slots (kept for stable
 			// numbering), [17..20]=proof flags, [21]=refresh TTL millis.
@@ -613,21 +630,27 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 				f.fence.HolderPodUID, f.fence.HolderSessionUID,
 				f.fence.LeaseEpoch, f.fence.Fence, start.Generation, start.Token.Value,
 				1, liveRecordPrefix, stagedRecordPrefix,
-				"1", "1", "1", "1",
+				reservedFlag, "1", "1", "1",
 				recordTTLFlag, "1", "1", "0",
 				refreshTTL,
 			}
 		}
-		evalCommit := func(recordTTLFlag string) error {
+		evalCommit := func(recordTTLFlag, reservedFlag string) error {
 			commandArgs := []interface{}{"EVALSHA", manager.Digest(), 4, liveStatus, stagedStatus, liveIndex, stagedIndex}
-			commandArgs = append(commandArgs, argv(recordTTLFlag)...)
+			commandArgs = append(commandArgs, argv(recordTTLFlag, reservedFlag)...)
 			return client.Do(f.ctx, commandArgs...).Err()
 		}
 
-		// Rejection case FIRST: the control commit consumes the staging.
-		Expect(evalCommit("0")).To(MatchError(ContainSubstring("COMMIT_REJECTED")),
+		// Rejection case FIRST: a successful commit consumes the staging.
+		Expect(evalCommit("0", "1")).To(MatchError(ContainSubstring("COMMIT_REJECTED")),
 			"a non-eligible commit proof must still be rejected inside the script")
-		Expect(evalCommit("1")).ToNot(HaveOccurred(), "an all-valid proof must commit")
+		// The reserved structural slots are deliberately unenforced (#2660
+		// m1): a successful repair_reconcile IS the structural proof, so a
+		// '0' in ARGV[13] must not reject the commit. This case also proves
+		// the harness can commit (re-instating the deleted pre-validation
+		// loop would fail it).
+		Expect(evalCommit("1", "0")).ToNot(HaveOccurred(),
+			"the reserved structural slots must stay unenforced: repair_reconcile success is the proof")
 	})
 
 	It("UT-FMC-STAGED-006 [BR-SECURITY-016]: a fenced-read proof mismatch never serves staged state", func() {
