@@ -76,6 +76,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			// Create unique test namespace for K8s resource isolation
 			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-sig")
 
+			// #2593 (DD-FLEET-015): presence-first scope checking — pre-create the
+			// pods referenced by this Describe's inline alert payloads so the
+			// signaled targets are observable.
+			sharedhelpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+				"test-pod-123", "test-pod-dedup", "custom-labels-test-pod", "failing-pod-xyz")
+
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
@@ -363,6 +369,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		BeforeEach(func() {
 			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-crd")
 
+			// #2593 (DD-FLEET-015): pre-create pods referenced by inline alert payloads.
+			sharedhelpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+				"test-pod-123", "test-pod-dedup", "custom-labels-test-pod", "failing-pod-xyz")
+
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
@@ -625,6 +635,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-dedup")
+
+			// #2593 (DD-FLEET-015): pre-create pods referenced by inline alert payloads.
+			sharedhelpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+				"test-pod-123", "test-pod-dedup", "custom-labels-test-pod", "failing-pod-xyz")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
@@ -1064,6 +1078,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			// Create unique test namespace for K8s resource isolation
 			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-unique")
 
+			// #2593 (DD-FLEET-015): presence-first scope checking — pre-create the
+			// pods referenced by this Describe's inline alert payloads so the
+			// signaled targets are observable.
+			sharedhelpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+				"test-pod-123", "test-pod-dedup", "custom-labels-test-pod", "failing-pod-xyz")
+
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
@@ -1161,6 +1181,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
 			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-fail")
+
+			// #2593 (DD-FLEET-015): presence-first scope checking — pre-create the
+			// pods referenced by this Describe's inline alert payloads so the
+			// signaled targets are observable.
+			sharedhelpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+				"test-pod-123", "test-pod-dedup", "custom-labels-test-pod", "failing-pod-xyz")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})

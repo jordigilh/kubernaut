@@ -286,8 +286,12 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			// must ask the API server for that longer TTL instead of the 1h default.
 			var capturedExpSeconds int64
 			addCapturingTokenReactor(fakeCS, &capturedExpSeconds)
-			wfe := buildWFE("my-sa", 90*time.Minute)
+			wfe := buildWFE("my-sa", 0)
 			setupExecutor(fakeCS, wfe)
+			// Anchor the absolute deadline after the potentially slow fake-client
+			// setup so parallel suite load cannot consume the assertion's TTL.
+			deadline := metav1.NewTime(time.Now().Add(90 * time.Minute))
+			wfe.Spec.TimesOutAt = &deadline
 			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 
 			Expect(err).ToNot(HaveOccurred())

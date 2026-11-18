@@ -84,6 +84,7 @@ type gatewayConfig struct {
 	clusterEntries               []clusterEntry
 	discoverableClusters         []discoverableCluster
 	structuredContent            []map[string]any
+	listResourcesHandler         mcp.ToolHandler
 	allowExternalContainerAccess bool
 	emptyResourcesList           bool
 	ambiguousMutationFailure     bool
@@ -131,6 +132,16 @@ func WithExternalContainerAccess() Option {
 func WithStructuredContent(data []map[string]any) Option {
 	return func(cfg *gatewayConfig) {
 		cfg.structuredContent = data
+	}
+}
+
+// WithListResourcesHandler replaces the default resources_list response for
+// tests that need to model pagination, malformed continuation fields, or a
+// failure after an earlier successful page. The cluster tool wrapper still
+// records every invocation before calling the handler.
+func WithListResourcesHandler(handler mcp.ToolHandler) Option {
+	return func(cfg *gatewayConfig) {
+		cfg.listResourcesHandler = handler
 	}
 }
 
@@ -414,6 +425,9 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"labelSelector":{"type":"string"}},"required":["kind","apiVersion"]}`),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
+		if cfg.listResourcesHandler != nil {
+			return cfg.listResourcesHandler(ctx, req)
+		}
 		var args struct {
 			Kind          string `json:"kind"`
 			APIVersion    string `json:"apiVersion"`

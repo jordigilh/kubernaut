@@ -381,6 +381,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 						ReceivedTime: metav1.Now(),
 					},
 				}
+				ensureRRTarget(rr)
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -426,6 +427,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 					ReceivedTime: metav1.Now(),
 				},
 			}
+			ensureRRTarget(rr4)
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
 			By("Waiting for RR4 to transition to Blocked")

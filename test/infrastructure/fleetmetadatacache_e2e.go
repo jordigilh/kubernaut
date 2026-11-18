@@ -470,12 +470,15 @@ func runFMCFleetCorePhase(ctx context.Context, namespace, kubeconfigPath, fmcIma
 	if err := configureKuadrantBrokerCredential(ctx, kubeconfigPath, gatewayType, oauth, auth); err != nil {
 		return err
 	}
-	if err := deployFMCFleetCore(ctx, namespace, kubeconfigPath, fmcImage, *auth, oauth, coverage, writer); err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7b: Creating RBAC for the exchanged FMC identity...")
+	// BR-SCOPE-001 / BR-SECURITY-016: FMC readiness requires clean source
+	// observations. Authorize the exchanged target-read identity before the
+	// deployment helper waits for rollout, or local registrations stay forbidden.
+	_, _ = fmt.Fprintln(writer, "\n🔑 Creating RBAC for the exchanged FMC identity before deployment...")
 	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("exchanged-identity RBAC creation failed: %w", err)
+	}
+	if err := deployFMCFleetCore(ctx, namespace, kubeconfigPath, fmcImage, *auth, oauth, coverage, writer); err != nil {
+		return err
 	}
 	tokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC), ClientID: oauth.ClientID, ClientSecret: oauth.ClientSecret, Scopes: oauth.Scopes, KubeconfigPath: kubeconfigPath})

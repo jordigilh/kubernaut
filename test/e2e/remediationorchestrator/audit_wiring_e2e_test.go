@@ -116,7 +116,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, testRR)
 
 			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
 			// Per universal standard: All services use RemediationRequest.Name for audit correlation

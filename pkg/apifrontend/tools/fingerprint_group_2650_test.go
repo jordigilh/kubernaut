@@ -26,7 +26,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Issue #2650: the AF-side fingerprint plumbing gains the API-group dimension
@@ -112,8 +112,8 @@ var _ = Describe("Fingerprint group dimension — AF tools (#2650, BR-GATEWAY-00
 
 	// UT-AF-2650-004 (AC-4, GW/AF parity): identical cluster+GVK standalone
 	// resource -> identical fingerprint from the GW path
-	// (ResolveFingerprintWithCluster with an OwnerResolverWithAPIVersion-capable
-	// resolver, fleet_wiring_test.go UT-FLEET-FP-001 pattern) and from the AF
+	// (ResolveFingerprintWithCluster with a GVK-carrying
+	// OwnerResolver, fleet_wiring_test.go UT-FLEET-FP-001 pattern) and from the AF
 	// path (HandleCreateRR's RR spec.signalFingerprint, which is produced by
 	// rrFingerprintWithCluster). Labeled UT, not IT: it proves pure-function
 	// parity on fake clients; the tool-closure wiring proof is IT-AF-2650-001.
@@ -156,10 +156,11 @@ var _ = Describe("Fingerprint group dimension — AF tools (#2650, BR-GATEWAY-00
 // top-level owners.
 type selfResolvingFakeResolver struct{ apiVersion string }
 
-func (f *selfResolvingFakeResolver) ResolveTopLevelOwner(_ context.Context, _, kind, name string) (string, string, error) {
-	return kind, name, nil
-}
-
-func (f *selfResolvingFakeResolver) ResolveTopLevelOwnerWithAPIVersion(_ context.Context, _, kind, name string) (ownerchain.OwnerResolution, error) {
-	return ownerchain.OwnerResolution{Kind: kind, Name: name, APIVersion: f.apiVersion}, nil
+func (f *selfResolvingFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{
+		Namespace:  resource.Namespace,
+		Kind:       resource.Kind,
+		Name:       resource.Name,
+		APIVersion: f.apiVersion,
+	}, nil
 }

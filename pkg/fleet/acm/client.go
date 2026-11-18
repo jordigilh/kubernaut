@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -73,58 +74,86 @@ func NewClient(endpoint string, opts ...ClientOption) *Client {
 	return c
 }
 
-// IsManagedResource checks whether a resource exists on a managed cluster
+// Check checks whether a resource exists on a managed cluster
 // by querying ACM Search's GraphQL API. Search visibility and backend failures
 // are returned so callers can distinguish an unavailable scope backend from an
 // unmanaged resource.
-func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
+	unavailable := scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "search_observation_unavailable", Retryable: true}
+	if ctx.Err() != nil {
+		return unavailable, ctx.Err()
+	}
 	// Resolve ACM Search metadata with the shared ADR-053 label precedence rules.
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
-		return false, fmt.Errorf("acm scope: cluster, kind and name are required")
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil
 	}
-	gvk, err := scope.GVKForIdentity(r)
-	if err != nil {
-		return false, fmt.Errorf("acm scope: remote target GVK is unavailable: %w", err)
+	if _, err := scope.GVKForIdentity(r); err != nil {
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil //nolint:nilerr // DD-FLEET-015: invalid input is a completed domain outcome
 	}
-	r.Group, r.Version = gvk.Group, gvk.Version
+	if r.Namespace == "" || scope.IsClusterScopedKind(r.Kind) {
+		return scope.ScopeResult{State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable}, nil
+	}
 	item, found, err := c.searchScopeItem(ctx, r)
 	if err != nil {
-		return false, err
+		return acmScopeFailure(ctx, err)
 	}
 	if !found {
-		return false, fmt.Errorf("acm scope: resource visibility cannot be verified")
+		return unavailable, nil
+	}
+	if !hasLabelProjection(item) {
+		return unavailable, nil
 	}
 	resourceLabels := searchManagedLabels(item)
-	clusterScoped := r.Namespace == "" || scope.IsClusterScopedKind(r.Kind)
-	resolution := scope.ResolveLabels(resourceLabels, nil, clusterScoped)
-	// An invalid managed label is an unavailable resolution, not a verified
-	// unmanaged decision (ADR-068): it must surface as an observable error so
-	// the federated boolean lane fails closed instead of laundering
-	// managed=false through ScopeVerifiedUnmanaged.
-	if resolution.Source == scope.ScopeSourceUnavailable {
-		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", resolution.Reason)
-	}
-	if clusterScoped || resolution.ResourceLabel == scope.LabelStateTrue || resolution.ResourceLabel == scope.LabelStateFalse {
-		return resolution.Included, nil
+	resolution := scope.ResolveLabels(resourceLabels, nil, false)
+	if resolution.ResourceLabel != scope.LabelStateAbsent {
+		return acmScopeResolution(resolution), nil
 	}
 	namespace := scope.ResourceIdentity{ClusterID: r.ClusterID, Version: "v1", Kind: "Namespace", Name: r.Namespace}
 	ns, found, err := c.searchScopeItem(ctx, namespace)
 	if err != nil {
-		return false, err
+		return acmScopeFailure(ctx, err)
 	}
-	if !found {
-		return false, fmt.Errorf("acm scope: namespace visibility cannot be verified")
+	if !found || !hasLabelProjection(ns) {
+		return unavailable, nil
 	}
-	nsResolution := scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false)
-	if nsResolution.Source == scope.ScopeSourceUnavailable {
-		return false, fmt.Errorf("acm scope: managed label is invalid (%s)", nsResolution.Reason)
+	return acmScopeResolution(scope.ResolveLabels(resourceLabels, searchManagedLabels(ns), false)), nil
+}
+
+var errSearchDenied = errors.New("acm scope access denied")
+
+func acmScopeFailure(ctx context.Context, err error) (scope.ScopeResult, error) {
+	if errors.Is(err, errSearchDenied) {
+		return scope.ScopeResult{State: scope.ScopeUnauthorized, Provenance: scope.ScopeSourceUnavailable}, nil
 	}
-	return nsResolution.Included, nil
+	result := scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Retryable: true}
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
+	return result, err
+}
+
+func hasLabelProjection(item map[string]json.RawMessage) bool {
+	var value string
+	raw, exists := item["label"]
+	return exists && string(raw) != "null" && json.Unmarshal(raw, &value) == nil
+}
+
+func acmScopeResolution(resolution scope.Resolution) scope.ScopeResult {
+	if resolution.Source == scope.ScopeSourceUnavailable {
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: resolution.Reason}
+	}
+	state := scope.ScopeVerifiedUnmanaged
+	if resolution.Included {
+		state = scope.ScopeVerifiedManaged
+	}
+	return scope.ScopeResult{State: state, Provenance: resolution.Source}
 }
 
 func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) (map[string]json.RawMessage, bool, error) {
-	// GVKForIdentity (IsManagedResource, above) guarantees a non-empty Version.
-	filters := append(buildFilters(r), searchFilter{Property: "apiversion", Values: []string{r.Version}})
+	filters := buildFilters(r)
+	if r.Version != "" {
+		filters = append(filters, searchFilter{Property: "apiversion", Values: []string{r.Version}})
+	}
 	reqBody := graphQLRequest{
 		Query: SearchQuery,
 		Variables: map[string]interface{}{
@@ -150,12 +179,18 @@ func (c *Client) searchScopeItem(ctx context.Context, r scope.ResourceIdentity) 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+			return nil, false, errSearchDenied
+		}
 		return nil, false, fmt.Errorf("acm scope query returned status %d", resp.StatusCode)
 	}
 
 	var gqlResp graphQLResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
 		return nil, false, fmt.Errorf("decode acm scope response: %w", err)
+	}
+	if ctx.Err() != nil {
+		return nil, false, ctx.Err()
 	}
 	return scopeItemFromResponse(gqlResp, r)
 }
@@ -165,7 +200,7 @@ func scopeItemFromResponse(gqlResp graphQLResponse, r scope.ResourceIdentity) (m
 		return nil, false, fmt.Errorf("acm scope query returned graphql errors")
 	}
 
-	if gqlResp.Data == nil || len(gqlResp.Data.SearchResult) == 0 {
+	if gqlResp.Data == nil || len(gqlResp.Data.SearchResult) != 1 {
 		return nil, false, fmt.Errorf("acm scope response is missing search results")
 	}
 	result := gqlResp.Data.SearchResult[0]
@@ -188,19 +223,21 @@ func searchManagedLabels(item map[string]json.RawMessage) map[string]string {
 	labels := make(map[string]string, 1)
 	for _, pair := range strings.Split(firstString(item, "label"), ";") {
 		key, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
-		if ok && key == scope.ManagedLabelKey {
-			if _, exists := labels[key]; exists {
-				labels[key] = "invalid-duplicate"
-				break
-			}
-			labels[key] = value
+		if strings.TrimSpace(key) != scope.ManagedLabelKey {
+			continue
 		}
+		_, duplicate := labels[scope.ManagedLabelKey]
+		if !ok || key != scope.ManagedLabelKey || duplicate {
+			labels[scope.ManagedLabelKey] = string(scope.LabelStateInvalid)
+			return labels
+		}
+		labels[key] = value
 	}
 	return labels
 }
 
 // Ping checks connectivity to the ACM Search GraphQL API by issuing the
-// same SearchQuery used by IsManagedResource, filtered on kind=Namespace.
+// same SearchQuery used by Check, filtered on kind=Namespace.
 // ACM Search rejects an empty/nil filter set with a GraphQL business error
 // ("query input must contain a filter or keyword") even when the backend is
 // healthy and fully authenticated (confirmed against a live ACM 2.16.2

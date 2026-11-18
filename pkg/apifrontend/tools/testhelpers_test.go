@@ -26,8 +26,8 @@ import (
 // the explicit NeverManagedScopeChecker fixtures.
 type alwaysManagedScopeChecker struct{}
 
-func (alwaysManagedScopeChecker) IsManagedResource(context.Context, scope.ResourceIdentity) (bool, error) {
-	return true, nil
+func (alwaysManagedScopeChecker) Check(context.Context, scope.ResourceIdentity) (scope.ScopeResult, error) {
+	return scope.ScopeResult{State: scope.ScopeVerifiedManaged, Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 func testAlwaysManagedScopeChecker() scope.ScopeChecker {

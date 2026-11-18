@@ -9,6 +9,16 @@
 **Last Updated**: 2026-01-20
 **Owner**: Platform Team
 
+> **Approved pre-GA amendment (2026-11-16, #2593):**
+> [DD-FLEET-015](../architecture/decisions/DD-FLEET-015-owned-watch-and-enum-scope.md)
+> supersedes older boolean/missing-target fallback examples below. Scope checks
+> require observed target presence before namespace inheritance. Missing target
+> or namespace evidence is unavailable, never verified unmanaged; invalid labels
+> cannot inherit. The enum-only `Check` contract authorizes only
+> `verified_managed`; cluster-scoped target authorization remains deferred.
+> Namespace observations still support namespaced inheritance. The approved
+> [26-contract test plan](../tests/2593/TEST_PLAN.md) defines acceptance.
+
 ---
 
 ## 📋 Executive Summary

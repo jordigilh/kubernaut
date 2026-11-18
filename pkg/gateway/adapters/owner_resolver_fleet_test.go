@@ -34,15 +34,24 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fleettest"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 	var (
-		ctx context.Context
+		ctx          context.Context
+		registry     *adapters.APIResourceRegistry
+		remoteReader client.Reader
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
+		var err error
+		registry, err = adapters.NewAPIResourceRegistry(newFakeDiscovery(standardResources()))
+		Expect(err).NotTo(HaveOccurred())
+		pod := ownerGVKObject("v1", "Pod", "nginx-abc", "", "", "")
+		pod.SetNamespace("default")
+		remoteReader = fake.NewClientBuilder().WithObjects(pod).Build()
 	})
 
 	Describe("SetReaderFactory dispatch", func() {
@@ -105,10 +114,10 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerKind: "Deployment",
 				ownerName: "local-nginx",
 			}
-			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter := adapters.NewPrometheusAdapter(localResolver, registry, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
 				Readers: map[string]client.Reader{
-					"prod-east": nil,
+					"prod-east": remoteReader,
 				},
 			})
 
@@ -210,9 +219,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}
-			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter := adapters.NewPrometheusAdapter(localResolver, registry, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
-				Readers: map[string]client.Reader{"prod-east": nil},
+				Readers: map[string]client.Reader{"prod-east": remoteReader},
 			})
 
 			localAdapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
@@ -232,9 +241,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}
-			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter := adapters.NewPrometheusAdapter(localResolver, registry, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
-				Readers: map[string]client.Reader{"prod-east": nil},
+				Readers: map[string]client.Reader{"prod-east": remoteReader},
 			})
 
 			payload := buildAlertPayload("prod-east")
@@ -278,9 +287,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			adapter := adapters.NewPrometheusAdapter(&stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
-			}, nil, logr.Discard())
+			}, registry, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
-				Readers: map[string]client.Reader{"remote-cluster": nil},
+				Readers: map[string]client.Reader{"remote-cluster": remoteReader},
 			})
 
 			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("", "remote-cluster"))
@@ -293,9 +302,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			adapter := adapters.NewPrometheusAdapter(&stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
-			}, nil, logr.Discard())
+			}, registry, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
-				Readers: map[string]client.Reader{"hub": nil},
+				Readers: map[string]client.Reader{"hub": remoteReader},
 			})
 
 			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("hub", "remote-cluster"))
@@ -361,6 +370,10 @@ type stubOwnerResolver struct {
 
 func (s *stubOwnerResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
 	return s.ownerKind, s.ownerName, s.err
+}
+
+func (s *stubOwnerResolver) ResolveTopLevelOwnerIdentity(_ context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Namespace: resource.Namespace, Kind: s.ownerKind, Name: s.ownerName}, s.err
 }
 
 var _ types.OwnerResolver = (*stubOwnerResolver)(nil)

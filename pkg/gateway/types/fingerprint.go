@@ -23,21 +23,9 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-
-	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
-
-// OwnerResolverWithAPIVersion is the optional APIVersion-aware extension of
-// OwnerResolver (#2592). Implementations that can preserve the top-level
-// owner's apiVersion through the chain (e.g. ownerchain.K8sOwnerResolver)
-// satisfy it structurally; ResolveFingerprintWithCluster prefers it so the
-// resolved signal target carries a complete GVK. Resolvers that do not
-// implement it leave the owner's APIVersion empty — the strict scope gate
-// then rejects the Kind-only identity instead of guessing (fail-closed).
-type OwnerResolverWithAPIVersion interface {
-	ResolveTopLevelOwnerWithAPIVersion(ctx context.Context, namespace, kind, name string) (ownerchain.OwnerResolution, error)
-}
 
 // ResolveFingerprint is the single entry point for fingerprint generation across
 // all gateway adapters. It encapsulates the owner resolution logic that
@@ -76,60 +64,43 @@ func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolv
 		return CalculateClusterAwareFingerprint(clusterID, resource), resource, nil
 	}
 
-	// #2592: prefer the APIVersion-aware resolution so the owner target keeps
-	// its complete GVK. The plain method remains the fallback for resolvers
-	// that cannot supply it; their targets carry no apiVersion and are
-	// rejected by the strict identity gate rather than inferred.
-	if avResolver, ok := resolver.(OwnerResolverWithAPIVersion); ok {
-		resolution, err := avResolver.ResolveTopLevelOwnerWithAPIVersion(ctx, resource.Namespace, resource.Kind, resource.Name)
-		if err != nil {
-			logger.Error(err, "Owner resolution failed, dropping signal",
-				"resource", resource.String())
-			return "", ResourceIdentifier{}, fmt.Errorf("owner resolution failed for %s: %w", resource.String(), err)
-		}
-		if resolution.Kind == "" || resolution.Name == "" {
-			logger.Info("Owner resolution returned empty, dropping signal",
-				"resource", resource.String())
-			return "", ResourceIdentifier{}, fmt.Errorf("owner resolution returned empty for %s", resource.String())
-		}
-		owner := seedOwnerAPIVersion(ResourceIdentifier{
-			Namespace:  resource.Namespace,
-			Kind:       resolution.Kind,
-			Name:       resolution.Name,
-			APIVersion: resolution.APIVersion,
-		}, resource, logger)
-		fp := CalculateClusterAwareFingerprint(clusterID, owner)
-		logger.V(1).Info("Owner resolution succeeded",
-			"resource", resource.String(), "owner", owner.String(), "fingerprint", fp[:12])
-		return fp, owner, nil
-	}
-
-	// INVARIANT (#2650): this plain-resolver fallback is unreachable in
-	// production today — the only production OwnerResolver,
-	// ownerchain.K8sOwnerResolver, implements OwnerResolverWithAPIVersion, so
-	// the branch above always wins. It exists for third-party/test resolvers
-	// that only implement the plain interface; their targets carry no
-	// apiVersion (empty group segment) and are rejected by the strict scope
-	// gate rather than guessed (fail-closed).
-	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(
-		ctx, resource.Namespace, resource.Kind, resource.Name)
+	// #2592/#2593 (DD-FLEET-014): resolution is GVK-carrying end to end. The
+	// input resource's APIVersion — determined from discovery at ingestion
+	// (#2593) — flows into the traversal, each owner keeps its own
+	// authoritative version, and the production resolver FAILS (error) on a
+	// still-empty source GVK rather than returning a Kind-only identity.
+	resolved, err := resolver.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
+		Namespace: resource.Namespace, Kind: resource.Kind, Name: resource.Name, APIVersion: resource.APIVersion,
+	})
 	if err != nil {
 		logger.Error(err, "Owner resolution failed, dropping signal",
 			"resource", resource.String())
 		return "", ResourceIdentifier{}, fmt.Errorf("owner resolution failed for %s: %w", resource.String(), err)
 	}
 
-	if ownerKind == "" || ownerName == "" {
+	if resolved.Kind == "" || resolved.Name == "" {
 		logger.Info("Owner resolution returned empty, dropping signal",
 			"resource", resource.String())
 		return "", ResourceIdentifier{}, fmt.Errorf("owner resolution returned empty for %s", resource.String())
 	}
 
-	owner := ResourceIdentifier{
-		Namespace: resource.Namespace,
-		Kind:      ownerKind,
-		Name:      ownerName,
-	}
+	// #2650 M1 × #2593 interaction: the production resolver
+	// (ownerchain.K8sOwnerResolver.ResolveTopLevelOwnerIdentity) already
+	// back-fills the source GVK from its discovery registry and errors on a
+	// versionless identity, so for it the seed below is redundant defense in
+	// depth. The seed remains the gateway-level fail-closed safety net for
+	// OwnerResolver implementations (third-party, test fakes) that return a
+	// standalone identity with an empty APIVersion without erroring: the
+	// input resource's apiVersion — discovery-determined per #2593 when the
+	// adapter could not supply one — seeds the identity ONLY when the
+	// resolved owner IS the resource; a different versionless owner stays
+	// empty and is rejected by the strict identity gate downstream.
+	owner := seedOwnerAPIVersion(ResourceIdentifier{
+		Namespace:  resolved.Namespace,
+		Kind:       resolved.Kind,
+		Name:       resolved.Name,
+		APIVersion: resolved.APIVersion,
+	}, resource, logger)
 	fp := CalculateClusterAwareFingerprint(clusterID, owner)
 	logger.V(1).Info("Owner resolution succeeded",
 		"resource", resource.String(), "owner", owner.String(), "fingerprint", fp[:12])
@@ -138,11 +109,13 @@ func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolv
 
 // seedOwnerAPIVersion back-fills the resolved owner identity's apiVersion
 // from the input signal resource when owner resolution could not supply one
-// (#2650, M1). The gap: nil-registry test paths and registry misses for kinds
-// unknown to discovery (new CRD before the 5-min refresh, transient discovery
-// miss) make resolveGVK fall back to the static kindToGroup map, which misses
-// grouped kinds — resolution.APIVersion comes back empty exactly for the
-// cross-group resources the group dimension exists for.
+// (#2650, M1). Original gap: resolvers whose GVK lookup missed a grouped kind
+// (registry miss, nil registry) returned the standalone resource's identity
+// with an empty apiVersion — exactly for the cross-group resources the group
+// dimension exists for. Post-#2593, the production resolver determines the
+// source GVK from discovery itself and fails closed on a versionless source
+// (DD-FLEET-014), so this seed is defense in depth for resolvers that still
+// return a versionless standalone identity without erroring.
 //
 // The seed is valid ONLY when the resolved owner IS the input resource
 // (standalone resource: same kind, name and namespace) — the resource's own

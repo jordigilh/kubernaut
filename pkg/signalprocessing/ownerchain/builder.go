@@ -47,6 +47,7 @@ package ownerchain
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,9 +93,22 @@ func NewBuilder(c client.Reader, logger logr.Logger) *Builder {
 // DD-WORKFLOW-001 v1.8: Chain contains OWNERS ONLY
 // BR-SP-100: Max depth 5
 func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]signalprocessingv1alpha1.OwnerChainEntry, error) {
+	return b.build(ctx, namespace, "", kind, name, false)
+}
+
+// BuildWithAPIVersion traverses an owner chain using an explicit source
+// apiVersion. It is used for remote readers where Kind-only GVK inference is
+// unsafe. Each owner reference must carry its own apiVersion before it can be
+// used for the next lookup.
+func (b *Builder) BuildWithAPIVersion(ctx context.Context, namespace, apiVersion, kind, name string) ([]signalprocessingv1alpha1.OwnerChainEntry, error) {
+	return b.build(ctx, namespace, apiVersion, kind, name, true)
+}
+
+func (b *Builder) build(ctx context.Context, namespace, apiVersion, kind, name string, requireExplicitGVK bool) ([]signalprocessingv1alpha1.OwnerChainEntry, error) {
 	var chain []signalprocessingv1alpha1.OwnerChainEntry
 
 	currentNamespace := namespace
+	currentAPIVersion := apiVersion
 	currentKind := kind
 	currentName := name
 
@@ -106,7 +120,7 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 		b.logger.V(1).Info("Traversing owner chain level",
 			"level", i, "kind", currentKind, "name", currentName, "namespace", currentNamespace)
 
-		ownerRef, err := b.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
+		ownerRef, err := b.getControllerOwnerWithGVK(ctx, currentNamespace, currentAPIVersion, currentKind, currentName, requireExplicitGVK)
 		if err != nil {
 			if errors.Is(err, ErrNoControllerOwner) {
 				b.logger.V(1).Info("No controller owner found, chain complete",
@@ -136,6 +150,7 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 		})
 
 		currentNamespace = ownerNamespace
+		currentAPIVersion = ownerRef.APIVersion
 		currentKind = ownerRef.Kind
 		currentName = ownerRef.Name
 	}
@@ -150,7 +165,14 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 // getControllerOwner fetches a resource and returns its controller owner reference.
 // Returns ErrNoControllerOwner if no controller owner found.
 // Returns a different error for K8s API errors (RBAC, timeout, not found).
+// getControllerOwner preserves the local compatibility seam used by existing
+// callers. Remote traversal uses getControllerOwnerWithGVK below so it cannot
+// infer a GVK from Kind alone.
 func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name string) (*metav1.OwnerReference, error) {
+	return b.getControllerOwnerWithGVK(ctx, namespace, "", kind, name, false)
+}
+
+func (b *Builder) getControllerOwnerWithGVK(ctx context.Context, namespace, apiVersion, kind, name string, requireExplicitGVK bool) (*metav1.OwnerReference, error) {
 	// Check context cancellation first
 	select {
 	case <-ctx.Done():
@@ -159,7 +181,10 @@ func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name 
 	}
 
 	// Determine GVK for unstructured fetch
-	gvk := getGVKForKind(kind)
+	gvk, err := gvkForLookup(apiVersion, kind, requireExplicitGVK)
+	if err != nil {
+		return nil, err
+	}
 
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
@@ -177,6 +202,23 @@ func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name 
 	}
 
 	return nil, ErrNoControllerOwner
+}
+
+func gvkForLookup(apiVersion, kind string, requireExplicitGVK bool) (schema.GroupVersionKind, error) {
+	if apiVersion == "" {
+		if requireExplicitGVK {
+			return schema.GroupVersionKind{}, fmt.Errorf("ownerchain: explicit apiVersion is required for %q", kind)
+		}
+		return getGVKForKind(kind), nil
+	}
+	groupVersion, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil || groupVersion.Version == "" {
+		if err != nil {
+			return schema.GroupVersionKind{}, fmt.Errorf("ownerchain: invalid apiVersion %q: %w", apiVersion, err)
+		}
+		return schema.GroupVersionKind{}, fmt.Errorf("ownerchain: invalid apiVersion %q", apiVersion)
+	}
+	return groupVersion.WithKind(kind), nil
 }
 
 // getGVKForKind returns the GroupVersionKind for a given K8s resource kind.

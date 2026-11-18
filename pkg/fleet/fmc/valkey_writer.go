@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // ValkeyWriter implements CacheWriter using a Valkey (Redis-compatible) client.
@@ -54,9 +56,17 @@ func NewValkeyWriter(addr string, opts ...ValkeyOption) *ValkeyWriter {
 	}
 }
 
-// Set writes a key with the given TTL. The value is "1" (existence-only semantics).
+// Set records an observed explicit true label with the given TTL.
 func (v *ValkeyWriter) Set(ctx context.Context, key string, ttl time.Duration) error {
-	return v.client.Set(ctx, key, "1", ttl).Err()
+	return v.SetObservation(ctx, key, scope.LabelStateTrue, ttl)
+}
+
+// SetObservation writes a presence-aware label state for a source observation.
+// The key's existence proves target presence; the value records only the
+// bounded managed-label state and never stores a resource body or arbitrary
+// labels.
+func (v *ValkeyWriter) SetObservation(ctx context.Context, key string, labelState scope.LabelState, ttl time.Duration) error {
+	return v.client.Set(ctx, key, string(labelState), ttl).Err()
 }
 
 // Close terminates the underlying Redis connection.

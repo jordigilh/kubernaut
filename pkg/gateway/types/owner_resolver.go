@@ -16,7 +16,11 @@ limitations under the License.
 
 package types
 
-import "context"
+import (
+	"context"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+)
 
 // OwnerResolver resolves the top-level controller owner of a Kubernetes resource.
 //
@@ -30,22 +34,12 @@ import "context"
 // Issue #228: Moved from adapters package to types package so that all adapters
 // share the same interface and ResolveFingerprint can accept it directly.
 type OwnerResolver interface {
-	// ResolveTopLevelOwner traverses the ownerReference chain to find the top-level
-	// controller (e.g., Deployment, StatefulSet, DaemonSet).
-	//
-	// Parameters:
-	// - ctx: Context for cancellation/timeout
-	// - namespace: Resource namespace
-	// - kind: Resource kind (e.g., "Pod")
-	// - name: Resource name (e.g., "payment-api-789abc")
-	//
-	// Returns:
-	// - ownerKind: Top-level owner kind (e.g., "Deployment")
-	// - ownerName: Top-level owner name (e.g., "payment-api")
-	// - err: Resolution error (RBAC, timeout, not found, deleted). Callers must
-	//   drop the signal on error to prevent pod-level fingerprints from breaking
-	//   deduplication. The K8sOwnerResolver implementation uses trust-but-verify
-	//   (#284): when the cache returns no ownerReferences, it re-checks with the
-	//   direct API before accepting the result.
-	ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind string, ownerName string, err error)
+	// ResolveTopLevelOwnerIdentity traverses the controller-owner chain and
+	// returns the complete top-level identity, or an error (unknown GVK, RBAC,
+	// timeout, not found or deleted). Callers drop the signal on error to avoid
+	// unreliable child-level fingerprints. The implementation retains cached
+	// metadata reads and direct-API trust-but-verify (#284).
+	// DD-FLEET-014: return each resolved identity's own authoritative version;
+	// never copy a child's version to an owner, including a same-kind owner.
+	ResolveTopLevelOwnerIdentity(ctx context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error)
 }

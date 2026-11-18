@@ -296,7 +296,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Namespace: "prod", Kind: "Deployment", Name: "web-unscoped", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
 		})
 
 		It("UT-AF-2025-032: the rr_id (dedup lookup) path is not scope-checked", func() {

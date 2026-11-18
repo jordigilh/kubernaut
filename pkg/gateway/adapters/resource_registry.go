@@ -65,6 +65,10 @@ type registrySnapshot struct {
 	// group/Kind are intentionally NOT treated as separate candidates here —
 	// only a distinct Group counts as a new candidate.
 	kindToGVRCandidates map[string][]schema.GroupVersionResource
+	// complete is true only when discovery enumerated every API group
+	// without partial failure (#2592 determination gate: an incomplete
+	// snapshot can hide a second group serving the same Kind).
+	complete bool
 }
 
 type existenceCacheEntry struct {
@@ -185,8 +189,13 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 	if err != nil && lists == nil {
 		return nil, err
 	}
-	// Partial failure is OK — client-go returns partial results + error for
-	// groups it can't enumerate (IsGroupDiscoveryFailedError).
+	// Partial failure is tolerated for the adapter-side label/lookup uses
+	// (client-go returns partial results + error for groups it cannot
+	// enumerate, IsGroupDiscoveryFailedError), but it is RECORDED: the #2592
+	// determination gate refuses to determine a GVK from an incomplete
+	// snapshot, because a failed group could be the second group serving the
+	// same Kind.
+	snapshotComplete := err == nil
 
 	totalResources := 0
 	for _, list := range lists {
@@ -198,6 +207,7 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 		labelToKind:         make(map[string]string, totalResources),
 		kindNamespaced:      make(map[string]bool, totalResources),
 		kindToGVRCandidates: make(map[string][]schema.GroupVersionResource, totalResources),
+		complete:            snapshotComplete,
 	}
 
 	for _, list := range lists {
@@ -336,6 +346,42 @@ func (r *APIResourceRegistry) KindToGVRCandidates(kind string) ([]schema.GroupVe
 	}
 	candidates, ok := snap.kindToGVRCandidates[kind]
 	return candidates, ok
+}
+
+// DetermineKindAPIVersion implements the #2592 GVK-determination contract for
+// the scope gate: a Kind with no explicit apiVersion is DETERMINED from API
+// discovery only when it maps to exactly one discovered API GROUP — e.g. a
+// generic Kubernetes type like Deployment — and no CRD or external resource
+// shares the Kind (a shared Kind yields multiple candidates, one per group).
+// When several served versions of the same group exist, the first-discovered
+// version is used; the scope decision is unaffected (same objects, same
+// labels). Determination additionally requires a COMPLETE discovery snapshot:
+// a partially failed group discovery can hide a second group serving the same
+// Kind, which would turn determination into a guess (the one fail-open path
+// this contract forbids), so an incomplete snapshot returns "". Zero or
+// multiple candidates likewise return "" so the caller fails closed instead of
+// guessing. This is determination from live cluster state, not inference: the
+// same discovery snapshot the Prometheus adapter's resolveCandidateGVR uses
+// (#2066).
+func (r *APIResourceRegistry) DetermineKindAPIVersion(kind string) string {
+	if !r.snapshotComplete() {
+		return ""
+	}
+	candidates, ok := r.KindToGVRCandidates(kind)
+	if !ok || len(candidates) != 1 {
+		return ""
+	}
+	return formatAPIVersion(candidates[0])
+}
+
+// snapshotComplete reports whether the last discovery snapshot enumerated
+// every API group without partial failure. Mirrors KindToGVRCandidates'
+// lock discipline.
+func (r *APIResourceRegistry) snapshotComplete() bool {
+	r.mu.RLock()
+	snap := r.snapshot
+	r.mu.RUnlock()
+	return snap != nil && snap.complete
 }
 
 // TierForKind returns the priority tier for a given Kind.

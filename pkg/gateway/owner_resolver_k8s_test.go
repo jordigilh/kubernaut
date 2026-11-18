@@ -626,8 +626,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 
 			setup(deploy, rs, podA, podB)
 
-			resourceA := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podA.Name}
-			resourceB := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podB.Name}
+			resourceA := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podA.Name, APIVersion: corev1.SchemeGroupVersion.String()}
+			resourceB := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podB.Name, APIVersion: corev1.SchemeGroupVersion.String()}
 
 			fpA, _, err := types.ResolveFingerprint(ctx, resolver, resourceA, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())

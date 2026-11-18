@@ -99,6 +99,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for RO to create SignalProcessing")
@@ -176,6 +177,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -252,6 +254,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -318,6 +321,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate normalization")
@@ -415,6 +419,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for RO to create SignalProcessing")
@@ -488,6 +493,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate reactive completion")
@@ -566,6 +572,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("2. Wait for SignalProcessing and simulate 1:1 mapping")
@@ -635,6 +642,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					FiringTime: now, ReceivedTime: now,
 				},
 			}
+			ensureRRTarget(rr)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			spName := "sp-" + rrName

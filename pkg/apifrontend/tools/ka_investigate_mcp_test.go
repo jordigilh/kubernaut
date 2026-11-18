@@ -1682,7 +1682,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
 		}, false, "user")
 		Expect(err).To(HaveOccurred())
-		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue())
 	})
 
 	It("UT-AF-2025-052: the rr_id (takeover) path is not scope-checked", func() {

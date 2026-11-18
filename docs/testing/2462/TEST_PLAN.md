@@ -138,6 +138,35 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 
 ### 7.1 Failure diagnostic collection
 
+#### Approved #2593 bounded contract clarification (2026-11-16)
+
+The user approved the corresponding amendment in
+`docs/tests/2593/TEST_PLAN.md` before test edits. Scenarios 002/003 are admitted
+success journeys, not unconditional availability promises during FMC repair.
+Grounding must prove genuine content bound to the current A2A context, RR and
+InvestigationSession before presentation; HTTP 200 and EOF alone do not do so.
+Preserve the >512 structured fixture assertion and every RCA/workflow option,
+SSE media/parser and positive authentication assertion. An honest short refusal
+does not prove transport truncation and must not count as grounded success.
+
+Scenario 004 retains its first-caller action=start barrier and requires the
+current request's RR/session, not any retained target match. The second caller
+must use that authoritative **existing rr_id**, isolating driver-lease guidance
+from new-RR scope admission (ADR-068). Require session_active and no synthetic
+RCA; unavailable/conflict are not alternative successes. A completed rejected
+first stream should fail promptly, not spend 90 seconds waiting for an impossible
+start. Resource-based admission coverage remains separate.
+
+A new deterministic repair-window refusal IT holds only external MCP collection
+after real BeginRepair and exercises real Syncer/Valkey/readiness/FMC HTTP/AF.
+It proves unavailable/no new RR/no KA start/no fabricated RCA, releases collection,
+and requires guarded clean separately from admitted-success journeys. No sleeps,
+whole-investigation retry-until-green, production readiness toggle/reservation API
+or publication/fencing redesign is authorized. These are four critical contracts
+(one additive IT, three corrected existing scenarios), not duplicate scenario
+credit. Initial new qualification is 0/4; source-attributed historical passes
+remain historical. Exact-candidate remote qualification is required before push.
+
 | Scenario ID | Contract |
 |---|---|
 | UT-E2E-AF-FLEET-MUSTGATHER-001 | Always include the local cluster; include the separate Fleet cluster when Fleet setup was attempted. |

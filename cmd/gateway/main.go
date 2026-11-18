@@ -235,6 +235,11 @@ func run() int {
 	// Issue #1029: Dynamic API resource registry — replaces static kindToGroup +
 	// resourceCandidates + LabelFilter with fully dynamic discovery.
 	apiRegistry, err := buildAPIRegistry(serverCtx, srv, logger)
+	if err == nil {
+		// #2592: the scope gate determines a Kind-only signal's GVK from the
+		// same discovery snapshot the adapters use.
+		srv.SetAPIResourceRegistry(apiRegistry)
+	}
 	if err != nil {
 		logger.Error(err, "Failed to initialize API resource registry")
 		return 1

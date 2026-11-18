@@ -299,7 +299,7 @@ var _ = Describe("investigation scope wiring (#2025)", func() {
 			}, false, "it-user",
 		)
 		Expect(err).To(HaveOccurred())
-		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		Expect(errors.Is(err, tools.ErrScopeUnavailable)).To(BeTrue(), "DD-FLEET-015: an unavailable checker is a scope-unavailable outcome, not a not-managed determination")
 	})
 })
 

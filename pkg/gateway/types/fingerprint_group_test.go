@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Issue #2650: the fingerprint hash gains an API-group dimension so the same
@@ -132,10 +132,11 @@ var _ = Describe("Fingerprint group dimension (#2650, BR-GATEWAY-004)", func() {
 
 	Describe("Owner-path group seeding (M1)", func() {
 		// registryMissResolver simulates the discovery gap: an
-		// OwnerResolverWithAPIVersion-capable resolver whose GVK lookup missed
-		// the kind, so the standalone resource's own apiVersion comes back
-		// empty (owner_resolver.go resolveGVK static-map fallback misses
-		// grouped kinds like Route).
+		// OwnerResolver whose identity resolution returns the standalone
+		// resource without an apiVersion (registry miss, nil registry —
+		// post-#2593 the production resolver fails closed here instead,
+		// so the gateway-level seed is defense in depth for resolvers
+		// that return a versionless identity without erroring).
 		resolver := &registryMissFakeResolver{}
 
 		It("UT-GW-2650-007: resource apiVersion known, resolution returns empty apiVersion -> fingerprint carries the resource's group", func() {
@@ -186,23 +187,16 @@ var _ = Describe("Fingerprint group dimension (#2650, BR-GATEWAY-004)", func() {
 // apiVersion (real Kubernetes always populates it).
 type differentOwnerNoVersionResolver struct{}
 
-func (f *differentOwnerNoVersionResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
-	return "StatefulSet", "shared-route", nil
+func (f *differentOwnerNoVersionResolver) ResolveTopLevelOwnerIdentity(_ context.Context, _ sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Namespace: "production", Kind: "StatefulSet", Name: "shared-route"}, nil
 }
 
-func (f *differentOwnerNoVersionResolver) ResolveTopLevelOwnerWithAPIVersion(_ context.Context, _, _, _ string) (ownerchain.OwnerResolution, error) {
-	return ownerchain.OwnerResolution{Kind: "StatefulSet", Name: "shared-route"}, nil
-}
-
-// registryMissFakeResolver implements both owner-resolution interfaces but
-// returns an empty APIVersion, reproducing the registry-miss/nil-registry gap
-// where resolveGVK cannot map a grouped kind.
+// registryMissFakeResolver implements the OwnerResolver interface but
+// returns the standalone identity with an empty APIVersion, reproducing the
+// registry-miss/nil-registry gap where the GVK lookup cannot map a grouped
+// kind (a resolver that does not fail closed on a versionless source).
 type registryMissFakeResolver struct{}
 
-func (f *registryMissFakeResolver) ResolveTopLevelOwner(_ context.Context, _, kind, name string) (string, string, error) {
-	return kind, name, nil
-}
-
-func (f *registryMissFakeResolver) ResolveTopLevelOwnerWithAPIVersion(_ context.Context, _, kind, name string) (ownerchain.OwnerResolution, error) {
-	return ownerchain.OwnerResolution{Kind: kind, Name: name}, nil
+func (f *registryMissFakeResolver) ResolveTopLevelOwnerIdentity(_ context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
+	return sharedtypes.OwnerChainEntry{Namespace: resource.Namespace, Kind: resource.Kind, Name: resource.Name}, nil
 }

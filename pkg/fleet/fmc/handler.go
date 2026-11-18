@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -74,15 +75,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(ClustersPath, h.handleListClusters)
 }
 
-// ScopeCheckResponse is the JSON response for scope check queries.
-type ScopeCheckResponse struct {
-	Managed bool `json:"managed"`
-}
-
 // handleScopeCheck checks whether a resource on a remote cluster is managed.
 //
 //	GET /api/v1/scope/check?cluster={clusterID}&group={g}&version={v}&kind={k}&namespace={ns}&name={n}
-//	-> 200 {"managed": true} or {"managed": false}
+//	-> 200 verified state/provenance; nonverified domain outcomes use 4xx/503
 //	-> 400 if required params missing
 //	-> 405 if not GET
 func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
@@ -100,19 +96,22 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		Name:      q.Get("name"),
 	}
 
-	if resource.ClusterID == "" || resource.Kind == "" || resource.Name == "" {
-		http.Error(w, "cluster, kind, and name are required query parameters", http.StatusBadRequest)
+	if resource.ClusterID == "" || resource.Kind == "" || resource.Name == "" ||
+		len(validation.IsDNS1123Subdomain(resource.ClusterID)) != 0 ||
+		len(validation.IsDNS1123Subdomain(resource.Name)) != 0 ||
+		(resource.Namespace != "" && len(validation.IsDNS1123Label(resource.Namespace)) != 0) {
+		h.writeScope(w, http.StatusBadRequest, scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
 	// #2592 (SI-10): a missing or partial GVK is a permanent input defect and
 	// must be a 400, never a retryable 503 or a final managed=false. Group is
 	// optional (core API); version is mandatory.
 	if _, err := scope.GVKForIdentity(resource); err != nil {
-		http.Error(w, "version is a required query parameter (group optional for the core API)", http.StatusBadRequest)
+		h.writeScope(w, http.StatusBadRequest, scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
 
-	if _, known := h.registry.Get(resource.ClusterID); !known {
+	if _, known := h.registry.Get(resource.ClusterID); !known || !h.registry.Ready() {
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
 		// A cluster missing from the registry is an unavailable check, not a
@@ -120,11 +119,14 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		// distinguishable on the wire (SC-7), mirroring the checker-error
 		// lane below. Gateway/RO's HTTPClient retries with backoff and fails
 		// safe if retries are exhausted.
-		http.Error(w, "scope check unavailable: cluster is not registered", http.StatusServiceUnavailable)
+		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
 
-	managed, err := h.checker.IsManagedResource(r.Context(), resource)
+	result, err := h.checker.Check(r.Context(), resource)
+	if err == nil {
+		err = result.Validate()
+	}
 	if err != nil {
 		h.logger.Error(err, "scope check failed",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
@@ -136,11 +138,33 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 		// silently, permanently treating a transient blip as a final
 		// unmanaged determination. If retries are exhausted there,
 		// HTTPClient still fails safe to managed=false (SC-7 unchanged).
-		http.Error(w, "scope check temporarily unavailable", http.StatusServiceUnavailable)
+		h.writeScope(w, http.StatusServiceUnavailable, scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable})
 		return
 	}
 
-	writeJSON(w, ScopeCheckResponse{Managed: managed})
+	h.writeScope(w, scopeStatus(result.State), result)
+}
+
+// DD-FLEET-015: status and enum are one authorization boundary.
+func scopeStatus(state scope.ScopeState) int {
+	switch state {
+	case scope.ScopeVerifiedManaged, scope.ScopeVerifiedUnmanaged:
+		return http.StatusOK
+	case scope.ScopeInvalid, scope.ScopeUnsupported:
+		return http.StatusUnprocessableEntity
+	case scope.ScopeUnauthorized:
+		return http.StatusForbidden
+	default:
+		return http.StatusServiceUnavailable
+	}
+}
+
+func (h *Handler) writeScope(w http.ResponseWriter, status int, result scope.ScopeResult) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error(err, "write scope response")
+	}
 }
 
 // ClusterListResponse is the JSON response for cluster listing.

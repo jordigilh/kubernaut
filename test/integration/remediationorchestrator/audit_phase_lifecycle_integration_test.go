@@ -53,6 +53,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 §1)", func() {
@@ -117,7 +118,10 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 	// Helper to create valid RemediationRequest
 	// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
+	// #2593 (DD-FLEET-015): the target Pod must be observed before scope can
+	// authorize routing, so create it in the managed target namespace.
 	newValidRemediationRequest := func(name, fingerprint string) *remediationv1.RemediationRequest {
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
 		now := metav1.Now()
 		return &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{

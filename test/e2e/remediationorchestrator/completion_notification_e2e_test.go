@@ -36,6 +36,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E-RO-2449-001: Completion Notification on Successful Local Remediation
@@ -92,7 +93,7 @@ var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notif
 				ReceivedTime: now,
 			},
 		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		helpers.CreateRemediationRequestWithTarget(ctx, k8sClient, rr)
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")

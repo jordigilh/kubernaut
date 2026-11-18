@@ -107,7 +107,9 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", roRedisPort)
 
 		By("Seeding shared Redis with managed resources for remote clusters")
-		// Cache keys use the explicit GVK written by the FMC syncer.
+		// Cache keys use the real GVK ("apps/v1" for Deployment/StatefulSet)
+		// matching what pkg/fleet/fmc/syncer.go writes from the K8s API. Remote
+		// remediation targets provide the same explicit GVK.
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "staging-west", "dr-site-east", "any-cluster"} {
 			key, err := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "production", "api-server")
@@ -126,6 +128,9 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key4, 5*time.Minute)).To(Succeed())
 		}
+		unmanagedKey, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "unknown-ns", "unknown-resource")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writer.SetObservation(ctx, unmanagedKey, scope.LabelStateFalse, 5*time.Minute)).To(Succeed())
 		_ = writer.Close()
 
 		By("Creating real FMC HTTP stack (scopecache + handler + httptest)")
@@ -169,8 +174,8 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-managed", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "prod-east",
-				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
-					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				TargetResource: remediationv1.ResourceIdentifier{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server", Namespace: "production",
 				},
 			},
 		}
@@ -180,7 +185,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			"AC-3: managed resource on remote cluster must NOT be blocked")
 	})
 
-	It("IT-RO-054-FLEET-002 [AC-3]: should route empty ClusterID to local scope.Manager", func() {
+	It("IT-RO-054-FLEET-002 [AC-3]: Fleet empty attribution blocks without a local fallback", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-local", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
@@ -191,8 +196,10 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		}
 
 		condition := engine.CheckUnmanagedResource(ctx, rr)
-		Expect(condition).To(BeNil(),
-			"AC-3: managed resource on local cluster (managed namespace) must NOT be blocked")
+		Expect(condition).NotTo(BeNil())
+		Expect(condition.Blocked).To(BeTrue())
+		Expect(condition.Message).To(ContainSubstring("unavailable"))
+		Expect(condition.Message).NotTo(ContainSubstring("Add label"))
 	})
 
 	It("IT-RO-054-FLEET-003 [AC-3]: should block RR when remote scope returns unmanaged", func() {
@@ -200,8 +207,8 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-unmanaged", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "prod-east",
-				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
-					Kind: "Deployment", Name: "unknown-resource", Namespace: "unknown-ns",
+				TargetResource: remediationv1.ResourceIdentifier{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "unknown-resource", Namespace: "unknown-ns",
 				},
 			},
 		}
@@ -217,8 +224,8 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-lineage", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "dr-site-east",
-				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
-					Kind: "StatefulSet", Name: "postgres", Namespace: "databases",
+				TargetResource: remediationv1.ResourceIdentifier{
+					APIVersion: "apps/v1", Kind: "StatefulSet", Name: "postgres", Namespace: "databases",
 				},
 			},
 		}
@@ -233,8 +240,8 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 			ObjectMeta: metav1.ObjectMeta{Name: "rr-unknown-cluster", Namespace: ROControllerNamespace},
 			Spec: remediationv1.RemediationRequestSpec{
 				ClusterID: "unknown-cluster",
-				TargetResource: remediationv1.ResourceIdentifier{APIVersion: "apps/v1",
-					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				TargetResource: remediationv1.ResourceIdentifier{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server", Namespace: "production",
 				},
 			},
 		}

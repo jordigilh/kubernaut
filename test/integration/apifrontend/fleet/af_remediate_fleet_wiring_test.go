@@ -238,9 +238,9 @@ type fleetTestRemoteScopeChecker struct {
 	calls     []scope.ResourceIdentity
 }
 
-func (c *fleetTestRemoteScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+func (c *fleetTestRemoteScopeChecker) Check(_ context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	c.calls = append(c.calls, resource)
-	return resource.ClusterID == c.clusterID, nil
+	return scope.ScopeResult{State: map[bool]scope.ScopeState{true: scope.ScopeVerifiedManaged, false: scope.ScopeVerifiedUnmanaged}[resource.ClusterID == c.clusterID], Provenance: scope.ScopeSourceResourceLabel}, nil
 }
 
 type fleetTestAuditRecorder struct {

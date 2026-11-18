@@ -24,10 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -47,6 +43,7 @@ func newBackendUnstructured(name, endpoint string) *unstructured.Unstructured {
 			"kind":       "Backend",
 			"metadata": map[string]interface{}{
 				"name":      name,
+				"uid":       "backend-" + name,
 				"namespace": "kubernaut-system",
 				"labels": map[string]interface{}{
 					ManagedLabel: "true",
@@ -80,58 +77,93 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 		})
 	})
 
-	Describe("Probe", func() {
-		It("UT-REG-EAIGW-012 [BR-INTEGRATION-065, SI-4]: rejects a probe before initial sync", func() {
-			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry has not completed initial sync"))
+	Describe("Session publication", func() {
+		It("W05 UT-REG-REVIEW-EA-003 [BR-INTEGRATION-065]: stale LIST cannot resurrect an intervening deletion", func() {
+			old := newBackendUnstructured("east", "https://old")
+			w.onAdd(old)
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := ExtractClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onDelete(old)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
+			Expect(w.List()).To(BeEmpty())
+		})
+
+		DescribeTable("W05 UT-REG-REVIEW-EA-004/005 [BR-INTEGRATION-065]: stale publication cannot undo lifecycle retirement", func(stop bool) {
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			if stop {
+				w.Stop()
+			} else {
+				w.invalidate(errors.New("watch failed"))
+			}
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{})).NotTo(Succeed())
 			Expect(w.Ready()).To(BeFalse())
-		})
+		}, Entry("stop", true), Entry("watch failure", false))
 
-		It("UT-REG-EAIGW-013 [BR-INTEGRATION-065, SI-4]: rejects a probe after the registry stops", func() {
-			w.Stop()
-
-			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry stopped"))
-		})
-
-		It("UT-REG-EAIGW-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
-			w = NewEAIGWRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))
-			w.started = true
-
-			Expect(w.Probe(context.Background())).To(Succeed())
-			Expect(w.Ready()).To(BeTrue())
-			info, found := w.Get("prod-east")
+		It("W05 UT-REG-REVIEW-EA-001 [BR-INTEGRATION-065]: stale LIST cannot overwrite an intervening update", func() {
+			old := newBackendUnstructured("east", "https://old")
+			updated := newBackendUnstructured("east", "https://new")
+			w.onAdd(old)
+			generation, err := w.begin()
+			Expect(err).NotTo(HaveOccurred())
+			info, err := ExtractClusterInfo(old)
+			Expect(err).NotTo(HaveOccurred())
+			w.onUpdate(old, updated)
+			Expect(w.install(context.Background(), generation, map[string]ClusterInfo{"east": info})).NotTo(Succeed())
+			current, found := w.Get("east")
 			Expect(found).To(BeTrue())
-			Expect(info.MCPEndpoint).To(Equal("https://mcp.example.com/prod-east"))
+			Expect(current.MCPEndpoint).To(Equal("https://new"))
 		})
 
-		It("UT-REG-EAIGW-011 [SI-4]: marks readiness false when the authoritative API is unavailable", func() {
-			w.started = true
+		It("UT-REG-REVIEW-EA-002 [BR-INTEGRATION-065]: unrelated and identical updates preserve a registration proof", func() {
+			east := newBackendUnstructured("east", "https://east")
+			west := newBackendUnstructured("west", "https://west")
+			w.onAdd(east)
+			w.ready = true // Handler-unit fixture; external HTTP tests prove health.
+			snapshot, found := w.Snapshot("east")
+			Expect(found).To(BeTrue())
+			w.onAdd(west)
+			w.onUpdate(east, east.DeepCopy())
+			Expect(w.WithCurrent(context.Background(), "east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error { return nil })).To(Succeed())
+		})
+		// Former LIST-only Probe recovery/startup specs are replaced by
+		// IT-FMC-WATCH-2637-001/002/004 against the real external HTTP boundary.
+
+		It("UT-REG-EAIGW-015 [AC-3]: rejects stale delete and old revision commits after same-name recreation", func() {
+			oldRegistration := newBackendUnstructured("prod-east", "https://old.example")
+			newRegistration := newBackendUnstructured("prod-east", "https://new.example")
+			newRegistration.SetUID("backend-prod-east-recreated")
+
+			w.onAdd(oldRegistration)
 			w.ready = true
-			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-				runtime.NewScheme(),
-				map[schema.GroupVersionResource]string{BackendGVR: "BackendList"},
-			)
-			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				return true, nil, errors.New("api unavailable")
-			})
-			w.client = client
+			oldSnapshot, found := w.Snapshot("prod-east")
+			Expect(found).To(BeTrue())
 
-			Expect(w.Probe(context.Background())).To(MatchError(ContainSubstring("refresh fleet cluster registry")))
-			Expect(w.Ready()).To(BeFalse())
+			w.onUpdate(oldRegistration, newRegistration)
+			w.onDelete(oldRegistration)
+
+			current, found := w.Get("prod-east")
+			Expect(found).To(BeTrue())
+			Expect(current.RegistrationUID).To(Equal("backend-prod-east-recreated"))
+			Expect(w.WithCurrent(context.Background(), "prod-east", oldSnapshot.Info.RegistrationUID, oldSnapshot.Revision, func(ClusterInfo) error {
+				return nil
+			})).To(MatchError(ContainSubstring("registration changed")))
 		})
 
-		It("UT-REG-EAIGW-014 [SI-4]: installs the informer watch error handler during startup wiring", func() {
-			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
-			stopCh := make(chan struct{})
-			defer close(stopCh)
+		It("UT-REG-EAIGW-016 [AC-3]: rejects a commit after a same-UID registry update increments revision", func() {
+			first := newBackendUnstructured("prod-east", "https://old.example")
+			second := newBackendUnstructured("prod-east", "https://new.example")
+			w.onAdd(first)
+			w.ready = true
+			snapshot, found := w.Snapshot("prod-east")
+			Expect(found).To(BeTrue())
+			w.onUpdate(first, second)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_, err := startInformerAndSeed(ctx, client, EAIGWRegistryConfig{
-				ResyncPeriod: time.Minute,
-				onWatchError: func(error) {},
-			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh, w.trackableClusterInfo)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(w.WithCurrent(context.Background(), "prod-east", snapshot.Info.RegistrationUID, snapshot.Revision, func(ClusterInfo) error {
+				return nil
+			})).To(MatchError(ContainSubstring("registration changed")))
 		})
 	})
 
@@ -187,6 +219,24 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 	})
 
 	Describe("onDelete", func() {
+		It("UT-REG-EAIGW-017 [AC-3]: resolves the current cluster map through the lock-scoped owner", func() {
+			deleted := newBackendUnstructured("current-map", "https://mcp.example/current-map")
+			staleClusters := map[string]ClusterInfo{
+				"current-map": {ID: "current-map", RegistrationUID: string(deleted.GetUID())},
+			}
+			currentClusters := map[string]ClusterInfo{
+				"current-map": {ID: "current-map", RegistrationUID: string(deleted.GetUID())},
+			}
+			w.clusters = currentClusters
+
+			handleDeletedCluster(deleted, &w.mu, func() (map[string]ClusterInfo, map[string]uint64) {
+				return currentClusters, nil
+			}, &w.revision, w.metrics, w.logger, func(ClusterEvent) {})
+
+			Expect(currentClusters).NotTo(HaveKey("current-map"))
+			Expect(staleClusters).To(HaveKey("current-map"))
+		})
+
 		It("UT-REG-EAIGW-006: should remove cluster from registry and emit Deleted event", func() {
 			u := newBackendUnstructured("dev-west",
 				"https://mcp.example.com/dev-west")

@@ -4,14 +4,18 @@
 package helpers
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
+	. "github.com/onsi/gomega" //nolint:revive // Expect used in helpers
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -23,6 +27,30 @@ import (
 // ============================================================================
 // RemediationRequest Factory (BR-ORCH-025)
 // ============================================================================
+
+// CreateRemediationRequestWithTarget ensures the RR's spec.targetResource
+// exists in the cluster and then creates the RemediationRequest (#2593,
+// DD-FLEET-015 presence-first scope checking: a missing target resolves as
+// ScopeUnavailable("observation_missing") and can never be verified managed
+// OR unmanaged). The target is created unlabeled so it inherits the scope
+// decision of its namespace: managed fixtures keep managed-namespace
+// inheritance, and unmanaged fixtures keep the verified-unmanaged outcome
+// (including the kubectl-label remediation message).
+//
+// Supported kinds: Pod, Deployment. Other kinds fall back to creating the RR
+// unchanged (their fixtures keep their own setup responsibility).
+func CreateRemediationRequestWithTarget(ctx context.Context, k8sClient client.Client, rr *remediationv1.RemediationRequest) {
+	target := rr.Spec.TargetResource
+	if target.Namespace != "" && target.Name != "" {
+		switch target.Kind {
+		case "Pod":
+			EnsureTestPod(ctx, k8sClient, target.Namespace, target.Name)
+		case fixtureKindDeployment:
+			EnsureTestDeployment(ctx, k8sClient, target.Namespace, target.Name)
+		}
+	}
+	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+}
 
 // RemediationRequestOpts provides optional overrides for test data
 type RemediationRequestOpts struct {
@@ -114,9 +142,13 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 // testAPIVersionForKind maps a fixture kind to its apiVersion, mirroring what
 // production adapters resolve via API discovery (#2592: RRs must carry an
 // explicit targetResource.apiVersion).
+// fixtureKindDeployment is the shared literal for the default RR target kind
+// (goconst: used by the target-ensure switch and testAPIVersionForKind).
+const fixtureKindDeployment = "Deployment"
+
 func testAPIVersionForKind(kind string) string {
 	switch kind {
-	case "Deployment", "StatefulSet", "ReplicaSet", "DaemonSet":
+	case fixtureKindDeployment, "StatefulSet", "ReplicaSet", "DaemonSet":
 		return "apps/v1"
 	case "Job", "CronJob":
 		return "batch/v1"

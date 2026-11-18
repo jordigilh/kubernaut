@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // ScopeCheck queries FMC's real /api/v1/scope/check endpoint and returns the
@@ -39,24 +41,42 @@ import (
 // exercises FMC's actual HTTP API end to end. Gateway-agnostic: FMC's own
 // REST contract never varies by which gateway fronts kube-mcp-server.
 func ScopeCheck(g Gomega, h *Harness, clusterID, group, version, kind, namespace, name string) bool {
+	result, err := fmc.NewHTTPClient(h.FMCAPIBaseURL, fmc.WithHTTPClient(h.FMCHTTPClient)).Check(h.Ctx,
+		scope.ResourceIdentity{ClusterID: clusterID, Group: group, Version: version, Kind: kind, Namespace: namespace, Name: name})
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.State).To(BeElementOf(scope.ScopeVerifiedManaged, scope.ScopeVerifiedUnmanaged))
+	return result.State == scope.ScopeVerifiedManaged
+}
+
+// ScopeCheckUnavailable preserves BR-SCOPE-001/DD-FLEET-013: an absent target
+// has no verified managed decision, even when its partition is clean.
+func ScopeCheckUnavailable(g Gomega, h *Harness, identity scope.ResourceIdentity) {
+	resp := scopeCheckResponse(g, h, identity)
+	defer func() { _ = resp.Body.Close() }()
+	g.Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable), "missing target must be unavailable")
+	raw, err := io.ReadAll(resp.Body)
+	g.Expect(err).NotTo(HaveOccurred())
+	body, err := fmc.DecodeScopeResponse(strings.NewReader(string(raw)))
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(body.Validate()).To(Succeed())
+	g.Expect(body.State).To(Equal(scope.ScopeUnavailable))
+	g.Expect(body.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+}
+
+func scopeCheckResponse(g Gomega, h *Harness, identity scope.ResourceIdentity) *http.Response {
 	q := url.Values{}
-	q.Set("cluster", clusterID)
-	q.Set("group", group)
-	q.Set("version", version)
-	q.Set("kind", kind)
-	q.Set("namespace", namespace)
-	q.Set("name", name)
+	q.Set("cluster", identity.ClusterID)
+	q.Set("group", identity.Group)
+	q.Set("version", identity.Version)
+	q.Set("kind", identity.Kind)
+	q.Set("namespace", identity.Namespace)
+	q.Set("name", identity.Name)
 
 	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ScopeCheckPath+"?"+q.Encode(), http.NoBody)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to build scope check request")
 	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "scope check request failed")
-	defer func() { _ = resp.Body.Close() }()
-	g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "scope check should return 200")
-
-	var body fmc.ScopeCheckResponse
-	g.Expect(json.NewDecoder(resp.Body).Decode(&body)).To(Succeed())
-	return body.Managed
+	return resp
 }
 
 // ScopeCheckStatus returns the raw HTTP status of a scope-check request for

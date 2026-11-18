@@ -84,8 +84,16 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			By("4. Verify Gateway returns error but doesn't crash")
 			Expect(err).To(HaveOccurred(),
 				"BR-GATEWAY-113: Context deadline should cause error")
-			Expect(err.Error()).To(ContainSubstring("context"),
-				"BR-GATEWAY-113: Error must indicate context issue")
+			// #2593 (DD-FLEET-015): the presence-first scope gate is the first
+			// K8s consumer of the request context, and signal ingestion masks
+			// scope backend errors as "scope validation unavailable" — the
+			// cancelled context no longer surfaces verbatim. The graceful-
+			// handling contract (error returned, no crash, subsequent requests
+			// processed) is asserted below.
+			Expect(err.Error()).To(Or(
+				ContainSubstring("context"),
+				ContainSubstring("scope validation unavailable"),
+			), "BR-GATEWAY-113: Error must indicate the context/scope failure")
 			// Note: Response may be nil on context timeout (expected behavior)
 			// Gateway didn't crash - this is what we're validating
 

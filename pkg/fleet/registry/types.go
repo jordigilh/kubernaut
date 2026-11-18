@@ -20,12 +20,22 @@ limitations under the License.
 // Envoy AI Gateway (EAIGWRegistry) and Kuadrant (KuadrantRegistry).
 package registry
 
-import "context"
+import (
+	"context"
+	"reflect"
+	"sync"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
 
 // ClusterInfo holds metadata about a discovered managed cluster.
 type ClusterInfo struct {
 	// ID is the unique identifier (CR name in the MCP Gateway).
 	ID string
+	// RegistrationUID is the Kubernetes metadata.uid of the gateway registration
+	// object. It fences cache state across delete/recreate incarnations that
+	// reuse the same registration name.
+	RegistrationUID string
 	// MCPEndpoint is the URL to reach the cluster's MCP server through the gateway.
 	MCPEndpoint string
 	// ToolPrefix is the prefix used by the MCP Gateway for this cluster's tools.
@@ -35,6 +45,130 @@ type ClusterInfo struct {
 	Labels map[string]string
 	// Namespace where the MCP Gateway CRD was found.
 	Namespace string
+}
+
+// RegistrationSnapshot is an immutable view of one current registry entry and
+// its per-registration revision (DD-FLEET-013).
+type RegistrationSnapshot struct {
+	Info     ClusterInfo
+	Revision uint64
+}
+
+// RegistrySnapshot atomically captures authoritative membership and the global
+// mutation generation. Generation fences publication, not individual read proofs.
+type RegistrySnapshot struct {
+	Generation    uint64
+	Registrations []RegistrationSnapshot
+}
+
+type RegistrySnapshotter interface {
+	SnapshotAll() RegistrySnapshot
+}
+
+func snapshotRegistrations(generation uint64, clusters map[string]ClusterInfo, revisions map[string]uint64) RegistrySnapshot {
+	snapshot := RegistrySnapshot{Generation: generation, Registrations: make([]RegistrationSnapshot, 0, len(clusters))}
+	for id, info := range clusters {
+		info.Labels = cloneLabels(info.Labels)
+		snapshot.Registrations = append(snapshot.Registrations, RegistrationSnapshot{Info: info, Revision: revisions[id]})
+	}
+	return snapshot
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(labels))
+	for key, value := range labels {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+// publishRegistrations preserves revisions of unchanged entries. The caller owns
+// the registry lock and has checked the refresh mutation generation.
+func publishRegistrations(current *map[string]ClusterInfo, refreshed map[string]ClusterInfo, revisions map[string]uint64, generation *uint64) {
+	if !clusterMapEqual(*current, refreshed) {
+		*generation++
+	}
+	for id := range revisions {
+		if _, exists := refreshed[id]; !exists {
+			delete(revisions, id)
+		}
+	}
+	for id, info := range refreshed {
+		old, exists := (*current)[id]
+		if !exists || !clusterInfoEqual(old, info) {
+			revisions[id] = *generation
+		}
+	}
+	*current = refreshed
+}
+
+func addCluster(info ClusterInfo, mu *sync.RWMutex, clusters *map[string]ClusterInfo, revisions map[string]uint64, generation *uint64, stopped *bool) (bool, bool, int) {
+	mu.Lock()
+	defer mu.Unlock()
+	current, existed := (*clusters)[info.ID]
+	if *stopped {
+		return false, existed, len(*clusters)
+	}
+	// Every accepted event fences refresh publication, including extracted-data
+	// no-ops; only a changed registration receives a new proof revision.
+	*generation++
+	if existed && clusterInfoEqual(current, info) {
+		return false, true, len(*clusters)
+	}
+	(*clusters)[info.ID] = info
+	revisions[info.ID] = *generation
+	return true, existed, len(*clusters)
+}
+
+func emitAddedCluster(info ClusterInfo, existed bool, count int, metrics *Metrics, emit func(ClusterEvent)) {
+	metrics.NilSafeSetClusters(float64(count))
+	metrics.NilSafeIncReconcile()
+	eventType := EventAdded
+	if existed {
+		eventType = EventUpdated
+	}
+	emit(ClusterEvent{Type: eventType, Cluster: info})
+}
+
+func clusterInfoEqual(left, right ClusterInfo) bool {
+	return left.ID == right.ID &&
+		left.RegistrationUID == right.RegistrationUID &&
+		left.MCPEndpoint == right.MCPEndpoint &&
+		left.ToolPrefix == right.ToolPrefix &&
+		left.Namespace == right.Namespace &&
+		reflect.DeepEqual(left.Labels, right.Labels)
+}
+
+func clusterMapEqual(left, right map[string]ClusterInfo) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for id, leftInfo := range left {
+		rightInfo, ok := right[id]
+		if !ok || !clusterInfoEqual(leftInfo, rightInfo) {
+			return false
+		}
+	}
+	return true
+}
+
+func objectUID(obj interface{}) string {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return ""
+	}
+	return string(u.GetUID())
+}
+
+// CurrentRegistrationGuard provides the short critical section used by cache
+// repair and commit operations. The callback runs only while the requested
+// registration UID and revision are still current.
+type CurrentRegistrationGuard interface {
+	Snapshot(clusterID string) (RegistrationSnapshot, bool)
+	WithCurrent(context.Context, string, string, uint64, func(ClusterInfo) error) error
 }
 
 // ClusterEvent represents a change in the cluster registry.

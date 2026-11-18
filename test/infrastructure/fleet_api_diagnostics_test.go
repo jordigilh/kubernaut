@@ -258,8 +258,8 @@ var _ = Describe("BR-INTEGRATION-054/065 / BR-SCOPE-002: organic Fleet scope rea
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(header)).To(Equal("Authorization: Bearer " + probeToken + "\n"))
 		},
-		Entry("a cache miss is not readiness", `{"managed":false}`, false),
-		Entry("a managed fixture is ready", `{"managed":true}`, true),
+		Entry("an observed unmanaged fixture is not ready", `{"state":"verified_unmanaged","provenance":"resource-label"}`, false),
+		Entry("a managed fixture is ready", `{"state":"verified_managed","provenance":"resource-label"}`, true),
 	)
 
 	DescribeTable("UT-FLEET-2493-002: invalid or failed scope responses remain explicit errors",
@@ -322,7 +322,7 @@ exec sleep 30`, true)
 	})
 
 	It("UT-FLEET-2493-001: authorization-header injection is rejected before executing the probe", func() {
-		installFleetScopeProbeExecutor(`{"managed":true}`, 0)
+		installFleetScopeProbeExecutor(`{"state":"verified_managed","provenance":"resource-label"}`, 0)
 		managed, err := CheckFleetResourceScope(context.Background(), "owned-2493-control-plane", "/owned-2493/kubeconfig", "kubernaut-system", "bad\nX-Injected: true", resource)
 		Expect(managed).To(BeFalse())
 		Expect(err).To(HaveOccurred())
