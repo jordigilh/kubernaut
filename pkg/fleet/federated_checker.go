@@ -96,28 +96,6 @@ func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
 	return f.remote
 }
 
-// IsManagedResource is the boolean compatibility lane kept from main
-// (#2647). It routes by ClusterID through the typed lane and collapses the
-// outcome: only a verified managed=true returns true; every other outcome
-// (verified unmanaged, invalid, unsupported, unavailable) fails closed as
-// false with the distinguishing error where one exists.
-func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	result, err := f.Check(ctx, resource)
-	if err != nil {
-		return false, err
-	}
-	if result.State == scope.ScopeVerifiedManaged {
-		return true, nil
-	}
-	if result.State == scope.ScopeVerifiedUnmanaged {
-		return false, nil
-	}
-	if result.Reason != "" {
-		return false, fmt.Errorf("fleet scope: check did not complete: %s", result.Reason)
-	}
-	return false, fmt.Errorf("fleet scope: check did not complete: %s", result.State)
-}
-
 // Check dispatches only explicitly attributed Fleet requests to the statically
 // typed remote backend. Non-Fleet requests use the local checker at the factory.
 // DD-FLEET-015 forbids an empty Fleet attribution from falling back locally.
@@ -155,4 +133,3 @@ func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.Resour
 func unavailableScopeResult(reason string) scope.ScopeResult {
 	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: reason, Retryable: true}
 }
-

@@ -68,8 +68,7 @@ func (r ScopeResult) Validate() error {
 
 // TypedScopeChecker is an additive contract preserved from main (#2647) for
 // consumers that reference the typed lane explicitly. ScopeChecker itself is
-// the typed contract (DD-FLEET-015); IsManagedResource remains a boolean
-// convenience method on *Manager.
+// the typed contract (DD-FLEET-015); the boolean lane is gone (#2660 m10).
 type TypedScopeChecker interface {
 	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
 }

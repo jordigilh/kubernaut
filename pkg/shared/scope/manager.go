@@ -256,8 +256,8 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 // resolveObserved is the presence-first lookup backing the typed Check lane
 // (DD-FLEET-015): the target resource must be observed before inheritance is
 // considered, so a NotFound is an observation error, never a silent namespace
-// fallthrough. Resolve and IsManagedResource keep the ADR-053 inheritance
-// semantics for inventory and boolean consumers.
+// fallthrough. Resolve and ResolveWithResourceLabels keep the ADR-053
+// inheritance semantics for inventory consumers.
 func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity) (Resolution, error) {
 	gvk, err := GVKForIdentity(resource)
 	if err != nil {
@@ -291,8 +291,8 @@ func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity
 
 // Check implements DD-FLEET-015: target presence precedes inheritance.
 // The typed contract keeps invalid, unavailable and unsupported outcomes
-// distinct from verified unmanaged; IsManagedResource remains available for
-// boolean consumers.
+// distinct from verified unmanaged; there is no boolean lane to collapse
+// them.
 func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable}, err
@@ -386,39 +386,6 @@ func (m *Manager) resolveWithResourceLabels(ctx context.Context, resource Resour
 // which creates metadata-only informers for PartialObjectMetadata lookups.
 func NewManager(c client.Reader) *Manager {
 	return &Manager{client: c}
-}
-
-// IsManagedResource checks whether a Kubernetes resource is managed by Kubernaut.
-//
-// The 2-level hierarchy (ADR-053):
-//  1. Check resource label: "true" → managed, "false" → unmanaged, missing → continue
-//  2. Check namespace label: "true" → managed, "false" → unmanaged, missing → unmanaged
-//
-// An invalid managed label (present but neither "true" nor "false") is
-// unavailable, not absent: the resolution fails closed as unmanaged and the
-// outcome is logged here so boolean consumers can observe it (the typed
-// Check contract carries the reason explicitly).
-//
-// For cluster-scoped resources (namespace==""), only the resource label is checked.
-// Resource not found: falls through to namespace check.
-// Namespace not found: returns false, nil (unmanaged, not an error).
-//
-// ClusterID must be empty — the local Manager cannot resolve remote clusters.
-// For remote checks, use a fleet adapter (e.g., FederatedScopeChecker).
-func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
-	resolution, err := m.Resolve(ctx, resource)
-	if err != nil {
-		log.FromContext(ctx).WithName("scope").Error(err, "Failed to resolve resource scope")
-		return false, err
-	}
-	if resolution.Source == ScopeSourceUnavailable {
-		log.FromContext(ctx).WithName("scope").Info("Scope resolution unavailable; failing closed as unmanaged",
-			"reason", resolution.Reason,
-			"namespace", resource.Namespace,
-			"kind", resource.Kind,
-			"name", resource.Name)
-	}
-	return resolution.Included, nil
 }
 
 // isClusterScoped returns true if the resource kind is cluster-scoped.
