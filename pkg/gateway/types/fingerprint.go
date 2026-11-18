@@ -144,21 +144,24 @@ func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolv
 // grouped kinds — resolution.APIVersion comes back empty exactly for the
 // cross-group resources the group dimension exists for.
 //
-// The owner's own apiVersion from OwnerReferences always wins (it is only
-// empty here), so this seed only fires for standalone resources where the
-// resolution IS the resource. When an owner WAS found yet carries no version
-// (degenerate controllerRef-without-apiVersion — real Kubernetes populates
-// it), the seed is logged so the attribution stays observable rather than
-// silent.
+// The seed is valid ONLY when the resolved owner IS the input resource
+// (standalone resource: same kind, name and namespace) — the resource's own
+// apiVersion is then trivially its owner's. When resolution found a DIFFERENT
+// owner that carries no apiVersion (degenerate controllerRef — real Kubernetes
+// populates it), the child's group must NOT be attributed to the owner: the
+// owner keeps its empty version, which the #2592 strict identity gate rejects
+// downstream (fail-closed), and the mismatch is logged so the attribution
+// decision stays observable.
 func seedOwnerAPIVersion(owner, resource ResourceIdentifier, logger logr.Logger) ResourceIdentifier {
 	if owner.APIVersion != "" || resource.APIVersion == "" {
 		return owner
 	}
-	owner.APIVersion = resource.APIVersion
-	if owner.Kind != resource.Kind || owner.Name != resource.Name {
-		logger.Info("Owner resolution returned empty apiVersion; seeded group dimension from signal resource",
+	if owner.Kind != resource.Kind || owner.Name != resource.Name || owner.Namespace != resource.Namespace {
+		logger.Info("Owner resolution returned a different owner with empty apiVersion; refusing to seed the group from the child resource (fail-closed)",
 			"resource", resource.String(), "owner", owner.String())
+		return owner
 	}
+	owner.APIVersion = resource.APIVersion
 	return owner
 }
 

@@ -149,6 +149,12 @@ var _ = Describe("APIVersion (F2)", func() {
 		Entry("v1beta1", "v1beta1"),
 		Entry("apps/v1beta2", "apps/v1beta2"),
 		Entry("apiextensions.k8s.io/v1", "apiextensions.k8s.io/v1"),
+		// #2650 review: grouped versions are DNS1035 labels, not just v<N> —
+		// scope.ParseAPIVersion (the canonical identity parser) accepts CRD
+		// versions like "stable", and validate.APIVersion must agree so AF
+		// tools can look up resources the Gateway fingerprints.
+		Entry("grouped non-v<N> version (CRD)", "example.com/stable"),
+		Entry("grouped non-v<N> version (named)", "corp.example/v2alpha"),
 	)
 
 	DescribeTable("invalid api versions",
@@ -163,6 +169,7 @@ var _ = Describe("APIVersion (F2)", func() {
 		Entry("double slash", "apps//v1", "invalid api_version"),
 		Entry("missing v prefix", "apps/1", "invalid api_version"),
 		Entry("path traversal", "../../v1", "invalid api_version"),
+		Entry("grouped numeric-only version", "apps/1", "invalid api_version"),
 		Entry("space", "apps /v1", "invalid api_version"),
 		Entry("too long", strings.Repeat("a", 254), "exceeds max length"),
 	)

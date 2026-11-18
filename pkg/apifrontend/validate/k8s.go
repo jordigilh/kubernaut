@@ -8,13 +8,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 var (
 	kindRE      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 	alertNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
-	apiVersionRE = regexp.MustCompile(`^([a-z0-9][a-z0-9.-]*/)?v[0-9]+([a-z0-9]+)?$`)
 )
 
 // Namespace validates that ns is a valid Kubernetes namespace (RFC 1123 DNS label).
@@ -74,15 +74,15 @@ func Kind(k string) error {
 
 // ValidActions is the set of valid interactive action strings.
 var ValidActions = map[string]bool{
-	"investigate":  true,
-	"discover":     true,
-	"select":       true,
-	"takeover":     true,
-	"message":      true,
-	"complete":     true,
-	"cancel":       true,
-	"status":       true,
-	"reconnect":    true,
+	"investigate": true,
+	"discover":    true,
+	"select":      true,
+	"takeover":    true,
+	"message":     true,
+	"complete":    true,
+	"cancel":      true,
+	"status":      true,
+	"reconnect":   true,
 }
 
 // Action validates that the action string is in the valid set.
@@ -126,7 +126,12 @@ func AlertName(name string) error {
 const MaxAPIVersionLen = 253
 
 // APIVersion validates that v is a valid Kubernetes API version string.
-// Format: "group/version" (e.g., "apps/v1") or "version" for core (e.g., "v1").
+// Delegates to the canonical scope.ParseAPIVersion (#2592 identity contract)
+// so the AF tools accept exactly the forms every other component accepts:
+// core "v<N>((alpha|beta)<N>)?" and grouped "<DNS1123-subdomain>/<DNS1035-label>"
+// (e.g. "v1", "apps/v1", "example.com/stable"). A regex-only check previously
+// rejected grouped non-v<N> versions (CRD versions like "stable") that the
+// fingerprint's group extraction accepts, splitting the identity contract.
 func APIVersion(v string) error {
 	if v == "" {
 		return fmt.Errorf("api_version must not be empty")
@@ -134,8 +139,8 @@ func APIVersion(v string) error {
 	if len(v) > MaxAPIVersionLen {
 		return fmt.Errorf("api_version %q exceeds max length %d", v, MaxAPIVersionLen)
 	}
-	if !apiVersionRE.MatchString(v) {
-		return fmt.Errorf("invalid api_version %q: must be 'v<N>' or '<group>/v<N>' (e.g., 'v1', 'apps/v1')", v)
+	if _, _, err := scope.ParseAPIVersion(v); err != nil {
+		return fmt.Errorf("invalid api_version %q: must be a core 'v<N>' or '<group>/<version>' (e.g. 'v1', 'apps/v1', 'example.com/stable')", v)
 	}
 	return nil
 }

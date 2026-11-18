@@ -154,8 +154,45 @@ var _ = Describe("Fingerprint group dimension (#2650, BR-GATEWAY-004)", func() {
 			Expect(fp).To(Equal(expected),
 				"the seeded group must reach the fingerprint hash (M1: registry-miss standalone resource)")
 		})
+
+		It("UT-GW-2650-008: a DIFFERENT owner with empty apiVersion is not seeded from the child resource (fail-closed)", func() {
+			// Degenerate controllerRef without apiVersion: the resolved owner
+			// is another resource and carries no version. The child's group
+			// must NOT be attributed to the owner — the owner keeps its empty
+			// version and the #2592 strict identity gate rejects it
+			// downstream rather than guessing.
+			differentOwnerResolver := &differentOwnerNoVersionResolver{}
+			pod := types.ResourceIdentifier{
+				Namespace: "production", Kind: "Pod", Name: "shared-route-abc", APIVersion: "v1",
+			}
+
+			fp, resolved, err := types.ResolveFingerprintWithCluster(context.Background(), "", differentOwnerResolver, pod, logr.Discard())
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolved.APIVersion).To(BeEmpty(),
+				"the child's apiVersion must not be attributed to a different owner")
+			Expect(resolved.Kind).To(Equal("StatefulSet"))
+			expected := types.CalculateClusterAwareFingerprint("", types.ResourceIdentifier{
+				Namespace: "production", Kind: "StatefulSet", Name: "shared-route",
+			})
+			Expect(fp).To(Equal(expected),
+				"the fingerprint must hash the owner with the empty group segment, not the child's group")
+		})
 	})
 })
+
+// differentOwnerNoVersionResolver resolves to a different owner (StatefulSet)
+// with an empty APIVersion, reproducing a controllerRef that carries no
+// apiVersion (real Kubernetes always populates it).
+type differentOwnerNoVersionResolver struct{}
+
+func (f *differentOwnerNoVersionResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
+	return "StatefulSet", "shared-route", nil
+}
+
+func (f *differentOwnerNoVersionResolver) ResolveTopLevelOwnerWithAPIVersion(_ context.Context, _, _, _ string) (ownerchain.OwnerResolution, error) {
+	return ownerchain.OwnerResolution{Kind: "StatefulSet", Name: "shared-route"}, nil
+}
 
 // registryMissFakeResolver implements both owner-resolution interfaces but
 // returns an empty APIVersion, reproducing the registry-miss/nil-registry gap

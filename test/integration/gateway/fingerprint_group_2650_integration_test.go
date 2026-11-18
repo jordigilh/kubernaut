@@ -46,6 +46,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,12 +139,16 @@ func registerRouteCRDsFor2650() {
 }
 
 // removeRouteCRDsFor2650 cleans up the test-only CRDs so the shared envtest
-// API server is left as found for other specs.
+// API server is left as found for other specs. Only NotFound is ignorable;
+// any other deletion failure is reported (a leftover fixed-name CRD would
+// break later setup with AlreadyExists).
 func removeRouteCRDsFor2650() {
 	crdClient := crdClientFor2650()
 	for _, group := range []string{"route.openshift.io", "serving.knative.dev"} {
 		crd := &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "routes." + group}}
-		_ = crdClient.Delete(ctx, crd)
+		if err := crdClient.Delete(ctx, crd); err != nil && !apierrors.IsNotFound(err) {
+			Fail(fmt.Sprintf("cleanup: deleting CRD routes.%s: %v", group, err))
+		}
 	}
 }
 
