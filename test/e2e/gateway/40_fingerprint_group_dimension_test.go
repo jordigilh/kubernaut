@@ -109,8 +109,15 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 	}
 
 	revokeRouteReadRBAC2650 := func() {
-		_ = crdClient.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}})
-		_ = crdClient.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}})
+		// Only NotFound is ignorable; other deletion failures are reported
+		// (a leftover fixed-name RBAC object would break later setup with
+		// AlreadyExists). Both deletions are attempted regardless.
+		if err := crdClient.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}}); err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(fmt.Errorf("delete ClusterRoleBinding: %w", err), "cleanup: fp-group-e2e-route-reader")
+		}
+		if err := crdClient.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "fp-group-e2e-route-reader"}}); err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(fmt.Errorf("delete ClusterRole: %w", err), "cleanup: fp-group-e2e-route-reader")
+		}
 	}
 
 	BeforeAll(func() {

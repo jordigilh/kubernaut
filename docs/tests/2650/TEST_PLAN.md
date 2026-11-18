@@ -118,7 +118,7 @@ Maintainer decision: NO migration, NO backward compatibility — clean installs 
 
 - **Unit**: 100% of in-scope business scenarios (the full group-segment decision table: distinct groups, determinism, cluster+group combination, empty group, malformed fallback, same-group versions, owner-path seeding)
 - **Integration**: 100% of Wiring Manifest rows (plan §Wiring Manifest)
-- **E2E**: covered by existing a2a/fullpipeline suites via fixture sweep (mock-llm.yaml `api_version` arg); no new E2E tier
+- **E2E**: existing a2a/fullpipeline suites via fixture sweep (mock-llm.yaml `api_version` arg), plus the dedicated cross-group journey `E2E-GW-2650-001` on the deployed Gateway (maintainer request; see Tier 3 below)
 
 ### 5.2 Two-Tier Minimum
 
