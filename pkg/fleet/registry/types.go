@@ -96,7 +96,8 @@ func cloneLabels(labels map[string]string) map[string]string {
 // the registry lock and has checked the refresh mutation generation.
 func publishRegistrations(current *map[string]ClusterInfo, refreshed map[string]ClusterInfo, revisions map[string]uint64, generation *uint64) {
 	if !clusterMapEqual(*current, refreshed) {
-		*generation++
+		next := *generation + 1
+		*generation = next
 	}
 	for id := range revisions {
 		if _, exists := refreshed[id]; !exists {
@@ -112,22 +113,42 @@ func publishRegistrations(current *map[string]ClusterInfo, refreshed map[string]
 	*current = refreshed
 }
 
-func addCluster(info ClusterInfo, mu *sync.RWMutex, clusters *map[string]ClusterInfo, revisions map[string]uint64, generation *uint64, stopped *bool) (bool, bool, int) {
-	mu.Lock()
-	defer mu.Unlock()
-	current, existed := (*clusters)[info.ID]
-	if *stopped {
-		return false, existed, len(*clusters)
+// registryState is the mutable registry state addCluster mutates. It keeps
+// addCluster's parameter list small and makes the lock ownership explicit.
+type registryState struct {
+	mu         *sync.RWMutex
+	clusters   *map[string]ClusterInfo
+	revisions  map[string]uint64
+	generation *uint64
+	stopped    *bool
+}
+
+// clusterAddResult reports one accepted watch event: whether the cluster
+// changed, whether it already existed, and the resulting cluster count.
+type clusterAddResult struct {
+	Changed bool
+	Existed bool
+	Count   int
+}
+
+// addCluster records one accepted cluster event under the registry lock. Every
+// accepted event fences refresh publication, including extracted-data no-ops;
+// only a changed registration receives a new proof revision.
+func addCluster(state registryState, info ClusterInfo) clusterAddResult {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	current, existed := (*state.clusters)[info.ID]
+	if *state.stopped {
+		return clusterAddResult{Existed: existed, Count: len(*state.clusters)}
 	}
-	// Every accepted event fences refresh publication, including extracted-data
-	// no-ops; only a changed registration receives a new proof revision.
-	*generation++
+	next := *state.generation + 1
+	*state.generation = next
 	if existed && clusterInfoEqual(current, info) {
-		return false, true, len(*clusters)
+		return clusterAddResult{Existed: true, Count: len(*state.clusters)}
 	}
-	(*clusters)[info.ID] = info
-	revisions[info.ID] = *generation
-	return true, existed, len(*clusters)
+	(*state.clusters)[info.ID] = info
+	state.revisions[info.ID] = *state.generation
+	return clusterAddResult{Changed: true, Existed: existed, Count: len(*state.clusters)}
 }
 
 func emitAddedCluster(info ClusterInfo, existed bool, count int, metrics *Metrics, emit func(ClusterEvent)) {

@@ -179,11 +179,17 @@ func (w *KuadrantRegistry) onAdd(obj interface{}) {
 		return
 	}
 
-	changed, existed, count := addCluster(info, &w.mu, &w.clusters, w.registrationRevisions, &w.revision, &w.stopped)
-	if !changed {
+	added := addCluster(registryState{
+		mu:         &w.mu,
+		clusters:   &w.clusters,
+		revisions:  w.registrationRevisions,
+		generation: &w.revision,
+		stopped:    &w.stopped,
+	}, info)
+	if !added.Changed {
 		return
 	}
-	emitAddedCluster(info, existed, count, w.metrics, w.emit)
+	emitAddedCluster(info, added.Existed, added.Count, w.metrics, w.emit)
 	w.logger.Info("cluster added", "id", info.ID, "toolPrefix", info.ToolPrefix)
 }
 
