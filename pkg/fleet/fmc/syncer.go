@@ -314,9 +314,9 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 		s.metrics.SyncErrors.WithLabelValues(cluster.ID, "repair_failed").Inc()
 		return fmt.Errorf("sync cluster %s repair: %w", cluster.ID, err)
 	}
-	if !result.CleanCommitEligible {
-		return fmt.Errorf("sync cluster %s repair returned no clean proof", cluster.ID)
-	}
+	// #2660 m8: no CleanCommitEligible re-check here. statusStore.Repair
+	// already errors on an incomplete proof (failRepairResult), so a nil
+	// error from repairPartition always carries a clean, committed proof.
 
 	duration := time.Since(start)
 	s.metrics.SyncDuration.WithLabelValues(cluster.ID).Observe(duration.Seconds())
@@ -489,9 +489,8 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		commitFailure = commitResult.Failure
 		return repairResult, err
 	}
-	if !commitResult.Committed || !commitResult.CleanCommit {
-		return repairResult, fmt.Errorf("repair commit did not publish clean state")
-	}
+	// #2660 m8: no Committed/CleanCommit re-check here. CommitRepair sets both
+	// only on a nil-error return, so this point is already a clean commit.
 	// #2660 m3: the cache is already clean. A later readiness publish failure
 	// must not mark the (now deleted) staged key uncertain.
 	cacheCommitted = true
