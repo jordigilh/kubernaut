@@ -257,7 +257,11 @@ Notes:
   `mark_uncertain` accepts it.
 - m1/m6/m7/m8/m9/n1–n3/n5 are **RED: N/A** — they delete unreachable code,
   dead fields, or zero-caller lanes, or are behavior-preserving refactors. Their
-  safety net is the existing suite.
+  safety net is the existing suite. **m1's exception is reviewed and approved**
+  (plan review rounds 2-3): deleting an unreachable rejection loop cannot be
+  made RED, and the m1 contract is instead pinned discriminatingly by
+  `UT-FMC-STAGED-012`'s reserved-slot acceptance case (`ARGV[13]='0'` commits
+  successfully), which fails if the deleted pre-validation loop is reinstated.
 
 ### Tier 2: Integration Tests
 

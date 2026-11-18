@@ -77,8 +77,11 @@ are deleted. They had no production callers and collapsed the typed outcome
 (`invalid`, `unsupported`, `unavailable`) into `false`, which is exactly the
 ambiguity DD-FLEET-015 removes. Use `Check` and branch on `ScopeState`.
 `fleet.NewFederatedScopeChecker` no longer accepts a local checker (the dead
-`local` field is gone with it); non-Fleet requests must use the local checker
-at the factory, as the production factory already does.
+`local` field is gone with it). The factory selects the local checker only when
+Fleet is **disabled**; with Fleet enabled, every scope request must carry a
+`ClusterID` — an unattributed request returns `ScopeInvalid`
+(`missing_cluster_attribution`) and never falls back to the local checker
+(DD-FLEET-015).
 
 ### `ScopeResult.Managed` is removed
 

@@ -137,6 +137,7 @@ type lifecycleStatusStore struct {
 	// Recorded repair outcomes.
 	uncertainErr      error
 	uncertainFailures []scopecache.RepairFailure
+	abandonCalls      int
 	abandonCtxErr     error
 
 	// Fault injection. Typed failures mirror the real store, which always
@@ -174,6 +175,7 @@ func (s *lifecycleStatusStore) MarkRepairUncertain(ctx context.Context, _ scopec
 }
 
 func (s *lifecycleStatusStore) AbandonStaging(ctx context.Context, _ scopecache.PartitionStateKey, _ string, _ uint64, _ scopecache.WriterFence) error {
+	s.abandonCalls++
 	s.abandonCtxErr = ctx.Err()
 	return nil
 }
@@ -453,6 +455,8 @@ var _ = Describe("FMC lifecycle handoff (BR-SCOPE-001, BR-INTEGRATION-065)", fun
 		}), statusStore, lease, []string{"Pod"})
 
 		Expect(syncer.SyncCluster(ctx, current)).To(HaveOccurred())
+		Expect(statusStore.abandonCalls).To(Equal(1),
+			"the begin failure must trigger exactly one abandon; a missing cleanup would otherwise pass vacuously")
 		Expect(statusStore.abandonCtxErr).ToNot(HaveOccurred(),
 			"the abandon must not inherit the cancelled request context, or the staging is stranded for its TTL")
 	})
