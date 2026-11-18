@@ -211,8 +211,8 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 		}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: page},
 			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
-				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
-				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
+				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 			}},
 			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}},
 			Authorizer: allowAuthorizer{},
@@ -226,7 +226,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 		Expect(result.Items[0].CurrentPolicies).To(HaveLen(2))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Value).To(Equal(0.85))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("runtime-config"))
-		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:ai"))
+		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
 		Expect(result.Items[0].HistoricalEvaluations[0].Source).To(Equal("AIAnalysis"))
 		Expect(result.Items[0].HistoricalEvaluations[0].MatchedRules).To(ConsistOf("production_requires_review"))
@@ -272,7 +272,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system"}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: page},
 			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
-				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 			}},
 			History:    history,
 			Authorizer: allowAuthorizer{},

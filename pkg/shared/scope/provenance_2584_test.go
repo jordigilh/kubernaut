@@ -17,7 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-var _ = Describe("BR-SCOPE-001 / UT-AF-2584-003: structured scope provenance", func() {
+var _ = Describe("BR-SCOPE-001: structured scope provenance", func() {
 	It("UT-AF-2584-003 [BR-SCOPE-001]: preserves resource-label precedence over namespace inheritance", func() {
 		resolved := scope.ResolveLabels(
 			map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueFalse},

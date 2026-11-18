@@ -42,7 +42,7 @@ func newRuntimePolicySource(objects ...client.Object) *policyread.KubernetesSour
 	return source
 }
 
-var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", func() {
+var _ = Describe("BR-AI-085: typed Kubernetes policy sources", func() {
 	It("UT-AF-2584-002 [BR-AI-085]: projects current policy identity and revision without the policy source", func() {
 		source := newRuntimePolicySource(runtimePolicyConfigMaps("0.85")...)
 
@@ -57,9 +57,6 @@ var _ = Describe("BR-AI-085 / UT-AF-2584-006: typed Kubernetes policy sources", 
 		Expect(policies[1].ConfigMapName).To(Equal("custom-signal-policy"))
 		Expect(policies[1].ConfigMapKey).To(Equal("policy.rego"))
 		Expect(policies[1].Revision).To(MatchRegexp(`^sha256:[0-9a-f]{64}$`))
-		// The revision is a digest: the policy source itself is never projected.
-		Expect(policies[0].Revision).NotTo(ContainSubstring("package approval"))
-		Expect(policies[1].Revision).NotTo(ContainSubstring("package signal"))
 	})
 
 	It("UT-AF-2584-001 [BR-AI-088]: represents the runtime confidence threshold exactly", func() {

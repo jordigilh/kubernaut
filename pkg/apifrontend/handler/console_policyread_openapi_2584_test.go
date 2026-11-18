@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-logr/logr"
@@ -20,20 +19,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/requestid"
 )
-
-// consoleOpenAPICurrentPolicyStub supplies realistic digest revisions: the
-// projection's revision is a sha256 digest, and the schema enforces that shape.
-type consoleOpenAPICurrentPolicyStub struct{}
-
-func (*consoleOpenAPICurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
-	return []policyread.PolicyMetadata{{
-		Type:          "aiAnalysis",
-		ConfigMapName: "aianalysis-policy",
-		ConfigMapKey:  "approval.rego",
-		Revision:      "sha256:" + strings.Repeat("a", 64),
-		Threshold:     &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"},
-	}}, nil
-}
 
 // consoleOpenAPIHistoryStub keeps the policy-scope projection complete without
 // manufacturing historical records: the schema check covers the envelope and
@@ -104,7 +89,7 @@ var _ = Describe("IT-AF-2584-011: Console read OpenAPI contract", func() {
 		doc := loadConsoleOpenAPI()
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory:  &consoleInventoryStub{page: successfulPage()},
-			CurrentPolicies: &consoleOpenAPICurrentPolicyStub{},
+			CurrentPolicies: &consoleCurrentPolicyStub{},
 			History:         &consoleOpenAPIHistoryStub{},
 			Authorizer:      &consoleAuthorizer{allow: true},
 		})
@@ -139,6 +124,9 @@ var _ = Describe("IT-AF-2584-011: Console read OpenAPI contract", func() {
 		Expect(problemBody).To(HaveKeyWithValue("status", float64(http.StatusBadRequest)))
 		Expect(problemBody).To(HaveKeyWithValue("detail", "invalid Console read filter"))
 		Expect(problemBody).To(HaveKeyWithValue("request_id", "req-2584-openapi"))
+		// Shape smoke test only: ProblemDetail declares no required members and
+		// no additionalProperties:false, so the member assertions above are the
+		// contract. Declaring them is a codegen-affecting follow-up.
 		Expect(problemSchema.VisitJSON(problemBody)).To(Succeed())
 	})
 })

@@ -217,8 +217,10 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 		_, router, err := buildRouterConfig(testRouterBuildParams(&dualToolConsoleAuthorizer{}))
 		Expect(err).NotTo(HaveOccurred())
 
-		// The agentic surface keeps serving after the Console read routes are
-		// registered on the same authenticated router.
+		// The agentic routes stay mounted and reachable after the Console read
+		// routes register. This fixture uses a pass-through auth middleware, so
+		// it proves route registration and precedence only; the authenticated
+		// chain is covered by the router-wiring container.
 		mcpRecorder := httptest.NewRecorder()
 		router.ServeHTTP(mcpRecorder, httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
 		Expect(mcpRecorder.Code).To(Equal(http.StatusOK))

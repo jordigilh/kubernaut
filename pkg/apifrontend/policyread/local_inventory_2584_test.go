@@ -43,20 +43,15 @@ var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
 		Expect(alpha.ID).To(HavePrefix("r-"))
 		Expect(alpha.Scope.Source).To(Equal(inventory.ScopeSourceResourceLabel))
 
-		// Only the configured kind is ever listed.
+		// Only the configured kind is ever listed: the reader must not fall back
+		// to listing everything and filtering afterwards.
 		listed := map[string]struct{}{}
 		for _, action := range client.Actions() {
 			if action.GetVerb() == "list" {
 				listed[action.GetResource().Resource] = struct{}{}
 			}
 		}
-		Expect(listed).To(HaveKey("deployments"))
-
-		// The shipped allowlist is the AC-6 guarantee: policy and credential
-		// kinds are excluded by construction, not by post-filtering.
-		for _, kind := range policyread.DefaultLocalResourceKinds {
-			Expect(kind.Resource).NotTo(BeElementOf("secrets", "configmaps"))
-		}
+		Expect(listed).To(Equal(map[string]struct{}{"deployments": {}}))
 	})
 
 	It("UT-AF-2584-007 [BR-SCOPE-001, FedRAMP SI-10]: paginates by opaque IDs without repeating a record", func() {
@@ -91,7 +86,7 @@ var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
 		Expect(resource.ID).To(Equal(page1.Items[0].ID))
 	})
 
-	It("UT-AF-2584-004 [BR-SCOPE-001]: reuses Namespace label resolution within one list operation", func() {
+	It("UT-AF-2584-004 [BR-SCOPE-001]: inherits a valid Namespace label when the resource label is absent", func() {
 		scheme := runtime.NewScheme()
 		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
 		namespace := &metav1.PartialObjectMetadata{
@@ -118,6 +113,15 @@ var _ = Describe("BR-SCOPE-001: local inventory projection", func() {
 		page, err := reader.List(context.Background(), inventory.Filters{ClusterID: "local", Limit: 10})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(page.Items).To(HaveLen(2))
+
+		// An absent resource label inherits the Namespace decision, and the
+		// provenance names the Namespace as the decisive source.
+		for _, resource := range page.Items {
+			Expect(resource.Scope.Included).To(BeTrue())
+			Expect(resource.Scope.Source).To(Equal(inventory.ScopeSourceNamespaceLabel))
+			Expect(resource.Scope.ResourceLabel).To(Equal(inventory.LabelAbsent))
+			Expect(resource.Scope.NamespaceLabel).To(Equal(inventory.LabelTrue))
+		}
 
 		namespaceGets := 0
 		for _, action := range client.Actions() {

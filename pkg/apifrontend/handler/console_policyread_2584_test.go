@@ -275,6 +275,9 @@ type consoleInventoryStub struct {
 	getCalls  int
 }
 
+// consoleCurrentPolicyStub mirrors the served contract: the revision is a
+// sha256 digest (the schema enforces that shape) and the threshold comes from
+// the operator runtime configuration.
 type consoleCurrentPolicyStub struct{}
 
 func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
@@ -282,7 +285,8 @@ func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([
 		Type:          "aiAnalysis",
 		ConfigMapName: "aianalysis-policy",
 		ConfigMapKey:  "approval.rego",
-		Revision:      "sha256:ai",
+		Revision:      "sha256:" + strings.Repeat("a", 64),
+		Threshold:     &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"},
 	}}, nil
 }
 

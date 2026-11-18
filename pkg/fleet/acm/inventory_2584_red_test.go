@@ -19,7 +19,7 @@ import (
 
 const emptySearchResponse = `{"data":{"searchResult":[{"count":0,"items":[]}]}}`
 
-var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func() {
+var _ = Describe("BR-SCOPE-001, BR-SECURITY-016: ACM canonical inventory projection", func() {
 	It("UT-ACM-2593-IDENTITY-001 [BR-SCOPE-001]: projects a live-shaped managed resource without exposing its ACM UID", func() {
 		var requestBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
