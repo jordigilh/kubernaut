@@ -346,6 +346,13 @@ func targetClusterScoped(registry *APIResourceRegistry, kind string) bool {
 	return registry != nil && !registry.IsNamespacedKind(kind)
 }
 
+// IsClusterScopedTarget exposes the classification to the Gateway ingress path so
+// that the scope identity and the adapters' fingerprint normalization use one
+// answer (#2670).
+func IsClusterScopedTarget(registry *APIResourceRegistry, kind string) bool {
+	return targetClusterScoped(registry, kind)
+}
+
 // KindToGVRCandidates returns every discovered GroupVersionResource for a
 // given Kind, one per distinct API group (#2066). Returns false if the kind
 // is not in the registry. Unlike KindToGVR, which returns only the

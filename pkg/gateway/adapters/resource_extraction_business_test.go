@@ -129,7 +129,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"Cluster-scoped resources (Node) get empty namespace (#1371)")
 		})
 
-		It("normalizes a namespace on a cluster-scoped target so the fingerprint is stable (#2670)", func() {
+		It("UT-GW-2670-010: normalizes a namespace on a cluster-scoped target so the fingerprint is stable (#2670)", func() {
 			// BUSINESS OUTCOME: one Node is remediated once, whichever
 			// namespace its alert carries. The dedup key no longer depends on
 			// the alert namespace (AF still hashes the namespace it is given;

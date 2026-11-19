@@ -465,8 +465,8 @@ func (s *Server) sendSuccessResponse(
 // signal.Resource.Namespace into spec.targetResource and RO re-checks that
 // namespace, so an authorization-only normalization would let the gates diverge
 // (#2670).
-func scopeIdentityFor(signal *types.NormalizedSignal, apiVersion string) (scope.ResourceIdentity, error) {
-	signal.Resource.Namespace = scopeTargetNamespace(signal)
+func (s *Server) scopeIdentityFor(signal *types.NormalizedSignal, apiVersion string) (scope.ResourceIdentity, error) {
+	signal.Resource.Namespace = scopeTargetNamespace(signal.Resource.Kind, signal.Namespace, signal.Resource.Namespace, s.apiResourceRegistry)
 	return scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
@@ -476,17 +476,18 @@ func scopeIdentityFor(signal *types.NormalizedSignal, apiVersion string) (scope.
 }
 
 // scopeTargetNamespace returns the namespace the scope identity must carry. It
-// matches the RemediationRequest target (signal.Resource.Namespace): a
-// cluster-scoped kind has none even when the alert carries a namespace, so
-// passing the alert namespace would make the identity ambiguous (#2670).
-func scopeTargetNamespace(signal *types.NormalizedSignal) string {
-	if scope.IsClusterScopedKind(signal.Resource.Kind) {
+// matches the RemediationRequest target: a cluster-scoped kind has none even
+// when the alert carries one, so passing the alert namespace would make the
+// identity ambiguous (#2670). The registry is the same classifier the adapters
+// use, so a discovered cluster-scoped CRD is normalised here too.
+func scopeTargetNamespace(kind, signalNamespace, resourceNamespace string, registry *adapters.APIResourceRegistry) string {
+	if adapters.IsClusterScopedTarget(registry, kind) {
 		return ""
 	}
-	if signal.Resource.Namespace != "" {
-		return signal.Resource.Namespace
+	if resourceNamespace != "" {
+		return resourceNamespace
 	}
-	return signal.Namespace
+	return signalNamespace
 }
 
 // validateScope checks whether the signal's target resource is within Kubernaut's
@@ -537,7 +538,7 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		}
 	}
 
-	identity, err := scopeIdentityFor(signal, apiVersion)
+	identity, err := s.scopeIdentityFor(signal, apiVersion)
 	if err != nil {
 		// A missing or malformed apiVersion that could not be determined is a
 		// permanent signal-quality defect (#2592, SI-10): reject and count it
