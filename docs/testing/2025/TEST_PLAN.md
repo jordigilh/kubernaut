@@ -51,6 +51,11 @@ resource-constrained the same way `release/v1.5`'s #2022/#2023/#2027 were bundle
 
 ## 2. Issue #2025 (clone of #2022): AF Tool-Layer Scope Validation
 
+> **Superseded (#2660/#2662):** the `IsManagedResource` boolean lane this plan gates through no
+> longer exists; the AF tool layer now goes through the typed `ScopeChecker.Check` contract
+> (DD-FLEET-015). The scenario inventory below reflects the API as it existed when this plan was
+> written.
+
 ### 2.1 Fix Summary
 
 `HandleCreateRR` (`pkg/apifrontend/tools/af_create_rr.go`) — the single choke point all three
