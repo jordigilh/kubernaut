@@ -550,18 +550,27 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		blockedUntilStr = &str
 	}
 
+	// BR-AUDIT-005: prefer the target and counts the routing check actually
+	// evaluated. Fall back to the RR spec target only for legacy callers that
+	// do not populate BlockingCondition.TargetResource.
+	targetResource := blocked.TargetResource
+	if targetResource == "" {
+		targetResource = rr.Spec.TargetResource.String()
+	}
+
 	blockData := &roaudit.RoutingBlockedData{
 		BlockReason:         blocked.Reason,
 		BlockMessage:        blocked.Message,
 		FromPhase:           fromPhase,
 		ToPhase:             string(remediationv1.PhaseBlocked),
 		WorkflowID:          workflowID,
-		TargetResource:      rr.Spec.TargetResource.String(),
+		TargetResource:      targetResource,
 		RequeueAfterSeconds: requeueSeconds,
 		BlockedUntil:        blockedUntilStr,
 		BlockingWFE:         blocked.BlockingWorkflowExecution,
 		DuplicateOf:         blocked.DuplicateOf,
-		ConsecutiveFailures: rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount,
+		ConsecutiveFailures: blocked.ConsecutiveFailures,
+		RecentWFE:           blocked.RecentWFE,
 	}
 
 	// Calculate backoff seconds if NextAllowedExecution is set
