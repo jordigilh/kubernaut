@@ -69,7 +69,7 @@ var _ = Describe("WorkflowExecution snapshot isolation", func() {
 						ExecutionEngine: "job",
 					},
 				},
-				TargetResource: "default/deployment/snapshot-isolation",
+				TargetResource: "default/apps/v1/Deployment/snapshot-isolation",
 			},
 			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 				Phase: workflowexecutionv1alpha1.PhaseRunning,

@@ -92,24 +92,24 @@ var _ = Describe("Executor Registry (BR-WE-014)", func() {
 
 var _ = Describe("ExecutionResourceName (BR-WE-014)", func() {
 	It("should generate deterministic names (UT-WE-014-010)", func() {
-		name1 := executor.ExecutionResourceName("default/deployment/my-app")
-		name2 := executor.ExecutionResourceName("default/deployment/my-app")
+		name1 := executor.ExecutionResourceName("default/apps/v1/Deployment/my-app")
+		name2 := executor.ExecutionResourceName("default/apps/v1/Deployment/my-app")
 		Expect(name1).To(Equal(name2))
 	})
 
 	It("should have wfe- prefix (UT-WE-014-011)", func() {
-		name := executor.ExecutionResourceName("default/deployment/my-app")
+		name := executor.ExecutionResourceName("default/apps/v1/Deployment/my-app")
 		Expect(name).To(HavePrefix("wfe-"))
 	})
 
 	It("should not exceed 63 characters (UT-WE-014-012)", func() {
-		name := executor.ExecutionResourceName("very-long-namespace/deployment/very-long-deployment-name-exceeds")
+		name := executor.ExecutionResourceName("very-long-namespace/apps/v1/Deployment/very-long-deployment-name-exceeds")
 		Expect(len(name)).To(BeNumerically("<=", 63))
 	})
 
 	It("should generate different names for different targets (UT-WE-014-013)", func() {
-		name1 := executor.ExecutionResourceName("ns1/deployment/app1")
-		name2 := executor.ExecutionResourceName("ns2/deployment/app2")
+		name1 := executor.ExecutionResourceName("ns1/apps/v1/Deployment/app1")
+		name2 := executor.ExecutionResourceName("ns2/apps/v1/Deployment/app2")
 		Expect(name1).ToNot(Equal(name2))
 	})
 })
@@ -141,7 +141,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/my-app",
+					TargetResource: "default/apps/v1/Deployment/my-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -183,7 +183,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 			for _, env := range envVars {
 				if env.Name == "TARGET_RESOURCE" {
 					foundTarget = true
-					Expect(env.Value).To(Equal("default/deployment/my-app"))
+					Expect(env.Value).To(Equal("default/apps/v1/Deployment/my-app"))
 				}
 				if env.Name == "NAMESPACE" {
 					foundNamespace = true
@@ -204,7 +204,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/another-app",
+					TargetResource: "default/apps/v1/Deployment/another-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -230,7 +230,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 	Context("GetStatus", func() {
 		It("should return Running for active Job (UT-WE-014-030)", func() {
-			targetResource := "default/deployment/status-running"
+			targetResource := "default/apps/v1/Deployment/status-running"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      executor.ExecutionResourceName(targetResource),
@@ -256,7 +256,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 		})
 
 		It("should return Completed for succeeded Job (UT-WE-014-031)", func() {
-			targetResource := "default/deployment/status-complete"
+			targetResource := "default/apps/v1/Deployment/status-complete"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      executor.ExecutionResourceName(targetResource),
@@ -289,7 +289,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 		})
 
 		It("should return Failed for failed Job (UT-WE-014-032)", func() {
-			targetResource := "default/deployment/status-failed"
+			targetResource := "default/apps/v1/Deployment/status-failed"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      executor.ExecutionResourceName(targetResource),
@@ -342,7 +342,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 	Context("Cleanup", func() {
 		It("should delete existing Job (UT-WE-014-040)", func() {
-			targetResource := "default/deployment/cleanup-app"
+			targetResource := "default/apps/v1/Deployment/cleanup-app"
 			jobName := executor.ExecutionResourceName(targetResource)
 
 			job := &batchv1.Job{
@@ -386,7 +386,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/nonexistent",
+					TargetResource: "default/apps/v1/Deployment/nonexistent",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							ExecutionEngine: "job",
@@ -394,7 +394,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName("default/deployment/nonexistent")},
+					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName("default/apps/v1/Deployment/nonexistent")},
 				},
 			}
 
@@ -444,7 +444,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-tekton", "default", "default/deployment/my-app",
+			wfe := newTestWFE("test-wfe-tekton", "default", "default/apps/v1/Deployment/my-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default"})
 
@@ -479,7 +479,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 
 			// Verify deterministic name matches ExecutionResourceName
-			expectedName := executor.ExecutionResourceName("default/deployment/my-app")
+			expectedName := executor.ExecutionResourceName("default/apps/v1/Deployment/my-app")
 			Expect(result.ResourceName).To(Equal(expectedName))
 		})
 
@@ -487,7 +487,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-default-sa", "default", "default/deployment/another-app",
+			wfe := newTestWFE("test-wfe-default-sa", "default", "default/apps/v1/Deployment/another-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -506,7 +506,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-params", "default", "default/deployment/param-app",
+			wfe := newTestWFE("test-wfe-params", "default", "default/apps/v1/Deployment/param-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default", "REPLICAS": "3"})
 
@@ -531,18 +531,18 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
 			Expect(paramMap).To(HaveKeyWithValue("REPLICAS", "3"))
-			Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/param-app"))
+			Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/apps/v1/Deployment/param-app"))
 		})
 
 		It("UT-WE-2613-001 [BR-WE-014]: should replace a stale TARGET_RESOURCE parameter with Spec.TargetResource", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			const authoritativeTarget = "production/deployment/current-app"
+			const authoritativeTarget = "production/apps/v1/Deployment/current-app"
 			wfe := newTestWFE("test-wfe-authoritative-target", "production", authoritativeTarget,
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{
-					"TARGET_RESOURCE": "stale/deployment/old-app",
+					"TARGET_RESOURCE": "stale/apps/v1/Deployment/old-app",
 					"NAMESPACE":       "production",
 				})
 
@@ -574,7 +574,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-no-params", "default", "default/deployment/no-param-app",
+			wfe := newTestWFE("test-wfe-no-params", "default", "default/apps/v1/Deployment/no-param-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -590,14 +590,14 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			// Only TARGET_RESOURCE should be present
 			Expect(pr.Spec.Params).To(HaveLen(1))
 			Expect(pr.Spec.Params[0].Name).To(Equal("TARGET_RESOURCE"))
-			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal("default/deployment/no-param-app"))
+			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal("default/apps/v1/Deployment/no-param-app"))
 		})
 
 		It("should set labels carrying WFE metadata for observability (UT-WE-014-064)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-labels", "prod-ns", "prod-ns/deployment/api-server",
+			wfe := newTestWFE("test-wfe-labels", "prod-ns", "prod-ns/apps/v1/Deployment/api-server",
 				"scale-up", "ghcr.io/kubernaut/workflows/scale:v2.0.0", nil)
 
 			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -617,14 +617,14 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(pr.Labels).To(HaveKey("kubernaut.ai/target-resource"))
 
 			// Verify annotation carries full (unsanitized) target resource
-			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "prod-ns/deployment/api-server"))
+			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "prod-ns/apps/v1/Deployment/api-server"))
 		})
 
 		It("should preserve AlreadyExists error for controller retry logic (UT-WE-014-065)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec = executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-dup", "default", "default/deployment/dup-app",
+			wfe := newTestWFE("test-wfe-dup", "default", "default/apps/v1/Deployment/dup-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 			// First create should succeed
@@ -801,7 +801,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 	Context("Cleanup", func() {
 		It("should delete existing PipelineRun (UT-WE-014-080)", func() {
-			targetResource := "default/deployment/cleanup-app"
+			targetResource := "default/apps/v1/Deployment/cleanup-app"
 			prName := executor.ExecutionResourceName(targetResource)
 
 			pr := &tektonv1.PipelineRun{
@@ -842,7 +842,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/nonexistent",
+					TargetResource: "default/apps/v1/Deployment/nonexistent",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							ExecutionEngine: "tekton",
@@ -886,7 +886,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec := executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-convert", "default", "default/deployment/convert-app",
+			wfe := newTestWFE("test-wfe-convert", "default", "default/apps/v1/Deployment/convert-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", params)
 
 			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -919,7 +919,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec := executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-empty-params", "default", "default/deployment/empty-app",
+			wfe := newTestWFE("test-wfe-empty-params", "default", "default/apps/v1/Deployment/empty-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{})
 
@@ -947,7 +947,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			tektonExec := executor.NewTektonExecutor(k8sClient)
 
-			wfe := newTestWFE("test-wfe-label-sanitize", "default", "prod-ns/deployment/api-server",
+			wfe := newTestWFE("test-wfe-label-sanitize", "default", "prod-ns/apps/v1/Deployment/api-server",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -960,8 +960,9 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Target resource "prod-ns/deployment/api-server" should become "prod-ns__deployment__api-server"
-			Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("prod-ns__deployment__api-server"))
+			// Target identity "prod-ns/apps/v1/Deployment/api-server" sanitizes each
+			// path separator; the group/version are ordinary identity parts.
+			Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("prod-ns__apps__v1__Deployment__api-server"))
 		})
 
 		It("should truncate label values to 63 characters (UT-WE-014-088)", func() {
@@ -972,7 +973,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			tektonExec := executor.NewTektonExecutor(k8sClient)
 
 			// Create a target resource that, when sanitized, exceeds 63 chars
-			longTarget := "very-long-namespace/deployment/very-long-deployment-name-that-exceeds-sixty-three-chars"
+			longTarget := "very-long-namespace/apps/v1/Deployment/very-long-deployment-name-that-exceeds-sixty-three-chars"
 			wfe := newTestWFE("test-wfe-label-truncate", "default", longTarget,
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
@@ -1017,7 +1018,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-020: should mount secrets as volumes on the Job", func() {
-		wfe := newTestWFE("test-wfe-deps", "default", "default/deployment/deps-app",
+		wfe := newTestWFE("test-wfe-deps", "default", "default/apps/v1/Deployment/deps-app",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1047,7 +1048,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-021: should mount configMaps as volumes on the Job", func() {
-		wfe := newTestWFE("test-wfe-cm", "default", "default/deployment/cm-app",
+		wfe := newTestWFE("test-wfe-cm", "default", "default/apps/v1/Deployment/cm-app",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1077,7 +1078,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-022: should mount both secrets and configMaps at correct paths", func() {
-		wfe := newTestWFE("test-wfe-both", "default", "default/deployment/both-app",
+		wfe := newTestWFE("test-wfe-both", "default", "default/apps/v1/Deployment/both-app",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1117,7 +1118,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-023: should create Job with only the tmp scratch volume when no dependencies", func() {
-		wfe := newTestWFE("test-wfe-nodeps", "default", "default/deployment/nodeps-app",
+		wfe := newTestWFE("test-wfe-nodeps", "default", "default/apps/v1/Deployment/nodeps-app",
 			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -1152,7 +1153,7 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-024: should add secret workspace binding to PipelineRun", func() {
-		wfe := newTestWFE("test-wfe-tekton-secret", "default", "default/deployment/secret-app",
+		wfe := newTestWFE("test-wfe-tekton-secret", "default", "default/apps/v1/Deployment/secret-app",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1175,7 +1176,7 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-025: should add configMap workspace binding to PipelineRun", func() {
-		wfe := newTestWFE("test-wfe-tekton-cm", "default", "default/deployment/cm-app-tekton",
+		wfe := newTestWFE("test-wfe-tekton-cm", "default", "default/apps/v1/Deployment/cm-app-tekton",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1198,7 +1199,7 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-026: should create PipelineRun without workspaces when no dependencies", func() {
-		wfe := newTestWFE("test-wfe-tekton-nodeps", "default", "default/deployment/nodeps-tekton",
+		wfe := newTestWFE("test-wfe-tekton-nodeps", "default", "default/apps/v1/Deployment/nodeps-tekton",
 			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
@@ -1211,7 +1212,7 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 	})
 
 	It("UT-WE-006-027: should add both secret and configMap workspace bindings", func() {
-		wfe := newTestWFE("test-wfe-tekton-both", "default", "default/deployment/both-tekton",
+		wfe := newTestWFE("test-wfe-tekton-both", "default", "default/apps/v1/Deployment/both-tekton",
 			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
 
 		opts := executor.CreateOptions{
@@ -1261,7 +1262,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 	})
 
 	It("should return true for a completed (succeeded) Job (UT-WE-374-001)", func() {
-		jobName := executor.ExecutionResourceName("default/deployment/my-app")
+		jobName := executor.ExecutionResourceName("default/apps/v1/Deployment/my-app")
 		job := &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      jobName,
@@ -1280,13 +1281,13 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/my-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/apps/v1/Deployment/my-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeTrue(), "Completed Job should be reported as completed so it can be cleaned up")
 	})
 
 	It("should return false for a running Job (UT-WE-374-002)", func() {
-		jobName := executor.ExecutionResourceName("default/deployment/running-app")
+		jobName := executor.ExecutionResourceName("default/apps/v1/Deployment/running-app")
 		job := &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      jobName,
@@ -1299,13 +1300,13 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/running-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/apps/v1/Deployment/running-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeFalse(), "Running Job should preserve the concurrent lock (BR-WE-009)")
 	})
 
 	It("should return true for a failed Job (UT-WE-374-003)", func() {
-		jobName := executor.ExecutionResourceName("default/deployment/failed-app")
+		jobName := executor.ExecutionResourceName("default/apps/v1/Deployment/failed-app")
 		job := &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      jobName,
@@ -1325,7 +1326,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/failed-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/apps/v1/Deployment/failed-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeTrue(), "Failed Job should be reported as completed so stale locks are released (BR-WE-011)")
 	})
@@ -1334,7 +1335,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/vanished-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/apps/v1/Deployment/vanished-app", "kubernaut-workflows")
 		Expect(err).To(HaveOccurred(), "Should return error when Job does not exist (race condition)")
 		Expect(completed).To(BeFalse())
 	})
@@ -1364,7 +1365,7 @@ var _ = Describe("Job Executor Parameter Filtering (#243)", func() {
 	})
 
 	It("UT-WE-243-010: should strip undeclared params from Job env vars when DeclaredParameterNames is set", func() {
-		wfe := newTestWFE("test-wfe-filter", "default", "default/deployment/filter-app",
+		wfe := newTestWFE("test-wfe-filter", "default", "default/apps/v1/Deployment/filter-app",
 			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 			map[string]string{
 				"NAMESPACE":    "default",
@@ -1391,14 +1392,14 @@ var _ = Describe("Job Executor Parameter Filtering (#243)", func() {
 			envMap[env.Name] = env.Value
 		}
 
-		Expect(envMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/filter-app"))
+		Expect(envMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/apps/v1/Deployment/filter-app"))
 		Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
 		Expect(envMap).To(HaveKeyWithValue("REPLICAS", "3"))
 		Expect(envMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param HALLUCINATED should be stripped")
 	})
 
 	It("UT-WE-243-011: should pass all params through when DeclaredParameterNames is nil (no schema)", func() {
-		wfe := newTestWFE("test-wfe-noschema", "default", "default/deployment/noschema-app",
+		wfe := newTestWFE("test-wfe-noschema", "default", "default/apps/v1/Deployment/noschema-app",
 			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 			map[string]string{
 				"NAMESPACE": "default",
@@ -1445,7 +1446,7 @@ var _ = Describe("Tekton Executor Parameter Filtering (#243)", func() {
 	})
 
 	It("UT-WE-243-020: should strip undeclared params from PipelineRun when DeclaredParameterNames is set", func() {
-		wfe := newTestWFE("test-wfe-tekton-filter", "default", "default/deployment/tekton-filter-app",
+		wfe := newTestWFE("test-wfe-tekton-filter", "default", "default/apps/v1/Deployment/tekton-filter-app",
 			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 			map[string]string{
 				"NAMESPACE":    "default",
@@ -1471,14 +1472,14 @@ var _ = Describe("Tekton Executor Parameter Filtering (#243)", func() {
 			paramMap[p.Name] = p.Value.StringVal
 		}
 
-		Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/tekton-filter-app"))
+		Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/apps/v1/Deployment/tekton-filter-app"))
 		Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
 		Expect(paramMap).To(HaveKeyWithValue("REPLICAS", "3"))
 		Expect(paramMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param HALLUCINATED should be stripped")
 	})
 
 	It("UT-WE-243-021: should pass all params through when DeclaredParameterNames is nil (no schema)", func() {
-		wfe := newTestWFE("test-wfe-tekton-noschema", "default", "default/deployment/tekton-noschema",
+		wfe := newTestWFE("test-wfe-tekton-noschema", "default", "default/apps/v1/Deployment/tekton-noschema",
 			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 			map[string]string{
 				"NAMESPACE": "default",

@@ -32,12 +32,12 @@ package routing
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // BlockingCondition represents a blocking scenario that prevents
@@ -80,10 +80,15 @@ type BlockingCondition struct {
 	// Optional: only set when Reason = "DuplicateInProgress".
 	DuplicateOf string
 
-	// TargetResource is the resource identity the blocking check actually
-	// evaluated: the AI-resolved effective target after analysis, otherwise
-	// the RemediationRequest spec target. BR-AUDIT-005: the routing-blocked
-	// audit event must name the same resource the decision was made about.
+	// TargetResource is the canonical identity (namespace/group/version/Kind/
+	// name) that this check actually evaluated, when the check is
+	// target-scoped. Post-analysis gates resolve the RCA remediation target,
+	// which can differ from the RR's signal target (e.g. Pod -> Deployment),
+	// so the audit trail must record the evaluated identity rather than the
+	// RR's own. BR-AUDIT-005: the routing-blocked audit event must name the
+	// same resource the decision was made about.
+	// Optional: empty for RR-scoped conditions (managed-scope, failure count).
+	// #2658
 	TargetResource string
 
 	// ConsecutiveFailures is the observed consecutive-failure count that
@@ -104,6 +109,10 @@ type TargetResource struct {
 	Kind      string
 	Name      string
 	Namespace string
+	// APIVersion is the target's apiVersion (#2658), e.g. "apps/v1" or "v1".
+	// Empty means it could not be established and the identity renders the
+	// reserved "unresolved" form (a documented normal state, never core).
+	APIVersion string
 
 	// ClusterID optionally scopes DataStorage remediation-history queries to a
 	// single cluster (Issue #1802, fleet deployments). Sourced from
@@ -112,14 +121,22 @@ type TargetResource struct {
 	ClusterID string
 }
 
-// String returns the canonical target resource string used in logging, audit
-// evidence and WFE matching. Cluster-scoped resources omit the empty namespace
-// so they render as "Kind/name" rather than "/Kind/name".
+// String returns the canonical target identity (#2658):
+// "namespace/group/version/Kind/name" for namespaced resources and
+// "group/version/Kind/name" for cluster-scoped ones (see
+// scope.BuildTargetIdentity).
 func (t TargetResource) String() string {
-	if t.Namespace == "" {
-		return fmt.Sprintf("%s/%s", t.Kind, t.Name)
+	if t.Kind == "" && t.Name == "" {
+		return ""
 	}
-	return fmt.Sprintf("%s/%s/%s", t.Namespace, t.Kind, t.Name)
+	// A name-only struct is the parseTargetResource degradation shape (a
+	// malformed persisted string): render the raw value rather than a
+	// canonical identity with an empty Kind slot, so logs show what was
+	// actually stored.
+	if t.Kind == "" {
+		return t.Name
+	}
+	return scope.BuildTargetIdentity(t.APIVersion, t.Namespace, t.Kind, t.Name)
 }
 
 // RemediationHistoryQuerier abstracts DataStorage queries for remediation history.

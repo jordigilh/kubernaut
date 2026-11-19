@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 )
 
@@ -113,9 +114,11 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	}
 
 	correlationID := rr.Name
-	// DD-EM-003: Use remediation target for audit trail consistency
-	remTarget := resolveDualTargets(rr, ai).Remediation
-	targetResource := fmt.Sprintf("%s/%s/%s", remTarget.Namespace, remTarget.Kind, remTarget.Name)
+	// DD-EM-003 / #2658 E11: use the remediation target for audit-trail
+	// consistency, in the E1b join-key form. The resolution is the same one
+	// that produces WorkflowExecution.spec.targetResource, so the RO emission
+	// and the routing/DataStorage identity cannot diverge on API group.
+	targetResource := creator.ResolveTargetIdentity(rr, ai).AuditKey()
 
 	// Extract workflow metadata from AIAnalysis status
 	var workflowID, workflowName, workflowVersion, actionType string
@@ -550,9 +553,12 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		blockedUntilStr = &str
 	}
 
-	// BR-AUDIT-005: prefer the target and counts the routing check actually
-	// evaluated. Fall back to the RR spec target only for legacy callers that
-	// do not populate BlockingCondition.TargetResource.
+	// BR-AUDIT-005: prefer the target the routing check actually evaluated
+	// (#2658: the canonical identity; target-scoped gates resolve the RCA
+	// remediation target, which differs from the RR's signal target when
+	// AIAnalysis overrode it, so mapping the RR target here would name a
+	// resource that never collided). Fall back to the RR spec target only for
+	// legacy callers that do not populate BlockingCondition.TargetResource.
 	targetResource := blocked.TargetResource
 	if targetResource == "" {
 		targetResource = rr.Spec.TargetResource.String()

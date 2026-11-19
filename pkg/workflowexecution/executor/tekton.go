@@ -447,11 +447,30 @@ func ConvertParameters(params map[string]string) []tektonv1.Param {
 	return tektonParams
 }
 
+// maxLabelValueLen is the Kubernetes label-value length limit.
+const maxLabelValueLen = 63
+
 // sanitizeLabelValue makes a string safe for use as a Kubernetes label value.
+//
+// #2658 E10: path separators map to "__"; the "@" -> "__at__" mapping is inert
+// defense-in-depth for legacy values from the rejected suffix encoding (the
+// canonical identity carries the group as a path part and contains no "@").
+// Values longer than 63 characters are truncated to a prefix plus a
+// deterministic sha256 suffix, so a trailing API group can never be silently
+// dropped: two identities that differ only in their group (or only past the
+// cut) still produce distinct, legal label values.
 func sanitizeLabelValue(s string) string {
 	result := strings.ReplaceAll(s, "/", "__")
-	if len(result) > 63 {
-		result = result[:63]
+	result = strings.ReplaceAll(result, "@", "__at__")
+	if len(result) <= maxLabelValueLen {
+		return result
 	}
-	return result
+	sum := sha256.Sum256([]byte(result))
+	fingerprint := hex.EncodeToString(sum[:])[:labelFingerprintLength]
+	prefixLen := maxLabelValueLen - labelFingerprintLength - 1
+	return result[:prefixLen] + "-" + fingerprint
 }
+
+// labelFingerprintLength is the number of sha256 hex characters kept as the
+// deterministic disambiguating suffix of a truncated label value.
+const labelFingerprintLength = 8

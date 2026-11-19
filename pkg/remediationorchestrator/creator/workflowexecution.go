@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // WorkflowExecutionCreator creates WorkflowExecution CRDs from RemediationRequests.
@@ -272,18 +273,85 @@ func (c *WorkflowExecutionCreator) CreateWithResult(
 	return name, true, nil
 }
 
-// BuildTargetResourceString builds the target resource string for WorkflowExecution.
-// Format: "namespace/kind/name" for namespaced resources
+// TargetIdentity is the resolved remediation target identity (#2658).
 //
-//	"kind/name" for cluster-scoped resources (e.g., Node)
-//
-// This format is used by WorkflowExecution for resource locking (DD-WE-001).
-func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
-	tr := rr.Spec.TargetResource
-	if tr.Namespace != "" {
-		return fmt.Sprintf("%s/%s/%s", tr.Namespace, tr.Kind, tr.Name)
+// APIVersion is the target's own apiVersion (e.g. "apps/v1", "v1"); an empty
+// value means the group/version could not be established and the identity
+// renders the reserved "unresolved" form rather than pretending to be core.
+type TargetIdentity struct {
+	Namespace  string
+	Kind       string
+	Name       string
+	APIVersion string
+}
+
+// String renders the canonical identity used by
+// WorkflowExecution.spec.targetResource and every derived key:
+// "namespace/group/version/Kind/name" (cluster-scoped omits the namespace
+// part). See scope.BuildTargetIdentity.
+func (t TargetIdentity) String() string {
+	return scope.BuildTargetIdentity(t.APIVersion, t.Namespace, t.Kind, t.Name)
+}
+
+// AuditKey renders the identity written to the RO audit payload
+// (`target_resource`) and queried by DataStorage. It is the same canonical
+// identity as String(): the API group and version are ordinary path parts, so
+// the audit join key needs no separate column.
+func (t TargetIdentity) AuditKey() string {
+	return t.String()
+}
+
+// ResolveTargetIdentity resolves the effective remediation target with the
+// documented precedence (BR-KA-212, #2658 D-B): the LLM-identified RCA
+// RemediationTarget when it names a kind and name, else the RR's
+// TargetResource. The apiVersion follows the same order: the RCA target's own
+// APIVersion, else the RR's -- so the RO audit emission, the routing gates and
+// the WFE spec string can never diverge on group or version.
+func ResolveTargetIdentity(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) TargetIdentity {
+	identity := TargetIdentity{}
+	var apiVersions []string
+	if ai != nil {
+		if rca := ai.Status.GetRCAResult().RootCauseAnalysis; rca != nil && rca.RemediationTarget != nil {
+			ar := rca.RemediationTarget
+			if ar.Kind != "" && ar.Name != "" {
+				identity = TargetIdentity{Namespace: ar.Namespace, Kind: ar.Kind, Name: ar.Name}
+				apiVersions = append(apiVersions, ar.APIVersion)
+			}
+		}
 	}
-	return fmt.Sprintf("%s/%s", tr.Kind, tr.Name)
+	if identity.Kind == "" && rr != nil {
+		tr := rr.Spec.TargetResource
+		identity = TargetIdentity{Namespace: tr.Namespace, Kind: tr.Kind, Name: tr.Name}
+	}
+	if rr != nil {
+		apiVersions = append(apiVersions, rr.Spec.TargetResource.APIVersion)
+	}
+	identity.APIVersion = resolveAPIVersion(apiVersions...)
+	return identity
+}
+
+// resolveAPIVersion returns the first usable apiVersion from the candidates
+// (#2658 D-B producer precedence). An unparseable candidate is skipped so a
+// malformed RCA value cannot mask a valid RR apiVersion.
+func resolveAPIVersion(apiVersions ...string) string {
+	for _, apiVersion := range apiVersions {
+		if apiVersion == "" {
+			continue
+		}
+		if _, _, err := scope.ParseAPIVersion(apiVersion); err != nil {
+			continue
+		}
+		return apiVersion
+	}
+	return ""
+}
+
+// BuildTargetResourceString builds the target resource identity for
+// WorkflowExecution from the RR's own target resource (see
+// ResolveTargetIdentity.String for the exact format). It is used for resource
+// locking (DD-WE-001) and by every busy/cooldown/approval gate.
+func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
+	return ResolveTargetIdentity(rr, nil).String()
 }
 
 // ResolveExecutionClusterID determines the fleet cluster WorkflowExecution's
@@ -313,19 +381,9 @@ func ResolveExecutionClusterID(rr *remediationv1.RemediationRequest, ai *aianaly
 // The LLM may identify a higher-level owner resource (e.g., Deployment) rather than the
 // Pod that generated the signal, which is the correct target for patching operations.
 func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
-	// Prefer RemediationTarget from RCA if available
-	rca := ai.Status.GetRCAResult().RootCauseAnalysis
-	if rca != nil && rca.RemediationTarget != nil {
-		ar := rca.RemediationTarget
-		if ar.Kind != "" && ar.Name != "" {
-			if ar.Namespace != "" {
-				return fmt.Sprintf("%s/%s/%s", ar.Namespace, ar.Kind, ar.Name)
-			}
-			return fmt.Sprintf("%s/%s", ar.Kind, ar.Name)
-		}
-	}
-	// Fall back to RR's target resource
-	return BuildTargetResourceString(rr)
+	// Prefer RemediationTarget from RCA if available, falling back to the RR's
+	// own target resource; the group follows the same precedence (#2658).
+	return ResolveTargetIdentity(rr, ai).String()
 }
 
 // workflowExecutionTimesOutAt computes the absolute deadline for workflow

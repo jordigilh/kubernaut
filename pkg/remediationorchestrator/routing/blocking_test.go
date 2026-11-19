@@ -1105,7 +1105,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource: "demo-hpa/Deployment/api-frontend",
+					TargetResource: "demo-hpa/apps/v1/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID: "patch-hpa-v1",
@@ -1135,7 +1135,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/Deployment/api-frontend")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/apps/v1/Deployment/api-frontend")
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).ToNot(BeNil(),
@@ -1157,7 +1157,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource: "demo-hpa/Deployment/api-frontend",
+					TargetResource: "demo-hpa/apps/v1/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID: "patch-hpa-v1",

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -362,17 +361,18 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	return nil, ErrNotBlocked
 }
 
-// parseTargetResource parses a "namespace/kind/name" or "kind/name" string into TargetResource.
+// parseTargetResource parses a canonical target identity (#2658) into a
+// TargetResource: "namespace/group/version/Kind/name" or
+// "group/version/Kind/name". A string that does not parse yields a
+// TargetResource whose only populated field is Name, preserving the previous
+// "unparseable input" shape so the ineffective-chain check degrades to an
+// empty history rather than blocking with a fabricated target.
 func parseTargetResource(s string) TargetResource {
-	parts := strings.Split(s, "/")
-	switch len(parts) {
-	case 3:
-		return TargetResource{Namespace: parts[0], Kind: parts[1], Name: parts[2]}
-	case 2:
-		return TargetResource{Kind: parts[0], Name: parts[1]}
-	default:
+	apiVersion, namespace, kind, name, err := scope.ParseTargetIdentity(s)
+	if err != nil {
 		return TargetResource{Name: s}
 	}
+	return TargetResource{Namespace: namespace, Kind: kind, Name: name, APIVersion: apiVersion}
 }
 
 // CheckConsecutiveFailures checks if the RR is blocked due to consecutive failures.
