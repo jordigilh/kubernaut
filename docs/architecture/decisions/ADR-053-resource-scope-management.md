@@ -10,7 +10,9 @@
 > older boolean checker, missing-target/namespace fallback and invalid-label
 > examples. `ScopeChecker.Check` returns enum state/provenance; only verified
 > managed authorizes action. Missing observation evidence is unavailable, invalid
-> labels cannot inherit, and cluster-scoped target authorization stays deferred.
+> labels cannot inherit, and cluster-scoped targets authorize through their own
+> observed label (FR-SCOPE-004 Option A, #2670); only the non-labelable
+> `ClusterScope` pseudo-target stays deferred.
 > AF uses `ErrResourceNotManaged` only for verified unmanaged and
 > `ErrScopeUnavailable` for missing/invalid/unsupported/denied authority or errors.
 > Existing-RR takeover remains distinct from new-RR admission under ADR-068.
@@ -117,6 +119,52 @@ metadata:
 - **Simplicity**: Only 2 levels (resource → namespace), not 5 (pod → replicaset → deployment → namespace)
 - **Performance**: Max 2 API calls (resource + namespace)
 - **Operator Control**: Resource-level override for exceptions (e.g., exclude legacy apps from managed namespace)
+
+### 2a. Recognized kinds (issue #2670)
+
+The scope lanes classify a target as cluster-scoped through a static kind map
+(`pkg/shared/scope/manager.go` `clusterScopedKinds`) plus an empty namespace, and
+resolve it at level 1 only. The map is a heuristic, not API discovery: an entry
+that the cluster does not serve is simply unobservable, and an identity without a
+namespace is treated as cluster-scoped whether or not its kind is listed. The
+inventory is pinned by `UT-SCOPE-2670-012`, so adding or removing a kind requires
+changing this section and the test together.
+
+**Upstream Kubernetes, shipped by default (19):** `Node`, `PersistentVolume`,
+`Namespace`, `ClusterRole`, `ClusterRoleBinding`, `StorageClass`,
+`CustomResourceDefinition`, `IngressClass`, `PriorityClass`,
+`ValidatingWebhookConfiguration`, `MutatingWebhookConfiguration`, `CSIDriver`,
+`CSINode`, `VolumeAttachment`, `RuntimeClass`, `APIService`,
+`CertificateSigningRequest`, `FlowSchema`, `PriorityLevelConfiguration`.
+(`APIService`, the CSI kinds and the flowcontrol kinds can be disabled in a
+stripped-down apiserver; absence only makes them unobservable.)
+
+**OpenShift-only (4):** `ClusterOperator`, `ClusterVersion`, `Infrastructure`,
+`ClusterNetwork`.
+
+**Namespaced kinds recognized by the same map** (they keep the 2-level
+hierarchy and are never treated as cluster-scoped): `Pod`, `Service`,
+`ConfigMap`, `Secret`, `PersistentVolumeClaim`, `ReplicaSet`, `Deployment`,
+`StatefulSet`, `DaemonSet`, `Job`, `CronJob`.
+
+**Reads are read-only.** The check performs a metadata-only `Get` on
+`PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an
+ACM Search query; no mutating verb is required or performed.
+
+**Read grants per lane** (nothing here is a mutation permission):
+- Gateway and API Frontend read the shared target set, which includes
+  `nodes`, `persistentvolumes` and `persistentvolumeclaims`.
+- RemediationOrchestrator reads `pods`, `nodes`, `services`, `namespaces`,
+  `persistentvolumes`, `persistentvolumeclaims` and `configmaps`, plus the
+  `apps` workload kinds.
+- The Fenced Fleet Metadata Cache observes `Node` and `Namespace`.
+- Direct ACM has no per-kind grant: visibility is bounded by ACM Search RBAC
+  (see ADR-068 §ACM Search RBAC), which is broader than the fenced lane's list.
+
+Failure states are fail-closed and lane-specific: an unreadable kind on the
+cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup
+timeout, while the API Frontend's direct client surfaces the terminal
+`unauthorized` state.
 
 ---
 
@@ -472,7 +520,7 @@ spec:
 
 ### Neutral
 
-- ℹ️ **V1.0 Focuses on Namespaced Resources**: Cluster-scoped resources (Nodes, PVs) deferred to V2.0
+- ℹ️ **Cluster-Scoped Resources (Option A, #2670)**: labelable cluster-scoped targets (Node, PersistentVolume, labeled cluster-scoped CRDs, Namespace objects) authorize through their own `kubernaut.ai/managed` label at level 1; the `RemediationScope` CRD (FR-SCOPE-004 Option B) remains deferred to V2.0
 - ℹ️ **V1.0 Uses Direct API for RO**: V2.0 can add metadata-only cache if needed
 - ℹ️ **V1.0 Uses Simple 2-Level Hierarchy**: V2.0 can add CRD-based config for complex rules
 

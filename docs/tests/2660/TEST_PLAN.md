@@ -40,8 +40,10 @@ plus a dead `local` field are removed.
 5. **Readiness lanes**: `ReadinessInvalid` keeps its error and yields
    `partition_invalid`; `ReadinessUnavailable` stays a nil-error
    `partition_unavailable` result.
-6. **Behavior-change record**: cluster-scoped targets stay `ScopeUnsupported`;
-   the boolean scope lanes are gone with no wire change.
+6. **Behavior-change record**: cluster-scoped targets stayed `ScopeUnsupported` in
+   this change; #2670 later superseded that with level-1 label authorization
+   (`ScopeUnsupported` is now reserved for the `ClusterScope` pseudo-kind). The
+   boolean scope lanes are gone with no wire change.
 
 ### 1.3 Success Metrics
 

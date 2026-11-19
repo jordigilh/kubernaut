@@ -66,8 +66,10 @@ Local target presence precedes namespace inheritance. Missing targets, unknown
 kinds and missing namespace evidence remain unavailable. Explicit resource true/
 false determines resource-label provenance. Present unlabeled targets may inherit
 an observed namespace label, including explicit namespace false. Only observed
-absent opt-in yields none. Cluster-scoped target checks remain unsupported;
-internal Namespace observations continue to support inheritance.
+absent opt-in yields none. Cluster-scoped targets resolve at level 1 from their own
+label (BR-SCOPE-001 FR-SCOPE-004 Option A, #2670); only the non-labelable
+`ClusterScope` pseudo-target remains unsupported. Internal Namespace observations
+continue to support namespaced inheritance.
 
 FMC retains UID/revision/generation/full-fence/completeness/TTL proof. Unknown
 registrations perform no cache read. Observation-backed reads are mandatory.

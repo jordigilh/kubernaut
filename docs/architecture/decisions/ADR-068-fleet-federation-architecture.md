@@ -914,8 +914,9 @@ only `state` and determining-observation `provenance` on the wire. States are
 and `unauthorized`. Only verified managed authorizes action. Completed domain
 outcomes return nil error; execution/cancellation/protocol errors override any
 result. Target presence precedes inheritance; missing target/namespace evidence
-is unavailable, invalid labels cannot inherit, and cluster-scoped target checks
-remain unsupported. Boolean compatibility is removed atomically. Earlier dated
+is unavailable, invalid labels cannot inherit, and cluster-scoped targets resolve
+at level 1 from their own label (BR-SCOPE-001 FR-SCOPE-004 Option A, #2670).
+Boolean compatibility is removed atomically. Earlier dated
 boolean examples/qualification records are historical, not the current contract.
 
 **What this replaced** (all removed):

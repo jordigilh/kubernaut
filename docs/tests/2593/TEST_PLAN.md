@@ -258,7 +258,7 @@ Total estimate: 6–8 hours plus CI. No GREEN claim until all required proof pas
 | S07 | Backend failure remains unavailable/error |
 | S08 | Invalid/duplicate labels cannot inherit |
 | S09 | Typed backend authorization denial |
-| S10 | Deferred cluster-scoped target; internal Namespace inheritance remains |
+| S10 | Cluster-scoped targets resolve at level 1 from their own label; internal Namespace inheritance remains (#2670 supersedes the deferred reading) |
 | S11 | Strict authoritative GVK and exact unambiguous Search identity |
 | S12 | Fleet attribution, unknown registration, enabled-without-endpoint factory rejection |
 | S13 | Valid enum/provenance roundtrip; no public diagnostics |
@@ -970,7 +970,7 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 | Expiry time | Valkey server `TIME`, `PEXPIREAT`, and `PTTL`; no application-clock authority | Approved internal replacement contract; Step 0 external design record pending |
 | GVK | Explicit schema-propagated group/version; no remote `InferGVK` | DD-FLEET-014/015 approved; retain schema and owner handoff proof |
 | Invalid labels | Invalid resource/namespace label is typed invalid/unavailable; it is not absent and cannot inherit namespace scope | Pending ADR-053 amendment |
-| Cluster-scoped target | No namespace inheritance; no `verified_managed` cluster-scoped remediation claim until FR-SCOPE-004 is separately approved | Pending BR-SCOPE-001 decision |
+| Cluster-scoped target | No namespace inheritance; authorized by its own observed label at level 1 (#2670 restored FR-SCOPE-004 Option A; `ScopeUnsupported` only for the `ClusterScope` pseudo-kind) | Superseded 2026-11-19 by #2670 |
 | Inventory vocabulary | Existing `pkg/fleet/inventory.Page` states plus `CompletenessComplete/Partial` | #2584/#2600 conditional; not implemented here |
 | AF boundary | Local list/policy scope; existing exact/get; non-local Console list/policy scope unavailable | Approved by DD-AF-018 unless separately amended |
 | Public FMC scope API | `GET /api/v1/scope/check`; ordinary `application/json`; enum-only `state` and `provenance`; no `managed`, public v2 route or media token | Explicit amended implementation approval, DD-FLEET-015, 2026-11-16 |

@@ -15,7 +15,9 @@
 > require observed target presence before namespace inheritance. Missing target
 > or namespace evidence is unavailable, never verified unmanaged; invalid labels
 > cannot inherit. The enum-only `Check` contract authorizes only
-> `verified_managed`; cluster-scoped target authorization remains deferred.
+> `verified_managed`; cluster-scoped targets authorize through their own observed
+> label (FR-SCOPE-004 Option A, #2670), and only the non-labelable
+> `ClusterScope` pseudo-target remains deferred.
 > Namespace observations still support namespaced inheritance. The approved
 > [26-contract test plan](../tests/2593/TEST_PLAN.md) defines acceptance.
 
@@ -464,7 +466,7 @@ notificationRules:
 
 The following are explicitly OUT OF SCOPE for V1.0:
 
-1. ❌ **Cluster-Scoped Resources**: Nodes, PersistentVolumes (deferred to V2.0)
+1. ❌ **Cluster-Scoped Selection Policies**: `RemediationScope`-style selectors (FR-SCOPE-004 Option B) remain deferred to V2.0; per-object labels (Option A) are implemented (#2670)
 2. ❌ **Resource-Level Granularity**: Per-deployment, per-pod scope (namespace-level only)
 3. ❌ **Dynamic Scope Policies**: Rego policies for scope decisions (static labels only)
 4. ❌ **Scope Inheritance**: Child resources inheriting parent scope (flat namespace model)
