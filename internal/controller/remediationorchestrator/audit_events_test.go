@@ -192,7 +192,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 				Message:             "3 consecutive failures. Cooldown active.",
 				RequeueAfter:        time.Hour,
 				BlockedUntil:        &blockedUntil,
-				TargetResource:      defaultFixture + "/Deployment/test-app",
+				TargetResource:      defaultFixture + "/Deployment/ai-resolved",
 				ConsecutiveFailures: 3,
 				RecentWFE:           "wfe-prior",
 			}
@@ -218,8 +218,8 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Expect(payload.ToPhase.Value).To(Equal(string(remediationv1.PhaseBlocked)))
 			Expect(payload.BlockReason.Value).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 			Expect(payload.BlockMessage.Value).To(Equal("3 consecutive failures. Cooldown active."))
-			Expect(payload.TargetResource.Value).To(Equal(defaultFixture+"/Deployment/test-app"),
-				"the handler boundary must not fall back to the RR spec target")
+			Expect(payload.TargetResource.Value).To(Equal(defaultFixture+"/Deployment/ai-resolved"),
+				"the handler boundary must not fall back to the RR spec target (test-app)")
 			Expect(payload.ConsecutiveFailures.Value).To(Equal(int32(3)))
 			Expect(payload.RecentWfe.Value).To(Equal("wfe-prior"))
 			Expect(payload.BlockedUntil.Value.Format(time.RFC3339)).To(Equal(blockedUntil.Format(time.RFC3339)))

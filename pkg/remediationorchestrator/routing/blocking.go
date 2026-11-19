@@ -502,7 +502,7 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 		Message:             fmt.Sprintf("%d consecutive failures. Cooldown expires: %s", consecutiveFailures, blockedUntil.Format(time.RFC3339)),
 		RequeueAfter:        cooldownDuration,
 		BlockedUntil:        &blockedUntil,
-		TargetResource:      formatSpecTargetResource(rr),
+		TargetResource:      FormatSpecTargetResource(rr),
 		ConsecutiveFailures: int32(consecutiveFailures),
 	}
 }
@@ -557,7 +557,7 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 		Message:        fmt.Sprintf("Duplicate of active remediation %s. Will inherit outcome when original completes.", originalRR.Name),
 		RequeueAfter:   30 * time.Second,
 		DuplicateOf:    originalRR.Name,
-		TargetResource: formatSpecTargetResource(rr),
+		TargetResource: FormatSpecTargetResource(rr),
 	}, nil
 }
 
@@ -741,7 +741,7 @@ func (r *RoutingEngine) CheckExponentialBackoff(
 		Message:             fmt.Sprintf("Exponential backoff active. Next execution allowed at %s (in %s)", nextAllowed.Format(time.RFC3339), requeueAfter.Round(time.Second)),
 		RequeueAfter:        requeueAfter,
 		BlockedUntil:        &nextAllowed,
-		TargetResource:      formatSpecTargetResource(rr),
+		TargetResource:      FormatSpecTargetResource(rr),
 		ConsecutiveFailures: rr.Status.GetRoutingStatus().ConsecutiveFailureCount,
 	}
 }
@@ -828,12 +828,12 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		rr.Spec.TargetResource.Name, clusterCtx), backoffDuration, blockedUntil)
 }
 
-// formatSpecTargetResource renders the RR spec target with Kind casing
+// FormatSpecTargetResource renders the RR spec target with Kind casing
 // preserved. ResourceIdentifier.String() lowercases Kind, while routing's
 // AI-resolved and WorkflowExecution target strings preserve it; auditing one
 // canonical form keeps routing.blocked joinable with the WFE and across
 // pre-analysis/post-analysis block reasons (BR-AUDIT-005 reconstruction).
-func formatSpecTargetResource(rr *remediationv1.RemediationRequest) string {
+func FormatSpecTargetResource(rr *remediationv1.RemediationRequest) string {
 	tr := rr.Spec.TargetResource
 	if tr.Namespace != "" {
 		return fmt.Sprintf("%s/%s/%s", tr.Namespace, tr.Kind, tr.Name)
@@ -856,7 +856,7 @@ func unmanagedBlockCondition(
 		Message:             message,
 		RequeueAfter:        backoff,
 		BlockedUntil:        &blockedUntil,
-		TargetResource:      formatSpecTargetResource(rr),
+		TargetResource:      FormatSpecTargetResource(rr),
 		ConsecutiveFailures: rr.Status.GetRoutingStatus().ConsecutiveFailureCount,
 	}
 }

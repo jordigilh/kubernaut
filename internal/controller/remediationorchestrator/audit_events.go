@@ -555,7 +555,9 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 	// do not populate BlockingCondition.TargetResource.
 	targetResource := blocked.TargetResource
 	if targetResource == "" {
-		targetResource = rr.Spec.TargetResource.String()
+		// Same canonical formatter as the routing checks: the fallback must not
+		// reintroduce the lowercase-Kind form if a legacy caller omits the field.
+		targetResource = routing.FormatSpecTargetResource(rr)
 	}
 
 	blockData := &roaudit.RoutingBlockedData{

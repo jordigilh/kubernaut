@@ -438,7 +438,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress)))
 			Expect(blocked.DuplicateOf).To(Equal("rr-older-active"))
 			Expect(blocked.TargetResource).To(Equal("ns-a/Deployment/app"),
-				"UT-RO-AUDIT-2663-012: duplicate blocks must use the same canonical target format")
+				"UT-RO-AUDIT-2663-013: duplicate blocks must use the same canonical target format")
 		})
 
 		It("should block when active RR with same fingerprint exists", func() {
@@ -1243,7 +1243,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Message).To(ContainSubstring("Exponential backoff active"))
 			Expect(blocked.Message).To(ContainSubstring(futureTime.Format(time.RFC3339)))
 			Expect(blocked.TargetResource).To(Equal("default/Pod/nginx-backoff"),
-				"UT-RO-AUDIT-2663-012: preserve Kind casing for backoff blocks")
+				"UT-RO-AUDIT-2663-014: preserve Kind casing for backoff blocks")
 		})
 
 		It("should not block when no backoff configured", func() {
@@ -1962,7 +1962,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				"label guidance is wrong for a permanent identity defect")
 			Expect(spy.calledRemote).To(BeFalse())
 			Expect(result.TargetResource).To(Equal("default/Deployment/nginx"),
-				"UT-RO-AUDIT-2663-012: scope blocks must preserve Kind casing")
+				"UT-RO-AUDIT-2663-015: scope blocks must preserve Kind casing")
 		})
 
 		It("UT-RO-AUDIT-2663-011: renders cluster-scoped targets without an empty namespace [BR-AUDIT-005, FedRAMP AU-3]", func() {

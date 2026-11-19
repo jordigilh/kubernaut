@@ -351,8 +351,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, "10s", "500ms").Should(BeNumerically(">=", 2),
 			"Expected at least 2 routing.blocked events: initial block + re-block")
 
-		// Validate the latest event has correct structure
-		latestEvent := events[len(events)-1]
+		// DataStorage returns events newest-first (ORDER BY event_timestamp DESC),
+		// so index 0 is the re-block event we need here.
+		latestEvent := events[0]
 		Expect(latestEvent.EventType).To(Equal(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked)))
 		Expect(latestEvent.EventAction).To(Equal(audit.ActionBlocked))
 		Expect(string(latestEvent.EventOutcome)).To(Equal("pending"))
@@ -361,8 +362,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		payload := latestEvent.EventData.RemediationOrchestratorAuditPayload
 		Expect(payload.RrName).To(Equal(rrName))
 		Expect(payload.EventType).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked))
-		// IT-RO-010-005 / UT-RO-AUDIT-2663-013: the re-block event must audit the
-		// post-increment count that produced the new backoff, not the stale one.
+		// IT-RO-010-005: the re-block event must audit the post-increment count
+		// that produced the new backoff, not the stale one.
 		Expect(payload.ConsecutiveFailures.IsSet()).To(BeTrue(),
 			"re-block events must carry the failure count that drove the block")
 		Expect(payload.ConsecutiveFailures.Value).To(Equal(
