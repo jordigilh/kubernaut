@@ -79,6 +79,22 @@ type BlockingCondition struct {
 	// Used only for DuplicateInProgress blocks.
 	// Optional: only set when Reason = "DuplicateInProgress".
 	DuplicateOf string
+
+	// TargetResource is the resource identity the blocking check actually
+	// evaluated: the AI-resolved effective target after analysis, otherwise
+	// the RemediationRequest spec target. BR-AUDIT-005: the routing-blocked
+	// audit event must name the same resource the decision was made about.
+	TargetResource string
+
+	// ConsecutiveFailures is the observed consecutive-failure count that
+	// triggered a ConsecutiveFailures or ExponentialBackoff block. BR-AUDIT-005:
+	// the incoming RR's own status counter is usually zero for a new request,
+	// so the computed history count must travel with the decision.
+	ConsecutiveFailures int32
+
+	// RecentWFE names the recently completed WorkflowExecution that triggered
+	// a RecentlyRemediated block. BR-AUDIT-005 reconstruction evidence.
+	RecentWFE string
 }
 
 // TargetResource identifies a Kubernetes resource for routing decisions.
@@ -96,8 +112,13 @@ type TargetResource struct {
 	ClusterID string
 }
 
-// String returns the formatted target resource string used in logging and WFE matching.
+// String returns the canonical target resource string used in logging, audit
+// evidence and WFE matching. Cluster-scoped resources omit the empty namespace
+// so they render as "Kind/name" rather than "/Kind/name".
 func (t TargetResource) String() string {
+	if t.Namespace == "" {
+		return fmt.Sprintf("%s/%s", t.Kind, t.Name)
+	}
 	return fmt.Sprintf("%s/%s/%s", t.Namespace, t.Kind, t.Name)
 }
 

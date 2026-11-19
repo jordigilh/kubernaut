@@ -609,7 +609,7 @@ this extension adds no synchronous audit acknowledgment or retention-policy chan
 - Captures: block reason, workflow ID, target resource, requeue timing, blocked duration
 - Use cases: cooldown enforcement, duplicate detection, resource conflict resolution, consecutive failure tracking
 - ADR-032 compliance: All phase transitions must be audited
-- ⚠️ Per the catalog, the emitted payload today only carries `rr_name`/`namespace` — the richer fields listed above are built by the caller but not yet attached to the outgoing event (payload-mapping gap, not a doc issue)
+- ✅ Issue #2663 attaches the richer payload fields (block reason/message, from/to phase, effective target resource, requeue/backoff timing, blocking/duplicate/recent WFE, consecutive failures) to the outgoing event; see the catalog for the CC7.2/AU-3 mapping and proving tests
 
 **Recommendation**: ✅ Generate audit traces for coordination visibility, but P1 priority (not P0).
 
