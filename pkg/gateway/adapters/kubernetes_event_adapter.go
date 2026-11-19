@@ -222,7 +222,10 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	}
 	// A cluster-scoped kind has no namespace, whatever the event claims.
 	// Normalizing before fingerprint resolution keeps the dedup key, the RR
-	// target and the scope identity aligned (#2670).
+	// target and the scope identity aligned (#2670). This adapter has no
+	// discovery registry, so only the static kinds are covered; a cluster-scoped
+	// CRD event that carries involvedObject.namespace keeps it (see ADR-053
+	// §2a). K8s events for cluster-scoped objects normally carry none.
 	if scope.IsClusterScopedKind(resource.Kind) {
 		resource.Namespace = ""
 	}

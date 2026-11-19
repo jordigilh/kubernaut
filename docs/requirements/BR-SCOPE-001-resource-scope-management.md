@@ -212,7 +212,8 @@ retryConfig:
 
 **Requirement**: Operators MUST be able to mark cluster-scoped resources (Nodes, PersistentVolumes) as managed by Kubernaut.
 
-**Configuration Options** (TBD - requires design decision):
+**Configuration Options** (decided: Option A is implemented and is the supported
+mechanism; Option B remains open for V2.0):
 
 **Option A: Resource Labels/Annotations**
 ```yaml
@@ -511,7 +512,7 @@ The following are explicitly OUT OF SCOPE for V1.0:
 - ✅ Defense-in-depth (Gateway + RO)
 - ✅ Graceful failure (clear error messages)
 - ✅ Observable (metrics, logs, audit)
-- ✅ Extensible (V2.0 can add cluster-scoped, CRD-based config)
+- ✅ Extensible (V2.0 can add selector-based cluster-scoped config — FR-SCOPE-004 Option B; per-object labels are the shipped Option A)
 
 **Next Steps**:
 1. Implement shared scope manager (`pkg/shared/scope/manager.go`)

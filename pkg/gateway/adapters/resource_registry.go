@@ -332,10 +332,13 @@ func (r *APIResourceRegistry) IsNamespacedKind(kind string) bool {
 	return namespaced
 }
 
-// targetClusterScoped reports whether a target kind has no namespace. API
-// discovery wins when it positively knows the kind (which covers cluster-scoped
-// CRDs); the static scope map is the fallback, and an unknown kind stays
-// namespaced because IsNamespacedKind defaults to true (#2670).
+// targetClusterScoped reports whether a target kind has no namespace. The
+// static scope map is authoritative for the kinds it lists; API discovery
+// extends the answer to kinds outside the map (which covers cluster-scoped
+// CRDs). An unknown kind stays namespaced, because IsNamespacedKind defaults to
+// true and dropping a namespace a resource needs is worse than keeping one it
+// does not (#2670). Discovery records one scope per Kind (first group wins), so
+// a Kind served with different scopes by different groups is not modelled here.
 func targetClusterScoped(registry *APIResourceRegistry, kind string) bool {
 	if scope.IsClusterScopedKind(kind) {
 		return true

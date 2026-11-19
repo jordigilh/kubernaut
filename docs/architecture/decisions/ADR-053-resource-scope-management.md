@@ -159,6 +159,22 @@ ends in retryable `unavailable` rather than a terminal rejection. Closing that
 gap needs a RESTMapper-based kind resolver; both directions of the ambiguity are
 tracked as one follow-up.
 
+**Normalization and dedup.** The Gateway adapters drop a claimed namespace for a
+cluster-scoped target before the fingerprint is computed, so the dedup key, the
+persisted `spec.targetResource` and the scope identity agree (for cluster-scoped
+kinds this supersedes #1371's "honor an explicit namespace label"). The
+Prometheus adapter uses API discovery, so it also covers a discovered
+cluster-scoped CRD; the Kubernetes-event adapter has no discovery client and
+covers only the static kinds, which is acceptable because events for
+cluster-scoped objects normally carry no namespace.
+
+**Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
+when the identity has none, so a Kind that is *not* known to be cluster-scoped
+but arrives without a namespace can match a same-named object in any namespace
+and resolve at level 1. The local and fenced lanes return `unavailable` for the
+same identity. The adapters always supply a namespace for unknown kinds, so this
+needs a defective identity to reach.
+
 **Reads are read-only.** The check performs a metadata-only `Get` on
 `PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an
 ACM Search query; no mutating verb is required or performed.
@@ -167,12 +183,11 @@ ACM Search query; no mutating verb is required or performed.
 - Gateway and API Frontend read the shared target set, which includes
   `nodes`, `persistentvolumes` and `persistentvolumeclaims`.
 - RemediationOrchestrator reads `pods`, `nodes`, `services`, `namespaces`,
-  `persistentvolumes` and `configmaps`, plus the `apps` workload kinds. Its
-  deployed role does **not** grant `persistentvolumeclaims` today: a PVC scope
-  check therefore reads as unavailable at RO until the companion operator change
-  ([kubernaut-operator#645](https://github.com/jordigilh/kubernaut-operator/issues/645))
-  grants it. Gateway, API Frontend, the Effectiveness Monitor and the Kubernaut
-  Agent already have that grant.
+  `persistentvolumes`, `persistentvolumeclaims` and `configmaps`, plus the `apps`
+  workload kinds. The PVC grant landed in
+  [kubernaut-operator#646](https://github.com/jordigilh/kubernaut-operator/pull/646)
+  (issue #645) at the same time as this behaviour, because a PVC scope check at
+  RO was otherwise unavailable.
 - The Fenced Fleet Metadata Cache syncs Deployment, StatefulSet, DaemonSet, Pod,
   Service, Node and Namespace; for cluster-scoped **targets** that means `Node`
   and `Namespace`, with Namespace also serving as inheritance evidence.

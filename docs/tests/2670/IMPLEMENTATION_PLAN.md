@@ -170,7 +170,7 @@ request actually needs, verified against `kubernaut-operator`:
   `nodes`, `services`, `namespaces`, `persistentvolumes`, `configmaps` but not
   `persistentvolumeclaims`, while its apps rule (`:1377`) already grants deployments. Add
   `persistentvolumeclaims` to that core rule (get/list/watch) in `kubernaut-operator`, with its
-  RBAC test updated — a companion change in that repository, not this PR.
+  RBAC test updated. Shipped as kubernaut-operator#646.
 - **Gateway and API Frontend already have it**; nothing to do.
 - **FMC needs nothing**: its own SA reads no target resources
   (`fleetMetadataCacheClusterRole`, `fleetmetadatacache.go:297-309`, contains only MCP-gateway CRD
@@ -354,13 +354,15 @@ body.
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.
 
-## 5b. Companion change — `kubernaut-operator`
+## 5b. Companion change — `kubernaut-operator` (landed)
 
-Lands in the `kubernaut-operator` repository as its own PR (this PR cannot touch that repo):
+Shipped as `kubernaut-operator` PR #646 (issue #645, merged 2026-11-19): the
+`remediationOrchestratorClusterRole` core rule now includes `persistentvolumeclaims`
+with `get/list/watch`, proven by the operator's RBAC test.
 
 1. RED: extend `internal/resources/rbac_test.go` to assert
    `remediationOrchestratorClusterRole` grants `persistentvolumeclaims` get/list/watch.
-2. GREEN: add `persistentvolumeclaims` to the core rule at `internal/resources/rbac.go:1376`.
+2. GREEN: add `persistentvolumeclaims` to the core rule at `internal/resources/rbac.go`.
 3. Nothing else: Gateway/AF already grant PVC, EM/KA already do, FMC's own SA performs no hub
    target reads, and the fleet-caller group already has PVC through the built-in `view` role
    (§2 D5).
@@ -547,7 +549,7 @@ rather than mutation, `Namespace` targets are legitimate, and — per the owner 
 23-kind inventory is documented explicitly in ADR-053 and pinned by `UT-SCOPE-2670-012`.
 `PersistentVolumeClaim` is handled as the namespaced kind it is (§2 D5), not added to the
 cluster-scoped map; the only missing read grant in the operator is RO's `persistentvolumeclaims`
-and it lands as the companion change in §5b. Two
+and it landed as the companion change in §5b (kubernaut-operator#646). Two
 explicit deductions from the project's integration target ("100% of wiring points"): (1) **two of
 five wiring points** (Gateway `validateScope`, API Frontend `checkRRScope`) have no cluster-scoped
 IT of their own — the Gateway has `UT-GW-2670-001/002` proving its identity normalization, both call
