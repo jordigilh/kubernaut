@@ -168,6 +168,14 @@ cluster-scoped CRD; the Kubernetes-event adapter has no discovery client and
 covers only the static kinds, which is acceptable because events for
 cluster-scoped objects normally carry no namespace.
 
+The residual case is a cluster-scoped CRD the adapter cannot classify (event
+adapter, or discovery unavailable) arriving with a namespace. That identity is
+treated as *namespaced*, which means it can be authorized by that namespace's
+`kubernaut.ai/managed` label at level 2 rather than failing closed. It needs a
+crafted or defective producer to reach — the adapters only keep a namespace for
+kinds they do not positively classify as cluster-scoped, and the same
+RESTMapper-based resolver follow-up closes both directions of this ambiguity.
+
 **Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
 when the identity has none, so a Kind that is *not* known to be cluster-scoped
 but arrives without a namespace can match a same-named object in any namespace

@@ -97,12 +97,15 @@ read (a `Get` on `PartialObjectMetadata`, a cache read, or an ACM Search query)
 and never mutates the target. ADR-053 §"Recognized kinds" lists every kind the
 static classification recognizes and the reads each lane holds.
 
-**Cluster-scoped targets carry no namespace.** An alert that labels a namespace
-for a Node, PV or other cluster-scoped kind is normalized to an empty target
-namespace, so the dedup key (which hashes the target namespace), the persisted
-`spec.targetResource` and the scope identity all agree with what the API Frontend
-hashes for the same object. For cluster-scoped kinds this supersedes #1371's
-"honor an explicit namespace label" behaviour.
+**Cluster-scoped targets carry no namespace.** At the Gateway, an alert that
+labels a namespace for a Node, PV or other cluster-scoped kind is normalized to
+an empty target namespace, so the dedup key (which hashes the target namespace),
+the persisted `spec.targetResource` and the scope identity agree. This holds for
+the kinds the Gateway can classify — the static set plus kinds its API discovery
+reports as cluster-scoped. For cluster-scoped kinds it supersedes #1371's "honor
+an explicit namespace label" behaviour. The API Frontend still hashes the
+namespace it is given, so a cluster-scoped CRD submitted through AF with a
+namespace keeps it.
 
 ### Both `IsManagedResource` boolean lanes are removed
 

@@ -371,7 +371,8 @@ func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert Aler
 	// A cluster-scoped kind has no target namespace even when the alert carries
 	// one. Normalizing here runs before fingerprint resolution, so the dedup
 	// key, the RR target and the scope identity stay aligned (#2670). Discovery
-	// wins when it knows the kind, which covers cluster-scoped CRDs.
+	// extends the answer to kinds the static map does not classify, which
+	// covers cluster-scoped CRDs.
 	if targetClusterScoped(a.registry, kind) {
 		ns = ""
 	}

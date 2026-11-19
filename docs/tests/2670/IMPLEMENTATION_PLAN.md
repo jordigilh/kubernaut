@@ -333,10 +333,12 @@ For a cluster-scoped kind the two differ, and the new terminal guard would turn 
 (`scopeTargetNamespace`), writes it back onto the signal, and builds the identity from it, so the
 Gateway checks exactly the identity RO re-checks.
 
-`PrometheusAdapter.extractAlertResource` blanks the namespace for a known cluster-scoped kind before
-fingerprint resolution. That keeps the dedup key, the RR target and the scope identity aligned, and
-matches the API Frontend's documented invariant that GW and AF hash the same target. It supersedes
-#1371's "honor an explicit namespace label" for cluster-scoped kinds (`UT-GW-1371-014` updated).
+The adapters blank the namespace for a cluster-scoped kind before fingerprint resolution. The
+Prometheus adapter uses `targetClusterScoped` (static map, extended by API discovery, so
+cluster-scoped CRDs are covered); the Kubernetes-event adapter has no discovery client and covers
+the static kinds only. That keeps the dedup key, the RR target and the scope identity aligned and
+supersedes #1371's "honor an explicit namespace label" for cluster-scoped kinds
+(`UT-GW-1371-014` updated).
 
 ## 5. TDD phases
 
@@ -350,7 +352,8 @@ body.
 | 3. ACM lane UT + IT | `pkg/fleet/acm/client_test.go`: rewrite `UT-ACM-2592-002`, add `UT-ACM-2670-001..002`; `test/integration/acm/acm_factory_test.go`: add `IT-ACM-2670-001` | `acm/client.go` §4.3 (phase exits only when both the UTs and `IT-ACM-2670-001` pass) | extract the four terminal guards into `classifyIdentity` (gocyclo 20 → below the 15 threshold), collapse the namespace read into the `!clusterScoped` branch (§4.3 item 5) keeping the level-2 read for namespaced targets |
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
-| 6. Docs | — | §8 | N/A |
+| 6. Gateway adapters | `pkg/gateway/adapters`: `UT-GW-2670-003` (event adapter) and `UT-GW-2670-004` (classification) | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
+| 7. Docs | — | §8 | N/A |
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.
 
@@ -432,7 +435,7 @@ the **reader contract**, not a production observation; fleet PV/CRD observation 
 | IT-RO-192-001 (restored) | Local lane through RO: a managed-labeled Node passes the scope gate, the RR reaches Processing, SP is created, SP failure drives `PhaseFailed`, and no EA is created (#240 contract) |
 | IT-ACM-2670-001 (new) | Direct ACM backend composed by the production factory: a `Node` identity with `label: ""` resolves `verified_unmanaged`/`none`, and with `label: "kubernaut.ai/managed=true"` resolves `verified_managed`/`resource-label` — the cluster-scoped branch of `acm.Client.Check` through real wiring |
 
-Scenario coverage: 23 unit scenario IDs (local 14 / fleet 6 / ACM 3) + 4 integration scenarios,
+Scenario coverage: 27 unit scenario IDs (local 14 / fleet 6 / ACM 3 / gateway 4) + 4 integration scenarios,
 all business outcomes, no duplicate assertions. Critical scenarios: 100%.
 
 ## 7. Wiring manifest
