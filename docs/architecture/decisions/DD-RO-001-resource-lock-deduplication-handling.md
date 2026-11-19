@@ -291,7 +291,14 @@ Last signal: %s`,
 
 ### Target Resource Format
 
-RO builds `targetResource` from `RemediationRequest.spec.targetResource`:
+> **Superseded (#2658, DD-IDENTITY-001 §D2)**: `targetResource` is now the
+> canonical identity `namespace/group/version/Kind/name` (cluster-scoped:
+> `group/version/Kind/name`), built by `creator.ResolveTargetIdentity` /
+> `scope.BuildTargetIdentity`. The historical 3-part builder below is kept for
+> the record only.
+
+Historically (pre-#2658) RO built `targetResource` from
+`RemediationRequest.spec.targetResource`:
 
 ```go
 func buildTargetResource(rr *RemediationRequest) string {
@@ -387,7 +394,7 @@ See: [BUSINESS_REQUIREMENTS.md](../../services/crd-controllers/05-remediationorc
 
 | Field | Direction | Description |
 |-------|-----------|-------------|
-| `spec.targetResource` | RO → WE | Format: `namespace/kind/name` or `kind/name` |
+| `spec.targetResource` | RO → WE | Canonical identity `namespace/group/version/Kind/name` or `group/version/Kind/name` (#2658, DD-IDENTITY-001 §D2); `unresolved` in the group/version slots when unknown |
 | `status.phase` | WE → RO | Includes `Skipped` phase |
 | `status.skipDetails` | WE → RO | Reason, conflicting workflow, recent remediation |
 
