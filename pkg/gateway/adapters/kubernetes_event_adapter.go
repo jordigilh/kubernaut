@@ -220,6 +220,12 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Namespace:  event.InvolvedObject.Namespace,
 		APIVersion: event.InvolvedObject.APIVersion,
 	}
+	// A cluster-scoped kind has no namespace, whatever the event claims.
+	// Normalizing before fingerprint resolution keeps the dedup key, the RR
+	// target and the scope identity aligned (#2670).
+	if scope.IsClusterScopedKind(resource.Kind) {
+		resource.Namespace = ""
+	}
 
 	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004, Issue #228)
 	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.

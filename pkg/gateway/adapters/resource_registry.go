@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var (
@@ -328,6 +330,17 @@ func (r *APIResourceRegistry) IsNamespacedKind(kind string) bool {
 		return true
 	}
 	return namespaced
+}
+
+// targetClusterScoped reports whether a target kind has no namespace. API
+// discovery wins when it positively knows the kind (which covers cluster-scoped
+// CRDs); the static scope map is the fallback, and an unknown kind stays
+// namespaced because IsNamespacedKind defaults to true (#2670).
+func targetClusterScoped(registry *APIResourceRegistry, kind string) bool {
+	if scope.IsClusterScopedKind(kind) {
+		return true
+	}
+	return registry != nil && !registry.IsNamespacedKind(kind)
 }
 
 // KindToGVRCandidates returns every discovered GroupVersionResource for a

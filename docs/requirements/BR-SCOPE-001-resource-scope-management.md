@@ -469,7 +469,7 @@ notificationRules:
 The following are explicitly OUT OF SCOPE for V1.0:
 
 1. ❌ **Cluster-Scoped Selection Policies**: `RemediationScope`-style selectors (FR-SCOPE-004 Option B) remain deferred to V2.0; per-object labels (Option A) are implemented (#2670)
-2. ❌ **Resource-Level Granularity**: Per-deployment, per-pod scope (namespace-level only)
+2. ❌ **Dynamic Resource-Level Policies**: selector-driven per-resource scope rules; per-object `kubernaut.ai/managed` labels (FR-SCOPE-004 Option A) are supported
 3. ❌ **Dynamic Scope Policies**: Rego policies for scope decisions (static labels only)
 4. ❌ **Scope Inheritance**: Child resources inheriting parent scope (flat namespace model)
 5. ❌ **Scope Change Notifications**: Proactive alerts when scope changes (reactive only)
