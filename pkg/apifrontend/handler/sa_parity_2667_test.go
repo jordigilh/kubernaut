@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +13,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
 	adksession "google.golang.org/adk/v2/session"
+	"google.golang.org/genai"
 	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
@@ -36,8 +39,10 @@ import (
 // auth middleware in its TokenReview mode (the mode that authenticates
 // service-account tokens, pkg/apifrontend/auth/tokenreview.go), the real MCP
 // handler/bridge, the real A2A handler, and the real Console read handler, and
-// drives every request with the same bearer token. Only the Kubernetes API
-// (TokenReview, dynamic/typed clients) is a fixture.
+// drives every request with the same bearer token. Fixtures are limited to the
+// Kubernetes API (TokenReview, dynamic/typed clients) and one deterministic
+// test LLM whose only scripted answer is final text, so the ADK task can reach
+// a terminal state without executing a tool or contacting a model provider.
 
 const (
 	saToken    = "test-token"
@@ -136,14 +141,40 @@ var _ = Describe("BR-INTERACTIVE-010: service-account parity across A2A/MCP and 
 		Expect(recorder.Code).To(Equal(http.StatusOK), "A2A must not reject the verified service account")
 		var response map[string]any
 		Expect(json.Unmarshal(recorder.Body.Bytes(), &response)).To(Succeed())
-		Expect(response).To(HaveKey("result"), "the A2A request must reach the real protocol handler")
+		result, ok := response["result"].(map[string]any)
+		Expect(ok).To(BeTrue(), "the A2A request must reach the real protocol handler")
+		status, ok := result["status"].(map[string]any)
+		Expect(ok).To(BeTrue(), "message/send must return the terminal task")
+		Expect(status["state"]).To(Equal("completed"),
+			"the service-account task must reach a terminal completed state")
+		taskID, ok := result["id"].(string)
+		Expect(ok).To(BeTrue(), "the terminal task must carry an ID")
+		Expect(taskID).NotTo(BeEmpty())
 
 		Eventually(func() int {
 			return len(eventsOfType(auditor, audit.EventA2ATaskStarted))
 		}, 5*time.Second).Should(Equal(1))
-		event := eventsOfType(auditor, audit.EventA2ATaskStarted)[0]
-		Expect(event.UserID).To(Equal(saUsername), "the verified service-account identity must reach the A2A audit trail unchanged")
-		Expect(event.Detail["method"]).To(Equal("message/send"))
+		started := eventsOfType(auditor, audit.EventA2ATaskStarted)[0]
+		Expect(started.UserID).To(Equal(saUsername), "the verified service-account identity must reach the A2A audit trail unchanged")
+		Expect(started.Detail["method"]).To(Equal("message/send"))
+		Expect(started.CorrelationID).NotTo(BeEmpty(), "a non-empty correlation is required for the equality below to mean anything")
+
+		Eventually(func() int {
+			return len(eventsOfType(auditor, audit.EventA2ATaskCompleted))
+		}, 5*time.Second).Should(Equal(1))
+		completed := eventsOfType(auditor, audit.EventA2ATaskCompleted)[0]
+		Expect(completed.UserID).To(Equal(saUsername),
+			"terminal attribution must stay the verified service account")
+		Expect(completed.Detail["task_id"]).To(Equal(taskID))
+		Expect(completed.CorrelationID).NotTo(BeEmpty())
+		Expect(completed.CorrelationID).To(Equal(started.CorrelationID))
+
+		triage := eventsOfType(auditor, audit.EventTriageCompleted)
+		Expect(triage).To(HaveLen(1), "the success callback pairs completion with one triage outcome")
+		Expect(triage[0].UserID).To(Equal(saUsername))
+		Expect(triage[0].Detail["task_id"]).To(Equal(taskID))
+		Expect(triage[0].CorrelationID).To(Equal(started.CorrelationID))
+		Expect(eventsOfType(auditor, audit.EventA2ATaskFailed)).To(BeEmpty())
 
 		authEvents := eventsOfType(auditor, audit.EventAuthSuccess)
 		Expect(authEvents).NotTo(BeEmpty())
@@ -200,12 +231,13 @@ func saTokenReviewClient() *k8sfake.Clientset {
 }
 
 // newServiceAccountParityAgent builds the real A2A launcher over the ADK root
-// agent. Tools are registered because the launcher rejects a tool-less agent;
-// the fixture never gives them a reason to run.
+// agent. Tools are registered because NewRootAgent rejects a tool-less agent;
+// the deterministic test LLM never asks to run them.
 func newServiceAccountParityAgent() agent.Agent {
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
 		Instruction: "Service-account parity fixture agent.",
 		SkipTools:   false,
+		LLMModel:    finalTextLLM{},
 	})
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	return rootAgent
@@ -235,6 +267,21 @@ func eventsOfType(auditor *fakeAuditor, eventType audit.EventType) []*audit.Even
 type authorizedIdentity struct {
 	username string
 	groups   []string
+}
+
+// finalTextLLM is the deterministic external LLM fixture: it answers with one
+// final text turn and never requests a tool, so the ADK loop terminates.
+type finalTextLLM struct{}
+
+func (finalTextLLM) Name() string { return "sa-parity-final-text" }
+
+func (finalTextLLM) GenerateContent(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		yield(&model.LLMResponse{
+			Content:      genai.NewContentFromText("service-account parity", genai.RoleModel),
+			TurnComplete: true,
+		}, nil)
+	}
 }
 
 // recordingToolAuthorizer records the identity that reaches the real per-tool
