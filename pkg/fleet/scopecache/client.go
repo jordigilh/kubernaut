@@ -88,9 +88,21 @@ func NewClientWithStatusStore(statusStore StatusStore, registration registry.Cur
 // resource cache miss, expiry, backend error, invalid label, or uncertain
 // record never falls through to a managed namespace. Namespace inheritance is
 // considered only after the resource itself is verified present and unlabeled.
+// A cluster-scoped target resolves at level 1 (its own label); only the
+// non-labelable pseudo-target stays unsupported (issue #2670).
 func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (scope.ScopeResult, error) {
 	if ctx.Err() != nil {
 		return unavailableResult("scope_canceled"), ctx.Err()
+	}
+	// A cluster-level intent has no backing object to carry a label
+	// (DD-GATEWAY-CLUSTER-SCOPE-SIGNALS). Must precede GVK validation because
+	// the pseudo-target carries no apiVersion. Defense in depth: both fleet
+	// entry points validate GVK before delegating.
+	if resource.Kind == scope.PseudoKindClusterScope {
+		return scope.ScopeResult{
+			State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonClusterScopedTargetUnsupported,
+		}, nil
 	}
 	gvk, err := scope.GVKForIdentity(resource)
 	if err != nil {
@@ -100,13 +112,16 @@ func (c *Client) Check(ctx context.Context, resource scope.ResourceIdentity) (sc
 			Reason:     "invalid_resource_gvk",
 		}, nil
 	}
-	// BR-SCOPE-001 FR-SCOPE-004 / #2593: cluster-scoped remediation
-	// remains deferred. This target boundary deliberately does not apply to
-	// internal Namespace observation reads used for namespaced inheritance.
-	if resource.Namespace == "" || scope.IsClusterScopedKind(resource.Kind) {
+	if resource.Namespace != "" && scope.IsClusterScopedKind(resource.Kind) {
 		return scope.ScopeResult{
-			State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable,
-			Reason: "cluster_scoped_target_unsupported",
+			State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonInvalidClusterScopedNamespace,
+		}, nil
+	}
+	if resource.Namespace == "" && scope.IsKnownNamespacedKind(resource.Kind) {
+		return scope.ScopeResult{
+			State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonNamespacedTargetWithoutNamespace,
 		}, nil
 	}
 	if c.statusStore != nil {
@@ -225,7 +240,7 @@ func readinessScopeFailure(err error) (scope.ScopeResult, error) {
 
 func (c *Client) mapFencedRecord(ctx context.Context, request FencedReadRequest, record FencedReadResult, proof FencedReadProof) (scope.ScopeResult, error) {
 	if record.State != ReadVerified {
-		return unavailableResult("cache_miss"), nil
+		return unavailableResult(ReasonCacheMiss), nil
 	}
 	switch record.Record.LabelState {
 	case scope.LabelStateTrue:
@@ -289,7 +304,7 @@ func readMatchesProof(result FencedReadResult, proof FencedReadProof) bool {
 func (c *Client) checkResourceObservation(ctx context.Context, resource scope.ResourceIdentity, record CachedObservation) (scope.ScopeResult, error) {
 	if record.State != RecordVerifiedPresent {
 		if record.State == RecordMissing {
-			return unavailableResult("cache_miss"), nil
+			return unavailableResult(ReasonCacheMiss), nil
 		}
 		return unavailableResult("uncertain_record"), nil
 	}
@@ -372,6 +387,10 @@ func verifiedResult(managed bool, provenance scope.ScopeSource) scope.ScopeResul
 		Provenance: provenance,
 	}
 }
+
+// ReasonCacheMiss marks a target with no verified cache record. A missing
+// record is never a verified unmanaged decision.
+const ReasonCacheMiss = "cache_miss"
 
 func unavailableResult(reason string) scope.ScopeResult {
 	return scope.ScopeResult{
