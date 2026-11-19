@@ -19,7 +19,7 @@ import (
 
 const emptySearchResponse = `{"data":{"searchResult":[{"count":0,"items":[]}]}}`
 
-var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func() {
+var _ = Describe("BR-SCOPE-001, BR-SECURITY-016: ACM canonical inventory projection", func() {
 	It("UT-ACM-2593-IDENTITY-001 [BR-SCOPE-001]: projects a live-shaped managed resource without exposing its ACM UID", func() {
 		var requestBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -435,6 +435,38 @@ var _ = Describe("IT-FLEET-2584-002: ACM canonical inventory projection", func()
 		resource, err := acm.NewClient(server.URL).Get(context.Background(), "prod-east", testInventoryResourceID)
 		Expect(err).To(MatchError(ContainSubstring("cluster does not match")))
 		Expect(resource.ID).To(BeEmpty())
+	})
+
+	It("UT-FLEET-2584-ACM-EMPTY-001 [BR-API-001, FedRAMP SI-10]: records an applied zero-item Search as an empty observation, not a failure", func() {
+		var requestBodies []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer GinkgoRecover()
+			body, err := io.ReadAll(r.Body)
+			Expect(err).NotTo(HaveOccurred())
+			requestBodies = append(requestBodies, string(body))
+			_, err = io.WriteString(w, emptySearchResponse)
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		DeferCleanup(server.Close)
+
+		page, err := acm.NewClient(server.URL).List(context.Background(), inventory.Filters{ClusterID: "prod-east"})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The query must still be scoped to the requested cluster: an over-broad
+		// collection would make a zero-item observation meaningless.
+		Expect(requestBodies).NotTo(BeEmpty())
+		Expect(requestBodies[0]).To(ContainSubstring("prod-east"))
+
+		// This adapter is the FMC collection path (FMC -> control plane -> cache),
+		// not a Console read surface. The durable fact is that an applied,
+		// fully-traversed Search with zero items is an empty observation: turning
+		// it into `unavailable` would misreport a healthy partition as a failure.
+		// Completeness is deliberately not asserted here: whether an empty
+		// partition may be presented as `empty` to a Console reader is decided at
+		// FMC page assembly from partition proof (DD-FLEET-017 D2.4, pending #2661).
+		Expect(page.State).To(Equal(inventory.StateEmpty))
+		Expect(page.Items).To(BeEmpty())
+		Expect(page.ObservedAt).NotTo(BeZero())
 	})
 
 })

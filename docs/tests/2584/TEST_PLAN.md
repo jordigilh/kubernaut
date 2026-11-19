@@ -4,11 +4,11 @@
 
 **Test Plan Identifier**: TP-2584-v1.0
 **Feature**: Versioned, read-only, authenticated API Frontend projections for policy scope, policy evaluation metadata, and managed-resource inventory
-**Version**: 1.5
+**Version**: 1.9
 **Created**: 2026-11-01
 **Author**: Kubernaut Team
-**Status**: Implementation complete on branch; scoped AF validation passed; cross-repository qualification pending
-**Branch**: `openchamber/issue-2584-console-policy-read`
+**Status**: Implementation landed via #2604; scoped AF validation passed with two declared P0 cases PARTIAL (§5.5); cross-repository qualification pending
+**Branch**: `work/2584-policyread` (evidence correction; implementation originally landed via #2604)
 
 > Production code and tests are present on this branch. Authorization, historical-source,
 > and typed-audit decisions were approved before implementation. This record separates
@@ -34,8 +34,9 @@ Console's `policies.scope` view. It proves that an authenticated interactive use
 obtain only a sanitized, versioned projection of the effective Kubernaut scope and
   managed-resource inventory through AF, without browser tokens, direct browser access to
   DataStorage, raw Rego, secrets, private reasoning, arbitrary payloads, or cross-scope
-  records. It also proves that incomplete, unavailable, forbidden, and ambiguous
-reads fail closed and that existing A2A/MCP and service-account paths remain unchanged.
+  records. It also specifies, and partially proves, that incomplete, unavailable, forbidden, and
+ambiguous reads fail closed and that existing A2A/MCP and service-account paths remain
+unchanged; §5.5 records exactly which sub-cases remain unproven.
 
 ### 1.2 Objectives
 
@@ -74,6 +75,8 @@ reads fail closed and that existing A2A/MCP and service-account paths remain unc
 - [BR-SECURITY-016](../../requirements/BR-SECURITY-016-kubernetes-rbac-enforcement.md): Kubernetes RBAC Enforcement for REST API Endpoints.
 - [BR-AI-085](../../requirements/BR-AI-085-rego-policy-input-schema.md): Rego Policy Input Schema for Approval Decisions.
 - [BR-AI-088](../../requirements/BR-AI-088-configurable-confidence-thresholds.md): Operator-Configurable Confidence Thresholds.
+- BR-API-001: versioned Console read API contract and error semantics.
+- [BR-INTERACTIVE-010](../../requirements/BR-INTERACTIVE-010.md): interactive protocol (A2A/MCP) compatibility.
 - BR-AUDIT-005 v2.0: Core audit trace and attribution requirement, as defined by `AGENTS.md`.
 - [ADR-053](../../architecture/decisions/ADR-053-resource-scope-management.md) and the shared `pkg/shared/scope` implementation.
 - [DD-AUDIT-003](../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) and [ADR-034](../../architecture/decisions/ADR-034-unified-audit-table-design.md).
@@ -94,18 +97,21 @@ reads fail closed and that existing A2A/MCP and service-account paths remain unc
 |---|---|---|---|---|---|
 | R1 | REST route is reachable without the verified user or read capability | Unauthorized policy/inventory disclosure | Medium | IT-AF-2584-004, IT-AF-2584-005 | Run the real post-auth router and SAR path; reject missing identity and service-account callers on console routes |
 | R2 | A namespace or resource filter widens the requested scope | Cross-tenant data disclosure | Medium | UT-AF-2584-005, IT-AF-2584-005 | Exact filter validation, target SARs, no offset pagination, and no fallback from invalid identity to broad list |
-| R3 | Resource label, namespace label, and cluster scope are evaluated in the wrong order | Incorrect remediation boundary shown to operators | Medium | UT-AF-2584-003, UT-AF-2584-004, IT-AF-2584-002 | Reuse structured shared-scope resolution and assert provenance, not only the boolean result |
+| R3 | Resource label, namespace label, and cluster scope are evaluated in the wrong order | Incorrect remediation boundary shown to operators | Medium | UT-AF-2584-003, UT-AF-2584-004, IT-AF-2584-007 | Reuse structured shared-scope resolution and assert provenance, not only the boolean result |
 | R4 | Raw Rego, ConfigMap keys, secrets, arbitrary labels, or private reasoning leak through a projection | Security/compliance violation | Medium | UT-AF-2584-002, UT-AF-2584-009, IT-AF-2584-003 | Typed allowlist projection and negative response assertions |
 | R5 | Current policy metadata is confused with historical evaluation metadata | Misleading governance/audit display | Medium | UT-AF-2584-006, IT-AF-2584-003 | Separate response fields and fixtures with different revisions/hashes |
 | R6 | An incomplete or unavailable backend returns records or counts | False operational state and information leakage | High | UT-AF-2584-008, IT-AF-2584-006 | Error-state envelope contains no items, counts, or provenance; successful pages require complete source reads |
-| R7 | Remote-cluster reads silently fall back to the hub cluster | Wrong-cluster data is presented as requested data | Medium | IT-AF-2584-008, IT-FLEET-2584-001/002 | Explicit cluster identity, FMC/ACM control-plane selection, existing `ScopeChecker`, and no local fallback |
+| R7 | Remote-cluster reads silently fall back to the hub cluster | Wrong-cluster data is presented as requested data | Medium | IT-AF-2584-008, IT-FLEET-2584-001 | Explicit cluster identity, FMC/ACM control-plane selection, existing `ScopeChecker`, and no local fallback. The ACM lane is NOT QUALIFIED (§8.2/§14); its fixture-level IT label was retired |
 | R8 | New router/config wiring changes A2A/MCP or robot behavior | Existing interactive/agent flows regress | Low | IT-AF-2584-009, existing AF suites | Additive route registration and regression coverage for existing protocol paths |
 
 ### 3.1 Risk-to-Test Traceability
 
-R1, R2, R6, and R7 are critical security/data-integrity risks. Each has both unit
-decision coverage and a production-path integration test. No implementation may be
-declared GREEN while any of those ITs is absent or failing.
+R1, R2, R6, and R7 are critical security/data-integrity risks. Each has unit decision
+coverage and a production-path integration test. No implementation may be declared GREEN
+while any of those ITs is absent or failing — with one recorded exception: R7's ACM lane
+is **NOT QUALIFIED** (§8.2/§14) and its fixture-level IT label was retired, so R7 is
+satisfied by `IT-AF-2584-008` and `IT-FLEET-2584-001` only. The ACM Console inventory gate
+remains closed, so no implementation relies on that lane.
 
 ---
 
@@ -208,7 +214,9 @@ The shared state vocabulary exposes these eight logical states:
 6. `unavailable` — required backend/configuration cannot be read, HTTP 503, no data.
 7. `forbidden` — authenticated caller lacks the endpoint or requested scope permission,
    HTTP 403, no records, counts, or provenance.
-8. `not_found` — exact requested identity does not exist, HTTP 404, no related metadata.
+8. `not_found` — exact requested identity does not exist, HTTP 404, no related metadata. An
+   exact-target authorization denial is deliberately mapped here, not to `forbidden`, so a caller
+   cannot distinguish "denied" from "absent".
 
 Invalid filters are HTTP 400 RFC 7807 errors and are not converted to an empty result.
 For `partial`, `stale`, `unavailable`, `forbidden`, and `not_found`, the response body
@@ -227,6 +235,19 @@ contains only the state, status, request ID, and a safe generic message.
 
 **FAIL** is any P0 failure, any cross-scope or sensitive-data leak, any partial/stale
 response containing records, any unapproved contract deviation, or any A2A/MCP regression.
+
+> **Declared P0 gap (2026-11-18).** Two of the four `**Priority**: P0` cases in §9 are PARTIAL,
+> so the 100% P0 gate above is **NOT met** by this evidence set:
+>
+> - `IT-AF-2584-006` — unproven sub-cases: backend timeout, a referenced policy ConfigMap
+>   that is absent (as opposed to the reference field being missing), and incomplete history
+>   join. ConfigMap permission denial is proven by the forbidden-error case in the same spec.
+> - `IT-AF-2584-009` — unproven sub-case: service-account parity on the A2A/MCP paths (the
+>   proving spec covers route mounting and middleware enforcement, and the Console routes
+>   *reject* service accounts, which is the opposite assertion).
+>
+> This is recorded, not waived, and no release claim rests on this plan; the implementation
+> itself landed via #2604.
 
 ### 5.6 Suspension and Resumption
 
@@ -286,10 +307,17 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | FedRAMP SC-8 | Same-origin/TLS route does not create a browser bearer-token path | — | IT-AF-2584-001/009 | E2E-CONSOLE-2584-001 |
 | FedRAMP SI-10 | Invalid filters and IDs are rejected without widening scope | UT-AF-2584-005 | IT-AF-2584-005 | E2E-CONSOLE-2584-002 |
 | Operator audit baseline | Typed read events are safe, persisted, queryable, failure-observable, and classified as `apifrontend` | UT-AF-2584-011, UT-DS-2584-001 | IT-AF-2584-012 | Deployment audit check |
+| BR-API-001 | Versioned Console read API contract and sanitized error semantics | UT-AF-2584-001, UT-FLEET-2584-ACM-EMPTY-001 | IT-AF-2584-002/005/007/011, IT-AF-2592-LOCAL-ROUTER-001 | E2E-CONSOLE-2584-002 |
+| BR-INTERACTIVE-010 | Existing A2A/MCP protocol behaviour remains compatible | — | IT-AF-2584-009 | Existing AF protocol suites |
 
 ---
 
 ## 8. Test Scenarios
+
+Each row names one scenario. A scenario may be proven by more than one spec when it has
+genuinely distinct facets (state mapping, authorization, pagination); the ID names the
+scenario, not a single test. No spec carries two scenario IDs. Every scenario ID on a **PASS** row resolves to at least one spec
+that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so in their own cell.
 
 ### 8.1 Unit Tests
 
@@ -298,12 +326,12 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `UT-AF-2584-001` | Runtime ConfigMap threshold is represented exactly; missing, malformed, or out-of-range values fail closed and are never inferred from raw policy | **PASS** — runtime-source and finite-value regression tests |
 | `UT-AF-2584-002` | Current policy identity/revision is projected without Rego source or arbitrary ConfigMap data | **PASS** — sanitized policy projection tests |
 | `UT-AF-2584-003` | Resource label overrides namespace label and reports resource provenance | **PASS** — structured scope provenance tests |
-| `UT-AF-2584-004` | Cluster-scoped resources do not inherit namespace scope; invalid labels are treated as absent, so namespaced resources may inherit a valid namespace label; no valid labels remain unmanaged | **PASS** — scope and local inventory tests |
+| `UT-AF-2584-004` | Cluster-scoped resources never inherit namespace scope; a namespaced resource with an absent resource label inherits a valid namespace label; an invalid resource label or invalid namespace label fails closed as `unavailable` with no scope widening; no valid label state resolves to unmanaged | **PASS** — scope and local inventory tests |
 | `UT-AF-2584-005` | Canonical cluster/GVK/namespace/name filters and opaque IDs reject malformed or widening input | **PASS** — inventory contract and handler tests |
 | `UT-AF-2584-006` | Historical hash/rules/decision remain separate from current policy revision/threshold; bounded matching is deterministic | **PASS** — policy/history projection tests |
 | `UT-AF-2584-007` | Cursor pagination is stable, bounded, and never emits a total count | **PASS** — canonical inventory pagination tests |
 | `UT-AF-2584-008` | Complete, empty, partial, stale, unavailable, forbidden, and not-found states map deterministically | **PASS** — shared state contract, stale/partial audit, and fail-closed mapping tests |
-| `UT-AF-2584-009` | Projection allowlist excludes secrets, tokens, private reasoning, raw policy, and arbitrary payloads | **PASS** — response serialization and adapter allowlist tests |
+| `UT-AF-2584-009` | Projection allowlist excludes secrets, tokens, private reasoning, raw policy, and arbitrary payloads | **PASS** — exact field-set assertion over the serialized `PolicyScopePage`/item/policy objects (added field fails) plus adapter key scoping |
 | `UT-AF-2584-010` | Missing identity, service-account identity, missing capability, and denied target SAR fail closed | **PASS** — authorization and handler denial tests |
 | `UT-AF-2584-011` | Typed audit details contain actor/action/outcome/request scope but no returned payload or secret | **PASS** — typed audit adapter tests |
 | `UT-DS-2584-001` | DataStorage preserves `apifrontend` as a bounded metric category instead of normalizing it to `other` | **PASS** — DataStorage metric-category test |
@@ -317,25 +345,26 @@ infrastructure/root cause is fixed and the affected focused suite is rerun.
 | `UT-AF-2592-BUDGET-001` | Retained canonical projections cannot exceed the local working-set budget | **PASS** |
 | `UT-AF-2592-SEMAPHORE-001` | Cancellable per-reader concurrency bounds are shared by local `List` and `Get` | **PASS** |
 | `UT-AF-2584-HTTPS-BODY-001` | The dedicated policy-read HTTPS transport stops an oversized decrypted Kubernetes response before unbounded client-go decoding | **PASS** |
+| `UT-FLEET-2584-ACM-EMPTY-001` | An applied, fully-traversed ACM Search with zero items is recorded as an empty observation with an observation timestamp, not as an `unavailable` failure | **PASS** — collection-path contract: the spec asserts the observation state and the cluster-scoped query. The current failure envelope still carries `CompletenessPartial` for an applied zero-item search; envelope shape deferred to #2661 / DD-FLEET-017 G10 |
 
 ### 8.2 Integration Tests
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection using runtime ConfigMap policy metadata | **PASS** — production wiring and route-tier tests; deployed qualification remains separate |
-| `IT-AF-2584-002` | A real envtest inventory read reports exact resource identity, effective scope, precedence, provenance, and links | **PASS** — local inventory and dependency-wiring tests |
+| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection, and the production policy-read dependencies are constructed from AF clients | **PASS** — production wiring and route-tier tests (stub policy metadata); runtime ConfigMap metadata is proven at unit level by `UT-AF-2584-001/002`. Deployed qualification remains separate |
+| `IT-AF-2584-002` | The authenticated inventory read serializes the documented wire shape (state, completeness, item identity) | **PASS** — handler serialization spec. There is no envtest provenance join in this release; provenance is proven by `UT-AF-2584-003`/`UT-AF-2584-004` and link/scope by `IT-AF-2584-007` |
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
-| `IT-AF-2584-004` | Unauthorized capability or target-scope SAR returns forbidden with no records, counts, provenance, or existence detail | **PASS** — authenticated handler denial tests |
-| `IT-AF-2584-005` | Invalid filters, cross-cluster IDs, cross-namespace IDs, and guessed direct IDs cannot widen the result | **PASS** — filter, opaque-ID, and target-denial tests |
-| `IT-AF-2584-006` | Missing/invalid runtime metadata, ConfigMap permission failure, history permission failure, unavailable source, and incomplete join return state-only failure responses | **PASS** — fail-closed source/state tests; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history fetch failures no longer fail requests because SP history is not fetched (see #2592; references in IMPLEMENTATION_PLAN.md are superseded historical record, left unedited) |
+| `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
+| `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader |
+| `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable and ConfigMap permission denial (`IT-AF-2584-006`, whose forbidden-error case asserts both), missing or out-of-range runtime threshold (`UT-AF-2584-001`), missing policy reference field (`UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: backend timeout, a referenced ConfigMap that is absent (only the reference field is covered), incomplete history join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
-| `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites |
-| `IT-AF-2584-009` | Existing A2A/MCP and verified service-account behavior remain unchanged after route/config wiring | **PASS** — broad affected AF package regression suite |
-| `IT-AF-2584-010` | Every authenticated read outcome carries correct actor type/ID, action, outcome/state, request ID, and correlation through the typed DataStorage audit union | **PASS** — live typed audit persistence/retrieval evidence |
-| `IT-AF-2584-011` | OpenAPI validation accepts every success/error schema and rejects undocumented fields or unversioned paths | **PASS** — OpenAPI Generator validation; unused-model warnings only |
+| `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
+| `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PARTIAL** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers), and a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware. Not proven by this branch: verified service-account parity on the A2A/MCP paths — `IT-AF-2584-004` proves the Console routes *reject* service accounts, which is the opposite assertion |
+| `IT-AF-2584-010` | Every authenticated read outcome carries correct actor type/ID, action, outcome/state, request ID, and correlation through the typed DataStorage audit union | **PASS** — `IT-AF-2584-010` (handler read through the DataStorage adapter) plus `IT-AF-2584-012`, `IT-AF-2584-AUDIT-001`, and `IT-AF-2584-AUDIT-002` |
+| `IT-AF-2584-011` | The Console read success pages and the problem envelope validate against the committed schema, and undocumented fields are rejected in both | **PASS** — `IT-AF-2584-011` validates the served inventory page, policy-scope page, and problem+json envelope against the committed schema; rejects an undocumented field in both `ManagedResourcePage` and `ProblemDetail`; and asserts the concrete problem members. `ProblemDetail` declares `required: [type, title, status]`, `additionalProperties: false`, and the `request_id` extension member (RFC 9457 §3.2); the 401, 429, 501 and 503 emitters are each validated against it. It does not assert unversioned-path rejection, and the live-server 401/429 paths are covered at the emitter, not the router, level. |
 | `IT-AF-2584-012` | **First RED gate:** a live DataStorage audit write is queryable by correlation/request ID, preserves required actor/action/outcome fields, excludes sensitive payloads, and makes persistence failure observable | **PASS** — live DataStorage integration evidence |
 | `IT-FLEET-2584-001` | FMC's typed inventory projection returns only canonical managed-resource identity/scope fields, preserves cursor/state metadata, and rejects unsupported or widening filters | **PASS** — focused FMC adapter suite |
-| `IT-FLEET-2584-002` | ACM's typed inventory projection matches the FMC canonical model and returns state-only failure on query/auth/backend errors | **NOT QUALIFIED** — fixture suite passed, but live ACM spike exposed incompatible filters, label/ID representation, and scope behavior; see §16.3 |
+| `IT-FLEET-2584-002` | ACM's typed inventory projection matches the FMC canonical model and returns state-only failure on query/auth/backend errors | **NOT QUALIFIED** — fixture suite passed, but live ACM spike exposed incompatible filters, label/ID representation, and scope behavior; see §16.3. The container label was retired when the suite was re-scoped to BR-level (it hosts several unrelated scenario IDs); the live lane is what remains unqualified |
 | `IT-AF-2592-LOCAL-ROUTER-001` | The production AF router serves the local metadata projection with observed time and bounded freshness, without exposing count/reload/snapshot metadata | **PASS** |
 | `IT-AF-2592-RESPONSE-001` | An oversized serialized Console projection becomes state-only unavailable before any success body is written | **PASS** |
 | `IT-AF-2584-AUDIT-001/002` | Malformed authenticated requests and oversized serialized responses each produce exactly one final-outcome audit event | **PASS** |
@@ -387,11 +416,16 @@ does not inherit the namespace label. Re-run with resource label absent and asse
 
 **Given** a real router, verified user identity, one allowed resource, one denied
 resource, and SAR reactions for capability and target checks.
-**When** the caller requests the denied resource, a cross-namespace filter, and a
-guessed opaque ID.
-**Then** the server returns the documented forbidden/not-found state without `items`,
-`total`, `nextCursor`, resource labels, policy names, or provenance. Existing allowed
-reads remain available to the same user.
+**When** the caller requests the denied resource with and without the endpoint
+capability.
+**Then** the server returns the documented state-only 403 (capability denied) or 404
+(exact target denied) without `items`, `total`, `nextCursor`, resource labels, policy
+names, or provenance, and does not consult the inventory reader for a capability denial.
+Existing allowed reads remain available to the same user.
+
+The non-local refusal and guessed-opaque-ID probes belong to `IT-AF-2584-005` (§8.2);
+cross-namespace authorization is not exercised end-to-end, because namespace narrowing is
+applied by the local reader.
 
 ### IT-AF-2584-006: Fail-closed source states
 
@@ -482,7 +516,7 @@ contract exists.
 |---|---|---|
 | Test plan | `docs/tests/2584/TEST_PLAN.md` | Approved test strategy and traceability |
 | Implementation plan | `docs/tests/2584/IMPLEMENTATION_PLAN.md` | Approved TDD and wiring plan |
-| AF unit suites | `pkg/apifrontend/{policyread,auth,scope}/` | Business and security decision tests |
+| AF unit suites | `pkg/apifrontend/{policyread,auth}/`, `pkg/shared/scope/` | Business and security decision tests |
 | AF integration suites | `pkg/apifrontend/handler/`, `cmd/apifrontend/` or `test/integration/apifrontend/` | Real production-path wiring tests |
 | Fleet control-plane suites | `pkg/fleet/fmc/`, `pkg/fleet/acm/` | Sanitized exact/detail transport and fail-closed behavior; Console list remains gated |
 | OpenAPI contract | `api/apifrontend/openapi/apifrontend-v1.yaml` | Versioned route/schema contract |
@@ -518,15 +552,15 @@ unit-only handler calls.
 
 | Code path | Production entry point | Exit point | Wiring IT | Status |
 |---|---|---|---|---|
-| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | Validated policy metadata and revision | IT-AF-2584-001/003 | **PASS** |
+| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | Validated policy metadata and revision | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the metadata→projection join is stub-level in `IT-AF-2584-003`; real ConfigMap reads are proven at unit level by `UT-AF-2584-001/002` |
 | Policy scope handler | `GET /api/v1/console/policies/scope` | Sanitized 200/state response | IT-AF-2584-001/003 | **PASS** |
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | Paginated identity projection | IT-AF-2584-002/007 | **PASS** |
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
-| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-002 | **PASS** |
-| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003/006 | **PASS** |
+| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** — with a stub resolver in that spec; provenance semantics are proven at unit level by `UT-AF-2584-003/004` |
+| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the reader→projection join is stub-level (`IT-AF-2584-003`). The failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
-| ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-002, IT-AF-2584-008 | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
+| ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | — no qualifying IT; fixture evidence only (`UT-ACM-2593-IDENTITY-001`, `UT-ACM-2593-UNION-001`) | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
 | Audit persistence/retrieval | AF adapter → DataStorage audit store → query | Searchable typed event and observable failure | IT-AF-2584-012 | **PASS** |
 | `apifrontend` metric category | DataStorage audit handler | Bounded category/lag metric | UT-DS-2584-001 | **PASS** |
@@ -559,7 +593,7 @@ Unit tests do not count as wiring proof.
 | Full compile/build | **PASS** | `go test ./... -run '^$' -timeout=30s`; `go build ./...` |
 | Static quality | **PASS** | `golangci-lint run --timeout=5m` — 0 issues; `git diff --check` |
 | Remote adapter qualification | **PASS** | FMC/ACM focused suites and AF remote focused integration, 2/2 specs |
-| Typed DataStorage audit | **PASS** | Live write/query and failure-observability evidence for `IT-AF-2584-012` |
+| Typed DataStorage audit | **PASS (prior revision)** | Live write/query and failure-observability evidence for `IT-AF-2584-012`. Not re-executed on this branch: the integration suite requires envtest assets and a DataStorage instance (§16.2) |
 
 ### 16.2 Explicitly Deferred or Blocked Evidence
 
@@ -598,7 +632,7 @@ against three ConfigMaps and their managed namespace established these results:
 - The adapter now returns a state-only `partial` page when `count` exceeds the
   number of returned items, and rejects contradictory smaller counts; exact reads
   do not map a detected partial page to not-found. `UT-ACM-2584-LIVE-003/007/008`
-  and `IT-FLEET-2584-LIVE-003` prove those safeguards. Matching counts alone do
+  prove those safeguards. Matching counts alone do
   not prove complete visibility or freshness on all supported ACM versions.
 - A live unprivileged Search request for a known existing ConfigMap returned
   `count: 0`, empty items, and no messages. The same identity did not regain
@@ -615,6 +649,11 @@ against three ConfigMaps and their managed namespace established these results:
   that alone does not prove how ACM handles every unsupported property or ID.
 
 **Required RED scenarios before correcting the adapter:**
+
+> This list is the required evidence, not a record of existing specs. Retained on main:
+> `UT-ACM-2584-LIVE-001`, `003`, `005`-`008` and the `UT-ACM-2593-*` suite. The
+> `UT-ACM-2584-LIVE-002`/`004` entries and every `IT-FLEET-2584-LIVE-*` companion are
+> forward-looking coverage and are **not claimed as present**.
 
 1. `UT-ACM-2584-LIVE-001` / `IT-FLEET-2584-LIVE-001`: real Search-shaped flat
    labels, explicit true/false, invalid/absent labels, namespace inheritance, and
@@ -732,24 +771,23 @@ so the 90% scenario target and critical-scenario gate are not met.
 | Silent Search filtering versus genuinely empty cluster | Not distinguishable from Search alone; not proven |
 
 These are adapter unit scenarios, not 16 independent test functions; some tests
-prove more than one business outcome. The audit assertion in
-`IT-FLEET-2584-LIVE-003` checks a partial-state event through the service and
-real ACM client with an in-memory emitter, not persistence or a live gateway.
+prove more than one business outcome. A partial-state audit assertion through the service and a real ACM client with an
+in-memory emitter was exercised in the spike worktree and is **not retained on main**;
+the retained adapter specs assert state only. No persistence or live-gateway claim is made.
 `UT-ACM-2593-CONSISTENCY-001`, `UT-ACM-2593-EXACT-002` and the added filter/cursor/audit assertions were
 added after the underlying behavior; no prior RED is claimed for them.
-`IT-AF-2593-PARTIAL-001` exercises the Console HTTP handler, policy service,
-and real ACM adapter against an HTTP Search fixture and verifies that a partial
-response leaks no records. `IT-AF-2593-DENY-001` verifies that capability
-denial prevents the adapter from contacting Search. Both pass; neither is a
-production factory or live-cluster journey, and neither was observed RED.
+`IT-AF-2593-DENY-001` verifies that capability denial prevents the adapter from
+contacting Search and passes. The partial-response Console handler journey was exercised
+in the spike worktree and is **not retained on main**, so no record-leak claim is made for
+it here. Neither is a production factory or live-cluster journey, and neither was observed RED.
 
 The user accepts bounded results and identifies ACM as the authoritative tool
 for deeper inventory browsing; the Console is a convenience query view, not the
 single source of truth. Namespace, resource name and kind filters are now sent
 to the relevant ACM resource queries before the traversal limit is applied;
 `UT-ACM-2593-FILTER-001` was observed RED then GREEN using over 1,000 unrelated
-objects, and `IT-AF-2593-FILTER-001` verifies HTTP-to-adapter filter dispatch
-against a fixture (added after implementation, without a RED observation).
+objects. HTTP-to-adapter filter dispatch has **no retained IT** on main, so it is not
+claimed here (the fixture spec was added after implementation, without a RED observation).
 The managed-namespace discovery query remains independently bounded, so a kind
 or resource-name filter alone does not guarantee success when that query itself
 reaches 1,000 namespaces; a namespace filter narrows discovery. Exact opaque-ID
@@ -836,6 +874,21 @@ cancellation, projection discard, retained-byte exhaustion, shared List/Get conc
 cancellation, pre-write response rejection, and production-router local dispatch. They do not
 qualify ACM/FMC list visibility or completeness; that gate remains closed.
 
+### 16.5 Prior-art disposition (the seven `_2584_*` drafts, issued with PR #2665)
+
+The seven uncommitted files in the `v16-acm-inventory` worktree were reviewed against `origin/main`
+at `52acac9ab`. No delta was applied; this is the record of why, so the judgement is auditable.
+
+| File | Delta vs main | Disposition | Basis |
+|---|---|---|---|
+| `pkg/shared/scope/gvk.go` | Optional group/version, no `ErrInvalidIdentity`, `requireExplicit` flag | Superseded | #2592 (`e498b2df8`) enforces explicit GVK with DNS-1123/1035 validation |
+| `pkg/shared/scope/checker.go` | `ScopeChecker` is the boolean `IsManagedResource` seam; no `ScopeResult.Validate`, so an invalid state can cross the wire as a decision | Superseded | #2592 / DD-FLEET-015 typed contract |
+| `pkg/shared/scope/manager.go` | Reintroduces Kind-only inference (`InferGVK`) and drops the presence-first typed lane (`resolveObserved`, `localScopeLookupFailure`) | Superseded | Verified at `52acac9ab`: main and draft both have `Resolve()`; draft is 375 lines vs main 434. #2592 forbids Kind inference and DD-FLEET-015 requires the presence-first lane |
+| `pkg/shared/scope/manager_test.go` | Pre-#2592 Kind-inference specs (`UT-SCOPE-RI-003`) | Superseded | Contradicts the explicit-GVK contract |
+| `pkg/shared/scope/provenance_2584_test.go` | 81 net lines smaller than main (85 vs 166) | Superseded | Main carries the newer provenance specs, including the typed-lane cases |
+| `pkg/apifrontend/policyread/local_inventory.go` | `CanonicalResourceIDChecked`; `page.Validate()` in `Get` | Not applied | Identity is always representable (`Kinds` comes from the fixed default allowlist, never a caller) and `list()` builds valid pages while `readInventoryPage` already validates — unreachable defensive code, which AGENTS.md forbids adding tests for |
+| `pkg/fleet/acm/inventory.go` | Two hunks: an explicit complete empty page instead of `StateOnly(StateEmpty)`, and `CanonicalResourceIDChecked` replacing `CanonicalResourceID` + `ValidateResourceID` | **Deferred to #2661 (G10)** | A real latent defect, not dead code: the internal `StateEmpty` + `CompletenessPartial` envelope fails `Page.validateEmpty`. It has no operator impact today because `inventoryResultPage` rebuilds the returned page and the remote Console list is gated, and its correct shape is DD-FLEET-017's to decide |
+
 ## 17. Changelog
 
 | Version | Date | Changes |
@@ -849,3 +902,4 @@ qualify ACM/FMC list visibility or completeness; that gate remains closed.
 | 1.6 | 2026-11-05 | Added the 16 MiB decrypted Kubernetes response-body containment test and documented its HTTPS-preserving, non-RSS-complete scope |
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |
 | 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration; tests now require resolved AIA/SP policy name/key fields in the service runtime ConfigMaps and fail closed when references are missing |
+| 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 and widening probes added; `IT-AF-2584-006/009` narrowed to what is proven; §5.5 records the declared P0 gap and §16.5 the seven-draft disposition; DD-FLEET-017/ADR-068 references marked pending #2661; version, branch and changelog fields maintained |

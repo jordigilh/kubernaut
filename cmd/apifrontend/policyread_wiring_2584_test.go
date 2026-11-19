@@ -36,7 +36,7 @@ import (
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func() {
+var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 	DescribeTable("IT-AF-ROUTE-010 / IT-AF-PRES-007 [BR-SCOPE-001]: production dependency factory, action and exact inventory retain enum authority",
 		func(state scope.ScopeState, source scope.ScopeSource, status int, expected inventory.State) {
 			resource := inventory.Resource{ClusterID: "hub", Version: "v1", Kind: "Pod", Namespace: "payments", Name: "api",
@@ -194,7 +194,7 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
 		Expect(deps.RemoteInventory).NotTo(BeNil())
 	})
-	It("constructs local typed policy/history and inventory sources from AF clients", func() {
+	It("IT-AF-2584-001 [BR-API-001]: constructs local typed policy/history and inventory sources from AF clients", func() {
 		scheme := runtime.NewScheme()
 		Expect(v1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
@@ -211,6 +211,67 @@ var _ = Describe("IT-AF-2584-001/002/003: policy-read dependency wiring", func()
 		Expect(deps.PolicySource).NotTo(BeNil())
 		Expect(deps.HistorySource).NotTo(BeNil())
 		Expect(deps.RemoteInventory).To(BeNil())
+	})
+
+	It("IT-AF-2584-009 [BR-API-001]: keeps existing A2A and MCP routes mounted alongside the Console read routes", func() {
+		params := testRouterBuildParams(&dualToolConsoleAuthorizer{})
+		// Distinct bodies prove each path reaches the handler mounted for it,
+		// not merely that some handler answered 200.
+		params.MCPHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Mounted-By", "mcp")
+			w.WriteHeader(http.StatusOK)
+		})
+		params.A2AHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Mounted-By", "a2a")
+			w.WriteHeader(http.StatusOK)
+		})
+		_, router, err := buildRouterConfig(params)
+		Expect(err).NotTo(HaveOccurred())
+
+		// The agentic surface keeps serving after the Console read routes are
+		// registered on the same router. This fixture uses a pass-through auth
+		// middleware, so it proves mounting and dispatch only; the authenticated
+		// chain is covered by the router-wiring container.
+		mcpRecorder := httptest.NewRecorder()
+		router.ServeHTTP(mcpRecorder, httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
+		Expect(mcpRecorder.Code).To(Equal(http.StatusOK))
+		Expect(mcpRecorder.Header().Get("X-Mounted-By")).To(Equal("mcp"))
+
+		a2aRecorder := httptest.NewRecorder()
+		router.ServeHTTP(a2aRecorder, httptest.NewRequest(http.MethodPost, "/a2a/invoke", http.NoBody))
+		Expect(a2aRecorder.Code).To(Equal(http.StatusOK))
+		Expect(a2aRecorder.Header().Get("X-Mounted-By")).To(Equal("a2a"))
+
+		// The Console routes are additive: they answer on their own paths and
+		// reject an unauthenticated caller instead of widening the router.
+		consoleRecorder := httptest.NewRecorder()
+		router.ServeHTTP(consoleRecorder, httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody))
+		Expect(consoleRecorder.Code).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("IT-AF-2584-009 [BR-SECURITY-016, FedRAMP AC-4/AC-6]: keeps both surfaces behind the configured authentication middleware", func() {
+		params := testRouterBuildParams(&dualToolConsoleAuthorizer{})
+		// A distinctive stop code proves the middleware ran: the Console handler
+		// would answer 401 on its own, so 401 could not distinguish the two.
+		params.AuthMiddleware = func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Auth-Middleware", "applied")
+				w.WriteHeader(http.StatusTeapot)
+			})
+		}
+		_, router, err := buildRouterConfig(params)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, probe := range []struct{ method, path string }{
+			{http.MethodPost, "/mcp"},
+			{http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local"},
+			{http.MethodGet, "/api/v1/console/policies/scope?cluster_id=local"},
+		} {
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(probe.method, probe.path, http.NoBody))
+			Expect(recorder.Code).To(Equal(http.StatusTeapot), "%s %s must not bypass the middleware", probe.method, probe.path)
+			Expect(recorder.Header().Get("X-Auth-Middleware")).To(Equal("applied"), probe.path)
+		}
 	})
 })
 
