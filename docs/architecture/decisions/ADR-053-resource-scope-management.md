@@ -125,10 +125,14 @@ metadata:
 The scope lanes classify a target as cluster-scoped through a static kind map
 (`pkg/shared/scope/manager.go` `clusterScopedKinds`) plus an empty namespace, and
 resolve it at level 1 only. The map is a heuristic, not API discovery: an entry
-that the cluster does not serve is simply unobservable, and an identity without a
-namespace is treated as cluster-scoped whether or not its kind is listed. The
-inventory is pinned by `UT-SCOPE-2670-012`, so adding or removing a kind requires
-changing this section and the test together.
+that the cluster does not serve is simply unobservable. An identity without a
+namespace is resolved at level 1 when its kind is unknown or known to be
+cluster-scoped; a kind known to be namespaced (`Pod`, `Deployment`, `Service`,
+`ConfigMap`, `Secret`, `PersistentVolumeClaim`, …) is rejected first as
+`invalid` / `namespaced_target_without_namespace`, because such an identity can
+never be satisfied and retrying it would loop. The inventory is pinned by
+`UT-SCOPE-2670-012`, so adding or removing a kind requires changing this section
+and the test together.
 
 **Upstream Kubernetes, shipped by default (19):** `Node`, `PersistentVolume`,
 `Namespace`, `ClusterRole`, `ClusterRoleBinding`, `StorageClass`,
@@ -155,9 +159,15 @@ ACM Search query; no mutating verb is required or performed.
 - Gateway and API Frontend read the shared target set, which includes
   `nodes`, `persistentvolumes` and `persistentvolumeclaims`.
 - RemediationOrchestrator reads `pods`, `nodes`, `services`, `namespaces`,
-  `persistentvolumes`, `persistentvolumeclaims` and `configmaps`, plus the
-  `apps` workload kinds.
-- The Fenced Fleet Metadata Cache observes `Node` and `Namespace`.
+  `persistentvolumes` and `configmaps`, plus the `apps` workload kinds. Its
+  deployed role does **not** grant `persistentvolumeclaims` today: a PVC scope
+  check therefore reads as unavailable at RO until the companion operator change
+  ([kubernaut-operator#645](https://github.com/jordigilh/kubernaut-operator/issues/645))
+  grants it. Gateway, API Frontend, the Effectiveness Monitor and the Kubernaut
+  Agent already have that grant.
+- The Fenced Fleet Metadata Cache syncs Deployment, StatefulSet, DaemonSet, Pod,
+  Service, Node and Namespace; for cluster-scoped **targets** that means `Node`
+  and `Namespace`, with Namespace also serving as inheritance evidence.
 - Direct ACM has no per-kind grant: visibility is bounded by ACM Search RBAC
   (see ADR-068 §ACM Search RBAC), which is broader than the fenced lane's list.
 

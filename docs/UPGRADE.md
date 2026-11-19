@@ -81,8 +81,12 @@ This reverses the behavior shipped in #2637/#2662, where both scope lanes
 refused every cluster-scoped target and hub `Node`/`PersistentVolume`
 remediation that had worked through a label stopped resolving as managed. The
 reason string never crosses the Fleet wire: `ScopeResult` carries only `state`
-and `provenance` (DD-FLEET-015), so fleet-lane consumers see the bare
-`ScopeUnsupported` state.
+and `provenance` (DD-FLEET-015), so a Fleet consumer sees the bare state. For a
+`ClusterScope` request that specific qualifier still matters: an identity with no
+group and no version fails GVK validation before the boundary check and returns
+`ScopeInvalid` from the federated checker and the FMC HTTP handler, while one
+that carries a version reaches the pseudo-target guard and yields bare
+`ScopeUnsupported`.
 
 Read access is unchanged and read-only: the scope check performs a metadata-only
 read (a `Get` on `PartialObjectMetadata`, a cache read, or an ACM Search query)
