@@ -324,14 +324,19 @@ replaced by the helper in REFACTOR, behavior-identical.
    when `clusterScoped` (level 1 only). `buildFilters` already omits the namespace filter when
    `r.Namespace == ""`, so the Search request needs no change.
 
-### 4.4 `pkg/gateway/signal_ingestion.go`
+### 4.4 Gateway: target identity, normalization and dedup
 
 `validateScope` built the scope identity from `signal.Namespace` (the alert's namespace) while the
 RemediationRequest carries `signal.Resource.Namespace` (`crd_creator.go` `buildTargetResource`).
 For a cluster-scoped kind the two differ, and the new terminal guard would turn a labeled Node into
-`ScopeInvalid` → a 5xx instead of admission. Fix: use `signal.Resource.Namespace`, fall back to
-`signal.Namespace` only for a non-cluster-scoped kind, and force empty for a known cluster-scoped
-kind, so the Gateway checks exactly the identity RO re-checks.
+`ScopeInvalid` → a 5xx instead of admission. `scopeIdentityFor` now derives the namespace once
+(`scopeTargetNamespace`), writes it back onto the signal, and builds the identity from it, so the
+Gateway checks exactly the identity RO re-checks.
+
+`PrometheusAdapter.extractAlertResource` blanks the namespace for a known cluster-scoped kind before
+fingerprint resolution. That keeps the dedup key, the RR target and the scope identity aligned, and
+matches the API Frontend's documented invariant that GW and AF hash the same target. It supersedes
+#1371's "honor an explicit namespace label" for cluster-scoped kinds (`UT-GW-1371-014` updated).
 
 ## 5. TDD phases
 
@@ -379,7 +384,7 @@ Lands in the `kubernaut-operator` repository as its own PR (this PR cannot touch
 | UT-SCOPE-2670-011 | `Namespace` object as the target (not inheritance evidence), labeled managed | `verified_managed` / `resource-label` — §2 D4: a namespace-level alert is a legitimate target; the label on the object applies at level 1 | yes (regression guard: a later "narrow the kind set" change must edit this test deliberately) |
 | UT-SCOPE-2670-012 | the recognized cluster-scoped inventory itself | `clusterScopedKinds` equals the 23-entry list the ADR-053 section publishes (added by this issue, §8) — adding or removing a kind must change this test and the doc together. Needs its own internal `package scope` spec file (the map is unexported), not `scope_test` | yes (keeps the documented authorization surface honest) |
 | UT-SCOPE-2670-013 | `PersistentVolumeClaim` target (all cases `Version: "v1"`, Group `""`, fixture `corev1.PersistentVolumeClaim`): labeled; unlabeled in a managed namespace; empty namespace | `verified_managed` / `resource-label`; `verified_managed` / `namespace-label`; `ScopeInvalid` / `namespaced_target_without_namespace` — proves PVC keeps the namespaced 2-level hierarchy (§2 D5) | yes (owner-requested kind) |
-| UT-SCOPE-2670-014 | namespaced kinds (`Pod`, `Deployment`, `Service`, `ConfigMap`, `Secret`, `Job`, `CronJob`, `PersistentVolumeClaim`) are never classified as cluster-scoped | `IsClusterScopedKind` false for each; `IsKnownNamespacedKind("PersistentVolumeClaim")` true | yes (SI-10) |
+| UT-SCOPE-2670-014 | namespaced kinds (`Pod`, `Deployment`, `Service`, `ConfigMap`, `Secret`, `Job`, `CronJob`, `PersistentVolumeClaim`, `HorizontalPodAutoscaler`, `Ingress`, `PodDisruptionBudget`) are never classified as cluster-scoped and are known-namespaced | `IsClusterScopedKind` false for each; `IsKnownNamespacedKind` true (so a namespace-less identity is terminal) | yes (SI-10) |
 | all pre-existing `pkg/shared/scope` specs in `manager_test.go` | namespaced hierarchy, invalid identity, error paths | unchanged — the namespaced specs never reach a new guard; the cluster-scoped specs (`UT-SCOPE-001-013/014/015`) drive `Resolve`, which never had the refusal | regression |
 
 `UT-SCOPE-001-013/014/015` stay as-is: they drive `Resolve`, which never had the refusal.

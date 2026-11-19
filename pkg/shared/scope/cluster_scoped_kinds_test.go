@@ -70,5 +70,9 @@ var _ = Describe("Recognized cluster-scoped kinds (BR-SCOPE-001 FR-SCOPE-004)", 
 		}
 		Expect(IsKnownNamespacedKind("PersistentVolumeClaim")).To(BeTrue(),
 			"PVC must be a known namespaced kind so a namespace-less identity is terminal")
+		for _, kind := range []string{"HorizontalPodAutoscaler", "Ingress", "PodDisruptionBudget"} {
+			Expect(IsKnownNamespacedKind(kind)).To(BeTrue(),
+				"%s must be a known namespaced kind, or a namespace-less identity would retry forever (#2670)", kind)
+		}
 	})
 })

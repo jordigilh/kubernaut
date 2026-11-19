@@ -252,7 +252,9 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, mockScope)
 		Expect(err).ToNot(HaveOccurred())
 
-		// A Node alert can carry a namespace while the target itself has none.
+		// A Node alert can carry a namespace while the target itself has none,
+		// and the adapter now drops it; set it on the resource too so this spec
+		// fails if the write-back is ever removed (#2670).
 		signal := &types.NormalizedSignal{
 			Fingerprint: "test-fingerprint-node-2670",
 			SignalName:  "NodeNotReady",
@@ -260,6 +262,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 			Namespace:   "openshift-monitoring",
 			Resource: types.ResourceIdentifier{
 				APIVersion: "v1",
+				Namespace:  "openshift-monitoring",
 				Kind:       "Node",
 				Name:       "worker-1",
 			},

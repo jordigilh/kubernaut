@@ -129,6 +129,42 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"Cluster-scoped resources (Node) get empty namespace (#1371)")
 		})
 
+		It("normalizes a namespace on a cluster-scoped target so the fingerprint is stable (#2670)", func() {
+			// BUSINESS OUTCOME: one Node is remediated once, whichever
+			// namespace its alert carries, and GW/AF agree on the dedup key.
+			const withNamespace = `{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "NodeNotReady",
+						"node": "worker-node-1",
+						"namespace": "openshift-monitoring",
+						"severity": "critical"
+					}
+				}]
+			}`
+			const withoutNamespace = `{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "NodeNotReady",
+						"node": "worker-node-1",
+						"severity": "critical"
+					}
+				}]
+			}`
+
+			with, err := adapter.Parse(context.Background(), []byte(withNamespace))
+			Expect(err).NotTo(HaveOccurred())
+			without, err := adapter.Parse(context.Background(), []byte(withoutNamespace))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(with.Resource.Namespace).To(BeEmpty(),
+				"a cluster-scoped target has no namespace, whatever the alert labels say")
+			Expect(with.Fingerprint).To(Equal(without.Fingerprint),
+				"the dedup key must not depend on the alert namespace for a cluster-scoped target")
+		})
+
 		It("extracts StatefulSet kind for stateful application workflows", func() {
 			// BUSINESS OUTCOME: RO selects StatefulSet workflows (ordered restart, PVC handling)
 			payload := `{

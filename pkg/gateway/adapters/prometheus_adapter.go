@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // rfc1123LabelRegexp validates a K8s name/namespace against RFC 1123 label rules.
@@ -367,6 +368,12 @@ func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert Aler
 		} else {
 			ns = "default"
 		}
+	}
+	// A cluster-scoped kind has no target namespace even when the alert carries
+	// one. Normalizing here runs before fingerprint resolution, so the dedup
+	// key, the RR target and the scope identity stay aligned (#2670).
+	if scope.IsClusterScopedKind(kind) {
+		ns = ""
 	}
 	return types.ResourceIdentifier{
 		Kind:       kind,
