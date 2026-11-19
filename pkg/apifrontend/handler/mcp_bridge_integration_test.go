@@ -207,7 +207,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), mockDS)
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history", map[string]any{
-				"namespace": "prod", "kind": "Deployment", "name": "api", "spec_hash": "sha256:abc123",
+				"namespace": "prod", "kind": "Deployment", "name": "api", "api_version": "apps/v1", "spec_hash": "sha256:abc123",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -375,7 +375,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 			// Call DS tool in same session
 			status2, _ := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history", map[string]any{
-				"kind": "Deployment", "name": "api", "spec_hash": "sha256:abc123",
+				"kind": "Deployment", "name": "api", "api_version": "apps/v1", "spec_hash": "sha256:abc123",
 			}, testUser)
 			Expect(status2).To(Equal(http.StatusOK))
 
@@ -482,7 +482,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			// kubernaut_list_workflows, which moved to KA's catalog in #1677
 			// Phase 2f -- DD-WORKFLOW-019).
 			status, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history", map[string]any{
-				"kind": "Deployment", "name": "api", "spec_hash": "sha256:abc123",
+				"kind": "Deployment", "name": "api", "api_version": "apps/v1", "spec_hash": "sha256:abc123",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))

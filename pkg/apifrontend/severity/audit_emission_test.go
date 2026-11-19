@@ -83,7 +83,10 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 		events := spy.eventsByType(audit.EventSeverityTriageCompleted)
 		Expect(events).To(HaveLen(1), "expected exactly one severity_triage.completed event")
 		Expect(events[0].Detail).To(HaveKeyWithValue("severity", "critical"))
-		Expect(events[0].Detail).To(HaveKey("source"))
+		// #2658 D1.9: the emitted key is reconciled with the persisted
+		// payload field name (source_tier), so the audit record carries the
+		// tier instead of an empty value.
+		Expect(events[0].Detail).To(HaveKey("source_tier"))
 	})
 
 	It("UT-AF-1156-056: emits severity_triage.failed on triage error", func() {
