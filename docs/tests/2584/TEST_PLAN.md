@@ -74,6 +74,8 @@ reads fail closed and that existing A2A/MCP and service-account paths remain unc
 - [BR-SECURITY-016](../../requirements/BR-SECURITY-016-kubernetes-rbac-enforcement.md): Kubernetes RBAC Enforcement for REST API Endpoints.
 - [BR-AI-085](../../requirements/BR-AI-085-rego-policy-input-schema.md): Rego Policy Input Schema for Approval Decisions.
 - [BR-AI-088](../../requirements/BR-AI-088-configurable-confidence-thresholds.md): Operator-Configurable Confidence Thresholds.
+- BR-API-001: versioned Console read API contract and error semantics.
+- [BR-INTERACTIVE-010](../../requirements/BR-INTERACTIVE-010.md): interactive protocol (A2A/MCP) compatibility.
 - BR-AUDIT-005 v2.0: Core audit trace and attribution requirement, as defined by `AGENTS.md`.
 - [ADR-053](../../architecture/decisions/ADR-053-resource-scope-management.md) and the shared `pkg/shared/scope` implementation.
 - [DD-AUDIT-003](../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) and [ADR-034](../../architecture/decisions/ADR-034-unified-audit-table-design.md).
@@ -233,8 +235,9 @@ response containing records, any unapproved contract deviation, or any A2A/MCP r
 > **Declared P0 gap (2026-11-18).** Two of the four `**Priority**: P0` cases in §9 are PARTIAL,
 > so the 100% P0 gate above is **NOT met** by this evidence set:
 >
-> - `IT-AF-2584-006` — unproven sub-cases: ConfigMap permission denial, unavailable source,
->   incomplete join.
+> - `IT-AF-2584-006` — unproven sub-cases: backend timeout, a referenced policy ConfigMap
+>   that is absent (as opposed to the reference field being missing), and incomplete history
+>   join. ConfigMap permission denial is proven by the forbidden-error case in the same spec.
 > - `IT-AF-2584-009` — unproven sub-case: service-account parity on the A2A/MCP paths (the
 >   proving spec covers route mounting and middleware enforcement, and the Console routes
 >   *reject* service accounts, which is the opposite assertion).
@@ -347,7 +350,7 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
 | `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
 | `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader |
-| `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable (`IT-AF-2584-006`), missing/invalid ConfigMap references (`UT-AF-2584-001`, `UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: ConfigMap permission denial, unavailable source, incomplete join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
+| `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable and ConfigMap permission denial (`IT-AF-2584-006`, whose forbidden-error case asserts both), missing policy reference field (`UT-AF-2584-001`, `UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: backend timeout, a referenced ConfigMap that is absent (only the reference field is covered), incomplete history join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
 | `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
 | `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PARTIAL** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers), and a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware. Not proven by this branch: verified service-account parity on the A2A/MCP paths — `IT-AF-2584-004` proves the Console routes *reject* service accounts, which is the opposite assertion |
@@ -551,7 +554,7 @@ unit-only handler calls.
 | Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** |
 | Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003 | **PASS** — the failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
-| ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | UT-ACM-2593-IDENTITY-001, UT-ACM-2593-UNION-001, IT-AF-2584-008 | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
+| ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | — no qualifying IT; fixture evidence only (`UT-ACM-2593-IDENTITY-001`, `UT-ACM-2593-UNION-001`) | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
 | Audit persistence/retrieval | AF adapter → DataStorage audit store → query | Searchable typed event and observable failure | IT-AF-2584-012 | **PASS** |
 | `apifrontend` metric category | DataStorage audit handler | Bounded category/lag metric | UT-DS-2584-001 | **PASS** |
