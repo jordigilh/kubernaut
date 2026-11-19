@@ -31,7 +31,9 @@ limitations under the License.
 //  2. Namespace label (for namespaced resources)
 //  3. Default: unmanaged (safe default)
 //
-// For cluster-scoped resources (namespace==""), only the resource label is checked.
+// For cluster-scoped resources (namespace==""), only the resource label is
+// checked; a cluster-level intent with no backing object (Kind "ClusterScope")
+// stays unsupported (issue #2670).
 //
 // # Usage
 //
@@ -76,6 +78,31 @@ const (
 
 	// ManagedLabelValueFalse indicates the resource is explicitly unmanaged.
 	ManagedLabelValueFalse = "false"
+
+	// PseudoKindClusterScope is the reserved non-labelable pseudo-kind for a
+	// cluster-level intent that has no backing object to carry a label
+	// (DD-GATEWAY-CLUSTER-SCOPE-SIGNALS Alternative 2B, issue #2670).
+	PseudoKindClusterScope = "ClusterScope"
+
+	// ReasonClusterScopedTargetUnsupported marks the non-labelable pseudo-target
+	// boundary. Set by all three scope lanes; observable only where
+	// ScopeResult.Reason is surfaced (the local lane).
+	ReasonClusterScopedTargetUnsupported = "cluster_scoped_target_unsupported"
+
+	// ReasonInvalidClusterScopedNamespace rejects an identity that gives a
+	// namespace to a cluster-scoped kind (SI-10).
+	ReasonInvalidClusterScopedNamespace = "invalid_cluster_scoped_namespace"
+
+	// ReasonNamespacedTargetWithoutNamespace rejects a known namespaced kind
+	// whose identity carries no namespace. Terminal, not a retryable
+	// observation gap.
+	ReasonNamespacedTargetWithoutNamespace = "namespaced_target_without_namespace"
+
+	// ReasonInvalidResourceLabel marks a present but non-boolean managed label.
+	ReasonInvalidResourceLabel = "invalid_resource_label"
+
+	// ReasonObservationMissing marks a target the lane could not observe.
+	ReasonObservationMissing = "observation_missing"
 )
 
 // namespaceGVK is the GroupVersionKind for Namespace, used for metadata-only lookups.
@@ -93,12 +120,15 @@ var kindToGroup = map[string]string{
 	"Secret":           "",
 	"Namespace":        "",
 	"PersistentVolume": "",
-	"ReplicaSet":       "apps",
-	"Deployment":       "apps",
-	"StatefulSet":      "apps",
-	"DaemonSet":        "apps",
-	"Job":              "batch",
-	"CronJob":          "batch",
+	// PersistentVolumeClaim is namespaced and deliberately lives here rather
+	// than in clusterScopedKinds (issue #2670).
+	"PersistentVolumeClaim": "",
+	"ReplicaSet":            "apps",
+	"Deployment":            "apps",
+	"StatefulSet":           "apps",
+	"DaemonSet":             "apps",
+	"Job":                   "batch",
+	"CronJob":               "batch",
 }
 
 // clusterScopedKinds identifies cluster-scoped resource kinds.
@@ -192,7 +222,7 @@ func resolveLabelStates(resourceState, namespaceState LabelState, clusterScoped 
 	}
 	if resourceState == LabelStateInvalid {
 		resolution.Source = ScopeSourceUnavailable
-		resolution.Reason = "invalid_resource_label"
+		resolution.Reason = ReasonInvalidResourceLabel
 		return resolution
 	}
 	if namespaceState == LabelStateInvalid {
@@ -233,7 +263,7 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 	if resource.ClusterID != "" {
 		return Resolution{}, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
 	}
-	clusterScoped := isClusterScoped(resource.Kind) || resource.Namespace == ""
+	clusterScoped := clusterScopedIdentity(resource)
 	gvk, gvkErr := GVKForIdentity(resource)
 	if gvkErr != nil {
 		return Resolution{}, gvkErr
@@ -258,7 +288,7 @@ func (m *Manager) Resolve(ctx context.Context, resource ResourceIdentity) (Resol
 // considered, so a NotFound is an observation error, never a silent namespace
 // fallthrough. Resolve and ResolveWithResourceLabels keep the ADR-053
 // inheritance semantics for inventory consumers.
-func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity) (Resolution, error) {
+func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity, clusterScoped bool) (Resolution, error) {
 	gvk, err := GVKForIdentity(resource)
 	if err != nil {
 		return Resolution{}, err
@@ -274,10 +304,11 @@ func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity
 	// target may inherit only from an OBSERVED namespace. Unlike the ADR-053
 	// inheritance lane (ResolveWithResourceLabels), a namespace that cannot be
 	// read — including NotFound — is missing evidence, never a decisive
-	// unmanaged outcome.
+	// unmanaged outcome. A cluster-scoped target has no namespace to inherit,
+	// so it resolves at level 1 and never reads Namespace metadata.
 	resourceState := labelState(obj.GetLabels())
-	if resourceState == LabelStateTrue || resourceState == LabelStateFalse || resourceState == LabelStateInvalid {
-		return resolveLabelStates(resourceState, LabelStateAbsent, false), nil
+	if clusterScoped || resourceState != LabelStateAbsent {
+		return resolveLabelStates(resourceState, LabelStateAbsent, clusterScoped), nil
 	}
 	ns := &metav1.PartialObjectMetadata{}
 	ns.SetGroupVersionKind(namespaceGVK)
@@ -286,7 +317,7 @@ func (m *Manager) resolveObserved(ctx context.Context, resource ResourceIdentity
 	if err := m.client.Get(nsCtx, client.ObjectKey{Name: resource.Namespace}, ns); err != nil {
 		return Resolution{}, fmt.Errorf("scope: resolve Namespace metadata: %w", err)
 	}
-	return resolveLabelStates(resourceState, labelState(ns.GetLabels()), false), nil
+	return resolveLabelStates(resourceState, labelState(ns.GetLabels()), clusterScoped), nil
 }
 
 // Check implements DD-FLEET-015: target presence precedes inheritance.
@@ -300,14 +331,26 @@ func (m *Manager) Check(ctx context.Context, resource ResourceIdentity) (ScopeRe
 	if resource.ClusterID != "" || resource.Kind == "" || resource.Name == "" {
 		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: "invalid_resource_identity"}, nil
 	}
+	if resource.Kind == PseudoKindClusterScope {
+		// A cluster-level intent has no backing object to carry a label
+		// (DD-GATEWAY-CLUSTER-SCOPE-SIGNALS); it stays deferred. Must precede
+		// GVK validation because the pseudo-target carries no apiVersion.
+		return ScopeResult{State: ScopeUnsupported, Provenance: ScopeSourceUnavailable, Reason: ReasonClusterScopedTargetUnsupported}, nil
+	}
 	if _, err := GVKForIdentity(resource); err != nil {
 		// A target-identity defect is permanent, not retryable.
 		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: "invalid_target_identity"}, nil //nolint:nilerr // DD-FLEET-015: completed invalid input is a domain result, not an execution failure
 	}
-	if resource.Namespace == "" || isClusterScoped(resource.Kind) {
-		return ScopeResult{State: ScopeUnsupported, Provenance: ScopeSourceUnavailable, Reason: "cluster_scoped_target_unsupported"}, nil
+	if resource.Namespace != "" && isClusterScoped(resource.Kind) {
+		// A cluster-scoped kind cannot gain scope from a supplied namespace.
+		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: ReasonInvalidClusterScopedNamespace}, nil
 	}
-	resolution, err := m.resolveObserved(ctx, resource)
+	if knownNamespacedKindWithoutNamespace(resource) {
+		// Permanent identity defect: a retryable observation gap here would
+		// requeue an input that can never succeed.
+		return ScopeResult{State: ScopeInvalid, Provenance: ScopeSourceUnavailable, Reason: ReasonNamespacedTargetWithoutNamespace}, nil //nolint:nilerr // completed invalid input is a domain result
+	}
+	resolution, err := m.resolveObserved(ctx, resource, clusterScopedIdentity(resource))
 	if ctx.Err() != nil {
 		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable}, ctx.Err()
 	}
@@ -337,7 +380,7 @@ func localScopeLookupFailure(err error) (ScopeResult, error) {
 		return ScopeResult{State: ScopeUnauthorized, Provenance: ScopeSourceUnavailable, Reason: "scope_access_denied"}, nil
 	}
 	if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
-		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable, Reason: "observation_missing", Retryable: true}, nil
+		return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable, Reason: ReasonObservationMissing, Retryable: true}, nil
 	}
 	return ScopeResult{State: ScopeUnavailable, Provenance: ScopeSourceUnavailable, Reason: "scope_lookup_error", Retryable: true}, err
 }
@@ -354,7 +397,7 @@ func (m *Manager) ResolveWithResourceLabels(ctx context.Context, resource Resour
 	if _, err := GVKForIdentity(resource); err != nil {
 		return Resolution{}, err
 	}
-	return m.resolveWithResourceLabels(ctx, resource, resourceLabels, isClusterScoped(resource.Kind) || resource.Namespace == "")
+	return m.resolveWithResourceLabels(ctx, resource, resourceLabels, clusterScopedIdentity(resource))
 }
 
 func (m *Manager) resolveWithResourceLabels(ctx context.Context, resource ResourceIdentity, resourceLabels map[string]string, clusterScoped bool) (Resolution, error) {
@@ -397,4 +440,27 @@ func isClusterScoped(kind string) bool {
 // cluster-scoped. Used as a static heuristic when a RESTMapper is unavailable.
 func IsClusterScopedKind(kind string) bool {
 	return clusterScopedKinds[kind]
+}
+
+// IsKnownNamespacedKind reports whether the kind is in the static map and is
+// namespaced. The fleet and ACM lanes use it so all three scope lanes share one
+// classification (issue #2670).
+func IsKnownNamespacedKind(kind string) bool {
+	_, known := kindToGroup[kind]
+	return known && !isClusterScoped(kind)
+}
+
+// clusterScopedIdentity reports whether the identity addresses a cluster-scoped
+// object: either a known cluster-scoped kind or any identity without a
+// namespace. Such an identity resolves at level 1 and never reads Namespace
+// metadata.
+func clusterScopedIdentity(resource ResourceIdentity) bool {
+	return isClusterScoped(resource.Kind) || resource.Namespace == ""
+}
+
+// knownNamespacedKindWithoutNamespace reports a permanent identity defect: a
+// kind known to be namespaced whose identity carries no namespace. Treating it
+// as a retryable observation gap would requeue input that can never succeed.
+func knownNamespacedKindWithoutNamespace(resource ResourceIdentity) bool {
+	return IsKnownNamespacedKind(resource.Kind) && resource.Namespace == ""
 }

@@ -59,7 +59,10 @@ const MaxOwnerChainDepth = 5
 const ownerLookupTimeout = 5 * time.Second
 
 // kindToGroup maps Kubernetes resource kinds to their API groups.
-// Same mapping as pkg/shared/scope/manager.go:kindToGroup.
+// Same mapping as pkg/shared/scope/manager.go:kindToGroup. PersistentVolumeClaim
+// is deliberately absent here: it is a namespaced leaf with no owner chain to
+// resolve, and adding it would eagerly start another informer for every
+// Gateway (issue #2670).
 // Shared pattern across Gateway scope management and owner chain resolution.
 //
 // Deprecated: Superseded by a KindResolver's KindToGVR() (#1029).
