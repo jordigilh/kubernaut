@@ -101,14 +101,17 @@ unchanged; §5.5 records exactly which sub-cases remain unproven.
 | R4 | Raw Rego, ConfigMap keys, secrets, arbitrary labels, or private reasoning leak through a projection | Security/compliance violation | Medium | UT-AF-2584-002, UT-AF-2584-009, IT-AF-2584-003 | Typed allowlist projection and negative response assertions |
 | R5 | Current policy metadata is confused with historical evaluation metadata | Misleading governance/audit display | Medium | UT-AF-2584-006, IT-AF-2584-003 | Separate response fields and fixtures with different revisions/hashes |
 | R6 | An incomplete or unavailable backend returns records or counts | False operational state and information leakage | High | UT-AF-2584-008, IT-AF-2584-006 | Error-state envelope contains no items, counts, or provenance; successful pages require complete source reads |
-| R7 | Remote-cluster reads silently fall back to the hub cluster | Wrong-cluster data is presented as requested data | Medium | IT-AF-2584-008, IT-FLEET-2584-001/002 | Explicit cluster identity, FMC/ACM control-plane selection, existing `ScopeChecker`, and no local fallback |
+| R7 | Remote-cluster reads silently fall back to the hub cluster | Wrong-cluster data is presented as requested data | Medium | IT-AF-2584-008, IT-FLEET-2584-001 | Explicit cluster identity, FMC/ACM control-plane selection, existing `ScopeChecker`, and no local fallback. The ACM lane is NOT QUALIFIED (§8.2/§14); its fixture-level IT label was retired |
 | R8 | New router/config wiring changes A2A/MCP or robot behavior | Existing interactive/agent flows regress | Low | IT-AF-2584-009, existing AF suites | Additive route registration and regression coverage for existing protocol paths |
 
 ### 3.1 Risk-to-Test Traceability
 
-R1, R2, R6, and R7 are critical security/data-integrity risks. Each has both unit
-decision coverage and a production-path integration test. No implementation may be
-declared GREEN while any of those ITs is absent or failing.
+R1, R2, R6, and R7 are critical security/data-integrity risks. Each has unit decision
+coverage and a production-path integration test. No implementation may be declared GREEN
+while any of those ITs is absent or failing — with one recorded exception: R7's ACM lane
+is **NOT QUALIFIED** (§8.2/§14) and its fixture-level IT label was retired, so R7 is
+satisfied by `IT-AF-2584-008` and `IT-FLEET-2584-001` only. The ACM Console inventory gate
+remains closed, so no implementation relies on that lane.
 
 ---
 
@@ -348,7 +351,7 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection using runtime ConfigMap policy metadata | **PASS** — production wiring and route-tier tests; deployed qualification remains separate |
+| `IT-AF-2584-001` | A real authenticated request reaches the production router and returns a complete local projection, and the production policy-read dependencies are constructed from AF clients | **PASS** — production wiring and route-tier tests (stub policy metadata); runtime ConfigMap metadata is proven at unit level by `UT-AF-2584-001/002`. Deployed qualification remains separate |
 | `IT-AF-2584-002` | The authenticated inventory read serializes the documented wire shape (state, completeness, item identity) | **PASS** — handler serialization spec. There is no envtest provenance join in this release; provenance is proven by `UT-AF-2584-003`/`UT-AF-2584-004` and link/scope by `IT-AF-2584-007` |
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
 | `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
@@ -549,7 +552,7 @@ unit-only handler calls.
 
 | Code path | Production entry point | Exit point | Wiring IT | Status |
 |---|---|---|---|---|
-| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | Validated policy metadata and revision | IT-AF-2584-001/003 | **PASS** |
+| Runtime policy metadata | Per-operation `aianalysis-config`/`signalprocessing-config` reads | Validated policy metadata and revision | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the metadata→projection join is stub-level in `IT-AF-2584-003`; real ConfigMap reads are proven at unit level by `UT-AF-2584-001/002` |
 | Policy scope handler | `GET /api/v1/console/policies/scope` | Sanitized 200/state response | IT-AF-2584-001/003 | **PASS** |
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | Paginated identity projection | IT-AF-2584-002/007 | **PASS** |
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
