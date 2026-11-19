@@ -353,7 +353,7 @@ body.
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
 | 6. Gateway identity | `pkg/gateway/scope_validation_test.go`: `UT-GW-2670-001/002` | `pkg/gateway/signal_ingestion.go` §4.4 (`scopeTargetNamespace`/`scopeIdentityFor`) | shared helper replaces the inline identity construction; doc comment restored |
-| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: the Prometheus fingerprint spec | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
+| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004..006`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: the Prometheus fingerprint spec | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
 | 8. Docs | — | §8 | N/A |
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.
@@ -436,7 +436,7 @@ the **reader contract**, not a production observation; fleet PV/CRD observation 
 | IT-RO-192-001 (restored) | Local lane through RO: a managed-labeled Node passes the scope gate, the RR reaches Processing, SP is created, SP failure drives `PhaseFailed`, and no EA is created (#240 contract) |
 | IT-ACM-2670-001 (new) | Direct ACM backend composed by the production factory: a `Node` identity with `label: ""` resolves `verified_unmanaged`/`none`, and with `label: "kubernaut.ai/managed=true"` resolves `verified_managed`/`resource-label` — the cluster-scoped branch of `acm.Client.Check` through real wiring |
 
-Scenario coverage: 27 unit scenario IDs (local 14 / fleet 6 / ACM 3 / gateway 4) + 4 integration scenarios,
+Scenario coverage: 29 unit scenario IDs (local 14 / fleet 6 / ACM 3 / gateway 6) + 4 integration scenarios,
 all business outcomes, no duplicate assertions. Critical scenarios: 100%.
 
 ## 7. Wiring manifest

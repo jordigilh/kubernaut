@@ -61,7 +61,7 @@ var _ = Describe("Cluster-scoped target detection for fingerprint normalization 
 		Expect(targetClusterScoped(nil, "Namespace")).To(BeTrue())
 	})
 
-	It("UT-GW-2670-004: discovery extends the classification to cluster-scoped CRDs", func() {
+	It("UT-GW-2670-005: discovery extends the classification to cluster-scoped CRDs", func() {
 		registry, err := NewAPIResourceRegistry(discoveryWithClusterScopedCRD())
 		Expect(err).ToNot(HaveOccurred())
 
@@ -70,7 +70,7 @@ var _ = Describe("Cluster-scoped target detection for fingerprint normalization 
 		Expect(targetClusterScoped(registry, "Node")).To(BeTrue(), "static and discovery agree for Node")
 	})
 
-	It("UT-GW-2670-004: an unknown or namespaced kind keeps its namespace", func() {
+	It("UT-GW-2670-006: an unknown or namespaced kind keeps its namespace", func() {
 		registry, err := NewAPIResourceRegistry(discoveryWithClusterScopedCRD())
 		Expect(err).ToNot(HaveOccurred())
 
