@@ -234,6 +234,24 @@ routing, and all other findings remain unchanged. Issue #1662 remains the
 re-triage owner; remove the exception earlier if a compatible fixed stable
 kubectl artifact is adopted, and renewal requires fresh approval.
 
+## 2026-11-19 Amendment: CVE-2026-97054 Exception
+
+The must-gather image scan reported **CVE-2026-97054** (Go `net/http`
+`MaxBytesReader` header race) in the retained `kubectl v1.36.2` binary's Go
+stdlib. The CVE is fixed in Go **1.26.11 / 1.27.4**. The latest stable kubectl
+releases inspected, **v1.36.6** and **v1.37.2**, embed **go1.26.10** — one patch
+below the fix — so no currently available supported stable kubectl artifact
+carries the remediated standard library.
+
+**Approved by the user**: add only this exact CVE to the must-gather-only
+Trivy exception set through **2027-05-19**, six calendar months from the
+2026-11-19 approval. This is risk acceptance, not vulnerability remediation.
+The kubectl image is intentionally neither rebuilt nor upgraded. Existing
+severity, `ignore-unfixed`, fail-closed exit behavior, application-image
+routing, and all other findings remain unchanged. Issue #1662 remains the
+re-triage owner; remove the exception earlier if a compatible stable kubectl
+built with Go 1.26.11+ is adopted, and renewal requires fresh approval.
+
 ## 2026-10-11 Amendment: Explicit Six-Month Risk Acceptance
 
 **Approved by the user**: "let's add kubectl CVEs as exceptions for 6 months validity".
