@@ -48,16 +48,16 @@ var _ = Describe("Hash Chain JSON Consistency - Root Cause Investigation", func(
 			// STEP 1: Simulate EVENT CREATION
 			// ========================================
 			eventForCreation := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				EventTimestamp: time.Date(2026, 1, 24, 10, 0, 0, 0, time.UTC),
-				EventDate:      repository.DateOnly{},
-				EventType:      "workflow.executed",
-				Version:        "1.0",
-				EventCategory:  "workflow",
-				EventAction:    "execute",
-				EventOutcome:   "success",
-				CorrelationID:  "test-correlation-001",
-				ParentEventID:  nil,
+				EventID:         uuid.New(),
+				EventTimestamp:  time.Date(2026, 1, 24, 10, 0, 0, 0, time.UTC),
+				EventDate:       repository.DateOnly{},
+				EventType:       "workflow.executed",
+				Version:         "1.0",
+				EventCategory:   "workflow",
+				EventAction:     "execute",
+				EventOutcome:    "success",
+				CorrelationID:   "test-correlation-001",
+				ParentEventID:   nil,
 				ParentEventDate: nil,
 				// CRITICAL: Optional fields left as ZERO VALUES (not explicitly set)
 				ResourceType:      "", // Zero value - omitempty will OMIT from JSON
@@ -114,30 +114,30 @@ var _ = Describe("Hash Chain JSON Consistency - Root Cause Investigation", func(
 			// Simulate what happens in audit_export.go when reading from PostgreSQL
 
 			// Simulate sql.NullString conversions (lines 197-213 in audit_export.go)
-			var resourceType sql.NullString   // NULL from DB
-			var resourceID sql.NullString     // NULL from DB
+			var resourceType sql.NullString      // NULL from DB
+			var resourceID sql.NullString        // NULL from DB
 			var resourceNamespace sql.NullString // NULL from DB
-			var clusterID sql.NullString      // NULL from DB
-			var actorID sql.NullString        // NULL from DB
-			var actorType sql.NullString      // NULL from DB
-			var severity sql.NullString       // NULL from DB
-			var errorCode sql.NullString      // NULL from DB
-			var errorMessage sql.NullString   // NULL from DB
-			var durationMs sql.NullInt64      // NULL from DB
+			var clusterID sql.NullString         // NULL from DB
+			var actorID sql.NullString           // NULL from DB
+			var actorType sql.NullString         // NULL from DB
+			var severity sql.NullString          // NULL from DB
+			var errorCode sql.NullString         // NULL from DB
+			var errorMessage sql.NullString      // NULL from DB
+			var durationMs sql.NullInt64         // NULL from DB
 
 			// Create verification event and assign from sql.NullString
 			// (this is what audit_export.go does)
 			eventForVerification := &repository.AuditEvent{
-				EventID:        eventForCreation.EventID,
-				EventTimestamp: eventForCreation.EventTimestamp.UTC(), // Force UTC (line 195 audit_export.go)
-				EventDate:      repository.DateOnly{},
-				EventType:      "workflow.executed",
-				Version:        "1.0",
-				EventCategory:  "workflow",
-				EventAction:    "execute",
-				EventOutcome:   "success",
-				CorrelationID:  "test-correlation-001",
-				ParentEventID:  nil,
+				EventID:         eventForCreation.EventID,
+				EventTimestamp:  eventForCreation.EventTimestamp.UTC(), // Force UTC (line 195 audit_export.go)
+				EventDate:       repository.DateOnly{},
+				EventType:       "workflow.executed",
+				Version:         "1.0",
+				EventCategory:   "workflow",
+				EventAction:     "execute",
+				EventOutcome:    "success",
+				CorrelationID:   "test-correlation-001",
+				ParentEventID:   nil,
 				ParentEventDate: nil,
 				// CRITICAL: These are EXPLICITLY SET from sql.NullString.String
 				// NULL -> "" conversion (lines 200-212 in audit_export.go)
@@ -274,8 +274,8 @@ var _ = Describe("Hash Chain JSON Consistency - Root Cause Investigation", func(
 
 			// Original EventData (with int)
 			originalEventData := map[string]interface{}{
-				"step":   1,     // int
-				"count":  42,    // int
+				"step":   1,  // int
+				"count":  42, // int
 				"status": "completed",
 			}
 

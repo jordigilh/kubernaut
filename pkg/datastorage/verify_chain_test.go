@@ -52,7 +52,7 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 			event := &repository.AuditEvent{
 				EventID:           uuid.New(),
 				EventTimestamp:    time.Now().UTC(),
-				EventType:        "gateway.signal.received",
+				EventType:         "gateway.signal.received",
 				EventCategory:     "signal",
 				EventAction:       "received",
 				EventOutcome:      "success",
@@ -74,14 +74,14 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 		It("UT-DS-1088-VC-002: should zero legal hold fields (SOC2 Gap #8)", func() {
 			now := time.Now().UTC()
 			event := &repository.AuditEvent{
-				EventID:            uuid.New(),
-				EventTimestamp:     now,
+				EventID:           uuid.New(),
+				EventTimestamp:    now,
 				EventType:         "test.event",
-				CorrelationID:      "rr-test-002",
-				LegalHold:          true,
-				LegalHoldReason:    "litigation",
-				LegalHoldPlacedBy:  "admin@example.com",
-				LegalHoldPlacedAt:  &now,
+				CorrelationID:     "rr-test-002",
+				LegalHold:         true,
+				LegalHoldReason:   "litigation",
+				LegalHoldPlacedBy: "admin@example.com",
+				LegalHoldPlacedAt: &now,
 			}
 
 			prepared := repository.PrepareEventForHashing(event)
@@ -99,7 +99,7 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 			event := &repository.AuditEvent{
 				EventID:        eventID,
 				EventTimestamp: ts,
-				EventType:     "test.event",
+				EventType:      "test.event",
 				EventCategory:  "test",
 				EventAction:    "created",
 				EventOutcome:   "success",
@@ -120,7 +120,7 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 			event := &repository.AuditEvent{
 				EventID:        uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 				EventTimestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-				EventType:     "test.deterministic",
+				EventType:      "test.deterministic",
 				EventCategory:  "test",
 				EventAction:    "verify",
 				EventOutcome:   "success",
@@ -140,7 +140,7 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 			event := &repository.AuditEvent{
 				EventID:        uuid.MustParse("22222222-2222-2222-2222-222222222222"),
 				EventTimestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-				EventType:     "test.chain",
+				EventType:      "test.chain",
 				CorrelationID:  "chain-test",
 			}
 
@@ -156,19 +156,19 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 				{
 					EventID:        uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 					EventTimestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-					EventType:     "gateway.signal.received",
+					EventType:      "gateway.signal.received",
 					CorrelationID:  "chain-verify-test",
 				},
 				{
 					EventID:        uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
 					EventTimestamp: time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC),
-					EventType:     "aianalysis.analysis.completed",
+					EventType:      "aianalysis.analysis.completed",
 					CorrelationID:  "chain-verify-test",
 				},
 				{
 					EventID:        uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 					EventTimestamp: time.Date(2026, 1, 1, 0, 2, 0, 0, time.UTC),
-					EventType:     "orchestrator.lifecycle.created",
+					EventType:      "orchestrator.lifecycle.created",
 					CorrelationID:  "chain-verify-test",
 				},
 			}
@@ -202,7 +202,7 @@ var _ = Describe("Phase 8: Verify Chain Hash Calculation (Checkpoint B / H1)", f
 			event := &repository.AuditEvent{
 				EventID:        uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
 				EventTimestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-				EventType:     "test.broken.chain",
+				EventType:      "test.broken.chain",
 				CorrelationID:  "broken-chain",
 			}
 

@@ -5147,6 +5147,62 @@ func (s ApifrontendSessionRetentionDeletedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ApifrontendSeverityTriageAmbiguousPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.AmbiguityReason.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "ambiguity_reason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) Validate() error {
+	switch s {
+	case "cluster_scoped_only":
+		return nil
+	case "group_unscopable":
+		return nil
+	case "alert_belongs_to_sibling":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendSeverityTriageAmbiguousPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.severity_triage.ambiguous":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendSeverityTriageCompletedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -6263,6 +6319,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData:
+		if err := s.ApifrontendSeverityTriageAmbiguousPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case ApifrontendConfigReloadedPayloadAuditEventEventData:
 		if err := s.ApifrontendConfigReloadedPayload.Validate(); err != nil {
 			return err
@@ -7066,6 +7127,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendSeverityTriageFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSeverityTriageAmbiguousPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

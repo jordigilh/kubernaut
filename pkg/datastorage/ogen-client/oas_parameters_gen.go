@@ -674,8 +674,19 @@ type GetRemediationHistoryContextParams struct {
 	TargetKind string
 	// Kubernetes resource name.
 	TargetName string
-	// Kubernetes resource namespace.
+	// Kubernetes resource namespace. May be empty for cluster-scoped
+	// resources (#762); an empty value is a legitimate cluster-scoped
+	// scope, not "unscoped".
 	TargetNamespace string
+	// Canonical apiVersion of the target resource (#2658). REQUIRED: an
+	// absent parameter is a 400, and an empty value is rejected because it
+	// is indistinguishable from "unknown". Send "v1" for the core API
+	// group, "apps/v1" for a grouped resource, or the reserved sentinel
+	// "unresolved" when the caller could not establish the apiVersion.
+	// The group and version are ordinary parts of the stored target
+	// identity (namespace/group/version/Kind/name), so history rows are
+	// matched by exact identity equality.
+	TargetApiVersion string
 	// SHA-256 hash of the current target resource spec (canonical JSON).
 	CurrentSpecHash string
 	// Tier 1 lookback window (default 24h). Accepts Go duration strings.
@@ -711,6 +722,13 @@ func unpackGetRemediationHistoryContextParams(packed middleware.Parameters) (par
 			In:   "query",
 		}
 		params.TargetNamespace = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "targetApiVersion",
+			In:   "query",
+		}
+		params.TargetApiVersion = packed[key].(string)
 	}
 	{
 		key := middleware.ParameterKey{
@@ -776,6 +794,26 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 			}); err != nil {
 				return err
 			}
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[A-Za-z][A-Za-z0-9]*$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(params.TargetKind)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
 		} else {
 			return err
 		}
@@ -810,6 +848,26 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 				params.TargetName = c
 				return nil
 			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(params.TargetName)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
 				return err
 			}
 		} else {
@@ -848,6 +906,26 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 			}); err != nil {
 				return err
 			}
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(params.TargetNamespace)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
 		} else {
 			return err
 		}
@@ -855,6 +933,62 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "targetNamespace",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: targetApiVersion.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetApiVersion",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.TargetApiVersion = c
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^(unresolved|v[0-9]+([a-z0-9]+)?|[a-z0-9.-]+/v[0-9]+([a-z0-9]+)?)$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(params.TargetApiVersion)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetApiVersion",
 			In:   "query",
 			Err:  err,
 		}

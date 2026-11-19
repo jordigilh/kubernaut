@@ -189,10 +189,10 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				},
 				{
 					EventData: map[string]interface{}{
-						"event_type":                  "effectiveness.hash.computed",
-						"post_remediation_spec_hash":  "sha256:aaa",
-						"pre_remediation_spec_hash":   "sha256:bbb",
-						"hash_match":                  false,
+						"event_type":                 "effectiveness.hash.computed",
+						"post_remediation_spec_hash": "sha256:aaa",
+						"pre_remediation_spec_hash":  "sha256:bbb",
+						"hash_match":                 false,
 					},
 				},
 				{
@@ -251,10 +251,10 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			events := []*server.EffectivenessEvent{
 				{
 					EventData: map[string]interface{}{
-						"event_type":                  "effectiveness.hash.computed",
-						"post_remediation_spec_hash":  "sha256:same",
-						"pre_remediation_spec_hash":   "sha256:same",
-						"hash_match":                  match,
+						"event_type":                 "effectiveness.hash.computed",
+						"post_remediation_spec_hash": "sha256:same",
+						"pre_remediation_spec_hash":  "sha256:same",
+						"hash_match":                 match,
 					},
 				},
 			}

@@ -20,13 +20,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
-	"github.com/jordigilh/kubernaut/pkg/audit"
 
-	"github.com/google/uuid"
 	"errors"
+	"github.com/google/uuid"
 	"time"
 )
 
@@ -36,21 +36,21 @@ var _ = Describe("Phase 11: Performance Hardening", func() {
 			parentDate := time.Now().Add(-1 * time.Hour).Truncate(24 * time.Hour)
 			parentID := uuid.New()
 			event := &audit.AuditEvent{
-				EventID:        uuid.New(),
-				EventTimestamp: time.Now(),
-				EventType:      "test.event",
-				EventCategory:  "audit",
-				EventAction:    "create",
-				EventOutcome:   "success",
-				CorrelationID:  uuid.NewString(),
-				ParentEventID:  &parentID,
+				EventID:         uuid.New(),
+				EventTimestamp:  time.Now(),
+				EventType:       "test.event",
+				EventCategory:   "audit",
+				EventAction:     "create",
+				EventOutcome:    "success",
+				CorrelationID:   uuid.NewString(),
+				ParentEventID:   &parentID,
 				ParentEventDate: &parentDate,
-				ResourceType:   "Pod",
-				ResourceID:     "pod-1",
-				ActorID:        "user-1",
-				ActorType:      "human",
-				EventData:      []byte(`{"key":"value"}`),
-				RetentionDays:  2555,
+				ResourceType:    "Pod",
+				ResourceID:      "pod-1",
+				ActorID:         "user-1",
+				ActorType:       "human",
+				EventData:       []byte(`{"key":"value"}`),
+				RetentionDays:   2555,
 			}
 
 			repoEvent, err := helpers.ConvertToRepositoryAuditEvent(event)
