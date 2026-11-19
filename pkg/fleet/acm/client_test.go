@@ -157,15 +157,66 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		Entry("namespace not visible", true),
 	)
 
-	It("UT-ACM-2592-002 [BR-SCOPE-001]: defaults an unlabeled cluster-scoped resource to unmanaged", func() {
+	It("UT-ACM-2592-002 [BR-SCOPE-001, #2670]: an unlabeled cluster-scoped resource with an explicit empty projection is verified unmanaged", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"worker"}]}]}}`)
+			_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"worker","label":""}]}]}}`)
 			Expect(err).NotTo(HaveOccurred())
 		}))
 		client = acm.NewClient(server.URL)
-		managed, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
+		result, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker"})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed.State).To(Equal(scope.ScopeUnsupported))
+		Expect(result.State).To(Equal(scope.ScopeVerifiedUnmanaged),
+			"an explicitly present empty label projection proves absence; no namespace exists to inherit")
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceNone))
+	})
+
+	DescribeTable("UT-ACM-2670-001 [BR-SCOPE-001, AC-4]: a labeled cluster-scoped projection authorizes at level 1",
+		func(kind, item string) {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[`+item+`]}]}}`)
+				Expect(err).NotTo(HaveOccurred())
+			}))
+			client = acm.NewClient(server.URL)
+			result, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: kind, Name: "target"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		},
+		Entry("Node", "Node", `{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"target","label":"kubernaut.ai/managed=true"}`),
+		Entry("PersistentVolume", "PersistentVolume", `{"cluster":"prod-east","apiversion":"v1","kind":"PersistentVolume","name":"target","label":"kubernaut.ai/managed=true"}`),
+		Entry("Namespace as target", "Namespace", `{"cluster":"prod-east","apiversion":"v1","kind":"Namespace","name":"target","label":"kubernaut.ai/managed=true"}`),
+	)
+
+	It("UT-ACM-2670-002 [BR-SCOPE-001, SI-10]: invalid and ambiguous cluster-scoped identities fail closed", func() {
+		invalid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"target","label":"kubernaut.ai/managed=yes"}]}]}}`)
+		}))
+		DeferCleanup(invalid.Close)
+		result, err := acm.NewClient(invalid.URL).Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "target"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid))
+		Expect(result.Reason).To(Equal(scope.ReasonInvalidResourceLabel))
+
+		noServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `{"data":{"searchResult":[{"count":0,"items":[]}]}}`)
+		}))
+		DeferCleanup(noServer.Close)
+		client = acm.NewClient(noServer.URL)
+
+		ambiguous, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Namespace: "default", Kind: "Node", Name: "target"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ambiguous.State).To(Equal(scope.ScopeInvalid))
+		Expect(ambiguous.Reason).To(Equal(scope.ReasonInvalidClusterScopedNamespace))
+
+		noNamespace, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Name: "target"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(noNamespace.State).To(Equal(scope.ScopeInvalid))
+		Expect(noNamespace.Reason).To(Equal(scope.ReasonNamespacedTargetWithoutNamespace))
+
+		pseudo, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Kind: scope.PseudoKindClusterScope, Name: "ClusterNotUpgradeable"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pseudo.State).To(Equal(scope.ScopeUnsupported))
+		Expect(pseudo.Reason).To(Equal(scope.ReasonClusterScopedTargetUnsupported))
 	})
 
 	It("UT-ACM-2584-SCOPE-001 [BR-SECURITY-016]: canonical scope checking surfaces Search failures", func() {

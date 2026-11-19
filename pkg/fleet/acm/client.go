@@ -78,6 +78,35 @@ func NewClient(endpoint string, opts ...ClientOption) *Client {
 // by querying ACM Search's GraphQL API. Search visibility and backend failures
 // are returned so callers can distinguish an unavailable scope backend from an
 // unmanaged resource.
+// classifyIdentity rejects identities that can never be resolved: the
+// non-labelable pseudo-target, an invalid GVK, a namespace on a cluster-scoped
+// kind, or a known namespaced kind without a namespace. The second return
+// reports whether a terminal result was produced.
+func classifyIdentity(r scope.ResourceIdentity) (scope.ScopeResult, bool) {
+	if r.Kind == scope.PseudoKindClusterScope {
+		return scope.ScopeResult{
+			State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonClusterScopedTargetUnsupported,
+		}, true
+	}
+	if _, err := scope.GVKForIdentity(r); err != nil {
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, true //nolint:nilerr // DD-FLEET-015: invalid input is a completed domain outcome
+	}
+	if r.Namespace != "" && scope.IsClusterScopedKind(r.Kind) {
+		return scope.ScopeResult{
+			State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonInvalidClusterScopedNamespace,
+		}, true
+	}
+	if r.Namespace == "" && scope.IsKnownNamespacedKind(r.Kind) {
+		return scope.ScopeResult{
+			State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable,
+			Reason: scope.ReasonNamespacedTargetWithoutNamespace,
+		}, true
+	}
+	return scope.ScopeResult{}, false
+}
+
 func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
 	unavailable := scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "search_observation_unavailable", Retryable: true}
 	if ctx.Err() != nil {
@@ -87,11 +116,8 @@ func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.Sco
 	if r.ClusterID == "" || r.Kind == "" || r.Name == "" {
 		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil
 	}
-	if _, err := scope.GVKForIdentity(r); err != nil {
-		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable}, nil //nolint:nilerr // DD-FLEET-015: invalid input is a completed domain outcome
-	}
-	if r.Namespace == "" || scope.IsClusterScopedKind(r.Kind) {
-		return scope.ScopeResult{State: scope.ScopeUnsupported, Provenance: scope.ScopeSourceUnavailable}, nil
+	if rejected, terminal := classifyIdentity(r); terminal {
+		return rejected, nil
 	}
 	item, found, err := c.searchScopeItem(ctx, r)
 	if err != nil {
@@ -104,8 +130,11 @@ func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.Sco
 		return unavailable, nil
 	}
 	resourceLabels := searchManagedLabels(item)
-	resolution := scope.ResolveLabels(resourceLabels, nil, false)
-	if resolution.ResourceLabel != scope.LabelStateAbsent {
+	// A cluster-scoped target has no namespace to inherit, so it resolves at
+	// level 1 and never reads a Namespace projection (issue #2670, AC-6).
+	clusterScoped := r.Namespace == "" || scope.IsClusterScopedKind(r.Kind)
+	resolution := scope.ResolveLabels(resourceLabels, nil, clusterScoped)
+	if clusterScoped || resolution.ResourceLabel != scope.LabelStateAbsent {
 		return acmScopeResolution(resolution), nil
 	}
 	namespace := scope.ResourceIdentity{ClusterID: r.ClusterID, Version: "v1", Kind: "Namespace", Name: r.Namespace}
