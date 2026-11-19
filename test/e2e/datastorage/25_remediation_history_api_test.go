@@ -61,7 +61,7 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 	BeforeEach(func() {
 		serviceURL = dataStorageURL
 		testID = generateTestID()
-		targetResource = fmt.Sprintf("default/Deployment/e2e-nginx-%s", testID)
+		targetResource = fmt.Sprintf("default/apps/v1/Deployment/e2e-nginx-%s", testID)
 		currentSpecHash = "sha256:e2e_current_" + testID
 
 		// Verify DS service is ready (Issue #753: health on dedicated port)

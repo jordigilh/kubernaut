@@ -299,7 +299,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1",
 					},
 				},
-				TargetResource: fmt.Sprintf("%s/deployment/test-app", ROControllerNamespace),
+				TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/test-app", ROControllerNamespace),
 			},
 		}
 		Expect(k8sClient.Create(ctx, we)).To(Succeed())

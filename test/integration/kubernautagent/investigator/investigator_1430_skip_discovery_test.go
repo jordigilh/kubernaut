@@ -31,8 +31,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // #1430 / BR-KA-200: When the RCA concludes no action is required
@@ -43,13 +43,13 @@ import (
 var _ = Describe("Investigator skip workflow discovery (#1430 / BR-KA-200)", func() {
 
 	var (
-		invLogger    logr.Logger
-		auditStore   *capturingAuditStore
-		mockClient   *mockLLMClient
-		builder      *prompt.Builder
-		rp           *parser.ResultParser
-		enricher     *enrichment.Enricher
-		phaseTools   katypes.PhaseToolMap
+		invLogger  logr.Logger
+		auditStore *capturingAuditStore
+		mockClient *mockLLMClient
+		builder    *prompt.Builder
+		rp         *parser.ResultParser
+		enricher   *enrichment.Enricher
+		phaseTools katypes.PhaseToolMap
 	)
 
 	BeforeEach(func() {
@@ -161,7 +161,7 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-KA-200)", fun
 				Name: "dns-pod", Namespace: "kube-system",
 				Severity: "warning", Message: "DNSTimeout",
 				RemediationID: "rr-dns-001",
-				Environment: "Production", Priority: "P2",
+				Environment:   "Production", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -199,7 +199,7 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-KA-200)", fun
 				Name: "hpa-target", Namespace: "production",
 				Severity: "info", Message: "ScalingEvent",
 				RemediationID: "rr-hpa-002",
-				Environment: "Production", Priority: "P3",
+				Environment:   "Production", Priority: "P3",
 			})
 			Expect(err).NotTo(HaveOccurred())
 

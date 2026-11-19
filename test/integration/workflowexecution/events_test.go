@@ -88,7 +88,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 
 	Context("IT-WE-095-01: Job happy path", func() {
 		It("should emit WorkflowValidated, ExecutionCreated, PhaseTransition (Pending→Running), WorkflowCompleted", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-events-happy-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-events-happy-%d", time.Now().UnixNano())
 			wfe := eventJobWFE("events-happy", targetResource)
 
 			defer func() {
@@ -143,7 +143,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 	Context("IT-WE-095-02: Validation failure", func() {
 		It("should emit WorkflowValidationFailed when spec is invalid", func() {
 			// Create WFE with empty ContainerImage (ValidateSpec rejects this)
-			wfe := createUniqueWFE("events-invalid", "default/deployment/test-pod")
+			wfe := createUniqueWFE("events-invalid", "default/apps/v1/Deployment/test-pod")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.WorkflowRef.ExecutionBundle = ""
 
@@ -178,7 +178,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 
 	Context("IT-WE-095-03: Cooldown blocking", func() {
 		It("should emit CooldownActive when cooldown is active", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-events-cooldown-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-events-cooldown-%d", time.Now().UnixNano())
 
 			By("Creating first WFE and completing it to activate cooldown")
 			wfe1 := eventJobWFE("events-cooldown-1", targetResource)
@@ -228,7 +228,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 
 	Context("IT-WE-095-04: Job failure", func() {
 		It("should emit WorkflowValidated, ExecutionCreated, WorkflowFailed", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-events-fail-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-events-fail-%d", time.Now().UnixNano())
 			wfe := eventJobWFE("events-fail", targetResource)
 
 			defer func() {

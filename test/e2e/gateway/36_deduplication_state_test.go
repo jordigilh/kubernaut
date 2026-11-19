@@ -54,7 +54,7 @@ import (
 // - Expected speedup: 5-6x faster (~15-20s instead of ~100s for 8 tests)
 var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests", func() {
 	var (
-		testCtx           context.Context      // ← Test-local context
+		testCtx           context.Context // ← Test-local context
 		testCancel        context.CancelFunc
 		testClient        client.Client
 		prometheusPayload []byte
@@ -64,13 +64,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 	sharedNamespace := fmt.Sprintf("test-dedup-p%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
 	BeforeEach(func() {
-	// Per-spec setup for parallel execution
-	testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
-	testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
+		// Per-spec setup for parallel execution
+		testCtx, testCancel = context.WithCancel(context.Background()) // ← Uses local variable
+		testClient = k8sClient                                         // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-	// Pre-create managed namespace (Pattern: RO E2E)
-	// Note: This test uses a shared namespace for state validation across specs
-	sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-state")
+		// Pre-create managed namespace (Pattern: RO E2E)
+		// Note: This test uses a shared namespace for state validation across specs
+		sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-state")
 
 		// Note: prometheusPayload created in Context's BeforeEach with unique UUID
 		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
@@ -78,7 +78,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 	AfterEach(func() {
 		if testCancel != nil {
-			testCancel()  // ← Only cancels test-local context
+			testCancel() // ← Only cancels test-local context
 		}
 		// Clean up test namespace (Pattern: RO E2E)
 		// Note: This will delete the shared namespace and all its CRDs
@@ -153,33 +153,33 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			crd.Status.OverallPhase = "Pending"
 			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
-		// Wait for status update to propagate
-		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
-			if updatedCRD == nil {
-				return ""
-			}
-			return string(updatedCRD.Status.OverallPhase)
-		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
+			// Wait for status update to propagate
+			Eventually(func() string {
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
+				if updatedCRD == nil {
+					return ""
+				}
+				return string(updatedCRD.Status.OverallPhase)
+			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
-		// Verify Gateway can query this CRD by fingerprint (direct API server check)
-		// Query using the same field selector Gateway uses for deduplication
-		// This ensures the CRD is indexed and queryable before testing duplicate detection
-		Eventually(func() int {
-			var rrList remediationv1alpha1.RemediationRequestList
-			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(gatewayNamespace),
-				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
-			)
-			if err != nil {
-				return 0
-			}
-			return len(rrList.Items)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"CRD should be queryable by fingerprint before testing deduplication")
+			// Verify Gateway can query this CRD by fingerprint (direct API server check)
+			// Query using the same field selector Gateway uses for deduplication
+			// This ensures the CRD is indexed and queryable before testing duplicate detection
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := testClient.List(testCtx, &rrList,
+					client.InNamespace(gatewayNamespace),
+					client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+				)
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should be queryable by fingerprint before testing deduplication")
 
-		By("4. Send duplicate alert")
-		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+			By("4. Send duplicate alert")
+			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			var response2 gateway.ProcessingResponse
@@ -271,33 +271,33 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			crd.Status.OverallPhase = "Processing"
 			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
-		// Wait for status update to propagate
-		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
-			if updatedCRD == nil {
-				return ""
-			}
-			return string(updatedCRD.Status.OverallPhase)
-		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
+			// Wait for status update to propagate
+			Eventually(func() string {
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
+				if updatedCRD == nil {
+					return ""
+				}
+				return string(updatedCRD.Status.OverallPhase)
+			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
 
-		// Verify Gateway can query this CRD by fingerprint (direct API server check)
-		// Query using the same field selector Gateway uses for deduplication
-		// This ensures the CRD is indexed and queryable before testing duplicate detection
-		Eventually(func() int {
-			var rrList remediationv1alpha1.RemediationRequestList
-			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(gatewayNamespace),
-				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
-			)
-			if err != nil {
-				return 0
-			}
-			return len(rrList.Items)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"CRD should be queryable by fingerprint before testing deduplication")
+			// Verify Gateway can query this CRD by fingerprint (direct API server check)
+			// Query using the same field selector Gateway uses for deduplication
+			// This ensures the CRD is indexed and queryable before testing duplicate detection
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := testClient.List(testCtx, &rrList,
+					client.InNamespace(gatewayNamespace),
+					client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+				)
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should be queryable by fingerprint before testing deduplication")
 
-		By("3. Send duplicate alert")
-		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+			By("3. Send duplicate alert")
+			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			By("4. Verify occurrence count was incremented")
@@ -382,26 +382,26 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"CRD status should be updated to Completed")
 
-		By("3. Verify CRD status propagation before testing terminal state logic")
-		// DD-STATUS-001: Gateway uses apiReader for fresh reads, but status updates
-		// still need time to propagate through K8s API eventual consistency
-		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
-			if updatedCRD == nil {
-				return ""
-			}
-			return string(updatedCRD.Status.OverallPhase)
-		}, 30*time.Second, 1*time.Second).Should(Equal("Completed"),
-			"CRD status should reflect Completed state before sending duplicate signal")
+			By("3. Verify CRD status propagation before testing terminal state logic")
+			// DD-STATUS-001: Gateway uses apiReader for fresh reads, but status updates
+			// still need time to propagate through K8s API eventual consistency
+			Eventually(func() string {
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
+				if updatedCRD == nil {
+					return ""
+				}
+				return string(updatedCRD.Status.OverallPhase)
+			}, 30*time.Second, 1*time.Second).Should(Equal("Completed"),
+				"CRD status should reflect Completed state before sending duplicate signal")
 
-		By("4. Send 'duplicate' alert (should be treated as new incident)")
-		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+			By("4. Send 'duplicate' alert (should be treated as new incident)")
+			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
-		// v1.0 EXPECTED BEHAVIOR: AlreadyExists error, fetch existing CRD
-		// Status could be 201 (if CRD re-creation succeeds) or 200 (if fetched)
-		// For now, we expect it to NOT be 202 (duplicate)
-		Expect(resp2.StatusCode).ToNot(Equal(http.StatusAccepted),
-			"Completed CRD should not trigger duplicate response")
+			// v1.0 EXPECTED BEHAVIOR: AlreadyExists error, fetch existing CRD
+			// Status could be 201 (if CRD re-creation succeeds) or 200 (if fetched)
+			// For now, we expect it to NOT be 202 (duplicate)
+			Expect(resp2.StatusCode).ToNot(Equal(http.StatusAccepted),
+				"Completed CRD should not trigger duplicate response")
 
 			// v1.1 TODO: After DD-015, verify TWO CRDs exist with different timestamps
 			// Eventually(func() int {
@@ -615,26 +615,26 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 					return ""
 				}
 				return string(updatedCRD.Status.OverallPhase)
-		}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
+			}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
 
-		// Verify Gateway can query this CRD by fingerprint (direct API server check)
-		// Query using the same field selector Gateway uses for deduplication
-		// This ensures the CRD is indexed and queryable before testing duplicate detection
-		Eventually(func() int {
-			var rrList remediationv1alpha1.RemediationRequestList
-			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(gatewayNamespace),
-				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
-			)
-			if err != nil {
-				return 0
-			}
-			return len(rrList.Items)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"CRD should be queryable by fingerprint before testing deduplication")
+			// Verify Gateway can query this CRD by fingerprint (direct API server check)
+			// Query using the same field selector Gateway uses for deduplication
+			// This ensures the CRD is indexed and queryable before testing duplicate detection
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := testClient.List(testCtx, &rrList,
+					client.InNamespace(gatewayNamespace),
+					client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+				)
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should be queryable by fingerprint before testing deduplication")
 
-		By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
-		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+			By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
+			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
 				"Non-terminal state (Blocked) should trigger duplicate (conservative: assume in-progress)")
 

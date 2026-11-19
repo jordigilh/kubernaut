@@ -26,6 +26,21 @@ import (
 
 const hubClusterID = "hub"
 
+// noSiblingCheckerIT satisfies severity.CrossGroupSiblingChecker with "no
+// cross-group sibling exists" (#2658): these RR-creation ITs model a unique
+// instance, so the group-scope gate must adjudicate exactly as before the
+// gate existed. The gate itself is proven by IT-AF-2658-102/103.
+type noSiblingCheckerIT struct{}
+
+func (noSiblingCheckerIT) CheckCrossGroupSiblings(context.Context, string, string, string, string) ([]string, error) {
+	return nil, nil
+}
+
+// withNoCrossGroupSiblings supplies that checker to a Triager.
+func withNoCrossGroupSiblings() severity.TriagerOption {
+	return severity.WithCrossGroupSiblingChecker(noSiblingCheckerIT{})
+}
+
 type noopPromClientIT struct{}
 
 func (n *noopPromClientIT) GetAlerts(_ context.Context) ([]prom.Alert, error) {
@@ -81,7 +96,7 @@ func defaultTestTriagerIT(namespace, kind, name string, clusterID ...string) *se
 	if len(clusterID) > 0 {
 		alertClusterID = clusterID[0]
 	}
-	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name, clusterID: alertClusterID}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name, clusterID: alertClusterID}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 }
 
 type alwaysManagedScopeCheckerIT struct{}
@@ -106,7 +121,7 @@ func unnamedAlertTestTriagerIT(namespace, kind, name string) *severity.Triager {
 			}},
 		},
 	}
-	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 }
 
 var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
@@ -276,7 +291,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 				}},
 			},
 		}
-		triager := severity.NewTriager(promClient, nil, cfg, logr.Discard())
+		triager := severity.NewTriager(promClient, nil, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   defaultFixture,
@@ -330,7 +345,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			if scenario.name == "missing-alert-severity" {
 				resourceName = "web-af-2467-missing"
 			}
-			triager := severity.NewTriager(scenario.promClient, nil, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(scenario.promClient, nil, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 			result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{
 				Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture,
 				Triager: triager, ScopeChecker: alwaysManagedScopeChecker(),

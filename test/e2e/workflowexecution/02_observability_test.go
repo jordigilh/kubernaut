@@ -67,7 +67,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		It("should emit Kubernetes events for phase transitions", func() {
 			// Business Outcome: Operators can track workflow lifecycle via K8s events
 			testName := fmt.Sprintf("e2e-events-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/events-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/events-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -126,7 +126,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		It("should mark WFE as Failed when PipelineRun is deleted externally", func() {
 			// Business Outcome: Operators see clear failure reason when PR deleted
 			testName := fmt.Sprintf("e2e-extdel-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/extdel-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/extdel-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -203,7 +203,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// First, run a workflow to generate metrics
 			testName := fmt.Sprintf("e2e-metrics-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/metrics-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/metrics-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -302,7 +302,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// Run a workflow that will complete successfully
 			testName := fmt.Sprintf("e2e-metrics-completed-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/metrics-completed-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/metrics-completed-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -372,7 +372,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// Run a workflow that intentionally fails (tekton-bundles/failing exits non-zero)
 			testName := fmt.Sprintf("e2e-metrics-failed-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/metrics-failed-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/metrics-failed-%s", uuid.New().String()[:8])
 
 			failureUUID := infrastructure.RegisteredWorkflowUUIDs["test-intentional-failure"]
 			Expect(failureUUID).ToNot(BeEmpty(),
@@ -477,7 +477,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			By("Creating a WorkflowExecution to generate audit events")
 			testName := fmt.Sprintf("e2e-audit-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/audit-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/audit-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -576,7 +576,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			By("Creating a WorkflowExecution that will fail")
 			testName := fmt.Sprintf("e2e-audit-failure-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/audit-fail-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/audit-fail-test-%s", uuid.New().String()[:8])
 
 			// Issue #518: WorkflowID must be a valid UUID (resolved at runtime via DS)
 			failureUUID := infrastructure.RegisteredWorkflowUUIDs["test-intentional-failure"]
@@ -742,7 +742,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			By("Creating a successful WorkflowExecution to generate complete audit trail")
 			testName := fmt.Sprintf("e2e-audit-fields-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/audit-fields-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/audit-fields-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -915,7 +915,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		It("should sync WFE status with PipelineRun status accurately", func() {
 			// Business Outcome: WFE status accurately reflects execution state
 			testName := fmt.Sprintf("e2e-sync-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/sync-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/sync-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {

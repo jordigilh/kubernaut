@@ -21,9 +21,9 @@ var _ = Describe("Normal-execution parent fixtures (BR-ORCH-029, BR-WE-014)", fu
 			var wfe *workflowexecutionv1.WorkflowExecution
 			switch engine {
 			case "job":
-				wfe = createUniqueJobWFE(id, "default/deployment/parent-fixture")
+				wfe = createUniqueJobWFE(id, "default/apps/v1/Deployment/parent-fixture")
 			case "tekton":
-				wfe = createUniqueWFE(id, "default/deployment/parent-fixture")
+				wfe = createUniqueWFE(id, "default/apps/v1/Deployment/parent-fixture")
 			default:
 				wfe = createMinimalWorkflowExecution(id, DefaultNamespace)
 			}
@@ -61,7 +61,7 @@ var _ = Describe("Normal-execution parent fixtures (BR-ORCH-029, BR-WE-014)", fu
 			var parentUID types.UID
 			var parentVersion string
 			for i := range 2 {
-				wfe := createUniqueJobWFE(fmt.Sprintf("%s-%d", id, i), "default/deployment/reuse-fixture")
+				wfe := createUniqueJobWFE(fmt.Sprintf("%s-%d", id, i), "default/apps/v1/Deployment/reuse-fixture")
 				wfe.Spec.RemediationRequestRef.Name = "rr-" + id
 				wfe.Spec.RemediationRequestRef.Namespace = "" // same-namespace default must become explicit
 				if crossNamespace {
@@ -100,7 +100,7 @@ var _ = Describe("Normal-execution parent fixtures (BR-ORCH-029, BR-WE-014)", fu
 
 	It("IT-WE-2588-025: keeps an owned missing-parent fixture on the cancellation path (BR-ORCH-029)", func() {
 		id := fmt.Sprintf("orphan-%d", time.Now().UnixNano())
-		wfe := createUniqueJobWFE(id, "default/deployment/orphan-fixture")
+		wfe := createUniqueJobWFE(id, "default/apps/v1/Deployment/orphan-fixture")
 		ref := &wfe.Spec.RemediationRequestRef
 		ref.APIVersion = remediationv1.GroupVersion.String()
 		ref.UID = types.UID(id)

@@ -329,7 +329,7 @@ func newCancellationWorkflowExecution(rr *remediationv1.RemediationRequest, name
 				Version:         "v1",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/cancel-test:v1",
 			}},
-			TargetResource: fmt.Sprintf("%s/deployment/test-app", targetNamespaceFor(rr)),
+			TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/test-app", targetNamespaceFor(rr)),
 		},
 	}
 }

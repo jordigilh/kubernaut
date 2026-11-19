@@ -29,8 +29,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -428,7 +428,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
-			result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "web-app-xyz", Namespace: "constrained", IncidentID: "inc-1"})
+			result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "web-app-xyz", Namespace: "constrained", IncidentID: "inc-1", APIVersion: "v1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.DetectedLabels).NotTo(BeNil())

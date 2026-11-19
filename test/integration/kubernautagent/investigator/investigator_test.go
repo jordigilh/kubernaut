@@ -40,6 +40,7 @@ import (
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -398,7 +399,9 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			testCtx := context.Background()
 			specHash := sha256FixtureHash
 			corrID := "oom-increase-memory"
-			target := "production/Deployment/api-server"
+			// #2658: RO writes the group-aware E1b key, so seeded history must
+			// carry the same API group the query derives.
+			target := "production/apps/v1/Deployment/api-server"
 			now := time.Now()
 			seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", corrID,
 				map[string]interface{}{
@@ -479,7 +482,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		func(hostile bool) {
 			testCtx := context.Background()
 			resourceName := fmt.Sprintf("history-provider-2496-%d", time.Now().UnixNano())
-			target := "production/Deployment/" + resourceName
+			target := "production/apps/v1/Deployment/" + resourceName
 			olderID, recentID := resourceName+"-older", resourceName+"-recent"
 			// BR-KA-016 / AU-3: the existing ogen date-time codec emits
 			// RFC3339 whole seconds. Keep exact timestamp equality without
@@ -857,9 +860,9 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			Expect(mockClient.calls).To(HaveLen(2))
 			workflowCallContent := allMessageContent(mockClient.calls[1].Messages)
-			Expect(workflowCallContent).To(ContainSubstring("demo-crashloop/Deployment/worker"),
+			Expect(workflowCallContent).To(ContainSubstring("demo-crashloop/apps/v1/Deployment/worker"),
 				"UT-KA-693-005: workflow selection prompt Resource field must show re-enriched target")
-			Expect(workflowCallContent).NotTo(ContainSubstring("demo-crashloop/Pod/worker-77784c6cf7-l27g4"),
+			Expect(workflowCallContent).NotTo(ContainSubstring("demo-crashloop/core/v1/Pod/worker-77784c6cf7-l27g4"),
 				"UT-KA-693-005: workflow selection prompt Resource field must NOT show original Pod identity")
 		})
 	})
@@ -1261,3 +1264,17 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 		})
 	})
 })
+
+// groupedTargetKey builds the group-aware E1b identity RO emits (#2658), so a
+// seeded remediation-history row matches the query the enrichment derives from
+// the target's apiVersion.
+func groupedTargetKey(namespace, kind, name string) string {
+	apiVersion := "v1"
+	switch kind {
+	case fleetLabelDeploymentKind, "StatefulSet", "DaemonSet", "ReplicaSet":
+		apiVersion = "apps/v1"
+	case "Job", "CronJob":
+		apiVersion = "batch/v1"
+	}
+	return scope.BuildTargetIdentity(apiVersion, namespace, kind, name)
+}
