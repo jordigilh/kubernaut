@@ -554,8 +554,8 @@ unit-only handler calls.
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | Paginated identity projection | IT-AF-2584-002/007 | **PASS** |
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
-| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** |
-| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003 | **PASS** — the failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
+| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** — with a stub resolver in that spec; provenance semantics are proven at unit level by `UT-AF-2584-003/004` |
+| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the reader→projection join is stub-level (`IT-AF-2584-003`). The failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
 | ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | — no qualifying IT; fixture evidence only (`UT-ACM-2593-IDENTITY-001`, `UT-ACM-2593-UNION-001`) | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
@@ -629,7 +629,7 @@ against three ConfigMaps and their managed namespace established these results:
 - The adapter now returns a state-only `partial` page when `count` exceeds the
   number of returned items, and rejects contradictory smaller counts; exact reads
   do not map a detected partial page to not-found. `UT-ACM-2584-LIVE-003/007/008`
-  and `IT-FLEET-2584-LIVE-003` prove those safeguards. Matching counts alone do
+  prove those safeguards. Matching counts alone do
   not prove complete visibility or freshness on all supported ACM versions.
 - A live unprivileged Search request for a known existing ConfigMap returned
   `count: 0`, empty items, and no messages. The same identity did not regain
@@ -646,6 +646,11 @@ against three ConfigMaps and their managed namespace established these results:
   that alone does not prove how ACM handles every unsupported property or ID.
 
 **Required RED scenarios before correcting the adapter:**
+
+> This list is the required evidence, not a record of existing specs. Retained on main:
+> `UT-ACM-2584-LIVE-001`, `003`, `005`-`008` and the `UT-ACM-2593-*` suite. The
+> `UT-ACM-2584-LIVE-002`/`004` entries and every `IT-FLEET-2584-LIVE-*` companion are
+> forward-looking coverage and are **not claimed as present**.
 
 1. `UT-ACM-2584-LIVE-001` / `IT-FLEET-2584-LIVE-001`: real Search-shaped flat
    labels, explicit true/false, invalid/absent labels, namespace inheritance, and
@@ -763,24 +768,23 @@ so the 90% scenario target and critical-scenario gate are not met.
 | Silent Search filtering versus genuinely empty cluster | Not distinguishable from Search alone; not proven |
 
 These are adapter unit scenarios, not 16 independent test functions; some tests
-prove more than one business outcome. The audit assertion in
-`IT-FLEET-2584-LIVE-003` checks a partial-state event through the service and
-real ACM client with an in-memory emitter, not persistence or a live gateway.
+prove more than one business outcome. A partial-state audit assertion through the service and a real ACM client with an
+in-memory emitter was exercised in the spike worktree and is **not retained on main**;
+the retained adapter specs assert state only. No persistence or live-gateway claim is made.
 `UT-ACM-2593-CONSISTENCY-001`, `UT-ACM-2593-EXACT-002` and the added filter/cursor/audit assertions were
 added after the underlying behavior; no prior RED is claimed for them.
-`IT-AF-2593-PARTIAL-001` exercises the Console HTTP handler, policy service,
-and real ACM adapter against an HTTP Search fixture and verifies that a partial
-response leaks no records. `IT-AF-2593-DENY-001` verifies that capability
-denial prevents the adapter from contacting Search. Both pass; neither is a
-production factory or live-cluster journey, and neither was observed RED.
+`IT-AF-2593-DENY-001` verifies that capability denial prevents the adapter from
+contacting Search and passes. The partial-response Console handler journey was exercised
+in the spike worktree and is **not retained on main**, so no record-leak claim is made for
+it here. Neither is a production factory or live-cluster journey, and neither was observed RED.
 
 The user accepts bounded results and identifies ACM as the authoritative tool
 for deeper inventory browsing; the Console is a convenience query view, not the
 single source of truth. Namespace, resource name and kind filters are now sent
 to the relevant ACM resource queries before the traversal limit is applied;
 `UT-ACM-2593-FILTER-001` was observed RED then GREEN using over 1,000 unrelated
-objects, and `IT-AF-2593-FILTER-001` verifies HTTP-to-adapter filter dispatch
-against a fixture (added after implementation, without a RED observation).
+objects. HTTP-to-adapter filter dispatch has **no retained IT** on main, so it is not
+claimed here (the fixture spec was added after implementation, without a RED observation).
 The managed-namespace discovery query remains independently bounded, so a kind
 or resource-name filter alone does not guarantee success when that query itself
 reaches 1,000 namespaces; a namespace filter narrows discovery. Exact opaque-ID
