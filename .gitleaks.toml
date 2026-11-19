@@ -148,3 +148,15 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''^docs/tests/2502/TEST_PLAN\.md$''']
 regexes = ['''^03ad405812c6f0574da6f89c7e13c063250192db43c517f877b84f3565913a65$''']
+
+# Issue #2670: the gitleaks job scans every branch fetched by
+# actions/checkout (fetch-depth: 0), so a historical commit still reachable from
+# another branch fails every PR run. `pkg/shared/scope/group_2658_test.go` was
+# deleted before it reached main (#2658); the match is a generic-api-key false
+# positive on a table of target-identity strings ("api", "prod", "Pod").
+# Narrower than the allowlist above: only this historical path and only this
+# rule.
+[[allowlists]]
+description = "Deleted #2658 test fixture; generic-api-key false positive on identity strings"
+targetRules = ["generic-api-key"]
+paths = ['''^pkg/shared/scope/group_2658_test\.go$''']
