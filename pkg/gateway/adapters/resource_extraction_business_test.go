@@ -131,7 +131,9 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 
 		It("normalizes a namespace on a cluster-scoped target so the fingerprint is stable (#2670)", func() {
 			// BUSINESS OUTCOME: one Node is remediated once, whichever
-			// namespace its alert carries, and GW/AF agree on the dedup key.
+			// namespace its alert carries. The dedup key no longer depends on
+			// the alert namespace (AF still hashes the namespace it is given;
+			// see docs/UPGRADE.md).
 			const withNamespace = `{
 				"alerts": [{
 					"status": "firing",

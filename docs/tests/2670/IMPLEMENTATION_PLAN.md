@@ -352,8 +352,9 @@ body.
 | 3. ACM lane UT + IT | `pkg/fleet/acm/client_test.go`: rewrite `UT-ACM-2592-002`, add `UT-ACM-2670-001..002`; `test/integration/acm/acm_factory_test.go`: add `IT-ACM-2670-001` | `acm/client.go` §4.3 (phase exits only when both the UTs and `IT-ACM-2670-001` pass) | extract the four terminal guards into `classifyIdentity` (gocyclo 20 → below the 15 threshold), collapse the namespace read into the `!clusterScoped` branch (§4.3 item 5) keeping the level-2 read for namespaced targets |
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
-| 6. Gateway adapters | `pkg/gateway/adapters`: `UT-GW-2670-003` (event adapter) and `UT-GW-2670-004` (classification) | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
-| 7. Docs | — | §8 | N/A |
+| 6. Gateway identity | `pkg/gateway/scope_validation_test.go`: `UT-GW-2670-001/002` | `pkg/gateway/signal_ingestion.go` §4.4 (`scopeTargetNamespace`/`scopeIdentityFor`) | shared helper replaces the inline identity construction; doc comment restored |
+| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: the Prometheus fingerprint spec | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
+| 8. Docs | — | §8 | N/A |
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.
 

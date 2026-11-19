@@ -180,8 +180,10 @@ RESTMapper-based resolver follow-up closes both directions of this ambiguity.
 when the identity has none, so a Kind that is *not* known to be cluster-scoped
 but arrives without a namespace can match a same-named object in any namespace
 and resolve at level 1. The local and fenced lanes return `unavailable` for the
-same identity. The adapters always supply a namespace for unknown kinds, so this
-needs a defective identity to reach.
+same identity. The Prometheus adapter defaults a missing namespace to `default`
+for kinds discovery does not report as cluster-scoped, so it does not produce
+this identity; the Kubernetes-event adapter copies `involvedObject.namespace`
+and never defaults, so only a defective or crafted event reaches it.
 
 **Reads are read-only.** The check performs a metadata-only `Get` on
 `PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an
