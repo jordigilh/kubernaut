@@ -71,6 +71,7 @@ historical mappings in the catalog.
 4. **`orchestrator.lifecycle.started`'s outcome is `pending`, not `success`.** The prior DD-AUDIT-003 baseline implied `success`.
 5. **Dead constant, never emitted**: `EventTypeLifecycleFailed = "orchestrator.lifecycle.failed"` exists in both the Go const block and the OpenAPI enum, but no code path ever sets it — `BuildFailureEvent` uses `EventTypeLifecycleCompleted` (with `outcome=failure`) instead. Only referenced as a negative-check constant in `test/e2e/remediationorchestrator/audit_wiring_e2e_test.go`.
 6. **Minor dead code, out of scope for this catalog**: `ActionFailed` and `ActionUnblocked` (marked "future") constants in `manager.go` are defined but never referenced by any builder; `EventCategoryOrchestration` duplicates `CategoryOrchestration` (same `"orchestration"` value, two names in use across the package and its test/controller callers).
+7. **Ineffective-chain counts are message-only.** `orchestrator.routing.blocked` carries structured `consecutive_failures` for `ConsecutiveFailures`, `ExponentialBackoff`, and scope re-blocks. `IneffectiveChain` still records its computed chain/recurrence count only in `block_message`; adding a structured field would require a separate additive schema decision.
 
 ---
 

@@ -361,6 +361,13 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		payload := latestEvent.EventData.RemediationOrchestratorAuditPayload
 		Expect(payload.RrName).To(Equal(rrName))
 		Expect(payload.EventType).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked))
+		// IT-RO-010-005 / UT-RO-AUDIT-2663-013: the re-block event must audit the
+		// post-increment count that produced the new backoff, not the stale one.
+		Expect(payload.ConsecutiveFailures.IsSet()).To(BeTrue(),
+			"re-block events must carry the failure count that drove the block")
+		Expect(payload.ConsecutiveFailures.Value).To(Equal(
+			fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount),
+			"audit count must match the persisted re-block count")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-005: RR %s re-blocked (failureCount: %d→%d, events: %d)\n",
 			rrName, initialFailureCount, fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount, len(events))
