@@ -355,7 +355,7 @@ body.
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
 | 6. Gateway identity | `pkg/gateway/scope_validation_test.go`: `UT-GW-2670-001/002`; `pkg/gateway/scope_target_namespace_test.go`: `UT-GW-2670-007..009` | `pkg/gateway/signal_ingestion.go` §4.4 (`scopeTargetNamespace`/`scopeIdentityFor`) | shared helper replaces the inline identity construction; doc comment restored |
-| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004..006`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: the Prometheus fingerprint spec | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
+| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004..006`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: `UT-GW-2670-010` (Prometheus fingerprint normalization) | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
 | 8. Docs | — | §8 | N/A |
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.
@@ -397,6 +397,17 @@ with `get/list/watch`, proven by the operator's RBAC test.
 
 `UT-SCOPE-001-013/014/015` stay as-is: they drive `Resolve`, which never had the refusal.
 
+
+### Unit — `pkg/gateway`
+
+| ID | Scenario | Expected |
+|----|----------|----------|
+| UT-GW-2670-001 | Node alert carrying a namespace and a `Resource.Namespace` | scope identity and the created RR target carry no namespace |
+| UT-GW-2670-002 | namespaced Pod with a target namespace distinct from the alert namespace | the target namespace is checked |
+| UT-GW-2670-003 | K8s event for a Node claiming `involvedObject.namespace` | target namespace dropped; fingerprint equals the namespace-free key |
+| UT-GW-2670-004..006 | classification: static map, discovery-extended cluster-scoped CRD, namespaced/unknown fallback | cluster-scoped for the first two, namespaced for the fallback |
+| UT-GW-2670-007..009 | `scopeTargetNamespace`: static kind, discovered CRD, namespaced/unknown fallback | empty for cluster-scoped kinds, target namespace otherwise |
+| UT-GW-2670-010 | Prometheus Node alert with a namespace label | fingerprint equals the namespace-free payload |
 
 ### Unit — `pkg/fleet/scopecache`
 

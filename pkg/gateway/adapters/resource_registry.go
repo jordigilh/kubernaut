@@ -347,7 +347,7 @@ func targetClusterScoped(registry *APIResourceRegistry, kind string) bool {
 }
 
 // IsClusterScopedTarget exposes the classification to the Gateway ingress path so
-// that the scope identity and the adapters' fingerprint normalization use one
+// that the scope identity and the adapters' fingerprint normalization take one
 // answer (#2670).
 func IsClusterScopedTarget(registry *APIResourceRegistry, kind string) bool {
 	return targetClusterScoped(registry, kind)

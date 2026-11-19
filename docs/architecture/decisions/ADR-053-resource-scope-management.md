@@ -168,13 +168,16 @@ cluster-scoped CRD; the Kubernetes-event adapter has no discovery client and
 covers only the static kinds, which is acceptable because events for
 cluster-scoped objects normally carry no namespace.
 
-The residual case is a cluster-scoped CRD the adapter cannot classify (event
-adapter, or discovery unavailable) arriving with a namespace. That identity is
-treated as *namespaced*, which means it can be authorized by that namespace's
-`kubernaut.ai/managed` label at level 2 rather than failing closed. It needs a
-crafted or defective producer to reach — the adapters only keep a namespace for
-kinds they do not positively classify as cluster-scoped, and the same
-RESTMapper-based resolver follow-up closes both directions of this ambiguity.
+The residual case is a cluster-scoped kind that **neither the adapters nor the
+Gateway's discovery snapshot** classifies, arriving with a namespace. That
+identity is treated as *namespaced* and can be authorized by that namespace's
+`kubernaut.ai/managed` label at level 2 rather than failing closed. When discovery
+does know the kind, the Gate normalizes it to level 1 regardless of the adapter,
+so the only remaining divergence there is the dedup key: the Kubernetes-event
+adapter has no discovery client and keeps the claimed namespace in the hash,
+while the RR target and the scope identity carry none. That can produce two RRs
+for one cluster-scoped CRD (BR-GATEWAY-004), and the same RESTMapper-based
+resolver follow-up closes both directions of the ambiguity.
 
 **Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
 when the identity has none, but `searchScopeItem` re-verifies the returned item
