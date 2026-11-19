@@ -7,7 +7,7 @@
 **Version**: 1.9
 **Created**: 2026-11-01
 **Author**: Kubernaut Team
-**Status**: Implementation landed via #2604; scoped AF validation passed with one declared P0 row PARTIAL (§5.5); cross-repository qualification pending
+**Status**: Implementation landed via #2604; scoped AF validation passed with two declared P0 cases PARTIAL (§5.5); cross-repository qualification pending
 **Branch**: `work/2584-policyread` (evidence correction; implementation originally landed via #2604)
 
 > Production code and tests are present on this branch. Authorization, historical-source,
@@ -230,10 +230,16 @@ contains only the state, status, request ID, and a safe generic message.
 **FAIL** is any P0 failure, any cross-scope or sensitive-data leak, any partial/stale
 response containing records, any unapproved contract deviation, or any A2A/MCP regression.
 
-> **Declared P0 gap (2026-11-18).** `IT-AF-2584-006` is PARTIAL, and it is one of the four
-> `**Priority**: P0` test cases in §9, so the 100% P0 gate above is **NOT met** by this evidence
-> set. The unproven sub-cases are ConfigMap permission denial, unavailable source, and incomplete
-> join. This is recorded, not waived, and no release claim rests on this plan; the implementation
+> **Declared P0 gap (2026-11-18).** Two of the four `**Priority**: P0` cases in §9 are PARTIAL,
+> so the 100% P0 gate above is **NOT met** by this evidence set:
+>
+> - `IT-AF-2584-006` — unproven sub-cases: ConfigMap permission denial, unavailable source,
+>   incomplete join.
+> - `IT-AF-2584-009` — unproven sub-case: service-account parity on the A2A/MCP paths (the
+>   proving spec covers route mounting and middleware enforcement, and the Console routes
+>   *reject* service accounts, which is the opposite assertion).
+>
+> This is recorded, not waived, and no release claim rests on this plan; the implementation
 > itself landed via #2604.
 
 ### 5.6 Suspension and Resumption
@@ -344,7 +350,7 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 | `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable (`IT-AF-2584-006`), missing/invalid ConfigMap references (`UT-AF-2584-001`, `UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: ConfigMap permission denial, unavailable source, incomplete join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
 | `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
-| `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PASS** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers), and a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware. Not proven by this branch: verified service-account parity on the A2A/MCP paths — `IT-AF-2584-004` proves the Console routes *reject* service accounts, which is the opposite assertion |
+| `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PARTIAL** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers), and a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware. Not proven by this branch: verified service-account parity on the A2A/MCP paths — `IT-AF-2584-004` proves the Console routes *reject* service accounts, which is the opposite assertion |
 | `IT-AF-2584-010` | Every authenticated read outcome carries correct actor type/ID, action, outcome/state, request ID, and correlation through the typed DataStorage audit union | **PASS** — `IT-AF-2584-010` (handler read through the DataStorage adapter) plus `IT-AF-2584-012`, `IT-AF-2584-AUDIT-001`, and `IT-AF-2584-AUDIT-002` |
 | `IT-AF-2584-011` | The Console read success pages and the problem envelope validate against the committed schema, and undocumented fields are rejected in both | **PASS** — `IT-AF-2584-011` validates the served inventory page, policy-scope page, and problem+json envelope against the committed schema; rejects an undocumented field in both `ManagedResourcePage` and `ProblemDetail`; and asserts the concrete problem members. `ProblemDetail` declares `required: [type, title, status]`, `additionalProperties: false`, and the `request_id` extension member (RFC 9457 §3.2); the 401, 429, 501 and 503 emitters are each validated against it. It does not assert unversioned-path rejection, and the live-server 401/429 paths are covered at the emitter, not the router, level. |
 | `IT-AF-2584-012` | **First RED gate:** a live DataStorage audit write is queryable by correlation/request ID, preserves required actor/action/outcome fields, excludes sensitive payloads, and makes persistence failure observable | **PASS** — live DataStorage integration evidence |
@@ -401,13 +407,16 @@ does not inherit the namespace label. Re-run with resource label absent and asse
 
 **Given** a real router, verified user identity, one allowed resource, one denied
 resource, and SAR reactions for capability and target checks.
-**When** the caller requests the denied resource, a non-local cluster, and a guessed
-opaque ID.
-**Then** the server returns the documented forbidden / unavailable / not-found state
-without `items`, `total`, `nextCursor`, resource labels, policy names, or provenance, and
-does not consult the local reader for a remote cluster. Existing allowed reads remain
-available to the same user. Cross-namespace authorization is not exercised end-to-end
-here; namespace narrowing is applied by the local reader.
+**When** the caller requests the denied resource with and without the endpoint
+capability.
+**Then** the server returns the documented state-only 403 (capability denied) or 404
+(exact target denied) without `items`, `total`, `nextCursor`, resource labels, policy
+names, or provenance, and does not consult the inventory reader for a capability denial.
+Existing allowed reads remain available to the same user.
+
+The non-local refusal and guessed-opaque-ID probes belong to `IT-AF-2584-005` (§8.2);
+cross-namespace authorization is not exercised end-to-end, because namespace narrowing is
+applied by the local reader.
 
 ### IT-AF-2584-006: Fail-closed source states
 
@@ -539,7 +548,7 @@ unit-only handler calls.
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | Paginated identity projection | IT-AF-2584-002/007 | **PASS** |
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
-| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007, UT-AF-2584-003/004 | **PASS** |
+| Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** |
 | Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-003 | **PASS** — the failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
 | ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | UT-ACM-2593-IDENTITY-001, UT-ACM-2593-UNION-001, IT-AF-2584-008 | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
