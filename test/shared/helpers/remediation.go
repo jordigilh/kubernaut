@@ -37,19 +37,35 @@ import (
 // inheritance, and unmanaged fixtures keep the verified-unmanaged outcome
 // (including the kubectl-label remediation message).
 //
-// Supported kinds: Pod, Deployment. Other kinds fall back to creating the RR
-// unchanged (their fixtures keep their own setup responsibility).
+// Supported target kinds: Pod and Deployment. A namespaced target of any other
+// kind FAILS LOUDLY (#2660 n4) instead of silently skipping the fixture, so a
+// test can never pass while checking a resource that was never created.
+// Cluster-scoped targets (empty namespace) keep their existing setup
+// responsibility and are a no-op here.
 func CreateRemediationRequestWithTarget(ctx context.Context, k8sClient client.Client, rr *remediationv1.RemediationRequest) {
-	target := rr.Spec.TargetResource
-	if target.Namespace != "" && target.Name != "" {
-		switch target.Kind {
-		case "Pod":
-			EnsureTestPod(ctx, k8sClient, target.Namespace, target.Name)
-		case fixtureKindDeployment:
-			EnsureTestDeployment(ctx, k8sClient, target.Namespace, target.Name)
-		}
-	}
+	ExpectWithOffset(1, ensureTargetFixture(ctx, k8sClient, rr.Spec.TargetResource)).To(Succeed())
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+}
+
+// ensureTargetFixture creates the target object for a supported, namespaced
+// fixture target. It returns a descriptive error for an unsupported kind.
+func ensureTargetFixture(ctx context.Context, k8sClient client.Client, target remediationv1.ResourceIdentifier) error {
+	if target.Namespace == "" || target.Name == "" {
+		// Cluster-scoped (or incomplete) targets are the fixture's own
+		// responsibility; creating them here is not supported.
+		return nil
+	}
+	switch target.Kind {
+	case "Pod":
+		EnsureTestPod(ctx, k8sClient, target.Namespace, target.Name)
+		return nil
+	case fixtureKindDeployment:
+		EnsureTestDeployment(ctx, k8sClient, target.Namespace, target.Name)
+		return nil
+	default:
+		return fmt.Errorf("ensure target fixture: unsupported kind %q for %s/%s (supported: Pod, Deployment)",
+			target.Kind, target.Namespace, target.Name)
+	}
 }
 
 // RemediationRequestOpts provides optional overrides for test data

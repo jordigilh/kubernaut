@@ -87,9 +87,8 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 		fmcServer = httptest.NewServer(mux)
 
 		By("Creating FederatedScopeChecker backed by real FMC + real scope.Manager")
-		localChecker := scope.NewManager(k8sClient)
 		remoteChecker := fmc.NewHTTPClient(fmcServer.URL)
-		federatedChecker := fleet.NewFederatedScopeChecker(localChecker, remoteChecker, testLogger)
+		federatedChecker := fleet.NewFederatedScopeChecker(remoteChecker, testLogger)
 
 		By("Creating Gateway server with real federated scope checker")
 		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))

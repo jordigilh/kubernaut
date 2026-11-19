@@ -137,9 +137,8 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		fmcServer = httptest.NewServer(mux)
 
 		By("Creating FederatedScopeChecker backed by real FMC")
-		localChecker := scope.NewManager(k8sClient)
 		remoteChecker := fmc.NewHTTPClient(fmcServer.URL)
-		federatedChecker := fleet.NewFederatedScopeChecker(localChecker, remoteChecker, testLogger)
+		federatedChecker := fleet.NewFederatedScopeChecker(remoteChecker, testLogger)
 
 		By("Creating Gateway server with federated scope checker")
 		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))

@@ -153,10 +153,10 @@ func (w *EAIGWRegistry) WithCurrent(ctx context.Context, clusterID, registration
 	}
 	info, ok := w.clusters[clusterID]
 	if !ok {
-		return fmt.Errorf("cluster %q is not registered", clusterID)
+		return fmt.Errorf("%w: cluster %q is not registered", ErrRegistrationChanged, clusterID)
 	}
 	if info.RegistrationUID != registrationUID || w.registrationRevisions[clusterID] != expectedRevision {
-		return fmt.Errorf("cluster %q registration changed", clusterID)
+		return fmt.Errorf("%w: cluster %q registration changed", ErrRegistrationChanged, clusterID)
 	}
 	return callback(info)
 }
@@ -218,11 +218,17 @@ func (w *EAIGWRegistry) onAdd(obj interface{}) {
 		return
 	}
 
-	changed, existed, count := addCluster(info, &w.mu, &w.clusters, w.registrationRevisions, &w.revision, &w.stopped)
-	if !changed {
+	added := addCluster(registryState{
+		mu:         &w.mu,
+		clusters:   &w.clusters,
+		revisions:  w.registrationRevisions,
+		generation: &w.revision,
+		stopped:    &w.stopped,
+	}, info)
+	if !added.Changed {
 		return
 	}
-	emitAddedCluster(info, existed, count, w.metrics, w.emit)
+	emitAddedCluster(info, added.Existed, added.Count, w.metrics, w.emit)
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
 }
 

@@ -168,12 +168,24 @@ var _ = Describe("Fingerprint Group Dimension E2E (#2650, BR-GATEWAY-004)", Orde
 			}, 60*time.Second, time.Second).Should(BeTrue(), "CRD routes."+group+" should become Established")
 
 			// Create the standalone Route CR (no ownerReferences): same name in
-			// both groups, in the managed test namespace.
+			// both groups, in the managed test namespace. CRD Established=True
+			// does not guarantee the group's discovery doc already lists the
+			// resource; a single-shot Create loses that registration->
+			// publication race under parallel apiserver load (CI run
+			// 44405980155: NoKindMatchError 0.6s after Established, where
+			// passing runs took 7-8s of incidental setup delay). Each retry
+			// re-triggers the dynamic mapper's discovery reload.
 			route := &unstructured.Unstructured{}
 			route.SetGroupVersionKind(schema.GroupVersionKind{Group: group, Version: "v1", Kind: "Route"})
 			route.SetName("shared-route")
 			route.SetNamespace(testNamespace)
-			Expect(crdClient.Create(ctx, route)).To(Succeed(), "creating Route CR in group "+group)
+			Eventually(func() error {
+				err := crdClient.Create(ctx, route)
+				if apierrors.IsAlreadyExists(err) {
+					return nil
+				}
+				return err
+			}, 60*time.Second, time.Second).Should(Succeed(), "creating Route CR in group "+group)
 		}
 	})
 

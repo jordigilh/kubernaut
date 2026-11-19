@@ -150,6 +150,9 @@ type CycleStore interface {
 // read methods intentionally use request/result types so token, revision, full
 // fence, generation, and TTL proof cannot be dropped at a call site.
 type StatusStore interface {
+	// BeginRepair returns a zero RepairStartResult on every error path (no
+	// token is issued for a failed begin). The syncer's begin-lane failure
+	// classification relies on this: a begin error never carries a start.
 	BeginRepair(context.Context, BeginRepairRequest) (RepairStartResult, error)
 	MarkRepairUncertain(context.Context, RepairStartResult, RepairFailure) error
 	AbandonStaging(ctx context.Context, partition PartitionStateKey, registrationUID string, revision uint64, fence WriterFence) error

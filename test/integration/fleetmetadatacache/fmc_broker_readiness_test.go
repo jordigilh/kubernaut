@@ -15,7 +15,10 @@ package fleetmetadatacache_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -451,6 +455,78 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(err).To(MatchError("scopecache: fenced-read proof changed"))
 		Expect(result.State).To(Equal(scope.ScopeUnavailable))
 		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+	})
+
+	It("IT-FMC-STAGED-001 [BR-SCOPE-001, #2660 m2]: a stranded staging expires on the real server and the next cycle reclaims it", func() {
+		available.Store(true)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+		// A clean committed cycle first so the post-recovery read has a
+		// committed proof to return to.
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+
+		// Strand a staging: begin a repair with the writer fence the syncer
+		// already holds (readiness publishes it) that never reconciles or
+		// commits. The fence stays valid for the follow-up production cycle.
+		fence := readiness.View().Global.Lease.WriterFence
+		snapshot, found := clusterReg.Snapshot(cluster)
+		Expect(found).To(BeTrue())
+		partition := scopecache.PartitionStateKey{ClusterID: cluster, RegistrationUID: info.RegistrationUID}
+		start, err := store.BeginRepair(ctx, scopecache.BeginRepairRequest{
+			Partition:                partition,
+			RegistrationUID:          info.RegistrationUID,
+			ExpectedRegistryRevision: snapshot.Revision,
+			WriterFence:              fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// On a real TTL-honoring server the staged status expires after its
+		// 15s TTL; nothing may keep it alive (no reconcile runs). This is the
+		// real-server counterpart of UT-FMC-STAGED-011, which can only reach
+		// the past-cap guard on a non-evicting miniredis clock.
+		stagedDigest := sha256.Sum256([]byte(cluster + "\x00" + info.RegistrationUID))
+		stagedKey := "kubernaut:fmc:v2:" + hex.EncodeToString(stagedDigest[:]) + ":status:staged"
+		poller := redis.NewClient(&redis.Options{Addr: proxy.Addr()})
+		DeferCleanup(func() { _ = poller.Close() })
+		Eventually(func() bool {
+			exists, err := poller.Exists(ctx, stagedKey).Result()
+			return err == nil && exists == 0
+		}, 25*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"the stranded staging must expire on the real server")
+
+		// A compliant server reports the expired staging as a stale fence
+		// (the fence check reads the gone key before any cap logic), and the
+		// failure is typed — the writer must begin a new repair.
+		identity := scopecache.ResourceIdentity{
+			ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed",
+		}
+		_, err = store.Repair(ctx, scopecache.RepairRequest{
+			Partition:                partition,
+			RegistrationUID:          info.RegistrationUID,
+			ExpectedRegistryRevision: snapshot.Revision,
+			WriterFence:              fence,
+			Generation:               start.Generation,
+			Token:                    start.Token,
+			Observations: scopecache.ValidatedObservationSet{
+				Items: []scopecache.RepairObservation{{
+					Identity: identity, APIVersion: "v1", LabelsPresent: true,
+					LabelState: "true", TTL: 30 * time.Second,
+				}},
+				Complete: true, PageCount: 1, ItemCount: 1,
+			},
+		})
+		Expect(err).To(HaveOccurred(), "a repair against the expired staging must fail closed")
+		var failure scopecache.RepairFailureError
+		Expect(errors.As(err, &failure)).To(BeTrue(), "the failure must be typed, got: %v", err)
+		Expect(failure.Failure.Code).To(Equal(scopecache.RepairFailureStaleFence),
+			"a compliant server reports the expired staging as a stale fence")
+
+		// Self-heal: the next production cycle reclaims the expired staging
+		// (a fresh begin) and publishes a clean proof readers can use.
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		result, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
 	})
 
 	It("IT-FMC-REVIEW-RETIRE-001 [BR-SCOPE-001]: Run reconciles a failed retired partition without a delivered deletion event", func() {

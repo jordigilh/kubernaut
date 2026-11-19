@@ -771,6 +771,9 @@ precondition** to the scope check pipeline:
 3. Namespace managed? (implicit in resource scope check)
 ```
 
+> **Superseded (#2662):** the `IsManagedResource` boolean lanes are deleted; the typed `Check`/`Resolve` contracts carry this hierarchy.
+
+
 The `ClusterLookup` interface is injected via `WithClusterLookup` option on
 `NewFederatedScopeChecker`. The production implementation uses
 `BackendInformerRegistry` (watching Backend CRDs with `kubernaut.ai/managed` label)

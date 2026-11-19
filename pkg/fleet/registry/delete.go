@@ -45,7 +45,8 @@ func handleDeletedCluster(
 	if existed {
 		delete(revisions, id)
 	}
-	*revision++
+	nextRevision := *revision + 1
+	*revision = nextRevision
 	clusterCount := len(clusters)
 	mu.Unlock()
 

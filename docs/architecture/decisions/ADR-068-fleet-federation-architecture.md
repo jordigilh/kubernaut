@@ -82,8 +82,10 @@ on the GroupVersionKinds their adapters can legitimately emit. Kinds outside
 the granted surface fail closed with an infrastructure error (informer/RBAC
 failure), which is observable and never silently widens scope.
 
-**Legacy boolean lane (scopecache)**: the additive typed contract is not yet
-consumed by Gateway/RO, which still use the boolean `IsManagedResource` seam.
+**Legacy boolean lane (scopecache)**: ~~the additive typed contract is not yet
+consumed by Gateway/RO, which still use the boolean `IsManagedResource` seam.~~
+*(Superseded by #2660: both `IsManagedResource` boolean lanes are deleted;
+`Check` returning the typed `ScopeResult` is the only contract.)*
 The Valkey scopecache lane's semantics differ from ACM Search by design: the
 FMC syncer writes only label-matching resources, so a cache **miss** resolves
 to verified-unmanaged within sync freshness, and `legacyScopeResult` marks that
