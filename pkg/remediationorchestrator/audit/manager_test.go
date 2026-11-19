@@ -1006,6 +1006,120 @@ var _ = Describe("Audit Manager", func() {
 				},
 			),
 		)
+
+		// UT-RO-AUDIT-2663-001 proves the complete routing-blocked payload is
+		// reconstructable from the persisted event alone (AUDIT_EVENT_CATALOG
+		// Known Gap #4). BR-AUDIT-005 reconstruction, SOC2 CC7.2 monitoring,
+		// FedRAMP AU-3 audit-record content, OWASP ASVS 7.1.2 structured records.
+		It("UT-RO-AUDIT-2663-001: preserves the complete RoutingBlockedData payload [BR-AUDIT-005, SOC2 CC7.2, FedRAMP AU-3, OWASP ASVS 7.1.2]", func() {
+			blockedUntil := "2026-11-12T10:11:12Z"
+			blockData := &prodaudit.RoutingBlockedData{
+				BlockReason:         "CooldownActive",
+				BlockMessage:        "cooldown is active",
+				FromPhase:           "Analyzing",
+				ToPhase:             "Blocked",
+				WorkflowID:          "workflow-1",
+				TargetResource:      "payments/Deployment/api",
+				RequeueAfterSeconds: 30,
+				BlockedUntil:        &blockedUntil,
+				BlockingWFE:         "wfe-1",
+				DuplicateOf:         "rr-original",
+				ConsecutiveFailures: 2,
+				BackoffSeconds:      15,
+				RecentWFE:           "wfe-0",
+			}
+
+			event, err := manager.BuildRoutingBlockedEvent("corr-routing-full", "production", "rr-blocked-001", "cluster-a", "Pending", blockData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue(), "event_data must carry the typed routing-blocked payload")
+
+			Expect(payload.FromPhase.Value).To(Equal("Analyzing"),
+				"blockData.FromPhase must win over the legacy fromPhase parameter")
+			Expect(payload.ToPhase.Value).To(Equal("Blocked"))
+			Expect(payload.BlockReason.Value).To(Equal("CooldownActive"))
+			Expect(payload.BlockMessage.Value).To(Equal("cooldown is active"))
+			Expect(payload.WorkflowID.Value).To(Equal("workflow-1"))
+			Expect(payload.TargetResource.Value).To(Equal("payments/Deployment/api"))
+			Expect(payload.RequeueAfterSeconds.Value).To(Equal(30))
+			Expect(payload.BlockedUntil.Value.Format(time.RFC3339)).To(Equal(blockedUntil))
+			Expect(payload.BlockingWfe.Value).To(Equal("wfe-1"))
+			Expect(payload.DuplicateOf.Value).To(Equal("rr-original"))
+			Expect(payload.ConsecutiveFailures.Value).To(Equal(int32(2)))
+			Expect(payload.BackoffSeconds.Value).To(Equal(15))
+			Expect(payload.RecentWfe.Value).To(Equal("wfe-0"))
+		})
+
+		// UT-RO-AUDIT-2663-002: a nil payload must fail closed rather than
+		// persist an event that cannot support AU-3 reconstruction.
+		It("UT-RO-AUDIT-2663-002: rejects nil block data [BR-AUDIT-005, FedRAMP AU-3]", func() {
+			event, err := manager.BuildRoutingBlockedEvent("corr-routing-nil", "production", "rr-blocked-002", "", "Pending", nil)
+			Expect(err).To(HaveOccurred())
+			Expect(event).To(BeNil())
+		})
+
+		// UT-RO-AUDIT-2663-003: an unparseable deadline is an integrity error,
+		// never a silently dropped AU-3 field.
+		It("UT-RO-AUDIT-2663-003: rejects malformed blocked_until [BR-AUDIT-005, SOC2 CC7.2, FedRAMP AU-3]", func() {
+			blockedUntil := "not-a-timestamp"
+			blockData := &prodaudit.RoutingBlockedData{
+				BlockReason:  "ExponentialBackoff",
+				BlockMessage: "backoff active",
+				FromPhase:    "Pending",
+				ToPhase:      "Blocked",
+				BlockedUntil: &blockedUntil,
+			}
+
+			event, err := manager.BuildRoutingBlockedEvent("corr-routing-bad-time", "production", "rr-blocked-003", "", "Pending", blockData)
+			Expect(err).To(HaveOccurred())
+			Expect(event).To(BeNil())
+		})
+
+		// UT-RO-AUDIT-2663-005: absent optional evidence stays absent rather
+		// than being persisted as an empty value (AU-3 content accuracy).
+		It("UT-RO-AUDIT-2663-005: omits optional routing fields that are not applicable [BR-AUDIT-005, FedRAMP AU-3]", func() {
+			blockData := &prodaudit.RoutingBlockedData{
+				BlockReason:         "UnmanagedResource",
+				BlockMessage:        "resource is outside Kubernaut scope",
+				FromPhase:           "Pending",
+				ToPhase:             "Blocked",
+				TargetResource:      "payments/Pod/api",
+				RequeueAfterSeconds: 5,
+			}
+
+			event, err := manager.BuildRoutingBlockedEvent("corr-routing-optional", "production", "rr-blocked-005", "", "Pending", blockData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.WorkflowID.IsSet()).To(BeFalse(), "workflow_id is not applicable to a scope block")
+			Expect(payload.BlockingWfe.IsSet()).To(BeFalse())
+			Expect(payload.DuplicateOf.IsSet()).To(BeFalse())
+			Expect(payload.RecentWfe.IsSet()).To(BeFalse())
+			Expect(payload.BlockedUntil.IsSet()).To(BeFalse())
+			Expect(payload.ConsecutiveFailures.IsSet()).To(BeFalse(),
+				"a zero count means not applicable, so it must not be persisted")
+			Expect(payload.BlockReason.Value).To(Equal("UnmanagedResource"))
+			Expect(payload.TargetResource.Value).To(Equal("payments/Pod/api"))
+		})
+
+		// UT-RO-AUDIT-2663-004: legacy callers that only supply fromPhase still
+		// produce a complete transition record (backward-compatible wiring).
+		It("UT-RO-AUDIT-2663-004: falls back to the fromPhase argument when block data omits it [BR-AUDIT-005, FedRAMP AU-3]", func() {
+			blockData := &prodaudit.RoutingBlockedData{
+				BlockReason:  "ResourceBusy",
+				BlockMessage: "resource busy",
+				ToPhase:      "Blocked",
+			}
+
+			event, err := manager.BuildRoutingBlockedEvent("corr-routing-fallback", "production", "rr-blocked-004", "", "Analyzing", blockData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.FromPhase.Value).To(Equal("Analyzing"))
+		})
 	})
 
 	// ========================================

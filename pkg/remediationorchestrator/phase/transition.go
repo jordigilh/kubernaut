@@ -94,6 +94,11 @@ type BlockMeta struct {
 	DuplicateOf               string
 	FromPhase                 Phase
 	WorkflowID                string
+	// BR-AUDIT-005: routing decision evidence carried through the handler
+	// boundary so the emitted event describes the block that actually happened.
+	TargetResource      string
+	ConsecutiveFailures int32
+	RecentWFE           string
 }
 
 // TransitionIntent captures the full outcome intent of a phase handler.

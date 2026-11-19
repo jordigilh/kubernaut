@@ -109,9 +109,16 @@ func setupScheme() *runtime.Scheme {
 //
 // Issue #1674: Check* methods return routing.ErrNotBlocked (not a bare nil
 // error) to match the production RoutingEngine's sentinel-error contract.
-type MockRoutingEngine struct{}
+type MockRoutingEngine struct {
+	// PreAnalysisBlock lets a test drive the Pending handler through the real
+	// blocking transition path; nil keeps the default "not blocked" behavior.
+	PreAnalysisBlock *routing.BlockingCondition
+}
 
 func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
+	if m.PreAnalysisBlock != nil {
+		return m.PreAnalysisBlock, nil
+	}
 	return nil, routing.ErrNotBlocked // Always return not blocked for unit tests
 }
 

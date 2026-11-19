@@ -2951,6 +2951,42 @@ components:
           type: string
           description: Reason for the transition
 
+        # Routing blocked fields (orchestrator.routing.blocked, DD-RO-002)
+        # Closes AUDIT_EVENT_CATALOG Known Gap #4: BR-AUDIT-005 reconstruction,
+        # SOC2 CC7.2 monitoring, FedRAMP AU-3 audit-record content.
+        block_reason:
+          type: string
+          description: Stable routing-engine blocking condition
+        block_message:
+          type: string
+          description: Human-readable routing blocking explanation
+        requeue_after_seconds:
+          type: integer
+          minimum: 0
+          description: Requested controller requeue delay in seconds
+        blocked_until:
+          type: string
+          format: date-time
+          description: RFC3339 time until which routing remains blocked
+        blocking_wfe:
+          type: string
+          description: WorkflowExecution that currently blocks routing
+        duplicate_of:
+          type: string
+          description: RemediationRequest or workflow that caused duplicate suppression
+        consecutive_failures:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Consecutive routing failures recorded on the RemediationRequest
+        backoff_seconds:
+          type: integer
+          minimum: 0
+          description: Calculated routing backoff in seconds
+        recent_wfe:
+          type: string
+          description: Most recent WorkflowExecution considered by routing
+
         # Approval Fields (conditional)
         parameter_evidence:
           type: string

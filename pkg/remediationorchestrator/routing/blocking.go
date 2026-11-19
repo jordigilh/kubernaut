@@ -497,11 +497,13 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 	blockedUntil := time.Now().Add(cooldownDuration)
 
 	return &BlockingCondition{
-		Blocked:      true,
-		Reason:       string(remediationv1.BlockReasonConsecutiveFailures),
-		Message:      fmt.Sprintf("%d consecutive failures. Cooldown expires: %s", consecutiveFailures, blockedUntil.Format(time.RFC3339)),
-		RequeueAfter: cooldownDuration,
-		BlockedUntil: &blockedUntil,
+		Blocked:             true,
+		Reason:              string(remediationv1.BlockReasonConsecutiveFailures),
+		Message:             fmt.Sprintf("%d consecutive failures. Cooldown expires: %s", consecutiveFailures, blockedUntil.Format(time.RFC3339)),
+		RequeueAfter:        cooldownDuration,
+		BlockedUntil:        &blockedUntil,
+		TargetResource:      rr.Spec.TargetResource.String(),
+		ConsecutiveFailures: int32(consecutiveFailures),
 	}
 }
 
@@ -550,11 +552,12 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 
 	// This is a duplicate - block it
 	return &BlockingCondition{
-		Blocked:      true,
-		Reason:       string(remediationv1.BlockReasonDuplicateInProgress),
-		Message:      fmt.Sprintf("Duplicate of active remediation %s. Will inherit outcome when original completes.", originalRR.Name),
-		RequeueAfter: 30 * time.Second,
-		DuplicateOf:  originalRR.Name,
+		Blocked:        true,
+		Reason:         string(remediationv1.BlockReasonDuplicateInProgress),
+		Message:        fmt.Sprintf("Duplicate of active remediation %s. Will inherit outcome when original completes.", originalRR.Name),
+		RequeueAfter:   30 * time.Second,
+		DuplicateOf:    originalRR.Name,
+		TargetResource: rr.Spec.TargetResource.String(),
 	}, nil
 }
 
@@ -605,6 +608,7 @@ func (r *RoutingEngine) CheckResourceBusy(
 		Message:                   fmt.Sprintf("Another workflow (%s) is running on the same target resource. Waiting for completion.", activeWFE.Name),
 		RequeueAfter:              30 * time.Second,
 		BlockingWorkflowExecution: activeWFE.Name,
+		TargetResource:            targetResourceStr,
 	}, nil
 }
 
@@ -666,11 +670,13 @@ func (r *RoutingEngine) checkRecentlyRemediated(
 	blockedUntil := time.Now().Add(remainingCooldown)
 
 	return &BlockingCondition{
-		Blocked:      true,
-		Reason:       string(remediationv1.BlockReasonRecentlyRemediated),
-		Message:      fmt.Sprintf("Target was remediated recently (%s). Cooldown expires: %s", recentWFE.Name, blockedUntil.Format(time.RFC3339)),
-		RequeueAfter: remainingCooldown,
-		BlockedUntil: &blockedUntil,
+		Blocked:        true,
+		Reason:         string(remediationv1.BlockReasonRecentlyRemediated),
+		Message:        fmt.Sprintf("Target was remediated recently (%s). Cooldown expires: %s", recentWFE.Name, blockedUntil.Format(time.RFC3339)),
+		RequeueAfter:   remainingCooldown,
+		BlockedUntil:   &blockedUntil,
+		TargetResource: targetResourceStr,
+		RecentWFE:      recentWFE.Name,
 	}, nil
 }
 
@@ -730,11 +736,13 @@ func (r *RoutingEngine) CheckExponentialBackoff(
 		"consecutiveFailures", rr.Status.GetRoutingStatus().ConsecutiveFailureCount)
 
 	return &BlockingCondition{
-		Blocked:      true,
-		Reason:       string(remediationv1.BlockReasonExponentialBackoff),
-		Message:      fmt.Sprintf("Exponential backoff active. Next execution allowed at %s (in %s)", nextAllowed.Format(time.RFC3339), requeueAfter.Round(time.Second)),
-		RequeueAfter: requeueAfter,
-		BlockedUntil: &nextAllowed,
+		Blocked:             true,
+		Reason:              string(remediationv1.BlockReasonExponentialBackoff),
+		Message:             fmt.Sprintf("Exponential backoff active. Next execution allowed at %s (in %s)", nextAllowed.Format(time.RFC3339), requeueAfter.Round(time.Second)),
+		RequeueAfter:        requeueAfter,
+		BlockedUntil:        &nextAllowed,
+		TargetResource:      rr.Spec.TargetResource.String(),
+		ConsecutiveFailures: rr.Status.GetRoutingStatus().ConsecutiveFailureCount,
 	}
 }
 
@@ -776,17 +784,12 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 				"namespace", rr.Spec.TargetResource.Namespace,
 				"kind", rr.Spec.TargetResource.Kind,
 				"name", rr.Spec.TargetResource.Name)
-			return &BlockingCondition{
-				Blocked: true,
-				Reason:  string(remediationv1.BlockReasonUnmanagedResource),
-				Message: fmt.Sprintf("Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
+			return unmanagedBlockCondition(rr, fmt.Sprintf(
+				"Target resource identity for %s/%s/%s (cluster=%s) is missing or invalid: %v. "+
 					"The RemediationRequest must carry spec.targetResource.apiVersion (e.g. \"apps/v1\"); "+
 					"it cannot be scope-checked or remediated until corrected.",
-					rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
-					rr.Spec.TargetResource.Name, clusterCtx, err),
-				RequeueAfter: backoffDuration,
-				BlockedUntil: &blockedUntil,
-			}
+				rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+				rr.Spec.TargetResource.Name, clusterCtx, err), backoffDuration, blockedUntil)
 		}
 
 		logger.Error(err, "Scope validation failed — blocking RR (fail-closed)",
@@ -795,16 +798,11 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
 
-		return &BlockingCondition{
-			Blocked: true,
-			Reason:  string(remediationv1.BlockReasonUnmanagedResource),
-			Message: fmt.Sprintf("Scope validation error for %s/%s/%s (cluster=%s): %v. "+
+		return unmanagedBlockCondition(rr, fmt.Sprintf(
+			"Scope validation error for %s/%s/%s (cluster=%s): %v. "+
 				"Blocking until scope infrastructure recovers.",
-				rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
-				rr.Spec.TargetResource.Name, clusterCtx, err),
-			RequeueAfter: backoffDuration,
-			BlockedUntil: &blockedUntil,
-		}
+			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+			rr.Spec.TargetResource.Name, clusterCtx, err), backoffDuration, blockedUntil)
 	}
 
 	if managed {
@@ -823,15 +821,30 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		"backoff", backoffDuration,
 		"blockedUntil", blockedUntil.Format(time.RFC3339))
 
-	return &BlockingCondition{
-		Blocked: true,
-		Reason:  string(remediationv1.BlockReasonUnmanagedResource),
-		Message: fmt.Sprintf("Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
+	return unmanagedBlockCondition(rr, fmt.Sprintf(
+		"Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
 			"Add label kubernaut.ai/managed=true to namespace or resource.",
-			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
-			rr.Spec.TargetResource.Name, clusterCtx),
-		RequeueAfter: backoffDuration,
-		BlockedUntil: &blockedUntil,
+		rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+		rr.Spec.TargetResource.Name, clusterCtx), backoffDuration, blockedUntil)
+}
+
+// unmanagedBlockCondition builds the scope-block decision shared by the three
+// CheckUnmanagedResource outcomes. Keeping the audit-relevant target in one
+// place prevents one branch from drifting out of BR-AUDIT-005 attribution.
+func unmanagedBlockCondition(
+	rr *remediationv1.RemediationRequest,
+	message string,
+	backoff time.Duration,
+	blockedUntil time.Time,
+) *BlockingCondition {
+	return &BlockingCondition{
+		Blocked:             true,
+		Reason:              string(remediationv1.BlockReasonUnmanagedResource),
+		Message:             message,
+		RequeueAfter:        backoff,
+		BlockedUntil:        &blockedUntil,
+		TargetResource:      rr.Spec.TargetResource.String(),
+		ConsecutiveFailures: rr.Status.GetRoutingStatus().ConsecutiveFailureCount,
 	}
 }
 
@@ -1252,7 +1265,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 		logger.Info("Ineffective remediation chain detected (Layer 1+2)",
 			"chainCount", chainCount,
 			"threshold", r.config.IneffectiveChainThreshold)
-		return r.buildIneffectiveBlockCondition(chainCount, "hash chain match")
+		return r.buildIneffectiveBlockCondition(target, chainCount, "hash chain match")
 	}
 
 	// Layer 1b: Forward hash chain -- spec changes each cycle but signal recurs (Issue #525)
@@ -1266,7 +1279,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 			"forwardCount", forwardCount,
 			"threshold", forwardThreshold,
 			"actionType", actionType)
-		return r.buildIneffectiveBlockCondition(forwardCount, "forward hash chain")
+		return r.buildIneffectiveBlockCondition(target, forwardCount, "forward hash chain")
 	}
 
 	// Layer 3: Safety net -- count total entries within time window
@@ -1275,7 +1288,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 		logger.Info("Ineffective remediation chain detected (Layer 3 safety net)",
 			"recentCount", recentCount,
 			"threshold", r.config.RecurrenceCountThreshold)
-		return r.buildIneffectiveBlockCondition(recentCount, "recurrence count safety net")
+		return r.buildIneffectiveBlockCondition(target, recentCount, "recurrence count safety net")
 	}
 
 	return nil
@@ -1403,13 +1416,14 @@ func isIneffectiveEntry(entry ogenclient.RemediationHistoryEntry, compareHash st
 	return false
 }
 
-func (r *RoutingEngine) buildIneffectiveBlockCondition(count int, detection string) *BlockingCondition {
+func (r *RoutingEngine) buildIneffectiveBlockCondition(target TargetResource, count int, detection string) *BlockingCondition {
 	return &BlockingCondition{
 		Blocked: true,
 		Reason:  string(remediationv1.BlockReasonIneffectiveChain),
 		Message: fmt.Sprintf(
 			"%d consecutive ineffective remediations detected (%s). Escalating to manual review.",
 			count, detection),
-		RequeueAfter: r.config.IneffectiveTimeWindow,
+		RequeueAfter:   r.config.IneffectiveTimeWindow,
+		TargetResource: target.String(),
 	}
 }
