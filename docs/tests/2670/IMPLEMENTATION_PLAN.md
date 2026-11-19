@@ -341,7 +341,7 @@ body.
 | Phase | RED (failing) | GREEN | REFACTOR |
 |-------|---------------|-------|----------|
 | 1. Local lane | `pkg/shared/scope/manager_test.go`: `UT-SCOPE-2670-001..011` and `..013`; `pkg/shared/scope/cluster_scoped_kinds_test.go` (new, `package scope`): `UT-SCOPE-2670-012`, `..014` | `manager.go` §4.1 | replace the two remaining inline `isClusterScoped(...) \|\| Namespace == ""` derivations (`Resolve`, `ResolveWithResourceLabels`) with the GREEN helper (behavior-identical, three callers), and rewrite the guard comment |
-| 2. Fleet lane UT | `client_red_test.go` (`UT-FMC-2670-001..004`), `scopecache_test.go` (`UT-FLEET-SC-016`); the shared `mockCacheReader` is upgraded to `store map[string]scope.LabelState` so `Absent`/`Invalid` observations are expressible | `client.go` §4.2 | delete the refusal comment that is now wrong; migrate the remaining `bool` fixture call sites to the label-state mock |
+| 2. Fleet lane UT | `client_red_test.go` (`UT-FMC-2670-001..005`), `scopecache_test.go` (`UT-FLEET-SC-016`); the shared `mockCacheReader` is upgraded to `store map[string]scope.LabelState` so `Absent`/`Invalid` observations are expressible, and `UT-FMC-2670-005` covers the fenced status-store lane FMC actually serves from | `client.go` §4.2 | delete the refusal comment that is now wrong; migrate the remaining `bool` fixture call sites to the label-state mock |
 | 3. ACM lane UT + IT | `pkg/fleet/acm/client_test.go`: rewrite `UT-ACM-2592-002`, add `UT-ACM-2670-001..002`; `test/integration/acm/acm_factory_test.go`: add `IT-ACM-2670-001` | `acm/client.go` §4.3 (phase exits only when both the UTs and `IT-ACM-2670-001` pass) | extract the four terminal guards into `classifyIdentity` (gocyclo 20 → below the 15 threshold), collapse the namespace read into the `!clusterScoped` branch (§4.3 item 5) keeping the level-2 read for namespaced targets |
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
@@ -397,6 +397,7 @@ service uses `NewClientWithStatusStore`. The reader lane is consumed by `test/in
 | UT-FMC-2670-002 | Node **present** with `LabelStateAbsent`, plus a managed Namespace key; unknown cluster-scoped kind **present** with `LabelStateAbsent` | `verified_unmanaged` / `none` (namespace key never consulted) |
 | UT-FMC-2670-003 | Node observed `false`; Node observed `invalid` | `verified_unmanaged` / `resource-label`; `ScopeInvalid` / `invalid_resource_label` |
 | UT-FMC-2670-004 | Node missing record; Node with a namespace; known namespaced kind with an empty namespace; `Kind: ClusterScope` | `ScopeUnavailable` / `cache_miss`; `ScopeInvalid` / `invalid_cluster_scoped_namespace`; `ScopeInvalid` / `namespaced_target_without_namespace`; `ScopeUnsupported` / `cluster_scoped_target_unsupported` (defense in depth, §2 D1) |
+| UT-FMC-2670-005 | fenced status-store lane (`NewClientWithStatusStore`, the production constructor): Node with `true` / `false` / `absent` / `invalid` | `verified_managed` / `verified_unmanaged` / `verified_unmanaged`+`none` / `ScopeInvalid`; each result passes `Validate()` |
 | UT-FLEET-SC-016 (rewritten) | Node **present** with a `LabelStateAbsent` observation and a coincidentally matching namespace key | `verified_unmanaged` / `none`, namespace key never consulted |
 
 Fleet production observation of cluster-scoped **targets** covers Node and Namespace today
@@ -413,7 +414,7 @@ the **reader contract**, not a production observation; fleet PV/CRD observation 
 |----|----------|----------|
 | UT-ACM-2592-002 (rewritten) | Node with an explicit empty label projection | `verified_unmanaged` / `none` |
 | UT-ACM-2670-001 | Node and `Namespace` (as target) with `kubernaut.ai/managed=true` projections | `verified_managed` / `resource-label` |
-| UT-ACM-2670-002 | Node with invalid label; Node with a namespace; `ClusterScope` | `ScopeInvalid` / `invalid_resource_label`; `ScopeInvalid` / `invalid_cluster_scoped_namespace`; `ScopeUnsupported` / `cluster_scoped_target_unsupported` |
+| UT-ACM-2670-002 | Node with invalid label; Node with a missing label projection and with `label: null`; Node with a namespace; namespaced kind without a namespace; `ClusterScope` | `ScopeInvalid` / `invalid_resource_label`; `ScopeUnavailable` (evidence is not absence); `ScopeInvalid` / `invalid_cluster_scoped_namespace`; `ScopeInvalid` / `namespaced_target_without_namespace`; `ScopeUnsupported` / `cluster_scoped_target_unsupported` |
 
 ### Integration (wiring + controls)
 
@@ -424,7 +425,7 @@ the **reader contract**, not a production observation; fleet PV/CRD observation 
 | IT-RO-192-001 (restored) | Local lane through RO: a managed-labeled Node passes the scope gate, the RR reaches Processing, SP is created, SP failure drives `PhaseFailed`, and no EA is created (#240 contract) |
 | IT-ACM-2670-001 (new) | Direct ACM backend composed by the production factory: a `Node` identity with `label: ""` resolves `verified_unmanaged`/`none`, and with `label: "kubernaut.ai/managed=true"` resolves `verified_managed`/`resource-label` — the cluster-scoped branch of `acm.Client.Check` through real wiring |
 
-Scenario coverage: 22 unit scenario IDs (local 14 / fleet 5 / ACM 3) + 4 integration scenarios,
+Scenario coverage: 23 unit scenario IDs (local 14 / fleet 6 / ACM 3) + 4 integration scenarios,
 all business outcomes, no duplicate assertions. Critical scenarios: 100%.
 
 ## 7. Wiring manifest
@@ -461,8 +462,9 @@ so the new logic cannot be reached from it. See §10 for the risk.
 | `docs/tests/2660/TEST_PLAN.md` 43 | Note the #2670 supersession of "cluster-scoped targets stay `ScopeUnsupported`" (labelable targets authorize; `ScopeUnsupported` reserved for `ClusterScope`) |
 | `test/integration/gateway/21_crd_lifecycle_integration_test.go` 196-201 | Remove the stale "now targets a Pod because Node is unsupported" rationale |
 
-Not changed: FR-SCOPE-004 ("Status: Deferred to V2.0", lines 209-243) is requirement text; lifting
-that status is a product decision outside this issue and is flagged for a follow-up.
+`BR-SCOPE-001` FR-SCOPE-004 is amended rather than left alone: its heading drops
+"(V2.0 - Future)" and its **Status** records Option A as implemented (#2670) with Option B
+(`RemediationScope`) deferred to V2.0.
 
 ## 9. Validation
 
@@ -512,9 +514,11 @@ Rollback: revert the PR atomically. No schema, CRD, RBAC, audit-event, or wire-f
 - **Follow-up issue (to file, optional):** a fleet-side kind allowlist for the direct-ACM backend
   if kind-level restriction is wanted there; ADR-068's visibility model is cluster/namespace
   granular. Needs its own DD.
-- **Follow-up issue (to file):** an unknown kind carrying a non-empty namespace can inherit a
-  namespace scope label because the static kind map cannot prove cluster-scopedness
-  (§10). Needs a RESTMapper-based kind resolver (CHECKPOINT DD).
+- **Follow-up issue (to file):** the static kind map cannot prove cluster-scopedness in either
+  direction. An unknown kind carrying a non-empty namespace can inherit a namespace scope label,
+  and a namespaced kind outside the map (e.g. `Route`) carrying no namespace is resolved at level 1
+  and lands in retryable `observation_missing` instead of a terminal rejection
+  (§10, ADR-053 §2a). Needs a RESTMapper-based kind resolver (CHECKPOINT DD).
 - **Follow-up issue (to file):** on the fenced lane an invalid `kubernaut.ai/managed` observation
   is rejected by `pkg/fleet/fmc/syncer.go` `buildObservedResource`, so the last committed record
   keeps serving until a later repair replaces it or its TTL expires (45s default). Removing the

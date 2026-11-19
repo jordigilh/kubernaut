@@ -149,7 +149,15 @@ stripped-down apiserver; absence only makes them unobservable.)
 **Namespaced kinds recognized by the same map** (they keep the 2-level
 hierarchy and are never treated as cluster-scoped): `Pod`, `Service`,
 `ConfigMap`, `Secret`, `PersistentVolumeClaim`, `ReplicaSet`, `Deployment`,
-`StatefulSet`, `DaemonSet`, `Job`, `CronJob`.
+`StatefulSet`, `DaemonSet`, `Job`, `CronJob`, `HorizontalPodAutoscaler`,
+`Ingress`, `PodDisruptionBudget`.
+
+A kind **outside** this map that carries no namespace stays ambiguous: it is
+resolved at level 1 like a cluster-scoped CRD, because the static map cannot
+prove it is namespaced. A cluster-scoped CRD that is never observed therefore
+ends in retryable `unavailable` rather than a terminal rejection. Closing that
+gap needs a RESTMapper-based kind resolver; both directions of the ambiguity are
+tracked as one follow-up.
 
 **Reads are read-only.** The check performs a metadata-only `Get` on
 `PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an

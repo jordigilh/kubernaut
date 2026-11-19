@@ -65,7 +65,7 @@ var _ = Describe("Recognized cluster-scoped kinds (BR-SCOPE-001 FR-SCOPE-004)", 
 	})
 
 	It("UT-SCOPE-2670-014 [BR-SCOPE-001, SI-10]: namespaced kinds are never classified as cluster-scoped", func() {
-		for _, kind := range []string{"Pod", "Deployment", "Service", "ConfigMap", "Secret", "Job", "CronJob", "PersistentVolumeClaim"} {
+		for _, kind := range []string{"Pod", "Deployment", "Service", "ConfigMap", "Secret", "Job", "CronJob", "PersistentVolumeClaim", "HorizontalPodAutoscaler", "Ingress", "PodDisruptionBudget"} {
 			Expect(IsClusterScopedKind(kind)).To(BeFalse(), "%s is namespaced and must keep the named 2-level hierarchy", kind)
 		}
 		Expect(IsKnownNamespacedKind("PersistentVolumeClaim")).To(BeTrue(),

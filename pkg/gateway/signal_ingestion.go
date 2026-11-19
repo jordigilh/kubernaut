@@ -460,12 +460,21 @@ func (s *Server) sendSuccessResponse(
 	}
 }
 
-// validateScope checks whether the signal's target resource is within Kubernaut's
-// management scope. Returns (nil, nil) if managed, (*ProcessingResponse, nil) for
-// a clean rejection, or (nil, error) on scope infrastructure failure.
-//
-// BR-SCOPE-002: Label-based resource opt-in with 2-level hierarchy.
-// BR-SCOPE-013: Deny-by-default when scope checker is not initialized.
+// scopeIdentityFor builds the identity the Gateway checks and persists the
+// normalized namespace back onto the signal: the RR carries
+// signal.Resource.Namespace into spec.targetResource and RO re-checks that
+// namespace, so an authorization-only normalization would let the gates diverge
+// (#2670).
+func scopeIdentityFor(signal *types.NormalizedSignal, apiVersion string) (scope.ResourceIdentity, error) {
+	signal.Resource.Namespace = scopeTargetNamespace(signal)
+	return scope.ApplyAPIVersion(scope.ResourceIdentity{
+		ClusterID: signal.ClusterID,
+		Kind:      signal.Resource.Kind,
+		Namespace: signal.Resource.Namespace,
+		Name:      signal.Resource.Name,
+	}, apiVersion)
+}
+
 // scopeTargetNamespace returns the namespace the scope identity must carry. It
 // matches the RemediationRequest target (signal.Resource.Namespace): a
 // cluster-scoped kind has none even when the alert carries a namespace, so
@@ -480,6 +489,12 @@ func scopeTargetNamespace(signal *types.NormalizedSignal) string {
 	return signal.Namespace
 }
 
+// validateScope checks whether the signal's target resource is within Kubernaut's
+// management scope. Returns (nil, nil) if managed, (*ProcessingResponse, nil) for
+// a clean rejection, or (nil, error) on scope infrastructure failure.
+//
+// BR-SCOPE-002: Label-based resource opt-in with 2-level hierarchy.
+// BR-SCOPE-013: Deny-by-default when scope checker is not initialized.
 func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 
@@ -522,12 +537,7 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		}
 	}
 
-	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
-		ClusterID: signal.ClusterID,
-		Kind:      signal.Resource.Kind,
-		Namespace: scopeTargetNamespace(signal),
-		Name:      signal.Resource.Name,
-	}, apiVersion)
+	identity, err := scopeIdentityFor(signal, apiVersion)
 	if err != nil {
 		// A missing or malformed apiVersion that could not be determined is a
 		// permanent signal-quality defect (#2592, SI-10): reject and count it

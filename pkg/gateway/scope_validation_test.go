@@ -272,6 +272,12 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		Expect(mockScope.lastParams.namespace).To(BeEmpty(),
 			"#2670: the scope identity must match the RR target namespace, which is empty for a cluster-scoped kind")
 		Expect(mockScope.lastParams.kind).To(Equal("Node"))
+
+		var created remediationv1alpha1.RemediationRequestList
+		Expect(k8sClient.List(ctx, &created)).To(Succeed())
+		Expect(created.Items).To(HaveLen(1))
+		Expect(created.Items[0].Spec.TargetResource.Namespace).To(BeEmpty(),
+			"#2670: the persisted RR target must match the checked identity, or RO re-checks a different namespace")
 	})
 
 	It("[UT-GW-2670-002] should keep the target namespace for namespaced kinds (BR-SCOPE-002, #2670)", func() {

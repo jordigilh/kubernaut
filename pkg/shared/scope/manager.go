@@ -129,6 +129,13 @@ var kindToGroup = map[string]string{
 	"DaemonSet":             "apps",
 	"Job":                   "batch",
 	"CronJob":               "batch",
+	// Commonly alerted namespaced kinds. Listed so an identity that carries no
+	// namespace is rejected as a permanent defect instead of being mistaken for
+	// a cluster-scoped target (issue #2670). Kinds outside this map remain
+	// ambiguous until a RESTMapper-based resolver lands (plan §11).
+	"HorizontalPodAutoscaler": "autoscaling",
+	"Ingress":                 "networking.k8s.io",
+	"PodDisruptionBudget":     "policy",
 }
 
 // clusterScopedKinds identifies cluster-scoped resource kinds.
