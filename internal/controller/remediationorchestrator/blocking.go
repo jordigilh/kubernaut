@@ -270,6 +270,9 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 			logger.Error(err, "Failed to increment ConsecutiveFailureCount for re-block")
 			return ctrl.Result{}, fmt.Errorf("failed to increment failure count for scope re-block: %w", err)
 		}
+		// BR-AUDIT-005: the block was built before the increment; audit the
+		// count that produced the new backoff, not the previous one.
+		blocked.ConsecutiveFailures = rr.Status.GetRoutingStatus().ConsecutiveFailureCount
 
 		return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhaseBlocked), "")
 	}

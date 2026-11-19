@@ -587,6 +587,77 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		})
 	})
 
+	// IT-RO-AUDIT-BLOCKED-001: proves the enriched routing-blocked payload flows
+	// through the production dispatch path (reconcile -> emitRoutingBlockedAudit ->
+	// BuildRoutingBlockedEvent -> DataStorage) and is queryable by correlation_id.
+	// BR-AUDIT-005 reconstruction, SOC2 CC7.2 monitoring, FedRAMP AU-3 content,
+	// OWASP ASVS 7.1.2 structured audit records.
+	Context("AE-INT-BLOCKED: Routing Blocked Audit Payload (BR-AUDIT-005, SOC2 CC7.2, FedRAMP AU-3, OWASP ASVS 7.1.2)", func() {
+		It("IT-RO-AUDIT-BLOCKED-001: persists the complete blocking decision for an unmanaged target", func() {
+			unmanagedNS := helpers.CreateTestNamespace(ctx, k8sClient, "audit-blocked", helpers.WithoutManagedLabel())
+			defer helpers.DeleteTestNamespace(ctx, k8sClient, unmanagedNS)
+
+			rrName := fmt.Sprintf("rr-audit-blocked-%s", GenerateTestFingerprint(unmanagedNS, "blocked")[:8])
+			rr := createRemediationRequest(unmanagedNS, rrName)
+
+			// Wait until the controller's routing engine blocks the RR.
+			var blocked *remediationv1.RemediationRequest
+			Eventually(func() string {
+				fetched := &remediationv1.RemediationRequest{}
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      rrName,
+					Namespace: ROControllerNamespace,
+				}, fetched); err != nil {
+					return ""
+				}
+				blocked = fetched
+				return string(fetched.Status.EnsureRoutingStatus().BlockReason)
+			}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+
+			Expect(blocked.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
+			Expect(blocked.Status.EnsureRoutingStatus().BlockedUntil).ToNot(BeNil())
+
+			correlationID := rr.Name
+			eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked)
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+				return len(events)
+			}, "90s", "1s").Should(BeNumerically(">=", 1), "expected the routing.blocked event after buffer flush")
+
+			event := events[0]
+			Expect(event.EventType).To(Equal(eventType))
+			Expect(event.EventAction).To(Equal(audit.ActionBlocked))
+			Expect(string(event.EventOutcome)).To(Equal("pending"))
+
+			payload := event.EventData.RemediationOrchestratorAuditPayload
+			Expect(payload.RrName).To(Equal(rr.Name))
+			Expect(payload.Namespace).To(Equal(rr.Namespace))
+
+			// The persisted payload must reproduce the controller's decision, not
+			// just the outer event envelope.
+			Expect(payload.FromPhase.Value).ToNot(BeEmpty(),
+				"from_phase is required to reconstruct the Pending/Analyzing -> Blocked transition")
+			Expect(payload.ToPhase.Value).To(Equal("Blocked"))
+			Expect(payload.BlockReason.Value).To(Equal(string(blocked.Status.EnsureRoutingStatus().BlockReason)))
+			Expect(payload.BlockMessage.Value).To(Equal(blocked.Status.EnsureRoutingStatus().BlockMessage))
+			Expect(payload.BlockMessage.Value).To(ContainSubstring("kubernaut.ai/managed=true"))
+			Expect(payload.TargetResource.Value).To(ContainSubstring("test-app"))
+			Expect(payload.RequeueAfterSeconds.Value).To(BeNumerically(">", 0))
+			Expect(payload.BlockedUntil.IsSet()).To(BeTrue())
+			Expect(payload.BlockedUntil.Value.Format(time.RFC3339)).To(Equal(
+				blocked.Status.EnsureRoutingStatus().BlockedUntil.Format(time.RFC3339)),
+				"blocked_until must match the RR's blocking deadline")
+			Expect(payload.WorkflowID.IsSet()).To(BeFalse(),
+				"optional workflow evidence must stay absent for a scope block")
+			Expect(payload.RecentWfe.IsSet()).To(BeFalse())
+
+			GinkgoWriter.Printf("✅ IT-RO-AUDIT-BLOCKED-001: persisted payload reason=%s from=%s to=%s until=%s\n",
+				payload.BlockReason.Value, payload.FromPhase.Value, payload.ToPhase.Value,
+				payload.BlockedUntil.Value.Format(time.RFC3339))
+		})
+	})
+
 	Context("AE-INT-8: Audit Metadata Validation", func() {
 		It("should include required metadata fields in all audit events (correlation_id, timestamps)", func() {
 			// Create RemediationRequest with unique fingerprint (prevents test pollution)

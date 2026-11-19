@@ -876,6 +876,9 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	fromPhase string,
 	blockData *RoutingBlockedData,
 ) (*api.AuditEventRequest, error) {
+	if blockData == nil {
+		return nil, fmt.Errorf("routing blocked data is required")
+	}
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, EventTypeRoutingBlocked)
@@ -893,10 +896,47 @@ func (m *Manager) BuildRoutingBlockedEvent(
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
+	// BR-AUDIT-005: preserve the full routing-blocked decision so the event alone
+	// reconstructs why routing stopped (AUDIT_EVENT_CATALOG Known Gap #4).
+	fromPhaseValue := blockData.FromPhase
+	if fromPhaseValue == "" {
+		fromPhaseValue = fromPhase
+	}
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
-		RrName:    rrName,
-		Namespace: namespace,
+		EventType:           api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
+		RrName:              rrName,
+		Namespace:           namespace,
+		FromPhase:           api.NewOptString(fromPhaseValue),
+		ToPhase:             api.NewOptString(blockData.ToPhase),
+		BlockReason:         api.NewOptString(blockData.BlockReason),
+		BlockMessage:        api.NewOptString(blockData.BlockMessage),
+		RequeueAfterSeconds: api.NewOptInt(blockData.RequeueAfterSeconds),
+		BackoffSeconds:      api.NewOptInt(blockData.BackoffSeconds),
+		TargetResource:      api.NewOptString(blockData.TargetResource),
+	}
+	// Optional routing evidence is omitted when absent so the audit record
+	// preserves the distinction between "not applicable" and an empty value.
+	if blockData.ConsecutiveFailures > 0 {
+		payload.ConsecutiveFailures = api.NewOptInt32(blockData.ConsecutiveFailures)
+	}
+	if blockData.WorkflowID != "" {
+		payload.WorkflowID = api.NewOptString(blockData.WorkflowID)
+	}
+	if blockData.BlockingWFE != "" {
+		payload.BlockingWfe = api.NewOptString(blockData.BlockingWFE)
+	}
+	if blockData.DuplicateOf != "" {
+		payload.DuplicateOf = api.NewOptString(blockData.DuplicateOf)
+	}
+	if blockData.RecentWFE != "" {
+		payload.RecentWfe = api.NewOptString(blockData.RecentWFE)
+	}
+	if blockData.BlockedUntil != nil {
+		blockedUntil, err := time.Parse(time.RFC3339, *blockData.BlockedUntil)
+		if err != nil {
+			return nil, fmt.Errorf("parse routing blocked deadline: %w", err)
+		}
+		payload.BlockedUntil = api.NewOptDateTime(blockedUntil)
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData(payload)
 

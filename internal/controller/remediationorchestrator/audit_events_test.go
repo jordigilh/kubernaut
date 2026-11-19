@@ -37,6 +37,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -181,6 +182,49 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			event := mockAuditStore.GetLastEvent()
 			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleTransitioned))
 			Expect(event.EventAction).To(Equal("transitioned"))
+		})
+
+		It("UT-RO-AUDIT-2663-010: emits complete routing-blocked evidence through the Pending handler [BR-AUDIT-005, SOC2 CC7.2, FedRAMP AU-3]", func() {
+			blockedUntil := time.Now().Add(time.Hour)
+			mockRoutingEngine.PreAnalysisBlock = &routing.BlockingCondition{
+				Blocked:             true,
+				Reason:              string(remediationv1.BlockReasonConsecutiveFailures),
+				Message:             "3 consecutive failures. Cooldown active.",
+				RequeueAfter:        time.Hour,
+				BlockedUntil:        &blockedUntil,
+				TargetResource:      defaultFixture + "/Deployment/test-app",
+				ConsecutiveFailures: 3,
+				RecentWFE:           "wfe-prior",
+			}
+
+			rr := newRemediationRequest("test-rr-blocked", defaultFixture, remediationv1.PhasePending)
+			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+			rr.Status.EnsureRoutingStatus().NextAllowedExecution = &metav1.Time{Time: time.Now().Add(15 * time.Minute)}
+			Expect(fakeClient.Status().Update(ctx, rr)).To(Succeed())
+			mockAuditStore.Reset()
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rr-blocked", Namespace: defaultFixture},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			events := mockAuditStore.GetEventsByType(roaudit.EventTypeRoutingBlocked)
+			Expect(events).To(HaveLen(1), "Pending handler must emit exactly one routing.blocked event")
+
+			payload, ok := events[0].EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.FromPhase.Value).To(Equal(string(remediationv1.PhasePending)))
+			Expect(payload.ToPhase.Value).To(Equal(string(remediationv1.PhaseBlocked)))
+			Expect(payload.BlockReason.Value).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
+			Expect(payload.BlockMessage.Value).To(Equal("3 consecutive failures. Cooldown active."))
+			Expect(payload.TargetResource.Value).To(Equal(defaultFixture+"/Deployment/test-app"),
+				"the handler boundary must not fall back to the RR spec target")
+			Expect(payload.ConsecutiveFailures.Value).To(Equal(int32(3)))
+			Expect(payload.RecentWfe.Value).To(Equal("wfe-prior"))
+			Expect(payload.BlockedUntil.Value.Format(time.RFC3339)).To(Equal(blockedUntil.Format(time.RFC3339)))
+			Expect(payload.BackoffSeconds.Value).To(BeNumerically(">", 0),
+				"backoff_seconds must be captured when NextAllowedExecution is set")
 		})
 
 		It("AE-7.3: Should emit verifying_started event on successful workflow (#280)", func() {
