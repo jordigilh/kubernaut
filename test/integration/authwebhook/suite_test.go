@@ -345,7 +345,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("   ✅ Registered RemediationRequest webhook handler")
 
 	// Register AgentSession CREATE existence-gate validator (Issue #2244, BR-AA-KA-065.13)
-	asHandler := authwebhook.NewAgentSessionHandler(auditStore, k8sManager.GetClient())
+	// #2674: production wires mgr.GetAPIReader() for this gate (cmd/authwebhook/main.go,
+	// agentSessionGateReader) because the existence check is an admission-time read that
+	// must not observe cache start-up or informer lag.
+	asHandler := authwebhook.NewAgentSessionHandler(auditStore, k8sManager.GetAPIReader())
 	webhookServer.Register("/validate-agentsession", &webhook.Admission{Handler: asHandler})
 	GinkgoWriter.Println("   ✅ Registered AgentSession webhook handler")
 
@@ -358,14 +361,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Starting Manager (webhook server lifecycle managed automatically)")
 	// Pattern: All other integration tests (RO, SP, AA, WE, NT)
-	// Manager.Start() blocks until webhook server is ready, then starts accepting requests
-	// This ELIMINATES the race condition where tests started before webhook was ready
+	// Manager.Start() runs in the goroutine below and returns only on shutdown;
+	// it does NOT block until the webhook server is ready, and controller-runtime
+	// starts webhook listeners BEFORE caches (pkg/manager/internal.go). Waiting
+	// for cache sync is therefore mandatory before any spec runs (#2674): without
+	// it a spec can reach the manager's cached client while the cache is still
+	// unstarted and read the cache-layer error instead of the object.
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
-	GinkgoWriter.Printf("[Process %d] ✅ Manager started (webhook server ready for requests)\n", GinkgoParallelProcess())
+
+	By("Waiting for the Manager cache to sync before running specs (#2674)")
+	cacheSyncCtx, cacheSyncCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cacheSyncCancel()
+	Expect(k8sManager.GetCache().WaitForCacheSync(cacheSyncCtx)).To(BeTrue(),
+		"manager cache must finish its initial sync before any admission spec runs; "+
+			"otherwise a cached read can return cache.ErrCacheNotStarted or miss a just-created object")
+	GinkgoWriter.Printf("[Process %d] ✅ Manager started (cache synced, webhook server ready for requests)\n", GinkgoParallelProcess())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("✅ AuthWebhook integration test environment ready")
