@@ -50,12 +50,43 @@ func ParseAPIVersion(apiVersion string) (string, string, error) {
 		return "", "", fmt.Errorf("%w: apiVersion is required", ErrInvalidIdentity)
 	}
 
+	// #2658: "core/v1" is a reserved alias for the core API group. Today it
+	// parses as the literal group "core" — a group that matches no GVK and no
+	// persisted identity row — so it is canonicalized here, at the single
+	// choke point every ParseAPIVersion consumer shares. The alias set is
+	// closed ("core/v1" only): core/v2 and core/v1beta1 stay invalid,
+	// consistent with the core-version rejection in NormalizeAPIGroup.
+	if apiVersion == "core/v1" {
+		return "", "v1", nil
+	}
+
 	groupVersion, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: invalid apiVersion %q: %w", ErrInvalidIdentity, apiVersion, err)
 	}
 	if groupVersion.Version == "" || (strings.Contains(apiVersion, "/") && groupVersion.Group == "") {
 		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
+	}
+	// #2658: the literal group "core" matches no GVK and no persisted
+	// identity row — every "core/<version>" spelling other than the reserved
+	// "core/v1" alias (canonicalized above) is rejected.
+	if groupVersion.Group == "core" {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q: use the core form %q instead of the group alias", ErrInvalidIdentity, apiVersion, groupVersion.Version)
+	}
+	// #2658 (review R2-1): "unresolved" is the reserved unknown-identity
+	// sentinel. It is a syntactically valid DNS1123 subdomain and DNS1035
+	// label, so without this check "unresolved/v1" and "apps/unresolved"
+	// would parse successfully and BuildTargetIdentity would emit hybrid
+	// identities ("unresolved" paired with a real version, or vice versa)
+	// that ParseTargetIdentity rejects — a producer gate feeding its own
+	// parser unparseable output. Callers that legitimately mean "unknown"
+	// pass an empty apiVersion (or the wire sentinel, handled before this
+	// function); the literal word is never a real group or CRD version.
+	if groupVersion.Group == scopeUnknownSentinel {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q: %q is the reserved unknown-identity sentinel, not an api group", ErrInvalidIdentity, apiVersion, scopeUnknownSentinel)
+	}
+	if strings.Contains(apiVersion, "/") && groupVersion.Version == scopeUnknownSentinel {
+		return "", "", fmt.Errorf("%w: invalid apiVersion %q: %q is the reserved unknown-identity sentinel, not an api version", ErrInvalidIdentity, apiVersion, scopeUnknownSentinel)
 	}
 	if !validGroupVersion(groupVersion.Group, groupVersion.Version, apiVersion) {
 		return "", "", fmt.Errorf("%w: invalid apiVersion %q", ErrInvalidIdentity, apiVersion)
