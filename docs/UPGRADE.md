@@ -70,7 +70,10 @@ degenerates to level 1: no namespace exists to inherit, so a present-but-
 unlabeled target is `verified_unmanaged` with `none` provenance, and a target
 that cannot be observed is `unavailable` (`observation_missing` locally,
 `cache_miss` fleet-side). An invalid label value is `invalid`, exactly as for a
-namespaced target.
+namespaced target — with one fenced-lane caveat: the syncer refuses an invalid
+observation, so a record committed earlier keeps serving until a later repair
+replaces it or its TTL expires. ADR-053 §"Recognized kinds" states that window
+and the follow-up that closes it.
 
 `ScopeUnsupported` with reason `cluster_scoped_target_unsupported` is now
 reserved for a genuinely non-labelable target: `Kind: ClusterScope`, the

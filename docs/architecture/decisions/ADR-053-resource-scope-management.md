@@ -171,6 +171,19 @@ ACM Search query; no mutating verb is required or performed.
 - Direct ACM has no per-kind grant: visibility is bounded by ACM Search RBAC
   (see ADR-068 §ACM Search RBAC), which is broader than the fenced lane's list.
 
+**Invalid-label observations on the fenced lane.** The FMC syncer rejects a
+malformed `kubernaut.ai/managed` value before it stages a repair
+(`pkg/fleet/fmc/syncer.go` `buildObservedResource`), so an invalid observation is
+never committed and a previously committed record keeps serving until a later
+repair replaces it or its TTL expires (45s by default). For a cluster-scoped
+target that means a record committed as `true` whose label later becomes invalid
+can still resolve `verified_managed` for that bounded window; the local lane,
+which reads the object live, returns `invalid` / `invalid_resource_label`
+immediately. Removing authorization on an invalid observation — instead of
+retaining the last committed snapshot — changes the DD-FLEET-016 staged-repair
+contract, applies to namespaced targets as well, and is a tracked follow-up
+rather than part of #2670.
+
 Failure states are fail-closed and lane-specific: an unreadable kind on the
 cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup
 timeout, while the API Frontend's direct client surfaces the terminal
