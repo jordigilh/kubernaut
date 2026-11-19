@@ -95,7 +95,8 @@ precedence rules, including explicit false, invalid-label provenance, inheritanc
 only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
-enable remote inventory list projection. The shared `IsManagedResource` contract
+enable remote inventory list projection. The shared scope contract (now
+`ScopeChecker.Check`; #2662 deleted the `IsManagedResource` boolean lane)
 is canonical and preserves backend errors so callers can distinguish an unavailable
 scope backend from an unmanaged resource.
 

@@ -132,7 +132,15 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 		observation.Identity.Kind, observation.Identity.Namespace, observation.Identity.Name,
 		string(observation.LabelState), observation.TTL.Milliseconds())
 	if err != nil {
-		return publicID, repairReconcileProof{}, err
+		// #2660 m2: classify the script reply here so Repair()'s
+		// failure-code derivation sees the fence sentinel instead of the raw
+		// server error string. STAGED_EXPIRED is a terminal staging expiry:
+		// the writer must begin a new repair, exactly like a stale fence. A
+		// post-write TTL check failure (INVALID_PTTL/TTL_MISMATCH) is
+		// genuinely ambiguous because the staged writes already landed, so
+		// it keeps ErrAmbiguousWrite rather than the previous message-derived
+		// ttl_invalid guess.
+		return publicID, repairReconcileProof{}, classifyScriptError(err)
 	}
 	proof, err := parseRepairReconcile(items)
 	if err != nil {
@@ -208,7 +216,16 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 	for _, observation := range request.Observations.Items {
 		publicID, proof, err := s.repairObservation(ctx, request, observation)
 		if err != nil {
-			return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
+			// #2660 review: repairObservation already returns typed failures
+			// (record_invalid, ttl_invalid); prefer the typed code instead
+			// of re-deriving one from the message text, which collapsed
+			// record_invalid to commit_rejected.
+			code := repairFailureCode(err)
+			var typed RepairFailureError
+			if errors.As(err, &typed) {
+				code = typed.Failure.Code
+			}
+			return failRepairResult(result, code, err, repairFailureRetryable(err))
 		}
 		if _, exists := seen[publicID]; exists {
 			return failRepairResult(result, RepairFailureCountMismatch, fmt.Errorf("duplicate repair resource %q", publicID), false)
@@ -230,7 +247,13 @@ func (s *ValkeyStatusStore) Repair(ctx context.Context, request RepairRequest) (
 	if result.ExpectedCount == 0 {
 		proof, err := s.finalizeEmptyRepair(ctx, request)
 		if err != nil {
-			return failRepairResult(result, repairFailureCode(err), err, repairFailureRetryable(err))
+			// #2660 review: repair_finalize_empty's STALE_FENCE must surface
+			// as stale_fence (the raw reply falls through to
+			// commit_rejected). Only the fence token is classified here:
+			// TTL_MISMATCH stays ttl_invalid because the empty finalization
+			// rejects before any write, so nothing is ambiguous.
+			classified := classifyFenceError(err)
+			return failRepairResult(result, repairFailureCode(classified), classified, repairFailureRetryable(classified))
 		}
 		result.StatusTTL = proof
 		result.EmptyPartitionVerified = true
@@ -294,8 +317,10 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 	}
 	// DD-FLEET-016 A2: the commit is an atomic swap of the staged keyspace
 	// over the live keyspace. ARGV[10]=expected count, [11]=live record
-	// prefix, [12]=staged record prefix, [13..]=proof flags per the Lua
-	// contract.
+	// prefix, [12]=staged record prefix, [13..16]=reserved structural proof
+	// slots (record/index/status/record-index validity -- always "1"; the
+	// real proof is the TTL triple, #2660 m1), [17..20]=proof flags per the
+	// Lua contract.
 	// ARGV[21]: per-record TTL (ms) so the commit refreshes renamed record
 	// expiries from commit time. Derived from the staged reconcile proof;
 	// Repair validates a uniform positive TTL across all observations.
@@ -315,7 +340,13 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 		boolArg(request.Proof.StatusTTL.Valid), boolArg(request.Proof.EmptyPartitionVerified),
 		refreshTTLMillis)
 	if err != nil {
-		result.Failure = repairFailureFromError(err)
+		// #2660 m2: classify BEFORE deriving the failure. Deriving from the
+		// raw server error silently degraded a stale-fence commit (e.g. a
+		// staging that expired between reconcile and commit) into
+		// commit_rejected, because only the classified error carries
+		// ErrStaleFence.
+		classified := classifyScriptError(err)
+		result.Failure = repairFailureFromError(classified)
 		return result, classifyRepairError(err)
 	}
 	if len(items) == 0 || scriptString(items, 0) != "ok" {
@@ -442,6 +473,21 @@ func (s *ValkeyStatusStore) evalMutation(ctx context.Context, keys []string, arg
 	return s.scripts.eval(ctx, keys, args...)
 }
 
+// classifyFenceError wraps only the stale-fence script tokens (STALE_FENCE,
+// STAGED_EXPIRED) as ErrStaleFence, leaving every other reply untouched. It
+// is used on script paths whose non-fence rejections are pre-write and must
+// keep their message-derived codes (e.g. repair_finalize_empty's
+// TTL_MISMATCH stays ttl_invalid).
+func classifyFenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "STALE_FENCE") || strings.Contains(err.Error(), "STAGED_EXPIRED") {
+		return fmt.Errorf("%w: %w", ErrStaleFence, err)
+	}
+	return err
+}
+
 func classifyScriptError(err error) error {
 	if err == nil {
 		return nil
@@ -449,8 +495,12 @@ func classifyScriptError(err error) error {
 	if errors.Is(err, ErrScriptUnavailable) || errors.Is(err, ErrAmbiguousWrite) || errors.Is(err, ErrStaleFence) {
 		return err
 	}
-	if strings.Contains(err.Error(), "STALE_FENCE") {
-		return fmt.Errorf("%w: %w", ErrStaleFence, err)
+	// #2660 m2: STAGED_EXPIRED means the staging outlived its total lifetime
+	// cap and the writer must begin a new repair, exactly like a stale fence.
+	// The Lua guard rejects before any staged write, so nothing is stranded;
+	// both replies fold into ErrStaleFence and RepairFailureStaleFence.
+	if fenceClassified := classifyFenceError(err); errors.Is(fenceClassified, ErrStaleFence) {
+		return fenceClassified
 	}
 	if strings.Contains(err.Error(), "TTL_MISMATCH") || strings.Contains(err.Error(), "INVALID_PTTL") {
 		return fmt.Errorf("%w: %w", ErrAmbiguousWrite, err)

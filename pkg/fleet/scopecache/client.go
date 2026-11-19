@@ -145,9 +145,11 @@ func (c *Client) checkFencedStatus(ctx context.Context, resource scope.ResourceI
 	proof, err := c.readiness.PartitionReady(partition, snapshot.Info.RegistrationUID, snapshot.Revision,
 		partitionReadiness.WriterFence, partitionReadiness.Generation)
 	if err != nil {
-		// The scope result carries the fail-closed reason; callers must not
-		// convert an unavailable partition into managed=false.
-		return unavailableResult("partition_unavailable"), nil //nolint:nilerr // readiness failure is intentionally represented in ScopeResult
+		// #2660 m5: an invalid proof is a snapshot defect (keep the error);
+		// an unavailable partition is an expected operational state carried
+		// only in the ScopeResult. Either way callers must not convert this
+		// into managed=false.
+		return readinessScopeFailure(err)
 	}
 	request := FencedReadRequest{
 		Partition:                partition,
@@ -170,21 +172,55 @@ func (c *Client) checkFencedStatus(ctx context.Context, resource scope.ResourceI
 	}
 	var result scope.ScopeResult
 	callbackErr := c.registration.WithCurrent(ctx, resource.ClusterID, snapshot.Info.RegistrationUID, snapshot.Revision, func(_ registry.ClusterInfo) error {
-		currentProof, proofErr := c.readiness.PartitionReady(partition, snapshot.Info.RegistrationUID, snapshot.Revision,
-			proof.WriterFence, proof.Generation)
-		if proofErr != nil {
-			return proofErr
-		}
-		if !readMatchesProof(record, currentProof) {
-			return fmt.Errorf("scopecache: fenced-read proof changed")
-		}
-		result, proofErr = c.mapFencedRecord(ctx, request, record, currentProof)
+		var proofErr error
+		result, proofErr = c.recheckFencedRead(ctx, partition, snapshot, request, record, proof)
 		return proofErr
 	})
 	if callbackErr != nil {
+		var readinessErr ReadinessError
+		if errors.As(callbackErr, &readinessErr) && readinessErr.Code == ReadinessInvalid {
+			return unavailableResult("partition_invalid"), callbackErr
+		}
 		return unavailableResult("registration_changed"), callbackErr
 	}
 	return result, nil
+}
+
+// recheckFencedRead re-establishes the partition proof inside the guarded
+// critical section and maps a record that still matches it.
+func (c *Client) recheckFencedRead(
+	ctx context.Context,
+	partition PartitionStateKey,
+	snapshot registry.RegistrationSnapshot,
+	request FencedReadRequest,
+	record FencedReadResult,
+	proof FencedReadProof,
+) (scope.ScopeResult, error) {
+	currentProof, proofErr := c.readiness.PartitionReady(partition, snapshot.Info.RegistrationUID, snapshot.Revision,
+		proof.WriterFence, proof.Generation)
+	if proofErr != nil {
+		// Defensive: site 1 validated the identity before this callback, so
+		// an invalid proof here can only mean the readiness snapshot was
+		// corrupted between the two reads. Same discrimination as site 1.
+		return readinessScopeFailure(proofErr)
+	}
+	if !readMatchesProof(record, currentProof) {
+		return unavailableResult("registration_changed"), fmt.Errorf("scopecache: fenced-read proof changed")
+	}
+	return c.mapFencedRecord(ctx, request, record, currentProof)
+}
+
+// readinessScopeFailure maps a readiness proof rejection to the fail-closed
+// scope outcome (#2660 m5). ReadinessInvalid is a snapshot/protocol defect and
+// keeps its error so it cannot be mistaken for a transient unavailable
+// partition; ReadinessUnavailable is an expected operational state that is
+// represented only in the ScopeResult.
+func readinessScopeFailure(err error) (scope.ScopeResult, error) {
+	var readinessErr ReadinessError
+	if errors.As(err, &readinessErr) && readinessErr.Code == ReadinessInvalid {
+		return unavailableResult("partition_invalid"), err
+	}
+	return unavailableResult("partition_unavailable"), nil
 }
 
 func (c *Client) mapFencedRecord(ctx context.Context, request FencedReadRequest, record FencedReadResult, proof FencedReadProof) (scope.ScopeResult, error) {
