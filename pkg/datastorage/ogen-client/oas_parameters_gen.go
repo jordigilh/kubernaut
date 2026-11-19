@@ -683,6 +683,9 @@ type GetRemediationHistoryContextParams struct {
 	// is indistinguishable from "unknown". Send "v1" for the core API
 	// group, "apps/v1" for a grouped resource, or the reserved sentinel
 	// "unresolved" when the caller could not establish the apiVersion.
+	// A grouped version follows the CRD rule (DNS1035 label), so a CRD
+	// served at "example.com/stable" is accepted, exactly as
+	// scope.ParseAPIVersion accepts it.
 	// The group and version are ordinary parts of the stored target
 	// identity (namespace/group/version/Kind/name), so history rows are
 	// matched by exact identity equality.
@@ -970,7 +973,7 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 					MaxLengthSet:  false,
 					Email:         false,
 					Hostname:      false,
-					Regex:         regexMap["^(unresolved|v[0-9]+([a-z0-9]+)?|[a-z0-9.-]+/v[0-9]+([a-z0-9]+)?)$"],
+					Regex:         regexMap["^(unresolved|v[0-9]+((alpha|beta)[0-9]+)?|[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z]([-a-z0-9]*[a-z0-9])?)$"],
 					MinNumeric:    0,
 					MinNumericSet: false,
 					MaxNumeric:    0,
