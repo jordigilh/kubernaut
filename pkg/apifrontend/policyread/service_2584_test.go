@@ -26,6 +26,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	metadatafake "k8s.io/client-go/metadata/fake"
 )
 
 var policyReadTestResourceID = inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
@@ -43,7 +45,7 @@ func TestPolicyRead(t *testing.T) {
 	RunSpecs(t, "Policy Read Suite")
 }
 
-var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope projection", func() {
+var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 	It("UT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: accepts an empty result without evaluating a freshness marker", func() {
 		page := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: inventory.Freshness{State: inventory.FreshnessStale}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: &inventoryStub{page: page}, Authorizer: allowAuthorizer{}})
@@ -149,7 +151,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
-	It("projects only exact historical metadata [BR-SCOPE-001, AC-4, AC-6, SI-10]", func() {
+	It("IT-AF-2584-003 [BR-SCOPE-001, FedRAMP AC-4, AC-6, SI-10]: joins current policy metadata with bounded historical evaluation", func() {
 		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		resource := inventory.Resource{
 			ID:         policyReadTestResourceID,
@@ -209,8 +211,8 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: page},
 			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
-				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
-				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:sp"},
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"}},
+				{Type: "signalProcessing", ConfigMapName: "signalprocessing-policy", ConfigMapKey: "policy.rego", Revision: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 			}},
 			History:    &historyStub{ai: []aianalysisv1.AIAnalysis{ai, missingGVK, invalidGVK, otherGroup}},
 			Authorizer: allowAuthorizer{},
@@ -224,7 +226,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items[0].CurrentPolicies).To(HaveLen(2))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Value).To(Equal(0.85))
 		Expect(result.Items[0].CurrentPolicies[0].Threshold.Source).To(Equal("runtime-config"))
-		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:ai"))
+		Expect(result.Items[0].CurrentPolicies[0].Revision).To(Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 		Expect(result.Items[0].HistoricalEvaluations).To(HaveLen(1))
 		Expect(result.Items[0].HistoricalEvaluations[0].Source).To(Equal("AIAnalysis"))
 		Expect(result.Items[0].HistoricalEvaluations[0].MatchedRules).To(ConsistOf("production_requires_review"))
@@ -270,7 +272,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system"}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: page},
 			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{
-				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:ai"},
+				{Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego", Revision: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 			}},
 			History:    history,
 			Authorizer: allowAuthorizer{},
@@ -288,7 +290,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(history.spCalls).To(BeZero())
 	})
 
-	It("returns a state-only stale result without records", func() {
+	It("UT-AF-2584-008 [BR-API-001]: returns a state-only stale result without records", func() {
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{page: inventory.Page{State: inventory.StateStale, Completeness: inventory.CompletenessPartial}},
 			Authorizer:     allowAuthorizer{},
@@ -302,7 +304,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(result.Items).To(BeEmpty())
 	})
 
-	DescribeTable("rejects non-interactive callers before inventory reads", func(identity *auth.UserIdentity) {
+	DescribeTable("UT-AF-2584-010 [BR-SECURITY-016]: rejects non-interactive callers before inventory reads", func(identity *auth.UserIdentity) {
 		reader := &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete}}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: reader, Authorizer: allowAuthorizer{}})
 		Expect(err).NotTo(HaveOccurred())
@@ -316,7 +318,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Entry("service account", user("system:serviceaccount:kubernaut-system:af", true)),
 	)
 
-	It("keeps exact backend failures distinct from not-found", func() {
+	It("UT-AF-2584-008 [BR-API-001]: keeps exact backend failures distinct from not-found", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{getErr: inventory.ErrUnavailable},
@@ -329,7 +331,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 	})
 
-	It("maps exact local target authorizer failures to unavailable", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: maps exact local target authorizer failures to unavailable", func() {
 		resourceID := policyReadTestResourceID
 		authorizer := &targetAuthorizer{err: errors.New("subject access review unavailable")}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
@@ -347,7 +349,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(authorizer.target.Resource).To(Equal("deployments"))
 	})
 
-	It("maps exact local target denials to not-found", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: maps exact local target denials to not-found", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{resource: inventory.Resource{
@@ -363,7 +365,7 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateNotFound))
 	})
 
-	It("fails closed when an exact local resource kind is not allowlisted", func() {
+	It("UT-AF-2584-010 [BR-SECURITY-016]: fails closed when an exact local resource kind is not allowlisted", func() {
 		resourceID := policyReadTestResourceID
 		authorizer := &targetAuthorizer{allowed: true}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
@@ -381,7 +383,133 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 		Expect(authorizer.calls).To(BeZero())
 	})
 
-	It("maps malformed exact backend identity to unavailable", func() {
+	It("IT-AF-2584-006 [BR-AI-085, FedRAMP SI-10]: returns a state-only failure when runtime policy metadata is unavailable", func() {
+		resource := inventory.Resource{
+			ID:        policyReadTestResourceID,
+			ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment",
+			Namespace: "payments", Name: "checkout",
+			Scope: inventory.Scope{Included: true},
+		}
+		page := inventory.Page{
+			State:        inventory.StateSuccess,
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory:  &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{err: errors.New("configmaps \"aianalysis-config\" is forbidden")},
+			Authorizer:      allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"})
+		Expect(err).To(HaveOccurred())
+		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+		Expect(result.State).To(Equal(inventory.StateUnavailable))
+		Expect(result.Items).To(BeEmpty())
+		Expect(result.NextCursor).To(BeEmpty())
+
+		encoded, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).NotTo(ContainSubstring(`"items"`))
+	})
+
+	It("IT-AF-2584-007 [BR-SCOPE-001]: cursor pages are deterministic and links preserve exact scope", func() {
+		scheme := runtime.NewScheme()
+		Expect(metav1.AddMetaToScheme(scheme)).To(Succeed())
+		client := metadatafake.NewSimpleMetadataClient(scheme, metadataDeployment("alpha"), metadataDeployment("beta"))
+		reader, err := policyread.NewLocalInventoryReader(policyread.LocalInventoryConfig{
+			MetadataClient: client,
+			ScopeResolver:  &localScopeStub{},
+			Now:            func() time.Time { return time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC) },
+			Kinds: []policyread.LocalResourceKind{{
+				Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true,
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		svc, err := policyread.NewService(policyread.Config{BasePath: "/api/v1/console"}, policyread.Dependencies{
+			LocalInventory:  reader,
+			CurrentPolicies: &currentPolicyStub{},
+			History:         &historyStub{},
+			Authorizer:      allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		filters := inventory.Filters{ClusterID: "local", Limit: 1}
+		first, err := svc.ListPolicyScope(context.Background(), user("alice", false), filters)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(first.Items).To(HaveLen(1))
+		Expect(first.NextCursor).To(Equal(first.Items[0].ID))
+
+		repeated, err := svc.ListPolicyScope(context.Background(), user("alice", false), filters)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(repeated.Items).To(HaveLen(1))
+		Expect(repeated.Items[0].ID).To(Equal(first.Items[0].ID))
+
+		second, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local", Limit: 1, Cursor: first.NextCursor})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(second.Items).To(HaveLen(1))
+		Expect(second.Items[0].ID).NotTo(Equal(first.Items[0].ID))
+		Expect(second.NextCursor).To(BeEmpty())
+
+		Expect(first.Items[0].InventoryLink).To(Equal(
+			"/api/v1/console/inventory/managed-resources/" + first.Items[0].ID + "?cluster_id=local"))
+	})
+
+	It("UT-AF-2584-009 [BR-SECURITY-016, FedRAMP SI-10]: the policy-scope projection exposes only allowlisted fields", func() {
+		observedAt := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+		resource := inventory.Resource{
+			ID: policyReadTestResourceID, ClusterID: "local", Group: "apps", Version: "v1",
+			Kind: "Deployment", Namespace: "payments", Name: "checkout",
+			Scope: inventory.Scope{Included: true},
+		}
+		page := inventory.Page{
+			State: inventory.StateSuccess, ObservedAt: observedAt,
+			Completeness: inventory.CompletenessComplete,
+			Items:        []inventory.Resource{resource},
+		}
+		svc, err := policyread.NewService(policyread.Config{Namespace: "kubernaut-system", BasePath: "/api/v1/console"}, policyread.Dependencies{
+			LocalInventory: &inventoryStub{page: page},
+			CurrentPolicies: &currentPolicyStub{policies: []policyread.PolicyMetadata{{
+				Type: "aiAnalysis", ConfigMapName: "aianalysis-policy", ConfigMapKey: "approval.rego",
+				Revision:  "sha256:" + strings.Repeat("a", 64),
+				Threshold: &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"},
+			}}},
+			History:    &historyStub{},
+			Authorizer: allowAuthorizer{},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := svc.ListPolicyScope(context.Background(), user("alice", false), inventory.Filters{ClusterID: "local"})
+		Expect(err).NotTo(HaveOccurred())
+
+		encoded, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		var document map[string]any
+		Expect(json.Unmarshal(encoded, &document)).To(Succeed())
+
+		// The projection is an allowlist, not a filter: any field added to the
+		// response types without updating this contract fails here.
+		Expect(keysOf(document)).To(ConsistOf("apiVersion", "kind", "state", "observedAt", "freshness", "completeness", "items"))
+		items, ok := document["items"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(items).To(HaveLen(1))
+		item, ok := items[0].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(keysOf(item)).To(ConsistOf("id", "resource", "currentPolicies", "inventoryLink"))
+		policies, ok := item["currentPolicies"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(policies).To(HaveLen(1))
+		policy, ok := policies[0].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(keysOf(policy)).To(ConsistOf("type", "configMapName", "configMapKey", "revision", "threshold"))
+
+		// Policy source text, tokens and arbitrary payloads never appear.
+		Expect(string(encoded)).NotTo(ContainSubstring("package approval"))
+		Expect(string(encoded)).NotTo(ContainSubstring("secret"))
+	})
+
+	It("UT-AF-2584-008 [BR-API-001]: maps malformed exact backend identity to unavailable", func() {
 		resourceID := policyReadTestResourceID
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory: &inventoryStub{resource: inventory.Resource{ID: resourceID, ClusterID: "other-cluster", Kind: "Deployment", Version: "v1", Name: "checkout"}},
@@ -397,6 +525,16 @@ var _ = Describe("BR-AI-085 / BR-AI-088 / UT-AF-2584-002/006/009: policy scope p
 
 func user(name string, serviceAccount bool) *auth.UserIdentity {
 	return &auth.UserIdentity{Username: name, IsServiceAccount: serviceAccount}
+}
+
+// keysOf reports the exact field set of a decoded JSON object, so allowlist
+// assertions fail when a new field is added to a response type.
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 type inventoryStub struct {
