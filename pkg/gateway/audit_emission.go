@@ -44,6 +44,7 @@ import (
 	// BR-109: Request ID middleware
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	// BR-HTTP-015: Shared CORS library
 	// DD-005: Shared sanitization library
 	// BR-SCOPE-002: Resource scope management
@@ -455,11 +456,11 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 //
 // BR-GATEWAY-058-A: Enhanced Correlation ID Pattern
 //
-// Format: "alertname:namespace:kind:name"
+// Format: "alertname:namespace/group/version/Kind/name"
 // Examples:
-//   - "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-//   - "NodeNotReady:default:Node:worker-node-1"
-//   - "DeploymentReplicasUnavailable:prod-api:Deployment:api-server"
+//   - "HighMemoryUsage:prod-payment-service/core/v1/Pod/payment-api-789"
+//   - "NodeNotReady:default/core/v1/Node/worker-node-1"
+//   - "DeploymentReplicasUnavailable:prod-api/apps/v1/Deployment/api-server"
 //
 // Benefits:
 //   - Human-readable: SRE can immediately identify the alert and resource
@@ -470,9 +471,17 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 //
 // Returns:
 //   - string: Human-readable correlation ID (30-150 chars depending on names)
+//
+// #2658 D4: the readable correlation ID is "<alertname>:<canonical identity>".
+// The target is rendered by scope.BuildTargetIdentity, so group and version ride
+// along as ordinary parts of the coordinates — the same identity the execution
+// plane, the audit trail and DataStorage use — and two siblings in different API
+// groups therefore never share a correlation ID. The alert name is the only
+// field that may contain neither ':' nor '/', so the prefix splits cleanly and
+// the remainder parses with scope.ParseTargetIdentity.
 func constructReadableCorrelationID(signal *types.NormalizedSignal) string {
-	return fmt.Sprintf("%s:%s:%s:%s",
-		signal.SignalName,
+	return signal.SignalName + ":" + scope.BuildTargetIdentity(
+		signal.Resource.APIVersion,
 		signal.Namespace,
 		signal.Resource.Kind,
 		signal.Resource.Name,
