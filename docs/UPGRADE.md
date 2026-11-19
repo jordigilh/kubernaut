@@ -63,10 +63,14 @@ approved as the DD-FLEET-015 deferred-target boundary (see below).
 
 BR-SCOPE-001 FR-SCOPE-004 (approved DD-FLEET-015 amendment): a
 cluster-scoped remediation target (`Namespace == ""` or a known cluster-scoped
-kind such as `Node`/`PersistentVolume`) returns `ScopeUnsupported` with reason
-`cluster_scoped_target_unsupported` on both the local and the fleet scope
-lanes. Hub `Node`/`PersistentVolume` remediation that previously worked through
-a label no longer resolves as managed. This is a documented behavior change, not
+kind such as `Node`/`PersistentVolume`) returns `ScopeUnsupported` on both the
+local and the fleet scope lanes. The reason `cluster_scoped_target_unsupported`
+is observable on the **local lane only**: `ScopeResult.Reason` never crosses the
+Fleet wire (the scope-result wire format carries only `state` and `provenance`,
+DD-FLEET-015), so Fleet-lane consumers see bare `ScopeUnsupported` — including
+via the ACM backend, which never emits the reason. Hub `Node`/`PersistentVolume`
+remediation that formerly worked through a label no longer resolves as managed.
+This is a documented behavior change, not
 a regression: the target boundary is deferred until fleet cluster-scoped support
 is designed.
 
