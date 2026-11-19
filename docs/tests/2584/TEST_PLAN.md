@@ -4,11 +4,11 @@
 
 **Test Plan Identifier**: TP-2584-v1.0
 **Feature**: Versioned, read-only, authenticated API Frontend projections for policy scope, policy evaluation metadata, and managed-resource inventory
-**Version**: 1.9
+**Version**: 2.0
 **Created**: 2026-11-01
 **Author**: Kubernaut Team
-**Status**: Implementation landed via #2604; scoped AF validation passed with two declared P0 cases PARTIAL (§5.5); cross-repository qualification pending
-**Branch**: `work/2584-policyread` (evidence correction; implementation originally landed via #2604)
+**Status**: Implementation landed via #2604; scoped AF validation passed with all four P0 cases proven (§5.5); cross-repository qualification pending
+**Branch**: `work/2667-p0-evidence` (P0 evidence-gap closure on top of the #2584/#2665 record)
 
 > Production code and tests are present on this branch. Authorization, historical-source,
 > and typed-audit decisions were approved before implementation. This record separates
@@ -34,9 +34,9 @@ Console's `policies.scope` view. It proves that an authenticated interactive use
 obtain only a sanitized, versioned projection of the effective Kubernaut scope and
   managed-resource inventory through AF, without browser tokens, direct browser access to
   DataStorage, raw Rego, secrets, private reasoning, arbitrary payloads, or cross-scope
-  records. It also specifies, and partially proves, that incomplete, unavailable, forbidden, and
-ambiguous reads fail closed and that existing A2A/MCP and service-account paths remain
-unchanged; §5.5 records exactly which sub-cases remain unproven.
+  records. It also specifies, and proves for the current evidence set, that incomplete,
+  unavailable, forbidden, and ambiguous reads fail closed, and that existing A2A/MCP and
+  service-account paths remain unchanged; §5.5 records the closure of the declared P0 gap.
 
 ### 1.2 Objectives
 
@@ -236,18 +236,23 @@ contains only the state, status, request ID, and a safe generic message.
 **FAIL** is any P0 failure, any cross-scope or sensitive-data leak, any partial/stale
 response containing records, any unapproved contract deviation, or any A2A/MCP regression.
 
-> **Declared P0 gap (2026-11-18).** Two of the four `**Priority**: P0` cases in §9 are PARTIAL,
-> so the 100% P0 gate above is **NOT met** by this evidence set:
+> **Declared P0 gap — CLOSED (2026-11-19, #2667).** The two PARTIAL P0 cases recorded here
+> on 2026-11-18 are now proven in full. The item list is retained so the closure is auditable
+> rather than inferred from a deleted sentence:
 >
-> - `IT-AF-2584-006` — unproven sub-cases: backend timeout, a referenced policy ConfigMap
->   that is absent (as opposed to the reference field being missing), and incomplete history
->   join. ConfigMap permission denial is proven by the forbidden-error case in the same spec.
-> - `IT-AF-2584-009` — unproven sub-case: service-account parity on the A2A/MCP paths (the
->   proving spec covers route mounting and middleware enforcement, and the Console routes
->   *reject* service accounts, which is the opposite assertion).
+> - `IT-AF-2584-006` — backend timeout, a referenced policy ConfigMap that is absent although
+>   the reference field is valid, and an incomplete history join that fails after visiting
+>   records are each proven state-only (no rows, no cursor) by the three `IT-AF-2584-006`
+>   specs added in §16.6.
+> - `IT-AF-2584-009` — service-account parity is proven on the real router: one
+>   TokenReview-authenticated service-account token reaches A2A and MCP with unchanged actor
+>   attribution on the success, tool, A2A task-start and A2A task-completion events, while the
+>   same token still receives a state-only 403 on the Console read route.
 >
-> This is recorded, not waived, and no release claim rests on this plan; the implementation
-> itself landed via #2604.
+> The 100% P0 case gate (criterion 1) is now met: no §9 P0 case is PARTIAL. Criterion 2 remains
+> unmet by the ACM inventory row (§14, NOT QUALIFIED) and criterion 5 (cross-repository Console
+> acceptance) remains deferred, so this plan is still not a release qualification; the
+> implementation itself landed via #2604.
 
 ### 5.6 Suspension and Resumption
 
@@ -356,10 +361,10 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
 | `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
 | `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader |
-| `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PARTIAL** — proven: runtime metadata unavailable and ConfigMap permission denial (`IT-AF-2584-006`, whose forbidden-error case asserts both), missing or out-of-range runtime threshold (`UT-AF-2584-001`), missing policy reference field (`UT-AF-2584-002`), history source failure (`UT-AF-2584-HISTORY-002`). Not proven by this branch: backend timeout, a referenced ConfigMap that is absent (only the reference field is covered), incomplete history join; live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
+| `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PASS** — proven: runtime metadata unavailable and ConfigMap permission denial (`IT-AF-2584-006`, whose forbidden-error case asserts both), missing or out-of-range runtime threshold (`UT-AF-2584-001`), missing policy reference field (`UT-AF-2584-002`), a referenced ConfigMap that is absent although the reference field is valid (`IT-AF-2584-006` absent-source spec), a runtime policy read that hits its context deadline (`IT-AF-2584-006` deadline spec), whole-source history failure (`UT-AF-2584-HISTORY-002`), and a history join that fails mid-stream after visiting records (`IT-AF-2584-006` incomplete-join spec). The four page-returning specs in that list each assert a state-only page with no rows and no cursor. Live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
 | `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
-| `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PARTIAL** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers), and a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware. Not proven by this branch: verified service-account parity on the A2A/MCP paths — `IT-AF-2584-004` proves the Console routes *reject* service accounts, which is the opposite assertion |
+| `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PASS** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers); a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware; and, on the production router with the real TokenReview auth middleware, one service-account token reaches the real MCP bridge and A2A handler with the verified `system:serviceaccount:` actor at the per-tool authorization seam and on `auth.success`, `tool.executed` and `a2a.task_started`. The A2A task then reaches a terminal `completed` state with the same actor on `a2a.task_completed` and `triage.completed` and no `a2a.task_failed`, while the same token gets a state-only 403 on the Console policy-scope route without an inventory read |
 | `IT-AF-2584-010` | Every authenticated read outcome carries correct actor type/ID, action, outcome/state, request ID, and correlation through the typed DataStorage audit union | **PASS** — `IT-AF-2584-010` (handler read through the DataStorage adapter) plus `IT-AF-2584-012`, `IT-AF-2584-AUDIT-001`, and `IT-AF-2584-AUDIT-002` |
 | `IT-AF-2584-011` | The Console read success pages and the problem envelope validate against the committed schema, and undocumented fields are rejected in both | **PASS** — `IT-AF-2584-011` validates the served inventory page, policy-scope page, and problem+json envelope against the committed schema; rejects an undocumented field in both `ManagedResourcePage` and `ProblemDetail`; and asserts the concrete problem members. `ProblemDetail` declares `required: [type, title, status]`, `additionalProperties: false`, and the `request_id` extension member (RFC 9457 §3.2); the 401, 429, 501 and 503 emitters are each validated against it. It does not assert unversioned-path rejection, and the live-server 401/429 paths are covered at the emitter, not the router, level. |
 | `IT-AF-2584-012` | **First RED gate:** a live DataStorage audit write is queryable by correlation/request ID, preserves required actor/action/outcome fields, excludes sensitive payloads, and makes persistence failure observable | **PASS** — live DataStorage integration evidence |
@@ -558,7 +563,7 @@ unit-only handler calls.
 | Managed inventory exact read | `GET /api/v1/console/inventory/managed-resources/{id}` | Exact authorized identity | IT-AF-2584-005 | **PASS** |
 | User/capability authorization | Post-auth console route | 200 or state-only denial | IT-AF-2584-004/005 | **PASS** |
 | Scope provenance | Shared resolver → projection | Effective source/inclusion | IT-AF-2584-007 | **PASS** — with a stub resolver in that spec; provenance semantics are proven at unit level by `UT-AF-2584-003/004` |
-| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the reader→projection join is stub-level (`IT-AF-2584-003`). The failure-path IT `IT-AF-2584-006` is PARTIAL (§8.2) and is not counted here |
+| Historical metadata | CRD readers → projection | Separate sanitized history | IT-AF-2584-001/003 | **PASS** — construction proven by `IT-AF-2584-001`; the reader→projection join is stub-level (`IT-AF-2584-003`). The failure path is proven by `IT-AF-2584-006` (§8.2), including a traversal that fails mid-stream |
 | FMC inventory projection | FMC control plane → AF adapter | Canonical remote identity/scope page | IT-FLEET-2584-001, IT-AF-2584-008 | **PASS** |
 | ACM inventory projection | ACM control plane → AF adapter | Canonical remote identity/scope page | — no qualifying IT; fixture evidence only (`UT-ACM-2593-IDENTITY-001`, `UT-ACM-2593-UNION-001`) | **NOT QUALIFIED** — fixture suite passes; live visibility/completeness and deployment evidence remain gated |
 | Audit attribution | Handler → AF audit emitter → adapter | Actor/action/outcome event | IT-AF-2584-010 | **PASS** |
@@ -889,6 +894,48 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 | `pkg/apifrontend/policyread/local_inventory.go` | `CanonicalResourceIDChecked`; `page.Validate()` in `Get` | Not applied | Identity is always representable (`Kinds` comes from the fixed default allowlist, never a caller) and `list()` builds valid pages while `readInventoryPage` already validates — unreachable defensive code, which AGENTS.md forbids adding tests for |
 | `pkg/fleet/acm/inventory.go` | Two hunks: an explicit complete empty page instead of `StateOnly(StateEmpty)`, and `CanonicalResourceIDChecked` replacing `CanonicalResourceID` + `ValidateResourceID` | **Deferred to #2661 (G10)** | A real latent defect, not dead code: the internal `StateEmpty` + `CompletenessPartial` envelope fails `Page.validateEmpty`. It has no operator impact today because `inventoryResultPage` rebuilds the returned page and the remote Console list is gated, and its correct shape is DD-FLEET-017's to decide |
 
+### 16.6 Declared P0 gap closure (2026-11-19, #2667)
+
+#2667 closed the four bounded evidence gaps that TP-2584 v1.9 declared in §5.5. No API, CRD,
+or production behavior changed: every spec drives existing production code, and only external
+dependencies are replaced by fixtures (the Kubernetes API, the TokenReview API, the
+dynamic/typed clients, and one deterministic test LLM whose only answer is final text). Five
+of the six specs prove behavior that already existed, which is what the declaration said was
+missing, so no prior RED is claimed for them. The sixth spec's terminal-completion facet (A2A)
+was observed RED against the same fixture without its LLM and then turned GREEN.
+
+| Item | Spec (Ginkgo/Gomega, one scenario ID per spec) | What it proves |
+|---|---|---|
+| Runtime policy-read timeout | `IT-AF-2584-006` — `pkg/apifrontend/policyread/p0_evidence_2667_test.go` | The production `KubernetesSource` + `Service` under a caller deadline surface `context.DeadlineExceeded`, and the page is state-only `unavailable` with no rows and no cursor |
+| Absent referenced ConfigMap | `IT-AF-2584-006` — same file | A valid `policyConfigMapName`/`policyConfigMapKey` whose ConfigMap does not exist yields state-only `unavailable`; history is never joined and the referenced name is not disclosed in the response |
+| Incomplete history join | `IT-AF-2584-006` — same file | `KubernetesSource.ForEachAIAnalysis` visits page 1 and then fails on its continuation: two list calls, state-only `unavailable`, no rows and no partial `historicalEvaluations` |
+| Service-account parity | `IT-AF-2584-009` — `pkg/apifrontend/handler/sa_parity_2667_test.go` | One TokenReview-authenticated service-account token on the production router: the MCP handshake and tool call succeed with the `system:serviceaccount:` actor at the per-tool authorization seam and on `tool.executed`; A2A `message/send` reaches the real handler with that actor on `a2a.task_started`, and the ADK task reaches `result.status.state == completed` with exactly one `a2a.task_completed` and one `triage.completed` event carrying that actor, the task's ID and the start event's correlation, and no `a2a.task_failed`; the Console policy-scope route still returns a state-only 403 without an inventory read, and the token is authenticated rather than rejected |
+
+Control mapping: FedRAMP SI-10 (source validation and fail-closed state) for the three
+source-state specs; FedRAMP AC-4/AC-6 (authorization boundary) and AU-2/AU-3 (actor
+attribution) for the parity specs. Business requirements: BR-AI-085, BR-SCOPE-001,
+BR-SECURITY-016, and BR-INTERACTIVE-010 respectively.
+
+These specs prove fixture-backed identity propagation and the launcher's audit callbacks.
+They do not prove live token cryptography, SAR authorization against a real API server,
+persisted audit reconstruction, or real triage execution; the A2A task is a deterministic
+no-tool run that creates no InvestigationSession.
+
+To confirm the deadline spec asserts production context propagation rather than a
+pre-baked error, it was re-run against a scratch copy of `service.go` with
+`readCurrentPolicies(guardCtx)` replaced by `readCurrentPolicies(context.Background())`:
+the spec failed with the missing-deadline message, and the scratch edit was reverted before
+commit (`git diff --stat pkg/apifrontend/policyread/service.go` is empty).
+
+Scoped commands and results on `work/2667-p0-evidence`:
+
+- `go build ./...` — pass
+- `go test ./pkg/apifrontend/policyread/ ./pkg/apifrontend/handler/ ./cmd/apifrontend/ ./pkg/apifrontend/auth/ ./pkg/apifrontend/audit/ -count=1` — pass (policyread 51 specs, handler 284 specs, plus the other three packages)
+- `golangci-lint run --timeout=10m ./pkg/apifrontend/handler/... ./pkg/apifrontend/policyread/...` — 0 issues
+
+Live deployment, Console browser qualification, and FMC/ACM visibility remain out of scope
+and unchanged (§8.3, §16.2).
+
 ## 17. Changelog
 
 | Version | Date | Changes |
@@ -903,3 +950,4 @@ at `52acac9ab`. No delta was applied; this is the record of why, so the judgemen
 | 1.7 | 2026-11-05 | Replaced duplicated operator-owned `policyRead` metadata with per-operation runtime ConfigMap discovery and added observed/freshness response metadata without snapshot semantics |
 | 1.8 | 2026-11-05 | Removed AF-owned policy reference configuration; tests now require resolved AIA/SP policy name/key fields in the service runtime ConfigMaps and fail closed when references are missing |
 | 1.9 | 2026-11-18 | Evidence correction for a closed issue: every PASS row now names an owning spec; scenario IDs attached to the specs that prove them; §8 preamble scoped to PASS rows; capability-denial 403 and widening probes added; `IT-AF-2584-006/009` narrowed to what is proven; §5.5 records the declared P0 gap and §16.5 the seven-draft disposition; DD-FLEET-017/ADR-068 references marked pending #2661; version, branch and changelog fields maintained |
+| 2.0 | 2026-11-19 | Closed the declared P0 gap (#2667) with six specs (three `IT-AF-2584-006` source-state facets and three `IT-AF-2584-009` route checks) and no production change: a context deadline, an absent referenced ConfigMap, and a mid-stream history join each prove state-only failure; service-account parity is proven on the production router through a terminal A2A completion. §8.2 rows moved PARTIAL→PASS for the proven facets only, §5.5 records the closure item-by-item, §14's historical-metadata row now cites the proven failure path, and §16.6 records the evidence, the deterministic test LLM fixture and the scoped commands |
