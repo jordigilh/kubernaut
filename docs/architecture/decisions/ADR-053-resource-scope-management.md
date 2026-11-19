@@ -177,13 +177,12 @@ kinds they do not positively classify as cluster-scoped, and the same
 RESTMapper-based resolver follow-up closes both directions of this ambiguity.
 
 **Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
-when the identity has none, so a Kind that is *not* known to be cluster-scoped
-but arrives without a namespace can match a same-named object in any namespace
-and resolve at level 1. The local and fenced lanes return `unavailable` for the
-same identity. The Prometheus adapter defaults a missing namespace to `default`
-for kinds discovery does not report as cluster-scoped, so it does not produce
-this identity; the Kubernetes-event adapter copies `involvedObject.namespace`
-and never defaults, so only a defective or crafted event reaches it.
+when the identity has none, but `searchScopeItem` re-verifies the returned item
+against the requested identity, namespace included. A namespaced object therefore
+cannot satisfy a namespace-less identity: the query is rejected as a mismatched
+identity and the lane returns `unavailable`. All lanes fail closed for that
+identity; only a genuinely cluster-scoped object passes and resolves at level 1
+from its own label.
 
 **Reads are read-only.** The check performs a metadata-only `Get` on
 `PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an
