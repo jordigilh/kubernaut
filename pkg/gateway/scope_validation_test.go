@@ -247,6 +247,58 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		Entry("unauthorized fails scope", scope.ScopeUnauthorized, scope.ScopeSourceUnavailable, 403, "", true),
 	)
 
+	It("[UT-GW-2670-001] should check a cluster-scoped target without the alert namespace (BR-SCOPE-002, #2670)", func() {
+		mockScope := &mockScopeChecker{managed: true}
+		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, mockScope)
+		Expect(err).ToNot(HaveOccurred())
+
+		// A Node alert can carry a namespace while the target itself has none.
+		signal := &types.NormalizedSignal{
+			Fingerprint: "test-fingerprint-node-2670",
+			SignalName:  "NodeNotReady",
+			Severity:    "critical",
+			Namespace:   "openshift-monitoring",
+			Resource: types.ResourceIdentifier{
+				APIVersion: "v1",
+				Kind:       "Node",
+				Name:       "worker-1",
+			},
+		}
+
+		response, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred(), "#2670: a labeled Node must not surface as an unavailable scope error")
+		Expect(response.Status).To(Equal(gatewaypkg.StatusCreated))
+		Expect(mockScope.callCount).To(BeNumerically(">", 0))
+		Expect(mockScope.lastParams.namespace).To(BeEmpty(),
+			"#2670: the scope identity must match the RR target namespace, which is empty for a cluster-scoped kind")
+		Expect(mockScope.lastParams.kind).To(Equal("Node"))
+	})
+
+	It("[UT-GW-2670-002] should keep the target namespace for namespaced kinds (BR-SCOPE-002, #2670)", func() {
+		mockScope := &mockScopeChecker{managed: true}
+		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, mockScope)
+		Expect(err).ToNot(HaveOccurred())
+
+		signal := &types.NormalizedSignal{
+			Fingerprint: "test-fingerprint-pod-2670",
+			SignalName:  "HighCPU",
+			Severity:    "warning",
+			Namespace:   "production",
+			Resource: types.ResourceIdentifier{
+				APIVersion: "v1",
+				Namespace:  "payments",
+				Kind:       "Pod",
+				Name:       "api-pod",
+			},
+		}
+
+		response, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusCreated))
+		Expect(mockScope.lastParams.namespace).To(Equal("payments"),
+			"the scope identity follows the RR target namespace, not the alert namespace")
+	})
+
 	// ========================================
 	// UT-GW-002-001: Reject signal from unmanaged namespace
 	// ========================================

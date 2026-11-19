@@ -203,6 +203,22 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		DeferCleanup(noServer.Close)
 		client = acm.NewClient(noServer.URL)
 
+		// Missing label evidence is not absence (AC-4): a Search item with no
+		// label projection, or an explicit null, is unverified — never
+		// verified_unmanaged.
+		for _, body := range []string{
+			`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"target"}]}]}}`,
+			`{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"target","label":null}]}]}}`,
+		} {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, body)
+			}))
+			unverified, err := acm.NewClient(server.URL).Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "target"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(unverified.State).To(Equal(scope.ScopeUnavailable), "missing label evidence must not read as absence (BR-SCOPE-001)")
+			server.Close()
+		}
+
 		ambiguous, err := client.Check(context.Background(), scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Namespace: "default", Kind: "Node", Name: "target"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ambiguous.State).To(Equal(scope.ScopeInvalid))

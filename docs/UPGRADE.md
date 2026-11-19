@@ -69,7 +69,8 @@ or `verified_unmanaged` with `resource-label` provenance. The 2-level hierarchy
 degenerates to level 1: no namespace exists to inherit, so a present-but-
 unlabeled target is `verified_unmanaged` with `none` provenance, and a target
 that cannot be observed is `unavailable` (`observation_missing` locally,
-`cache_miss` fleet-side). An invalid label value is `invalid`, exactly as for a
+`cache_miss` on the fenced fleet lane, `search_observation_unavailable` on direct
+ACM). An invalid label value is `invalid`, exactly as for a
 namespaced target — with one fenced-lane caveat: the syncer refuses an invalid
 observation, so a record committed earlier keeps serving until a later repair
 replaces it or its TTL expires. ADR-053 §"Recognized kinds" states that window

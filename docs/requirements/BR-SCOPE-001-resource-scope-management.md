@@ -208,7 +208,7 @@ retryConfig:
 
 ---
 
-### FR-SCOPE-004: Cluster-Scoped Resource Support (V2.0 - Future)
+### FR-SCOPE-004: Cluster-Scoped Resource Support
 
 **Requirement**: Operators MUST be able to mark cluster-scoped resources (Nodes, PersistentVolumes) as managed by Kubernaut.
 
@@ -242,7 +242,9 @@ spec:
           storage.kubernaut.io/managed: "true"
 ```
 
-**Status**: Deferred to V2.0 (V1.0 focuses on namespace-scoped resources only)
+**Status**: Option A (per-object resource labels) is implemented (#2670) and is the
+supported mechanism. Option B (`RemediationScope` CRD selectors) remains deferred
+to V2.0.
 
 ---
 

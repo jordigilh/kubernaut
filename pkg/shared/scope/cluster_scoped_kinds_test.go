@@ -30,7 +30,7 @@ import (
 // removing a kind is a deliberate change in code, test and documentation.
 var _ = Describe("Recognized cluster-scoped kinds (BR-SCOPE-001 FR-SCOPE-004)", func() {
 
-	It("UT-SCOPE-2670-012: the classification inventory matches the documented set", func() {
+	It("UT-SCOPE-2670-012 [BR-SCOPE-001]: the classification inventory matches the documented set", func() {
 		documented := map[string]bool{
 			// Upstream Kubernetes, shipped by default (19).
 			"Node":                           true,
@@ -64,7 +64,7 @@ var _ = Describe("Recognized cluster-scoped kinds (BR-SCOPE-001 FR-SCOPE-004)", 
 		Expect(clusterScopedKinds).To(HaveLen(23))
 	})
 
-	It("UT-SCOPE-2670-012 [BR-SCOPE-001]: namespaced kinds are never classified as cluster-scoped", func() {
+	It("UT-SCOPE-2670-014 [BR-SCOPE-001, SI-10]: namespaced kinds are never classified as cluster-scoped", func() {
 		for _, kind := range []string{"Pod", "Deployment", "Service", "ConfigMap", "Secret", "Job", "CronJob", "PersistentVolumeClaim"} {
 			Expect(IsClusterScopedKind(kind)).To(BeFalse(), "%s is namespaced and must keep the named 2-level hierarchy", kind)
 		}

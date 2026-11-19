@@ -248,7 +248,7 @@ func (c *Client) mapFencedRecord(ctx context.Context, request FencedReadRequest,
 	case scope.LabelStateFalse:
 		return verifiedResult(false, scope.ScopeSourceResourceLabel), nil
 	case scope.LabelStateInvalid:
-		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: "invalid_resource_label"}, nil
+		return scope.ScopeResult{State: scope.ScopeInvalid, Provenance: scope.ScopeSourceUnavailable, Reason: scope.ReasonInvalidResourceLabel}, nil
 	case scope.LabelStateAbsent:
 		if request.Identity.Namespace == "" || scope.IsClusterScopedKind(request.Identity.Kind) {
 			return verifiedResult(false, scope.ScopeSourceNone), nil
@@ -317,7 +317,7 @@ func (c *Client) checkResourceObservation(ctx context.Context, resource scope.Re
 		return scope.ScopeResult{
 			State:      scope.ScopeInvalid,
 			Provenance: scope.ScopeSourceUnavailable,
-			Reason:     "invalid_resource_label",
+			Reason:     scope.ReasonInvalidResourceLabel,
 		}, nil
 	case scope.LabelStateAbsent:
 		// Continue below: only a verified-present, unlabeled resource can

@@ -129,6 +129,64 @@ func cleanReadiness(partition scopecache.PartitionStateKey, info registry.Cluste
 	return readiness
 }
 
+// labelStatusStore returns one verified fenced record carrying the requested
+// label state, with proof fields copied from the read request so the client's
+// proof check passes. It isolates the status-store (production) lane from the
+// ObservationReader lane.
+type labelStatusStore struct {
+	noOpStatusStore
+	label scope.LabelState
+}
+
+func (s labelStatusStore) ReadVerified(_ context.Context, request scopecache.FencedReadRequest) (scopecache.FencedReadResult, error) {
+	ttl := scopecache.TTLPTTLValidation{Valid: true}
+	return scopecache.FencedReadResult{
+		State:                  scopecache.ReadVerified,
+		ProvenRegistryRevision: request.ExpectedRegistryRevision,
+		ProvenGeneration:       request.Generation,
+		ProvenWriterFence:      request.WriterFence,
+		Record: scopecache.ResourceRecord{
+			Identity:   request.Identity,
+			LabelState: s.label,
+			Generation: request.Generation,
+		},
+		RecordValid: true,
+		IndexValid:  true,
+		StatusValid: true,
+		RecordTTL:   ttl,
+		IndexTTL:    ttl,
+		StatusTTL:   ttl,
+	}, nil
+}
+
+// UT-FMC-2670-005 [BR-SCOPE-001, AC-4]: the fenced status-store lane resolves a
+// cluster-scoped target at level 1. This is the lane the FMC service actually
+// serves from (NewClientWithStatusStore); the ObservationReader cases above
+// cover the contract used by the imports and the ITs.
+var _ = DescribeTable("UT-FMC-2670-005 [BR-SCOPE-001]: fenced reads resolve a cluster-scoped target at level 1",
+	func(label scope.LabelState, wantState scope.ScopeState, wantProvenance scope.ScopeSource) {
+		info := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "cluster-a__"}
+		partition := scopecache.PartitionStateKey{ClusterID: info.ID, RegistrationUID: info.RegistrationUID}
+		fence := scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1}
+		readiness := cleanReadiness(partition, info, 1, fence, 1)
+		guard := &staticRegistrationGuard{snapshot: registry.RegistrationSnapshot{Info: info, Revision: 1}, found: true}
+		client, err := scopecache.NewClientWithStatusStore(labelStatusStore{label: label}, guard, readiness)
+		Expect(err).ToNot(HaveOccurred())
+
+		result, err := client.Check(context.Background(), scope.ResourceIdentity{
+			ClusterID: info.ID, Version: "v1", Kind: "Node", Name: "worker-1",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(wantState))
+		Expect(result.Provenance).To(Equal(wantProvenance))
+		Expect(result.Validate()).To(Succeed())
+	},
+	Entry("managed label", scope.LabelStateTrue, scope.ScopeVerifiedManaged, scope.ScopeSourceResourceLabel),
+	Entry("explicit opt-out", scope.LabelStateFalse, scope.ScopeVerifiedUnmanaged, scope.ScopeSourceResourceLabel),
+	Entry("absent label inherits nothing", scope.LabelStateAbsent, scope.ScopeVerifiedUnmanaged, scope.ScopeSourceNone),
+	Entry("invalid label fails closed", scope.LabelStateInvalid, scope.ScopeInvalid, scope.ScopeSourceUnavailable),
+)
+
 var _ = Describe("Status-store scope cache client (BR-SCOPE-001)", func() {
 	DescribeTable("UT-FMC-2670-001 [BR-SCOPE-001, AC-4]: a labeled cluster-scoped observation authorizes remediation", func(group, version, kind string) {
 		// Issue #2670: a real cluster-scoped object (Node, PV, cluster-scoped

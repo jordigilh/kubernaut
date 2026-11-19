@@ -74,10 +74,6 @@ func NewClient(endpoint string, opts ...ClientOption) *Client {
 	return c
 }
 
-// Check checks whether a resource exists on a managed cluster
-// by querying ACM Search's GraphQL API. Search visibility and backend failures
-// are returned so callers can distinguish an unavailable scope backend from an
-// unmanaged resource.
 // classifyIdentity rejects identities that can never be resolved: the
 // non-labelable pseudo-target, an invalid GVK, a namespace on a cluster-scoped
 // kind, or a known namespaced kind without a namespace. The second return
@@ -107,6 +103,10 @@ func classifyIdentity(r scope.ResourceIdentity) (scope.ScopeResult, bool) {
 	return scope.ScopeResult{}, false
 }
 
+// Check checks whether a resource exists on a managed cluster
+// by querying ACM Search's GraphQL API. Search visibility and backend failures
+// are returned so callers can distinguish an unavailable scope backend from an
+// unmanaged resource.
 func (c *Client) Check(ctx context.Context, r scope.ResourceIdentity) (scope.ScopeResult, error) {
 	unavailable := scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: "search_observation_unavailable", Retryable: true}
 	if ctx.Err() != nil {

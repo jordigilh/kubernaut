@@ -466,6 +466,20 @@ func (s *Server) sendSuccessResponse(
 //
 // BR-SCOPE-002: Label-based resource opt-in with 2-level hierarchy.
 // BR-SCOPE-013: Deny-by-default when scope checker is not initialized.
+// scopeTargetNamespace returns the namespace the scope identity must carry. It
+// matches the RemediationRequest target (signal.Resource.Namespace): a
+// cluster-scoped kind has none even when the alert carries a namespace, so
+// passing the alert namespace would make the identity ambiguous (#2670).
+func scopeTargetNamespace(signal *types.NormalizedSignal) string {
+	if scope.IsClusterScopedKind(signal.Resource.Kind) {
+		return ""
+	}
+	if signal.Resource.Namespace != "" {
+		return signal.Resource.Namespace
+	}
+	return signal.Namespace
+}
+
 func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 
@@ -511,7 +525,7 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 	identity, err := scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
-		Namespace: signal.Namespace,
+		Namespace: scopeTargetNamespace(signal),
 		Name:      signal.Resource.Name,
 	}, apiVersion)
 	if err != nil {

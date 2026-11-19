@@ -286,7 +286,8 @@ and Namespace.
    early return becomes
    `if resourceState == LabelStateTrue || resourceState == LabelStateFalse || resourceState == LabelStateInvalid || clusterScoped { return resolveLabelStates(resourceState, LabelStateAbsent, clusterScoped), nil }`
    so a cluster-scoped target never reads a Namespace. The final `resolveLabelStates` call at
-   `manager.go:289` keeps its literal `false`: it is only reachable when `clusterScoped` is false.
+   `manager.go:289` passes the parameter; on that path it is necessarily `false`, because the
+   early return above already handled every `clusterScoped` case.
 7. Package doc comment: note the pseudo-target exception next to the existing
    "For cluster-scoped resources (namespace==\"\"), only the resource label is checked".
 
@@ -323,6 +324,15 @@ replaced by the helper in REFACTOR, behavior-identical.
    when `clusterScoped` (level 1 only). `buildFilters` already omits the namespace filter when
    `r.Namespace == ""`, so the Search request needs no change.
 
+### 4.4 `pkg/gateway/signal_ingestion.go`
+
+`validateScope` built the scope identity from `signal.Namespace` (the alert's namespace) while the
+RemediationRequest carries `signal.Resource.Namespace` (`crd_creator.go` `buildTargetResource`).
+For a cluster-scoped kind the two differ, and the new terminal guard would turn a labeled Node into
+`ScopeInvalid` → a 5xx instead of admission. Fix: use `signal.Resource.Namespace`, fall back to
+`signal.Namespace` only for a non-cluster-scoped kind, and force empty for a known cluster-scoped
+kind, so the Gateway checks exactly the identity RO re-checks.
+
 ## 5. TDD phases
 
 Every phase starts with a failing test (target + focus), captured as RED evidence for the PR
@@ -330,7 +340,7 @@ body.
 
 | Phase | RED (failing) | GREEN | REFACTOR |
 |-------|---------------|-------|----------|
-| 1. Local lane | `pkg/shared/scope/manager_test.go`: `UT-SCOPE-2670-001..011` and `..013`; `pkg/shared/scope/cluster_scoped_kinds_test.go` (new, `package scope`): `UT-SCOPE-2670-012` | `manager.go` §4.1 | replace the two remaining inline `isClusterScoped(...) \|\| Namespace == ""` derivations (`Resolve`, `ResolveWithResourceLabels`) with the GREEN helper (behavior-identical, three callers), and rewrite the guard comment |
+| 1. Local lane | `pkg/shared/scope/manager_test.go`: `UT-SCOPE-2670-001..011` and `..013`; `pkg/shared/scope/cluster_scoped_kinds_test.go` (new, `package scope`): `UT-SCOPE-2670-012`, `..014` | `manager.go` §4.1 | replace the two remaining inline `isClusterScoped(...) \|\| Namespace == ""` derivations (`Resolve`, `ResolveWithResourceLabels`) with the GREEN helper (behavior-identical, three callers), and rewrite the guard comment |
 | 2. Fleet lane UT | `client_red_test.go` (`UT-FMC-2670-001..004`), `scopecache_test.go` (`UT-FLEET-SC-016`); the shared `mockCacheReader` is upgraded to `store map[string]scope.LabelState` so `Absent`/`Invalid` observations are expressible | `client.go` §4.2 | delete the refusal comment that is now wrong; migrate the remaining `bool` fixture call sites to the label-state mock |
 | 3. ACM lane UT + IT | `pkg/fleet/acm/client_test.go`: rewrite `UT-ACM-2592-002`, add `UT-ACM-2670-001..002`; `test/integration/acm/acm_factory_test.go`: add `IT-ACM-2670-001` | `acm/client.go` §4.3 (phase exits only when both the UTs and `IT-ACM-2670-001` pass) | extract the four terminal guards into `classifyIdentity` (gocyclo 20 → below the 15 threshold), collapse the namespace read into the `!clusterScoped` branch (§4.3 item 5) keeping the level-2 read for namespaced targets |
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
@@ -369,6 +379,7 @@ Lands in the `kubernaut-operator` repository as its own PR (this PR cannot touch
 | UT-SCOPE-2670-011 | `Namespace` object as the target (not inheritance evidence), labeled managed | `verified_managed` / `resource-label` — §2 D4: a namespace-level alert is a legitimate target; the label on the object applies at level 1 | yes (regression guard: a later "narrow the kind set" change must edit this test deliberately) |
 | UT-SCOPE-2670-012 | the recognized cluster-scoped inventory itself | `clusterScopedKinds` equals the 23-entry list the ADR-053 section publishes (added by this issue, §8) — adding or removing a kind must change this test and the doc together. Needs its own internal `package scope` spec file (the map is unexported), not `scope_test` | yes (keeps the documented authorization surface honest) |
 | UT-SCOPE-2670-013 | `PersistentVolumeClaim` target (all cases `Version: "v1"`, Group `""`, fixture `corev1.PersistentVolumeClaim`): labeled; unlabeled in a managed namespace; empty namespace | `verified_managed` / `resource-label`; `verified_managed` / `namespace-label`; `ScopeInvalid` / `namespaced_target_without_namespace` — proves PVC keeps the namespaced 2-level hierarchy (§2 D5) | yes (owner-requested kind) |
+| UT-SCOPE-2670-014 | namespaced kinds (`Pod`, `Deployment`, `Service`, `ConfigMap`, `Secret`, `Job`, `CronJob`, `PersistentVolumeClaim`) are never classified as cluster-scoped | `IsClusterScopedKind` false for each; `IsKnownNamespacedKind("PersistentVolumeClaim")` true | yes (SI-10) |
 | all pre-existing `pkg/shared/scope` specs in `manager_test.go` | namespaced hierarchy, invalid identity, error paths | unchanged — the namespaced specs never reach a new guard; the cluster-scoped specs (`UT-SCOPE-001-013/014/015`) drive `Resolve`, which never had the refusal | regression |
 
 `UT-SCOPE-001-013/014/015` stay as-is: they drive `Resolve`, which never had the refusal.
@@ -413,7 +424,7 @@ the **reader contract**, not a production observation; fleet PV/CRD observation 
 | IT-RO-192-001 (restored) | Local lane through RO: a managed-labeled Node passes the scope gate, the RR reaches Processing, SP is created, SP failure drives `PhaseFailed`, and no EA is created (#240 contract) |
 | IT-ACM-2670-001 (new) | Direct ACM backend composed by the production factory: a `Node` identity with `label: ""` resolves `verified_unmanaged`/`none`, and with `label: "kubernaut.ai/managed=true"` resolves `verified_managed`/`resource-label` — the cluster-scoped branch of `acm.Client.Check` through real wiring |
 
-Scenario coverage: 21 unit scenario IDs (local 13 / fleet 5 / ACM 3) + 4 integration scenarios,
+Scenario coverage: 22 unit scenario IDs (local 14 / fleet 5 / ACM 3) + 4 integration scenarios,
 all business outcomes, no duplicate assertions. Critical scenarios: 100%.
 
 ## 7. Wiring manifest
@@ -421,7 +432,7 @@ all business outcomes, no duplicate assertions. Critical scenarios: 100%.
 | Component | Production entry point | Wiring code location | IT |
 |-----------|----------------------|---------------------|----|
 | `scope.Manager.Check` cluster-scoped resolution | RO remediation-authorization gate | `pkg/remediationorchestrator/routing/blocking.go` `checkScopeForResource` | IT-RO-192-001 |
-| `scope.Manager.Check` cluster-scoped resolution | Gateway signal ingestion | `pkg/gateway/signal_ingestion.go` `validateScope` | **none — accepted risk (§10)** |
+| `scope.Manager.Check` cluster-scoped resolution | Gateway signal ingestion | `pkg/gateway/signal_ingestion.go` `validateScope` | `UT-GW-2670-001/002` (identity normalization); no cluster-scoped IT |
 | `scope.Manager.Check` cluster-scoped resolution | API Frontend RR creation tool | `pkg/apifrontend/tools/scope_helpers.go` `checkRRScope` | **none — same injected checker (§10)** |
 | `scopecache.Client.Check` | FMC `GET /api/v1/scope/check` | `pkg/fleet/fmc/handler.go` `handleScopeCheck` | IT-FMC-DEFERRED-001 |
 | `acm.Client.Check` | Fleet backend selection | `pkg/fleet/scope_factory.go:158` | IT-ACM-2670-001 (run with `go test ./test/integration/acm/...`; the suite is outside the CI integration matrix, §9) |
@@ -530,7 +541,8 @@ cluster-scoped map; the only missing read grant in the operator is RO's `persist
 and it lands as the companion change in §5b. Two
 explicit deductions from the project's integration target ("100% of wiring points"): (1) **two of
 five wiring points** (Gateway `validateScope`, API Frontend `checkRRScope`) have no cluster-scoped
-IT of their own — both call the identical injected checker, proven at UT + fleet IT + RO IT — and
+IT of their own — the Gateway has `UT-GW-2670-001/002` proving its identity normalization, both call
+the identical injected checker, proven at UT + fleet IT + RO IT — and
 (2) the direct-ACM lane's authorizable kind set is bounded only by ACM visibility (pre-existing,
 §10). The blast radius is three guard sites and six known callers; the fleet fenced path needs no
 production change beyond the guard removal. Remaining risk is the documented pre-existing
