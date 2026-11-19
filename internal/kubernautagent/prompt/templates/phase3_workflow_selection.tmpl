@@ -7,13 +7,13 @@
 
 ## Incident Context
 
-A **{{ .Severity }} {{ .SignalName }}** event {{ if eq .SignalMode "proactive" }}is predicted{{ else }}occurred{{ end }} for **{{ .Namespace }}/{{ .ResourceKind }}/{{ .ResourceName }}** in cluster **{{ .ClusterName }}**.
+A **{{ .Severity }} {{ .SignalName }}** event {{ if eq .SignalMode "proactive" }}is predicted{{ else }}occurred{{ end }} for **{{ .ResourceIdentity }}** in cluster **{{ .ClusterName }}**.
 
 **Technical Details**:
 - Signal Name: {{ .SignalName }}
 - Severity: {{ .Severity }}
 - Signal Mode: {{ .SignalMode }}
-- Resource: {{ .Namespace }}/{{ .ResourceKind }}/{{ .ResourceName }}
+- Resource: {{ .ResourceIdentity }}
 
 ## Severity Authority (BR-SP-105)
 

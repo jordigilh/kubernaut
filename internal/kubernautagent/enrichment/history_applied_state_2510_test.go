@@ -21,7 +21,7 @@ import (
 var _ = Describe("#2510 applied-state enrichment mapping", func() {
 	It("UT-KA-2510-002: maps server-derived state and current hash into the Agent DTO", func() {
 		client := &stubDSClient{response: &ogenclient.RemediationHistoryContext{
-			TargetResource:     "prod/Deployment/api",
+			TargetResource:     "prod/apps/v1/Deployment/api",
 			CurrentSpecHash:    "sha256:current",
 			RegressionDetected: false,
 			Tier1: ogenclient.RemediationHistoryTier1{Chain: []ogenclient.RemediationHistoryEntry{{
@@ -33,7 +33,7 @@ var _ = Describe("#2510 applied-state enrichment mapping", func() {
 			}}},
 		}}
 
-		result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), "Deployment", "api", "prod", "", "sha256:current")
+		result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api", Namespace: "prod", ClusterID: "", SpecHash: "sha256:current"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.CurrentSpecHash).To(Equal("sha256:current"))
 		Expect(result.Tier1).To(HaveLen(1))

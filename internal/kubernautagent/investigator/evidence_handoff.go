@@ -31,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -177,8 +178,24 @@ func (inv *Investigator) scopedHandoffInput(in handoffInput) handoffInput {
 
 // handoffHistoryMatchesTarget accepts canonical and legacy cluster-scoped
 // spellings while keeping arbitrary namespaced CRDs fail-closed.
+//
+// #2658: the stored history identity is namespace/group/version/Kind/name,
+// while the signal knows only namespace/kind/name. The group and version are
+// parsed out of the identity and cannot be cross-checked here (a signal
+// carries neither); they are already constrained by the identity-scoped
+// history query, so the comparison uses the identity's remaining coordinates.
+// Plain legacy spellings (group-blind rows written before #2658) are still an
+// exact coordinate match and stay acceptable.
 func handoffHistoryMatchesTarget(raw string, signal katypes.SignalContext) bool {
-	normalized := strings.TrimPrefix(strings.TrimSpace(raw), "/")
+	trimmed := strings.TrimPrefix(strings.TrimSpace(raw), "/")
+	normalized := trimmed
+	if _, namespace, kind, name, err := scope.ParseTargetIdentity(trimmed); err == nil {
+		if namespace == "" {
+			normalized = kind + "/" + name
+		} else {
+			normalized = namespace + "/" + kind + "/" + name
+		}
+	}
 	canonical := signal.Namespace + "/" + signal.ResourceKind + "/" + signal.ResourceName
 	if signal.Namespace == "" {
 		canonical = signal.ResourceKind + "/" + signal.ResourceName

@@ -40,7 +40,7 @@ import (
 var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	DescribeTable("UT-KA-2496-AUDIT-006: failed history acquisition is distinct from a legitimate empty result",
 		func(failed bool) {
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{TargetResource: "prod/Pod/api"}}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{TargetResource: "prod/core/v1/Pod/api"}}
 			if failed {
 				ds.err = errors.New("external history unavailable")
 			}
@@ -94,7 +94,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 					{Kind: "ReplicaSet", Name: "api-server-abc123", Namespace: "default"},
 				},
 				RemediationHistory: &enrichment.RemediationHistoryResult{
-					TargetResource:     "default/Deployment/api-server",
+					TargetResource:     "default/apps/v1/Deployment/api-server",
 					RegressionDetected: false,
 					Tier1: []enrichment.Tier1Entry{
 						{RemediationUID: "oom-increase-memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
@@ -253,7 +253,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	Describe("UT-KA-433-133: DataStorageClient accepts kind and specHash parameters", func() {
 		It("should compile with kind, name, namespace, specHash parameters", func() {
 			var client enrichment.DataStorageClient = &fakeDS{}
-			result, err := client.GetRemediationHistory(context.TODO(), "Deployment", "api-server", "production", "", "abc123hash")
+			result, err := client.GetRemediationHistory(context.TODO(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "production", ClusterID: "", SpecHash: "abc123hash"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 		})
@@ -524,7 +524,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 // fakeDS satisfies the updated DataStorageClient interface for compile-time verification.
 type fakeDS struct{}
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 
@@ -567,12 +567,14 @@ func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (strin
 
 // fakeDataStorageClient is a configurable DataStorageClient stub for enricher coordination tests.
 type fakeDataStorageClient struct {
-	history          *enrichment.RemediationHistoryResult
-	err              error
-	capturedSpecHash string
+	history            *enrichment.RemediationHistoryResult
+	err                error
+	capturedSpecHash   string
+	capturedAPIVersion string
 }
 
-func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
-	f.capturedSpecHash = specHash
+func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
+	f.capturedSpecHash = query.SpecHash
+	f.capturedAPIVersion = query.APIVersion
 	return f.history, f.err
 }

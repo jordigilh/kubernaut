@@ -77,7 +77,7 @@ type rcaDSClient struct {
 	historyErr error
 }
 
-func (f *rcaDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *rcaDSClient) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	if f.historyErr != nil {
 		return nil, f.historyErr
 	}

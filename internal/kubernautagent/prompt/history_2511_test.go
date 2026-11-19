@@ -20,7 +20,7 @@ import (
 var _ = Describe("#2511 generic history-aware RCA continuation", func() {
 	It("UT-KA-2511-002: renders generic recurrence guidance without memory-specific policy", func() {
 		history := &enrichment.RemediationHistoryResult{
-			TargetResource: "prod/Deployment/cert-manager",
+			TargetResource: "prod/apps/v1/Deployment/cert-manager",
 			Tier1: []enrichment.Tier1Entry{{
 				RemediationUID: "rr-certificate-1", ActionType: "rotate_certificate", SignalType: "TLSHandshakeFailure",
 				Outcome: "Success", EffectivenessScore: floatPtr(0), SignalResolved: boolPtr(false), AssessmentReason: "Full",
