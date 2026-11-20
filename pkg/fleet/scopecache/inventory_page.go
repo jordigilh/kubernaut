@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -526,8 +527,9 @@ func decodeInventoryRecords(items []interface{}, request InventoryPageRecordsReq
 	}
 	const recordFields = 8
 	offset := 6
-	if int64(len(items)) < int64(offset)+count*recordFields+1 {
-		return result, fmt.Errorf("short inventory page records payload")
+	recordCount, err := recordsLayout(items, count, offset, recordFields)
+	if err != nil {
+		return result, err
 	}
 	result.State = InventoryReadOK
 	result.Reason = ""
@@ -535,9 +537,9 @@ func decodeInventoryRecords(items []interface{}, request InventoryPageRecordsReq
 	result.Generation = uint64(generation)
 	result.Fence = uint64(fence)
 	result.RemainingProofTTL = remainingMillis(remaining)
-	result.Records = make([]InventoryRecord, 0, count)
-	for index := int64(0); index < count; index++ {
-		record, err := decodeInventoryRecord(items, offset+int(index)*recordFields, request.Partition.ClusterID, uint64(generation))
+	result.Records = make([]InventoryRecord, 0, recordCount)
+	for index := 0; index < recordCount; index++ {
+		record, err := decodeInventoryRecord(items, offset+index*recordFields, request.Partition.ClusterID, uint64(generation))
 		if err != nil {
 			return result, err
 		}
@@ -546,12 +548,33 @@ func decodeInventoryRecords(items []interface{}, request InventoryPageRecordsReq
 		}
 		result.Records = append(result.Records, *record)
 	}
-	labels, err := decodeNamespaceLabels(items, offset+int(count)*recordFields)
+	labels, err := decodeNamespaceLabels(items, offset+recordCount*recordFields)
 	if err != nil {
 		return result, err
 	}
 	result.NamespaceLabels = labels
 	return result, nil
+}
+
+// recordsLayout validates the page payload layout for count records and
+// returns the count narrowed to int.
+//
+// The payload can never hold more records than it has fields, so this both
+// validates the count and makes the int64 -> int narrowing provably safe
+// (go/incorrect-integer-conversion). The division form avoids a multiplication
+// that could overflow before the check.
+func recordsLayout(items []interface{}, count int64, offset, recordFields int) (int, error) {
+	if count < 0 || count > math.MaxInt {
+		return 0, fmt.Errorf("invalid inventory records count: %d", count)
+	}
+	if len(items) <= offset {
+		return 0, fmt.Errorf("short inventory page records payload")
+	}
+	recordCount := int(count)
+	if recordCount > (len(items)-offset-1)/recordFields {
+		return 0, fmt.Errorf("short inventory page records payload")
+	}
+	return recordCount, nil
 }
 
 // decodeInventoryRecord decodes one record of the page payload and rejects any
