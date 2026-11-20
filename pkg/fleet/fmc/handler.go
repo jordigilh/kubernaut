@@ -19,11 +19,15 @@ package fmc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -54,9 +58,10 @@ const (
 // Handler serves the FMC REST API for federated scope checks and cluster listing.
 // ADR-068: GW/RO query this API instead of connecting to Valkey directly.
 type Handler struct {
-	checker  scope.ScopeChecker
-	registry registry.ClusterRegistry
-	logger   logr.Logger
+	checker   scope.ScopeChecker
+	registry  registry.ClusterRegistry
+	inventory inventory.Reader
+	logger    logr.Logger
 }
 
 // NewHandler creates an FMC API handler with the given dependencies.
@@ -69,10 +74,24 @@ func NewHandler(checker scope.ScopeChecker, reg registry.ClusterRegistry, logger
 	}
 }
 
+// NewHandlerWithInventory creates an FMC API handler that also serves the
+// bounded managed-resource inventory projection (DD-FLEET-017 D2.1). The
+// inventory routes are registered only when a reader is supplied, so a
+// deployment that serves no projection keeps its previous route surface.
+func NewHandlerWithInventory(checker scope.ScopeChecker, reg registry.ClusterRegistry, reader inventory.Reader, logger logr.Logger) *Handler {
+	handler := NewHandler(checker, reg, logger)
+	handler.inventory = reader
+	return handler
+}
+
 // RegisterRoutes adds the FMC API routes to the given ServeMux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(ScopeCheckPath, h.handleScopeCheck)
 	mux.HandleFunc(ClustersPath, h.handleListClusters)
+	if h.inventory != nil {
+		mux.HandleFunc(InventoryPath, h.handleInventoryList)
+		mux.HandleFunc(InventoryPath+"/", h.handleInventoryGet)
+	}
 }
 
 // handleScopeCheck checks whether a resource on a remote cluster is managed.
@@ -200,6 +219,146 @@ func (h *Handler) handleListClusters(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
+}
+
+// handleInventoryList serves one bounded page of the managed-resource
+// projection (DD-FLEET-017 D2.1).
+//
+//	GET /api/v1/inventory/managed-resources?cluster_id=...&limit=...&cursor=...
+//	-> 200 success/empty page with freshness derived from the proof
+//	-> 400 malformed cursor or filter (the only caller error)
+//	-> 503 partial/unavailable state-only
+//	-> 405 if not GET
+func (h *Handler) handleInventoryList(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+	query := r.URL.Query()
+	limit := 0
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			h.writeInventoryFailure(w, http.StatusBadRequest, "limit is not a number")
+			return
+		}
+		limit = parsed
+	}
+	filters := inventory.Filters{
+		ClusterID:  query.Get("cluster_id"),
+		Namespace:  query.Get("namespace"),
+		Group:      query.Get("group"),
+		Version:    query.Get("version"),
+		Kind:       query.Get("kind"),
+		Name:       query.Get("name"),
+		ResourceID: query.Get("resource_id"),
+		Cursor:     query.Get("cursor"),
+		Limit:      limit,
+	}
+	page, err := h.inventory.List(r.Context(), filters)
+	h.writeInventoryPage(w, page, err)
+}
+
+// handleInventoryGet serves one exact managed resource by opaque ID.
+//
+//	GET /api/v1/inventory/managed-resources/{resourceID}?cluster_id=...
+//	-> 200 canonical resource
+//	-> 400 malformed ID or cluster filter
+//	-> 404 absent, invisible, or cross-cluster
+//	-> 503 unproven partition or identity mismatch
+//	-> 405 if not GET
+func (h *Handler) handleInventoryGet(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+	resourceID := strings.TrimPrefix(r.URL.Path, InventoryPath+"/")
+	if resourceID == "" || strings.Contains(resourceID, "/") {
+		h.writeInventoryFailure(w, http.StatusNotFound, "inventory resource not found")
+		return
+	}
+	clusterID := r.URL.Query().Get("cluster_id")
+	if err := inventory.ValidateResourceID(resourceID); err != nil {
+		h.writeInventoryFailure(w, http.StatusBadRequest, "resource_id is not a valid opaque ID")
+		return
+	}
+	if _, err := (inventory.Filters{ClusterID: clusterID}).Normalize(); err != nil {
+		h.writeInventoryFailure(w, http.StatusBadRequest, "cluster_id is required")
+		return
+	}
+	resource, err := h.inventory.Get(r.Context(), clusterID, resourceID)
+	switch {
+	case errors.Is(err, inventory.ErrInvalidFilter):
+		h.writeInventoryFailure(w, http.StatusBadRequest, "invalid inventory filter")
+		return
+	case errors.Is(err, inventory.ErrNotFound):
+		h.writeInventoryFailure(w, http.StatusNotFound, "inventory resource not found")
+		return
+	case err != nil:
+		h.logger.Error(err, "inventory exact read failed", "cluster", clusterID)
+		h.writeInventoryJSON(w, http.StatusServiceUnavailable, inventory.StateOnly(inventory.StateUnavailable))
+		return
+	}
+	if err := resource.Validate(); err != nil {
+		h.logger.Error(err, "inventory exact read returned an invalid resource", "cluster", clusterID)
+		h.writeInventoryJSON(w, http.StatusServiceUnavailable, inventory.StateOnly(inventory.StateUnavailable))
+		return
+	}
+	h.writeInventoryJSON(w, http.StatusOK, resource)
+}
+
+// writeInventoryPage maps a page and its error to the DD-FLEET-017 §6 wire
+// contract. A page is never written without passing Page.Validate: a decoded
+// page that breaks the contract is replaced by a state-only failure.
+func (h *Handler) writeInventoryPage(w http.ResponseWriter, page inventory.Page, err error) {
+	if errors.Is(err, inventory.ErrInvalidFilter) {
+		h.writeInventoryFailure(w, http.StatusBadRequest, "invalid inventory filter")
+		return
+	}
+	if errors.Is(err, inventory.ErrNotFound) {
+		h.writeInventoryJSON(w, http.StatusNotFound, inventory.StateOnly(inventory.StateNotFound))
+		return
+	}
+	if err != nil {
+		h.logger.V(1).Info("inventory projection is not complete", "state", page.State, "reason", err.Error())
+	}
+	if page.Validate() != nil {
+		h.writeInventoryJSON(w, http.StatusServiceUnavailable, inventory.StateOnly(inventory.StateUnavailable))
+		return
+	}
+	h.writeInventoryJSON(w, inventoryWireStatus(page.State), page)
+}
+
+// inventoryWireStatus mirrors the existing FMC status mapping: only a
+// malformed caller input is a 4xx, every unproven state is a state-only 503.
+func inventoryWireStatus(state inventory.State) int {
+	switch state {
+	case inventory.StateSuccess, inventory.StateEmpty:
+		return http.StatusOK
+	case inventory.StateForbidden:
+		return http.StatusForbidden
+	case inventory.StateNotFound:
+		return http.StatusNotFound
+	default:
+		return http.StatusServiceUnavailable
+	}
+}
+
+// inventoryError is the bounded failure envelope for a 4xx inventory request.
+// The shared inventory.State enum has no caller-error value, so an invalid
+// request is reported without pretending to be a page.
+type inventoryError struct {
+	Error string `json:"error"`
+}
+
+func (h *Handler) writeInventoryFailure(w http.ResponseWriter, status int, message string) {
+	h.writeInventoryJSON(w, status, inventoryError{Error: message})
+}
+
+func (h *Handler) writeInventoryJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		h.logger.Error(err, "write inventory response")
+	}
 }
 
 // Pinger checks connectivity to a backend store.

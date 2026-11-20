@@ -190,6 +190,20 @@ func (s *lifecycleStatusStore) ReadVerified(context.Context, scopecache.FencedRe
 	return scopecache.FencedReadResult{}, nil
 }
 
+// DD-FLEET-017 D2.5a: the inventory page boundary is part of StatusStore. The
+// sync-lane fake never serves an inventory page.
+func (s *lifecycleStatusStore) ReadInventoryPageHeader(context.Context, scopecache.InventoryPageRequest) (scopecache.InventoryPageHeader, error) {
+	return scopecache.InventoryPageHeader{State: scopecache.InventoryReadMissing}, nil
+}
+
+func (s *lifecycleStatusStore) ReadInventoryPageRecords(context.Context, scopecache.InventoryPageRecordsRequest) (scopecache.InventoryPageRecords, error) {
+	return scopecache.InventoryPageRecords{State: scopecache.InventoryReadMissing}, nil
+}
+
+func (s *lifecycleStatusStore) ReadInventoryResource(context.Context, scopecache.InventoryResourceRequest) (scopecache.InventoryResourceRecord, error) {
+	return scopecache.InventoryResourceRecord{State: scopecache.InventoryReadMissing}, nil
+}
+
 type lifecycleLease struct {
 	fence scopecache.WriterFence
 	lost  chan struct{}

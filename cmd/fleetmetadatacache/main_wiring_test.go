@@ -24,6 +24,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"math/big"
@@ -31,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -46,6 +48,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -539,5 +542,58 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 			"SC-13: a TLS 1.2+ client with default (AEAD) ciphers must be accepted by the Intermediate profile")
 		_ = resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	})
+})
+
+// DD-FLEET-017 D2.1 / Test Plan wiring row 1: buildFMCServers is the
+// production assembly point for the FMC API mux. The inventory projection must
+// be reachable there, inside the same authenticated mux, and must fail closed
+// (503 state-only) when the partition proof is missing -- 404 would mean the
+// route was never registered.
+var _ = Describe("FMC inventory route production wiring (DD-FLEET-017 D2.1)", func() {
+	It("IT-FMC-INV-2661-001W [BR-API-001, BR-SAFETY-001]: buildFMCServers serves the inventory routes inside the authenticated mux", func() {
+		certDir := GinkgoT().TempDir()
+		cfg := fmcconfig.DefaultServiceConfig()
+		cfg.Server.APIAddr = osAssignedAddr
+		cfg.Server.HealthAddr = osAssignedAddr
+		cfg.Server.MetricsAddr = osAssignedAddr
+		cfg.Server.TLS.CertDir = certDir
+		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
+		deps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
+		DeferCleanup(sharedtls.ResetDefaultSecurityProfileForTesting)
+
+		servers := buildFMCServers(cfg, deps, logr.Discard())
+		ln, addr := listenOn()
+		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
+		defer func() { _ = servers.api.Close() }()
+
+		client := bearerHTTPClient("test-caller-token", &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test dials with modern Go defaults
+		})
+
+		resp, err := client.Get("https://" + addr + fmc.InventoryPath + "?cluster_id=unregistered-cluster")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable),
+			"the inventory route must exist on the production mux and fail closed without a partition proof")
+
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).ToNot(HaveOccurred())
+		var page inventory.Page
+		Expect(json.Unmarshal(body, &page)).To(Succeed())
+		Expect(page.State).To(Equal(inventory.StateUnavailable))
+		Expect(page.Items).To(BeEmpty())
+		Expect(page.NextCursor).To(BeEmpty())
+
+		exact, err := client.Get("https://" + addr + fmc.InventoryPath + "/r-" + strings.Repeat("a", 64) + "?cluster_id=unregistered-cluster")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = exact.Body.Close() }()
+		Expect(exact.StatusCode).To(Equal(http.StatusServiceUnavailable))
+
+		unknown, err := client.Get("https://" + addr + "/api/v1/inventory/not-a-route")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = unknown.Body.Close() }()
+		Expect(unknown.StatusCode).To(Equal(http.StatusNotFound),
+			"the unknown-route behaviour must be unchanged")
 	})
 })
