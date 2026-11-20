@@ -65,16 +65,27 @@ type caWatcherEntry struct {
 // backendDeps holds shared backend clients used by both the MCP and A2A handlers.
 // Created once by buildBackendDeps and consumed by buildMCPHandler / buildA2AHandler.
 type backendDeps struct {
-	DSClient              ds.Client
-	KAClient              *ka.Client
-	MCPClient             ka.MCPClient
-	DedicatedClient       ka.MCPClient
-	Pool                  *ka.KASessionPool
-	Triager               *severity.Triager
-	PromClient            prom.Client
-	DSResilientTransport  *resilience.CircuitBreakerTransport
-	CAWatchers            []caWatcherEntry
-	k8sDynClient          dynamic.Interface
+	DSClient             ds.Client
+	KAClient             *ka.Client
+	MCPClient            ka.MCPClient
+	DedicatedClient      ka.MCPClient
+	Pool                 *ka.KASessionPool
+	Triager              *severity.Triager
+	PromClient           prom.Client
+	DSResilientTransport *resilience.CircuitBreakerTransport
+	CAWatchers           []caWatcherEntry
+	k8sDynClient         dynamic.Interface
+	// k8sRawDynClient is the same dynamic client WITHOUT the circuit
+	// breaker. #2658 D1.5: the cross-group sibling check must distinguish a
+	// discovery/read failure from a CB-open state, so it reads through this
+	// direct client while the mapper stays discovery-backed.
+	k8sRawDynClient dynamic.Interface
+	// k8sDiscovery is the raw discovery client behind deps.Mapper. #2658: the
+	// cross-group sibling check prefers it over the mapper because discovery
+	// answers with a Kind's real plural, group and scope -- no plural guessing,
+	// so irregular plurals (Gateway -> "gateways") resolve instead of failing
+	// closed.
+	k8sDiscovery          discovery.DiscoveryInterface
 	k8sMetadataClient     metadata.Interface
 	k8sTypedClient        crclient.WithWatch
 	k8sPolicyClient       crclient.WithWatch
@@ -444,6 +455,7 @@ func buildK8sClientDeps(cfg *config.Config, deps *backendDeps, metricsReg *metri
 		DependencyName:   "k8s",
 	})
 	deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
+	deps.k8sRawDynClient = inner
 	logger.Info("K8s dynamic client initialized with circuit breaker")
 
 	metadataCfg := policyread.WithResponseBodyLimit(restCfg, policyread.DefaultInventoryBackendResponseBytes)
@@ -471,7 +483,11 @@ func buildK8sDiscoveryMapper(restCfg *rest.Config, deps *backendDeps, logger log
 		logger.Error(discErr, "K8s discovery client unavailable — CRD kind resolution will use static table only")
 		return
 	}
-	deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
+	// One shared cache (#2658): the sibling check reads Kind/group data from it
+	// too, so a triage never issues uncached discovery requests.
+	cache := memory.NewMemCacheClient(disc)
+	deps.k8sDiscovery = cache
+	deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(cache)
 	logger.Info("K8s RESTMapper initialized for CRD kind resolution")
 }
 
@@ -537,6 +553,26 @@ func buildSeverityTriageDeps(ctx context.Context, cfg *config.Config, deps *back
 		triagerOpts = append(triagerOpts, severity.WithPodResolver(
 			severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
 		))
+	}
+	// #2658 D1.8: the group-scope gate's sibling checker. Construction order
+	// matters -- buildK8sClientDeps (the RESTMapper + raw dynamic client) runs
+	// before this function, so both dependencies are available here. When
+	// either is unavailable the checker stays unwired and the gate fails
+	// closed (R3-5); the user can still resolve that by confirming the
+	// target's own API group.
+	if deps.k8sRawDynClient != nil {
+		switch {
+		case deps.k8sDiscovery != nil:
+			// Preferred: exact Kind -> plural/group/scope data, so no plural is
+			// guessed (irregular plurals resolve instead of failing closed).
+			triagerOpts = append(triagerOpts, severity.WithCrossGroupSiblingChecker(
+				severity.NewDiscoveryCrossGroupSiblingChecker(deps.k8sDiscovery, deps.k8sRawDynClient, logger.WithName("group-scope-checker")),
+			))
+		case deps.Mapper != nil:
+			triagerOpts = append(triagerOpts, severity.WithCrossGroupSiblingChecker(
+				severity.NewRESTMapperCrossGroupSiblingChecker(deps.Mapper, deps.k8sRawDynClient, logger.WithName("group-scope-checker")),
+			))
+		}
 	}
 
 	deps.Triager = severity.NewTriager(promClient, nil, severityCfg, logger.WithName("severity-triage"), triagerOpts...)

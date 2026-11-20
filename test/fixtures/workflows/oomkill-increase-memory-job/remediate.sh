@@ -8,13 +8,15 @@
 # Pattern: Validate -> Action -> Verify (DD-WORKFLOW-003)
 #
 # Parameters (env vars, UPPER_SNAKE_CASE per DD-WORKFLOW-003):
-#   TARGET_RESOURCE_KIND  - Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)
-#   TARGET_RESOURCE_NAME  - Name of the resource to patch
-#   TARGET_NAMESPACE      - Namespace of the resource
-#   MEMORY_LIMIT_NEW      - New memory limit to apply (e.g., 256Mi, 1Gi)
+#   TARGET_RESOURCE_KIND       - Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)
+#   TARGET_RESOURCE_NAME       - Name of the resource to patch
+#   TARGET_RESOURCE_NAMESPACE  - Namespace of the resource
+#   MEMORY_LIMIT_NEW           - New memory limit to apply (e.g., 256Mi, 1Gi)
 #
 # Fallback (injected by WE Job executor):
-#   TARGET_RESOURCE       - Combined format: namespace/kind/name
+#   TARGET_RESOURCE - Canonical identity (#2658):
+#     namespaced:     namespace/group/version/Kind/name
+#     cluster-scoped: group/version/Kind/name
 #
 set -e
 
@@ -27,21 +29,38 @@ echo ""
 # Parameter Resolution
 # Prefer individual parameters from LLM over combined TARGET_RESOURCE
 # ============================================
-if [ -n "$TARGET_RESOURCE_KIND" ] && [ -n "$TARGET_RESOURCE_NAME" ] && [ -n "$TARGET_NAMESPACE" ]; then
+if [ -n "$TARGET_RESOURCE_KIND" ] && [ -n "$TARGET_RESOURCE_NAME" ] && [ -n "$TARGET_RESOURCE_NAMESPACE" ]; then
     KIND="$TARGET_RESOURCE_KIND"
     NAME="$TARGET_RESOURCE_NAME"
-    NAMESPACE="$TARGET_NAMESPACE"
+    NAMESPACE="$TARGET_RESOURCE_NAMESPACE"
     echo "Using LLM-provided parameters:"
 elif [ -n "$TARGET_RESOURCE" ]; then
-    # Fallback: parse TARGET_RESOURCE (format: namespace/kind/name)
-    NAMESPACE=$(echo "$TARGET_RESOURCE" | cut -d'/' -f1)
-    KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f2)
-    NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f3)
+    # Fallback: parse TARGET_RESOURCE, the canonical identity (#2658):
+    #   namespace/group/version/Kind/name (5 parts)
+    #   group/version/Kind/name           (4 parts, cluster-scoped)
+    PARTS=$(echo "$TARGET_RESOURCE" | awk -F'/' '{print NF}')
+    case "$PARTS" in
+        5)
+            NAMESPACE=$(echo "$TARGET_RESOURCE" | cut -d'/' -f1)
+            KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f4)
+            NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f5)
+            ;;
+        4)
+            NAMESPACE="default"
+            KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f3)
+            NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f4)
+            ;;
+        *)
+            echo "ERROR: TARGET_RESOURCE is not a canonical identity: $TARGET_RESOURCE"
+            echo "  Expected namespace/group/version/Kind/name or group/version/Kind/name"
+            exit 1
+            ;;
+    esac
     echo "Using TARGET_RESOURCE fallback:"
 else
     echo "ERROR: No target resource specified."
-    echo "  Required: TARGET_RESOURCE_KIND + TARGET_RESOURCE_NAME + TARGET_NAMESPACE"
-    echo "  Or: TARGET_RESOURCE (format: namespace/kind/name)"
+    echo "  Required: TARGET_RESOURCE_KIND + TARGET_RESOURCE_NAME + TARGET_RESOURCE_NAMESPACE"
+    echo "  Or: TARGET_RESOURCE (canonical identity, #2658)"
     exit 1
 fi
 

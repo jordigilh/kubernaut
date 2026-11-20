@@ -63,6 +63,27 @@ type TriageInput struct {
 	// its ambiguity gate only for this exact match -- a different candidate
 	// on a later call still fails closed and asks again.
 	ConfirmedSignalName string
+	// APIGroup is the target resource's own API group (#2658), parsed from
+	// the mandatory apiVersion at the call site. Empty means the caller
+	// carries no group (legacy inputs) and the group-scope gate does not
+	// engage.
+	APIGroup string
+	// APIGroupKnown tells the triager that APIGroup was actually derived
+	// from the target's apiVersion, so the empty string means the core API
+	// group rather than "unknown" (#2658). Production callers derive it
+	// from the validated, mandatory apiVersion; legacy inputs leave it
+	// false and the group-scope gate stays off. Without this flag a
+	// core-group target could never be gated, even though core is a
+	// legitimate sibling group for a Kind registered in several groups
+	// (e.g. Event in core and events.k8s.io).
+	APIGroupKnown bool
+	// ConfirmedAPIGroup, when non-empty and it normalizes to the target's
+	// own APIGroup, indicates the user has confirmed that the ambiguous
+	// candidate alert refers to THIS group's resource (#2658). It is the
+	// identity-confirmation counterpart of ConfirmedSignalName: a signal
+	// name can never resolve a group ambiguity, and a group can never
+	// resolve a cluster-scoped ambiguity.
+	ConfirmedAPIGroup string
 }
 
 // TriageResult holds the outcome of the severity triage pipeline.
@@ -74,12 +95,48 @@ type TriageResult struct {
 	Confidence float64
 	// Ambiguous is true when the only correlating evidence found is a
 	// cluster-scoped alert with no verified relationship to the target
-	// resource (namespace/resource key overlap) -- a guess, not a fact
-	// (DD-AF-012, #2027/#2028). Only Tier 1's cluster-scoped branches set
-	// this; resource- and namespace-scoped matches always have a verified
-	// relationship and are never ambiguous.
+	// resource (DD-AF-012, #2027/#2028), or -- #2658 -- a positive match
+	// that cannot be scoped to the target's API group because a same
+	// namespace/kind/name resource exists in another group. Only Tier 1's
+	// cluster-scoped branches and the #2658 group-scope gate set this;
+	// unambiguous resource- and namespace-scoped matches are never
+	// ambiguous.
 	Ambiguous bool
+	// AmbiguityReason classifies an Ambiguous result (#2658):
+	// cluster_scoped_only (DD-AF-012 lineage, resolvable via
+	// ConfirmedSignalName), group_unscopable (a cross-group sibling exists,
+	// resolvable only via ConfirmedAPIGroup), or alert_belongs_to_sibling
+	// (the user confirmed the candidate belongs to the sibling's group --
+	// severity must not be inherited).
+	AmbiguityReason string
+	// CandidateAPIGroups lists the groups in which cross-group siblings were
+	// found (group_unscopable only).
+	CandidateAPIGroups []string
+	// CandidateIdentifier carries the confirmable candidate identity for
+	// ambiguous results. For cluster_scoped_only it mirrors AlertName; for
+	// group_unscopable rule-tier results it carries the rule name, because
+	// an alert name must never be usable to bypass the group gate.
+	CandidateIdentifier string
 }
+
+// Ambiguity reason values (#2658). All are new surfaces: before #2658 the
+// ambiguous path carried no reason dimension.
+const (
+	// AmbiguityReasonClusterScopedOnly marks the DD-AF-012 ambiguity class:
+	// only a cluster-scoped alert correlates, with no verified relationship.
+	// Resolvable via ConfirmedSignalName.
+	AmbiguityReasonClusterScopedOnly = "cluster_scoped_only"
+	// AmbiguityReasonGroupUnscopable marks the #2658 ambiguity class: a
+	// positive correlation cannot be scoped to the target's API group
+	// because a same-namespace/kind/name sibling exists in another group
+	// (or the sibling check was unavailable and failed closed). Resolvable
+	// only via ConfirmedAPIGroup.
+	AmbiguityReasonGroupUnscopable = "group_unscopable"
+	// AmbiguityReasonAlertBelongsToSibling marks the resolved-negative case:
+	// the user confirmed the candidate alert refers to the sibling group's
+	// resource, so its severity must not be inherited by this target.
+	AmbiguityReasonAlertBelongsToSibling = "alert_belongs_to_sibling"
+)
 
 // Canonical severity values (ADR-066). Severity is kept as a plain string
 // (not a named type) on TriageResult for JSON/API compatibility.

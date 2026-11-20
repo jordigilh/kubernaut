@@ -35,7 +35,7 @@ import (
 //   - initContainers[] (same paths as containers)
 //
 // Kind-aware pod template resolution:
-//   - Deployment/StatefulSet/DaemonSet/ReplicaSet/Job: spec.template.spec
+//   - Deployment/apps/v1/StatefulSet/DaemonSet/apps/v1/ReplicaSet/Job: spec.template.spec
 //   - Pod: spec (direct)
 //   - CronJob: spec.jobTemplate.spec.template.spec
 //   - Non-workload (HPA, Service): empty slice
@@ -524,7 +524,7 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 		}
 
 		hAbsent, err1 := hash.CompositeSpecHash(specHash, absentHashes) //nolint:staticcheck // testing deprecated API for backward compat
-		hReal, err2 := hash.CompositeSpecHash(specHash, realHashes)   //nolint:staticcheck // testing deprecated API for backward compat
+		hReal, err2 := hash.CompositeSpecHash(specHash, realHashes)     //nolint:staticcheck // testing deprecated API for backward compat
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())

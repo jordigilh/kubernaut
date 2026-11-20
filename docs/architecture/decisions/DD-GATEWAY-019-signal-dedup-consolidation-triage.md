@@ -1,6 +1,6 @@
 # DD-GATEWAY-019: Signal Fingerprint/Deduplication Consolidation — Triage & Recommendation
 
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-08-22
 **Status**: 🔄 **PROPOSED** (triage complete, alternative approved by @jordigilh, implementation not yet started)
 **Confidence**: 90% (triage conclusion) / 70% (specific recommended alternative)
@@ -9,6 +9,12 @@
 **Tracking Issue**: (see `docs/architecture/decisions/README.md` entry / linked GitHub issue)
 
 ---
+
+## Changelog
+
+- **1.1 (2026-11-19)** — documents the fingerprint identity dimensions after
+  #2650 (group dimension) and the #2658 review: group in, version out, with the
+  duplicate-remediation rationale for rejecting GVK.
 
 ## Executive Summary
 
@@ -52,6 +58,37 @@ boundary (AW or otherwise).
 | **Trigger** | HTTP webhook handler (Alertmanager/K8s Event POST) | LLM/agent MCP tool call (`kubernaut_remediate`, `kubernaut_investigate`) | K8s admission webhook (invoked synchronously by the API server) |
 
 Key findings from the codebase triage:
+
+### Fingerprint identity dimensions (#2650, #2658)
+
+`CalculateClusterAwareFingerprint` hashes
+`[clusterID:]group:namespace:kind:name`.
+
+- **Group is part of the hash.** Two objects can share namespace/kind/name across
+  API groups (`Route` in `route.openshift.io` vs `serving.knative.dev`; `Ingress`
+  in `networking.k8s.io` vs `extensions`). Omitting it deduplicated genuinely
+  different objects into one RemediationRequest — the defect #2658 removes.
+- **Version is deliberately NOT part of the hash.** Kubernetes serves one object
+  under several versions (`autoscaling/v1` and `autoscaling/v2` address the same
+  HorizontalPodAutoscaler; `apps/v1` and `apps/v1beta2` the same Deployment).
+  Version is a view of an object, not part of its identity. A version-bearing
+  hash would fingerprint the same object twice whenever the alert path and the
+  RR/AF path observe different served versions, so dedup would miss and two
+  concurrent remediations of one object could run — the exact failure dedup
+  exists to prevent. `GVK` in the hash is therefore **rejected by design**, with
+  `GV` reduced to `G`; the Kind is already a segment.
+- **Accepted trade-off.** During a deprecated-group migration (e.g. `extensions`
+  → `networking.k8s.io` Ingress) the same object can be observed under two group
+  spellings and will hash differently for that window. That window is transient
+  and operator-visible; group-blindness was permanent and silent.
+- **Byte-identity with AF is mandatory.** Both services call this one function
+  (`af_create_rr.go`, `af_check_existing_rr.go`); neither may re-format a
+  fingerprint by hand.
+- **Distinct from the correlation ID.** The GW readable correlation ID
+  (`alertname:` + the canonical identity) *does* carry the version, because it is
+  a narrative key: two versions of one object producing two audit rows is
+  harmless, where merging them (the fingerprint's behaviour) would be wrong for
+  forensics. See DD-IDENTITY-001 "Dedup identity vs. narrative identity".
 
 1. **The fingerprint algorithm itself is already not duplicated.** AF imports
    `pkg/gateway/types` and calls Gateway's exact hash function — the code

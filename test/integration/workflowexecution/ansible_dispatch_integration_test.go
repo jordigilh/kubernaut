@@ -52,7 +52,7 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 	Context("controller dispatch without ansible executor registered", func() {
 		It("IT-WE-2390-003: should preserve engineConfig before failing WFE with UnsupportedEngine when ansible executor is not registered", func() {
 			workflowID := trustedWorkflowFixture("Ansible dispatch fixture", "ansible")
-			targetResource := fmt.Sprintf("default/deployment/ansible-dispatch-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-dispatch-%d", time.Now().UnixNano())
 			wfeName := fmt.Sprintf("ansible-it-%d", time.Now().UnixNano())
 
 			engineConfig, err := json.Marshal(map[string]interface{}{

@@ -50,11 +50,11 @@ var _ = Describe("Issue #616: CorrelateTier1Chain Post-Hash Matching (Regression
 			EventTimestamp: ts,
 			EventData: map[string]interface{}{
 				"pre_remediation_spec_hash": preHash,
-				"outcome":                  "success",
-				"signal_type":              "HighCPULoad",
-				"signal_fingerprint":       "fp-616",
-				"action_type":              "RestartPod",
-				"target_resource":          "default/Deployment/nginx",
+				"outcome":                   "success",
+				"signal_type":               "HighCPULoad",
+				"signal_fingerprint":        "fp-616",
+				"action_type":               "RestartPod",
+				"target_resource":           "default/apps/v1/Deployment/nginx",
 			},
 		}
 	}

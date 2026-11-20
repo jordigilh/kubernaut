@@ -110,7 +110,7 @@ func (a *alwaysFiringPromClient) InstantQuery(_ context.Context, _ string) (*pro
 // a cluster-scoped alert with no verified relationship to any target -- the
 // DD-AF-012/#2027/#2028 "ambiguous" scenario. See alwaysFiringPromClient.
 func ambiguousTestTriager() *severity.Triager {
-	return severity.NewTriager(&alwaysFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+	return severity.NewTriager(&alwaysFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 }
 
 // defaultTestTriager returns a Triager that resolves "warning" via a
@@ -135,7 +135,7 @@ func defaultTestTriager(namespace, kind, name string, clusterID ...string) *seve
 			{State: "firing", Labels: labels},
 		},
 	}
-	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 }
 
 // unnamedAlertTestTriager returns a Triager that resolves a severity from a
@@ -151,7 +151,7 @@ func unnamedAlertTestTriager(namespace, kind, name string) *severity.Triager {
 			}},
 		},
 	}
-	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 }
 
 func extractRRName(rrid string) string {
@@ -349,7 +349,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 					}},
 				},
 			}
-			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test triage", APIVersion: "apps/v1",
@@ -365,7 +365,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 			cfg := severity.DefaultConfig()
-			triager := severity.NewTriager(&noopPromClient{}, noopLLM, cfg, logr.Discard())
+			triager := severity.NewTriager(&noopPromClient{}, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "no alert or rule exists for this resource", APIVersion: "apps/v1",
@@ -547,7 +547,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 					}},
 				},
 			}
-			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod", Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "alert-based", APIVersion: "apps/v1",
@@ -581,7 +581,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				},
 			},
 		}
-		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod", Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace: "prod", Kind: "Deployment", Name: "api", Description: "rule-based", APIVersion: "apps/v1",
@@ -657,7 +657,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				}},
 			},
 		}
-		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace: production, Kind: "Deployment", Name: "web-server", Description: "cross-ns triage", APIVersion: "apps/v1",
@@ -721,7 +721,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue(),
-				"fingerprint(production/Deployment/web) should match the pre-seeded RR")
+				"fingerprint(production/apps/v1/Deployment/web) should match the pre-seeded RR")
 		})
 
 		It("UT-AF-1292-NS-003: fleet triage does not query hub-local events for signalName (BR-AI-056)", func() {
@@ -781,7 +781,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 					},
 				},
 			}
-			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard(), withNoCrossGroupSiblings())
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 				Namespace:   workloadNS,

@@ -28,8 +28,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {

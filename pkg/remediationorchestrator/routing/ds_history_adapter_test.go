@@ -48,8 +48,8 @@ func (s *stubHistoryClient) GetRemediationHistoryContext(
 var _ = Describe("DSHistoryAdapter (Issue #214)", func() {
 
 	var (
-		ctx    context.Context
-		stub   *stubHistoryClient
+		ctx     context.Context
+		stub    *stubHistoryClient
 		adapter *routing.DSHistoryAdapter
 	)
 

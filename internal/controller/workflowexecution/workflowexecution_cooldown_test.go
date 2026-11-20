@@ -65,7 +65,7 @@ var _ = Describe("WorkflowExecution cooldown scope [BR-FLEET-004]", func() {
 		hubWFE := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: "hub-completed", Namespace: "kubernaut-system"},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "history/Deployment/memory-eater",
+				TargetResource: "history/apps/v1/Deployment/memory-eater",
 				ClusterID:      "hub",
 			},
 			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -103,7 +103,7 @@ var _ = Describe("WorkflowExecution cooldown scope [BR-FLEET-004]", func() {
 		hubWFE := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: "hub-same-scope", Namespace: "kubernaut-system"},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "history/Deployment/memory-eater",
+				TargetResource: "history/apps/v1/Deployment/memory-eater",
 				ClusterID:      "hub",
 			},
 			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -141,7 +141,7 @@ var _ = Describe("WorkflowExecution cooldown scope [BR-FLEET-004]", func() {
 		priorWFE := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: "prior-workflow", Namespace: "kubernaut-system"},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "history/Deployment/memory-eater",
+				TargetResource: "history/apps/v1/Deployment/memory-eater",
 				ClusterID:      "hub",
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID: "workflow-a",

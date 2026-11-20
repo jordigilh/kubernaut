@@ -50,7 +50,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 	Context("CRD Creation", func() {
 		It("should create WorkflowExecution successfully", func() {
 			// Unique target for this test
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-create-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-create-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("create", targetResource)
 
 			// Cleanup in defer (parallel-safe pattern per 03-testing-strategy.mdc)
@@ -71,7 +71,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		})
 
 		It("should preserve spec fields after creation", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-spec-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-spec-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("spec", targetResource)
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"MESSAGE": `"value"`})
 			wfe.Spec.Confidence = 0.95
@@ -102,7 +102,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		// V2.0: Controller is running, so we observe status changes
 
 		It("should update status to Running via controller", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-status-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-status-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("status", targetResource)
 
 			defer func() {
@@ -130,7 +130,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		})
 
 		It("should set ExecutionRef when Running", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-prref-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-prref-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("prref", targetResource)
 
 			defer func() {
@@ -163,7 +163,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 	Context("CRD Deletion", func() {
 		It("should delete WorkflowExecution with controller cleanup", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-delete-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-delete-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("delete", targetResource)
 
 			// Create first
@@ -190,7 +190,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		})
 
 		It("should handle finalizer during deletion", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-finalizer-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-finalizer-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("finalizer", targetResource)
 
 			// Create WFE
@@ -227,7 +227,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			// Business Value: Operators don't have manual cleanup orphaned Tekton resources
 			// TESTING_GUIDELINES.md: Integration tests validate CRD-based flows and cross-service coordination
 
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-restart-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-restart-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("restart-recovery", targetResource)
 
 			// Create WFE
@@ -274,7 +274,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 	Context("Spec Validation", func() {
 		It("should accept valid WorkflowExecution spec", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-valid-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/lifecycle-valid-%d", time.Now().UnixNano())
 			wfe := lifecycleWFE("valid", targetResource)
 
 			defer func() {

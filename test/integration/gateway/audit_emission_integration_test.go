@@ -29,6 +29,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -1232,8 +1233,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
-				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.SignalName,
+				// BR-GATEWAY-058-A (#2658): "alertname:" + the canonical
+				// namespace/group/version/Kind/name identity. Built from the same
+				// canonical builder the Gateway uses, so a group/version-aware
+				// identity is asserted end to end rather than hand-formatted.
+				readableCorrelationID := signal.SignalName + ":" + scope.BuildTargetIdentity(
+					signal.Resource.APIVersion,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1306,8 +1311,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
-				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.SignalName,
+				// BR-GATEWAY-058-A (#2658): "alertname:" + the canonical
+				// namespace/group/version/Kind/name identity. Built from the same
+				// canonical builder the Gateway uses, so a group/version-aware
+				// identity is asserted end to end rather than hand-formatted.
+				readableCorrelationID := signal.SignalName + ":" + scope.BuildTargetIdentity(
+					signal.Resource.APIVersion,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1377,8 +1386,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				eventType := gateway.EventTypeCRDFailed
-				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.SignalName,
+				// BR-GATEWAY-058-A (#2658): "alertname:" + the canonical
+				// namespace/group/version/Kind/name identity. Built from the same
+				// canonical builder the Gateway uses, so a group/version-aware
+				// identity is asserted end to end rather than hand-formatted.
+				readableCorrelationID := signal.SignalName + ":" + scope.BuildTargetIdentity(
+					signal.Resource.APIVersion,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1478,8 +1491,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
 				// Format: "alertname:namespace:kind:name"
-				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					testSignal.SignalName,
+				// BR-GATEWAY-058-A (#2658): "alertname:" + the canonical
+				// namespace/group/version/Kind/name identity. Built from the same
+				// canonical builder the Gateway uses, so a group/version-aware
+				// identity is asserted end to end rather than hand-formatted.
+				readableCorrelationID := testSignal.SignalName + ":" + scope.BuildTargetIdentity(
+					testSignal.Resource.APIVersion,
 					testSignal.Namespace,
 					testSignal.Resource.Kind,
 					testSignal.Resource.Name,

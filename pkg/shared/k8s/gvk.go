@@ -71,29 +71,54 @@ func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return gvk, nil
 	}
 
-	if mapper != nil {
-		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-		resource := schema.GroupVersionResource{Resource: pluralGVR.Resource}
-		gvks, err := mapper.KindsFor(resource)
-		if err != nil || len(gvks) == 0 {
-			// #1888: restmapper.DeferredDiscoveryRESTMapper's own self-heal only fires
-			// once, before its first successful discovery populate (its Fresh() gate
-			// becomes permanently true afterward and is never invalidated on a TTL). A
-			// CRD group missing from that first round would otherwise stay unresolvable
-			// for the life of the pod. Retry once via Reset() when the mapper supports it
-			// (see DD-K8S-001), mirroring the existing pattern in
-			// pkg/kubernautagent/tools/k8s/resolver.go.
-			if rm, ok := mapper.(meta.ResettableRESTMapper); ok {
-				rm.Reset()
-				gvks, err = mapper.KindsFor(resource)
-			}
-		}
-		if err == nil && len(gvks) > 0 {
-			return gvks[0], nil
-		}
+	if gvks, err := kindsFor(mapper, kind); err == nil {
+		return gvks[0], nil
 	}
 
 	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
+}
+
+// KindsForKind enumerates every GroupVersionKind the mapper resolves for a
+// Kind, in the mapper's order (#2658). It deliberately bypasses
+// staticGVKByKind: the static table answers with a single well-known GVK,
+// which would hide the second API group registering the same Kind and defeat
+// a cross-group identity check. When the Kind cannot be enumerated (no mapper,
+// unknown Kind, or a Kind whose plural the apimachinery guess cannot derive --
+// e.g. "Gateway" guesses "gatewaies") it returns an error so callers can fail
+// closed instead of silently treating the Kind as single-group.
+func KindsForKind(mapper meta.RESTMapper, kind string) ([]schema.GroupVersionKind, error) {
+	return kindsFor(mapper, kind)
+}
+
+// kindsFor is the shared Kind -> GVK enumeration used by ResolveGVKForKind
+// (which wants the first match) and KindsForKind (which wants all matches).
+func kindsFor(mapper meta.RESTMapper, kind string) ([]schema.GroupVersionKind, error) {
+	if mapper == nil {
+		return nil, fmt.Errorf("cannot enumerate GVKs for kind %q: no REST mapper", kind)
+	}
+	pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
+	resource := schema.GroupVersionResource{Resource: pluralGVR.Resource}
+	gvks, err := mapper.KindsFor(resource)
+	if err != nil || len(gvks) == 0 {
+		// #1888: restmapper.DeferredDiscoveryRESTMapper's own self-heal only fires
+		// once, before its first successful discovery populate (its Fresh() gate
+		// becomes permanently true afterward and is never invalidated on a TTL). A
+		// CRD group missing from that first round would otherwise stay unresolvable
+		// for the life of the pod. Retry once via Reset() when the mapper supports it
+		// (see DD-K8S-001), mirroring the existing pattern in
+		// pkg/kubernautagent/tools/k8s/resolver.go.
+		if rm, ok := mapper.(meta.ResettableRESTMapper); ok {
+			rm.Reset()
+			gvks, err = mapper.KindsFor(resource)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot enumerate GVKs for kind %q: %w", kind, err)
+	}
+	if len(gvks) == 0 {
+		return nil, fmt.Errorf("cannot enumerate GVKs for kind %q: no kind matches resource %q", kind, resource.Resource)
+	}
+	return gvks, nil
 }
 
 // ResolveGVKWithAPIVersion resolves a Kind to its GVK using an explicit apiVersion

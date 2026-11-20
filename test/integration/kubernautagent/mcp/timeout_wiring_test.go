@@ -87,8 +87,8 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 			stack := newRealMCPTestStack(sharedK8sClient, nsName, opts)
 			defer stack.Close()
 
-		var notificationReceived atomic.Bool
-		sess, err := connectMCP(stack.Server, "alice@example.com")
+			var notificationReceived atomic.Bool
+			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = sess.Close() }()
 

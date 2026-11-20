@@ -80,7 +80,7 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 						},
 					},
 				},
-				TargetResource: "default/deployment/test-app",
+				TargetResource: "default/apps/v1/Deployment/test-app",
 				Parameters:     sharedtypes.TypedParameterMap{},
 			},
 		}

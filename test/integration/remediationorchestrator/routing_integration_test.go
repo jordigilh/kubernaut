@@ -363,8 +363,10 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		By("Pre-creating a completed WFE with uppercase Kind in spec.targetResource")
 		// The targetResource format is "namespace/Kind/name" (preserving Kind casing).
 		// Before the fix (issue #203), the reconciler lowercased the first letter of Kind,
-		// producing "namespace/deployment/name" which would NOT match this WFE.
-		targetResource := ns + "/Deployment/test-app"
+		// producing "namespace/apps/v1/Deployment/name" which would NOT match this WFE.
+		// #2658: the identity carries the canonical API group alongside the
+		// preserved Kind casing.
+		targetResource := ns + "/apps/v1/Deployment/test-app"
 		wfe := &workflowexecutionv1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "wfe-recently-completed",
@@ -417,9 +419,10 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 			Severity:   "critical",
 			SignalType: "alert",
 			RemediationTarget: &aianalysisv1.RemediationTarget{
-				Kind:      "Deployment",
-				Name:      "test-app",
-				Namespace: ns,
+				Kind:       "Deployment",
+				Name:       "test-app",
+				Namespace:  ns,
+				APIVersion: "apps/v1",
 			},
 		}
 		aiCompletedAt := metav1.Now()

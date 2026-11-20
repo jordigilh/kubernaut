@@ -81,7 +81,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 				},
 			}
 
-			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 
 			ctx, cancel := context.WithTimeout(
 				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -146,7 +146,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 					}},
 				},
 			}
-			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 
 			ctx, cancel := context.WithTimeout(
 				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -277,7 +277,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 						"name": "web-app-2390-fleet", "cluster": "remote-cluster",
 					},
 				}},
-			}, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			}, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
 					MCPClient:     mockMCP,
@@ -456,7 +456,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 					},
 				},
 			}
-			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -533,7 +533,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 					},
 				}},
 			}
-			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(
@@ -638,7 +638,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 					},
 				}},
 			}
-			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(
 				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -752,7 +752,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 				},
 			},
 		}
-		triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+		triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard(), withNoCrossGroupSiblings())
 
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(

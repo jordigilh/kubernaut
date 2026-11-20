@@ -253,7 +253,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 
 	It("IT-RO-2396-001 [AC-4, AC-6; ASVS V4.1.1/V4.1.3]: should not block an identical target from another cluster", func() {
 		suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-		targetResource := "kubernaut-system/Deployment/memory-eater"
+		targetResource := "kubernaut-system/apps/v1/Deployment/memory-eater"
 		blockerRR := helpers.NewRemediationRequest(
 			"rr-prod-west-"+suffix,
 			ROControllerNamespace,

@@ -57,11 +57,29 @@ const (
 	MaxAIAnalysisDecisionContextResults = 2 * MaxROEventsBySpecHashResults
 )
 
+// RemediationHistoryQuery scopes one remediation-history traversal (#2658 D-B).
+// It replaces the previous positional argument list so the group dimension
+// cannot be dropped at a call site without the compiler noticing.
+type RemediationHistoryQuery struct {
+	// TargetResource is the canonical identity to match
+	// (namespace/group/version/Kind/name), composed by the caller in lockstep
+	// with the audit emission.
+	TargetResource string
+	ClusterID      string
+	SpecHash       string
+	Since          time.Time
+	Until          time.Time
+}
+
 // queryROEventsBySpecHash traverses the linked RO chain from a dual-hash
 // anchor. Recursive candidates must have a correlated EM post-hash equal to
 // the current RO pre-hash and an earlier RO timestamp. Recursive UNION removes
 // duplicate recursive states; the final DISTINCT ON removes duplicate event
 // identities reached through convergent paths.
+// queryROEventsBySpecHash matches one exact canonical target identity
+// (namespace/group/version/Kind/name, #2658): a single equality predicate, so a
+// cross-group or cross-version row can never enter another target's chain and
+// no prefix/LIKE scan is needed.
 const queryROEventsBySpecHash = `WITH RECURSIVE remediation_chain (
 			event_id, event_type, event_data, event_timestamp, correlation_id, pre_hash, chain_depth
 		) AS (
@@ -403,11 +421,7 @@ func uniqueCorrelationIDs(correlationIDs []string) []string {
 // index on (event_timestamp, pre_remediation_spec_hash) to cover the ORDER BY.
 func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	ctx context.Context,
-	targetResource string,
-	clusterID string,
-	specHash string,
-	since time.Time,
-	until time.Time,
+	query RemediationHistoryQuery,
 ) ([]RawAuditRow, error) {
 	// PERF-H2: the query requests one extra row so a complete-chain overflow
 	// can be detected and rejected instead of silently returning a prefix.
@@ -418,12 +432,13 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	queryCtx, cancel := context.WithTimeout(ctx, remediationHistoryQueryTimeout)
 	defer cancel()
 
-	rows, err := r.db.QueryContext(queryCtx, queryROEventsBySpecHash, targetResource, clusterID, specHash, since, until, maxROResults+1, MaxRemediationHistoryTraversalDepth)
+	rows, err := r.db.QueryContext(queryCtx, queryROEventsBySpecHash, query.TargetResource, query.ClusterID, query.SpecHash, query.Since, query.Until, maxROResults+1, MaxRemediationHistoryTraversalDepth)
 	if err != nil {
 		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
 		r.logger.Error(err, "Failed to query RO events by spec hash",
-			"target_resource", targetResource, "cluster_id", clusterID,
-			"spec_hash", specHash, "since", since, "until", until)
+			"target_resource", query.TargetResource,
+			"cluster_id", query.ClusterID, "spec_hash", query.SpecHash,
+			"since", query.Since, "until", query.Until)
 		return nil, err
 	}
 	defer func() {
@@ -436,32 +451,32 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	if err != nil {
 		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
 		r.logger.Error(err, "Failed to scan RO events by spec hash",
-			"target_resource", targetResource, "cluster_id", clusterID,
-			"spec_hash", specHash, "since", since, "until", until)
+			"target_resource", query.TargetResource, "cluster_id", query.ClusterID,
+			"spec_hash", query.SpecHash, "since", query.Since, "until", query.Until)
 		return nil, err
 	}
 	if err := queryCtx.Err(); err != nil {
 		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
 		r.logger.Error(err, "RO events by spec hash query exceeded its context deadline",
-			"target_resource", targetResource, "cluster_id", clusterID,
-			"spec_hash", specHash, "since", since, "until", until)
+			"target_resource", query.TargetResource, "cluster_id", query.ClusterID,
+			"spec_hash", query.SpecHash, "since", query.Since, "until", query.Until)
 		return nil, err
 	}
 	if len(results) > maxROResults {
 		err := fmt.Errorf("%w: result count exceeded %d", ErrRemediationHistoryResourceLimit, maxROResults)
 		r.logger.Error(err, "RO events by spec hash result budget exceeded",
-			"target_resource", targetResource, "cluster_id", clusterID,
-			"spec_hash", specHash, "result_count", len(results),
+			"target_resource", query.TargetResource, "cluster_id", query.ClusterID,
+			"spec_hash", query.SpecHash, "result_count", len(results),
 			"max_results", maxROResults)
 		return nil, err
 	}
 
 	r.logger.V(1).Info("QueryROEventsBySpecHash completed",
-		"target_resource", targetResource,
-		"cluster_id", clusterID,
-		"spec_hash", specHash,
+		"target_resource", query.TargetResource,
+		"cluster_id", query.ClusterID,
+		"spec_hash", query.SpecHash,
 		"result_count", len(results),
-		"window", until.Sub(since).String())
+		"window", query.Until.Sub(query.Since).String())
 
 	return results, nil
 }

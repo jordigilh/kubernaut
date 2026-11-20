@@ -107,15 +107,41 @@ Gateway emits structured audit events with:
 
 **Enhancement (BR-GATEWAY-058-A)**: Use human-readable correlation ID instead of SHA256 fingerprint for better operator experience.
 
-**Correlation ID Format**:
+**#2658 amendment — the correlation ID embeds the canonical identity.**
+`correlation_id` is `alertname:namespace/group/version/Kind/name`, with the target
+rendered by the single shared builder (`scope.BuildTargetIdentity`) that the
+execution plane, the RO audit trail and DataStorage already use. This is not an
+annotation glued onto the name: group and version are ordinary parts of the
+target coordinates, so the remainder after the first `:` parses with
+`scope.ParseTargetIdentity`.
+
+Consequences:
+
+- two resources that share a Kind and name in **different API groups** now produce
+  distinct correlation IDs, so a failure-investigation query on one cannot return
+  the other's events (SOC2 CC7.2, FedRAMP AU-3). Leaving the group out was tried
+  and rejected: it reproduced exactly the group-blind ambiguity #2658 removes;
+- the core group renders as `core` and an unestablished apiVersion renders
+  `unresolved` in both slots — never `@v1`, never an empty segment;
+- `alertname` is the only component that may contain neither `:` nor `/`, which
+  keeps the split unambiguous;
+- this ID is emitted only when no RemediationRequest exists (CRD-creation
+  failure). AF's own audit correlation IDs are the RR name / request ids and are
+  unaffected; should AF ever emit a readable *signal* identity, it must call the
+  same `scope.BuildTargetIdentity` builder rather than re-format by hand.
+
+See DD-IDENTITY-001 §D4.
+
+**Correlation ID Format** (post-#2658; the remainder after the first `:` is the
+canonical identity):
 ```
-alertname:namespace:kind:name
+alertname:namespace/group/version/Kind/name
 ```
 
 **Examples**:
-- `HighMemoryUsage:prod-payment-service:Pod:payment-api-789`
-- `NodeNotReady:default:Node:worker-node-1`
-- `DeploymentReplicasUnavailable:prod-api:Deployment:api-server`
+- `HighMemoryUsage:prod-payment-service/core/v1/Pod/payment-api-789`
+- `NodeNotReady:default/core/v1/Node/worker-node-1`
+- `DeploymentReplicasUnavailable:prod-api/apps/v1/Deployment/api-server`
 
 **Event Structure**:
 ```json
@@ -418,7 +444,7 @@ HighMemoryUsage:prod-payment-service:Pod:payment-api-789
 | **AWS X-Ray** | Trace ID (hex) | ❌ Low |
 | **Jaeger** | Span ID (hex) | ❌ Low |
 | **Kubernaut Gateway (Pre-058-A)** | SHA256 fingerprint | ❌ Low |
-| **Kubernaut Gateway (Post-058-A)** | `alertname:namespace:kind:name` | ✅ High |
+| **Kubernaut Gateway (Post-058-A, #2658)** | `alertname:namespace/group/version/Kind/name` | ✅ High |
 
 **Conclusion**: BR-GATEWAY-058-A aligns Gateway with OpenTelemetry best practices for semantic observability.
 

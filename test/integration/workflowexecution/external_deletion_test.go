@@ -69,7 +69,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			// BR-WE-007 AC-3: Message indicates external deletion
 
 			By("Creating WorkflowExecution")
-			targetResource := fmt.Sprintf("default/deployment/ext-del-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ext-del-%d", time.Now().UnixNano())
 			wfe := deletionWFE("ext-del-detect", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -137,7 +137,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			// Note: Full audit persistence validation in E2E tests with real DataStorage
 
 			By("Creating WorkflowExecution")
-			targetResource := fmt.Sprintf("default/deployment/ext-del-audit-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ext-del-audit-%d", time.Now().UnixNano())
 			wfe := deletionWFE("ext-del-audit", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -200,7 +200,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			// ensuring the controller's reconcileRunning correctly detects the external deletion.
 
 			By("Creating WorkflowExecution")
-			targetResource := fmt.Sprintf("default/deployment/ext-del-pending-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ext-del-pending-%d", time.Now().UnixNano())
 			wfe := deletionWFE("ext-del-pending", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -243,7 +243,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			// Validates controller cleanup behavior after external deletion
 
 			By("Creating WorkflowExecution")
-			targetResource := fmt.Sprintf("default/deployment/ext-del-ref-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ext-del-ref-%d", time.Now().UnixNano())
 			wfe := deletionWFE("ext-del-ref", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -303,7 +303,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			// Normal completion should NOT trigger external deletion logic
 
 			By("Creating WorkflowExecution")
-			targetResource := fmt.Sprintf("default/deployment/normal-complete-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/normal-complete-%d", time.Now().UnixNano())
 			wfe := deletionWFE("normal-complete", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 

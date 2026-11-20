@@ -93,6 +93,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.DefaultConfig(),
 			logr.Discard(),
 			severity.WithPodResolver(resolver),
+			withNoCrossGroupSiblings(),
 		)
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
@@ -173,6 +174,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.DefaultConfig(),
 			logr.Discard(),
 			severity.WithPodResolver(resolver),
+			withNoCrossGroupSiblings(),
 		)
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
@@ -251,6 +253,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.DefaultConfig(),
 			logr.Discard(),
 			severity.WithPodResolver(severity.NewK8sPodResolver(dynamicClient, logr.Discard())),
+			withNoCrossGroupSiblings(),
 		)
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,

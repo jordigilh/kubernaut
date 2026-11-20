@@ -91,14 +91,14 @@ var _ = Describe("DD-KA-2496 history selection metadata (BR-KA-016, AU-3, SI-10)
 	It("UT-DS-2496-004: history reads report incomplete metadata once without payloads or backfill", func() {
 		rows := []repository.RawAuditRow{{CorrelationID: "rr-unknown", EventData: map[string]interface{}{"parameters": "history-sensitive-sentinel-2496"}},
 			{CorrelationID: "rr-zero", EventData: map[string]interface{}{"workflow_id": "wf-zero", "workflow_name": "Known zero", "workflow_selection_confidence": 0.0}}}
-		query := &mockRemediationHistoryQuerier{queryROEventsBySpecHashFn: func(_ context.Context, _, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+		query := &mockRemediationHistoryQuerier{queryROEventsBySpecHashFn: func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 			return rows, nil
 		}}
 		sink := &bug674SpyLogSink{}
 		h := server.NewHandler(server.WithRemediationHistoryQuerier(query), server.WithLogger(logr.New(sink)))
 		recorder := httptest.NewRecorder()
 		h.HandleGetRemediationHistoryContext(recorder, httptest.NewRequest(http.MethodGet,
-			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&clusterId=origin-a&currentSpecHash=sha256:current", nil))
+			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&targetApiVersion=apps%2Fv1&clusterId=origin-a&currentSpecHash=sha256:current", nil))
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		var gaps []bug674LogEntry
 		for _, entry := range sink.entries {
@@ -109,7 +109,7 @@ var _ = Describe("DD-KA-2496 history selection metadata (BR-KA-016, AU-3, SI-10)
 		Expect(gaps).To(HaveLen(1), "one bounded summary per history lookup, not per record/tier")
 		Expect(gaps[0].fields).To(HaveKeyWithValue("affected_record_count", 1))
 		Expect(gaps[0].fields).To(HaveKeyWithValue("backfill_attempted", false))
-		Expect(gaps[0].fields).To(HaveKeyWithValue("target_resource", "prod/Deployment/api"))
+		Expect(gaps[0].fields).To(HaveKeyWithValue("target_resource", "prod/apps/v1/Deployment/api"))
 		Expect(gaps[0].fields).To(HaveKeyWithValue("cluster_id", "origin-a"))
 		Expect(gaps[0].fields).To(HaveKeyWithValue("missing_fields", ConsistOf("workflow_id", "workflow_name", "workflow_selection_confidence")))
 		Expect(recorder.Body.String()).NotTo(ContainSubstring("history-sensitive-sentinel-2496"))

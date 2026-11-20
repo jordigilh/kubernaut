@@ -200,7 +200,7 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 			// ACT: Parse and apply lifetime
 			connMaxLifetime, err := time.ParseDuration(cfg.Database.ConnMaxLifetime)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(connMaxLifetime).To(Equal(15 * time.Minute),
+			Expect(connMaxLifetime).To(Equal(15*time.Minute),
 				"Config should parse to 15 minutes")
 
 			db.SetConnMaxLifetime(connMaxLifetime)
@@ -287,4 +287,3 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 		})
 	})
 })
-

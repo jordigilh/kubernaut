@@ -87,9 +87,9 @@ var _ = Describe("Multi-Issuer JWT — GAP-11 / DD-AUTH-MCP-001", Label("integra
 
 		mockAuthz = &auth.MockAuthorizer{
 			AllowedUsers: map[string]bool{
-				"alice@keycloak":                                       true,
-				"bob@dex":                                              true,
-				"system:serviceaccount:kubernaut-system:apifrontend":   true,
+				"alice@keycloak": true,
+				"bob@dex":        true,
+				"system:serviceaccount:kubernaut-system:apifrontend": true,
 			},
 		}
 

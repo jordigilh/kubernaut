@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/go-logr/logr"
 
@@ -34,7 +33,7 @@ import (
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
 // DD-KA-016 v1.7: Both tiers query the complete causal chain by spec hash (#2490).
 type RemediationHistoryQuerier interface {
-	QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+	QueryROEventsBySpecHash(ctx context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error)
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
 }
 

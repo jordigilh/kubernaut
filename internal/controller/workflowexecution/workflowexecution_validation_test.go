@@ -46,34 +46,34 @@ var _ = Describe("WorkflowExecution input validation [SI-10, ASVS V5.1.x]", func
 	}
 
 	It("UT-WE-2512-010: accepts Kubernetes-shaped target identity and OCI bundle", func() {
-		wfe := newValidationWFE("prod/Deployment/api-7", "registry.example.com/workflows/restart:v1")
+		wfe := newValidationWFE("prod/apps/v1/Deployment/api-7", "registry.example.com/workflows/restart:v1")
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(Succeed())
 	})
 
 	It("UT-WE-2512-011: rejects traversal and malformed target names", func() {
-		wfe := newValidationWFE("prod/Deployment/secret..", "registry.example.com/workflows/restart:v1")
-		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(MatchError(ContainSubstring("targetResource name is invalid")))
+		wfe := newValidationWFE("prod/apps/v1/Deployment/secret..", "registry.example.com/workflows/restart:v1")
+		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(MatchError(ContainSubstring("invalid name")))
 	})
 
 	It("UT-WE-2512-012: rejects malformed execution bundle references", func() {
-		wfe := newValidationWFE("prod/Deployment/api", "not a valid image")
+		wfe := newValidationWFE("prod/apps/v1/Deployment/api", "not a valid image")
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(MatchError(ContainSubstring("executionBundle must be a valid OCI image reference")))
 	})
 
 	It("UT-WE-2512-013: rejects new Job WFEs without an RR UID", func() {
-		wfe := newValidationWFE("prod/Deployment/api", "registry.example.com/workflows/restart:v1")
+		wfe := newValidationWFE("prod/apps/v1/Deployment/api", "registry.example.com/workflows/restart:v1")
 		wfe.Spec.RemediationRequestRef.UID = ""
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(MatchError(ContainSubstring("remediationRequestRef.uid is required")))
 	})
 
 	It("UT-WE-2512-020: rejects new Job WFEs without an RR name", func() {
-		wfe := newValidationWFE("prod/Deployment/api", "registry.example.com/workflows/restart:v1")
+		wfe := newValidationWFE("prod/apps/v1/Deployment/api", "registry.example.com/workflows/restart:v1")
 		wfe.Spec.RemediationRequestRef.Name = ""
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(MatchError(ContainSubstring("remediationRequestRef.name is required")))
 	})
 
 	It("UT-WE-2512-014: accepts Ansible playbook URLs instead of applying OCI image validation", func() {
-		wfe := newValidationWFE("prod/Deployment/api", "https://github.com/kubernaut/playbooks.git")
+		wfe := newValidationWFE("prod/apps/v1/Deployment/api", "https://github.com/kubernaut/playbooks.git")
 		wfe.Spec.WorkflowRef.ExecutionEngine = executionEngineAnsible
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(Succeed())
 	})

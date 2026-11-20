@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)", Ordered, ContinueOnFailure, func() {
@@ -44,13 +44,13 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 		testLogger = logger.WithValues("test", "error-responses")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
-	testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	testLogger.Info("Test 17: Error Response Codes - Setup")
-	testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		testLogger.Info("Test 17: Error Response Codes - Setup")
+		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Pre-create managed namespace (Pattern: RO E2E)
-	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "error-codes")
-	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		// Pre-create managed namespace (Pattern: RO E2E)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "error-codes")
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})

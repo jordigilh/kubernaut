@@ -67,7 +67,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		It("should execute Job workflow to completion (BR-WE-014, BR-WE-001)", func() {
 			// Business Outcome: Job-based remediations complete successfully within SLA
 			testName := fmt.Sprintf("e2e-job-success-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
 
 			defer func() {
@@ -147,7 +147,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		It("should populate failure details when Job fails (BR-WE-014, BR-WE-004)", func() {
 			// Business Outcome: Job failures produce actionable failure details
 			testName := fmt.Sprintf("e2e-job-failure-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-fail-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-fail-test-%s", uuid.New().String()[:8])
 
 			// Issue #518: WorkflowID must be a valid UUID (resolved at runtime via DS)
 			jobFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-intentional-failure"]
@@ -242,7 +242,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			// before ActiveDeadlineSeconds (30m) would otherwise eventually fail
 			// it, deliberately avoiding a 30-minute CI run.
 			testName := fmt.Sprintf("e2e-job-oomkill-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-oomkill-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-oomkill-test-%s", uuid.New().String()[:8])
 
 			jobOomkillUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-oomkill"]
 			Expect(jobOomkillUUID).ToNot(BeEmpty(),
@@ -366,7 +366,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			// Reuses the existing test-job-intentional-failure fixture (exit 1,
 			// no new image) per DD-WE-008 Section 8.
 			testName := fmt.Sprintf("e2e-job-genuine-failure-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-genuine-fail-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-genuine-fail-test-%s", uuid.New().String()[:8])
 
 			jobFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-intentional-failure"]
 			Expect(jobFailureUUID).ToNot(BeEmpty(),
@@ -439,7 +439,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		It("should sync WFE status with Job status accurately (BR-WE-014, BR-WE-003)", func() {
 			// Business Outcome: WFE status accurately reflects Job execution state
 			testName := fmt.Sprintf("e2e-job-sync-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-sync-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-sync-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
 
 			defer func() {
@@ -494,7 +494,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		It("should create Job with correct labels, env vars, and image (BR-WE-014)", func() {
 			// Business Outcome: Created Jobs match expected spec for observability and traceability
 			testName := fmt.Sprintf("e2e-job-spec-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-spec-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-spec-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
 
 			defer func() {
@@ -587,7 +587,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			// validated in IT-RO-2512-001. This E2E test validates the immutable
 			// per-RR/WFE execution identity and status reference.
 			testName := fmt.Sprintf("e2e-job-naming-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/naming-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/naming-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
 
 			defer func() {
@@ -645,7 +645,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		It("should mark WFE as Failed when Job is deleted externally (BR-WE-014, BR-WE-007)", func() {
 			// Business Outcome: WFE detects externally deleted Jobs and fails gracefully
 			testName := fmt.Sprintf("e2e-job-extdel-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/job-extdel-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-extdel-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
 
 			defer func() {
@@ -715,7 +715,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			// WorkflowExecution while its Kubernetes Job is still active.
 			testName := fmt.Sprintf("e2e-job-cancel-2588-%s", uuid.New().String()[:8])
 			rrName := "rr-" + testName
-			targetResource := fmt.Sprintf("default/deployment/job-cancel-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-cancel-test-%s", uuid.New().String()[:8])
 
 			now := metav1.Now()
 			rr := &remediationv1alpha1.RemediationRequest{

@@ -298,3 +298,32 @@ var _ = Describe("RemediationRequestStatus God-Struct Decomposition (BR-COMMON-0
 		})
 	})
 })
+
+// UT-RO-2658-009: ResourceIdentifier.String() is the value of the
+// routing.blocked audit event (#2658). It renders the canonical identity —
+// namespace/group/version/Kind/name — with the Kind's own casing, so the audit
+// identity and the WorkflowExecution identity are the same string.
+var _ = Describe("ResourceIdentifier.String (#2658) [BR-ORCH-042, AU-3]", func() {
+	DescribeTable("renders the canonical identity with a verbatim Kind",
+		func(ri v1alpha1.ResourceIdentifier, want string) {
+			Expect(ri.String()).To(Equal(want))
+			Expect(ri.String()).NotTo(ContainSubstring("@"),
+				"the identity is a path, not an annotated string")
+		},
+		Entry("namespaced grouped",
+			v1alpha1.ResourceIdentifier{Kind: "Deployment", Name: "web", Namespace: "prod", APIVersion: "apps/v1"},
+			"prod/apps/v1/Deployment/web"),
+		Entry("namespaced core",
+			v1alpha1.ResourceIdentifier{Kind: "Pod", Name: "api", Namespace: "prod", APIVersion: "v1"},
+			"prod/core/v1/Pod/api"),
+		Entry("cluster-scoped grouped",
+			v1alpha1.ResourceIdentifier{Kind: "Node", Name: "worker-1", APIVersion: "metrics.k8s.io/v1"},
+			"metrics.k8s.io/v1/Node/worker-1"),
+		Entry("cluster-scoped core",
+			v1alpha1.ResourceIdentifier{Kind: "Node", Name: "worker-1", APIVersion: "v1"},
+			"core/v1/Node/worker-1"),
+		Entry("missing apiVersion renders the unresolved form",
+			v1alpha1.ResourceIdentifier{Kind: "Deployment", Name: "web", Namespace: "prod"},
+			"prod/unresolved/unresolved/Deployment/web"),
+	)
+})

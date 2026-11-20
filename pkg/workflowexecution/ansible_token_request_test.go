@@ -83,7 +83,7 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 						ServiceAccountName: saName,
 					},
 				},
-				TargetResource: "default/Deployment/nginx",
+				TargetResource: "default/apps/v1/Deployment/nginx",
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "rr-test",
 					Namespace: "kubernaut-workflows",

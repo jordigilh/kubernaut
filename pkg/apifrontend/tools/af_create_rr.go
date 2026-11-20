@@ -79,6 +79,13 @@ type CreateRRArgs struct {
 	// LLM-visible confirmed_signal_name field, not set by the LLM directly
 	// on this struct.
 	ConfirmedAmbiguousSignalName string `json:"-"`
+	// ConfirmedAmbiguousAPIGroup, when non-empty, is the API group the user
+	// confirmed the correlated alert refers to (#2658). It resolves a
+	// group_unscopable ambiguity only when it normalizes to the target's own
+	// group; a sibling's group yields the alert_belongs_to_sibling outcome.
+	// Populated internally by each tool handler from its own LLM-visible
+	// confirmed_api_group field, not set by the LLM directly on this struct.
+	ConfirmedAmbiguousAPIGroup string `json:"-"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -103,12 +110,23 @@ type CreateRRResult struct {
 	// Ambiguous is true when severity triage found only a cluster-scoped
 	// alert with no verified relationship to the target resource -- no RR
 	// is created and the caller must ask the user to confirm
-	// CandidateSignalName before retrying (DD-AF-012, #2027/#2028).
+	// CandidateSignalName before retrying (DD-AF-012, #2027/#2028) -- or,
+	// #2658, when the correlation cannot be scoped to the target's API
+	// group, resolvable via confirmed_api_group instead.
 	Ambiguous bool `json:"ambiguous,omitempty"`
 	// CandidateSignalName/CandidateSeverity carry the unverified candidate
 	// so the calling agent can present it to the user for confirmation.
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AmbiguityReason classifies an Ambiguous result (#2658) so the agent can
+	// pick the right confirmation field: cluster_scoped_only
+	// (confirmed_signal_name), group_unscopable (confirmed_api_group), or
+	// alert_belongs_to_sibling (the correlated alert is another group's
+	// resource -- do not remediate this one).
+	AmbiguityReason string `json:"ambiguity_reason,omitempty"`
+	// CandidateAPIGroups lists the groups in which cross-group siblings were
+	// found (#2658); the agent presents them so the user can pick one.
+	CandidateAPIGroups []string `json:"candidate_api_groups,omitempty"`
 }
 
 // CreateRRHooks lets a caller interleave work strictly between "the new
@@ -253,19 +271,14 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 
 	resolvedSeverity, triageResult, err := resolveCreateRRSeverity(ctx, d, args)
 	if err != nil {
-		// DD-AF-012/#2027/#2028: an ambiguous match is a typed signal, not a
-		// generic error -- no RR is created, but the caller gets a normal
-		// result carrying the weak candidate so the agent can ask the user
-		// to confirm before retrying (mirrors #2022's Managed: false shape).
+		// DD-AF-012/#2027/#2028, #2658: an ambiguous match is a typed signal,
+		// not a generic error -- no RR is created, but the caller gets a
+		// normal result carrying the reason and the weak candidate so the
+		// agent can ask the user to confirm before retrying (mirrors #2022's
+		// Managed: false shape).
 		var ambErr *severity.AmbiguousSeverityError
 		if errors.As(err, &ambErr) {
-			return CreateRRResult{
-				Ambiguous:           true,
-				CandidateSignalName: ambErr.Candidate.AlertName,
-				CandidateSeverity:   ambErr.Candidate.Severity,
-				Message: fmt.Sprintf("severity/signal correlation is ambiguous for %s/%s: only a cluster-scoped alert (%s) was found, with no verified relationship to this resource",
-					args.Kind, args.Name, ambErr.Candidate.AlertName),
-			}, nil
+			return ambiguousCreateRRResult(args, ambErr.Candidate), nil
 		}
 		return CreateRRResult{}, err
 	}
@@ -292,6 +305,53 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 
 	emitCreateRRAudit(ctx, d, args, username, res, resolvedSeverity)
 	return *res, nil
+}
+
+// ambiguousCreateRRResult translates a triage ambiguity into the typed,
+// non-error tool result (#2658 reason-driven messages). Each reason names the
+// exact field that resolves it so the agent never asks for the wrong fact.
+func ambiguousCreateRRResult(args *CreateRRArgs, candidate severity.TriageResult) CreateRRResult {
+	result := CreateRRResult{
+		Ambiguous:           true,
+		AmbiguityReason:     candidate.AmbiguityReason,
+		CandidateAPIGroups:  candidate.CandidateAPIGroups,
+		CandidateSignalName: candidate.AlertName,
+		CandidateSeverity:   candidate.Severity,
+	}
+	switch candidate.AmbiguityReason {
+	case severity.AmbiguityReasonGroupUnscopable:
+		result.Message = fmt.Sprintf(
+			"severity/signal correlation for %s/%s cannot be scoped to its API group %q: a resource with the same namespace/kind/name exists in API group %s. "+
+				"No remediation request was created. Ask the user which API group the alert refers to, then re-call with confirmed_api_group set to that group.",
+			args.Kind, args.Name, targetAPIGroup(args), describeAPIGroups(candidate.CandidateAPIGroups))
+	case severity.AmbiguityReasonAlertBelongsToSibling:
+		result.Message = fmt.Sprintf(
+			"the correlated alert belongs to %s/%s in API group %s, not to this %q resource -- its severity must not be inherited, so no remediation request was created. "+
+				"Tell the user the alert refers to the same-named resource in that API group and offer to start a remediation for that resource instead (api_version with that group).",
+			args.Kind, args.Name, describeAPIGroups(candidate.CandidateAPIGroups), targetAPIGroup(args))
+	default:
+		result.Message = fmt.Sprintf(
+			"severity/signal correlation is ambiguous for %s/%s: only a cluster-scoped alert (%s) was found, with no verified relationship to this resource. "+
+				"No remediation request was created. Ask the user to confirm that signal, then re-call with confirmed_signal_name set to it.",
+			args.Kind, args.Name, candidate.AlertName)
+	}
+	return result
+}
+
+// targetAPIGroup returns the target's own group for messages, spelling the
+// core group as "core" (its empty string is not readable to a user).
+func targetAPIGroup(args *CreateRRArgs) string {
+	group, _, err := scope.ParseAPIVersion(args.APIVersion)
+	if err != nil {
+		return "unknown"
+	}
+	return scope.DisplayAPIGroup(group)
+}
+
+// describeAPIGroups renders candidate groups for a message; an empty list means
+// the checker failed closed without identifying a specific sibling group.
+func describeAPIGroups(groups []string) string {
+	return scope.DisplayAPIGroups(groups, "unavailable")
 }
 
 // validateCreateRRArgs validates all HandleCreateRR inputs, returning a
@@ -322,6 +382,15 @@ func validateCreateRRArgs(d *ToolDeps, args *CreateRRArgs) error {
 	if err := validate.ClusterID(args.ClusterID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	// #2658/SI-10: a confirmation value the normalizer cannot resolve is
+	// rejected here rather than silently ignored -- silently dropping it
+	// would return the identical ambiguous result and look like the
+	// confirmation had no effect.
+	if args.ConfirmedAmbiguousAPIGroup != "" {
+		if _, state := scope.NormalizeAPIGroup(args.ConfirmedAmbiguousAPIGroup); state != scope.NormalizeStateResolvedGroup {
+			return fmt.Errorf("%w: confirmed_api_group %q is not a resolvable API group", ErrInvalidInput, args.ConfirmedAmbiguousAPIGroup)
+		}
+	}
 	return nil
 }
 
@@ -338,6 +407,13 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	if d.Triager == nil {
 		return "", nil, fmt.Errorf("severity triage not configured: %w", severity.ErrSeverityUndetermined)
 	}
+	// #2658: the target's API group is derived here, at the single call site,
+	// from the validated mandatory apiVersion. APIGroupKnown is set so the
+	// core group (empty) is distinguishable from "no group information".
+	apiGroup, _, err := scope.ParseAPIVersion(args.APIVersion)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: target apiVersion: %w", ErrInvalidInput, err)
+	}
 	input := severity.TriageInput{
 		Namespace:           args.Namespace,
 		Kind:                args.Kind,
@@ -347,6 +423,9 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		FleetMode:           d.ClusterLister != nil,
 		Labels:              map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
 		ConfirmedSignalName: args.ConfirmedAmbiguousSignalName,
+		APIGroup:            apiGroup,
+		APIGroupKnown:       true,
+		ConfirmedAPIGroup:   args.ConfirmedAmbiguousAPIGroup,
 	}
 	result, err := d.Triager.Triage(ctx, input)
 	if err != nil {

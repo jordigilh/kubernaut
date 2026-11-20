@@ -51,7 +51,7 @@ var _ = Describe("Issue #2533 DataStorage history projection", func() {
 			ExpectedMechanism:     expectedJustification.ExpectedMechanism,
 		}
 		client := &issue2533HistoryContextClient{response: &ogenclient.RemediationHistoryContext{
-			TargetResource:  "prod/Deployment/api",
+			TargetResource:  "prod/apps/v1/Deployment/api",
 			CurrentSpecHash: "sha256:current",
 			Tier1: ogenclient.RemediationHistoryTier1{Chain: []ogenclient.RemediationHistoryEntry{{
 				RemediationUID:      "rr-2533",
@@ -64,7 +64,7 @@ var _ = Describe("Issue #2533 DataStorage history projection", func() {
 				RepeatJustification: ogenclient.NewOptRepeatJustification(justification),
 			}}},
 		}}
-		result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), "Deployment", "api", "prod", "cluster-2533", "sha256:current")
+		result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api", Namespace: "prod", ClusterID: "cluster-2533", SpecHash: "sha256:current"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Tier1).To(HaveLen(1))
 		Expect(result.Tier1[0].WorkflowRationale).To(Equal("The current target evidence supports the catalog workflow."))

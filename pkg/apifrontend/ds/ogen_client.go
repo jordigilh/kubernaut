@@ -8,6 +8,7 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // OgenClient implements the Client interface using the ogen-generated DS client.
@@ -55,10 +56,11 @@ func NewOgenClient(cfg OgenClientConfig) (*OgenClient, error) {
 // GetRemediationHistory queries the DS for remediation history.
 func (c *OgenClient) GetRemediationHistory(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error) {
 	params := ogenclient.GetRemediationHistoryContextParams{
-		TargetKind:      opts.Kind,
-		TargetName:      opts.Name,
-		TargetNamespace: opts.Namespace,
-		CurrentSpecHash: opts.SpecHash,
+		TargetKind:       opts.Kind,
+		TargetName:       opts.Name,
+		TargetNamespace:  opts.Namespace,
+		TargetApiVersion: scope.WireAPIVersion(opts.APIVersion),
+		CurrentSpecHash:  opts.SpecHash,
 	}
 	if opts.Since != "" {
 		params.Tier1Window = ogenclient.NewOptString(opts.Since)

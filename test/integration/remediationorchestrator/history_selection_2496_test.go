@@ -86,14 +86,19 @@ var _ = Describe("#2496 RO selection history and no-execution safety", func() {
 			Expect(payload.WorkflowID).To(Equal(api.NewOptString(selection.WorkflowID)))
 			Expect(payload.WorkflowName).To(Equal(api.NewOptString(selection.WorkflowName)))
 			Expect(payload.WorkflowSelectionConfidence).To(Equal(api.NewOptFloat64(confidence)))
-			Expect(payload.TargetResource.Value).To(Equal(rr.Spec.TargetResource.Namespace + "/Deployment/test-app"))
+			Expect(payload.TargetResource.Value).To(Equal(rr.Spec.TargetResource.Namespace+"/apps/v1/Deployment/test-app"),
+				"#2658 E11: the workflow_created join key carries the canonical API group")
 			Expect(payload.PreRemediationSpecHash.Value).NotTo(BeEmpty())
 			Expect(string(raw)).NotTo(ContainSubstring("parameters"))
 			Expect(string(raw)).NotTo(ContainSubstring("private-ro-2496"))
 
 			params := api.GetRemediationHistoryContextParams{
 				TargetKind: rr.Spec.TargetResource.Kind, TargetName: rr.Spec.TargetResource.Name,
-				TargetNamespace: rr.Spec.TargetResource.Namespace, CurrentSpecHash: payload.PreRemediationSpecHash.Value,
+				TargetNamespace: rr.Spec.TargetResource.Namespace,
+				// #2658 D-B: targetApiVersion is required and must name
+				// the group RO emitted.
+				TargetApiVersion: "apps/v1",
+				CurrentSpecHash:  payload.PreRemediationSpecHash.Value,
 			}
 			history := queryHistorySelectionRO2496(params)
 			Expect(history.Tier1.Chain).To(HaveLen(1))

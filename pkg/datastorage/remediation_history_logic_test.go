@@ -47,11 +47,11 @@ var _ = Describe("Remediation History Correlation Logic (DD-KA-016 v1.1)", func(
 			EventTimestamp: ts,
 			EventData: map[string]interface{}{
 				"pre_remediation_spec_hash": preHash,
-				"outcome":                  outcome,
-				"signal_type":              signalType,
-				"signal_fingerprint":       signalFingerprint,
-				"action_type":              actionType,
-				"target_resource":          "default/Deployment/nginx",
+				"outcome":                   outcome,
+				"signal_type":               signalType,
+				"signal_fingerprint":        signalFingerprint,
+				"action_type":               actionType,
+				"target_resource":           "default/apps/v1/Deployment/nginx",
 			},
 		}
 	}
@@ -431,9 +431,9 @@ var _ = Describe("Remediation History Correlation Logic (DD-KA-016 v1.1)", func(
 					},
 					{
 						EventData: map[string]interface{}{
-							"event_type":    "effectiveness.alert.assessed",
-							"assessed":      true,
-							"score":         1.0,
+							"event_type": "effectiveness.alert.assessed",
+							"assessed":   true,
+							"score":      1.0,
 							"alert_resolution": map[string]interface{}{
 								"alert_resolved": true,
 							},

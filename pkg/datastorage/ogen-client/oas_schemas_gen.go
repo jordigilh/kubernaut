@@ -9814,6 +9814,206 @@ func (s *ApifrontendSessionRetentionDeletedPayloadEventType) UnmarshalText(data 
 	}
 }
 
+// Severity triage ambiguous event payload (apifrontend.severity_triage.ambiguous) — correlating
+// evidence exists but cannot be attributed to the target resource, so no RemediationRequest is
+// created until the user confirms (BR-SEVERITY-001 AC-8, DD-AF-012,.
+// Ref: #/components/schemas/ApifrontendSeverityTriageAmbiguousPayload
+type ApifrontendSeverityTriageAmbiguousPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSeverityTriageAmbiguousPayloadEventType `json:"event_type"`
+	// Why the correlation is ambiguous; selects the confirmation the user is asked for.
+	AmbiguityReason ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason `json:"ambiguity_reason"`
+	// Canonical API group of the target resource (#2658); empty means the core group.
+	APIGroup OptString `json:"api_group"`
+	// Namespace of the target resource (empty for cluster-scoped targets).
+	Namespace OptString `json:"namespace"`
+	// Kind of the target resource.
+	Kind OptString `json:"kind"`
+	// Name of the target resource.
+	Name OptString `json:"name"`
+	// Alert name that correlated (empty when the candidate is unknown or cleared by the group gate).
+	CandidateAlert OptString `json:"candidate_alert"`
+	// Severity the candidate would have contributed.
+	CandidateSeverity OptString `json:"candidate_severity"`
+	// API groups in which same-namespace/kind/name siblings exist (group_unscopable); empty string
+	// denotes the core group.
+	CandidateAPIGroups []string `json:"candidate_api_groups"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetEventType() ApifrontendSeverityTriageAmbiguousPayloadEventType {
+	return s.EventType
+}
+
+// GetAmbiguityReason returns the value of AmbiguityReason.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetAmbiguityReason() ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason {
+	return s.AmbiguityReason
+}
+
+// GetAPIGroup returns the value of APIGroup.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetAPIGroup() OptString {
+	return s.APIGroup
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// GetKind returns the value of Kind.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetKind() OptString {
+	return s.Kind
+}
+
+// GetName returns the value of Name.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetName() OptString {
+	return s.Name
+}
+
+// GetCandidateAlert returns the value of CandidateAlert.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetCandidateAlert() OptString {
+	return s.CandidateAlert
+}
+
+// GetCandidateSeverity returns the value of CandidateSeverity.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetCandidateSeverity() OptString {
+	return s.CandidateSeverity
+}
+
+// GetCandidateAPIGroups returns the value of CandidateAPIGroups.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) GetCandidateAPIGroups() []string {
+	return s.CandidateAPIGroups
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetEventType(val ApifrontendSeverityTriageAmbiguousPayloadEventType) {
+	s.EventType = val
+}
+
+// SetAmbiguityReason sets the value of AmbiguityReason.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetAmbiguityReason(val ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) {
+	s.AmbiguityReason = val
+}
+
+// SetAPIGroup sets the value of APIGroup.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetAPIGroup(val OptString) {
+	s.APIGroup = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetNamespace(val OptString) {
+	s.Namespace = val
+}
+
+// SetKind sets the value of Kind.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetKind(val OptString) {
+	s.Kind = val
+}
+
+// SetName sets the value of Name.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetCandidateAlert sets the value of CandidateAlert.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetCandidateAlert(val OptString) {
+	s.CandidateAlert = val
+}
+
+// SetCandidateSeverity sets the value of CandidateSeverity.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetCandidateSeverity(val OptString) {
+	s.CandidateSeverity = val
+}
+
+// SetCandidateAPIGroups sets the value of CandidateAPIGroups.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) SetCandidateAPIGroups(val []string) {
+	s.CandidateAPIGroups = val
+}
+
+// Why the correlation is ambiguous; selects the confirmation the user is asked for.
+type ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason string
+
+const (
+	ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly     ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason = "cluster_scoped_only"
+	ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable       ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason = "group_unscopable"
+	ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason = "alert_belongs_to_sibling"
+)
+
+// AllValues returns all ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason values.
+func (ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) AllValues() []ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason {
+	return []ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason{
+		ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly,
+		ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable,
+		ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly:
+		return []byte(s), nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable:
+		return []byte(s), nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) UnmarshalText(data []byte) error {
+	switch ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason(data) {
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly
+		return nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable
+		return nil
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSeverityTriageAmbiguousPayloadEventType string
+
+const (
+	ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous ApifrontendSeverityTriageAmbiguousPayloadEventType = "apifrontend.severity_triage.ambiguous"
+)
+
+// AllValues returns all ApifrontendSeverityTriageAmbiguousPayloadEventType values.
+func (ApifrontendSeverityTriageAmbiguousPayloadEventType) AllValues() []ApifrontendSeverityTriageAmbiguousPayloadEventType {
+	return []ApifrontendSeverityTriageAmbiguousPayloadEventType{
+		ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSeverityTriageAmbiguousPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSeverityTriageAmbiguousPayloadEventType(data) {
+	case ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Severity triage completed event payload (apifrontend.severity_triage.completed) — multi-tier
 // severity triage succeeded (SOC2 CC7.2, Issue.
 // Ref: #/components/schemas/ApifrontendSeverityTriageCompletedPayload
@@ -9824,6 +10024,8 @@ type ApifrontendSeverityTriageCompletedPayload struct {
 	Severity string `json:"severity"`
 	// Tier that produced the final severity (prometheus_rules, llm, default).
 	SourceTier string `json:"source_tier"`
+	// Canonical API group of the target resource (#2658); empty means the core group.
+	APIGroup OptString `json:"api_group"`
 	// Triage pipeline execution time.
 	DurationMs OptInt `json:"duration_ms"`
 }
@@ -9841,6 +10043,11 @@ func (s *ApifrontendSeverityTriageCompletedPayload) GetSeverity() string {
 // GetSourceTier returns the value of SourceTier.
 func (s *ApifrontendSeverityTriageCompletedPayload) GetSourceTier() string {
 	return s.SourceTier
+}
+
+// GetAPIGroup returns the value of APIGroup.
+func (s *ApifrontendSeverityTriageCompletedPayload) GetAPIGroup() OptString {
+	return s.APIGroup
 }
 
 // GetDurationMs returns the value of DurationMs.
@@ -9861,6 +10068,11 @@ func (s *ApifrontendSeverityTriageCompletedPayload) SetSeverity(val string) {
 // SetSourceTier sets the value of SourceTier.
 func (s *ApifrontendSeverityTriageCompletedPayload) SetSourceTier(val string) {
 	s.SourceTier = val
+}
+
+// SetAPIGroup sets the value of APIGroup.
+func (s *ApifrontendSeverityTriageCompletedPayload) SetAPIGroup(val OptString) {
+	s.APIGroup = val
 }
 
 // SetDurationMs sets the value of DurationMs.
@@ -11601,6 +11813,7 @@ type AuditEventEventData struct {
 	ApifrontendMCPSessionInitPayload                 ApifrontendMCPSessionInitPayload
 	ApifrontendSeverityTriageCompletedPayload        ApifrontendSeverityTriageCompletedPayload
 	ApifrontendSeverityTriageFailedPayload           ApifrontendSeverityTriageFailedPayload
+	ApifrontendSeverityTriageAmbiguousPayload        ApifrontendSeverityTriageAmbiguousPayload
 	ApifrontendConfigReloadedPayload                 ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload                 ApifrontendConfigRejectedPayload
 	ApifrontendInteractiveSignalFailedPayload        ApifrontendInteractiveSignalFailedPayload
@@ -11776,6 +11989,7 @@ const (
 	ApifrontendMCPSessionInitPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.mcp.session_init"
 	ApifrontendSeverityTriageCompletedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.severity_triage.completed"
 	ApifrontendSeverityTriageFailedPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.severity_triage.failed"
+	ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.severity_triage.ambiguous"
 	ApifrontendConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.rejected"
 	ApifrontendInteractiveSignalFailedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.interactive_signal.failed"
@@ -12333,6 +12547,11 @@ func (s AuditEventEventData) IsApifrontendSeverityTriageCompletedPayload() bool 
 // IsApifrontendSeverityTriageFailedPayload reports whether AuditEventEventData is ApifrontendSeverityTriageFailedPayload.
 func (s AuditEventEventData) IsApifrontendSeverityTriageFailedPayload() bool {
 	return s.Type == ApifrontendSeverityTriageFailedPayloadAuditEventEventData
+}
+
+// IsApifrontendSeverityTriageAmbiguousPayload reports whether AuditEventEventData is ApifrontendSeverityTriageAmbiguousPayload.
+func (s AuditEventEventData) IsApifrontendSeverityTriageAmbiguousPayload() bool {
+	return s.Type == ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData
 }
 
 // IsApifrontendConfigReloadedPayload reports whether AuditEventEventData is ApifrontendConfigReloadedPayload.
@@ -14821,6 +15040,27 @@ func NewApifrontendSeverityTriageFailedPayloadAuditEventEventData(v ApifrontendS
 	return s
 }
 
+// SetApifrontendSeverityTriageAmbiguousPayload sets AuditEventEventData to ApifrontendSeverityTriageAmbiguousPayload.
+func (s *AuditEventEventData) SetApifrontendSeverityTriageAmbiguousPayload(v ApifrontendSeverityTriageAmbiguousPayload) {
+	s.Type = ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData
+	s.ApifrontendSeverityTriageAmbiguousPayload = v
+}
+
+// GetApifrontendSeverityTriageAmbiguousPayload returns ApifrontendSeverityTriageAmbiguousPayload and true boolean if AuditEventEventData is ApifrontendSeverityTriageAmbiguousPayload.
+func (s AuditEventEventData) GetApifrontendSeverityTriageAmbiguousPayload() (v ApifrontendSeverityTriageAmbiguousPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageAmbiguousPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageAmbiguousPayload, true
+}
+
+// NewApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSeverityTriageAmbiguousPayload.
+func NewApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData(v ApifrontendSeverityTriageAmbiguousPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSeverityTriageAmbiguousPayload(v)
+	return s
+}
+
 // SetApifrontendConfigReloadedPayload sets AuditEventEventData to ApifrontendConfigReloadedPayload.
 func (s *AuditEventEventData) SetApifrontendConfigReloadedPayload(v ApifrontendConfigReloadedPayload) {
 	s.Type = ApifrontendConfigReloadedPayloadAuditEventEventData
@@ -15990,6 +16230,7 @@ type AuditEventRequestEventData struct {
 	ApifrontendMCPSessionInitPayload                 ApifrontendMCPSessionInitPayload
 	ApifrontendSeverityTriageCompletedPayload        ApifrontendSeverityTriageCompletedPayload
 	ApifrontendSeverityTriageFailedPayload           ApifrontendSeverityTriageFailedPayload
+	ApifrontendSeverityTriageAmbiguousPayload        ApifrontendSeverityTriageAmbiguousPayload
 	ApifrontendConfigReloadedPayload                 ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload                 ApifrontendConfigRejectedPayload
 	ApifrontendInteractiveSignalFailedPayload        ApifrontendInteractiveSignalFailedPayload
@@ -16165,6 +16406,7 @@ const (
 	ApifrontendMCPSessionInitPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.mcp.session_init"
 	ApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.severity_triage.completed"
 	ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.severity_triage.failed"
+	ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.severity_triage.ambiguous"
 	ApifrontendConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.rejected"
 	ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.interactive_signal.failed"
@@ -16722,6 +16964,11 @@ func (s AuditEventRequestEventData) IsApifrontendSeverityTriageCompletedPayload(
 // IsApifrontendSeverityTriageFailedPayload reports whether AuditEventRequestEventData is ApifrontendSeverityTriageFailedPayload.
 func (s AuditEventRequestEventData) IsApifrontendSeverityTriageFailedPayload() bool {
 	return s.Type == ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSeverityTriageAmbiguousPayload reports whether AuditEventRequestEventData is ApifrontendSeverityTriageAmbiguousPayload.
+func (s AuditEventRequestEventData) IsApifrontendSeverityTriageAmbiguousPayload() bool {
+	return s.Type == ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData
 }
 
 // IsApifrontendConfigReloadedPayload reports whether AuditEventRequestEventData is ApifrontendConfigReloadedPayload.
@@ -19207,6 +19454,27 @@ func (s AuditEventRequestEventData) GetApifrontendSeverityTriageFailedPayload() 
 func NewApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData(v ApifrontendSeverityTriageFailedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetApifrontendSeverityTriageFailedPayload(v)
+	return s
+}
+
+// SetApifrontendSeverityTriageAmbiguousPayload sets AuditEventRequestEventData to ApifrontendSeverityTriageAmbiguousPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSeverityTriageAmbiguousPayload(v ApifrontendSeverityTriageAmbiguousPayload) {
+	s.Type = ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData
+	s.ApifrontendSeverityTriageAmbiguousPayload = v
+}
+
+// GetApifrontendSeverityTriageAmbiguousPayload returns ApifrontendSeverityTriageAmbiguousPayload and true boolean if AuditEventRequestEventData is ApifrontendSeverityTriageAmbiguousPayload.
+func (s AuditEventRequestEventData) GetApifrontendSeverityTriageAmbiguousPayload() (v ApifrontendSeverityTriageAmbiguousPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageAmbiguousPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageAmbiguousPayload, true
+}
+
+// NewApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSeverityTriageAmbiguousPayload.
+func NewApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData(v ApifrontendSeverityTriageAmbiguousPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSeverityTriageAmbiguousPayload(v)
 	return s
 }
 

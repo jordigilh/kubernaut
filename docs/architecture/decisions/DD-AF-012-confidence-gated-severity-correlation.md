@@ -168,6 +168,33 @@ Key clarifying facts established during discussion:
    mechanism), and Tier 1's ambiguity check is bypassed for that explicit, user-confirmed call —
    fail-closed if the confirmed name does not exactly match the candidate that was surfaced.
 
+5. **(#2658) The ambiguity is reason-scoped.** `TriageResult.AmbiguityReason` classifies it:
+   `cluster_scoped_only` (this record's lineage), `group_unscopable` (a positive correlation that
+   cannot be attributed to the target's API group because a same-namespace/kind/name sibling exists
+   in another group) and `alert_belongs_to_sibling` (the user confirmed the alert belongs to the
+   sibling's resource). `resolvesAmbiguity` switches on the reason: a signal-name confirmation never
+   resolves a group ambiguity, and a group confirmation never resolves a cluster-scoped one.
+   `group_unscopable` results clear `AlertName` (the confirmable identity moves to
+   `CandidateIdentifier`) precisely so a signal name cannot be used as a bypass. See
+   DD-IDENTITY-001 §D1.
+6. **(#2658) The confirmation field is reason-specific.** `confirmed_signal_name` resolves
+   `cluster_scoped_only`; a new LLM-visible `confirmed_api_group` on the same three tools resolves
+   `group_unscopable` (mapped internally to `CreateRRArgs.ConfirmedAmbiguousAPIGroup`, `json:"-"`).
+   Confirming the target's own group bypasses the gate; confirming a sibling's group returns the
+   non-error `alert_belongs_to_sibling` result instead of `ErrSeverityUndetermined`, because
+   inheriting that severity would remediate the wrong object. `SignalNameOverride` is **not** a
+   resolution mechanism (retracted: it does not bypass triage).
+7. **(#2658) Ambiguity values are auditable.** The decision is persisted as
+   `severity_triage.ambiguous` with `api_group`, `ambiguity_reason`, the candidate identity/severity
+   and `candidate_api_groups`; `severity_triage.completed` carries `api_group` and the reconciled
+   `source_tier` key.
+8. **(#2658) A future `api_group` alert label** (removing the need for confirmation in the common
+   case) is a deferred lift; the Tier 1.5/2 `Labels` compatibility surface is unchanged by this
+   record.
+9. **(#2658) Fleet-mode deviation**: a fleet target adjudicates as before plus a
+   `sibling_check_unavailable` observation — AF has no per-cluster existence reader (its
+   `ClusterLister` is list-only). Recorded here so the deviation is a decision, not an oversight.
+
 ### Scope boundaries
 
 - **In scope**: `kubernaut_investigate`, `kubernaut_remediate`, `kubernaut_investigate_alert` —

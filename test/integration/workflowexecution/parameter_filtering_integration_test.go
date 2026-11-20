@@ -49,7 +49,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 	Context("Job executor with live workflow parameter declarations", func() {
 
 		It("IT-WE-243-001: should reject undeclared params before creating a Job", func() {
-			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
+			wfe := createUniqueJobWFE("pf-job-strip", "default/apps/v1/Deployment/pf-job-strip-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE":    "default",
@@ -70,7 +70,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-002: BR-ORCH-025 fails closed for an unverifiable Job workflow", func() {
-			wfe := createUniqueJobWFE("pf-job-nil", "default/deployment/pf-job-nil-app")
+			wfe := createUniqueJobWFE("pf-job-nil", "default/apps/v1/Deployment/pf-job-nil-app")
 			wfe.Spec.WorkflowRef.WorkflowID = "missing-workflow"
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE": "default",
@@ -86,7 +86,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-003: should dispatch params declared by the live workflow", func() {
-			wfe := createUniqueJobWFE("pf-job-empty", "default/deployment/pf-job-empty-app")
+			wfe := createUniqueJobWFE("pf-job-empty", "default/apps/v1/Deployment/pf-job-empty-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE": "default",
@@ -112,7 +112,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 	Context("Tekton executor with live workflow parameter declarations", func() {
 
 		It("IT-WE-243-010: should reject undeclared params before creating a PipelineRun", func() {
-			wfe := createUniqueWFEWithTypedParams("pf-tekton-strip", "default/deployment/pf-tekton-strip-app",
+			wfe := createUniqueWFEWithTypedParams("pf-tekton-strip", "default/apps/v1/Deployment/pf-tekton-strip-app",
 				typedParametersFromStrings(map[string]string{
 					"NAMESPACE":    "default",
 					"REPLICAS":     "3",
@@ -132,7 +132,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-011: BR-ORCH-025 fails closed for an unverifiable Tekton workflow", func() {
-			wfe := createUniqueWFEWithTypedParams("pf-tekton-nil", "default/deployment/pf-tekton-nil-app",
+			wfe := createUniqueWFEWithTypedParams("pf-tekton-nil", "default/apps/v1/Deployment/pf-tekton-nil-app",
 				typedParametersFromStrings(map[string]string{
 					"NAMESPACE": "default",
 					"CUSTOM":    "value",

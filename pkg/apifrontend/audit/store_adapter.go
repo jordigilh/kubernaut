@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -160,6 +161,7 @@ var typedPayloadEvents = map[EventType]bool{
 	EventConfigRejected:                 true,
 	EventSeverityTriageCompleted:        true,
 	EventSeverityTriageFailed:           true,
+	EventSeverityTriageAmbiguous:        true,
 	EventTriageStarted:                  true,
 	EventTriageCompleted:                true,
 	EventRRCreated:                      true,
@@ -243,6 +245,7 @@ var actionMap = map[EventType]string{
 	EventJWTDelegation:                  "delegated",
 	EventSeverityTriageCompleted:        "completed",
 	EventSeverityTriageFailed:           "failed",
+	EventSeverityTriageAmbiguous:        "ambiguous",
 	EventWorkflowDiscovery:              "discovered",
 	EventTriageStarted:                  "started",
 	EventTriageCompleted:                "completed",
@@ -293,6 +296,7 @@ var eventDataBuilders = map[EventType]eventDataBuilder{
 	EventConfigRejected:                 buildConfigRejectedPayload,
 	EventSeverityTriageCompleted:        buildSeverityTriageCompletedPayload,
 	EventSeverityTriageFailed:           buildSeverityTriageFailedPayload,
+	EventSeverityTriageAmbiguous:        buildSeverityTriageAmbiguousPayload,
 	EventTriageStarted:                  buildTriageStartedPayload,
 	EventTriageCompleted:                buildTriageCompletedPayload,
 	EventRRCreated:                      buildRRCreatedPayload,
@@ -599,7 +603,58 @@ func buildSeverityTriageCompletedPayload(e *Event) ogenclient.AuditEventRequestE
 		EventType:  ogenclient.ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted,
 		Severity:   detailStr(d, "severity"),
 		SourceTier: detailStr(d, "source_tier"),
+		APIGroup:   ogenclient.NewOptString(detailStr(d, "api_group")),
 	})
+}
+
+// buildSeverityTriageAmbiguousPayload renders the #2658 ambiguity decision
+// (BR-SEVERITY-001 AC-8): the reason selects the confirmation the agent must
+// ask for, and the candidate API groups are what the user picks between.
+// Unknown reasons fall back to cluster_scoped_only so an emission with a
+// programming error never produces an invalid payload (which DS would reject
+// wholesale, losing the audit record).
+func buildSeverityTriageAmbiguousPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	d := e.Detail
+	return ogenclient.NewApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData(ogenclient.ApifrontendSeverityTriageAmbiguousPayload{
+		EventType:          ogenclient.ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous,
+		AmbiguityReason:    ambiguityReasonValue(detailStr(d, "ambiguity_reason")),
+		APIGroup:           ogenclient.NewOptString(detailStr(d, "api_group")),
+		Namespace:          ogenclient.NewOptString(detailStr(d, "namespace")),
+		Kind:               ogenclient.NewOptString(detailStr(d, "kind")),
+		Name:               ogenclient.NewOptString(detailStr(d, "name")),
+		CandidateAlert:     ogenclient.NewOptString(detailStr(d, "candidate_alert")),
+		CandidateSeverity:  ogenclient.NewOptString(detailStr(d, "candidate_severity")),
+		CandidateAPIGroups: detailJSONStringSlice(d, "candidate_api_groups"),
+	})
+}
+
+// ambiguityReasonValue maps the gate's reason strings onto the OpenAPI enum,
+// defaulting to cluster_scoped_only (the DD-AF-012 lineage value) so an
+// unexpected value stays persistable.
+func ambiguityReasonValue(reason string) ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason {
+	switch ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason(reason) {
+	case ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly,
+		ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable,
+		ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling:
+		return ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason(reason)
+	default:
+		return ogenclient.ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly
+	}
+}
+
+// detailJSONStringSlice decodes a JSON string array carried in the Detail map
+// (Detail values are strings, so list-shaped details are encoded by the
+// emitter).
+func detailJSONStringSlice(d map[string]string, key string) []string {
+	raw := detailStr(d, key)
+	if raw == "" {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil
+	}
+	return values
 }
 
 func buildSeverityTriageFailedPayload(e *Event) ogenclient.AuditEventRequestEventData {

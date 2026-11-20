@@ -76,7 +76,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "", // Empty - should fail
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 				},
 			}
 
@@ -101,7 +101,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 				},
 			}
 
@@ -127,7 +127,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionEngine: "job",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 				},
 			}
 
@@ -190,13 +190,11 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 			Expect(err).To(HaveOccurred(), "Single-part target resource should be rejected")
 			Expect(err.Error()).To(ContainSubstring("must be in format"),
 				"Error message should explain expected format")
-			Expect(err.Error()).To(ContainSubstring("got 1 parts"),
-				"Error message should indicate number of parts found")
 
 			GinkgoWriter.Println("✅ Single-part target resource rejected with format guidance")
 		})
 
-		It("should reject target resource with too many parts (invalid format)", func() {
+		It("should reject a target resource with too many parts (invalid format)", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-wfe",
@@ -209,18 +207,16 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 						},
 					},
-					TargetResource: "default/apps/deployment/test-app", // Invalid - 4 parts
+					TargetResource: "default/apps/v1/Deployment/test-app/extra", // Invalid - 6 parts
 				},
 			}
 
 			err := reconciler.ValidateSpec(wfe)
-			Expect(err).To(HaveOccurred(), "Four-part target resource should be rejected")
+			Expect(err).To(HaveOccurred(), "Six-part target resource should be rejected")
 			Expect(err.Error()).To(ContainSubstring("must be in format"),
 				"Error message should explain expected format")
-			Expect(err.Error()).To(ContainSubstring("got 4 parts"),
-				"Error message should indicate number of parts found")
 
-			GinkgoWriter.Println("✅ Four-part target resource rejected with format guidance")
+			GinkgoWriter.Println("✅ Over-long target resource rejected with format guidance")
 		})
 
 		It("should reject target resource with empty part", func() {
@@ -236,19 +232,19 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 						},
 					},
-					TargetResource: "default/deployment/", // Empty name - should fail
+					TargetResource: "default/apps/v1/Deployment/", // Empty name - should fail
 				},
 			}
 
 			err := reconciler.ValidateSpec(wfe)
-			Expect(err).To(HaveOccurred(), "Target resource with empty part should be rejected")
-			Expect(err.Error()).To(ContainSubstring("empty part"),
-				"Error message should indicate which part is empty")
+			Expect(err).To(HaveOccurred(), "Target resource with an empty name should be rejected")
+			Expect(err.Error()).To(ContainSubstring("targetResource"),
+				"Error message should name the offending field")
 
 			GinkgoWriter.Println("✅ Target resource with empty part rejected")
 		})
 
-		It("should accept valid cluster-scoped target resource (2 parts)", func() {
+		It("should accept a valid cluster-scoped target identity", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-wfe",
@@ -261,7 +257,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-node:v1.0.0",
 						},
 					},
-					TargetResource: "node/worker-node-1", // Valid cluster-scoped: {kind}/{name}
+					TargetResource: "core/v1/Node/worker-node-1", // Valid cluster-scoped: {kind}/{name}
 				},
 			}
 
@@ -284,7 +280,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 						},
 					},
-					TargetResource: "default/deployment/test-app", // Valid namespaced: {ns}/{kind}/{name}
+					TargetResource: "default/apps/v1/Deployment/test-app", // Valid namespaced: {ns}/{kind}/{name}
 				},
 			}
 
@@ -351,7 +347,7 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 							TargetResource: "invalid-format-only-one-part",
 						},
 					},
-					expectedSubstrings: []string{"must be in format", "namespace", "kind", "name"},
+					expectedSubstrings: []string{"must be in format", "namespace", "Kind", "Name"},
 				},
 			}
 

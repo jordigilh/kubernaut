@@ -45,14 +45,14 @@ func bundleTestYAML(bundleRef string) string {
 }
 
 var (
-	validDigestOnlyBundleSchemaYAML   = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
-	validTagDigestBundleSchemaYAML    = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
-	tagOnlyBundleSchemaYAML           = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0")
-	emptyBundleSchemaYAML             = bundleTestYAML("")
-	wrongAlgorithmBundleSchemaYAML    = bundleTestYAML("quay.io/kubernaut/test@md5:abc123def456")
-	shortDigestBundleSchemaYAML       = bundleTestYAML("quay.io/kubernaut/test@sha256:abc123")
-	noExecutionSectionSchemaYAML      string
-	executionNoBundleSchemaYAML       string
+	validDigestOnlyBundleSchemaYAML = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	validTagDigestBundleSchemaYAML  = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	tagOnlyBundleSchemaYAML         = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0")
+	emptyBundleSchemaYAML           = bundleTestYAML("")
+	wrongAlgorithmBundleSchemaYAML  = bundleTestYAML("quay.io/kubernaut/test@md5:abc123def456")
+	shortDigestBundleSchemaYAML     = bundleTestYAML("quay.io/kubernaut/test@sha256:abc123")
+	noExecutionSectionSchemaYAML    string
+	executionNoBundleSchemaYAML     string
 )
 
 func init() {

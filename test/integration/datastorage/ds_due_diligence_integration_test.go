@@ -48,7 +48,7 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 	BeforeEach(func() {
 		testCtx = context.Background()
 		testID = generateTestID()
-		targetResource = fmt.Sprintf("default/Deployment/nginx-%s", testID)
+		targetResource = fmt.Sprintf("default/apps/v1/Deployment/nginx-%s", testID)
 		rhRepo = repository.NewRemediationHistoryRepository(db.DB, logger)
 	})
 
@@ -99,10 +99,10 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 			map[string]interface{}{
 				"target_resource":           targetResource,
 				"pre_remediation_spec_hash": preHash,
-				"action_type":              "RestartPod",
-				"signal_type":              "HighCPULoad",
-				"signal_fingerprint":       "fp-" + testID,
-				"outcome":                  "success",
+				"action_type":               "RestartPod",
+				"signal_type":               "HighCPULoad",
+				"signal_fingerprint":        "fp-" + testID,
+				"outcome":                   "success",
 			},
 			now.Add(-25*time.Hour),
 		)
@@ -113,7 +113,7 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 			map[string]interface{}{
 				"pre_remediation_spec_hash":  preHash,
 				"post_remediation_spec_hash": postHash,
-				"hash_match":                false,
+				"hash_match":                 false,
 			},
 			now.Add(-23*time.Hour),
 		)
@@ -126,7 +126,7 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 		tier2Since := now.Add(-90 * 24 * time.Hour)
 		tier2Until := now.Add(-24 * time.Hour)
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", postHash, tier2Since, tier2Until)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: postHash, Since: tier2Since, Until: tier2Until})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1),

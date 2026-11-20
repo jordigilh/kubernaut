@@ -58,7 +58,7 @@ func (f *k8sCallFakeK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string)
 // the K8s-call audit path, not remediation history retrieval.
 type k8sCallStubDSClient struct{}
 
-func (k8sCallStubDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (k8sCallStubDSClient) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 

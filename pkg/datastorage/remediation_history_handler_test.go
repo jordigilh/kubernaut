@@ -37,13 +37,13 @@ import (
 // mockRemediationHistoryQuerier implements server.RemediationHistoryQuerier for testing.
 // Each method delegates to a configurable function field, allowing per-test behavior.
 type mockRemediationHistoryQuerier struct {
-	queryROEventsBySpecHashFn  func(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+	queryROEventsBySpecHashFn  func(ctx context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error)
 	queryEffectivenessEventsFn func(ctx context.Context, correlationIDs []string) (map[string][]*server.EffectivenessEvent, error)
 }
 
-func (m *mockRemediationHistoryQuerier) QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error) {
+func (m *mockRemediationHistoryQuerier) QueryROEventsBySpecHash(ctx context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 	if m.queryROEventsBySpecHashFn != nil {
-		return m.queryROEventsBySpecHashFn(ctx, targetResource, clusterID, specHash, since, until)
+		return m.queryROEventsBySpecHashFn(ctx, query)
 	}
 	return nil, nil
 }
@@ -64,7 +64,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 	// Base URL with all required params
 	baseURL := "/api/v1/remediation-history/context" +
-		"?targetKind=Deployment&targetName=nginx&targetNamespace=default&currentSpecHash=sha256:abc123"
+		"?targetKind=Deployment&targetName=nginx&targetNamespace=default&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:abc123"
 
 	BeforeEach(func() {
 		mock = &mockRemediationHistoryQuerier{}
@@ -81,7 +81,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 		It("UT-RH-HANDLER-001: should return 400 when targetKind is missing", func() {
 			req := httptest.NewRequest("GET",
-				"/api/v1/remediation-history/context?targetName=nginx&targetNamespace=default&currentSpecHash=sha256:abc",
+				"/api/v1/remediation-history/context?targetName=nginx&targetNamespace=default&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:abc",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
@@ -95,7 +95,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 		It("UT-RH-HANDLER-002: should return 400 when targetName is missing", func() {
 			req := httptest.NewRequest("GET",
-				"/api/v1/remediation-history/context?targetKind=Deployment&targetNamespace=default&currentSpecHash=sha256:abc",
+				"/api/v1/remediation-history/context?targetKind=Deployment&targetNamespace=default&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:abc",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
@@ -105,7 +105,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 		It("UT-RH-HANDLER-003: should return 200 when targetNamespace is absent (cluster-scoped resources)", func() {
 			req := httptest.NewRequest("GET",
-				"/api/v1/remediation-history/context?targetKind=Deployment&targetName=nginx&currentSpecHash=sha256:abc",
+				"/api/v1/remediation-history/context?targetKind=Deployment&targetName=nginx&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:abc",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
@@ -114,7 +114,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 		It("UT-RH-HANDLER-004: should return 400 when currentSpecHash is missing", func() {
 			req := httptest.NewRequest("GET",
-				"/api/v1/remediation-history/context?targetKind=Deployment&targetName=nginx&targetNamespace=default",
+				"/api/v1/remediation-history/context?targetKind=Deployment&targetName=nginx&targetNamespace=default&targetApiVersion=apps%2Fv1",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
@@ -134,22 +134,21 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 	// otherwise cluster-scoped resources would silently never match any
 	// stored history, defeating the new filter.
 	Describe("Target-Resource Format Unification (Issue #1802)", func() {
-		It("UT-DS-1802-002: should emit the canonical 3-part format for cluster-scoped (namespace-less) resources", func() {
+		It("UT-DS-1802-002: should emit the canonical cluster-scoped identity (no namespace part)", func() {
 			var capturedTargetResource string
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, targetResource, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
-				capturedTargetResource = targetResource
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+				capturedTargetResource = query.TargetResource
 				return nil, nil
 			}
 
 			req := httptest.NewRequest("GET",
-				"/api/v1/remediation-history/context?targetKind=Node&targetName=node-1&currentSpecHash=sha256:abc",
+				"/api/v1/remediation-history/context?targetKind=Node&targetName=node-1&targetApiVersion=v1&currentSpecHash=sha256:abc",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
 			Expect(rec.Code).To(Equal(http.StatusOK))
-			Expect(capturedTargetResource).To(Equal("/Node/node-1"),
-				"cluster-scoped target-resource string must match the 3-part canonical format "+
-					"written by RO's audit emission (emitWorkflowCreatedAudit), not a bare 2-part 'Kind/Name'")
+			Expect(capturedTargetResource).To(Equal("core/v1/Node/node-1"),
+				"cluster-scoped identity is group/version/Kind/name (no empty namespace part) and must match RO's audit emission")
 		})
 	})
 
@@ -159,8 +158,8 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 	Describe("Successful Responses", func() {
 
 		It("UT-RH-HANDLER-005: should return 200 with empty chains when no RO events", func() {
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
-				Expect(specHash).To(Equal("sha256:abc123"))
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+				Expect(query.SpecHash).To(Equal("sha256:abc123"))
 				return nil, nil
 			}
 
@@ -172,7 +171,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
-			Expect(resp["targetResource"]).To(Equal("default/Deployment/nginx"))
+			Expect(resp["targetResource"]).To(Equal("default/apps/v1/Deployment/nginx"))
 			Expect(resp["currentSpecHash"]).To(Equal("sha256:abc123"))
 			Expect(resp["regressionDetected"]).To(BeFalse())
 
@@ -183,8 +182,8 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 		It("UT-RH-HANDLER-006: should return 200 with populated tier1 chain when RO+EM data exists", func() {
 			fixedTime := time.Date(2026, 2, 12, 10, 0, 0, 0, time.UTC)
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
-				Expect(specHash).To(Equal("sha256:abc123"))
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+				Expect(query.SpecHash).To(Equal("sha256:abc123"))
 				return []repository.RawAuditRow{
 					{
 						EventType:      "remediation.workflow_created",
@@ -196,7 +195,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 							"signal_type":               "alert",
 							"signal_fingerprint":        "fp-001",
 							"action_type":               "restart",
-							"target_resource":           "default/Deployment/nginx",
+							"target_resource":           "default/apps/v1/Deployment/nginx",
 						},
 					},
 				}, nil
@@ -275,8 +274,8 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 			fixedTime := time.Date(2026, 2, 12, 10, 0, 0, 0, time.UTC)
 			specHashCallCount := 0
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
-				Expect(specHash).To(Equal("sha256:abc123"))
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+				Expect(query.SpecHash).To(Equal("sha256:abc123"))
 				specHashCallCount++
 				if specHashCallCount == 1 {
 					// Tier 1 call
@@ -291,7 +290,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 								"signal_type":               "alert",
 								"signal_fingerprint":        "fp-reg",
 								"action_type":               "restart",
-								"target_resource":           "default/Deployment/nginx",
+								"target_resource":           "default/apps/v1/Deployment/nginx",
 							},
 						},
 					}, nil
@@ -333,8 +332,8 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 			// lookback and outside the default 24-hour Tier 1 window.
 			tier2FixedTime := time.Now().UTC().Add(-48 * time.Hour)
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
-				Expect(specHash).To(Equal("sha256:abc123"))
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+				Expect(query.SpecHash).To(Equal("sha256:abc123"))
 				specHashCallCount++
 				if specHashCallCount == 1 {
 					return nil, nil // Tier 1 empty
@@ -350,7 +349,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 							"outcome":                   "success",
 							"signal_type":               "alert",
 							"action_type":               "ScaleUp",
-							"target_resource":           "default/Deployment/nginx",
+							"target_resource":           "default/apps/v1/Deployment/nginx",
 						},
 					},
 				}, nil
@@ -396,11 +395,11 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 			olderTime := now.Add(-48 * time.Hour)
 			queryCount := 0
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, since, until time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				queryCount++
-				Expect(until).To(BeTemporally("~", now, 5*time.Second))
+				Expect(query.Until).To(BeTemporally("~", now, 5*time.Second))
 				if queryCount == 1 {
-					Expect(since).To(BeTemporally("~", now.Add(-24*time.Hour), 5*time.Second))
+					Expect(query.Since).To(BeTemporally("~", now.Add(-24*time.Hour), 5*time.Second))
 					return []repository.RawAuditRow{{
 						EventType:      "remediation.workflow_created",
 						CorrelationID:  "rr-recent-bridge",
@@ -414,7 +413,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 					}}, nil
 				}
 
-				Expect(since).To(BeTemporally("~", now.Add(-72*time.Hour), 5*time.Second))
+				Expect(query.Since).To(BeTemporally("~", now.Add(-72*time.Hour), 5*time.Second))
 				return []repository.RawAuditRow{
 					{
 						EventType:      "remediation.workflow_created",
@@ -469,9 +468,9 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 		It("UT-RH-HANDLER-008: should use default 24h tier1 and 2160h tier2 windows when omitted", func() {
 			var capturedSince time.Time
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, since time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				if capturedSince.IsZero() {
-					capturedSince = since // capture from the first (Tier 1) call
+					capturedSince = query.Since // capture from the first (Tier 1) call
 				}
 				return nil, nil
 			}
@@ -492,7 +491,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 	Describe("Error Handling", func() {
 
 		It("UT-RH-HANDLER-009: should return 500 when repository returns error", func() {
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				return nil, fmt.Errorf("database connection lost")
 			}
 
@@ -509,7 +508,7 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 
 		It("UT-DS-2490-RESOURCE-002: should return 503 when history exceeds repository resource limits", func() {
 			queryCount := 0
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				queryCount++
 				if queryCount == 1 {
 					return nil, nil

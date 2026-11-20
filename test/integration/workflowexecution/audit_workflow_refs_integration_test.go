@@ -163,7 +163,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 							ActionType:      "RestartPod",
 						},
 					},
-					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
+					TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/test-app", namespace),
 					Parameters: typedParametersFromStrings(map[string]string{
 						"MESSAGE": "test-pod-123 in " + namespace,
 					}),
@@ -320,7 +320,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
+					TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/api-server", namespace),
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}

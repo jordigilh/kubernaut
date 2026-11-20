@@ -112,7 +112,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 	})
 
 	// IT-GW-FLEET-010: Fleet signal dispatches to remote scope check.
-	// Resource "prod-east/Deployment/api-server" is seeded in Valkey → FMC returns managed=true.
+	// Resource "prod-east/apps/v1/Deployment/api-server" is seeded in Valkey → FMC returns managed=true.
 	// This proves the fleet (remote) path was invoked because the resource only exists in Valkey,
 	// not in envtest.
 	It("IT-GW-FLEET-010: should dispatch to remote scope check when signal has ClusterID", func() {

@@ -234,6 +234,9 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |
 | AC-7 | Workflow catalog stores severity as a JSONB array in labels; `"*"` wildcard supported (DD-WORKFLOW-001 v2.8); search uses the JSONB `?` operator with wildcard fallback | Schema inspection + integration test |
 | AC-8 | AF creates no RR without explicit, unambiguous correlated alert/rule severity; otherwise it passes the raw source value unchanged, leaving canonical mapping or failure to SP Rego | AF triage unit/integration tests and SP classification test |
+| AC-8.a | (#2658) Correlation is scoped to the target's API group: AF fails closed as `group_unscopable` when a same-namespace/kind/name sibling exists in another API group, surfacing `candidate_api_groups`; the ambiguity is only resolved by `confirmed_api_group` naming the target's own group (a signal-name confirmation never resolves it, and a sibling-group confirmation returns the non-error `alert_belongs_to_sibling` result instead of inheriting severity) | `pkg/apifrontend/severity` UT-AF-2658-001..007, tool-level UT-AF-2658-005, IT-AF-2658-101..104 |
+| AC-8.b | (#2658) A single-group Kind is unchanged, and an unavailable cross-group check (no mapper/client, cannot-enumerate) fails closed and is audited — never a silent gate skip | UT-AF-2658-003/007, IT-AF-2658-102 |
+| AC-8.c | (#2658) The triage decision is reconstructable from the audit trail: `severity_triage.ambiguous` persists `api_group`, `ambiguity_reason`, candidate identity/severity and `candidate_api_groups`; `severity_triage.completed` carries `api_group` and the reconciled `source_tier` | UT-AF-2658-009 / IT-AF-2658-106 |
 
 ---
 
@@ -247,6 +250,6 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 
 ---
 
-**Document Version**: 1.3 (updated for #2467 / DD-AF-016, 2026-09-27)
+**Document Version**: 1.4 (updated for #2658 / DD-IDENTITY-001 group-aware triage, 2026-11-18; prior: 1.3 for #2467 / DD-AF-016, 2026-09-27)
 **Author**: AI Assistant (reviewed by Jordi Gil)
 **Next Review**: After E2E severity scenarios (Sprint N+1)

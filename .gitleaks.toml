@@ -105,6 +105,10 @@ paths = [
   '''^pkg/apifrontend/launcher/event_bridge_test\.go$''',
   '''^pkg/apifrontend/tools/kubectl_get_test\.go$''',
   '''^pkg/gateway/processing/storm_aggregator\.go$''',
+  # #2658: canonical-identity Ginkgo fixtures. The generic-api-key rule
+  # matches the "unresolved" sentinel strings ("prod/unresolved/unresolved/
+  # Pod/api") as key-like; individually inspected, no real credential.
+  '''^pkg/shared/scope/group_2658_test\.go$''',
   '''^pkg/kubernautagent/tools/sanitization/credential_test\.go$''',
   '''^pkg/kubernautagent/tools/sanitization/secret_test\.go$''',
   '''^pkg/kubernautagent/tools/sanitization/injection_test\.go$''',
