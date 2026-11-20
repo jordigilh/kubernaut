@@ -57,10 +57,10 @@ Repairs write to a **staged generation**, and a single atomic Lua
 
 ## Invalid-label observations (#2686)
 
-An observation whose `kubernaut.ai/managed` label value is invalid (anything other than
-`"true"`/`"false"`, or a structurally malformed labels object) is a **complete, decisive
-source observation**, not a failed scan. The staged-repair contract therefore carries it
-like any other label state:
+An observation whose managed-label *value* is anything other than `"true"`/`"false"` is a
+**complete, decisive source observation**, not a failed scan. (A structurally malformed
+labels object still fails the scan as an incomplete source.) The staged-repair contract
+therefore carries it like any other label state:
 
 - `buildObservedResource` no longer rejects `scope.LabelStateInvalid`; the item is staged
   by `repair_reconcile` with `label_state=invalid` and installed by the atomic commit swap.

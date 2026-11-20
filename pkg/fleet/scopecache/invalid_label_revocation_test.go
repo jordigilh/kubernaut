@@ -17,6 +17,7 @@ limitations under the License.
 package scopecache_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -106,6 +107,63 @@ var _ = Describe("Invalid-label revocation on the fenced lane (BR-SCOPE-001, #26
 			"the committed record must carry the invalid observation, not the last good state")
 	})
 
+	It("UT-FMC-2686-007 [BR-SCOPE-001, #2686]: a committed invalid Namespace label revokes an unlabeled resource through fenced inheritance", func() {
+		f := newStagedRepairFixture()
+		DeferCleanup(f.server.Close)
+		DeferCleanup(f.store.Close)
+
+		info := registry.ClusterInfo{ID: f.part.ClusterID, RegistrationUID: f.part.RegistrationUID}
+		// The resource is present and unlabeled; its namespace's label value
+		// is invalid. Before #2686 the invalid Namespace observation could
+		// never be committed, so this inheritance branch was unreachable on
+		// the fenced lane and the last committed namespace state kept serving.
+		deployment := scopecache.ResourceIdentity{
+			ClusterID: f.part.ClusterID, Group: "apps", Version: "v1", Kind: "Deployment",
+			Namespace: "payments", Name: "checkout",
+		}
+		namespace := scopecache.ResourceIdentity{
+			ClusterID: f.part.ClusterID, Version: "v1", Kind: "Namespace", Name: "payments",
+		}
+		start, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 2, WriterFence: f.fence,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		repair, err := f.store.Repair(f.ctx, scopecache.RepairRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 2,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			Observations: scopecache.ValidatedObservationSet{
+				Items: []scopecache.RepairObservation{
+					{Identity: deployment, APIVersion: "apps/v1", LabelsPresent: false, LabelState: scope.LabelStateAbsent, TTL: 30 * time.Second},
+					{Identity: namespace, APIVersion: "v1", LabelsPresent: true, LabelState: scope.LabelStateInvalid, TTL: 30 * time.Second},
+				},
+				Complete: true, PageCount: 1, ItemCount: 2,
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		_, err = f.store.CommitRepair(f.ctx, scopecache.RepairCommitRequest{
+			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 2,
+			WriterFence: f.fence, Generation: start.Generation, Token: start.Token,
+			ExpectedCount: 2, Proof: repair,
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		readiness := cleanReadiness(f.part, info, 2, f.fence, start.Generation)
+		client, err := scopecache.NewClientWithStatusStore(f.store, &staticRegistrationGuard{
+			snapshot: registry.RegistrationSnapshot{Info: info, Revision: 2}, found: true,
+		}, readiness)
+		Expect(err).ToNot(HaveOccurred())
+
+		result, err := client.Check(f.ctx, scope.ResourceIdentity{
+			ClusterID: deployment.ClusterID, Group: deployment.Group, Version: deployment.Version,
+			Kind: deployment.Kind, Namespace: deployment.Namespace, Name: deployment.Name,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.State).To(Equal(scope.ScopeInvalid),
+			"an invalid namespace label must fail closed through inheritance, not retain the last committed state")
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+		Expect(result.Reason).To(Equal("invalid_namespace_label"))
+	})
+
 	It("UT-FMC-2686-003 [BR-SCOPE-001, #2686]: a committed invalid record revokes a previously verified-managed target (AC-6, SI-10)", func() {
 		f := newStagedRepairFixture()
 		DeferCleanup(f.server.Close)
@@ -186,4 +244,46 @@ var _ = Describe("Invalid-label revocation on the fenced lane (BR-SCOPE-001, #26
 		Expect(result.Reason).To(Equal("partition_unavailable"),
 			"readiness and partition failures keep their own fail-closed outcome, never flattened into invalid")
 	})
+})
+
+// labelStateReader is an ObservationReader double whose cache values are
+// explicit label states, so the legacy reader lane can serve committed
+// invalid records (#2686 made those writable).
+type labelStateReader struct {
+	store map[string]scope.LabelState
+}
+
+func (r *labelStateReader) Read(_ context.Context, key string) (scopecache.CachedObservation, error) {
+	label, exists := r.store[key]
+	if !exists {
+		return scopecache.CachedObservation{State: scopecache.RecordMissing}, nil
+	}
+	return scopecache.CachedObservation{State: scopecache.RecordVerifiedPresent, LabelState: label}, nil
+}
+
+var _ = Describe("Invalid-label revocation on the legacy reader lane (BR-SCOPE-001, #2686)", func() {
+	ctx := context.Background()
+
+	DescribeTable("UT-FMC-2686-008 [BR-SCOPE-001, #2686]: a committed invalid record fails closed on the legacy reader lane",
+		func(resourceLabel, namespaceLabel scope.LabelState, expectedReason string) {
+			reader := &labelStateReader{store: make(map[string]scope.LabelState)}
+			resourceKey, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "payments", "checkout")
+			Expect(err).ToNot(HaveOccurred())
+			namespaceKey, err := scopecache.BuildKey("prod-east", "", "v1", "Namespace", "", "payments")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[resourceKey] = resourceLabel
+			reader.store[namespaceKey] = namespaceLabel
+
+			result, err := scopecache.NewClient(reader).Check(ctx, scope.ResourceIdentity{
+				ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment",
+				Namespace: "payments", Name: "checkout",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid), "an invalid label must never authorize or silently unmanage")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+			Expect(result.Reason).To(Equal(expectedReason))
+		},
+		Entry("invalid resource label", scope.LabelStateInvalid, scope.LabelStateTrue, "invalid_resource_label"),
+		Entry("absent resource label inherits an invalid namespace label", scope.LabelStateAbsent, scope.LabelStateInvalid, "invalid_namespace_label"),
+	)
 })
