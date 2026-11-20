@@ -137,6 +137,7 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		}, timeout, interval).Should(Succeed())
 
 		By("Verifying WFE carries the workflow-declared execution cluster (prod-east), overriding the signal's origin cluster (DD-FLEET-008)")
+		var ownedWFEName string
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
@@ -157,6 +158,7 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 			}
 			g.Expect(owned).ToNot(BeNil(),
 				"RO should have created a WFE owned by this RR")
+			ownedWFEName = owned.Name
 			g.Expect(owned.Spec.ClusterID).To(Equal("prod-east"),
 				"DD-FLEET-008: WFE.Spec.ClusterID must follow the selected workflow's "+
 					"declared execution.clusterId (fleet-exec-cluster-override-v1 -> prod-east), "+
@@ -181,5 +183,11 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 				"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
 			}))
 		}, timeout, interval).Should(Succeed())
+
+		// Issue #2688: the WFE field assertions above let a
+		// BackoffLimitExceeded spoke Job pass silently. The override-routed
+		// remediation must actually succeed on the spoke (prod-east).
+		By("Verifying the spoke remediation Job completes successfully (issue #2688)")
+		expectRemoteWorkflowJobSucceeds(ownedWFEName)
 	})
 })

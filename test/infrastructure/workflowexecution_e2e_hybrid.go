@@ -957,6 +957,12 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 // ClusterRoleBinding so Job pods spawned by the WE controller can get/patch
 // workload resources (Deployments, StatefulSets, DaemonSets, Pods) in any
 // namespace. Used by oomkill-increase-memory-job's remediate.sh.
+// createWorkflowJobExecutorRBAC applies the workflow-job-executor SA + RBAC.
+// Every object carries the app.kubernetes.io/part-of=kubernaut label so the
+// must-gather cluster-state collector (cmd/must-gather/collectors/
+// cluster-state.sh filters ClusterRoles/Bindings by that label) actually
+// captures them -- issue #2688 found the spoke RBAC dump empty and the SA's
+// permissions unverifiable precisely because these labels were missing.
 func createWorkflowJobExecutorRBAC(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  🔐 Creating workflow-job-executor SA + RBAC in %s...\n", namespace)
 
@@ -969,11 +975,14 @@ metadata:
   labels:
     app: workflowexecution
     component: job-executor
+    app.kubernetes.io/part-of: kubernaut
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: workflow-job-executor
+  labels:
+    app.kubernetes.io/part-of: kubernaut
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments", "statefulsets", "daemonsets"]
@@ -991,6 +1000,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: workflow-job-executor
+  labels:
+    app.kubernetes.io/part-of: kubernaut
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
