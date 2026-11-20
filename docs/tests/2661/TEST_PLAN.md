@@ -8,15 +8,22 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2.2. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
+**Status**: 📝 Draft v2.3. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
 approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
 for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
-configuration surface (`UT-FMC-SRC-2661-001..010`) and the unit-testable ACM
-collector (`UT-FMC-SRC-2661-011/013/014/015/016/017/018/019/021/022`).
-**Not yet proven:** production source selection (Wiring row 4), the repair-wide
-deadline wiring, request-level credential/CA proof (023), the fenced sync and
-selection ITs (IT-FMC-SRC-2661-001..004), and every E2E claim. Increment 1 carries
-its own evidence and is merged (`#2681`).
+configuration surface (`UT-FMC-SRC-2661-001..010`), the ACM collector
+(`UT-FMC-SRC-2661-011..019`, `021..023`; `020` lives in
+`pkg/fleet/scopecache/inventory_page_test.go`), and the Tier 2 integration
+specs `IT-FMC-SRC-2661-001..004` (commit `73e66c805`,
+`work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
+construction (`buildFMCSyncer`/`buildACMSource`/`NewACMHTTPSearch` over
+configs from the production loader; the fenced commit path against miniredis
+with pinned server time). Known limitation: `IT-FMC-SRC-2661-004` proves the
+one-deadline-per-repair sharing semantics (D4.1a rule 7b) through the
+production context seam with a shortened staging lifetime — the repair path's
+own 55 s budget-setting is verified by code inspection, not observationally.
+**Not yet proven:** the AF dispatch/SAR ITs (`IT-AF-2661-001..003`) and every
+E2E claim. Increment 1 carries its own evidence and is merged (`#2681`).
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
 (parent [#2593](https://github.com/jordigilh/kubernaut/issues/2593),
 investigation [#2599](https://github.com/jordigilh/kubernaut/issues/2599))
