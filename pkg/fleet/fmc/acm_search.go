@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -36,6 +37,45 @@ import (
 const paginatedSearchQuery = `query($input: [SearchInput]) { searchResult: search(input: $input) { count items } }`
 
 const acmGraphQLPath = "/searchapi/graphql"
+
+// maxACMResponseBytes bounds one Search reply before it is decoded. The logical
+// page-size guard runs after decoding, so without this a hostile or broken
+// Search could allocate far beyond the configured chunk.
+const maxACMResponseBytes = 8 << 20
+
+// ACMSearchFailure classifies why a chunk request failed, so the collector can
+// report the right observation failure instead of collapsing everything into a
+// transport error.
+type ACMSearchFailure string
+
+const (
+	// ACMSearchFailureTransport is a network, timeout or TLS failure.
+	ACMSearchFailureTransport ACMSearchFailure = "transport"
+	// ACMSearchFailureTool is an answer the endpoint gave: an HTTP error status,
+	// a GraphQL error, or an empty searchResult.
+	ACMSearchFailureTool ACMSearchFailure = "tool"
+	// ACMSearchFailureMalformed is an unreadable or over-budget body.
+	ACMSearchFailureMalformed ACMSearchFailure = "malformed"
+)
+
+// ACMSearchError carries the classified failure while retaining the cause.
+type ACMSearchError struct {
+	Failure ACMSearchFailure
+	Err     error
+}
+
+func (e *ACMSearchError) Error() string {
+	if e.Err == nil {
+		return string(e.Failure)
+	}
+	return fmt.Sprintf("ACM search %s: %v", e.Failure, e.Err)
+}
+
+func (e *ACMSearchError) Unwrap() error { return e.Err }
+
+func searchFailure(failure ACMSearchFailure, err error) error {
+	return &ACMSearchError{Failure: failure, Err: err}
+}
 
 // ACMSearchOptions is one chunk of an ACM Search traversal.
 type ACMSearchOptions struct {
@@ -71,6 +111,18 @@ type ACMSearch interface {
 type ACMHTTPSearch struct {
 	endpoint string
 	client   *http.Client
+	// reloader is retained so CA rotation has an owner: a watcher (or a caller)
+	// can hand it new PEM without rebuilding the client (D4.1a rule 6).
+	reloader *sharedtls.CAReloader
+}
+
+// ReloadCA installs rotated CA material on the live client. A no-op when the
+// deployment uses system trust.
+func (s *ACMHTTPSearch) ReloadCA(pemData []byte) error {
+	if s.reloader == nil {
+		return nil
+	}
+	return s.reloader.ReloadCallback(string(pemData))
 }
 
 // NewACMHTTPSearch builds the chunk reader for one ACM Search endpoint.
@@ -82,18 +134,21 @@ func NewACMHTTPSearch(endpoint, tokenPath, caFile string, timeout time.Duration)
 		return nil, fmt.Errorf("ACM search token path is required")
 	}
 	transport := http.DefaultTransport
+	var reloader *sharedtls.CAReloader
 	if caFile != "" {
-		reloader, err := sharedtls.NewCAReloaderFromFile(caFile)
+		loaded, err := sharedtls.NewCAReloaderFromFile(caFile)
 		if err != nil {
 			return nil, fmt.Errorf("load ACM search CA: %w", err)
 		}
-		transport = reloader
+		reloader = loaded
+		transport = loaded
 	}
 	if timeout <= 0 {
 		timeout = defaultACMRequestCap
 	}
 	return &ACMHTTPSearch{
 		endpoint: endpoint,
+		reloader: reloader,
 		client: &http.Client{
 			Timeout:   timeout,
 			Transport: auth.NewAuthTransport(auth.NewTokenSource(tokenPath), transport),
@@ -117,18 +172,25 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 	request.Header.Set("Content-Type", "application/json")
 	response, err := s.client.Do(request)
 	if err != nil {
-		return ACMSearchPage{}, fmt.Errorf("ACM search request failed: %w", err)
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTransport, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return ACMSearchPage{}, fmt.Errorf("ACM search returned status %d", response.StatusCode)
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool,
+			fmt.Errorf("ACM search returned status %d", response.StatusCode))
 	}
+	if response.ContentLength > maxACMResponseBytes {
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
+			fmt.Errorf("ACM search response is %d bytes, above the %d byte bound", response.ContentLength, maxACMResponseBytes))
+	}
+	limited := io.LimitReader(response.Body, maxACMResponseBytes+1)
 	var decoded acmGraphQLResponse
-	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
-		return ACMSearchPage{}, fmt.Errorf("decode ACM search response: %w", err)
+	if err := json.NewDecoder(limited).Decode(&decoded); err != nil {
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
+			fmt.Errorf("decode ACM search response: %w", err))
 	}
 	if len(decoded.Errors) > 0 || decoded.Data == nil || len(decoded.Data.SearchResult) == 0 {
-		return ACMSearchPage{}, fmt.Errorf("ACM search query failed")
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("ACM search query failed"))
 	}
 	result := decoded.Data.SearchResult[0]
 	return ACMSearchPage(result), nil

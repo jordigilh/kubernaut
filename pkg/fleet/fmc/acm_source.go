@@ -62,6 +62,12 @@ const (
 	defaultACMCollectionBudget = 55 * time.Second
 )
 
+// RepairCollectionBudget bounds the collection phase of one repair. It sits
+// under the 60 s staged-generation lifetime so the commit still fits, and it is
+// the value the repair path sets once per repair (D4.1a rule 7b). The collector
+// never derives a budget of its own in production.
+const RepairCollectionBudget = 55 * time.Second
+
 // deadlineKey carries the staging deadline a sync cycle computed from its
 // repair start. The collector never reads a clock it cannot bound.
 type deadlineKey struct{}
@@ -70,6 +76,13 @@ type deadlineKey struct{}
 // remaining life.
 func WithCollectionDeadline(ctx context.Context, deadline time.Time) context.Context {
 	return context.WithValue(ctx, deadlineKey{}, deadline)
+}
+
+// isACMCollectionDeadlineSet reports whether the repair path already bounded
+// this collection, so nobody wraps it twice.
+func isACMCollectionDeadlineSet(ctx context.Context) bool {
+	deadline, ok := ctx.Value(deadlineKey{}).(time.Time)
+	return ok && !deadline.IsZero()
 }
 
 func collectionDeadline(ctx context.Context, now time.Time, fallback time.Duration) time.Time {
@@ -159,6 +172,24 @@ func (r *acmClusterReader) ListObserved(ctx context.Context, request observation
 	return r.traverse(ctx, deadline, gvk, request.Kind)
 }
 
+// searchFailureClass maps a chunk failure onto the observation failure the
+// syncer reports, so an auth or GraphQL answer is not logged as a network
+// outage and a corrupt body is not logged as a source problem.
+func searchFailureClass(err error) observation.ObservationFailure {
+	var searchErr *ACMSearchError
+	if errors.As(err, &searchErr) {
+		switch searchErr.Failure {
+		case ACMSearchFailureTransport:
+			return observation.FailureTransport
+		case ACMSearchFailureMalformed:
+			return observation.FailureMalformedContent
+		case ACMSearchFailureTool:
+			return observation.FailureTool
+		}
+	}
+	return observation.FailureTransport
+}
+
 // acmWalk is the mutable state of one guarded traversal. Keeping it in a
 // value lets the guards be tested and reasoned about one at a time instead of
 // as one long function.
@@ -179,10 +210,16 @@ func newACMWalk() *acmWalk {
 // traverse is the guarded offset walk: explicit ascending uid order, strict
 // per-page uid increase, a stable total count, one bounded restart when the
 // count moves, and an incomplete result for every other anomaly.
+//
+// Known residual (spike 2026-11-18, mutation probe verdict 4): balanced
+// delete+create churn can keep the count stable while shifting offsets, so a
+// skipped identity is not detectable by these guards. Offset continuation is not
+// a snapshot; keyset continuation is unavailable on this Search build. This is a
+// documented limitation, never a completeness guarantee.
 func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk schema.GroupVersionKind, kind string) (observation.ListObservation, error) {
 	walk := newACMWalk()
 	for {
-		timeout, err := r.chunkTimeout(deadline)
+		timeout, err := r.chunkTimeout(r.source.config.Now(), deadline)
 		if err != nil {
 			// D4.1a rule 7a: a request that cannot finish must not start, so
 			// the collection is abandoned and the previous proof ages out.
@@ -190,7 +227,7 @@ func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk
 		}
 		page, err := r.searchChunk(ctx, timeout, gvk, kind, walk.offset)
 		if err != nil {
-			return incompleteObservation(observation.FailureTransport, err)
+			return incompleteObservation(searchFailureClass(err), err)
 		}
 		walk.pages++
 		if walk.pages > observation.MaxObservationPages {
@@ -216,8 +253,8 @@ func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk
 
 // chunkTimeout derives this request's ceiling from the staging budget rather
 // than a configured value (D4.1a rule 7a).
-func (r *acmClusterReader) chunkTimeout(deadline time.Time) (time.Duration, error) {
-	remaining := time.Until(deadline) - r.source.config.CommitReserve
+func (r *acmClusterReader) chunkTimeout(now time.Time, deadline time.Time) (time.Duration, error) {
+	remaining := deadline.Sub(now) - r.source.config.CommitReserve
 	if remaining < r.source.config.StartFloor {
 		return 0, fmt.Errorf("ACM collection has %s of budget left, below the %s start floor",
 			remaining.Round(time.Millisecond), r.source.config.StartFloor)
@@ -339,41 +376,104 @@ func (r *acmClusterReader) searchChunk(ctx context.Context, timeout time.Duratio
 // cross-cluster item, a missing or mismatched apiVersion, or an invalid managed
 // label fails the kind, not just the item (DD-FLEET-017 D4.5).
 func observedItemFromSearch(raw map[string]json.RawMessage, clusterID string, gvk schema.GroupVersionKind, kind string) (observation.ObservedItem, observation.ObservationFailure, error) {
-	itemCluster := searchString(raw, "cluster")
-	if itemCluster != "" && itemCluster != clusterID {
-		return observation.ObservedItem{}, observation.FailureConflict,
-			fmt.Errorf("ACM item belongs to cluster %q while collecting %q", itemCluster, clusterID)
+	if err := requireClusterOwnership(raw, clusterID); err != nil {
+		return observation.ObservedItem{}, observationFailureOf(err), err
 	}
-	apiVersion := searchString(raw, "apiversion")
-	if apiVersion == "" {
-		return observation.ObservedItem{}, observation.FailureItem,
-			fmt.Errorf("ACM item has no apiversion; GVK is never inferred")
-	}
-	itemGV, err := schema.ParseGroupVersion(apiVersion)
+	apiVersion, err := requireExactAPIVersion(raw, gvk, kind)
 	if err != nil {
-		return observation.ObservedItem{}, observation.FailureItem,
-			fmt.Errorf("ACM item has an unparseable apiversion %q: %w", apiVersion, err)
-	}
-	itemKind := searchString(raw, "kind")
-	if itemKind != kind || itemGV.Group != gvk.Group || itemGV.Version != gvk.Version {
-		return observation.ObservedItem{}, observation.FailureConflict,
-			fmt.Errorf("ACM item %s/%s does not match the requested %s", apiVersion, itemKind, gvk.String())
+		return observation.ObservedItem{}, observationFailureOf(err), err
 	}
 	name := searchString(raw, "name")
 	if name == "" {
 		return observation.ObservedItem{}, observation.FailureItem, fmt.Errorf("ACM item has no name")
 	}
-	namespace := searchString(raw, "namespace")
-	clusterScoped := scope.IsClusterScopedKind(kind)
-	if clusterScoped && namespace != "" {
-		return observation.ObservedItem{}, observation.FailureScope,
-			fmt.Errorf("cluster-scoped ACM item %s/%s carries namespace %q", kind, name, namespace)
-	}
-	if !clusterScoped && namespace == "" {
-		return observation.ObservedItem{}, observation.FailureScope,
-			fmt.Errorf("namespaced ACM item %s/%s has no namespace", kind, name)
+	namespace, err := requireNamespaceFor(raw, kind, name)
+	if err != nil {
+		return observation.ObservedItem{}, observationFailureOf(err), err
 	}
 	labelState, labelsPresent := acmManagedLabelState(raw)
+	return buildObservedItem(apiVersion, kind, name, namespace, labelState, labelsPresent), observation.FailureNone, nil
+}
+
+// identityError keeps the typed failure with the reason without threading a
+// third return value through every check.
+type identityError struct {
+	failure observation.ObservationFailure
+	err     error
+}
+
+func (e *identityError) Error() string { return e.err.Error() }
+func (e *identityError) Unwrap() error { return e.err }
+
+func identityFailure(failure observation.ObservationFailure, err error) error {
+	return &identityError{failure: failure, err: err}
+}
+
+func observationFailureOf(err error) observation.ObservationFailure {
+	var typed *identityError
+	if errors.As(err, &typed) {
+		return typed.failure
+	}
+	return observation.FailureItem
+}
+
+// requireClusterOwnership refuses an item whose cluster is missing or different:
+// Search visibility is not membership, so ownership is never assumed.
+func requireClusterOwnership(raw map[string]json.RawMessage, clusterID string) error {
+	itemCluster, present := searchStringValue(raw, "cluster")
+	if !present || itemCluster == "" {
+		return identityFailure(observation.FailureItem,
+			fmt.Errorf("ACM item has no cluster attribution; ownership is never assumed"))
+	}
+	if itemCluster != clusterID {
+		return identityFailure(observation.FailureConflict,
+			fmt.Errorf("ACM item belongs to cluster %q while collecting %q", itemCluster, clusterID))
+	}
+	return nil
+}
+
+// requireExactAPIVersion enforces exact GVK: a missing or mismatched apiVersion
+// fails the kind because group/version are never inferred (D4.1).
+func requireExactAPIVersion(raw map[string]json.RawMessage, gvk schema.GroupVersionKind, kind string) (string, error) {
+	apiVersion := searchString(raw, "apiversion")
+	if apiVersion == "" {
+		return "", identityFailure(observation.FailureItem,
+			fmt.Errorf("ACM item has no apiversion; GVK is never inferred"))
+	}
+	itemGV, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return "", identityFailure(observation.FailureItem,
+			fmt.Errorf("ACM item has an unparseable apiversion %q: %w", apiVersion, err))
+	}
+	if itemKind := searchString(raw, "kind"); itemKind != kind || itemGV.Group != gvk.Group || itemGV.Version != gvk.Version {
+		return "", identityFailure(observation.FailureConflict,
+			fmt.Errorf("ACM item %s/%s does not match the requested %s", apiVersion, itemKind, gvk.String()))
+	}
+	return apiVersion, nil
+}
+
+// requireNamespaceFor enforces the namespace contract: a cluster-scoped item
+// must not carry one, a namespaced item must, and a malformed field is an item
+// failure rather than a silent reclassification.
+func requireNamespaceFor(raw map[string]json.RawMessage, kind, name string) (string, error) {
+	namespace, present := searchStringValue(raw, "namespace")
+	if _, found := raw["namespace"]; found && !present {
+		return "", identityFailure(observation.FailureItem,
+			fmt.Errorf("ACM item %s/%s has a namespace field that is not a string", kind, name))
+	}
+	clusterScoped := scope.IsClusterScopedKind(kind)
+	if clusterScoped && namespace != "" {
+		return "", identityFailure(observation.FailureScope,
+			fmt.Errorf("cluster-scoped ACM item %s/%s carries namespace %q", kind, name, namespace))
+	}
+	if !clusterScoped && namespace == "" {
+		return "", identityFailure(observation.FailureScope,
+			fmt.Errorf("namespaced ACM item %s/%s has no namespace", kind, name))
+	}
+	return namespace, nil
+}
+
+func buildObservedItem(apiVersion, kind, name, namespace string, labelState scope.LabelState, labelsPresent bool) observation.ObservedItem {
 	object := unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": apiVersion,
 		"kind":       kind,
@@ -382,28 +482,53 @@ func observedItemFromSearch(raw map[string]json.RawMessage, clusterID string, gv
 	if namespace != "" {
 		object.SetNamespace(namespace)
 	}
-	return observation.ObservedItem{Object: object, LabelsPresent: labelsPresent, LabelState: labelState}, observation.FailureNone, nil
+	return observation.ObservedItem{Object: object, LabelsPresent: labelsPresent, LabelState: labelState}
 }
 
 // acmManagedLabelState reads the projected label field. Search projects labels
 // as a semicolon-separated `label` string and omits the field entirely when the
-// object has none (spike 2026-11-18), which is why absence and an unparseable
-// value are distinguished.
+// object has none (spike 2026-11-18). Malformed projected data must never become
+// "absent" or a silently-won last value: an invalid label stays invalid so the
+// syncer fails the kind (ADR-053).
 func acmManagedLabelState(raw map[string]json.RawMessage) (scope.LabelState, bool) {
-	if labelValue, present := raw["label"]; present {
+	labelValue, present := raw["label"]
+	if present {
+		// JSON null unmarshals into "" without error, so it is detected before
+		// decoding: a present-but-null projection is corruption, not absence.
+		if strings.TrimSpace(string(labelValue)) == "null" {
+			return scope.LabelStateInvalid, true
+		}
 		var projected string
-		if err := json.Unmarshal(labelValue, &projected); err == nil {
-			labels := parseProjectedLabels(projected)
-			for _, key := range managedLabelKeys() {
-				if value, found := labels[key]; found {
-					return labelStateOf(value), true
-				}
+		if err := json.Unmarshal(labelValue, &projected); err != nil {
+			// Present but not a string: unparseable, not absent.
+			return scope.LabelStateInvalid, true
+		}
+		states, malformed := parseProjectedLabels(projected)
+		if malformed {
+			return scope.LabelStateInvalid, true
+		}
+		var found scope.LabelState
+		occurrences := 0
+		for _, key := range managedLabelKeys() {
+			state, ok := states[key]
+			if !ok {
+				continue
 			}
+			occurrences++
+			found = state
+		}
+		switch {
+		case occurrences > 1 || found == scope.LabelStateInvalid:
+			// Duplicate or unparseable managed value: refuse to pick one.
+			return scope.LabelStateInvalid, true
+		case occurrences == 1:
+			return found, true
+		default:
 			return scope.LabelStateAbsent, true
 		}
 	}
 	for _, key := range []string{"label.kubernaut.ai/managed", "labels.kubernaut.ai/managed", "label.kubernaut.ai~1managed"} {
-		if value := searchString(raw, key); value != "" {
+		if value, found := searchStringValue(raw, key); found {
 			return labelStateOf(value), true
 		}
 	}
@@ -414,16 +539,40 @@ func managedLabelKeys() []string {
 	return []string{scope.ManagedLabelKey, "kubernaut.ai~1managed"}
 }
 
-func parseProjectedLabels(projected string) map[string]string {
-	labels := make(map[string]string)
+// parseProjectedLabels turns Search's `k=v;k=v` projection into label states.
+// An entry without `=` or with an empty managed value is malformed: reporting it
+// keeps the caller from treating corruption as "no label".
+func parseProjectedLabels(projected string) (map[string]scope.LabelState, bool) {
+	states := make(map[string]scope.LabelState)
+	if strings.TrimSpace(projected) == "" {
+		return states, false
+	}
+	seen := make(map[string]struct{}, 8)
 	for _, entry := range strings.Split(projected, ";") {
-		key, value, found := strings.Cut(entry, "=")
-		if !found {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
 			continue
 		}
-		labels[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		key, value, found := strings.Cut(trimmed, "=")
+		if !found {
+			return states, true
+		}
+		key = strings.TrimSpace(key)
+		if _, duplicate := seen[key]; duplicate {
+			// Two values for one key cannot be resolved into a single label
+			// state, and quietly winning the last one would invent an answer.
+			return states, true
+		}
+		seen[key] = struct{}{}
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedValue == "" {
+			// `kubernaut.ai/managed=` is corruption, not an absent label.
+			states[key] = scope.LabelStateInvalid
+			continue
+		}
+		states[key] = labelStateOf(trimmedValue)
 	}
-	return labels
+	return states, false
 }
 
 func labelStateOf(value string) scope.LabelState {
@@ -437,6 +586,21 @@ func labelStateOf(value string) scope.LabelState {
 	default:
 		return scope.LabelStateInvalid
 	}
+}
+
+// searchStringValue distinguishes "field absent or not a JSON string" from
+// "field present with an empty value": ownership and namespace checks need the
+// difference.
+func searchStringValue(raw map[string]json.RawMessage, key string) (string, bool) {
+	value, present := raw[key]
+	if !present {
+		return "", false
+	}
+	var decoded string
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return "", false
+	}
+	return decoded, true
 }
 
 func searchString(raw map[string]json.RawMessage, key string) string {
