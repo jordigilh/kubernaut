@@ -220,6 +220,12 @@ necessarily on the next check: until that cache catches up, a check can still se
 the previous label value. The fenced lane's retained-snapshot window is the same
 class of bounded staleness, only longer and explicit.
 
+When the fenced lane has **no** retained record for an invalid observation, the
+read is `unavailable` / `cache_miss` — or `partition_unavailable` when readiness
+is missing — never `invalid`: absence of a record is not evidence of an invalid
+label. `invalid` / `invalid_resource_label` is produced only for a committed
+record that itself carries `LabelStateInvalid`.
+
 Removing authorization on an invalid observation — instead of retaining the last
 committed snapshot — changes the DD-FLEET-016 staged-repair contract, applies to
 namespaced targets as well, and is tracked as
