@@ -351,7 +351,7 @@ func (h *AnalyzingHandler) capturePreRemediationHashStep(ctx context.Context, rr
 		workflowID = sw.WorkflowID
 		actionType = sw.ActionType
 	}
-	targetResource := formatRemediationTargetString(ai)
+	targetResource := formatRemediationTargetString(rr, ai)
 	remTarget := h.callbacks.ResolveDualTargets(rr, ai).Remediation
 
 	preHash, degradedReason, hashErr := h.callbacks.CapturePreRemediationHash(

@@ -68,20 +68,33 @@ func resolveDualTargets(
 	return &creator.DualTarget{Signal: signal, Remediation: remediation}
 }
 
-// formatRemediationTargetString builds a "namespace/kind/name" or "kind/name"
-// string from an AIAnalysis RemediationTarget. Returns "" if the target is nil.
-func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
-	if ai == nil || ai.Status.GetRCAResult().RootCauseAnalysis == nil || ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget == nil {
+// formatRemediationTargetString builds the group-aware target identity
+// (#2658 E2b) for the gates and the distributed lock key. Returns "" when the
+// AIAnalysis carries no remediation target.
+//
+// It MUST use exactly the same resolution as the WFE spec string
+// (creator.ResolveTargetIdentity): the busy/cooldown gates and the lock key
+// compare against WorkflowExecution.spec.targetResource, so a different group
+// precedence here would silently stop matching and fail the busy gate open.
+//
+// Documented divergence (DD-IDENTITY-001 §D2): when the AIAnalysis carries no
+// usable RCA remediation target, this returns "" while the WFE spec and the
+// audit key fall back to the RR target via ResolveTargetIdentity. The gates
+// and the approval/lock path then skip (no WFE matches an empty key) — the
+// pre-#2658 behavior, kept deliberately rather than changing gate semantics
+// in this issue.
+func formatRemediationTargetString(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
+	if ai == nil {
 		return ""
 	}
-	ar := ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget
-	if ar.Kind == "" || ar.Name == "" {
+	rca := ai.Status.GetRCAResult().RootCauseAnalysis
+	if rca == nil || rca.RemediationTarget == nil {
 		return ""
 	}
-	if ar.Namespace != "" {
-		return ar.Namespace + "/" + ar.Kind + "/" + ar.Name
+	if rca.RemediationTarget.Kind == "" || rca.RemediationTarget.Name == "" {
+		return ""
 	}
-	return ar.Kind + "/" + ar.Name
+	return creator.ResolveTargetIdentity(rr, ai).String()
 }
 
 // CapturePreRemediationHash fetches the target resource via an uncached reader

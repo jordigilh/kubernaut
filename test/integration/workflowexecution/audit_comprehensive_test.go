@@ -85,7 +85,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					Parameters: typedParametersFromStrings(map[string]string{
 						"MESSAGE": "value",
 					}),
@@ -143,7 +143,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -163,7 +163,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Verifying metadata is present")
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)).To(Succeed())
-			Expect(updated.Spec.TargetResource).To(Equal("default/deployment/test-app"))
+			Expect(updated.Spec.TargetResource).To(Equal("default/apps/v1/Deployment/test-app"))
 			Expect(updated.Spec.WorkflowRef.WorkflowID).To(Equal(workflowID))
 			GinkgoWriter.Println("✅ Audit metadata available for execution.workflow.started event")
 		})
@@ -198,7 +198,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -299,7 +299,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -356,7 +356,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/ordering-test",
+					TargetResource: "default/apps/v1/Deployment/ordering-test",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}

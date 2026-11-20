@@ -99,7 +99,7 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 		// (pkg/remediationorchestrator/audit, internal/controller/.../audit_events.go).
 		auditManager := roaudit.NewManager(roaudit.ServiceName)
 		nsA := fmt.Sprintf("e2e1802a-%s", testID)
-		targetA := nsA + "/Deployment/app"
+		targetA := nsA + "/apps/v1/Deployment/app"
 		firstCorrID := fmt.Sprintf("corr-e2e1802-a-%s-0", testID)
 		for i := 0; i < 3; i++ {
 			corrID := fmt.Sprintf("corr-e2e1802-a-%s-%d", testID, i)

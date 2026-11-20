@@ -134,28 +134,28 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 
 		testLogger.Info("✅ Alert sent with unique marker", "marker", uniqueMarker)
 
-	testLogger.Info("Step 2: Retrieve Gateway logs")
-	// Wait for logs to be written using Eventually
-	var logs string
-	Eventually(func() bool {
-		// Use fresh context for kubectl (not testCtx which may be expired in parallel execution)
-		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cmdCancel()
+		testLogger.Info("Step 2: Retrieve Gateway logs")
+		// Wait for logs to be written using Eventually
+		var logs string
+		Eventually(func() bool {
+			// Use fresh context for kubectl (not testCtx which may be expired in parallel execution)
+			cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cmdCancel()
 
-		cmd := exec.CommandContext(cmdCtx, "kubectl", "logs",
-			"-n", gatewayNamespace,
-			"-l", "app=gateway",
-			"--tail=100",
-			"--kubeconfig", kubeconfigPath)
-		output, err := cmd.Output()
-		if err != nil {
-			testLogger.Info("Could not retrieve Gateway logs", "error", err)
-			return false
-		}
-		logs = string(output)
-		// Check if logs contain our unique marker
-		return len(logs) > 0
-	}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
+			cmd := exec.CommandContext(cmdCtx, "kubectl", "logs",
+				"-n", gatewayNamespace,
+				"-l", "app=gateway",
+				"--tail=100",
+				"--kubeconfig", kubeconfigPath)
+			output, err := cmd.Output()
+			if err != nil {
+				testLogger.Info("Could not retrieve Gateway logs", "error", err)
+				return false
+			}
+			logs = string(output)
+			// Check if logs contain our unique marker
+			return len(logs) > 0
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
 
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))

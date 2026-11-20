@@ -41,7 +41,7 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 	BeforeEach(func() { workflowID = trustedWorkflowFixture("Lock release fixture", "job") })
 
 	It("IT-WE-375-002: cooldown enforcement with eventual lock release via ReconcileTerminal", func() {
-		targetResource := fmt.Sprintf("default/deployment/lock-release-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/lock-release-%d", time.Now().UnixNano())
 
 		By("Phase 1: Creating WFE1 and running it to completion")
 		wfe1 := createUniqueJobWFE("lock-rel1", targetResource)

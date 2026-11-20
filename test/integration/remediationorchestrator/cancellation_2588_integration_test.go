@@ -200,6 +200,34 @@ var _ = Describe("Issue #2588 RemediationRequest cancellation", Label("integrati
 		notification.Status.Message = "test terminal delivery failure"
 		Expect(k8sClient.Status().Update(ctx, &notification)).To(Succeed())
 
+		// This suite deliberately does not start the SignalProcessing
+		// controller (Phase 1: manual child control, suite_test.go). When
+		// RO's first reconcile wins the race against this test's
+		// cancellation request, it creates a SignalProcessing child and
+		// persists SignalProcessingRef — and that child can then never be
+		// acknowledged by a controller, hanging completion for the full
+		// Eventually budget (CI run 44742968966). Acknowledge it manually,
+		// exactly like IT-ORCH-2588-003, so completion does not depend on
+		// the create/cancel interleaving. Once the RR is Cancelling, RO
+		// dispatches cancellation before any phase handler, so no new SP can
+		// appear after this check.
+		var cancellingParent remediationv1.RemediationRequest
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), &cancellingParent)).To(Succeed())
+		if ref := cancellingParent.Status.GetPhaseProgress().SignalProcessingRef; ref != nil {
+			By("acknowledging a SignalProcessing child created before the cancellation request")
+			sp := &signalprocessingv1.SignalProcessing{}
+			spNamespace := ref.Namespace
+			if spNamespace == "" {
+				spNamespace = cancellingParent.Namespace
+			}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name:      ref.Name,
+				Namespace: spNamespace,
+			}, sp)).To(Succeed())
+			cancellation.SetAcknowledged(&sp.Status.Conditions, sp.Generation, "backend termination verified")
+			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		}
+
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(wfe), wfe)).To(Succeed())
 		cancellation.SetAcknowledged(&wfe.Status.Conditions, wfe.Generation, "backend termination verified")
 		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
@@ -329,7 +357,7 @@ func newCancellationWorkflowExecution(rr *remediationv1.RemediationRequest, name
 				Version:         "v1",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/cancel-test:v1",
 			}},
-			TargetResource: fmt.Sprintf("%s/deployment/test-app", targetNamespaceFor(rr)),
+			TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/test-app", targetNamespaceFor(rr)),
 		},
 	}
 }

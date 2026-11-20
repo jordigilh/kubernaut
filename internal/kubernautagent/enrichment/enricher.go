@@ -27,6 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -67,7 +68,7 @@ type K8sClient interface {
 // clusterID optionally scopes the query to a single fleet cluster (Issue
 // #1802, main only); pass "" for unscoped (release/v1.5 semantics).
 type DataStorageClient interface {
-	GetRemediationHistory(ctx context.Context, kind, name, namespace, clusterID, specHash string) (*RemediationHistoryResult, error)
+	GetRemediationHistory(ctx context.Context, query RemediationHistoryQuery) (*RemediationHistoryResult, error)
 }
 
 // RemediationHistoryResult holds the full DS response mapped to domain types.
@@ -115,11 +116,27 @@ func (e *HistoryFetchError) Unwrap() error {
 	return e.Err
 }
 
-func historyTargetRef(kind, name, namespace string) string {
-	return strings.Trim(strings.Join([]string{namespace, kind, name}, "/"), "/")
+// historyTargetRef renders the evidence-attribution identity (#2658). It is the
+// same canonical coordinates the execution plane and the audit trail use
+// (namespace/group/version/Kind/name), so an evidence source can never be
+// attributed to a group-blind spelling of the target.
+func historyTargetRef(apiVersion, kind, name, namespace string) string {
+	return scope.BuildTargetIdentity(apiVersion, namespace, kind, name)
 }
 
-func historySourceStatus(kind, name, namespace, clusterID, correlationID string, outcome katypes.EvidenceOutcome, code string) katypes.EvidenceSourceStatus {
+// historyStatusInput carries the identity coordinates of one evidence-source
+// status (#2658). A struct keeps the call sites readable and the argument count
+// inside the project's limit.
+type historyStatusInput struct {
+	APIVersion    string
+	Kind          string
+	Name          string
+	Namespace     string
+	ClusterID     string
+	CorrelationID string
+}
+
+func historySourceStatus(in historyStatusInput, outcome katypes.EvidenceOutcome, code string) katypes.EvidenceSourceStatus {
 	class := katypes.EvidenceFailureNone
 	switch outcome {
 	case katypes.EvidenceOutcomeSuccess,
@@ -139,10 +156,10 @@ func historySourceStatus(kind, name, namespace, clusterID, correlationID string,
 		Class:           class,
 		Source:          katypes.EvidenceSourceRemediationHistory,
 		Outcome:         outcome,
-		TargetRef:       historyTargetRef(kind, name, namespace),
-		ClusterID:       clusterID,
+		TargetRef:       historyTargetRef(in.APIVersion, in.Kind, in.Name, in.Namespace),
+		ClusterID:       in.ClusterID,
 		LastFailureCode: code,
-		CorrelationID:   correlationID,
+		CorrelationID:   in.CorrelationID,
 	}
 }
 
@@ -168,25 +185,27 @@ func mergeEvidenceSourceStatus(ctx context.Context, status katypes.EvidenceSourc
 	}
 }
 
-func historyStatusFromError(err error, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
+func historyStatusFromError(err error, apiVersion, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
+	in := historyStatusInput{
+		APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace,
+		ClusterID: clusterID, CorrelationID: correlationID,
+	}
 	var typed *HistoryFetchError
 	if errors.As(err, &typed) && typed != nil {
 		return typed.Status
 	}
 	if errors.Is(err, ErrRBACForbidden) {
-		return historySourceStatus(kind, name, namespace, clusterID, correlationID,
-			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeForbidden)
+		return historySourceStatus(in, katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeForbidden)
 	}
-	return historySourceStatus(kind, name, namespace, clusterID, correlationID,
-		katypes.EvidenceOutcomeTransportUnavailable, katypes.EvidenceFailureCodeTransport)
+	return historySourceStatus(in, katypes.EvidenceOutcomeTransportUnavailable, katypes.EvidenceFailureCodeTransport)
 }
 
 // HistoryEvidenceStatusForError maps an enrichment failure that prevented a
 // history result from being returned into the bounded source contract. It is
 // used by the investigator when Enrich must return early (for example, before
 // the normal history fetch path can attach its status).
-func HistoryEvidenceStatusForError(err error, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
-	return historyStatusFromError(err, kind, name, namespace, clusterID, correlationID)
+func HistoryEvidenceStatusForError(err error, apiVersion, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
+	return historyStatusFromError(err, apiVersion, kind, name, namespace, clusterID, correlationID)
 }
 
 // Tier1Entry is a detailed remediation history record (recent window).
@@ -482,6 +501,18 @@ func isForbiddenError(err error) bool {
 	return apierrors.IsForbidden(err)
 }
 
+// RemediationHistoryQuery scopes one enrichment remediation-history query
+// (#2658 D-B). APIVersion selects the API group the DataStorage endpoint
+// requires; an empty value is the documented unknown state (never "core").
+type RemediationHistoryQuery struct {
+	Kind       string
+	Name       string
+	Namespace  string
+	ClusterID  string
+	SpecHash   string
+	APIVersion string
+}
+
 // EnrichRequest groups Enrich's parameters. Introduced per AGENTS.md's
 // 8+-param Options-pattern/config-struct rule (D5, Issue #1802) rather than
 // adding ClusterID as an 8th positional parameter.
@@ -531,7 +562,7 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 
 	histResult, histErr, historySkipped := e.fetchHistory(ctx, result, historyFetchRequest{
 		Kind: kind, Name: name, Namespace: namespace, ClusterID: req.ClusterID,
-		IncidentID: incidentID, SpecHash: specHash,
+		IncidentID: incidentID, SpecHash: specHash, APIVersion: apiVersion,
 	})
 	if histErr != nil {
 		result.HistoryUnavailable = result.HistoryUnavailable || specHash != ""
@@ -578,6 +609,16 @@ type historyFetchRequest struct {
 	Kind, Name, Namespace string
 	ClusterID, IncidentID string
 	SpecHash              string
+	APIVersion            string
+}
+
+// statusInput renders the identity coordinates of this fetch for evidence-status
+// reporting (#2658).
+func (r historyFetchRequest) statusInput() historyStatusInput {
+	return historyStatusInput{
+		APIVersion: r.APIVersion, Kind: r.Kind, Name: r.Name, Namespace: r.Namespace,
+		ClusterID: r.ClusterID, CorrelationID: r.IncidentID,
+	}
 }
 
 func (e *Enricher) fetchHistory(ctx context.Context, result *EnrichmentResult, req historyFetchRequest) (*RemediationHistoryResult, error, bool) {
@@ -589,17 +630,19 @@ func (e *Enricher) fetchHistory(ctx context.Context, result *EnrichmentResult, r
 			// former is an unavailable evidence source.
 			outcome = katypes.EvidenceOutcomeTransportUnavailable
 		}
-		status := historySourceStatus(req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID,
-			outcome, katypes.EvidenceFailureCodeHashUnavailable)
+		status := historySourceStatus(req.statusInput(), outcome, katypes.EvidenceFailureCodeHashUnavailable)
 		history := &RemediationHistoryResult{EvidenceStatus: historyAggregateStatus(status)}
 		result.EvidenceStatus = history.EvidenceStatus
 		mergeEvidenceSourceStatus(ctx, status)
 		return history, nil, true
 	}
 
-	history, err := e.ds.GetRemediationHistory(ctx, req.Kind, req.Name, req.Namespace, req.ClusterID, req.SpecHash)
+	history, err := e.ds.GetRemediationHistory(ctx, RemediationHistoryQuery{
+		Kind: req.Kind, Name: req.Name, Namespace: req.Namespace,
+		ClusterID: req.ClusterID, SpecHash: req.SpecHash, APIVersion: req.APIVersion,
+	})
 	if err != nil {
-		status := historyStatusFromError(err, req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID)
+		status := historyStatusFromError(err, req.APIVersion, req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID)
 		result.EvidenceStatus = historyAggregateStatus(status)
 		mergeEvidenceSourceStatus(ctx, status)
 		return nil, err, false
@@ -612,7 +655,7 @@ func (e *Enricher) fetchHistory(ctx context.Context, result *EnrichmentResult, r
 		if len(history.Tier1) == 0 && len(history.Tier2) == 0 {
 			outcome = katypes.EvidenceOutcomeValidEmpty
 		}
-		status := historySourceStatus(req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID, outcome, "")
+		status := historySourceStatus(req.statusInput(), outcome, "")
 		history.EvidenceStatus = historyAggregateStatus(status)
 	}
 	result.EvidenceStatus = history.EvidenceStatus

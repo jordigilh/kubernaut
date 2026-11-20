@@ -55,7 +55,7 @@ var _ = Describe("Per-Workflow ServiceAccount Spec Tests [DD-WE-005] (#650, #166
 						ServiceAccountName: saName,
 					},
 				},
-				TargetResource: "default/Deployment/nginx",
+				TargetResource: "default/apps/v1/Deployment/nginx",
 			},
 		}
 		return wfe

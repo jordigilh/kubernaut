@@ -62,10 +62,13 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 				UID:       "rr-uid-123",
 			},
 			Spec: remediationv1.RemediationRequestSpec{
+				// #2592: apiVersion is mandatory on every RR target, so the
+				// canonical identity (#2658) resolves to apps/v1.
 				TargetResource: remediationv1.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "nginx",
-					Namespace: "default",
+					Kind:       "Deployment",
+					Name:       "nginx",
+					Namespace:  "default",
+					APIVersion: "apps/v1",
 				},
 			},
 		}
@@ -149,7 +152,7 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TimesOutAt).To(BeNil())
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("wf-uuid-123"))
-			Expect(created.Spec.TargetResource).To(Equal("default/Deployment/nginx"))
+			Expect(created.Spec.TargetResource).To(Equal("default/apps/v1/Deployment/nginx"))
 		})
 	})
 })

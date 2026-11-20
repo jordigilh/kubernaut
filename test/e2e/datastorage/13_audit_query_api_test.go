@@ -46,7 +46,7 @@ func createTestAuditEvent(baseURL, service, _ /* eventType */, correlationID str
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "TestAlert",
+				SignalName:  "TestAlert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},
@@ -138,7 +138,7 @@ var _ = Describe("Audit Events Query API", func() {
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-							SignalName:   "TestAlert0",
+							SignalName:  "TestAlert0",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint-0",
 						},
@@ -266,7 +266,7 @@ var _ = Describe("Audit Events Query API", func() {
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-							SignalName:   "TestAlert-Gateway",
+							SignalName:  "TestAlert-Gateway",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint",
 						},
@@ -464,7 +464,7 @@ var _ = Describe("Audit Events Query API", func() {
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "TestAlert",
+						SignalName:  "TestAlert",
 						Namespace:   "default",
 						Fingerprint: "test-fingerprint",
 					},
@@ -529,13 +529,13 @@ var _ = Describe("Audit Events Query API", func() {
 			events := make([]ogenclient.AuditEventRequest, 75)
 			for i := range events {
 				events[i] = ogenclient.AuditEventRequest{
-					Version:       "1.0",
-					EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
-					EventType:     "gateway.signal.received",
+					Version:        "1.0",
+					EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+					EventType:      "gateway.signal.received",
 					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
-					CorrelationID: correlationID,
-					EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
-					EventAction:   "test",
+					CorrelationID:  correlationID,
+					EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventAction:    "test",
 					EventData: ogenclient.AuditEventRequestEventData{
 						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{

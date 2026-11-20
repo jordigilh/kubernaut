@@ -72,7 +72,7 @@ var _ = Describe("BR-GATEWAY-002: Signal Ingestion - Prometheus Adapter", func()
 			Expect(signal.Resource.Name).NotTo(BeEmpty(),
 				"Must identify WHICH resource needs remediation")
 			Expect(signal.Resource.Kind).To(Equal("Pod"),
-				"Must identify WHAT TYPE of resource (Pod/Deployment/Node)")
+				"Must identify WHAT TYPE of resource (Pod/apps/v1/Deployment/Node)")
 			Expect(signal.Resource.Namespace).NotTo(BeEmpty(),
 				"Must know WHERE the resource is (needed for kubectl commands)")
 

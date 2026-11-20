@@ -31,14 +31,14 @@ import (
 
 var _ = Describe("JWT Middleware Pipeline — #1009", func() {
 	var (
-		mockJWKS    *testauth.MockJWKSServer
-		jwtAuth     *auth.JWTAuthenticator
-		mockK8sAuth *auth.MockAuthenticator
-		mockAuthz   *auth.MockAuthorizer
-		composite   *auth.CompositeAuthenticator
-		middleware  *auth.Middleware
-		server      *httptest.Server
-		capturedUser string
+		mockJWKS             *testauth.MockJWKSServer
+		jwtAuth              *auth.JWTAuthenticator
+		mockK8sAuth          *auth.MockAuthenticator
+		mockAuthz            *auth.MockAuthorizer
+		composite            *auth.CompositeAuthenticator
+		middleware           *auth.Middleware
+		server               *httptest.Server
+		capturedUser         string
 		capturedProviderType string
 	)
 
@@ -73,7 +73,7 @@ var _ = Describe("JWT Middleware Pipeline — #1009", func() {
 
 		mockAuthz = &auth.MockAuthorizer{
 			AllowedUsers: map[string]bool{
-				"user-a@corp":  true,
+				"user-a@corp": true,
 				"system:serviceaccount:kubernaut-system:apifrontend": true,
 			},
 		}

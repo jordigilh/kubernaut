@@ -39,15 +39,15 @@ import (
 
 var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", func() {
 	var (
-		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
-		testCtx       context.Context      // ← Test-local context
+		testNamespace string          // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
+		testCtx       context.Context // ← Test-local context
 		testCancel    context.CancelFunc
 		testClient    client.Client
 	)
 
 	BeforeEach(func() {
-		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
-		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
+		testCtx, testCancel = context.WithCancel(context.Background()) // ← Uses local variable
+		testClient = k8sClient                                         // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// Pre-create managed namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
@@ -58,9 +58,9 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	})
 
 	AfterEach(func() {
-	if testCancel != nil {
-		testCancel()  // ← Only cancels test-local context
-	}
+		if testCancel != nil {
+			testCancel() // ← Only cancels test-local context
+		}
 		// Clean up test namespace
 		if testNamespace != "" {
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)

@@ -81,7 +81,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				Namespace: testNamespace,
 			},
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
-				TargetResource: "default/pod/test-pod",
+				TargetResource: "default/core/v1/Pod/test-pod",
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "test-workflow",
@@ -128,7 +128,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 		Expect(k8sClient.Create(testCtx, workflow)).To(Succeed())
 		DeferCleanup(func() { deleteCRDAndWait(workflow.Name) })
 		workflow = waitForCRDStatus(workflow.Name)
-		parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"TARGET_RESOURCE":"default/pod/test-pod"}`))
+		parameters, evidence, err := sharedtypes.DecodeTypedParameterMap([]byte(`{"TARGET_RESOURCE":"default/core/v1/Pod/test-pod"}`))
 		Expect(err).NotTo(HaveOccurred())
 		rar = &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -263,7 +263,7 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 					Namespace: testNamespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource: fmt.Sprintf("default/pod/test-pod-%d", idx),
+					TargetResource: fmt.Sprintf("default/core/v1/Pod/test-pod-%d", idx),
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      fmt.Sprintf("test-workflow-%d", idx),

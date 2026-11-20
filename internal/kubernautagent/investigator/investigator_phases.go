@@ -345,6 +345,7 @@ func SignalToPrompt(s katypes.SignalContext) prompt.SignalData {
 		Message:                    s.Message,
 		ResourceKind:               overridden.ResourceKind,
 		ResourceName:               overridden.ResourceName,
+		ResourceAPIVersion:         overridden.ResourceAPIVersion,
 		ClusterName:                s.ClusterName,
 		Environment:                s.Environment,
 		Priority:                   s.Priority,

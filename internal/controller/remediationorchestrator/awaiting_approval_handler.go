@@ -280,7 +280,7 @@ func (h *AwaitingApprovalHandler) createApprovedWorkflowExecution(ctx context.Co
 	// concurrent reconcile from creating a duplicate WFE for the same target
 	// resource) — the lock is therefore acquired/released here rather than
 	// inside checkApprovalTargetBusy.
-	approvalTargetResource := formatRemediationTargetString(resolvedAI)
+	approvalTargetResource := formatRemediationTargetString(rr, resolvedAI)
 	if approvalTargetResource != "" {
 		acquired, lockErr := h.callbacks.AcquireLock(ctx, approvalTargetResource)
 		if lockErr != nil {

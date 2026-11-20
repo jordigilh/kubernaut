@@ -40,14 +40,14 @@ var _ = Describe("DD-KA-2496 history adapter (BR-KA-016, SI-10, AC-4)", func() {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				entry := fmt.Sprintf(`{"remediationUID":"rr-prior","workflowId":"wf-catalog-a","workflowName":"Restore memory",%s"completedAt":"2026-10-08T10:00:00Z","effectivenessScore":0,"signalResolved":false,"assessmentReason":"Full"}`, confidenceJSON)
-				if _, err := fmt.Fprintf(w, `{"targetResource":"prod/Deployment/api","currentSpecHash":"sha256:current","regressionDetected":false,"tier1":{"window":"24h","chain":[%s]},"tier2":{"window":"2160h","chain":[%s]}}`, entry, entry); err != nil {
+				if _, err := fmt.Fprintf(w, `{"targetResource":"prod/apps/v1/Deployment/api","currentSpecHash":"sha256:current","regressionDetected":false,"tier1":{"window":"24h","chain":[%s]},"tier2":{"window":"2160h","chain":[%s]}}`, entry, entry); err != nil {
 					GinkgoWriter.Printf("history fixture response failed: %v\n", err)
 				}
 			}))
 			DeferCleanup(endpoint.Close)
 			client, err := api.NewClient(endpoint.URL)
 			Expect(err).NotTo(HaveOccurred())
-			result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), "Deployment", "api", "prod", "origin-a", "sha256:current")
+			result, err := enrichment.NewDSAdapter(client).GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api", Namespace: "prod", ClusterID: "origin-a", SpecHash: "sha256:current"})
 			Expect(err).NotTo(HaveOccurred())
 			raw, err := json.Marshal(result)
 			Expect(err).NotTo(HaveOccurred())

@@ -40,10 +40,10 @@ type recurrentHistoryClient2511 struct {
 	errors   map[string]error
 }
 
-func (c *recurrentHistoryClient2511) GetRemediationHistory(_ context.Context, kind, name, namespace, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (c *recurrentHistoryClient2511) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := kind + "/" + name + "/" + namespace
+	key := query.Kind + "/" + query.Name + "/" + query.Namespace
 	c.requests = append(c.requests, key)
 	if err, ok := c.errors[key]; ok {
 		return nil, err
@@ -80,7 +80,7 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 			{ToolCalls: []llm.ToolCall{{ID: "correction", Name: investigator.SubmitResultToolName, Arguments: invalid}}},
 		}}
 		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
-			"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+			"Deployment/api-a/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
 		}}
 		inv := newTestInvestigator(investigator.Config{
 			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
@@ -110,8 +110,8 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 			{ToolCalls: []llm.ToolCall{{ID: "rca-final", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"validated alternate target","remediation_target":{"kind":"Deployment","name":"api-b","namespace":"prod","api_version":"apps/v1"},"causal_mechanism_status":"unknown"},"confidence":0.7,"actionable":false,"investigation_outcome":"inconclusive"}`}}},
 		}}
 		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
-			"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
-			"Deployment/api-b/prod": recurrentHistory2511("prod/Deployment/api-b", "scale_replicas", "HighCPU"),
+			"Deployment/api-a/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+			"Deployment/api-b/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-b", "scale_replicas", "HighCPU"),
 		}}
 		enricher := enrichment.NewEnricher(&historySpecHashK8sClient2511{}, ds, &gateRecordingAuditStore{}, logger)
 		inv := newTestInvestigator(investigator.Config{
@@ -136,7 +136,7 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("api-a"))))
 		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("initial symptom"))))
 		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("PRIOR REMEDIATION HISTORY REVIEW"))))
-		Expect(client.calls[2].Messages).To(ContainElement(HaveField("Content", ContainSubstring("prod/Deployment/api-b"))))
+		Expect(client.calls[2].Messages).To(ContainElement(HaveField("Content", ContainSubstring("prod/apps/v1/Deployment/api-b"))))
 		Expect(ds.requests).To(ContainElements("Deployment/api-a/prod", "Deployment/api-b/prod"))
 	})
 
@@ -160,7 +160,7 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 		}}
 		ds := &recurrentHistoryClient2511{
 			history: map[string]*enrichment.RemediationHistoryResult{
-				"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+				"Deployment/api-a/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
 			},
 			errors: map[string]error{
 				"Deployment/api-b/prod": errors.New("target-b history unavailable"),
@@ -183,12 +183,12 @@ var _ = Describe("#2511 recurrent RCA continuation", func() {
 		Expect(result.EvidenceStatus).NotTo(BeNil())
 		Expect(result.EvidenceStatus.Class).To(Equal(katypes.EvidenceFailureTransportUnavailable))
 		Expect(result.EvidenceStatus.Outcome).To(Equal(katypes.EvidenceOutcomeTransportUnavailable))
-		Expect(result.EvidenceStatus.Sources).To(ContainElement(HaveField("TargetRef", Equal("prod/Deployment/api-a"))))
-		Expect(result.EvidenceStatus.Sources).To(ContainElement(HaveField("TargetRef", Equal("prod/Deployment/api-b"))))
+		Expect(result.EvidenceStatus.Sources).To(ContainElement(HaveField("TargetRef", Equal("prod/apps/v1/Deployment/api-a"))))
+		Expect(result.EvidenceStatus.Sources).To(ContainElement(HaveField("TargetRef", Equal("prod/apps/v1/Deployment/api-b"))))
 		Expect(result.RemediationTarget.Name).To(Equal("api-b"))
 		Expect(client.calls).To(HaveLen(2), "target-B history failure must stop continuation rather than reuse target-A history")
-		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("prod/Deployment/api-a"))))
-		Expect(client.calls[1].Messages).NotTo(ContainElement(HaveField("Content", ContainSubstring("prod/Deployment/api-b"))))
+		Expect(client.calls[1].Messages).To(ContainElement(HaveField("Content", ContainSubstring("prod/apps/v1/Deployment/api-a"))))
+		Expect(client.calls[1].Messages).NotTo(ContainElement(HaveField("Content", ContainSubstring("prod/apps/v1/Deployment/api-b"))))
 		Expect(ds.requests).To(ContainElements("Deployment/api-a/prod", "Deployment/api-b/prod"))
 	})
 })

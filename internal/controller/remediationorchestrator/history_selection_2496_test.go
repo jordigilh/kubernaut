@@ -82,7 +82,9 @@ var _ = Describe("DD-KA-2496 RO history producer (BR-KA-016, BR-AUDIT-005, AU-3,
 		Expect(data).To(HaveKeyWithValue("workflow_id", ai.Status.GetRCAResult().SelectedWorkflow.WorkflowID))
 		Expect(data).To(HaveKeyWithValue("workflow_name", "Restore memory"))
 		Expect(data).To(HaveKeyWithValue("workflow_selection_confidence", 0.94))
-		Expect(data).To(HaveKeyWithValue("target_resource", defaultFixture+"/Deployment/test-deployment"))
+		// #2658 E11: the workflow_created join key is the group-aware E1b form
+		// (the same key the DataStorage history handler composes).
+		Expect(data).To(HaveKeyWithValue("target_resource", defaultFixture+"/apps/v1/Deployment/test-deployment"))
 		Expect(events[0].CorrelationID).To(Equal(rr.Name))
 		Expect(string(raw)).NotTo(ContainSubstring("parameters"))
 	})

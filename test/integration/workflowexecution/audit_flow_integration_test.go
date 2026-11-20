@@ -116,7 +116,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 			By("2. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
 			wfeName := fmt.Sprintf("audit-test-wfe-%d", time.Now().Unix())
-			targetResource := fmt.Sprintf("%s/deployment/test-app", testNs.Name)
+			targetResource := fmt.Sprintf("%s/apps/v1/Deployment/test-app", testNs.Name)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       wfeName,
@@ -237,7 +237,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 			By("2. Creating WorkflowExecution CRD")
 			wfeName := fmt.Sprintf("audit-lifecycle-wfe-%d", time.Now().Unix())
-			targetResource := fmt.Sprintf("%s/deployment/test-app", testNs.Name)
+			targetResource := fmt.Sprintf("%s/apps/v1/Deployment/test-app", testNs.Name)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       wfeName,

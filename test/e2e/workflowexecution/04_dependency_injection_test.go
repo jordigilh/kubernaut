@@ -71,7 +71,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 			// --- Phase 1: E2E-WE-006-001 (success path) ---
 			testName1 := fmt.Sprintf("e2e-dep-inj-001-%s", uuid.New().String()[:8])
-			targetResource1 := fmt.Sprintf("default/deployment/dep-inj-test-%s", uuid.New().String()[:8])
+			targetResource1 := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-test-%s", uuid.New().String()[:8])
 
 			wfe1 := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -179,7 +179,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			}()
 
 			testName2 := fmt.Sprintf("e2e-dep-inj-002-%s", uuid.New().String()[:8])
-			targetResource2 := fmt.Sprintf("default/deployment/dep-inj-fail-%s", uuid.New().String()[:8])
+			targetResource2 := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-fail-%s", uuid.New().String()[:8])
 
 			wfe2 := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -257,7 +257,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 				"test-job-hello-world UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-003-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/dep-inj-nodeps-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-nodeps-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -342,7 +342,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 				"test-dep-secret-configmap-tekton UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-004-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/dep-inj-tekton-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-tekton-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -442,7 +442,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 				"test-dep-configmap-job UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-005-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/dep-inj-cm-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-cm-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -534,7 +534,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 				"test-dep-configmap-tekton UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-006-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/dep-inj-cm-tekton-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/dep-inj-cm-tekton-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{

@@ -278,13 +278,18 @@ go test -v ./test/integration/gateway/10_crd_creation_lifecycle_integration_test
 Add this helper function to each migrated test (or create a shared helper file):
 
 ```go
-// generateFingerprint creates a signal fingerprint for testing
-// Format: SHA256(alertname:namespace:kind:name)
-func generateFingerprint(alertName, namespace, kind, name string) string {
-	import "crypto/sha256"
-	data := fmt.Sprintf("%s:%s:%s:%s", alertName, namespace, kind, name)
-	hash := sha256.Sum256([]byte(data))
-	return fmt.Sprintf("%x", hash)
+// generateFingerprint returns the production signal fingerprint.
+// Never hand-roll the hash: the format is
+// SHA256([clusterID:]group:namespace:kind:name), and the group is derived from
+// the resource's apiVersion (#2650, #2658). Call the real function so a test
+// cannot drift from the Gateway/AF contract.
+func generateFingerprint(clusterID, apiVersion, namespace, kind, name string) string {
+	return gwtypes.CalculateClusterAwareFingerprint(clusterID, gwtypes.ResourceIdentifier{
+		APIVersion: apiVersion,
+		Namespace:  namespace,
+		Kind:       kind,
+		Name:       name,
+	})
 }
 ```
 

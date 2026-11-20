@@ -1018,6 +1018,10 @@ func (s *Server) handleGetRemediationHistoryContextRequest(args [0]string, argsE
 					In:   "query",
 				}: params.TargetNamespace,
 				{
+					Name: "targetApiVersion",
+					In:   "query",
+				}: params.TargetApiVersion,
+				{
 					Name: "currentSpecHash",
 					In:   "query",
 				}: params.CurrentSpecHash,

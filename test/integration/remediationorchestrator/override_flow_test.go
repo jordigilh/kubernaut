@@ -268,7 +268,8 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		}, timeout, interval).Should(Succeed())
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(trustedAIOriginalWorkflowID))
 		Expect(we.Spec.Parameters).To(Equal(typedStringParameters(map[string]string{"NAMESPACE": "default", "POD_NAME": "reviewed-pod"})))
-		Expect(we.Spec.TargetResource).To(Equal(fmt.Sprintf("%s/Deployment/test-app", namespace)))
+		Expect(we.Spec.TargetResource).To(Equal(fmt.Sprintf("%s/apps/v1/Deployment/test-app", namespace)),
+			"#2658 E2: the WFE identity carries the canonical API group")
 	})
 
 	It("IT-RO-2570-023: BR-ORCH-025 carries a partial override through the RO reconciler to WE", func() {

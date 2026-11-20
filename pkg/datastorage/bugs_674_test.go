@@ -44,11 +44,11 @@ type bug674SpyLogSink struct {
 	entries []bug674LogEntry
 }
 
-func (s *bug674SpyLogSink) Init(_ logr.RuntimeInfo)  {}
-func (s *bug674SpyLogSink) Enabled(_ int) bool        { return true }
+func (s *bug674SpyLogSink) Init(_ logr.RuntimeInfo)                   {}
+func (s *bug674SpyLogSink) Enabled(_ int) bool                        { return true }
 func (s *bug674SpyLogSink) Error(_ error, _ string, _ ...interface{}) {}
 func (s *bug674SpyLogSink) WithValues(_ ...interface{}) logr.LogSink  { return s }
-func (s *bug674SpyLogSink) WithName(_ string) logr.LogSink           { return s }
+func (s *bug674SpyLogSink) WithName(_ string) logr.LogSink            { return s }
 
 func (s *bug674SpyLogSink) Info(_ int, msg string, keysAndValues ...interface{}) {
 	entry := bug674LogEntry{msg: msg, fields: make(map[string]interface{})}

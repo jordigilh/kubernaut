@@ -156,7 +156,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	}
 
 	It("UT-WE-2570-060: BR-ORCH-025 fails closed when workflow identity cannot be verified", func() {
-		wfe := buildPendingWFE("wfe-no-trusted-catalog", "default/deployment/no-catalog")
+		wfe := buildPendingWFE("wfe-no-trusted-catalog", "default/apps/v1/Deployment/no-catalog")
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(wfe).
 			WithStatusSubresource(wfe).
 			WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
@@ -176,7 +176,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	})
 
 	It("UT-WE-2570-041: BR-ORCH-025 rejects parameters absent from the live schema before executor dispatch", func() {
-		wfe := buildPendingWFE("wfe-no-declarations", "default/deployment/no-declarations")
+		wfe := buildPendingWFE("wfe-no-declarations", "default/apps/v1/Deployment/no-declarations")
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": "must-not-run"})
 		rw := buildCatalogWorkflow(wfe)
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(wfe, rw).WithStatusSubresource(wfe).
@@ -197,7 +197,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	})
 
 	It("UT-WE-2570-061: BR-ORCH-025 verifies identity when the catalog CRD lacks a selectable workflow ID field", func() {
-		wfe := buildPendingWFE("wfe-legacy-catalog-crd", "default/deployment/legacy-catalog")
+		wfe := buildPendingWFE("wfe-legacy-catalog-crd", "default/apps/v1/Deployment/legacy-catalog")
 		rw := buildCatalogWorkflow(wfe)
 		calls := 0
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).WithObjects(rw).
@@ -226,7 +226,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	})
 
 	It("UT-WE-2570-129: BR-ORCH-025 fails closed after transient identity lookup exhaustion without dispatching", func() {
-		wfe := buildPendingWFE("wfe-transient-catalog", "default/deployment/transient-catalog")
+		wfe := buildPendingWFE("wfe-transient-catalog", "default/apps/v1/Deployment/transient-catalog")
 		calls := 0
 		fakeClient := fake.NewClientBuilder().WithScheme(rpoScheme).
 			WithObjects(wfe).
@@ -301,7 +301,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	// executions from exhausting the execution namespace / target resource.
 	Context("UT-WE-1520-001 (P0): Cooldown gating blocks execution and requeues (BR-WE-009, FedRAMP SC-5)", func() {
 		It("should stay Pending, requeue after remaining cooldown, and emit CooldownActive instead of creating an execution resource", func() {
-			targetResource := "default/deployment/cooldown-target"
+			targetResource := "default/apps/v1/Deployment/cooldown-target"
 
 			// A prior WFE against the same target completed 1 minute ago — well
 			// inside the 5-minute default cooldown window.
@@ -366,7 +366,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 	// reconstruction (multiple "selection completed" events for one WFE).
 	Context("UT-WE-1520-002 (P0): Audit idempotency skips duplicate selection-completed event when execution resource already exists (BR-AUDIT-005 Gap #5, FedRAMP AU-2/AU-3, SOC2 CC8.1)", func() {
 		It("should not re-emit workflow.selection.completed when the execution PipelineRun already exists", func() {
-			targetResource := "default/deployment/idempotent-target"
+			targetResource := "default/apps/v1/Deployment/idempotent-target"
 			wfe := buildPendingWFE("wfe-audit-idempotent", targetResource)
 			rw := buildCatalogWorkflow(wfe)
 
@@ -430,7 +430,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 		})
 
 		It("should emit workflow.selection.completed exactly once when the execution resource does not yet exist", func() {
-			targetResource := "default/deployment/first-creation-target"
+			targetResource := "default/apps/v1/Deployment/first-creation-target"
 			wfe := buildPendingWFE("wfe-audit-first", targetResource)
 			rw := buildCatalogWorkflow(wfe)
 

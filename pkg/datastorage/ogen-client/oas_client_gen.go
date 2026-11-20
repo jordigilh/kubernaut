@@ -987,6 +987,20 @@ func (c *Client) sendGetRemediationHistoryContext(ctx context.Context, params Ge
 		}
 	}
 	{
+		// Encode "targetApiVersion" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetApiVersion",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetApiVersion))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
 		// Encode "currentSpecHash" parameter.
 		cfg := uri.QueryParameterEncodingConfig{
 			Name:    "currentSpecHash",

@@ -67,7 +67,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		// ========================================
 		It("should handle concurrent PipelineRun creation gracefully without duplicates", func() {
 			By("Creating WorkflowExecution for concurrent test")
-			targetResource := "test-namespace/deployment/concurrent-test"
+			targetResource := "test-namespace/apps/v1/Deployment/concurrent-test"
 			wfe := conflictWFE("concurrent-race", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -155,7 +155,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		// ========================================
 		It("should handle PipelineRun created externally before reconcile", func() {
 			By("Creating WorkflowExecution")
-			targetResource := "test-namespace/deployment/external-pr-test"
+			targetResource := "test-namespace/apps/v1/Deployment/external-pr-test"
 			wfe := conflictWFE("external-pr", targetResource)
 
 			By("Manually creating PipelineRun BEFORE WFE reconciliation")
@@ -203,7 +203,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		// ========================================
 		It("IT-WE-190-001: should classify PipelineRun collision as Deduplicated with DeduplicatedBy", func() {
 			By("Creating first WorkflowExecution")
-			targetResource := "test-namespace/deployment/conflict-test"
+			targetResource := "test-namespace/apps/v1/Deployment/conflict-test"
 			wfe1 := conflictWFE("conflict-wfe1", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
@@ -252,7 +252,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		// ========================================
 		It("should generate consistent PipelineRun names for same target resource", func() {
 			By("Creating two WFEs for same target (at different times)")
-			targetResource := "test-namespace/deployment/deterministic-test"
+			targetResource := "test-namespace/apps/v1/Deployment/deterministic-test"
 
 			wfe1 := conflictWFE("deterministic-wfe1", targetResource)
 			pr1 := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe1, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})

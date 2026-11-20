@@ -129,8 +129,8 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		Expect(err).NotTo(HaveOccurred())
 		Expect(remoteHash).To(Equal(hash), "the distractor hash must equal KA's actual current resource fingerprint")
 		By("Adding historical adversarial rows without replacing the real producer or current controllers")
-		otherOrigin := fleetHistoricalCollision2496(targetNS+"/Deployment/memory-eater", sourceOrigin, hash, priorSelection.WorkflowID)
-		otherTarget := fleetHistoricalCollision2496(targetNS+"-other/Deployment/memory-eater", currentOrigin, hash, priorSelection.WorkflowID)
+		otherOrigin := fleetHistoricalCollision2496(targetNS+"/apps/v1/Deployment/memory-eater", sourceOrigin, hash, priorSelection.WorkflowID)
+		otherTarget := fleetHistoricalCollision2496(targetNS+"-other/apps/v1/Deployment/memory-eater", currentOrigin, hash, priorSelection.WorkflowID)
 		before := fleetHistoricalSnapshot2496(first.Name, otherOrigin, otherTarget)
 		Expect(before).To(ContainSubstring("private-history-collision-2496"))
 		By("Proving both distractors are completed Full/known-zero/unresolved history in their own scopes")
@@ -225,7 +225,10 @@ func fleetScopedHistory2496(targetNS, origin, hash string) (*ogenclient.Remediat
 	GinkgoHelper()
 	resp, err := dataStorageClient.GetRemediationHistoryContext(ctx, ogenclient.GetRemediationHistoryContextParams{
 		TargetKind: "Deployment", TargetName: "memory-eater", TargetNamespace: targetNS,
-		CurrentSpecHash: hash, ClusterId: ogenclient.NewOptString(origin),
+		// #2658: targetApiVersion is required and must match the canonical
+		// identity the lifecycle events were recorded with.
+		TargetApiVersion: "apps/v1",
+		CurrentSpecHash:  hash, ClusterId: ogenclient.NewOptString(origin),
 	})
 	if err != nil {
 		return nil, err

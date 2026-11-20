@@ -16,7 +16,8 @@
 # Target resource resolution (mirrors oomkill-increase-memory-job/remediate.sh):
 #   TARGET_RESOURCE_KIND + TARGET_RESOURCE_NAME + TARGET_RESOURCE_NAMESPACE
 #     - Preferred, when the LLM explicitly selects these as parameters.
-#   TARGET_RESOURCE (format: namespace/kind/name)
+#   TARGET_RESOURCE (canonical identity, #2658:
+#   namespace/group/version/Kind/name, or group/version/Kind/name)
 #     - Fallback, always injected by the WE Job executor from the real
 #       RemediationRequest target resource (BR-WE-014).
 #
@@ -41,15 +42,32 @@ if [ -n "$TARGET_RESOURCE_KIND" ] && [ -n "$TARGET_RESOURCE_NAME" ] && [ -n "$TA
     NAMESPACE="$TARGET_RESOURCE_NAMESPACE"
     echo "Using LLM-provided target resource parameters:"
 elif [ -n "$TARGET_RESOURCE" ]; then
-    # Fallback: parse TARGET_RESOURCE (format: namespace/kind/name)
-    NAMESPACE=$(echo "$TARGET_RESOURCE" | cut -d'/' -f1)
-    KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f2)
-    DEPLOYMENT_NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f3)
+    # Fallback: parse TARGET_RESOURCE, the canonical identity (#2658):
+    #   namespace/group/version/Kind/name (5 parts)
+    #   group/version/Kind/name           (4 parts, cluster-scoped)
+    PARTS=$(echo "$TARGET_RESOURCE" | awk -F'/' '{print NF}')
+    case "$PARTS" in
+        5)
+            NAMESPACE=$(echo "$TARGET_RESOURCE" | cut -d'/' -f1)
+            KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f4)
+            DEPLOYMENT_NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f5)
+            ;;
+        4)
+            NAMESPACE="default"
+            KIND=$(echo "$TARGET_RESOURCE" | cut -d'/' -f3)
+            DEPLOYMENT_NAME=$(echo "$TARGET_RESOURCE" | cut -d'/' -f4)
+            ;;
+        *)
+            echo "ERROR: TARGET_RESOURCE is not a canonical identity: $TARGET_RESOURCE"
+            echo "  Expected namespace/group/version/Kind/name or group/version/Kind/name"
+            exit 1
+            ;;
+    esac
     echo "Using TARGET_RESOURCE fallback:"
 else
     echo "ERROR: No target resource specified."
     echo "  Required: TARGET_RESOURCE_KIND + TARGET_RESOURCE_NAME + TARGET_RESOURCE_NAMESPACE"
-    echo "  Or: TARGET_RESOURCE (format: namespace/kind/name)"
+    echo "  Or: TARGET_RESOURCE (canonical identity, #2658)"
     exit 1
 fi
 

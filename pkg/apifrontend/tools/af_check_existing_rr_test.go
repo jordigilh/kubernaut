@@ -291,7 +291,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeFalse(),
-				"fingerprint(prod/Deployment/web) must NOT match fingerprint(staging/Deployment/web)")
+				"fingerprint(prod/apps/v1/Deployment/web) must NOT match fingerprint(staging/apps/v1/Deployment/web)")
 		})
 	})
 })

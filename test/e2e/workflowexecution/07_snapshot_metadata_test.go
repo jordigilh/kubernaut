@@ -192,11 +192,11 @@ type snapshotWFEOptions struct {
 
 func newSnapshotWFE(options snapshotWFEOptions) *workflowexecutionv1alpha1.WorkflowExecution {
 	Expect(options.workflowID).ToNot(BeEmpty(), "registered workflow UUID must be available")
-	targetResource := "default/deployment/e2e-2390-" + options.name
+	targetResource := "default/apps/v1/Deployment/e2e-2390-" + options.name
 	parameters := map[string]string{}
 	if options.engine == "ansible" {
 		parameters["target_kind"] = "Deployment"
-		parameters["target_name"] = strings.TrimPrefix(targetResource, "default/deployment/")
+		parameters["target_name"] = strings.TrimPrefix(targetResource, "default/apps/v1/Deployment/")
 		parameters["target_namespace"] = "default"
 	} else {
 		parameters["TARGET_RESOURCE"] = targetResource

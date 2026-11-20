@@ -42,6 +42,11 @@ type GetRemediationHistoryArgs struct {
 	Name      string `json:"name,omitempty"`
 	Since     string `json:"since,omitempty"`
 	SpecHash  string `json:"spec_hash,omitempty"`
+	// APIVersion is the target resource's apiVersion (#2658). Required for a
+	// group-scoped history query: the DataStorage endpoint requires an API
+	// group, and omitting it would either be rejected or silently restrict
+	// history to core-group resources.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 // HistoricalRemediation is a past remediation record from the Data Store.
@@ -70,6 +75,14 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 	if args.Name == "" {
 		return GetRemediationHistoryResult{}, fmt.Errorf("name is required for remediation history lookup")
 	}
+	if args.APIVersion == "" {
+		// #2658: the DataStorage endpoint requires the target's apiVersion
+		// because group and version are part of the stored identity. An empty
+		// value used to reach the client, which sends the "unresolved"
+		// sentinel: a 200 with zero rows, i.e. "no prior remediations" for a
+		// target that has them. Reject it here instead of failing open.
+		return GetRemediationHistoryResult{}, fmt.Errorf("api_version is required for remediation history lookup (send \"v1\" for the core API group)")
+	}
 	if args.SpecHash == "" {
 		return GetRemediationHistoryResult{}, fmt.Errorf("spec_hash is required for remediation history lookup")
 	}
@@ -78,6 +91,7 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 	}
 	history, err := client.GetRemediationHistory(ctx, ds.HistoryOpts{
 		Namespace: args.Namespace, Kind: args.Kind, Name: args.Name, Since: args.Since, SpecHash: args.SpecHash,
+		APIVersion: args.APIVersion,
 	})
 	if err != nil {
 		return GetRemediationHistoryResult{}, fmt.Errorf("querying remediation history: %w", err)
@@ -97,7 +111,7 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 func NewGetRemediationHistoryTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation_history",
-		Description: "Query historical remediations from the Data Store. Required params: kind, name, spec_hash. Optional: namespace, since.",
+		Description: "Query historical remediations from the Data Store. Required params: kind, name, spec_hash, api_version (the target resource apiVersion, e.g. apps/v1 or v1). Optional: namespace, since.",
 	}, func(ctx agent.Context, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
 		return HandleGetRemediationHistory(ctx, client, args)
 	})

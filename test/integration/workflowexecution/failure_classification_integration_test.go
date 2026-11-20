@@ -225,7 +225,7 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 					ExecutionEngine: "tekton",
 				},
 			},
-			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
+			TargetResource: "default/apps/v1/Deployment/test-app-" + name, // Unique per test for deterministic PR names
 			Parameters:     sharedtypes.TypedParameterMap{},
 		},
 	}

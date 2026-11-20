@@ -78,14 +78,18 @@ var _ = Describe("#2496 authenticated history selection metadata", Label("integr
 	BeforeEach(func() {
 		id := uuid.NewString()
 		cluster = "origin-" + id
-		target = "prod/Deployment/api-" + id
+		// #2658: the RO emission writes the group-aware E1b identity, so the
+		// fixture and the query must agree on the suffix.
+		target = "prod/apps/v1/Deployment/api-" + id
 		recentID, historicalID, oldID = "rr-recent-"+id, "rr-history-"+id, "rr-unknown-"+id
 		// The generated audit wire uses RFC3339 second precision; compare the
 		// recorded instant, not Go's location representation from PostgreSQL.
 		recorded = time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Second)
 		params = api.GetRemediationHistoryContextParams{
 			TargetKind: "Deployment", TargetName: "api-" + id, TargetNamespace: "prod",
-			CurrentSpecHash: "sha256:" + id, ClusterId: api.NewOptString(cluster),
+			// #2658 D-B: targetApiVersion is required by the endpoint.
+			TargetApiVersion: "apps/v1",
+			CurrentSpecHash:  "sha256:" + id, ClusterId: api.NewOptString(cluster),
 			Tier1Window: api.NewOptString("1h"), Tier2Window: api.NewOptString("2160h"),
 		}
 		core, observed := observer.New(zap.InfoLevel)
@@ -357,7 +361,7 @@ var _ = Describe("#2496 authenticated history selection metadata", Label("integr
 	It("IT-DS-2496-002: identical workflow/spec/name on other targets and origins cannot enter authenticated history", func() {
 		writeRO(recentID, target, cluster, .84, recorded)
 		writeRO("rr-sibling-"+recentID, target, "other-"+cluster, .99, recorded)
-		writeRO("rr-target-"+recentID, target+"-other", cluster, .98, recorded)
+		writeRO("rr-target-"+recentID, "prod/apps/v1/Deployment/api-"+recentID+"-other", cluster, .98, recorded)
 		res, err := client.GetRemediationHistoryContext(ctx, params)
 		Expect(err).NotTo(HaveOccurred())
 		history, ok := res.(*api.RemediationHistoryContext)

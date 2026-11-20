@@ -61,7 +61,7 @@ var _ = Describe("#2496 structured Phase 3 handoff after Issue #2521", func() {
 		input := handoffInput{
 			Signal: katypes.SignalContext{ResourceKind: "Deployment", ResourceName: "api", Namespace: "prod", ResourceAPIVersion: "apps/v1"},
 			EnrichData: &prompt.EnrichmentData{HistoryResult: &enrichment.RemediationHistoryResult{
-				TargetResource: "prod/Deployment/api",
+				TargetResource: "prod/apps/v1/Deployment/api",
 				Tier1:          []enrichment.Tier1Entry{{RemediationUID: "prior-2496", WorkflowID: "same-workflow", WorkflowName: "restart-api", AssessmentReason: "Full", EffectivenessScore: &score}},
 			}},
 		}
@@ -69,7 +69,7 @@ var _ = Describe("#2496 structured Phase 3 handoff after Issue #2521", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(frozen.repeat.CompletedPriorWorkflows).To(HaveKeyWithValue("same-workflow", []string{"prior-2496"}))
 
-		input.EnrichData.HistoryResult.TargetResource = "prod/Deployment/other"
+		input.EnrichData.HistoryResult.TargetResource = "prod/apps/v1/Deployment/other"
 		other, err := inv.freezeEvidenceHandoff(context.Background(), input, "rr-other-2496")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(other.repeat.CompletedPriorWorkflows).NotTo(HaveKey("same-workflow"))

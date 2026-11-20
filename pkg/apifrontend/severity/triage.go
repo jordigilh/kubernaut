@@ -2,6 +2,7 @@ package severity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 const fleetClusterLabelKey = "cluster"
@@ -29,6 +31,15 @@ type LLMTriager interface {
 	TriageWithRules(ctx context.Context, rules []prom.Rule, input TriageInput) (TriageResult, error)
 }
 
+// CrossGroupSiblingChecker reports the API groups in which a resource with
+// the same namespace/kind/name exists, other than the target's own group
+// (#2658). Implementations must apply the single-group fast path internally
+// (a Kind resolved to one group can have no siblings) and treat enumeration
+// failure as an error so the caller fails closed.
+type CrossGroupSiblingChecker interface {
+	CheckCrossGroupSiblings(ctx context.Context, namespace, kind, name, targetGroup string) ([]string, error)
+}
+
 // AmbiguousSeverityError is returned by Triage when the only correlating
 // evidence found is a cluster-scoped alert with no verified relationship to
 // the target resource (DD-AF-012, #2027/#2028). Unlike ErrSeverityUndetermined
@@ -41,7 +52,35 @@ type AmbiguousSeverityError struct {
 }
 
 func (e *AmbiguousSeverityError) Error() string {
-	return "severity triage ambiguous: only a cluster-scoped alert (" + e.Candidate.AlertName + ") correlates, with no verified relationship to this resource"
+	switch e.Candidate.AmbiguityReason {
+	case AmbiguityReasonGroupUnscopable:
+		return "severity triage ambiguous: the correlating evidence cannot be scoped to the target's API group; a resource with the same namespace/kind/name exists in another API group (" +
+			formatAPIGroups(e.Candidate.CandidateAPIGroups) + ")"
+	case AmbiguityReasonAlertBelongsToSibling:
+		return "severity triage ambiguous: the correlated candidate belongs to the sibling resource in API group " +
+			formatAPIGroups(e.Candidate.CandidateAPIGroups) + ", not to the target's own API group"
+	default:
+		return "severity triage ambiguous: only a cluster-scoped alert (" + e.Candidate.AlertName + ") correlates, with no verified relationship to this resource"
+	}
+}
+
+// formatAPIGroups renders a candidate group list for human/audit text.
+func formatAPIGroups(groups []string) string {
+	return scope.DisplayAPIGroups(groups, "unavailable")
+}
+
+// encodeAPIGroups serializes a candidate group list for the audit Detail map,
+// whose values are strings. The store adapter decodes it into the typed
+// candidate_api_groups payload field (#2658 D1.9).
+func encodeAPIGroups(groups []string) string {
+	if len(groups) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(groups)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 // Config holds configuration for the triage pipeline.
@@ -67,12 +106,13 @@ func DefaultConfig() Config {
 
 // Triager orchestrates the multi-tier severity triage pipeline.
 type Triager struct {
-	promClient  prom.Client
-	config      Config
-	logger      logr.Logger
-	cache       *RulesCache
-	auditor     audit.Emitter
-	podResolver PodResolver
+	promClient     prom.Client
+	config         Config
+	logger         logr.Logger
+	cache          *RulesCache
+	auditor        audit.Emitter
+	podResolver    PodResolver
+	siblingChecker CrossGroupSiblingChecker
 }
 
 // TriagerOption configures optional dependencies on Triager.
@@ -87,6 +127,14 @@ func WithAuditor(e audit.Emitter) TriagerOption {
 // When set, Triage() auto-resolves pod names before running the pipeline.
 func WithPodResolver(r PodResolver) TriagerOption {
 	return func(t *Triager) { t.podResolver = r }
+}
+
+// WithCrossGroupSiblingChecker injects the #2658 group-scope gate's sibling
+// checker. When set (and the target carries an APIGroup), a positive
+// correlation that cannot be scoped to the target's group fails closed as a
+// group_unscopable ambiguity.
+func WithCrossGroupSiblingChecker(c CrossGroupSiblingChecker) TriagerOption {
+	return func(t *Triager) { t.siblingChecker = c }
 }
 
 // NewTriager creates a Prometheus-backed Triager. The llm argument is retained
@@ -147,39 +195,165 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		return result, err
 	}
 
-	// DD-AF-012/#2027/#2028: a cluster-scoped-only match is a guess, not a
-	// fact -- fail closed unless the caller already carries the user's
-	// confirmation for this exact candidate (a different candidate does not
-	// bypass the gate, even on a later call).
-	if result.Ambiguous && result.AlertName != input.ConfirmedSignalName {
-		if t.auditor != nil {
-			t.auditor.Emit(ctx, &audit.Event{
-				Type: audit.EventSeverityTriageAmbiguous,
-				Detail: map[string]string{
-					"namespace":          input.Namespace,
-					"kind":               input.Kind,
-					"name":               input.Name,
-					"candidate_alert":    result.AlertName,
-					"candidate_severity": result.Severity,
-				},
-			})
-		}
-		return result, &AmbiguousSeverityError{Candidate: result}
+	result, err = t.adjudicate(ctx, input, result)
+	if err != nil {
+		return result, err
 	}
 
 	if result.Severity != "" && t.auditor != nil {
 		t.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventSeverityTriageCompleted,
 			Detail: map[string]string{
-				"namespace": input.Namespace,
-				"kind":      input.Kind,
-				"name":      input.Name,
-				"severity":  result.Severity,
-				"source":    string(result.Source),
+				"namespace":   input.Namespace,
+				"kind":        input.Kind,
+				"name":        input.Name,
+				"severity":    result.Severity,
+				"source_tier": string(result.Source),
+				"api_group":   input.APIGroup,
 			},
 		})
 	}
 	return result, nil
+}
+
+// adjudicate applies the two fail-closed gates to a positive triage result and
+// returns either the accepted result or the typed ambiguity that must be
+// surfaced to the user (#2027/#2028, #2658). Extracted from Triage to keep its
+// cognitive complexity within the project's lint budget.
+func (t *Triager) adjudicate(ctx context.Context, input TriageInput, result TriageResult) (TriageResult, error) {
+	// DD-AF-012/#2027/#2028 + #2658: ambiguity is reason-scoped. A
+	// cluster-scoped-only match is a guess with no verified relationship
+	// (resolvable via ConfirmedSignalName); a group-unscopable match is a
+	// positive correlation that cannot be attributed to the target's API
+	// group because a cross-group sibling exists (resolvable only via
+	// ConfirmedAPIGroup). Both fail closed; neither confirmation class can
+	// bypass the other's gate.
+	if result.Ambiguous && !resolvesAmbiguity(result, input) {
+		t.emitAmbiguous(ctx, input, result, true)
+		return result, &AmbiguousSeverityError{Candidate: result}
+	}
+
+	// #2658 group-scope gate: a positive (non-ambiguous) correlation for a
+	// target whose group is known must be scoped to that group. If a same
+	// namespace/kind/name resource exists in another API group, the alert's
+	// severity cannot be attributed to this target without the user
+	// confirming which group the alert refers to. A known core group
+	// (APIGroup == "" with APIGroupKnown) is gated too: core is a real
+	// sibling group for Kinds registered in several groups.
+	if result.Ambiguous || strings.TrimSpace(result.Severity) == "" {
+		return result, nil
+	}
+	if input.APIGroup == "" && !input.APIGroupKnown {
+		return result, nil
+	}
+	gated, gateErr := t.applyGroupScopeGate(ctx, input, result)
+	if gateErr != nil {
+		t.emitAmbiguous(ctx, input, gated, false)
+		return gated, gateErr
+	}
+	return gated, nil
+}
+
+// emitAmbiguous persists the ambiguity decision (BR-SEVERITY-001 AC-8,
+// AU-3/CC7.2). withCandidate controls whether the candidate identity/severity
+// is included: a gate-side ambiguity may not have a confirmable alert.
+func (t *Triager) emitAmbiguous(ctx context.Context, input TriageInput, result TriageResult, withCandidate bool) {
+	if t.auditor == nil {
+		return
+	}
+	detail := map[string]string{
+		"namespace":            input.Namespace,
+		"kind":                 input.Kind,
+		"name":                 input.Name,
+		"api_group":            input.APIGroup,
+		"ambiguity_reason":     result.AmbiguityReason,
+		"candidate_api_groups": encodeAPIGroups(result.CandidateAPIGroups),
+	}
+	if withCandidate {
+		detail["candidate_alert"] = result.AlertName
+		detail["candidate_severity"] = result.Severity
+	}
+	t.auditor.Emit(ctx, &audit.Event{Type: audit.EventSeverityTriageAmbiguous, Detail: detail})
+}
+
+// resolvesAmbiguity reports whether the caller's confirmation resolves the
+// result's specific ambiguity reason (#2658: reason-scoped adjudication). A
+// signal-name confirmation only resolves cluster_scoped_only; a group
+// confirmation only resolves group_unscopable — neither can bypass the
+// other's gate.
+func resolvesAmbiguity(result TriageResult, input TriageInput) bool {
+	switch result.AmbiguityReason {
+	case AmbiguityReasonClusterScopedOnly:
+		return result.AlertName != "" && result.AlertName == input.ConfirmedSignalName
+	case AmbiguityReasonGroupUnscopable:
+		group, state := scope.NormalizeAPIGroup(input.ConfirmedAPIGroup)
+		return state == scope.NormalizeStateResolvedGroup && group == input.APIGroup
+	default:
+		return false
+	}
+}
+
+// applyGroupScopeGate enforces the #2658 sibling-existence rule on a positive
+// correlation. Fleet-mode targets adjudicate as today (no per-cluster reader
+// exists; the deviation is logged and audited upstream via the ambiguous
+// emission contract) — the maintainer-approved rule is to fail closed only
+// when a sibling is actually found, and in fleet mode the check cannot run.
+func (t *Triager) applyGroupScopeGate(ctx context.Context, input TriageInput, result TriageResult) (TriageResult, error) {
+	// The user's own-group confirmation is the resolution for the whole
+	// ambiguity class, so it is honoured before the sibling probe: when the
+	// check itself is unavailable, a confirmation is the only way out and
+	// must not dead-end (the sibling-vs-target distinction below still
+	// applies whenever the probe does run).
+	confirmedGroup, confirmedState := scope.NormalizeAPIGroup(input.ConfirmedAPIGroup)
+	if confirmedState == scope.NormalizeStateResolvedGroup && confirmedGroup == input.APIGroup {
+		return result, nil
+	}
+
+	if input.FleetMode && input.ClusterID != "" {
+		t.logger.Info("group-scope gate skipped: no per-cluster sibling reader in fleet mode (documented deviation, #2658)",
+			"namespace", input.Namespace, "kind", input.Kind, "name", input.Name, "cluster", input.ClusterID)
+		return result, nil
+	}
+
+	ambiguous := func(reason string, siblings []string) (TriageResult, error) {
+		result.Ambiguous = true
+		result.AmbiguityReason = reason
+		result.CandidateAPIGroups = siblings
+		result.CandidateIdentifier = result.AlertName
+		if result.RuleName != "" {
+			result.CandidateIdentifier = result.RuleName
+		}
+		// An alert name must never be usable to bypass the group gate
+		// (#2658 R3-3): clear it so ConfirmedSignalName cannot match.
+		result.AlertName = ""
+		return result, &AmbiguousSeverityError{Candidate: result}
+	}
+
+	if t.siblingChecker == nil {
+		t.logger.Info("group-scope gate fails closed: no sibling checker wired",
+			"namespace", input.Namespace, "kind", input.Kind, "name", input.Name)
+		return ambiguous(AmbiguityReasonGroupUnscopable, nil)
+	}
+	siblings, err := t.siblingChecker.CheckCrossGroupSiblings(ctx, input.Namespace, input.Kind, input.Name, input.APIGroup)
+	if err != nil {
+		t.logger.Info("group-scope gate fails closed: sibling check unavailable",
+			"namespace", input.Namespace, "kind", input.Kind, "name", input.Name, "error", err.Error())
+		return ambiguous(AmbiguityReasonGroupUnscopable, nil)
+	}
+	if len(siblings) == 0 {
+		return result, nil // unique instance: adjudicate as today
+	}
+
+	if confirmedState == scope.NormalizeStateResolvedGroup {
+		for _, sibling := range siblings {
+			if confirmedGroup == sibling {
+				// The user attests the alert refers to the sibling's
+				// resource: its severity must not be inherited.
+				return ambiguous(AmbiguityReasonAlertBelongsToSibling, siblings)
+			}
+		}
+	}
+	return ambiguous(AmbiguityReasonGroupUnscopable, siblings)
 }
 
 func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (TriageResult, error) {
@@ -378,10 +552,12 @@ func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]
 	case clusterFiring.found:
 		result := clusterFiring.result(SourceClusterFiringAlert)
 		result.Ambiguous = true
+		result.AmbiguityReason = AmbiguityReasonClusterScopedOnly
 		return result, true
 	case clusterPending.found:
 		result := clusterPending.result(SourceClusterPendingAlert)
 		result.Ambiguous = true
+		result.AmbiguityReason = AmbiguityReasonClusterScopedOnly
 		return result, true
 	}
 	return TriageResult{}, false

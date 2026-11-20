@@ -25,3 +25,9 @@ type SignalInteractiveRequest = signalInteractiveRequest
 // SignalInteractiveMaxAttempts exposes signalInteractiveMaxAttempts for
 // external test packages asserting exact retry-exhaustion counts (#2289).
 const SignalInteractiveMaxAttempts = signalInteractiveMaxAttempts
+
+// CreateRRForInvestigation exposes createRRForInvestigation for external test
+// packages so the #2658 confirmed_api_group mapping (InvestigatemcpArgs ->
+// CreateRRArgs) can be proven without the full MCP await machinery
+// (IT-AF-2658-104).
+var CreateRRForInvestigation = createRRForInvestigation

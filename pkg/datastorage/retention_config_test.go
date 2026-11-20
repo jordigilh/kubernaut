@@ -56,7 +56,7 @@ var _ = Describe("UT-DS-1048-P5: Retention Configuration", func() {
 					Host: "localhost", Port: 5432, Name: "test", User: "test",
 					StatementTimeout: "30s", LockTimeout: "10s",
 				},
-				Redis: config.RedisConfig{Addr: "localhost:6379"},
+				Redis:     config.RedisConfig{Addr: "localhost:6379"},
 				Retention: config.RetentionConfig{Interval: "not-a-duration"},
 			}
 			err := cfg.Validate()

@@ -27,7 +27,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:test", Namespace: "payments",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:test", Namespace: "payments",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
@@ -40,7 +40,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:test", Namespace: "empty",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:test", Namespace: "empty",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(0))
@@ -53,7 +53,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:test", Namespace: "pay",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:test", Namespace: "pay",
 		})
 		Expect(err).To(HaveOccurred())
 	})
@@ -66,7 +66,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:test", Since: "2026-01-01",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:test", Since: "2026-01-01",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
@@ -80,7 +80,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "", Name: "api", SpecHash: "sha256:abc123",
+			Kind: "", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:abc123",
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("kind is required"))
@@ -94,7 +94,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "", SpecHash: "sha256:abc123",
+			Kind: "Deployment", Name: "", APIVersion: "apps/v1", SpecHash: "sha256:abc123",
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("name is required"))
@@ -108,7 +108,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "",
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("spec_hash is required"))
@@ -123,11 +123,12 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Namespace: "prod", Kind: "Deployment", Name: "api", SpecHash: "sha256:abc123",
+			Namespace: "prod", Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:abc123",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
 		Expect(capturedOpts.SpecHash).To(Equal("sha256:abc123"))
+		Expect(capturedOpts.APIVersion).To(Equal("apps/v1"))
 	})
 
 	It("UT-AF-1462-005: empty namespace is allowed for cluster-scoped resources", func() {
@@ -139,11 +140,25 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "ClusterRole", Name: "admin", SpecHash: "sha256:def456",
+			Kind: "ClusterRole", Name: "admin", APIVersion: "apps/v1", SpecHash: "sha256:def456",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
 		Expect(capturedOpts.Namespace).To(BeEmpty())
+	})
+
+	It("UT-AF-2658-008: missing api_version is rejected instead of querying the unresolved identity", func() {
+		mock := &ds.MockClient{
+			GetRemediationHistoryFn: func(ctx context.Context, opts ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
+				Fail("DS client must not be called without an api_version (#2658 fail-closed)")
+				return nil, nil
+			},
+		}
+		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
+			Kind: "Deployment", Name: "api", SpecHash: "sha256:abc123",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("api_version is required"))
 	})
 
 	It("UT-AF-1462-E01: spec_hash without sha256: prefix returns format error", func() {
@@ -154,7 +169,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "md5:badprefix",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "md5:badprefix",
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("sha256: prefix"))
@@ -167,7 +182,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:e3b0c44298fc1c149afbf4c8996fb924",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
@@ -182,7 +197,7 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 			},
 		}
 		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
-			Kind: "Deployment", Name: "api", SpecHash: "sha256:abc123", Since: "24h",
+			Kind: "Deployment", Name: "api", APIVersion: "apps/v1", SpecHash: "sha256:abc123", Since: "24h",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(capturedOpts.Since).To(Equal("24h"))

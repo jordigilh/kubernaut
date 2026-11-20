@@ -19,7 +19,6 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -64,7 +63,7 @@ var _ = Describe("E2E-KA-1802-001: fleet cluster_id scoping isolates remediation
 		ns := "production"
 		kind := "Deployment"
 		name := "app-1802-" + testID
-		target := fmt.Sprintf("%s/%s/%s", ns, kind, name)
+		target := groupedTargetKey(ns, kind, name)
 		// Must match k8sFixtureClient.GetSpecHash's fixed return value, since
 		// this journey lets Enrich() auto-compute the spec hash via the
 		// fixture K8s client rather than passing one explicitly.
@@ -138,7 +137,8 @@ var _ = Describe("E2E-KA-1802-001: fleet cluster_id scoping isolates remediation
 		invB, mockClientB := newInvestigator()
 		_, err = invB.Investigate(context.Background(), katypes.SignalContext{
 			Name: "OOMKilled", Namespace: ns, ResourceKind: kind, ResourceName: name,
-			ClusterID: clusterB, RemediationID: "rem-1802e2e-b-" + testID,
+			ResourceAPIVersion: "apps/v1",
+			ClusterID:          clusterB, RemediationID: "rem-1802e2e-b-" + testID,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		// calls[0] = Phase 1 (RCA) initial prompt; calls[1] = Phase 3 (workflow
@@ -156,7 +156,8 @@ var _ = Describe("E2E-KA-1802-001: fleet cluster_id scoping isolates remediation
 		invA, mockClientA := newInvestigator()
 		_, err = invA.Investigate(context.Background(), katypes.SignalContext{
 			Name: "OOMKilled", Namespace: ns, ResourceKind: kind, ResourceName: name,
-			ClusterID: clusterA, RemediationID: "rem-1802e2e-a-" + testID,
+			ResourceAPIVersion: "apps/v1",
+			ClusterID:          clusterA, RemediationID: "rem-1802e2e-a-" + testID,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(mockClientA.calls)).To(BeNumerically(">=", 2))

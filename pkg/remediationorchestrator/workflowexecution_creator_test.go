@@ -241,7 +241,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(err).NotTo(HaveOccurred())
 			created := &workflowexecutionv1.WorkflowExecution{}
 			Expect(fakeClient.Get(context.Background(), client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)).To(Succeed())
-			Expect(created.Spec.TargetResource).To(Equal("reviewed/Pod/reviewed-pod"))
+			Expect(created.Spec.TargetResource).To(Equal("reviewed/core/v1/Pod/reviewed-pod"))
 		})
 		It("should use RCA RemediationTarget namespace/kind/name when namespaced (LLM identified Deployment)", func() {
 			// Arrange: AI with RootCauseAnalysis.RemediationTarget (namespaced)
@@ -252,9 +252,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Pod crash loop - parent Deployment needs rollback",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "my-app",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "my-app",
+					APIVersion: "apps/v1",
 				},
 			}
 			ctx := context.Background()
@@ -267,7 +268,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.TargetResource).To(Equal("prod/Deployment/my-app"),
+			Expect(created.Spec.TargetResource).To(Equal("prod/apps/v1/Deployment/my-app"),
 				"BR-KA-212: WorkflowExecution must use LLM-identified Deployment for correct patching target")
 		})
 
@@ -295,7 +296,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.TargetResource).To(Equal("Node/worker-1"),
+			Expect(created.Spec.TargetResource).To(Equal("core/v1/Node/worker-1"),
 				"BR-KA-212: Cluster-scoped resources use kind/name format")
 		})
 
@@ -323,7 +324,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.TargetResource).To(Equal("default/Pod/test-pod"),
+			Expect(created.Spec.TargetResource).To(Equal("default/core/v1/Pod/test-pod"),
 				"BR-KA-212: Fallback to RR TargetResource when RemediationTarget incomplete")
 		})
 
@@ -351,12 +352,12 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.TargetResource).To(Equal("default/Pod/test-pod"))
+			Expect(created.Spec.TargetResource).To(Equal("default/core/v1/Pod/test-pod"))
 		})
 	})
 
 	Describe("BuildTargetResourceString", func() {
-		It("should format namespaced resources as 'namespace/kind/name' per BR-ORCH-025", func() {
+		It("should format namespaced resources as namespace/group/version/Kind/name (#2658)", func() {
 			// Arrange
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 
@@ -364,7 +365,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			result := creator.BuildTargetResourceString(rr)
 
 			// Assert - default testutil creates a Pod in default namespace
-			Expect(result).To(Equal("default/Pod/test-pod"))
+			Expect(result).To(Equal("default/core/v1/Pod/test-pod"))
 		})
 
 		It("should format cluster-scoped Node as 'kind/name' per BR-ORCH-025", func() {
@@ -376,7 +377,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			result := creator.BuildTargetResourceString(rr)
 
 			// Assert
-			Expect(result).To(Equal("Node/worker-1"))
+			Expect(result).To(Equal("core/v1/Node/worker-1"))
 		})
 
 		It("should format cluster-scoped PersistentVolume as 'kind/name' per BR-ORCH-025", func() {
@@ -388,7 +389,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			result := creator.BuildTargetResourceString(rr)
 
 			// Assert
-			Expect(result).To(Equal("PersistentVolume/my-pv"))
+			Expect(result).To(Equal("core/v1/PersistentVolume/my-pv"))
 		})
 	})
 

@@ -27,7 +27,7 @@ import (
 
 type historyFailureDSClient2511 struct{}
 
-func (historyFailureDSClient2511) GetRemediationHistory(context.Context, string, string, string, string, string) (*enrichment.RemediationHistoryResult, error) {
+func (historyFailureDSClient2511) GetRemediationHistory(context.Context, enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	return nil, errors.New("simulated history backend outage")
 }
 
@@ -110,7 +110,7 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			}},
 		}}}
 		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
-			"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+			"Deployment/api-a/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
 		}}
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
@@ -176,7 +176,7 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			cancel: cancel,
 		}
 		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
-			"Deployment/api-a/prod": recurrentHistory2511("prod/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
+			"Deployment/api-a/prod": recurrentHistory2511("prod/apps/v1/Deployment/api-a", "rotate_certificate", "TLSHandshakeFailure"),
 		}}
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
@@ -268,7 +268,7 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			cancel: cancel,
 		}
 		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
-			"Deployment/api/prod": recurrentHistory2511("prod/Deployment/api", "rotate_certificate", "TLSHandshakeFailure"),
+			"Deployment/api/prod": recurrentHistory2511("prod/apps/v1/Deployment/api", "rotate_certificate", "TLSHandshakeFailure"),
 		}}
 		builder, err := prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())

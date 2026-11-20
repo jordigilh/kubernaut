@@ -132,7 +132,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					UID:       types.UID("test-uid-completed"),
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -198,7 +198,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					UID:       types.UID("test-uid-failed"),
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -264,7 +264,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					UID:       types.UID("test-uid-prefail"),
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -377,7 +377,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				Finalizers: []string{workflowexecution.FinalizerName},
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "default/deployment/test-app",
+				TargetResource: "default/apps/v1/Deployment/test-app",
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      uuid.New().String(),

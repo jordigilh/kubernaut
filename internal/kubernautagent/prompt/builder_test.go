@@ -78,7 +78,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			enrichData := &prompt.EnrichmentData{
 				OwnerChain: []string{"Deployment/api-server"},
 				HistoryResult: &enrichment.RemediationHistoryResult{
-					TargetResource: "production/Pod/api-server-abc",
+					TargetResource: "production/core/v1/Pod/api-server-abc",
 					Tier1: []enrichment.Tier1Entry{
 						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
 					},
@@ -105,7 +105,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			resolved := true
 			enrichData := &prompt.EnrichmentData{
 				HistoryResult: &enrichment.RemediationHistoryResult{
-					TargetResource: "production/Deployment/api-server",
+					TargetResource: "production/apps/v1/Deployment/api-server",
 					Tier1: []enrichment.Tier1Entry{
 						{RemediationUID: "oom-1", ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated", SignalResolved: &resolved, CompletedAt: time.Now().Add(-time.Hour)},
 						{RemediationUID: "oom-2", ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated", SignalResolved: &resolved, CompletedAt: time.Now()},

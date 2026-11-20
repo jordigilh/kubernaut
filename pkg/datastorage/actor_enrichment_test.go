@@ -37,7 +37,7 @@ var _ = Describe("UT-DS-1048-P5: Actor Identity Enrichment (AU-3)", func() {
 			EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 			EventTimestamp: time.Now().UTC().Truncate(time.Millisecond),
 			CorrelationID:  "corr-enrichment-test",
-			EventData:        ogenclient.AuditEventRequestEventData{},
+			EventData:      ogenclient.AuditEventRequestEventData{},
 		}
 	})
 

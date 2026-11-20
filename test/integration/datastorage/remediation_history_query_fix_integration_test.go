@@ -52,7 +52,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 	BeforeEach(func() {
 		testCtx = context.Background()
 		testID = generateTestID()
-		targetResource = fmt.Sprintf("default/Deployment/nginx-%s", testID)
+		targetResource = fmt.Sprintf("default/apps/v1/Deployment/nginx-%s", testID)
 		rhRepo = repository.NewRemediationHistoryRepository(db.DB, logger)
 	})
 
@@ -210,7 +210,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertEMHashEvent(cid, preHash, postHash, now.Add(-1*time.Hour))
 
 		// Query with currentSpecHash=postHash: should find the RO event via post-hash subquery
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", postHash, now.Add(-3*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: postHash, Since: now.Add(-3 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event found via post-hash EM correlation")
@@ -227,7 +227,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertROEvent(cid, targetResource, preHash, "RestartPod", now.Add(-2*time.Hour))
 
 		// Query with currentSpecHash=preHash: should find via pre-hash match
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", preHash, now.Add(-3*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: preHash, Since: now.Add(-3 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event matching pre-hash")
@@ -251,7 +251,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertEMHashEvent(cidPost, otherHash, targetHash, now.Add(-1*time.Hour))
 
 		// Query with currentSpecHash=targetHash: should find both RO events
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", targetHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: targetHash, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "Should return 2 RO events: one from pre-hash, one from post-hash path")
@@ -273,7 +273,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertFullEMEvents(cid, preHash, postHash, now.Add(-1*time.Hour))
 
 		// Query RO events by post-hash
-		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", postHash, now.Add(-3*time.Hour), now)
+		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: postHash, Since: now.Add(-3 * time.Hour), Until: now})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(roRows).ToNot(BeEmpty(), "Should find RO events via post-hash")
 
@@ -324,7 +324,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertROEvent(cid3, targetResource, hash1, "IncreaseMemoryLimits", now.Add(-1*time.Hour))
 		insertEMHashEvent(cid3, hash1, currentHash, now.Add(-59*time.Minute))
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: currentHash, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(3), "the current hash must expose every prior linked remediation")
@@ -349,7 +349,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertEMHashEvent(recentCID, bridgeHash, currentHash, now.Add(-11*time.Hour-59*time.Minute))
 
 		tier1Since := now.Add(-24 * time.Hour)
-		tier1Rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, tier1Since, now)
+		tier1Rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: currentHash, Since: tier1Since, Until: now})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(tier1Rows).To(HaveLen(1), "the recent bridge must appear in Tier 1")
 		Expect(tier1Rows[0].CorrelationID).To(Equal(recentCID))
@@ -360,7 +360,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		// coordination directly, without introducing HTTP into this integration
 		// test.
 		tier2Since := now.Add(-72 * time.Hour)
-		tier2AllRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, tier2Since, now)
+		tier2AllRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: currentHash, Since: tier2Since, Until: now})
 		Expect(err).ToNot(HaveOccurred())
 		tier2Rows := make([]repository.RawAuditRow, 0, len(tier2AllRows))
 		for _, row := range tier2AllRows {
@@ -404,10 +404,10 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertROEvent(futureCID, targetResource, futureHash, "ScaleUp", now.Add(-30*time.Minute))
 		insertEMHashEvent(futureCID, futureHash, bridgeHash, now.Add(-29*time.Minute))
 		insertROEvent(malformedCID, targetResource, bridgeHash, "RestartPod", now.Add(-3*time.Hour))
-		insertROEvent(otherTargetCID, "other/Deployment/nginx", initialHash, "IncreaseMemoryLimits", now.Add(-2*time.Hour-1*time.Minute))
+		insertROEvent(otherTargetCID, "other/apps/v1/Deployment/nginx", initialHash, "IncreaseMemoryLimits", now.Add(-2*time.Hour-1*time.Minute))
 		insertEMHashEvent(otherTargetCID, initialHash, bridgeHash, now.Add(-2*time.Hour))
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: currentHash, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "only the causal prior and anchor remediations belong to the chain")
@@ -428,7 +428,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertROEvent(cidB, targetResource, hashB, "IncreaseMemoryLimits", now.Add(-2*time.Hour))
 		insertEMHashEvent(cidB, hashB, hashA, now.Add(-119*time.Minute))
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", hashB, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: hashB, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2))
@@ -456,7 +456,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		insertClusterROEvent(priorB, targetResource, "cluster-b", initialHash, "IncreaseMemoryLimits", now.Add(-2*time.Hour-1*time.Minute))
 		insertClusterEMHashEvent(priorB, "cluster-b", initialHash, bridgeHash, now.Add(-2*time.Hour))
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "cluster-a", currentHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "cluster-a", SpecHash: currentHash, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "recursive traversal must exclude the same-target candidate from another cluster")
@@ -521,7 +521,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 			now, testID, leafHash, bridgeHash, branchCount)
 		Expect(err).ToNot(HaveOccurred())
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: currentHash, Since: now.Add(-4 * time.Hour), Until: now})
 
 		Expect(errors.Is(err, repository.ErrRemediationHistoryResourceLimit)).To(BeTrue())
 		Expect(rows).To(BeNil())
