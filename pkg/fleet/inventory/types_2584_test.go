@@ -2,6 +2,7 @@ package inventory_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -98,11 +99,19 @@ var _ = Describe("BR-SCOPE-001: canonical inventory contract", func() {
 			}
 		}
 
+		// DD-FLEET-017 D3 (UT-FMC-INV-2661-007): a page that claims inventory
+		// must also carry a supported freshness state and as_of, so every
+		// fixture below is contract-valid. The assertions are unchanged.
+		freshness := func() inventory.Freshness {
+			return inventory.Freshness{State: inventory.FreshnessFresh, AsOf: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}
+		}
+
 		It("UT-AF-2584-008 [BR-API-001]: requires complete success pages to contain validated items", func() {
 			resource := validResource()
 			page := inventory.Page{
 				State:        inventory.StateSuccess,
 				Completeness: inventory.CompletenessComplete,
+				Freshness:    freshness(),
 				Items:        []inventory.Resource{resource},
 			}
 			Expect(page.Validate()).To(Succeed())
@@ -112,7 +121,7 @@ var _ = Describe("BR-SCOPE-001: canonical inventory contract", func() {
 		})
 
 		It("UT-AF-2584-008 [BR-API-001]: requires complete empty pages and partial state-only failure pages", func() {
-			empty := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete}
+			empty := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: freshness()}
 			Expect(empty.Validate()).To(Succeed())
 
 			empty.Completeness = inventory.CompletenessPartial
@@ -130,6 +139,7 @@ var _ = Describe("BR-SCOPE-001: canonical inventory contract", func() {
 			page := inventory.Page{
 				State:        inventory.StateSuccess,
 				Completeness: inventory.CompletenessComplete,
+				Freshness:    freshness(),
 				Items:        []inventory.Resource{resource},
 			}
 			resource.ID = "r-" + "1111111111111111111111111111111111111111111111111111111111111111"

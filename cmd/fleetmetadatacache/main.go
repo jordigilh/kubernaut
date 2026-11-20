@@ -411,7 +411,16 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Lo
 		logger.Error(err, "Failed to create FMC scope cache client")
 		os.Exit(1)
 	}
-	apiHandler := fmc.NewHandler(scopeClient, deps.clusterRegistry, logger)
+	// DD-FLEET-017 D2.1 / Test Plan wiring row 1: FMC serves the bounded
+	// managed-resource inventory projection over the same proven cache the
+	// scope lane reads, on the same authenticated mux. Without this the
+	// /api/v1/inventory/managed-resources client has no server (gap G1).
+	inventoryReader, err := fmc.NewInventoryReader(deps.statusStore, deps.registrationGuard, deps.readiness, fmc.InventoryReaderConfig{})
+	if err != nil {
+		logger.Error(err, "Failed to create FMC inventory page reader")
+		os.Exit(1)
+	}
+	apiHandler := fmc.NewHandlerWithInventory(scopeClient, deps.clusterRegistry, inventoryReader, logger)
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
 
