@@ -369,6 +369,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		Expect(payload.ConsecutiveFailures.Value).To(Equal(
 			fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount),
 			"audit count must match the persisted re-block count")
+		Expect(payload.TargetResource.Value).To(Equal(ns+"/Deployment/test-app"),
+			"target_resource must preserve Kind casing through the production wiring path")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-005: RR %s re-blocked (failureCount: %d→%d, events: %d)\n",
 			rrName, initialFailureCount, fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount, len(events))
