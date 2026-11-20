@@ -49,11 +49,12 @@ returning `partition_unavailable`/`partition_invalid` — they are never flatten
 
 ## Scope
 
-Production changes (5 enforcement points):
+Production changes (6 enforcement points):
 
 | File | Change |
 |---|---|
 | `pkg/fleet/fmc/syncer.go` | `buildObservedResource` no longer rejects `LabelStateInvalid` |
+| `pkg/fleet/fmc/syncer.go` | legacy lane validates the whole observation set before any write (UT-FMC-2686-009) |
 | `pkg/fleet/scopecache/lifecycle.go` | `Observation.Validate` accepts `LabelStateInvalid` |
 | `pkg/fleet/scopecache/repair_contract.go` | `RepairObservation.Validate` accepts `LabelStateInvalid` |
 | `pkg/fleet/scopecache/status_store.go` | `decodeReadVerified` accepts a stored `invalid` |
@@ -89,7 +90,7 @@ No new components; the change relaxes validation on the existing wired chain.
 |----|----------|----------|----------|
 | UT-FMC-2686-005 | legacy lane: source item with invalid label state | sync succeeds; `SetObservation` receives `LabelStateInvalid` (legacy readers fail closed) | yes |
 | UT-FMC-2686-006 | repair lane: full lifecycle `SyncCluster` with an invalid-label item | sync succeeds (no error); the repair request carries the observation with `LabelState == invalid` | yes |
-| UT-FMC-2686-009 | legacy write lane: reader emits a label state outside `writableLabelState` | sync fails closed; nothing is written to the cache (both lanes share the single write-boundary rule) | yes |
+| UT-FMC-2686-009 | legacy write lane: reader emits a label state outside `knownLabelState` | sync fails closed; nothing is written to the cache (both lanes share the single write-boundary rule) | yes |
 
 ### Integration (wiring)
 

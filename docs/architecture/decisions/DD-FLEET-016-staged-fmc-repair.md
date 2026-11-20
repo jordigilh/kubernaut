@@ -65,7 +65,7 @@ therefore carries it like any other label state:
 - `buildObservedResource` no longer rejects `scope.LabelStateInvalid`; the item is staged
   by `repair_reconcile` with `label_state=invalid` and installed by the atomic commit swap.
 - `Observation.Validate`, `RepairObservation.Validate`, `decodeReadVerified` and the Lua
-  `read_verified` whitelist accept `invalid` (`writableLabelState` is the single Go rule).
+  `read_verified` whitelist accept `invalid` (`knownLabelState` is the single Go rule).
 - The read side (already shipped before this amendment) maps a committed `invalid` record
   to `ScopeInvalid`/`invalid_resource_label` — fail closed.
 
@@ -77,7 +77,7 @@ decisive on invalid labels), and readiness/partition failures keep their own out
 A structurally malformed source payload still fails the scan (source incomplete), which
 keeps the unavailable outcome.
 
-## Alternatives considered (invalid-label revocation, #2686)
+## Alternatives considered
 
 - **Reduce repair cadence** (skip repair while TTL fresh): keeps outages,
   grows staleness; rejected as a partial remedy.
@@ -89,6 +89,9 @@ keeps the unavailable outcome.
 - **Status quo plus client retry expansion**: weakens the approved AF retry
   budget (3 attempts / 2s total) without fixing the availability defect.
   Rejected.
+
+### Invalid-label revocation (#2686) alternatives
+
 - **Keep rejecting invalid observations at the writer (fail to last-good
   until TTL)**: retained a bounded fail-open authorization window after a
   managed label became invalid (#2686). Rejected in favor of the

@@ -344,7 +344,7 @@ func (s *Syncer) syncLegacyCluster(ctx context.Context, cluster registry.Cluster
 			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "duplicate_identity").Inc()
 			return err
 		}
-		// #2686: both write lanes share writableLabelState as the single
+		// #2686: both write lanes share knownLabelState as the single
 		// write-boundary rule, so a non-conforming reader state fails the
 		// cycle closed before any cache mutation, mirroring the fenced
 		// lane's whole-set validation before staging.

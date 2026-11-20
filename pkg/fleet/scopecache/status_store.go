@@ -419,7 +419,7 @@ func decodeReadVerified(items []interface{}) (readVerifiedProof, error) {
 	labelState := scope.LabelState(scriptString(items, 1))
 	// #2686: an invalid label state is a committed, decisive observation; the
 	// client maps it to a fail-closed ScopeInvalid (invalid_resource_label).
-	if !writableLabelState(labelState) {
+	if !knownLabelState(labelState) {
 		return readVerifiedProof{}, fmt.Errorf("invalid read label state %q", labelState)
 	}
 	return readVerifiedProof{

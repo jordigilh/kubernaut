@@ -124,7 +124,7 @@ func (o RepairObservation) Validate() error {
 	if err != nil || gv.Version == "" || gv.Group != o.Identity.Group || gv.Version != o.Identity.Version {
 		return fmt.Errorf("repair observation apiVersion does not match identity")
 	}
-	if !writableLabelState(o.LabelState) {
+	if !knownLabelState(o.LabelState) {
 		return fmt.Errorf("repair observation label state is invalid")
 	}
 	if o.TTL <= 0 {

@@ -38,7 +38,7 @@ import (
 // an explicitly invalid managed-label state (e.g. kubernaut.ai/managed:
 // "banana"), exactly what observation.ObservedItem.LabelState preserves for
 // the syncer (#2686). A non-nil outOfWhitelist state exercises the write
-// boundary's rejection of states outside writableLabelState.
+// boundary's rejection of states outside knownLabelState.
 type invalidLabelReader struct {
 	outOfWhitelist scope.LabelState
 }
@@ -140,7 +140,7 @@ var _ = Describe("FMC syncer invalid-label observation (BR-SCOPE-001, #2686)", f
 
 		err := syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})
 		Expect(err).To(MatchError(ContainSubstring("unsupported observation label state")),
-			"both write lanes share writableLabelState as the single write-boundary rule")
+			"both write lanes share knownLabelState as the single write-boundary rule")
 		Expect(writer.keysWritten).To(BeEmpty(), "a rejected observation must not reach the cache")
 	})
 })
