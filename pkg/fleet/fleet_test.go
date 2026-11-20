@@ -408,15 +408,22 @@ var _ = Describe("FleetConfig.ValidateFullFederation — GW/RO dual-capability r
 		Expect(err.Error()).To(ContainSubstring("mcpGatewayEndpoint"))
 	})
 
-	It("UT-FLEET-CFG-042: rejects Enabled=true with only MCPGatewayEndpoint configured (no Backend/Endpoint)", func() {
+	// DD-FLEET-017 increment 1d: an absent backend resolves to FMC, whose
+	// endpoint is derivable, so "only MCP configured" is no longer a dual-
+	// capability failure — it is the operator's post-facade shape.
+	It("UT-FLEET-CFG-042: accepts Enabled=true with only MCPGatewayEndpoint configured, deriving the FMC scope endpoint", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
 		cfg := fleet.FleetConfig{
 			Enabled:            true,
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
 		}
-		err := cfg.ValidateFullFederation()
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("backend"))
+		Expect(cfg.ValidateFullFederation()).To(Succeed(),
+			"absent backend means the facade default (FMC); its endpoint is derived")
+		Expect(cfg.EffectiveEndpoint()).To(Equal(
+			"https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
+			"GW/RO must reach FMC even when the renderer omits backend and endpoint")
 	})
 
 	It("UT-FLEET-CFG-043: accepts Enabled=true with both capabilities fully configured", func() {
@@ -686,5 +693,68 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 
 		mc := fleet.MCPGatewayConfig{Resilience: fleet.FleetResilienceConfig{DiscoverProbeTimeout: 2 * time.Second}}
 		Expect(mc.Resilience.DiscoverProbeTimeout).To(Equal(2 * time.Second))
+	})
+})
+
+// DD-FLEET-017 increment 1d (ADR-068 peer→facade, 2026-11-18 amendment):
+// FMC is the single caller-facing fleet-control-plane contact, so an absent
+// backend means FMC instead of being invalid. Explicit backends keep their
+// previous behaviour until the peer scaffolding is deleted.
+var _ = Describe("FleetConfig facade default (DD-FLEET-017 increment 1d)", func() {
+	It("UT-FLEET-CFG-024 [CM-6]: absent backend with an explicit endpoint validates and uses it", func() {
+		cfg := fleet.FleetConfig{Enabled: true, Endpoint: "https://fmc.example:8080"}
+
+		Expect(cfg.Validate()).To(Succeed(),
+			"absent backend resolves to FMC, so the explicit endpoint is a valid scope-check target")
+		Expect(cfg.EffectiveEndpoint()).To(Equal("https://fmc.example:8080"))
+	})
+
+	It("UT-FLEET-CFG-025 [CM-6]: absent backend with no endpoint derives the FMC service URL", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{Enabled: true}
+
+		Expect(cfg.EffectiveEndpoint()).To(Equal(
+			"https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
+			"the facade default must derive the same URL as an explicit fleetmetadatacache backend")
+	})
+
+	It("UT-FLEET-CFG-026 [CM-6]: an explicit acm backend still requires an endpoint", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "acm",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+
+		Expect(cfg.ValidateFullFederation()).To(MatchError(ContainSubstring("endpoint")),
+			"the facade default must not silently derive an FMC URL for an explicit acm backend")
+	})
+
+	It("UT-FLEET-CFG-027 [CM-6]: an unsupported backend is still rejected", func() {
+		cfg := fleet.FleetConfig{Enabled: true, Backend: "valkey", Endpoint: "https://fmc.example:8080"}
+
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring("unsupported backend")))
+	})
+
+	It("UT-FLEET-CFG-028 [SC-7]: an explicit acm backend still requires a token path", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "acm",
+			Endpoint: "https://acm.example:4010",
+		}
+
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring("tokenPath")),
+			"#1556: ACM Search requires bearer-token auth; the facade default must not weaken that")
+	})
+
+	It("UT-FLEET-CFG-029 [CM-6]: absent backend builds the FMC inventory reader", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		reader, err := fleet.NewInventoryReader(fleet.FleetConfig{Enabled: true})
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(reader).ToNot(BeNil(),
+			"the facade default must construct the Console inventory lane, not leave it nil")
 	})
 })
