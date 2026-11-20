@@ -90,8 +90,6 @@ spec:
       endpoint: https://mcp-gateway.envoy-gateway-system.svc.cluster.local:8080/mcp
       type: eaigw
       namespace: mcp-system
-    scopeCheck:
-      backend: fleetmetadatacache
     oauth2:
       tokenURL: https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token
       credentialsSecretRef: fleet-oauth2-creds
