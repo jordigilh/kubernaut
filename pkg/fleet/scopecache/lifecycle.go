@@ -94,13 +94,25 @@ type Observation struct {
 	TTL        time.Duration
 }
 
+// writableLabelState reports whether s is one of the bounded label states a
+// complete source observation can carry. #2686: invalid is included — an
+// invalid managed-label value is a decisive observation that must be staged,
+// committed and served so readers fail closed instead of retaining the last
+// committed authorization until TTL (DD-FLEET-016 amendment, BR-SCOPE-001).
+func writableLabelState(s scope.LabelState) bool {
+	switch s {
+	case scope.LabelStateTrue, scope.LabelStateFalse, scope.LabelStateAbsent, scope.LabelStateInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
 func (o Observation) Validate() error {
 	if err := o.Identity.Validate(); err != nil {
 		return err
 	}
-	switch o.LabelState {
-	case scope.LabelStateTrue, scope.LabelStateFalse, scope.LabelStateAbsent:
-	default:
+	if !writableLabelState(o.LabelState) {
 		return fmt.Errorf("unsupported observation label state %q", o.LabelState)
 	}
 	if o.TTL <= 0 {

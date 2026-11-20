@@ -427,7 +427,9 @@ if op == 'read_verified' then
     return {'missing'}
   end
   local label_state = redis.call('HGET', record, 'label_state')
-  if label_state ~= 'true' and label_state ~= 'false' and label_state ~= 'absent' then
+  -- #2686: 'invalid' is a committed, decisive observation (fail closed on the
+  -- read side); only structurally unknown states are rejected.
+  if label_state ~= 'true' and label_state ~= 'false' and label_state ~= 'absent' and label_state ~= 'invalid' then
     return redis.error_reply('INVALID_LABEL_STATE')
   end
   local now = now_ms()

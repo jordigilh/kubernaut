@@ -721,9 +721,11 @@ func (s *Syncer) buildObservedResource(
 	if !scope.IsClusterScopedKind(kind) && namespace == "" {
 		return observedResource{}, fmt.Errorf("syncKind: namespaced kind=%s has empty namespace", kind)
 	}
-	if item.LabelState == scope.LabelStateInvalid {
-		return observedResource{}, fmt.Errorf("syncKind: invalid managed label for cluster=%s kind=%s namespace=%s name=%s", cluster.ID, item.Object.GetKind(), namespace, item.Object.GetName())
-	}
+	// #2686: an invalid managed-label value is a complete, decisive source
+	// observation, not a failed scan. It is staged and committed like any
+	// other label state so the read side fails closed immediately instead of
+	// retaining the last committed authorization until TTL (DD-FLEET-016
+	// invalid-label observations amendment; BR-SCOPE-001).
 	key, err := scopecache.BuildKey(cluster.ID, itemGV.Group, itemGV.Version, item.Object.GetKind(), namespace, item.Object.GetName())
 	if err != nil {
 		return observedResource{}, fmt.Errorf("syncKind: invalid resource metadata for cluster=%s kind=%s namespace=%s name=%s: %w",

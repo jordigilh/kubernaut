@@ -15,6 +15,15 @@
 > `ErrScopeUnavailable` for missing/invalid/unsupported/denied authority or errors.
 > Existing-RR takeover remains distinct from new-RR admission under ADR-068.
 
+> **Fenced-lane invalid-label amendment (2026-11-20, #2686):** an invalid
+> `kubernaut.ai/managed` label value is a complete, decisive source observation.
+> The FMC writer stages and commits it (DD-FLEET-016 "Invalid-label
+> observations"), so a committed `invalid` record revokes a previously committed
+> authorization at the next committed repair instead of retaining the last-good
+> record until TTL. Local and fenced lanes share the rule; missing/uncertain
+> evidence stays `unavailable` and is never flattened into `invalid` or
+> `unmanaged`.
+
 > **Note (2026-02-24)**: [ADR-057](ADR-057-crd-namespace-consolidation.md) supersedes this ADR's
 > implicit assumption that CRDs are created in the signal/workload namespace. Per ADR-057, **all
 > kubernaut CRDs are created in the controller namespace** (`kubernaut-system`). The target resource

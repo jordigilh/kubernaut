@@ -87,6 +87,20 @@ Fleet is **disabled**; with Fleet enabled, every scope request must carry a
 (`missing_cluster_attribution`) and never falls back to the local checker
 (DD-FLEET-015).
 
+## Invalid managed-label observations now revoke (#2686)
+
+On the fenced fleet lane, a target whose `kubernaut.ai/managed` label value becomes
+invalid (anything other than `"true"`/`"false"`) used to keep its previously committed
+authorization until a later repair replaced the record or its TTL expired (45s default),
+because the FMC syncer rejected the invalid observation and failed the whole sync cycle.
+The syncer now stages and commits the invalid observation like any other label state
+(DD-FLEET-016 "Invalid-label observations" amendment), and the already-shipped read-side
+mapping turns it into `ScopeInvalid` (`invalid_resource_label`) immediately — the same
+fail-closed rule the local lane applies. Readiness and partition failures are unchanged:
+they keep returning `unavailable` (`partition_unavailable`/`partition_invalid`) and are
+never flattened into `invalid`. A structurally malformed source payload still fails the
+scan as incomplete (unavailable).
+
 ### `ScopeResult.Managed` is removed
 
 The field was written by the local manager and the federated checker but read

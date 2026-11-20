@@ -73,6 +73,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		empty             atomic.Bool
 		deferred          atomic.Bool
 		namespaceFalse    atomic.Bool
+		labelInvalid      atomic.Bool
 		calls             atomic.Int32
 		proxy             *redisfault.Proxy
 		holdCollection    atomic.Bool
@@ -87,6 +88,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		empty.Store(false)
 		deferred.Store(false)
 		namespaceFalse.Store(false)
+		labelInvalid.Store(false)
 		calls.Store(0)
 		holdCollection.Store(false)
 		collectionEntered = make(chan struct{}, 1)
@@ -141,9 +143,13 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 			if args.Kind != "Pod" {
 				return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{}}}, nil
 			}
+			managedValue := "true"
+			if labelInvalid.Load() {
+				managedValue = "banana"
+			}
 			return &mcp.CallToolResult{StructuredContent: map[string]interface{}{"items": []map[string]interface{}{{
 				"apiVersion": "v1", "kind": "Pod",
-				"metadata": map[string]interface{}{"name": "observed", "namespace": "default", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}},
+				"metadata":   map[string]interface{}{"name": "observed", "namespace": "default", "labels": map[string]interface{}{"kubernaut.ai/managed": managedValue}},
 			}}}}, nil
 		}))
 		DeferCleanup(gw.Close)
@@ -341,6 +347,48 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
 	}, Entry("begin", "begin"), Entry("commit", "commit"))
+
+	It("IT-FMC-2686-001 [BR-SCOPE-001, #2686]: an invalid managed-label observation revokes the previously committed authorization (AC-6, SI-10)", func() {
+		available.Store(true)
+		labelInvalid.Store(false)
+		info, found := clusterReg.Get(cluster)
+		Expect(found).To(BeTrue())
+
+		// Commit a managed record for the observed Pod.
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		Expect(syncer.Ready()).To(BeTrue())
+		authorized, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(authorized.State).To(Equal(scope.ScopeVerifiedManaged))
+
+		// The label value becomes invalid. The next complete scan must stage
+		// and commit the invalid observation (#2686): the sync must not fail
+		// and keep serving the last-good record until TTL.
+		labelInvalid.Store(true)
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(), "an invalid label value is a completed observation, not a failed sync")
+		Expect(syncer.Ready()).To(BeTrue())
+
+		revoked, err := checker.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(revoked.State).To(Equal(scope.ScopeInvalid), "the invalid observation must revoke the committed authorization at commit time, not at TTL")
+		Expect(revoked.Reason).To(Equal("invalid_resource_label"))
+
+		// The wire carries the same boundary: DD-FLEET-015 keeps state and
+		// provenance on the wire, so the revoked target answers 422 invalid,
+		// never 200 managed.
+		mux := http.NewServeMux()
+		fmc.NewHandler(checker, clusterReg, logr.Discard()).RegisterRoutes(mux)
+		server := httptest.NewServer(mux)
+		DeferCleanup(server.Close)
+		response, err := http.Get(server.URL + fmc.ScopeCheckPath + "?cluster=" + cluster + "&version=v1&kind=Pod&namespace=default&name=observed")
+		Expect(err).NotTo(HaveOccurred())
+		body, err := io.ReadAll(response.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(response.StatusCode).To(Equal(http.StatusUnprocessableEntity), "body: %s", body)
+		Expect(string(body)).To(ContainSubstring(`"state":"invalid"`))
+		Expect(string(body)).NotTo(ContainSubstring(`"state":"verified_managed"`))
+	})
 
 	It("IT-FMC-DEFERRED-001 [BR-SCOPE-001]: observed managed Nodes cannot authorize targets but Namespace observations still support inheritance", func() {
 		available.Store(true)
