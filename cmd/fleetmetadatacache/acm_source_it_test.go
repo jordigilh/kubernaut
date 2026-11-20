@@ -646,12 +646,15 @@ var _ = Describe("FMC ACM source production sync (DD-FLEET-017 D4, wiring rows 3
 		// Rule 7b: exactly one deadline per repair, read from the context.
 		// The repair path owns setting it in production (55 s from BeginRepair);
 		// that value is deliberately not configurable, so this spec bounds the
-		// same production context seam with a shorter staging lifetime: 20 s
-		// minus the 5 s commit reserve leaves 15 s of collection budget, and
+		// same production context seam with a shorter staging lifetime: 20.5 s
+		// minus the 5 s commit reserve leaves 15.5 s of collection budget, and
 		// the pod pages below (5 s + 5 s + 4 s, each inside the 10 s per-request
-		// cap) consume 14 s of it. The second kind then faces less than the
-		// 2 s start floor and must be refused without a request.
-		deadlineCtx := fmc.WithCollectionDeadline(ctx, time.Now().Add(20*time.Second))
+		// cap) consume 14 s of it. The margins balance at 1.5 s each way: the
+		// third page's derived timeout is 5.5 s against its 4 s delay, and the
+		// second kind then faces 1.5 s of remaining budget, below the 2 s
+		// start floor, so it must be refused without a request. Extra elapsed
+		// time only deepens the refusal; it cannot flip the outcome.
+		deadlineCtx := fmc.WithCollectionDeadline(ctx, time.Now().Add(20*time.Second+500*time.Millisecond))
 		search.setDelayedPodCatalog(150, []time.Duration{5 * time.Second, 5 * time.Second, 4 * time.Second})
 		namespaceRequestsBefore := search.kindRequests("Namespace")
 		syncErr := fixture.syncer.SyncCluster(deadlineCtx, acmITCluster)

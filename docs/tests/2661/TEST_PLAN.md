@@ -228,7 +228,7 @@ live run.
 | IT-FMC-SRC-2661-001 | From `buildFMCSyncer`→sync, an ACM-configured deployment makes Search calls and reaches `BeginRepair`→`Repair`→`CommitRepair`; a direct Valkey write, or a missing Search call, fails the spec | ✅ |
 | IT-FMC-SRC-2661-002 | Build two production syncers — one from an absent-`sources` config, one from `sources.acm` — and assert MCP-only versus ACM-only call surfaces; an invalid `sources` block fails **before** syncer construction | ✅ |
 | IT-FMC-SRC-2661-003 | Through the production `ACMHTTPSearch` construction: bearer header present, TLS validated against `caFile`, then token rotation and CA rotation both take effect on the same client | ✅ |
-| IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7a): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
+| IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7b): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
@@ -261,6 +261,14 @@ Kubernetes client reachable from the inventory path.
 **IT-AF-2661-003 (SAR).** Authorizer grants `kubernaut_list_managed_resources`
 but denies `list/core/v1/namespaces`. Assertions: `403`, `forbidden`, FMC
 fixture sees zero requests, exactly one audit event with `result_state=forbidden`.
+
+**IT-FMC-SRC-2661-003 (construction split).** The bearer, TLS-validation and
+token-rotation assertions run through `buildACMSource` (the production
+composition `buildFMCSyncer` uses). The CA-rotation half constructs
+`NewACMHTTPSearch` directly with the loaded config's values — the identical
+call `buildACMSource` makes — because `ACMSource` does not expose its transport
+for `ReloadCA`. Both halves use the production constructor; only the
+composition root differs.
 
 ## 9b. Tests retired or re-scoped by this plan
 
@@ -311,7 +319,7 @@ Total ≈ 12–15 h plus CI. The lex index adds ~1.5–2.5 h of code and, critic
 **re-qualification of the DD-FLEET-016 atomic swap** (~0.5–1 day of IT/live
 evidence) because it changes the committed keyspace.
 
-### 11a. Budget ownership (D4.1a rule 7a) — one deadline per repair
+### 11a. Budget ownership (D4.1a rules 7a–7b) — one deadline per repair
 
 The collector reads its deadline from the context, so exactly one component may
 set it. That component is the repair path, not the collector:
@@ -344,3 +352,6 @@ per-user remote visibility (#2600), no offset-snapshot guarantee, no Rancher or
 further sources, no remote policy-scope, no Console rendering evidence, no live
 result before the run. The peer model in current code and ADR-068 is not
 migration-tested by this plan; the amendment is a prerequisite, not a test item.
+CA rotation (`ReloadCA` on the live client) is proven as a capability of the
+production constructor with no production watcher wired yet; it is not claimed
+as operational rotation behavior.
