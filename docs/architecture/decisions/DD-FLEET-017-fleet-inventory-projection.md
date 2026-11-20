@@ -528,6 +528,23 @@ Rules:
    seven-kind sync outlive the 60 s staged generation, which is why the collector
    must never derive its own budget in production.
 
+**Cross-repo status (2026-11-20).** The operator half of D4.1a is implemented and
+merged: kubernaut-operator#649 (`feat/647-fmc-acm-source-config`, merge commit
+`fb8a3f0c`, closes kubernaut-operator#647). It renders exactly
+`sources.acm.{endpoint, tokenPath, caFile}` and, for consumers, the key-less
+fleet block that increment 1d accepts. Two facts from that landing bind this
+side:
+
+1. **Our strict decoding is now load-bearing.** The operator relies on FMC
+   rejecting a mismatch rather than silently ignoring it; an operand without
+   increment 2 decodes `sources` leniently and would drop the block while
+   running the MCP collector.
+2. **A present-but-empty `sources` block is a startup failure here.** The
+   operator therefore rejects an empty declaration at admission
+   (`UT-FLEET-647-VALIDATE-005`) and its renderer cannot emit one
+   (`UT-FLEET-647-SRC-009`); rules 1-2 of this section are the contract both
+   sides now test.
+
 **Alternatives.** (i) Reuse the v1 per-request adapter (rejected in D2).
 (ii) Keyset continuation — unsupported (spike: silent `count=0`).
 (iii) Single-shot bounded query with fail-closed saturation — keeps 1000-item
