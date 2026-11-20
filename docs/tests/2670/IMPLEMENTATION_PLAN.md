@@ -552,7 +552,7 @@ Rollback: revert the PR atomically. No schema, CRD, RBAC, audit-event, or wire-f
   and a namespaced kind outside the map (e.g. `Route`) carrying no namespace is resolved at level 1
   and lands in retryable `observation_missing` instead of a terminal rejection
   (§10, ADR-053 §2a). Needs a RESTMapper-based kind resolver (CHECKPOINT DD).
-- **Follow-up issue (to file):** on the fenced lane an invalid `kubernaut.ai/managed` observation
+- **Follow-up: [#2686](https://github.com/jordigilh/kubernaut/issues/2686).** On the fenced lane an invalid `kubernaut.ai/managed` observation
   is rejected by `pkg/fleet/fmc/syncer.go` `buildObservedResource`, so the last committed record
   keeps serving until a later repair replaces it or its TTL expires (45s default). Removing the
   authorization instead of retaining the last-good snapshot changes the DD-FLEET-016 staged-repair

@@ -74,7 +74,7 @@ ACM). An invalid label value is `invalid`, exactly as for a
 namespaced target — with one fenced-lane caveat: the syncer refuses an invalid
 observation, so a record committed earlier keeps serving until a later repair
 replaces it or its TTL expires. ADR-053 §"Recognized kinds" states that window
-and the follow-up that closes it.
+and the follow-up that closes it ([#2686](https://github.com/jordigilh/kubernaut/issues/2686)).
 
 Supported targets differ by lane, so choose the lane accordingly. The local
 Gateway/RO lane and direct ACM can authorize any kind they can read. The fenced

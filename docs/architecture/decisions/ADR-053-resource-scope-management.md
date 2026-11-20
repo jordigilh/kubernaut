@@ -222,7 +222,8 @@ class of bounded staleness, only longer and explicit.
 
 Removing authorization on an invalid observation — instead of retaining the last
 committed snapshot — changes the DD-FLEET-016 staged-repair contract, applies to
-namespaced targets as well, and is a tracked follow-up rather than part of #2670.
+namespaced targets as well, and is tracked as
+[#2686](https://github.com/jordigilh/kubernaut/issues/2686) rather than part of #2670.
 
 Failure states are fail-closed and lane-specific: an unreadable kind on the
 cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup
