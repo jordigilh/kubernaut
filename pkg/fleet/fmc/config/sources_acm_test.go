@@ -239,6 +239,12 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 				return "sources:\n  acm:\n    endpoint: https://search-api.example:4010\n" +
 					"    tokenPath: " + token + "\n    \"<<\": typo\n"
 			}, "sources.acm"),
+			Entry("merge tag on a non-merge key", func(token string) string {
+				// yaml.v3 only treats `<<` as a merge; a !!merge-tagged key with
+				// another name is an ordinary key and must reach the closed set.
+				return "sources:\n  acm:\n    endpoint: https://search-api.example:4010\n" +
+					"    tokenPath: " + token + "\n    !!merge foo: bar\n"
+			}, "\"foo\""),
 			Entry("sources is a scalar", func(string) string { return "sources: acm\n" }, "sources must be a mapping"),
 			Entry("sources.acm is a scalar", func(string) string { return "sources:\n  acm: https://search-api.example:4010\n" }, "sources.acm"),
 		)

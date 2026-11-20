@@ -282,11 +282,23 @@ func unexpectedKeys(keys, allowed []string) []string {
 	return unexpected
 }
 
-// isMergeKey reports whether a mapping key is YAML's merge key. The tag is the
-// only reliable signal: a quoted "<<" or '<<' is an ordinary string key, and
-// treating it as a merge would drop an unknown key from the closed-set check.
+// isMergeKey mirrors yaml.v3's merge predicate exactly (decode.go isMerge): the
+// value must be `<<` AND the tag must be unset, `!`, or the merge tag. Both
+// halves matter:
+//   - a quoted "<<" or '<<' is tagged !!str, so it is an ordinary key and must
+//     stay subject to the closed-set check;
+//   - a key tagged !!merge whose value is not `<<` is NOT a merge for yaml.v3,
+//     so treating it as one would skip that key from the check entirely.
 func isMergeKey(node *yaml.Node) bool {
-	return node != nil && node.Tag == "!!merge"
+	if node == nil || node.Kind != yaml.ScalarNode || node.Value != "<<" {
+		return false
+	}
+	switch node.Tag {
+	case "", "!", "!!merge", "tag:yaml.org,2002:merge":
+		return true
+	default:
+		return false
+	}
 }
 
 // resolveNode follows alias nodes so an anchored value is inspected through
