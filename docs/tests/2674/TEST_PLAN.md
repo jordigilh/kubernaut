@@ -156,7 +156,8 @@ wiring proof and are not counted toward business-line percentage.
 | `GetAPIReader` adds one API-server GET per `AgentSession` CREATE | Admission volume is low (one per investigation); the sibling RAR handler already does this. No new RBAC — the same SA credential and `get` grant are used. |
 | Direct reads bypass any cache-based field index | Not applicable: `RemediationRequestRef` is a plain `ObjectRef{Name, Namespace}` resolved by an exact-name `Get`; no indexer involved (verified in `validateRemediationRequestExists`). |
 | Harness `WaitForCacheSync` slows setup | Bounded by a 60 s context timeout; suite already waits for DataStorage health. |
-| Other handlers still use the cached client | Out of scope per #2674; their reads are not existence gates on a just-created object. |
+| Other handlers still use the cached client | Out of scope per #2674. The RW→ActionType gate is the only other existence gate, and it resolves ActionType by a `.spec.name`-indexed **List** (`remediationworkflow_handler.go`, DD-WORKFLOW-018), so a direct reader is not a drop-in there — and its target is a catalog object, not one created moments earlier in the same request path. |
+| Existing approval-path read ordering | The RAR IT already carries its own read barrier (`rar_override_validation_test.go`, `approvalReadBarrier`), independent of this change; the suite-level cache sync added here does not replace it. |
 
 ---
 
