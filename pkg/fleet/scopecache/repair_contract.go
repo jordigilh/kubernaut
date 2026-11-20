@@ -383,4 +383,9 @@ type FencedReadResult struct {
 	RecordTTL              TTLPTTLValidation
 	IndexTTL               TTLPTTLValidation
 	StatusTTL              TTLPTTLValidation
+	// RemainingProofTTL is the minimum remaining life of the record, status and
+	// index proofs, derived from the same server-time/PTTL sample the TTL
+	// validations use (DD-FLEET-017 D3.2a). It is additive: readers that do not
+	// consult it keep their existing behaviour.
+	RemainingProofTTL time.Duration
 }

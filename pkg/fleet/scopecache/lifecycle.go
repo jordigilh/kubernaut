@@ -156,6 +156,14 @@ type StatusStore interface {
 	Repair(context.Context, RepairRequest) (RepairResult, error)
 	CommitRepair(context.Context, RepairCommitRequest) (RepairCommitResult, error)
 	ReadVerified(context.Context, FencedReadRequest) (FencedReadResult, error)
+	// ReadInventoryPageHeader validates the committed proof once and returns
+	// the lexicographic identity page of that generation (DD-FLEET-017 D2.5a).
+	ReadInventoryPageHeader(context.Context, InventoryPageRequest) (InventoryPageHeader, error)
+	// ReadInventoryPageRecords re-validates the same fence and generation and
+	// returns only the requested page's records.
+	ReadInventoryPageRecords(context.Context, InventoryPageRecordsRequest) (InventoryPageRecords, error)
+	// ReadInventoryResource reads one committed record by canonical ID.
+	ReadInventoryResource(context.Context, InventoryResourceRequest) (InventoryResourceRecord, error)
 }
 
 // CacheStore is the concrete production composition used by the syncer.

@@ -339,9 +339,26 @@ func validateIdentityValue(field, value string, required bool) error {
 	return nil
 }
 
-// Validate checks the safety invariant for a decoded page. It rejects any
-// response that would leak records alongside an error/state-only result.
+// Validate checks the safety invariant for a decoded read-surface page. It
+// rejects any response that would leak records alongside an error/state-only
+// result, and requires a proof-backed freshness envelope (DD-FLEET-017 D3).
 func (p Page) Validate() error {
+	if err := p.validateFreshness(); err != nil {
+		return err
+	}
+	return p.validateShape()
+}
+
+// ValidateCollection checks the state, completeness, item and cursor
+// invariants of an internal collection-result shape WITHOUT the read-surface
+// freshness rule. A collection result is not a read surface: it carries no
+// partition proof and therefore must not claim freshness (DD-FLEET-017 D3,
+// G10). Read-surface pages use Validate.
+func (p Page) ValidateCollection() error {
+	return p.validateShape()
+}
+
+func (p Page) validateShape() error {
 	switch p.State {
 	case StateSuccess:
 		return p.validateSuccess()
@@ -352,6 +369,29 @@ func (p Page) Validate() error {
 	default:
 		return fmt.Errorf("%w: unsupported page state %q", ErrUnavailable, p.State)
 	}
+}
+
+// validateFreshness enforces the freshness envelope of a page that makes a
+// claim about inventory (DD-FLEET-017 D3, G3). A page with records or an
+// explicit empty claim must carry a supported freshness state and the instant
+// it was projected; `unknown` is deliberately not a value in v1.6 (D3.5), and
+// an unrecognised value is never accepted.
+func (p Page) validateFreshness() error {
+	claimsInventory := p.State == StateSuccess || p.State == StateEmpty
+	switch p.Freshness.State {
+	case "":
+		if claimsInventory {
+			return fmt.Errorf("%w: page freshness state is required", ErrUnavailable)
+		}
+		return nil
+	case FreshnessFresh, FreshnessStale:
+	default:
+		return fmt.Errorf("%w: unsupported page freshness state %q", ErrUnavailable, p.Freshness.State)
+	}
+	if p.Freshness.AsOf.IsZero() {
+		return fmt.Errorf("%w: page freshness as_of is required", ErrUnavailable)
+	}
+	return nil
 }
 
 func (p Page) validateSuccess() error {
