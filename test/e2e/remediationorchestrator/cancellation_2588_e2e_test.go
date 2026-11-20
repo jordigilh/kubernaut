@@ -92,6 +92,24 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 			return controllerutil.ContainsFinalizer(current, e2eCancellationFinalizer)
 		}, timeout, interval).Should(BeTrue())
 
+		// Wait for the deployed RO's Pending bootstrap (a 100ms requeue after
+		// the finalizer install) to create the SignalProcessing child BEFORE
+		// cancellation is requested: cancellationRequested() short-circuits
+		// the reconcile before any phase handler, so a Cancelling write that
+		// lands inside the requeue gap permanently prevents child creation
+		// and the spec times out (seen as a 23ms-vs-100ms race in CI run
+		// 44385975439; the same code passed with a 511ms margin earlier the
+		// same day).
+		By("waiting for the deployed RO to create the SignalProcessing child")
+		Eventually(func() bool {
+			current := &remediationv1.RemediationRequest{}
+			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), current); err != nil {
+				return false
+			}
+			return current.Status.GetPhaseProgress().SignalProcessingRef != nil
+		}, timeout, interval).Should(BeTrue(),
+			"RO must create the SignalProcessing child before cancellation is requested")
+
 		By("creating a pending child and recording it on the RR")
 		wfe := &workflowexecutionv1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: "wfe-" + rrName, Namespace: controllerNamespace},

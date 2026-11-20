@@ -247,7 +247,11 @@ def filter_go_entries(
         if is_generated_code(e.key):
             continue
 
-        is_pkg = pkg_pattern in e.key
+        # pkg_pattern may be a '|'-separated alternation (see
+        # GO_SERVICE_CONFIG["shared-packages"]); match any branch as a
+        # substring, mirroring _matches_service_pkg. Testing the whole pattern
+        # as one substring silently matches nothing and zeroes the tier.
+        is_pkg = any(pat and pat in e.key for pat in pkg_pattern.split("|"))
         is_internal = internal_pattern is not None and internal_pattern in e.key
         is_controller = controller_pattern is not None and controller_pattern in e.key
 

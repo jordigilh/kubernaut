@@ -801,9 +801,10 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			By("4. Verify fingerprint is based on the correct Deployment target")
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: testNamespace,
-				Kind:      "Deployment",
-				Name:      "api-server",
+				Namespace:  testNamespace,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				APIVersion: "apps/v1", // #2650: registry-resolved group (apps) is hashed
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
 				"BR-GATEWAY-184 FR-4: Fingerprint must reflect the Deployment target, not scrape metadata")
@@ -933,9 +934,10 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			By("4. Verify fingerprint reflects Deployment, not Namespace")
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: testNamespace,
-				Kind:      "Deployment",
-				Name:      "api-server",
+				Namespace:  testNamespace,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				APIVersion: "apps/v1", // #2650: registry-resolved group (apps) is hashed
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
 				"BR-GATEWAY-004 #1067: Fingerprint must be SHA256(ns:Deployment:api-server)")

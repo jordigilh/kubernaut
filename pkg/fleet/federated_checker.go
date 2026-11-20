@@ -64,7 +64,6 @@ func WithClusterLookup(lookup ClusterLookup) FederatedScopeCheckerOption {
 //
 // References: ADR-068, BR-INTEGRATION-065
 type FederatedScopeChecker struct {
-	local         scope.ScopeChecker
 	remote        scope.ScopeChecker
 	clusterLookup ClusterLookup
 	logger        logr.Logger
@@ -73,9 +72,12 @@ type FederatedScopeChecker struct {
 // NewFederatedScopeChecker creates an attributed Fleet checker.
 // remoteChecker handles every explicit cluster ID (backend-specific adapter).
 // Options can add a ClusterLookup for cluster-level precondition checking.
-func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteChecker scope.ScopeChecker, logger logr.Logger, opts ...FederatedScopeCheckerOption) *FederatedScopeChecker {
+//
+// There is deliberately no local checker parameter: DD-FLEET-015 forbids an
+// empty or unknown Fleet attribution from falling back to local scope, and a
+// stored-but-unused local checker implied exactly that fallback.
+func NewFederatedScopeChecker(remoteChecker scope.ScopeChecker, logger logr.Logger, opts ...FederatedScopeCheckerOption) *FederatedScopeChecker {
 	f := &FederatedScopeChecker{
-		local:  localChecker,
 		remote: remoteChecker,
 		logger: logger.WithName("federated-scope"),
 	}
@@ -92,28 +94,6 @@ func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteChecker sco
 // package.
 func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
 	return f.remote
-}
-
-// IsManagedResource is the boolean compatibility lane kept from main
-// (#2647). It routes by ClusterID through the typed lane and collapses the
-// outcome: only a verified managed=true returns true; every other outcome
-// (verified unmanaged, invalid, unsupported, unavailable) fails closed as
-// false with the distinguishing error where one exists.
-func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	result, err := f.Check(ctx, resource)
-	if err != nil {
-		return false, err
-	}
-	if result.State == scope.ScopeVerifiedManaged {
-		return true, nil
-	}
-	if result.State == scope.ScopeVerifiedUnmanaged {
-		return false, nil
-	}
-	if result.Reason != "" {
-		return false, fmt.Errorf("fleet scope: check did not complete: %s", result.Reason)
-	}
-	return false, fmt.Errorf("fleet scope: check did not complete: %s", result.State)
 }
 
 // Check dispatches only explicitly attributed Fleet requests to the statically
@@ -147,14 +127,9 @@ func (f *FederatedScopeChecker) Check(ctx context.Context, resource scope.Resour
 	if err := result.Validate(); err != nil {
 		return unavailableScopeResult("remote_protocol_error"), fmt.Errorf("fleet scope: %w", err)
 	}
-	if result.State == scope.ScopeVerifiedManaged || result.State == scope.ScopeVerifiedUnmanaged {
-		managed := result.State == scope.ScopeVerifiedManaged
-		result.Managed = &managed
-	}
 	return result, nil
 }
 
 func unavailableScopeResult(reason string) scope.ScopeResult {
 	return scope.ScopeResult{State: scope.ScopeUnavailable, Provenance: scope.ScopeSourceUnavailable, Reason: reason, Retryable: true}
 }
-

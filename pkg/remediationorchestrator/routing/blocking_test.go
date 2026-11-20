@@ -131,6 +131,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "abc123",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "api",
+					},
 				},
 			}
 
@@ -139,6 +142,12 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.RequeueAfter).To(Equal(time.Duration(3600) * time.Second))
+			// UT-RO-AUDIT-2663-006: the computed history count, not the new
+			// RR's zero status counter, must travel for BR-AUDIT-005.
+			Expect(blocked.ConsecutiveFailures).To(Equal(int32(3)))
+			// UT-RO-AUDIT-2663-012: preserve Kind casing so this key matches
+			// the AI-resolved/WFE target format used by post-analysis blocks.
+			Expect(blocked.TargetResource).To(Equal("Deployment/api"))
 		})
 
 		It("should not block when consecutive failures < threshold", func() {
@@ -428,6 +437,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked).ToNot(BeNil(), "Newer RR-B should be blocked by older RR-A")
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress)))
 			Expect(blocked.DuplicateOf).To(Equal("rr-older-active"))
+			Expect(blocked.TargetResource).To(Equal("ns-a/Deployment/app"),
+				"UT-RO-AUDIT-2663-013: duplicate blocks must use the same canonical target format")
 		})
 
 		It("should block when active RR with same fingerprint exists", func() {
@@ -642,6 +653,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.BlockingWorkflowExecution).To(Equal("wfe-running"))
 			Expect(blocked.RequeueAfter).To(Equal(30 * time.Second))
+			// UT-RO-AUDIT-2663-007: the audit must attribute the block to the
+			// effective target the routing check evaluated (BR-AUDIT-005).
+			Expect(blocked.TargetResource).To(Equal("default/pod/nginx-12345"))
 		})
 
 		// BR-WE-009-011, BR-FLEET-004; FedRAMP AC-4/AC-6; OWASP ASVS V4.1.1/V4.1.3.
@@ -860,6 +874,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).ToNot(BeNil(), "BR-FLEET-004: cooldown must use the workflow's effective execution cluster")
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+			Expect(blocked.TargetResource).To(Equal("default/pod/nginx-effective-cluster"),
+				"UT-RO-AUDIT-2663-009: audit must name the AI-resolved effective target")
 		})
 
 		It("should block when recent WFE within 5min cooldown", func() {
@@ -909,6 +925,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0))
+			// UT-RO-AUDIT-2663-008: BR-AUDIT-005 reconstruction needs both the
+			// evaluated target and the WFE that caused the cooldown.
+			Expect(blocked.TargetResource).To(Equal("default/pod/nginx-recent"))
+			Expect(blocked.RecentWFE).To(Equal("wfe-recent"))
 		})
 
 		It("should not block when WFE outside cooldown", func() {
@@ -1222,6 +1242,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 5*time.Minute))
 			Expect(blocked.Message).To(ContainSubstring("Exponential backoff active"))
 			Expect(blocked.Message).To(ContainSubstring(futureTime.Format(time.RFC3339)))
+			Expect(blocked.TargetResource).To(Equal("default/Pod/nginx-backoff"),
+				"UT-RO-AUDIT-2663-014: preserve Kind casing for backoff blocks")
 		})
 
 		It("should not block when no backoff configured", func() {
@@ -1939,6 +1961,13 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(result.Message).ToNot(ContainSubstring("Add label"),
 				"label guidance is wrong for a permanent identity defect")
 			Expect(spy.calledRemote).To(BeFalse())
+			Expect(result.TargetResource).To(Equal("default/Deployment/nginx"),
+				"UT-RO-AUDIT-2663-015: scope blocks must preserve Kind casing")
+		})
+
+		It("UT-RO-AUDIT-2663-011: renders cluster-scoped targets without an empty namespace [BR-AUDIT-005, FedRAMP AU-3]", func() {
+			Expect(routing.TargetResource{Kind: "Node", Name: "worker-1"}.String()).To(Equal("Node/worker-1"))
+			Expect(routing.TargetResource{Namespace: "prod", Kind: "Pod", Name: "api"}.String()).To(Equal("prod/Pod/api"))
 		})
 	})
 })

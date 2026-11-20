@@ -37,11 +37,11 @@ const (
 
 // ScopeResult carries a typed scope outcome across a boundary that otherwise
 // cannot safely represent cache misses, source uncertainty, or invalid input
-// as managed=false. DD-FLEET-015: only state and determining observation cross
-// the wire; bounded diagnostics stay internal.
+// as managed=false. DD-FLEET-015: only State and Provenance cross the wire;
+// Reason and Retryable are bounded internal diagnostics, and there is no
+// boolean "managed" member for consumers to bypass the typed state.
 type ScopeResult struct {
 	State      ScopeState  `json:"state"`
-	Managed    *bool       `json:"managed,omitempty"`
 	Provenance ScopeSource `json:"provenance,omitempty"`
 	Reason     string      `json:"-"`
 	Retryable  bool        `json:"-"`
@@ -68,8 +68,7 @@ func (r ScopeResult) Validate() error {
 
 // TypedScopeChecker is an additive contract preserved from main (#2647) for
 // consumers that reference the typed lane explicitly. ScopeChecker itself is
-// the typed contract (DD-FLEET-015); IsManagedResource remains a boolean
-// convenience method on *Manager.
+// the typed contract (DD-FLEET-015); the boolean lane is gone (#2660 m10).
 type TypedScopeChecker interface {
 	Check(ctx context.Context, resource ResourceIdentity) (ScopeResult, error)
 }
@@ -120,5 +119,4 @@ type ScopeChecker interface {
 
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
-var _ TypedScopeChecker = (*Manager)(nil)
 var _ TypedScopeChecker = (*Manager)(nil)

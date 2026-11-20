@@ -130,5 +130,8 @@ func ToBlockingCondition(bm *phase.BlockMeta) *routing.BlockingCondition {
 		BlockedUntil:              bm.BlockedUntil,
 		BlockingWorkflowExecution: bm.BlockingWorkflowExecution,
 		DuplicateOf:               bm.DuplicateOf,
+		TargetResource:            bm.TargetResource,
+		ConsecutiveFailures:       bm.ConsecutiveFailures,
+		RecentWFE:                 bm.RecentWFE,
 	}
 }

@@ -35039,6 +35039,24 @@ type RemediationOrchestratorAuditPayload struct {
 	ToPhase OptString `json:"to_phase"`
 	// Reason for the transition.
 	TransitionReason OptString `json:"transition_reason"`
+	// Stable routing-engine blocking condition.
+	BlockReason OptString `json:"block_reason"`
+	// Human-readable routing blocking explanation.
+	BlockMessage OptString `json:"block_message"`
+	// Requested controller requeue delay in seconds.
+	RequeueAfterSeconds OptInt `json:"requeue_after_seconds"`
+	// RFC3339 time until which routing remains blocked.
+	BlockedUntil OptDateTime `json:"blocked_until"`
+	// WorkflowExecution that currently blocks routing.
+	BlockingWfe OptString `json:"blocking_wfe"`
+	// RemediationRequest or workflow that caused duplicate suppression.
+	DuplicateOf OptString `json:"duplicate_of"`
+	// Consecutive routing failures recorded on the RemediationRequest.
+	ConsecutiveFailures OptInt32 `json:"consecutive_failures"`
+	// Calculated routing backoff in seconds.
+	BackoffSeconds OptInt `json:"backoff_seconds"`
+	// Most recent WorkflowExecution considered by routing.
+	RecentWfe OptString `json:"recent_wfe"`
 	// Disposable lossless parameter evidence.
 	ParameterEvidence OptString `json:"parameter_evidence"`
 	// Original values in the reviewed approval snapshot.
@@ -35186,6 +35204,51 @@ func (s *RemediationOrchestratorAuditPayload) GetToPhase() OptString {
 // GetTransitionReason returns the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) GetTransitionReason() OptString {
 	return s.TransitionReason
+}
+
+// GetBlockReason returns the value of BlockReason.
+func (s *RemediationOrchestratorAuditPayload) GetBlockReason() OptString {
+	return s.BlockReason
+}
+
+// GetBlockMessage returns the value of BlockMessage.
+func (s *RemediationOrchestratorAuditPayload) GetBlockMessage() OptString {
+	return s.BlockMessage
+}
+
+// GetRequeueAfterSeconds returns the value of RequeueAfterSeconds.
+func (s *RemediationOrchestratorAuditPayload) GetRequeueAfterSeconds() OptInt {
+	return s.RequeueAfterSeconds
+}
+
+// GetBlockedUntil returns the value of BlockedUntil.
+func (s *RemediationOrchestratorAuditPayload) GetBlockedUntil() OptDateTime {
+	return s.BlockedUntil
+}
+
+// GetBlockingWfe returns the value of BlockingWfe.
+func (s *RemediationOrchestratorAuditPayload) GetBlockingWfe() OptString {
+	return s.BlockingWfe
+}
+
+// GetDuplicateOf returns the value of DuplicateOf.
+func (s *RemediationOrchestratorAuditPayload) GetDuplicateOf() OptString {
+	return s.DuplicateOf
+}
+
+// GetConsecutiveFailures returns the value of ConsecutiveFailures.
+func (s *RemediationOrchestratorAuditPayload) GetConsecutiveFailures() OptInt32 {
+	return s.ConsecutiveFailures
+}
+
+// GetBackoffSeconds returns the value of BackoffSeconds.
+func (s *RemediationOrchestratorAuditPayload) GetBackoffSeconds() OptInt {
+	return s.BackoffSeconds
+}
+
+// GetRecentWfe returns the value of RecentWfe.
+func (s *RemediationOrchestratorAuditPayload) GetRecentWfe() OptString {
+	return s.RecentWfe
 }
 
 // GetParameterEvidence returns the value of ParameterEvidence.
@@ -35411,6 +35474,51 @@ func (s *RemediationOrchestratorAuditPayload) SetToPhase(val OptString) {
 // SetTransitionReason sets the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) SetTransitionReason(val OptString) {
 	s.TransitionReason = val
+}
+
+// SetBlockReason sets the value of BlockReason.
+func (s *RemediationOrchestratorAuditPayload) SetBlockReason(val OptString) {
+	s.BlockReason = val
+}
+
+// SetBlockMessage sets the value of BlockMessage.
+func (s *RemediationOrchestratorAuditPayload) SetBlockMessage(val OptString) {
+	s.BlockMessage = val
+}
+
+// SetRequeueAfterSeconds sets the value of RequeueAfterSeconds.
+func (s *RemediationOrchestratorAuditPayload) SetRequeueAfterSeconds(val OptInt) {
+	s.RequeueAfterSeconds = val
+}
+
+// SetBlockedUntil sets the value of BlockedUntil.
+func (s *RemediationOrchestratorAuditPayload) SetBlockedUntil(val OptDateTime) {
+	s.BlockedUntil = val
+}
+
+// SetBlockingWfe sets the value of BlockingWfe.
+func (s *RemediationOrchestratorAuditPayload) SetBlockingWfe(val OptString) {
+	s.BlockingWfe = val
+}
+
+// SetDuplicateOf sets the value of DuplicateOf.
+func (s *RemediationOrchestratorAuditPayload) SetDuplicateOf(val OptString) {
+	s.DuplicateOf = val
+}
+
+// SetConsecutiveFailures sets the value of ConsecutiveFailures.
+func (s *RemediationOrchestratorAuditPayload) SetConsecutiveFailures(val OptInt32) {
+	s.ConsecutiveFailures = val
+}
+
+// SetBackoffSeconds sets the value of BackoffSeconds.
+func (s *RemediationOrchestratorAuditPayload) SetBackoffSeconds(val OptInt) {
+	s.BackoffSeconds = val
+}
+
+// SetRecentWfe sets the value of RecentWfe.
+func (s *RemediationOrchestratorAuditPayload) SetRecentWfe(val OptString) {
+	s.RecentWfe = val
 }
 
 // SetParameterEvidence sets the value of ParameterEvidence.

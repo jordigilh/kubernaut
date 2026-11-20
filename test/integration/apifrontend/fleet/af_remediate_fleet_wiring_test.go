@@ -152,9 +152,7 @@ func fleetAlert(alertName, clusterID, namespace, targetName, severityValue strin
 }
 
 func newFleetRemediateTool(clusterRegistry *fleetTestClusterRegistry, remoteScope *fleetTestRemoteScopeChecker, auditor audit.Emitter, promClient prom.Client, controllerNamespace string) runnableFleetTool {
-	localScope := scope.NewManager(fleetTypedClient)
 	federatedScope := fleet.NewFederatedScopeChecker(
-		localScope,
 		remoteScope,
 		logr.Discard(),
 		fleet.WithClusterLookup(registry.NewClusterLookupAdapter(clusterRegistry)),

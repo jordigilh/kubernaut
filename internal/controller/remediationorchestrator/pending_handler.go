@@ -101,6 +101,9 @@ func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 			BlockedUntil:              blocked.BlockedUntil,
 			BlockingWorkflowExecution: blocked.BlockingWorkflowExecution,
 			DuplicateOf:               blocked.DuplicateOf,
+			TargetResource:            blocked.TargetResource,
+			ConsecutiveFailures:       blocked.ConsecutiveFailures,
+			RecentWFE:                 blocked.RecentWFE,
 		}), nil
 	}
 

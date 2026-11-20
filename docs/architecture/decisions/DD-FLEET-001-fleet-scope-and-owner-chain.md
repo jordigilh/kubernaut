@@ -38,7 +38,9 @@ Consumers:
 
 ### 2. Hierarchical Scope Check (3-Level)
 
-When fleet mode is enabled, `FederatedScopeChecker.IsManagedResource()` performs a
+When fleet mode is enabled, `FederatedScopeChecker` *(formerly
+`IsManagedResource()`, deleted by #2660 in favor of the typed `Check` lane)*
+performs a
 three-level check:
 
 ```

@@ -48,7 +48,7 @@ var _ = Describe("Full Wiring Integration", func() {
 	It("IT-AF-1428-001c: HandleCheckExistingRR accepts crclient.Client (typed wiring)", func() {
 		fc := newTypedFakeClient()
 		result, err := tools.HandleCheckExistingRR(context.Background(), fc, "ns", tools.CheckExistingRRArgs{
-			Namespace: "ns", Kind: "Deployment", Name: "web",
+			Namespace: "ns", Kind: "Deployment", Name: "web", APIVersion: "apps/v1",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeFalse())

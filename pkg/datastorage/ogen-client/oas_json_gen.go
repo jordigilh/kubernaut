@@ -19965,6 +19965,60 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.BlockReason.Set {
+					e.FieldStart("block_reason")
+					s.BlockReason.Encode(e)
+				}
+			}
+			{
+				if s.BlockMessage.Set {
+					e.FieldStart("block_message")
+					s.BlockMessage.Encode(e)
+				}
+			}
+			{
+				if s.RequeueAfterSeconds.Set {
+					e.FieldStart("requeue_after_seconds")
+					s.RequeueAfterSeconds.Encode(e)
+				}
+			}
+			{
+				if s.BlockedUntil.Set {
+					e.FieldStart("blocked_until")
+					s.BlockedUntil.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.BlockingWfe.Set {
+					e.FieldStart("blocking_wfe")
+					s.BlockingWfe.Encode(e)
+				}
+			}
+			{
+				if s.DuplicateOf.Set {
+					e.FieldStart("duplicate_of")
+					s.DuplicateOf.Encode(e)
+				}
+			}
+			{
+				if s.ConsecutiveFailures.Set {
+					e.FieldStart("consecutive_failures")
+					s.ConsecutiveFailures.Encode(e)
+				}
+			}
+			{
+				if s.BackoffSeconds.Set {
+					e.FieldStart("backoff_seconds")
+					s.BackoffSeconds.Encode(e)
+				}
+			}
+			{
+				if s.RecentWfe.Set {
+					e.FieldStart("recent_wfe")
+					s.RecentWfe.Encode(e)
+				}
+			}
+			{
 				if s.ParameterEvidence.Set {
 					e.FieldStart("parameter_evidence")
 					s.ParameterEvidence.Encode(e)
@@ -26186,6 +26240,60 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.TransitionReason.Set {
 					e.FieldStart("transition_reason")
 					s.TransitionReason.Encode(e)
+				}
+			}
+			{
+				if s.BlockReason.Set {
+					e.FieldStart("block_reason")
+					s.BlockReason.Encode(e)
+				}
+			}
+			{
+				if s.BlockMessage.Set {
+					e.FieldStart("block_message")
+					s.BlockMessage.Encode(e)
+				}
+			}
+			{
+				if s.RequeueAfterSeconds.Set {
+					e.FieldStart("requeue_after_seconds")
+					s.RequeueAfterSeconds.Encode(e)
+				}
+			}
+			{
+				if s.BlockedUntil.Set {
+					e.FieldStart("blocked_until")
+					s.BlockedUntil.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.BlockingWfe.Set {
+					e.FieldStart("blocking_wfe")
+					s.BlockingWfe.Encode(e)
+				}
+			}
+			{
+				if s.DuplicateOf.Set {
+					e.FieldStart("duplicate_of")
+					s.DuplicateOf.Encode(e)
+				}
+			}
+			{
+				if s.ConsecutiveFailures.Set {
+					e.FieldStart("consecutive_failures")
+					s.ConsecutiveFailures.Encode(e)
+				}
+			}
+			{
+				if s.BackoffSeconds.Set {
+					e.FieldStart("backoff_seconds")
+					s.BackoffSeconds.Encode(e)
+				}
+			}
+			{
+				if s.RecentWfe.Set {
+					e.FieldStart("recent_wfe")
+					s.RecentWfe.Encode(e)
 				}
 			}
 			{
@@ -52903,6 +53011,60 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.BlockReason.Set {
+			e.FieldStart("block_reason")
+			s.BlockReason.Encode(e)
+		}
+	}
+	{
+		if s.BlockMessage.Set {
+			e.FieldStart("block_message")
+			s.BlockMessage.Encode(e)
+		}
+	}
+	{
+		if s.RequeueAfterSeconds.Set {
+			e.FieldStart("requeue_after_seconds")
+			s.RequeueAfterSeconds.Encode(e)
+		}
+	}
+	{
+		if s.BlockedUntil.Set {
+			e.FieldStart("blocked_until")
+			s.BlockedUntil.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.BlockingWfe.Set {
+			e.FieldStart("blocking_wfe")
+			s.BlockingWfe.Encode(e)
+		}
+	}
+	{
+		if s.DuplicateOf.Set {
+			e.FieldStart("duplicate_of")
+			s.DuplicateOf.Encode(e)
+		}
+	}
+	{
+		if s.ConsecutiveFailures.Set {
+			e.FieldStart("consecutive_failures")
+			s.ConsecutiveFailures.Encode(e)
+		}
+	}
+	{
+		if s.BackoffSeconds.Set {
+			e.FieldStart("backoff_seconds")
+			s.BackoffSeconds.Encode(e)
+		}
+	}
+	{
+		if s.RecentWfe.Set {
+			e.FieldStart("recent_wfe")
+			s.RecentWfe.Encode(e)
+		}
+	}
+	{
 		if s.ParameterEvidence.Set {
 			e.FieldStart("parameter_evidence")
 			s.ParameterEvidence.Encode(e)
@@ -53108,7 +53270,7 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [45]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [54]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -53120,40 +53282,49 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [45]string{
 	8:  "from_phase",
 	9:  "to_phase",
 	10: "transition_reason",
-	11: "parameter_evidence",
-	12: "original_parameters",
-	13: "override_parameters",
-	14: "effective_parameters",
-	15: "override_rationale",
-	16: "rar_name",
-	17: "required_by",
-	18: "workflow_id",
-	19: "workflow_name",
-	20: "workflow_selection_confidence",
-	21: "confidence_str",
-	22: "decision",
-	23: "approved_by",
-	24: "rejected_by",
-	25: "rejection_reason",
-	26: "message",
-	27: "reason",
-	28: "sub_reason",
-	29: "notification_name",
-	30: "timeout_config",
-	31: "pre_remediation_spec_hash",
-	32: "target_resource",
-	33: "workflow_version",
-	34: "action_type",
-	35: "signal_type",
-	36: "signal_fingerprint",
-	37: "crd_outcome",
-	38: "ea_name",
-	39: "hash_compute_delay",
-	40: "alert_check_delay",
-	41: "gitops_sync_delay",
-	42: "operator_reconcile_delay",
-	43: "is_gitops_managed",
-	44: "is_crd",
+	11: "block_reason",
+	12: "block_message",
+	13: "requeue_after_seconds",
+	14: "blocked_until",
+	15: "blocking_wfe",
+	16: "duplicate_of",
+	17: "consecutive_failures",
+	18: "backoff_seconds",
+	19: "recent_wfe",
+	20: "parameter_evidence",
+	21: "original_parameters",
+	22: "override_parameters",
+	23: "effective_parameters",
+	24: "override_rationale",
+	25: "rar_name",
+	26: "required_by",
+	27: "workflow_id",
+	28: "workflow_name",
+	29: "workflow_selection_confidence",
+	30: "confidence_str",
+	31: "decision",
+	32: "approved_by",
+	33: "rejected_by",
+	34: "rejection_reason",
+	35: "message",
+	36: "reason",
+	37: "sub_reason",
+	38: "notification_name",
+	39: "timeout_config",
+	40: "pre_remediation_spec_hash",
+	41: "target_resource",
+	42: "workflow_version",
+	43: "action_type",
+	44: "signal_type",
+	45: "signal_fingerprint",
+	46: "crd_outcome",
+	47: "ea_name",
+	48: "hash_compute_delay",
+	49: "alert_check_delay",
+	50: "gitops_sync_delay",
+	51: "operator_reconcile_delay",
+	52: "is_gitops_managed",
+	53: "is_crd",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -53161,7 +53332,7 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationOrchestratorAuditPayload to nil")
 	}
-	var requiredBitSet [6]uint8
+	var requiredBitSet [7]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -53278,6 +53449,96 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"transition_reason\"")
+			}
+		case "block_reason":
+			if err := func() error {
+				s.BlockReason.Reset()
+				if err := s.BlockReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"block_reason\"")
+			}
+		case "block_message":
+			if err := func() error {
+				s.BlockMessage.Reset()
+				if err := s.BlockMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"block_message\"")
+			}
+		case "requeue_after_seconds":
+			if err := func() error {
+				s.RequeueAfterSeconds.Reset()
+				if err := s.RequeueAfterSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requeue_after_seconds\"")
+			}
+		case "blocked_until":
+			if err := func() error {
+				s.BlockedUntil.Reset()
+				if err := s.BlockedUntil.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"blocked_until\"")
+			}
+		case "blocking_wfe":
+			if err := func() error {
+				s.BlockingWfe.Reset()
+				if err := s.BlockingWfe.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"blocking_wfe\"")
+			}
+		case "duplicate_of":
+			if err := func() error {
+				s.DuplicateOf.Reset()
+				if err := s.DuplicateOf.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"duplicate_of\"")
+			}
+		case "consecutive_failures":
+			if err := func() error {
+				s.ConsecutiveFailures.Reset()
+				if err := s.ConsecutiveFailures.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"consecutive_failures\"")
+			}
+		case "backoff_seconds":
+			if err := func() error {
+				s.BackoffSeconds.Reset()
+				if err := s.BackoffSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"backoff_seconds\"")
+			}
+		case "recent_wfe":
+			if err := func() error {
+				s.RecentWfe.Reset()
+				if err := s.RecentWfe.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"recent_wfe\"")
 			}
 		case "parameter_evidence":
 			if err := func() error {
@@ -53628,8 +53889,9 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [6]uint8{
+	for i, mask := range [7]uint8{
 		0b00000111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 		0b00000000,

@@ -34,8 +34,9 @@ import (
 // Downstream services (SignalProcessing, AIAnalysis) enrich with additional context.
 type NormalizedSignal struct {
 	// Fingerprint is the unique identifier for deduplication
-	// Format: SHA256 hash of "alertname:namespace:kind:name" (local)
-	//         SHA256 hash of "clusterID:namespace:kind:name" (federated, when ClusterID != "")
+	// Format: SHA256 hash of "group:namespace:kind:name" (local)
+	//         SHA256 hash of "clusterID:group:namespace:kind:name" (federated, when ClusterID != "")
+	//         — the group segment comes from the resource's apiVersion (#2650, BR-GATEWAY-004)
 	// Example: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
 	Fingerprint string
 

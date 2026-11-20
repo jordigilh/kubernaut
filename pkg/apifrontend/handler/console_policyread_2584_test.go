@@ -147,7 +147,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(result).To(HaveKey("freshness"))
 		Expect(string(result["state"])).To(Equal(`"empty"`))
 	})
-	It("returns an RFC 7807 error for duplicated filters", func() {
+	It("IT-AF-2584-005 [FedRAMP SI-10]: returns an RFC 7807 error for duplicated filters", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local&cluster_id=other", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -160,7 +160,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring("invalid Console read filter"))
 	})
 
-	It("serializes a successful authenticated inventory page", func() {
+	It("IT-AF-2584-002 [BR-API-001]: serializes a successful authenticated inventory page", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
 		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
@@ -192,7 +192,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
 	})
 
-	It("rejects service accounts without reading inventory", func() {
+	It("IT-AF-2584-004 [BR-SECURITY-016]: rejects service accounts without reading inventory", func() {
 		reader := &consoleInventoryStub{page: successfulPage()}
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
@@ -206,7 +206,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(reader.listCalls).To(Equal(0))
 	})
 
-	It("maps exact target denial to not_found without leaking the target", func() {
+	It("IT-AF-2584-004 [BR-SECURITY-016]: maps exact target denial to not_found without leaking the target", func() {
 		resource := successfulPage().Items[0]
 		resource.Name = "sensitive-target"
 		reader := &consoleInventoryStub{page: successfulPage(), resource: resource}
@@ -222,6 +222,72 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"not_found"`))
 		Expect(recorder.Body.String()).NotTo(ContainSubstring("sensitive-target"))
 	})
+
+	It("UT-AF-2584-010 [BR-SECURITY-016, FedRAMP AC-6]: rejects a request without a verified identity before reading inventory", func() {
+		reader := &consoleInventoryStub{page: successfulPage()}
+		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, reader)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
+		recorder := httptest.NewRecorder()
+
+		readHandler.ServeHTTP(recorder, req)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring("checkout"))
+		Expect(reader.listCalls).To(Equal(0))
+	})
+
+	It("IT-AF-2584-004 [BR-SECURITY-016, FedRAMP AC-4/AC-6]: returns a state-only denial when the endpoint capability is missing", func() {
+		reader := &consoleInventoryStub{page: successfulPage()}
+		readHandler := newConsoleReadHandler(capabilityDeniedAuthorizer{}, reader)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=local", http.NoBody)
+		req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"}))
+		recorder := httptest.NewRecorder()
+
+		readHandler.ServeHTTP(recorder, req)
+
+		Expect(recorder.Code).To(Equal(http.StatusForbidden))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"forbidden"`))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring("checkout"))
+		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
+		Expect(reader.listCalls).To(Equal(0))
+	})
+
+	It("IT-AF-2584-005 [FedRAMP SI-10, AC-4]: rejects filters and IDs that would widen the result", func() {
+		local := &consoleInventoryStub{page: successfulPage()}
+		remote := &consoleInventoryStub{page: successfulPage()}
+		// Both backends are wired so the non-local probe can distinguish "the
+		// service refused the request" from "no remote reader was configured".
+		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory:  local,
+			RemoteInventory: remote,
+			CurrentPolicies: &consoleCurrentPolicyStub{},
+			Authorizer:      &consoleAuthorizer{allow: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		readHandler := handler.NewConsolePolicyReadHandler(service, logrDiscard())
+
+		// A non-local cluster is refused: neither backend is consulted.
+		crossCluster := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=prod-east", http.NoBody)
+		crossCluster = crossCluster.WithContext(auth.WithUserIdentity(crossCluster.Context(), &auth.UserIdentity{Username: "alice"}))
+		crossRecorder := httptest.NewRecorder()
+		readHandler.ServeHTTP(crossRecorder, crossCluster)
+		Expect(crossRecorder.Code).To(Equal(http.StatusServiceUnavailable))
+		Expect(crossRecorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
+		Expect(local.listCalls).To(Equal(0), "a remote cluster must not fall back to the local hub reader")
+		Expect(remote.listCalls).To(Equal(0), "a non-local list must be refused before remote dispatch")
+
+		// A guessed opaque ID returns not_found without existence detail.
+		guessedID := "r-" + strings.Repeat("0", 64)
+		guessed := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources/"+guessedID+"?cluster_id=local", http.NoBody)
+		guessed.SetPathValue("resourceID", guessedID)
+		guessed = guessed.WithContext(auth.WithUserIdentity(guessed.Context(), &auth.UserIdentity{Username: "alice"}))
+		guessedRecorder := httptest.NewRecorder()
+		readHandler.ServeHTTP(guessedRecorder, guessed)
+		Expect(guessedRecorder.Code).To(Equal(http.StatusNotFound))
+		Expect(guessedRecorder.Body.String()).To(ContainSubstring(`"state":"not_found"`))
+		Expect(guessedRecorder.Body.String()).NotTo(ContainSubstring("checkout"))
+	})
 })
 
 func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.InventoryReader) http.Handler {
@@ -234,7 +300,20 @@ func newConsoleReadHandler(authorizer policyread.Authorizer, reader policyread.I
 	return handler.NewConsolePolicyReadHandler(service, logrDiscard())
 }
 
+// capabilityDeniedAuthorizer grants the target but not the endpoint capability,
+// modelling a caller that authenticates but lacks the named read capability.
+type capabilityDeniedAuthorizer struct{}
+
+func (capabilityDeniedAuthorizer) Check(context.Context, string, []string, string) (bool, error) {
+	return false, nil
+}
+
+func (capabilityDeniedAuthorizer) CheckTarget(context.Context, string, []string, auth.TargetAccess) (bool, error) {
+	return true, nil
+}
+
 func successfulPage() inventory.Page {
+
 	observedAt := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	return inventory.Page{
 		State:        inventory.StateSuccess,
@@ -249,7 +328,7 @@ func successfulPage() inventory.Page {
 			Kind:      "Deployment",
 			Namespace: "payments",
 			Name:      "checkout",
-			Scope:     inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue},
+			Scope:     inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue, NamespaceLabel: inventory.LabelAbsent},
 		}},
 	}
 }
@@ -261,6 +340,9 @@ type consoleInventoryStub struct {
 	getCalls  int
 }
 
+// consoleCurrentPolicyStub mirrors the served contract: the revision is a
+// sha256 digest (the schema enforces that shape) and the threshold comes from
+// the operator runtime configuration.
 type consoleCurrentPolicyStub struct{}
 
 func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([]policyread.PolicyMetadata, error) {
@@ -268,7 +350,8 @@ func (*consoleCurrentPolicyStub) ReadCurrentPolicies(context.Context, string) ([
 		Type:          "aiAnalysis",
 		ConfigMapName: "aianalysis-policy",
 		ConfigMapKey:  "approval.rego",
-		Revision:      "sha256:ai",
+		Revision:      "sha256:" + strings.Repeat("a", 64),
+		Threshold:     &policyread.Threshold{Value: 0.85, Source: "runtime-config", Kind: "rego-approval"},
 	}}, nil
 }
 

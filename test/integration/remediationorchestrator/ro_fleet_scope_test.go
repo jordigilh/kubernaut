@@ -143,9 +143,8 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		fmcServer = httptest.NewServer(mux)
 
 		By("Creating FederatedScopeChecker backed by real FMC + real scope.Manager")
-		localChecker := scope.NewManager(k8sClient)
 		remoteChecker := fmc.NewHTTPClient(fmcServer.URL)
-		federatedChecker := fleet.NewFederatedScopeChecker(localChecker, remoteChecker, ctrl.Log.WithName("federated-scope-test"))
+		federatedChecker := fleet.NewFederatedScopeChecker(remoteChecker, ctrl.Log.WithName("federated-scope-test"))
 
 		By("Creating routing engine with real federated scope checker")
 		engine = routing.NewRoutingEngine(

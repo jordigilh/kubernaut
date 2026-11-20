@@ -11,7 +11,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 )
 
-var _ = Describe("IT-AF-2584-001/002/005: Console read router wiring", func() {
+var _ = Describe("BR-AI-085 / BR-SECURITY-016: Console read router wiring", func() {
 	It("registers all three Console routes in the authenticated middleware tier", func() {
 		consoleHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)

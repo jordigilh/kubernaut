@@ -527,16 +527,21 @@ func fpWaitForRRWithTargetNS(targetNS string, timeout time.Duration) string {
 //
 // Issue #54 bug fix: this previously hashed "namespace/kind/name" with '/'
 // separators, but production (rrFingerprintWithCluster ->
-// gwtypes.CalculateClusterAwareFingerprint) hashes "namespace:kind:name" with
-// ':' separators. The mismatch meant this helper could never match a real RR's
+// gwtypes.CalculateClusterAwareFingerprint) hashes with ':' separators. The
+// mismatch meant this helper could never match a real RR's
 // spec.signalFingerprint, so fpWaitForRRByFingerprint always timed out even
 // when AF successfully created the RR (E2E-FP-1189-002). Delegating directly
 // to the production function eliminates any future drift.
-func rrFingerprint(namespace, kind, name string) string {
+//
+// #2650: gains an apiVersion parameter — the fingerprint now includes the
+// API-group dimension, so callers must pass the same api_version the RR was
+// created with (e.g. the mock LLM's kubernaut_remediate args).
+func rrFingerprint(namespace, kind, name, apiVersion string) string {
 	return gwtypes.CalculateClusterAwareFingerprint("", gwtypes.ResourceIdentifier{
-		Namespace: namespace,
-		Kind:      kind,
-		Name:      name,
+		Namespace:  namespace,
+		Kind:       kind,
+		Name:       name,
+		APIVersion: apiVersion,
 	})
 }
 

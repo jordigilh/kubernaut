@@ -16,8 +16,8 @@ func TestInventoryContract(t *testing.T) {
 	RunSpecs(t, "Inventory Contract Suite")
 }
 
-var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contract", func() {
-	It("applies a bounded default limit and rejects a widening exact filter", func() {
+var _ = Describe("BR-SCOPE-001: canonical inventory contract", func() {
+	It("UT-AF-2584-005 [BR-SCOPE-001, FedRAMP SI-10]: applies a bounded default limit and rejects a widening exact filter", func() {
 		normalized, err := (inventory.Filters{ClusterID: "local"}).Normalize()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(normalized.Limit).To(Equal(inventory.DefaultLimit))
@@ -26,7 +26,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 		Expect(err).To(MatchError(ContainSubstring("resource_id cannot be combined")))
 	})
 
-	DescribeTable("rejects unbounded or malformed caller input", func(filters inventory.Filters) {
+	DescribeTable("UT-AF-2584-005 [FedRAMP SI-10]: rejects unbounded or malformed caller input", func(filters inventory.Filters) {
 		_, err := filters.Normalize()
 		Expect(err).To(HaveOccurred())
 		Expect(err).To(MatchError(ContainSubstring("invalid inventory filter")))
@@ -38,7 +38,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 		Entry("legacy resource ID", inventory.Filters{ClusterID: "local", ResourceID: "opaque-id"}),
 	)
 
-	It("rejects legacy and malformed resource IDs", func() {
+	It("UT-AF-2584-005 [FedRAMP SI-10]: rejects legacy and malformed resource IDs", func() {
 		validID := "r-" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 		Expect(inventory.ValidateResourceID(validID)).To(Succeed())
@@ -52,7 +52,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 		}
 	})
 
-	It("validates canonical identity before hashing", func() {
+	It("UT-AF-2584-005 [FedRAMP SI-10]: validates canonical identity before hashing", func() {
 		identity := scope.ResourceIdentity{
 			ClusterID: "prod-east",
 			Group:     "apps",
@@ -106,7 +106,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 			return inventory.Freshness{State: inventory.FreshnessFresh, AsOf: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}
 		}
 
-		It("requires complete success pages to contain validated items", func() {
+		It("UT-AF-2584-008 [BR-API-001]: requires complete success pages to contain validated items", func() {
 			resource := validResource()
 			page := inventory.Page{
 				State:        inventory.StateSuccess,
@@ -120,7 +120,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 			Expect(page.Validate()).To(MatchError(ContainSubstring("successful page must contain at least one item")))
 		})
 
-		It("requires complete empty pages and partial state-only failure pages", func() {
+		It("UT-AF-2584-008 [BR-API-001]: requires complete empty pages and partial state-only failure pages", func() {
 			empty := inventory.Page{State: inventory.StateEmpty, Completeness: inventory.CompletenessComplete, Freshness: freshness()}
 			Expect(empty.Validate()).To(Succeed())
 
@@ -134,7 +134,7 @@ var _ = Describe("BR-SCOPE-001 / UT-AF-2584-005/007: canonical inventory contrac
 			Expect(failure.Validate()).To(MatchError(ContainSubstring("state-only page must be partial")))
 		})
 
-		It("rejects an item whose ID does not match its identity and a bad cursor", func() {
+		It("UT-AF-2584-008 [BR-API-001]: rejects an item whose ID does not match its identity and a bad cursor", func() {
 			resource := validResource()
 			page := inventory.Page{
 				State:        inventory.StateSuccess,

@@ -62,8 +62,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		reader = scopecache.NewValkeyCacheReader(valkeyAddr)
 		client = scopecache.NewClient(reader)
 
-		local := &localAlwaysFalse{}
-		fc = fleet.NewFederatedScopeChecker(local, client, logr.Discard())
+		fc = fleet.NewFederatedScopeChecker(client, logr.Discard())
 	})
 
 	AfterAll(func() {
