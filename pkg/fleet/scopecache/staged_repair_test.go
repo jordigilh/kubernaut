@@ -660,11 +660,17 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		Expect(err).ToNot(HaveOccurred())
 		Expect(manager.Digest()).ToNot(BeEmpty())
 
-		var stagedStatus, stagedIndex, stagedRecord string
+		// DD-FLEET-017 D2.5a: the commit contract carries both per-partition
+		// indexes, so the harness must pass the staged and live lex index keys
+		// too (KEYS[5..6]). The fixture's real Repair staged both indexes, so
+		// they agree on the record count and the lex guard passes.
+		var stagedStatus, stagedIndex, stagedLex, stagedRecord string
 		for _, key := range f.server.Keys() {
 			switch {
 			case strings.HasSuffix(key, ":status:staged"):
 				stagedStatus = key
+			case strings.HasSuffix(key, ":index:lex:staged"):
+				stagedLex = key
 			case strings.HasSuffix(key, ":index:staged"):
 				stagedIndex = key
 			case strings.Contains(key, ":record:staged:"):
@@ -673,10 +679,12 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 		}
 		Expect(stagedStatus).ToNot(BeEmpty(), "the fixture must have a staged status key")
 		Expect(stagedIndex).ToNot(BeEmpty(), "the fixture must have a staged index key")
+		Expect(stagedLex).ToNot(BeEmpty(), "the fixture must have a staged lex index key")
 		Expect(stagedRecord).ToNot(BeEmpty(), "the fixture must have a staged record key")
 
 		liveStatus := strings.Replace(stagedStatus, ":staged", "", 1)
 		liveIndex := strings.Replace(stagedIndex, ":staged", "", 1)
+		liveLex := strings.Replace(stagedLex, ":staged", "", 1)
 		recordBase, _, found := strings.Cut(stagedRecord, ":record:staged:")
 		Expect(found).To(BeTrue(), "the staged record key must carry the staged record prefix")
 		stagedRecordPrefix := recordBase + ":record:staged:"
@@ -688,6 +696,8 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			// [1]=op, [2..9]=identity, [10]=expected count, [11..12]=record
 			// prefixes, [13..16]=reserved structural slots (kept for stable
 			// numbering), [17..20]=proof flags, [21]=refresh TTL millis.
+			// KEYS[1..6]=live/staged status, live/staged index, staged/live
+			// lex index (the order the Go writer passes them).
 			return []interface{}{
 				"commit", f.part.RegistrationUID, "1",
 				f.fence.HolderPodUID, f.fence.HolderSessionUID,
@@ -699,7 +709,7 @@ var _ = Describe("DD-FLEET-016 A2: staged repair availability (BR-SCOPE-001)", f
 			}
 		}
 		evalCommit := func(recordTTLFlag, reservedFlag string) error {
-			commandArgs := []interface{}{"EVALSHA", manager.Digest(), 4, liveStatus, stagedStatus, liveIndex, stagedIndex}
+			commandArgs := []interface{}{"EVALSHA", manager.Digest(), 6, liveStatus, stagedStatus, liveIndex, stagedIndex, stagedLex, liveLex}
 			commandArgs = append(commandArgs, argv(recordTTLFlag, reservedFlag)...)
 			return client.Do(f.ctx, commandArgs...).Err()
 		}

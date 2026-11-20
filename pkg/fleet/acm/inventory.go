@@ -356,8 +356,18 @@ func pageFromSearchResponse(gqlResp graphQLResponse, requestedClusterID string) 
 	}
 	observedAt := time.Now().UTC()
 	if result.Count == 0 || len(result.Items) == 0 {
-		page := inventory.StateOnly(inventory.StateEmpty)
-		page.ObservedAt = observedAt
+		// DD-FLEET-017 G10: a successfully traversed zero-item query is an
+		// applied observation, so it is a complete empty collection result —
+		// never the state-only failure envelope. Whether the fleet is empty is
+		// FMC page assembly's decision, from the partition proof.
+		page := inventory.Page{
+			State:        inventory.StateEmpty,
+			ObservedAt:   observedAt,
+			Completeness: inventory.CompletenessComplete,
+		}
+		if err := page.ValidateCollection(); err != nil {
+			return inventory.StateOnly(inventory.StateUnavailable), fmt.Errorf("validate ACM inventory collection result: %w", err)
+		}
 		return page, nil
 	}
 
@@ -376,8 +386,12 @@ func pageFromSearchResponse(gqlResp graphQLResponse, requestedClusterID string) 
 		Completeness: inventory.CompletenessComplete,
 		Items:        items,
 	}
-	if err := page.Validate(); err != nil {
-		return inventory.StateOnly(inventory.StateUnavailable), fmt.Errorf("validate ACM inventory page: %w", err)
+	// DD-FLEET-017 G10/D3.6: this is a collection-result shape, not a read
+	// surface. ACM Search exposes no index-freshness signal, so the page must
+	// not claim any freshness state; page assembly decides that from the
+	// partition proof.
+	if err := page.ValidateCollection(); err != nil {
+		return inventory.StateOnly(inventory.StateUnavailable), fmt.Errorf("validate ACM inventory collection result: %w", err)
 	}
 	return page, nil
 }

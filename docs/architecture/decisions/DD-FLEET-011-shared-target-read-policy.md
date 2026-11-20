@@ -25,6 +25,16 @@ operator behavior, not an implemented GW/RO/FMC parity contract.
 
 ## Decision
 
+> **Amendment (2026-11-18, #2661):** source selection for fleet-control-plane
+> queries has moved to FMC (ADR-068 "One federation-facing contact"). This DD's
+> target-read policy and backend-identity rules are **unchanged**: the Search
+> principal referenced in §4 is now the identity configured on FMC's ACM source,
+> and "FMC's local Kubernetes target roles do not authorize that query" still
+> applies to whichever identity performs it. §5's fail-closed ACM inventory gate
+> stays closed until that source, the configured hub Search identity,
+> completeness and a production journey are qualified (DD-FLEET-017 v2).
+> GW/RO direct ACM scope behaviour is untouched by this amendment.
+
 1. For the MVP, the operator will define and maintain a **shared
    target-resource read configuration** for GW, RO and FMC, derived from the
    same default target-read rules and administrator-configured
