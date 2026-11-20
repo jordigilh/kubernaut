@@ -92,7 +92,7 @@ func (s *ValkeyStatusStore) BeginRepair(ctx context.Context, request BeginRepair
 		return RepairStartResult{}, repairFailureError(RepairFailureInvalidRequest, err, false)
 	}
 	token := RepairToken{Value: uuid.NewString()}
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), stagedIndexKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), stagedIndexKey(request.Partition), stagedLexIndexKey(request.Partition)},
 		"begin", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, token.Value,
@@ -124,7 +124,7 @@ func (s *ValkeyStatusStore) repairObservation(ctx context.Context, request Repai
 		return "", repairReconcileProof{}, repairFailureError(RepairFailureRecordInvalid, err, false)
 	}
 	items, err := s.evalMutation(ctx,
-		[]string{stagedStatusKey(request.Partition), stagedRecordKey(request.Partition, publicID), stagedIndexKey(request.Partition)},
+		[]string{stagedStatusKey(request.Partition), stagedRecordKey(request.Partition, publicID), stagedIndexKey(request.Partition), stagedLexIndexKey(request.Partition)},
 		"repair_reconcile", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
@@ -272,7 +272,7 @@ func hasCleanRepairProof(result RepairResult) bool {
 }
 
 func (s *ValkeyStatusStore) finalizeEmptyRepair(ctx context.Context, request RepairRequest) (TTLPTTLValidation, error) {
-	items, err := s.evalMutation(ctx, []string{stagedStatusKey(request.Partition), stagedIndexKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{stagedStatusKey(request.Partition), stagedIndexKey(request.Partition), stagedLexIndexKey(request.Partition)},
 		"repair_finalize_empty", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation, request.Token.Value)
@@ -328,7 +328,7 @@ func (s *ValkeyStatusStore) CommitRepair(ctx context.Context, request RepairComm
 	if request.Proof.RecordTTL.Valid {
 		refreshTTLMillis = request.Proof.RecordTTL.ExpiresAtMillis - request.Proof.RecordTTL.ServerNowMillis
 	}
-	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), indexKey(request.Partition), stagedIndexKey(request.Partition)},
+	items, err := s.evalMutation(ctx, []string{statusKey(request.Partition), stagedStatusKey(request.Partition), indexKey(request.Partition), stagedIndexKey(request.Partition), stagedLexIndexKey(request.Partition), lexIndexKey(request.Partition)},
 		"commit", request.RegistrationUID, request.ExpectedRegistryRevision,
 		request.WriterFence.HolderPodUID, request.WriterFence.HolderSessionUID,
 		request.WriterFence.LeaseEpoch, request.WriterFence.Fence, request.Generation,
@@ -380,7 +380,7 @@ func (s *ValkeyStatusStore) ReadVerified(ctx context.Context, request FencedRead
 	if err != nil {
 		return result, classifyRepairError(err)
 	}
-	if len(items) == 0 || scriptString(items, 0) == "missing" {
+	if len(items) == 0 || scriptString(items, 0) == scriptMissing {
 		result.State = ReadMissing
 		return result, nil
 	}
@@ -459,6 +459,7 @@ func parseReadVerified(items []interface{}, request FencedReadRequest) (FencedRe
 	result.RecordTTL = ttlValidation(proof.now, proof.expires, proof.recordPTTL)
 	result.StatusTTL = ttlValidation(proof.now, proof.statusExpires, proof.statusPTTL)
 	result.IndexTTL = ttlValidation(proof.now, proof.indexExpires, proof.indexPTTL)
+	result.RemainingProofTTL = remainingMillis(minRemainingMillis(proof.now, proof.expires, proof.statusExpires, proof.indexExpires))
 	if !result.RecordTTL.Valid || !result.IndexTTL.Valid || !result.StatusTTL.Valid {
 		result.State = ReadUncertain
 		return result, repairFailureError(RepairFailureTTLInvalid, fmt.Errorf("read ttl proof is invalid"), false)
@@ -528,6 +529,13 @@ func indexKey(partition PartitionStateKey) string {
 	return partitionPrefix(partition) + ":index"
 }
 
+// lexIndexKey is the per-partition lexicographic identity index
+// (DD-FLEET-017 D2.5a). Both indexes are swapped by one commit and both are
+// absent for a proven-empty partition.
+func lexIndexKey(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":index:lex"
+}
+
 func recordKey(partition PartitionStateKey, publicID string) string {
 	return recordKeyPrefix(partition) + publicID
 }
@@ -545,6 +553,10 @@ func stagedStatusKey(partition PartitionStateKey) string {
 
 func stagedIndexKey(partition PartitionStateKey) string {
 	return partitionPrefix(partition) + ":index:staged"
+}
+
+func stagedLexIndexKey(partition PartitionStateKey) string {
+	return partitionPrefix(partition) + ":index:lex:staged"
 }
 
 func stagedRecordKey(partition PartitionStateKey, publicID string) string {

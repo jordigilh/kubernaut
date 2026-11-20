@@ -178,6 +178,14 @@ func ResolveLabels(resourceLabels, namespaceLabels map[string]string, clusterSco
 	return resolveLabelStates(labelState(resourceLabels), labelState(namespaceLabels), clusterScoped)
 }
 
+// ResolveLabelStates applies the same ADR-053 precedence to already-typed label
+// states. Fleet readers whose committed records carry only a label state (never
+// raw labels) reuse this function instead of reimplementing precedence
+// (DD-FLEET-017 §3.7, D2.2).
+func ResolveLabelStates(resourceState, namespaceState LabelState, clusterScoped bool) Resolution {
+	return resolveLabelStates(resourceState, namespaceState, clusterScoped)
+}
+
 func resolveLabelStates(resourceState, namespaceState LabelState, clusterScoped bool) Resolution {
 	resolution := Resolution{
 		ResourceLabel:  resourceState,

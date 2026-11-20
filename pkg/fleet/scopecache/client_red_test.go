@@ -55,6 +55,20 @@ func (noOpStatusStore) ReadVerified(context.Context, scopecache.FencedReadReques
 	return scopecache.FencedReadResult{}, nil
 }
 
+// DD-FLEET-017 D2.5a: the inventory page read boundary is part of StatusStore.
+// This scope-lane fake never serves an inventory page.
+func (noOpStatusStore) ReadInventoryPageHeader(context.Context, scopecache.InventoryPageRequest) (scopecache.InventoryPageHeader, error) {
+	return scopecache.InventoryPageHeader{State: scopecache.InventoryReadMissing}, nil
+}
+
+func (noOpStatusStore) ReadInventoryPageRecords(context.Context, scopecache.InventoryPageRecordsRequest) (scopecache.InventoryPageRecords, error) {
+	return scopecache.InventoryPageRecords{State: scopecache.InventoryReadMissing}, nil
+}
+
+func (noOpStatusStore) ReadInventoryResource(context.Context, scopecache.InventoryResourceRequest) (scopecache.InventoryResourceRecord, error) {
+	return scopecache.InventoryResourceRecord{State: scopecache.InventoryReadMissing}, nil
+}
+
 // staticRegistrationGuard serves one immutable registration snapshot. The
 // optional onCurrent hook lets a test rotate readiness exactly when the
 // client's guarded re-read runs.

@@ -240,6 +240,10 @@ cert both match, unlike a local port-forward).
 
 ### Results
 
+> Historical record: this spike exercised the `IsManagedResource()` boolean lane, which #2660
+> later removed in favor of the typed `ScopeChecker.Check` contract (DD-FLEET-015). The results
+> below reflect the API as it existed at spike time.
+
 | Check | Result |
 |-------|--------|
 | `FleetConfig.Validate()` accepts `backend=acm` + `TokenPath` | **PASS** |
