@@ -103,6 +103,29 @@ type KindResolver interface {
 	IsCoreBatchAppsKind(kind string) bool
 }
 
+// kindScopeResolver is the optional discovery-backed scope classifier. Gateway's
+// *adapters.APIResourceRegistry satisfies it; the type assertion keeps this
+// package free of a service import and keeps static-only resolvers working
+// (#2670).
+type kindScopeResolver interface {
+	// IsClusterScopedTargetKind applies the gateway's precedence: the
+	// discovered scope for the identity's (group, Kind) first, then the static
+	// map, then the per-Kind discovery answer.
+	IsClusterScopedTargetKind(kind, apiVersion string) bool
+}
+
+// ownerKindIsClusterScoped classifies an owner reached through an
+// ownerReference. Discovery decides when the resolver can classify the owner's
+// exact (group, Kind) — a cluster-scoped CRD is not in the static map, and the
+// namespace it inherits from the child would otherwise be hashed into the
+// fingerprint while the RR target has none (#2670).
+func ownerKindIsClusterScoped(reg KindResolver, kind, apiVersion string) bool {
+	if resolver, ok := reg.(kindScopeResolver); ok {
+		return resolver.IsClusterScopedTargetKind(kind, apiVersion)
+	}
+	return scope.IsClusterScopedKind(kind)
+}
+
 // KindToGroup returns a copy of the authoritative kind-to-API-group mapping
 // used for owner chain resolution. This is the single source of truth for which
 // Kubernetes resource kinds a consumer must be able to look up.
@@ -405,13 +428,15 @@ func (r *K8sOwnerResolver) traverseOwnerIdentityChain(
 		}
 		if step.advanced {
 			current.Kind, current.Name, current.APIVersion = step.nextKind, step.nextName, step.nextAPIVersion
-			// A cluster-scoped owner (Node, PersistentVolume, Namespace) has no
-			// namespace: the current resource's namespace must not be carried onto
-			// it. Without this, a mirror Pod in kube-system resolving to its Node
-			// would hash kube-system into the identity while the RR target is
-			// cluster-scoped, producing a second fingerprint for one target
-			// (#2670). Mirrors pkg/signalprocessing/ownerchain/builder.go.
-			if scope.IsClusterScopedKind(current.Kind) {
+			// A cluster-scoped owner (Node, PersistentVolume, Namespace, or a
+			// discovered cluster-scoped CRD) has no namespace: the current
+			// resource's namespace must not be carried onto it. Without this, a
+			// mirror Pod in kube-system resolving to its Node — or a Pod owned by
+			// a cluster-scoped CRD — would hash the child namespace into the
+			// identity while the RR target is cluster-scoped, producing a second
+			// fingerprint for one target (#2670). Mirrors
+			// pkg/signalprocessing/ownerchain/builder.go.
+			if ownerKindIsClusterScoped(r.registry, current.Kind, current.APIVersion) {
 				current.Namespace = ""
 			}
 			// Validate at the transition, including the last permitted depth.

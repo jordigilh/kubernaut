@@ -107,4 +107,30 @@ var _ = Describe("Cluster-scoped target detection for fingerprint normalization 
 				"the namespaced group must keep its namespace in either discovery order")
 		}
 	})
+
+	It("UT-GW-2670-028: an explicit apiVersion group outranks the static map", func() {
+		// A CRD may reuse a core Kind with the opposite scope. When the identity
+		// names the group, discovery for that group is authoritative; the static
+		// map is only the fallback (#2670).
+		cs := fakeclientset.NewSimpleClientset()
+		fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+		Expect(ok).To(BeTrue())
+		fd.Resources = []*metav1.APIResourceList{
+			{GroupVersion: "v1", APIResources: []metav1.APIResource{
+				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
+			}},
+			{GroupVersion: "tenant.example.com/v1", APIResources: []metav1.APIResource{
+				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: true},
+			}},
+		}
+		registry, err := NewAPIResourceRegistry(fd)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(targetClusterScoped(registry, "Node", "tenant.example.com/v1")).To(BeFalse(),
+			"a namespaced CRD that reuses a core Kind must keep its namespace")
+		Expect(targetClusterScoped(registry, "Node", "v1")).To(BeTrue(),
+			"the core Node stays cluster-scoped")
+		Expect(targetClusterScoped(nil, "Node", "tenant.example.com/v1")).To(BeTrue(),
+			"without discovery the static map is the only answer")
+	})
 })

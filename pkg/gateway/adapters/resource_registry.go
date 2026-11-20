@@ -377,25 +377,35 @@ func (r *APIResourceRegistry) namespacedFor(kind, apiVersion string) (bool, bool
 	return namespaced, ok
 }
 
-// targetClusterScoped reports whether a target kind has no namespace. The
-// static scope map is authoritative for the kinds it lists; API discovery
-// extends the answer to kinds outside the map (which covers cluster-scoped
-// CRDs). When apiVersion is known, the per-(group, Kind) discovery answer is
-// preferred over the per-Kind one so a Kind served with different scopes by
-// different groups is classified from the group the identity names (#2670). An
-// unknown kind stays namespaced, because IsNamespacedKind defaults to true and
-// dropping a namespace a resource needs is worse than keeping one it does not.
+// targetClusterScoped reports whether a target kind has no namespace. An
+// identity that names its API group is decided by that group's discovered
+// scope first: a custom resource may reuse a core Kind with the opposite scope
+// (e.g. a namespaced `tenant.example.com/v1 Node`), and the static map cannot
+// see the group (#2670). The static scope map remains the fallback for kinds it
+// lists, and API discovery extends the answer to kinds outside the map (which
+// covers cluster-scoped CRDs). An unknown kind stays namespaced, because
+// IsNamespacedKind defaults to true and dropping a namespace a resource needs is
+// worse than keeping one it does not.
 func targetClusterScoped(registry *APIResourceRegistry, kind, apiVersion string) bool {
+	if registry != nil {
+		if namespaced, ok := registry.namespacedFor(kind, apiVersion); ok {
+			return !namespaced
+		}
+	}
 	if scope.IsClusterScopedKind(kind) {
 		return true
 	}
 	if registry == nil {
 		return false
 	}
-	if namespaced, ok := registry.namespacedFor(kind, apiVersion); ok {
-		return !namespaced
-	}
 	return !registry.IsNamespacedKind(kind)
+}
+
+// IsClusterScopedTargetKind applies the same target-scope precedence to this
+// registry's snapshot. Owner-chain traversal uses it so a discovered
+// cluster-scoped CRD owner is normalized exactly like the adapter path (#2670).
+func (r *APIResourceRegistry) IsClusterScopedTargetKind(kind, apiVersion string) bool {
+	return targetClusterScoped(r, kind, apiVersion)
 }
 
 // IsClusterScopedTarget exposes the classification to the Gateway ingress path so

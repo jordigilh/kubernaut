@@ -30,11 +30,14 @@ import (
 )
 
 // clusterScopedOwnerReader serves a namespaced Pod controlled by a
-// cluster-scoped Node, then a standalone Node. It records the key of each fetch
+// cluster-scoped owner, then the owner itself. It records the key of each fetch
 // so the test can prove the traversal stopped passing the Pod's namespace down
-// to the Node lookup (#2670).
+// to the owner lookup (#2670).
 type clusterScopedOwnerReader struct {
-	keys []client.ObjectKey
+	ownerKind       string
+	ownerAPIVersion string
+	ownerName       string
+	keys            []client.ObjectKey
 }
 
 func (r *clusterScopedOwnerReader) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
@@ -43,8 +46,20 @@ func (r *clusterScopedOwnerReader) Get(_ context.Context, key client.ObjectKey, 
 	obj.SetName(key.Name)
 	if len(r.keys) == 1 && obj.GetObjectKind().GroupVersionKind().Kind == "Pod" {
 		controller := true
+		ownerKind := r.ownerKind
+		if ownerKind == "" {
+			ownerKind = "Node"
+		}
+		ownerName := r.ownerName
+		if ownerName == "" {
+			ownerName = "node-1"
+		}
+		ownerAPIVersion := r.ownerAPIVersion
+		if ownerAPIVersion == "" {
+			ownerAPIVersion = "v1"
+		}
 		obj.SetOwnerReferences([]metav1.OwnerReference{{
-			APIVersion: "v1", Kind: "Node", Name: "node-1", Controller: &controller,
+			APIVersion: ownerAPIVersion, Kind: ownerKind, Name: ownerName, Controller: &controller,
 		}})
 	}
 	return nil
@@ -53,6 +68,21 @@ func (r *clusterScopedOwnerReader) Get(_ context.Context, key client.ObjectKey, 
 func (r *clusterScopedOwnerReader) List(_ context.Context, _ client.ObjectList, _ ...client.ListOption) error {
 	return nil
 }
+
+// crdScopeResolver is a KindResolver that also answers the discovery-backed
+// scope question, standing in for Gateway's adapters.APIResourceRegistry in the
+// owner-chain package.
+type crdScopeResolver struct {
+	clusterScoped bool
+}
+
+func (crdScopeResolver) KindToGVR(string) (schema.GroupVersionResource, bool) {
+	return schema.GroupVersionResource{}, false
+}
+
+func (crdScopeResolver) IsCoreBatchAppsKind(string) bool { return false }
+
+func (r crdScopeResolver) IsClusterScopedTargetKind(string, string) bool { return r.clusterScoped }
 
 var _ = Describe("Owner identity chain cluster-scoped namespace normalization (#2670)", func() {
 	ctx := context.Background()
@@ -84,5 +114,25 @@ var _ = Describe("Owner identity chain cluster-scoped namespace normalization (#
 		Expect(resolved).To(Equal(entry("production", "ReplicaSet", "payment-api-abc", "apps/v1")),
 			"a namespaced owner keeps the child's namespace")
 		Expect(reader.gotGVKs[1]).To(Equal(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"}))
+	})
+
+	It("UT-GW-2670-029: a discovered cluster-scoped CRD owner keeps no namespace", func() {
+		// The static kind map does not know storage.example.com/v1 ClusterVolume,
+		// so only the discovery-backed classifier can blank the namespace the
+		// child Pod would otherwise pass down (#2670).
+		reader := &clusterScopedOwnerReader{
+			ownerKind: "ClusterVolume", ownerAPIVersion: "storage.example.com/v1", ownerName: "vol-1",
+		}
+		resolver := ownerchain.NewK8sOwnerResolver(reader, logr.Discard(),
+			ownerchain.WithRegistry(crdScopeResolver{clusterScoped: true}))
+
+		resolved, err := resolver.ResolveTopLevelOwnerIdentity(ctx, entry("production", "Pod", "pod-1", "v1"))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved).To(Equal(entry("", "ClusterVolume", "vol-1", "storage.example.com/v1")),
+			"a discovered cluster-scoped owner must hash the same identity as a direct event for it")
+		Expect(reader.keys).To(HaveLen(2))
+		Expect(reader.keys[1]).To(Equal(client.ObjectKey{Name: "vol-1"}),
+			"the owner verification fetch must be cluster-scoped")
 	})
 })
