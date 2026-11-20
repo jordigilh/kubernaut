@@ -142,6 +142,25 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Expect(observed.Items[0].LabelsPresent).To(BeTrue())
 	})
 
+	DescribeTable("UT-FMC-SRC-2661-019: a per-key label projection is held to the same rule as the semicolon field",
+		func(rawValue string) {
+			// Legacy projections use a dedicated key instead of the `label` field.
+			item := searchItem("uid-1", "api", "")
+			item["label.kubernaut.ai/managed"] = json.RawMessage(rawValue)
+
+			observed, err := readAll(newACMSource(&fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}))
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(observed.Items).To(HaveLen(1))
+			Expect(observed.Items[0].LabelsPresent).To(BeTrue(),
+				"the field was present, so claiming it was absent would hide corruption")
+			Expect(observed.Items[0].LabelState).To(Equal(scope.LabelStateInvalid))
+		},
+		Entry("null value", "null"),
+		Entry("numeric value", "42"),
+		Entry("empty value", `""`),
+	)
+
 	It("UT-FMC-SRC-2661-013: an item without cluster attribution fails the kind", func() {
 		item := searchItem("uid-1", "api", "kubernaut.ai/managed=true")
 		delete(item, "cluster")

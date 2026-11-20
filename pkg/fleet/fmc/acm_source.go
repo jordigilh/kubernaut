@@ -491,48 +491,76 @@ func buildObservedItem(apiVersion, kind, name, namespace string, labelState scop
 // "absent" or a silently-won last value: an invalid label stays invalid so the
 // syncer fails the kind (ADR-053).
 func acmManagedLabelState(raw map[string]json.RawMessage) (scope.LabelState, bool) {
-	labelValue, present := raw["label"]
-	if present {
-		// JSON null unmarshals into "" without error, so it is detected before
-		// decoding: a present-but-null projection is corruption, not absence.
-		if strings.TrimSpace(string(labelValue)) == "null" {
-			return scope.LabelStateInvalid, true
-		}
-		var projected string
-		if err := json.Unmarshal(labelValue, &projected); err != nil {
-			// Present but not a string: unparseable, not absent.
-			return scope.LabelStateInvalid, true
-		}
-		states, malformed := parseProjectedLabels(projected)
-		if malformed {
-			return scope.LabelStateInvalid, true
-		}
-		var found scope.LabelState
-		occurrences := 0
-		for _, key := range managedLabelKeys() {
-			state, ok := states[key]
-			if !ok {
-				continue
-			}
-			occurrences++
-			found = state
-		}
-		switch {
-		case occurrences > 1 || found == scope.LabelStateInvalid:
-			// Duplicate or unparseable managed value: refuse to pick one.
-			return scope.LabelStateInvalid, true
-		case occurrences == 1:
-			return found, true
-		default:
-			return scope.LabelStateAbsent, true
-		}
+	if labelValue, present := raw["label"]; present {
+		return projectedLabelState(labelValue)
 	}
-	for _, key := range []string{"label.kubernaut.ai/managed", "labels.kubernaut.ai/managed", "label.kubernaut.ai~1managed"} {
-		if value, found := searchStringValue(raw, key); found {
-			return labelStateOf(value), true
+	return fallbackLabelState(raw)
+}
+
+// projectedLabelState reads the semicolon `label` field Search projects. A
+// missing field means the object has no labels; a present-but-unusable field is
+// corruption (ADR-053: invalid is never absent).
+func projectedLabelState(labelValue json.RawMessage) (scope.LabelState, bool) {
+	if isJSONNull(labelValue) {
+		return scope.LabelStateInvalid, true
+	}
+	var projected string
+	if err := json.Unmarshal(labelValue, &projected); err != nil {
+		return scope.LabelStateInvalid, true
+	}
+	states, malformed := parseProjectedLabels(projected)
+	if malformed {
+		return scope.LabelStateInvalid, true
+	}
+	var found scope.LabelState
+	occurrences := 0
+	for _, key := range managedLabelKeys() {
+		state, ok := states[key]
+		if !ok {
+			continue
 		}
+		occurrences++
+		found = state
+	}
+	switch {
+	case occurrences > 1 || found == scope.LabelStateInvalid:
+		return scope.LabelStateInvalid, true
+	case occurrences == 1:
+		return found, true
+	default:
+		return scope.LabelStateAbsent, true
+	}
+}
+
+// fallbackLabelState reads the per-key projections older Search answers use, held
+// to the same rule: a present-but-unusable value is corruption, and reporting
+// LabelsPresent=false for it would claim the field was never there.
+func fallbackLabelState(raw map[string]json.RawMessage) (scope.LabelState, bool) {
+	for _, key := range fallbackManagedLabelKeys() {
+		labelValue, present := raw[key]
+		if !present {
+			continue
+		}
+		if isJSONNull(labelValue) {
+			return scope.LabelStateInvalid, true
+		}
+		value, isString := searchStringValue(raw, key)
+		if !isString || value == "" {
+			return scope.LabelStateInvalid, true
+		}
+		return labelStateOf(value), true
 	}
 	return scope.LabelStateAbsent, false
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return strings.TrimSpace(string(value)) == "null"
+}
+
+// fallbackManagedLabelKeys are the per-key projections older Search answers use
+// instead of the semicolon `label` field.
+func fallbackManagedLabelKeys() []string {
+	return []string{"label.kubernaut.ai/managed", "labels.kubernaut.ai/managed", "label.kubernaut.ai~1managed"}
 }
 
 func managedLabelKeys() []string {
