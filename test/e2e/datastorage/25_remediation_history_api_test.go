@@ -212,10 +212,11 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 
 		// Act: query via HTTP API
 		status, body := queryRemediationHistory(map[string]string{
-			"targetKind":      "Deployment",
-			"targetName":      fmt.Sprintf("e2e-nginx-%s", testID),
-			"targetNamespace": "default",
-			"currentSpecHash": currentSpecHash,
+			"targetKind":       "Deployment",
+			"targetName":       fmt.Sprintf("e2e-nginx-%s", testID),
+			"targetNamespace":  "default",
+			"targetApiVersion": "apps/v1", // #2658: required; matches the seeded canonical identity
+			"currentSpecHash":  currentSpecHash,
 		})
 
 		// Assert
@@ -253,10 +254,11 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 
 		// Act
 		status, body := queryRemediationHistory(map[string]string{
-			"targetKind":      "Deployment",
-			"targetName":      fmt.Sprintf("e2e-nginx-%s", testID),
-			"targetNamespace": "default",
-			"currentSpecHash": currentSpecHash,
+			"targetKind":       "Deployment",
+			"targetName":       fmt.Sprintf("e2e-nginx-%s", testID),
+			"targetNamespace":  "default",
+			"targetApiVersion": "apps/v1", // #2658: required; matches the seeded canonical identity
+			"currentSpecHash":  currentSpecHash,
 		})
 
 		// Assert
@@ -278,10 +280,11 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 	It("E2E-DS-016-003: Non-existent target returns 200 OK with empty chains", func() {
 		// Act: query for a target with zero events
 		status, body := queryRemediationHistory(map[string]string{
-			"targetKind":      "Deployment",
-			"targetName":      "e2e-ghost-" + testID,
-			"targetNamespace": "no-such-ns",
-			"currentSpecHash": "sha256:no_such_hash",
+			"targetKind":       "Deployment",
+			"targetName":       "e2e-ghost-" + testID,
+			"targetNamespace":  "no-such-ns",
+			"targetApiVersion": "apps/v1", // #2658: required even for an empty-result query
+			"currentSpecHash":  "sha256:no_such_hash",
 		})
 
 		// Assert
@@ -316,10 +319,11 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 
 		// Act
 		status, body := queryRemediationHistory(map[string]string{
-			"targetKind":      "Deployment",
-			"targetName":      fmt.Sprintf("e2e-nginx-%s", testID),
-			"targetNamespace": "default",
-			"currentSpecHash": currentSpecHash,
+			"targetKind":       "Deployment",
+			"targetName":       fmt.Sprintf("e2e-nginx-%s", testID),
+			"targetNamespace":  "default",
+			"targetApiVersion": "apps/v1", // #2658: required; matches the seeded canonical identity
+			"currentSpecHash":  currentSpecHash,
 		})
 
 		// Assert
@@ -361,7 +365,8 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		Expect(testDB.QueryRow("SELECT event_data::text FROM audit_events WHERE correlation_id = $1", legacy).Scan(&before)).To(Succeed())
 		status, body := queryRemediationHistory(map[string]string{
 			"targetKind": "Deployment", "targetName": "e2e-nginx-" + testID,
-			"targetNamespace": "default", "currentSpecHash": currentSpecHash,
+			"targetNamespace": "default", "targetApiVersion": "apps/v1", // #2658: required
+			"currentSpecHash": currentSpecHash,
 		})
 		Expect(status).To(Equal(http.StatusOK))
 		tier1 := body["tier1"].(map[string]interface{})["chain"].([]interface{})
@@ -395,6 +400,7 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		q.Set("targetKind", "Deployment")
 		q.Set("targetName", "e2e-nginx-invalid")
 		q.Set("targetNamespace", "default")
+		q.Set("targetApiVersion", "apps/v1") // #2658: required, so the 400 below proves the window rejection
 		q.Set("currentSpecHash", "sha256:abc")
 		q.Set("tier1Window", "not-a-duration")
 		req.URL.RawQuery = q.Encode()
