@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"gopkg.in/yaml.v3"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
@@ -47,12 +46,16 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		}
 	}
 
-	// mustYAML renders the fixture map, keeping the fixture readable as Go
-	// instead of a second YAML dialect inside the spec.
 	mustYAML := func(body map[string]any) []byte {
 		rendered, err := yaml.Marshal(body)
 		Expect(err).ToNot(HaveOccurred())
 		return rendered
+	}
+
+	writeFile := func(contents []byte) string {
+		path := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(path, contents, 0o600)).To(Succeed())
+		return path
 	}
 
 	writeConfig := func(sources any) string {
@@ -60,13 +63,19 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		if sources != nil {
 			body["sources"] = sources
 		}
-		path := filepath.Join(GinkgoT().TempDir(), "config.yaml")
-		Expect(os.WriteFile(path, mustYAML(body), 0o600)).To(Succeed())
-		return path
+		return writeFile(mustYAML(body))
+	}
+
+	// writeRawConfig exists for YAML the fixture map cannot express: merge keys
+	// and anchors, which are exactly the inputs that could hide a key from a
+	// literal-only check.
+	writeRawConfig := func(sourcesYAML string) string {
+		body := mustYAML(baseConfig())
+		return writeFile(append(body, []byte(sourcesYAML)...))
 	}
 
 	// tokenFile creates a readable token file so the tokenPath checks exercise
-	// readability, not just the path shape.
+	// the read path, not just the path shape.
 	tokenFile := func() string {
 		path := filepath.Join(GinkgoT().TempDir(), "token")
 		Expect(os.WriteFile(path, []byte("test-token-value"), 0o600)).To(Succeed())
@@ -120,6 +129,31 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 			Expect(cfg.Validate()).To(Succeed(),
 				"an absent caFile must fall back to system trust, not fail startup")
 		})
+
+		// UT-FMC-SRC-2661-009
+		DescribeTable("UT-FMC-SRC-2661-009 [BR-INTEGRATION-065]: a present sources block must name the source it selects",
+			func(sourcesYAML string) {
+				_, err := config.LoadFromFile(writeRawConfig(sourcesYAML))
+
+				Expect(err).To(HaveOccurred(),
+					"presence selects a source; it must never resolve back to MCP silently")
+				Expect(err.Error()).To(ContainSubstring("names no source"))
+			},
+			Entry("empty mapping", "sources: {}\n"),
+			Entry("null acm", "sources:\n  acm: null\n"),
+		)
+
+		// UT-FMC-SRC-2661-009 (continued): a named but incomplete ACM source is
+		// incomplete, not absent — it must fail validation, never load as MCP.
+		It("UT-FMC-SRC-2661-009 [BR-INTEGRATION-065]: an empty acm mapping loads as ACM and fails validation", func() {
+			cfg, err := config.LoadFromFile(writeRawConfig("sources:\n  acm: {}\n"))
+
+			Expect(err).ToNot(HaveOccurred(),
+				"an empty mapping is a present source; incompleteness is a validation failure")
+			Expect(cfg.SourceKind()).To(Equal(config.SourceACM),
+				"a named source must never resolve back to MCP")
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sources.acm.endpoint")))
+		})
 	})
 
 	Describe("fail closed at startup (D4.1a rule 3)", func() {
@@ -139,7 +173,7 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		)
 
 		// UT-FMC-SRC-2661-005
-		DescribeTable("UT-FMC-SRC-2661-005 [FedRAMP IA-5]: rejects a tokenPath that is relative, missing or unreadable",
+		DescribeTable("UT-FMC-SRC-2661-005 [FedRAMP IA-5]: rejects a tokenPath that is relative, missing, a directory or unreadable",
 			func(tokenPath func() string) {
 				cfg, err := config.LoadFromFile(writeConfig(map[string]any{
 					"acm": map[string]any{"endpoint": "https://search-api.example:4010", "tokenPath": tokenPath()},
@@ -154,6 +188,16 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 			Entry("relative", func() string { return "token" }),
 			Entry("empty", func() string { return "" }),
 			Entry("missing file", func() string { return filepath.Join(GinkgoT().TempDir(), "absent") }),
+			Entry("directory", func() string { return GinkgoT().TempDir() }),
+			// Root can open a mode-000 file, so this entry only discriminates on
+			// non-root runners; the directory and missing cases carry the
+			// readability assertion everywhere.
+			Entry("unreadable file", func() string {
+				path := filepath.Join(GinkgoT().TempDir(), "token-unreadable")
+				Expect(os.WriteFile(path, []byte("test-token-value"), 0o600)).To(Succeed())
+				Expect(os.Chmod(path, 0o000)).To(Succeed())
+				return path
+			}),
 		)
 
 		// UT-FMC-SRC-2661-006
@@ -170,21 +214,33 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		})
 	})
 
-	Describe("strict decoding (D4.1a rule 3)", func() {
+	Describe("closed key set (D4.1a rules 2-3)", func() {
 		// UT-FMC-SRC-2661-007
-		It("UT-FMC-SRC-2661-007 [FedRAMP CM-6]: an unknown key under sources.acm fails loading, not silently disables a guard", func() {
-			_, err := config.LoadFromFile(writeConfig(map[string]any{
-				"acm": map[string]any{
-					"endpoint":  "https://search-api.example:4010",
-					"tokenPath": tokenFile(),
-					// A plausible typo that would otherwise be dropped silently.
-					"endpointURL": "https://ignored.example:4010",
-				},
-			}))
+		DescribeTable("UT-FMC-SRC-2661-007 [FedRAMP CM-6]: an unknown or injected key under sources.acm fails loading, not silently disables a guard",
+			func(sourcesYAML func(token string) string, wantSubstring string) {
+				_, err := config.LoadFromFile(writeRawConfig(sourcesYAML(tokenFile())))
 
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("endpointURL"))
-		})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(wantSubstring),
+					"the error must name the block the operator has to fix")
+			},
+			Entry("literal typo", func(token string) string {
+				// A plausible typo that would otherwise be dropped silently.
+				return "sources:\n  acm:\n    endpoint: https://search-api.example:4010\n" +
+					"    tokenPath: " + token + "\n    endpointURL: https://ignored.example:4010\n"
+			}, "sources.acm"),
+			Entry("unknown key injected through a YAML merge key", func(token string) string {
+				// The lenient decode resolves the anchor, so a literal-key scan
+				// would never see endpointURL.
+				return "acmDefaults: &acmDefaults\n" +
+					"  endpoint: https://search-api.example:4010\n" +
+					"  tokenPath: " + token + "\n" +
+					"  endpointURL: https://ignored.example:4010\n" +
+					"sources:\n  acm:\n    <<: *acmDefaults\n"
+			}, "sources.acm"),
+			Entry("sources is a scalar", func(string) string { return "sources: acm\n" }, "sources must be a mapping"),
+			Entry("sources.acm is a scalar", func(string) string { return "sources:\n  acm: https://search-api.example:4010\n" }, "sources.acm"),
+		)
 
 		// UT-FMC-SRC-2661-008
 		It("UT-FMC-SRC-2661-008 [BR-INTEGRATION-065]: a second or unknown source is a configuration error", func() {
@@ -198,6 +254,19 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 
 			Expect(err).To(HaveOccurred(),
 				"at most one source may be declared; a second one must not be ignored")
+			Expect(err.Error()).To(ContainSubstring("rancher"))
+		})
+
+		// UT-FMC-SRC-2661-010
+		It("UT-FMC-SRC-2661-010 [FedRAMP CM-6]: a merged sources block is validated, not skipped", func() {
+			// The merge injects sources itself, so the block never appears as a
+			// literal root key.
+			_, err := config.LoadFromFile(writeRawConfig(
+				"shared: &shared\n  sources:\n    rancher:\n      endpoint: https://rancher.example\n" +
+					"<<: *shared\n"))
+
+			Expect(err).To(HaveOccurred(),
+				"a merged sources block must reach the closed-key check")
 			Expect(err.Error()).To(ContainSubstring("rancher"))
 		})
 	})

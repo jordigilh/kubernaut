@@ -8,9 +8,11 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
-approved 2026-11-18; this plan awaits its own approval. No test or implementation
-result is claimed.
+**Status**: 📝 Draft v2.1. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
+approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
+for execution on 2026-11-20. Implemented so far: the `sources.acm` configuration
+surface, `UT-FMC-SRC-2661-001..010` (2026-11-20). No collector, IT or E2E result is
+claimed yet; increment 1 (PR #2681) carries its own evidence.
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
 (parent [#2593](https://github.com/jordigilh/kubernaut/issues/2593),
 investigation [#2599](https://github.com/jordigilh/kubernaut/issues/2599))
@@ -148,13 +150,13 @@ live run.
 
 | BR | Contract | Scenarios |
 |---|---|---|
-| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012, IT-FMC-SRC-2661-003 |
+| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012 |
 | BR-SCOPE-002 | Exact GVK, canonical identity, no inference | UT-FMC-SRC-2661-013/018, UT-FMC-INV-2661-008 |
 | BR-API-001 | Typed, sanitized page, states and freshness | UT-FMC-INV-2661-001..010, IT-AF-2661-001/002 |
-| BR-SECURITY-016 | Least privilege, user gate, no privileged widening | UT-FMC-INV-2661-010, IT-AF-2661-003 |
+| BR-SECURITY-016 | Least privilege, user gate, no privileged widening | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023, IT-AF-2661-003, IT-FMC-SRC-2661-003 |
 | BR-SECURITY-017 | Metadata-only egress | UT-FMC-INV-2661-010, IT-FMC-INV-2661-001 |
-| BR-INTEGRATION-065 | Source abstraction and dispatch | IT-FMC-SRC-2661-001/002/004, IT-AF-2661-001 |
-| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-015..017, IT-AF-2661-002 |
+| BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010, IT-FMC-SRC-2661-001/002, IT-AF-2661-001 |
+| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-004..009/015..017/021/022, IT-AF-2661-002, IT-FMC-SRC-2661-004 |
 
 ## 8. Test scenarios
 
@@ -200,6 +202,9 @@ live run.
 | UT-FMC-SRC-2661-018 | `_uid` is used only for ordering/dedupe: absent from the cache projection, the page and the canonical ID | ✅ |
 | UT-FMC-SRC-2661-019 | A successfully traversed zero-item collection is recorded as an **applied observation** (never `unavailable`, never the failure envelope) and commits through `empty_verified`; the page layer, not the adapter, decides `empty` vs `partial` (G10) | ✅ |
 | UT-FMC-SRC-2661-020 | One atomic commit writes **both** indexes from the same staged generation: member counts must agree (`LEX_COUNT_MISMATCH` otherwise), the next `begin` clears an abandoned staging's lex index, both enforce the 10 000-member bound, and an empty commit removes both | ✅ |
+| UT-FMC-SRC-2661-021 | **Derived request budget** (D4.1a 7a): each request takes `min(10 s, remaining − 5 s commit reserve)`; when remaining is below the 2 s start floor the collector abandons staging and starts no request, so the previous proof ages out instead of being half-replaced | ✅ |
+| UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: the per-kind walk respects 50 items/page, 100 pages and 5 000 items, and the syncer's summed totals are checked before any staged write — exceeding any bound yields an incomplete collection with no clean commit, never a smaller clean set | ✅ |
+| UT-FMC-SRC-2661-023 | **Reuse, not reinvention** (D4.1a rule 6): the collector obtains its bearer token through the existing file token source and its trust through the existing CA reloader; the adapter adds no second credential or TLS mechanism | ✅ |
 
 ### Tier 2 — Integration
 
@@ -208,7 +213,9 @@ live run.
 | IT-FMC-INV-2661-001 | Production mux serves list and exact read; response is the shared sanitized schema; unknown route/method behaviour unchanged | ✅ |
 | IT-FMC-INV-2661-002 | End-to-end over real cache semantics: proven partition → `success`/`empty`; broken/staged/incomplete partition → `partial`/`unavailable`, with no staging key ever served | ✅ |
 | IT-FMC-SRC-2661-001 | The ACM adapter runs inside the real sync cycle and writes through the fenced/staged path (no direct Valkey writes) | ✅ |
-| IT-FMC-SRC-2661-002 | Source selection: an MCP-sourced cluster keeps its existing collector and never calls Search; an ACM-sourced cluster uses the adapter; an unknown source is `unavailable`, not guessed | ✅ |
+| IT-FMC-SRC-2661-002 | **Deployment-level** source selection (D4.1a rule 2): an FMC deployment with no `sources` block never calls Search and keeps the MCP collector; one with `sources.acm` collects from Search. There is no per-cluster classifier — an unknown `sources.*` entry fails startup, it is never a runtime `unavailable` | ✅ |
+| IT-FMC-SRC-2661-003 | Request-level trust and auth (D4.1a rule 6): every Search request carries the bearer token from the configured file token source and verifies against `caFile` through the existing CA reloader; rotating either file takes effect without a restart | ✅ |
+| IT-FMC-SRC-2661-004 | Staging-budget behaviour (D4.1a 7a): when the remaining budget is below the start floor the collector abandons staging instead of starting a request that cannot finish — no clean commit, the previous proof ages to `stale` then `unavailable` | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
@@ -261,7 +268,7 @@ Identical to DD-FLEET-017 §8 (single authority).
 | 1 | FMC inventory route | `GET /api/v1/inventory/managed-resources` | `pkg/fleet/fmc/handler.go` `RegisterRoutes` | IT-FMC-INV-2661-001 |
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
-| 4 | Source selection per cluster | FMC sync cycle | adapter selection table (MCP / ACM) | IT-FMC-SRC-2661-002 |
+| 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |

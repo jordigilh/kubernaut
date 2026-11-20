@@ -166,17 +166,24 @@ func LoadFromFile(path string) (*ServiceConfig, error) {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
-	}
-
-	// D4.1a rule 3: the sources subtree is decoded strictly so an operator typo
-	// cannot silently disable a guard.
+	// D4.1a rules 2-3: the sources subtree is validated against a closed key
+	// set, and a present block must name the source it selects. It runs before
+	// the lenient decode so a malformed sources block is reported by the
+	// guard's own message rather than by a generic unmarshal error.
 	sources, err := decodeSourcesStrict(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-	if sources != nil {
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	}
+
+	// The strict result is authoritative: it is the only decode of `sources`
+	// that has been validated.
+	if sources == nil {
+		cfg.Sources = SourcesConfig{}
+	} else {
 		cfg.Sources = *sources
 	}
 
