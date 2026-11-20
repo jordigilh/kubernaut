@@ -491,10 +491,39 @@ func buildObservedItem(apiVersion, kind, name, namespace string, labelState scop
 // "absent" or a silently-won last value: an invalid label stays invalid so the
 // syncer fails the kind (ADR-053).
 func acmManagedLabelState(raw map[string]json.RawMessage) (scope.LabelState, bool) {
-	if labelValue, present := raw["label"]; present {
-		return projectedLabelState(labelValue)
+	// Search answers with either the semicolon `label` field (present and
+	// complete, or absent entirely) or the legacy per-key form. More than one
+	// managed source at once is corruption: resolving it would silently invent a
+	// precedence the source never promised (DD-FLEET-017 D4.2).
+	labelValue, hasProjection := raw["label"]
+	presentKeys := presentFallbackKeys(raw)
+	sources := 0
+	if hasProjection {
+		sources++
 	}
-	return fallbackLabelState(raw)
+	sources += len(presentKeys)
+	switch {
+	case sources == 0:
+		return scope.LabelStateAbsent, false
+	case sources > 1:
+		return scope.LabelStateInvalid, true
+	case hasProjection:
+		return projectedLabelState(labelValue)
+	default:
+		return fallbackKeyState(raw, presentKeys[0])
+	}
+}
+
+// presentFallbackKeys lists which legacy per-key managed labels the answer
+// carries, in a stable order.
+func presentFallbackKeys(raw map[string]json.RawMessage) []string {
+	keys := make([]string, 0, 3)
+	for _, key := range fallbackManagedLabelKeys() {
+		if _, present := raw[key]; present {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // projectedLabelState reads the semicolon `label` field Search projects. A
@@ -532,25 +561,19 @@ func projectedLabelState(labelValue json.RawMessage) (scope.LabelState, bool) {
 	}
 }
 
-// fallbackLabelState reads the per-key projections older Search answers use, held
-// to the same rule: a present-but-unusable value is corruption, and reporting
-// LabelsPresent=false for it would claim the field was never there.
-func fallbackLabelState(raw map[string]json.RawMessage) (scope.LabelState, bool) {
-	for _, key := range fallbackManagedLabelKeys() {
-		labelValue, present := raw[key]
-		if !present {
-			continue
-		}
-		if isJSONNull(labelValue) {
-			return scope.LabelStateInvalid, true
-		}
-		value, isString := searchStringValue(raw, key)
-		if !isString || value == "" {
-			return scope.LabelStateInvalid, true
-		}
-		return labelStateOf(value), true
+// fallbackKeyState reads one present per-key projection, held to the same rule
+// as the projected field: a present-but-unusable value is corruption, and
+// reporting LabelsPresent=false for it would claim the field was never there.
+func fallbackKeyState(raw map[string]json.RawMessage, key string) (scope.LabelState, bool) {
+	labelValue := raw[key]
+	if isJSONNull(labelValue) {
+		return scope.LabelStateInvalid, true
 	}
-	return scope.LabelStateAbsent, false
+	value, isString := searchStringValue(raw, key)
+	if !isString || value == "" {
+		return scope.LabelStateInvalid, true
+	}
+	return labelStateOf(value), true
 }
 
 func isJSONNull(value json.RawMessage) bool {
@@ -583,6 +606,14 @@ func parseProjectedLabels(projected string) (map[string]scope.LabelState, bool) 
 		}
 		key, value, found := strings.Cut(trimmed, "=")
 		if !found {
+			return states, true
+		}
+		// A space around the separator cannot come from a valid Kubernetes
+		// label, so it is corruption. The Check lane classifies the same input
+		// as malformed (pkg/fleet/acm/client_test.go, "malformed managed key
+		// cannot inherit"); both lanes must agree instead of one lane reading it
+		// as managed.
+		if key != strings.TrimSpace(key) || value != strings.TrimSpace(value) {
 			return states, true
 		}
 		key = strings.TrimSpace(key)
