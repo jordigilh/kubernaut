@@ -908,6 +908,12 @@ rather than a bare namespace/kind/name triple, and `main` wires the checker thro
 `fleet.NewScopeChecker` rather than a bare `scope.Manager`, so this addendum gets Fleet's federated
 local+remote checks for free with no extra AF-side code).
 
+> **Superseded (#2660/#2662):** the `ScopeChecker.IsManagedResource` boolean lane referenced
+> throughout this addendum no longer exists. The same validation is carried by the typed
+> `ScopeChecker.Check` / `Manager.Resolve` contracts (DD-FLEET-015); `Manager.Check` reports
+> verified-managed/verified-unmanaged and keeps invalid, unavailable and unauthorized outcomes
+> distinct instead of collapsing them into `managed=false`.
+
 ### Gap Identified
 
 Decision #3 above established defense-in-depth at two points: Gateway (Point 1, fail-fast for
