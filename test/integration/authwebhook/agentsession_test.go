@@ -47,7 +47,11 @@ var _ = Describe("#2244 AgentSession Admission Existence Gate (BR-AA-KA-065.13)"
 	var asHandler *authwebhook.AgentSessionHandler
 
 	BeforeEach(func() {
-		asHandler = authwebhook.NewAgentSessionHandler(auditStore, k8sManager.GetClient())
+		// #2674: the existence gate reads the RemediationRequest through the
+		// manager's direct API reader, mirroring production
+		// (cmd/authwebhook/main.go, agentSessionGateReader): an admission-time
+		// read must not depend on cache start-up or informer lag.
+		asHandler = authwebhook.NewAgentSessionHandler(auditStore, k8sManager.GetAPIReader())
 	})
 
 	flushAndQuery := func(correlationID, eventType string) []ogenclient.AuditEvent {
