@@ -50,11 +50,17 @@ import (
 // admission response returns, with no async goroutine.
 type AgentSessionHandler struct {
 	auditStore audit.AuditStore
-	k8sClient  client.Client
+	k8sClient  client.Reader
 }
 
 // NewAgentSessionHandler creates a handler for AgentSession admission.
-func NewAgentSessionHandler(auditStore audit.AuditStore, k8sClient client.Client) *AgentSessionHandler {
+//
+// k8sClient is the reader used to resolve RemediationRequestRef. Production
+// MUST pass the manager's direct API reader (mgr.GetAPIReader()), not its
+// cache-backed client (#2674): this is an admission-time existence gate, so a
+// cache that has not started yet or is lagging turns a real RemediationRequest
+// into a denial -- see validateRemediationRequestExists.
+func NewAgentSessionHandler(auditStore audit.AuditStore, k8sClient client.Reader) *AgentSessionHandler {
 	return &AgentSessionHandler{
 		auditStore: auditStore,
 		k8sClient:  k8sClient,
@@ -97,10 +103,20 @@ func (h *AgentSessionHandler) handleCreate(ctx context.Context, req admission.Re
 // validateRemediationRequestExists checks that rrName resolves to a real
 // RemediationRequest in namespace via a direct Get -- RemediationRequestRef
 // is a plain ObjectRef{Name, Namespace}, so no field indexer is needed
-// (unlike ActionType's list-by-spec.name lookup).
+// (unlike ActionType's list-by-spec.name lookup). For the same reason the
+// reader needs no cache: an index-free direct read is exactly what this gate
+// wants, so production wires mgr.GetAPIReader() (#2674).
+//
+// The read must NOT go through the manager's cache-backed client. Two cache
+// windows break this gate (#2674): before the cache starts, Get returns
+// &cache.ErrCacheNotStarted{} (controller-runtime starts webhook listeners
+// before caches, and /readyz does not gate on cache sync), and after it starts
+// a lagging informer reports a freshly created RemediationRequest as NotFound.
+// Both deny a legitimate AgentSession, and both misattribute the cause in the
+// denial audit event (BR-AA-KA-065.13, SI-10, AU-3).
 //
 // h.k8sClient is nil in unit tests that don't exercise this gate
-// (production always wires a real cache-backed client in
+// (production always wires the manager's direct API reader in
 // cmd/authwebhook/main.go); the check is skipped rather than denied in that
 // case, matching the existing best-effort precedent of
 // RemediationWorkflowHandler.validateActionTypeExists.
