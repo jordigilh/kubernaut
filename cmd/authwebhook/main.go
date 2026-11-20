@@ -238,6 +238,36 @@ func registerAuthWebhookHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditSt
 	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
 }
 
+// apiReaderSource is the minimal ctrl.Manager surface the AgentSession
+// existence gate needs in order to choose its reader (#2674). It is a named
+// seam so the choice is testable without a live manager. Both methods are
+// declared because the regression specs pass a manager whose cache-backed
+// client reproduces the two cache windows -- which is exactly what a silent
+// revert to GetClient would pick up.
+type apiReaderSource interface {
+	GetAPIReader() client.Reader
+	GetClient() client.Client
+}
+
+// agentSessionGateReader returns the reader the AgentSession CREATE existence
+// gate uses (#2674, BR-AA-KA-065.13). It must be the manager's direct API
+// reader, never the manager's cache-backed client:
+//
+//   - controller-runtime starts webhook listeners before caches
+//     (pkg/manager/internal.go:429-446), and /readyz does not gate on cache
+//     sync, so an admission request can arrive while the cache-backed client
+//     still returns &cache.ErrCacheNotStarted{};
+//   - once the cache is up, a lagging informer reports a just-created
+//     RemediationRequest as NotFound, which the gate reports as "does not
+//     exist" -- identical to a genuinely dangling reference.
+//
+// Both windows deny a legitimate AgentSession and misattribute the denial in
+// the audit trail. The sibling RemediationApprovalRequest handler already uses
+// mgr.GetAPIReader() for the same reason. Proven by IT-AS-2674-001/002.
+func agentSessionGateReader(src apiReaderSource) client.Reader {
+	return src.GetAPIReader()
+}
+
 // registerAuthWebhookCRUDHandlers wires the WorkflowExecution,
 // RemediationApprovalRequest, RemediationRequest, and NotificationRequest
 // DELETE admission handlers (DD-WEBHOOK-003, Gap #8). Exits the process on
@@ -348,7 +378,9 @@ func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config,
 
 	// Issue #2244, BR-AA-KA-065.13: AgentSession CREATE existence gate
 	// (RemediationRequestRef must resolve to a real RemediationRequest).
-	asHandler := authwebhook.NewAgentSessionHandler(auditStore, mgr.GetClient())
+	// #2674: the gate reads through the direct API reader -- see
+	// agentSessionGateReader.
+	asHandler := authwebhook.NewAgentSessionHandler(auditStore, agentSessionGateReader(mgr))
 	webhookServer.Register("/validate-agentsession", &webhook.Admission{Handler: asHandler})
 	setupLog.Info("Registered AgentSession webhook handler with audit store")
 
