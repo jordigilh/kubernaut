@@ -149,14 +149,19 @@ regexTarget = "secret"
 paths = ['''^docs/tests/2502/TEST_PLAN\.md$''']
 regexes = ['''^03ad405812c6f0574da6f89c7e13c063250192db43c517f877b84f3565913a65$''']
 
-# Issue #2670: the gitleaks job scans every branch fetched by
-# actions/checkout (fetch-depth: 0), so a historical commit still reachable from
-# another branch fails every PR run. `pkg/shared/scope/group_2658_test.go` was
-# deleted before it reached main (#2658); the match is a generic-api-key false
-# positive on a table of target-identity strings ("api", "prod", "Pod").
-# Narrower than the allowlist above: only this historical path and only this
-# rule.
+# Issue #2684: code-scanning alert #86 (rule generic-api-key). PR #2658
+# introduced a Ginkgo table entry asserting canonical resource-identity
+# rendering -- Entry("reserved sentinel as group degrades to unknown",
+# "unresolved/v1", "prod", "Pod", "api", "prod/unresolved/unresolved/Pod/api").
+# generic-api-key matches because the identity string ends with the segment
+# "api"; there is no credential. The file and that entry no longer exist in the
+# tree, so only historical blobs are affected, but CI scans git history and the
+# alert fails the job on main and on every PR. Keep detection enabled while
+# excluding only this rule + historical path + exact matched value.
 [[allowlists]]
-description = "Deleted #2658 test fixture; generic-api-key false positive on identity strings"
+description = "Verified resource-identity test fixture; not an API key (PR #2658, alert #86)"
 targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
 paths = ['''^pkg/shared/scope/group_2658_test\.go$''']
+regexes = ['''^prod/unresolved/unresolved/Pod/api$''']
