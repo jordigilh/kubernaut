@@ -51,6 +51,22 @@ var kindToGVK = map[string]schema.GroupVersionKind{
 	"Namespace":   {Group: "", Version: "v1", Kind: "Namespace"},
 }
 
+// KindGVKs resolves configured resource-kind names to their exact GVK. It is
+// exported so the production composition root can hand a source adapter the
+// same mapping the MCP collector uses, instead of keeping a second copy that
+// could drift. An unknown kind is an error, never a guess (DD-FLEET-017 D4.1).
+func KindGVKs(kinds []string) (map[string]schema.GroupVersionKind, error) {
+	resolved := make(map[string]schema.GroupVersionKind, len(kinds))
+	for _, kind := range kinds {
+		gvk, known := kindToGVK[kind]
+		if !known {
+			return nil, fmt.Errorf("unknown resource kind %q (add to kindToGVK map)", kind)
+		}
+		resolved[kind] = gvk
+	}
+	return resolved, nil
+}
+
 // ObservedReader is the typed, complete-scan source contract used by FMC.
 // A bare client.Reader is intentionally not accepted because it cannot prove
 // source completeness or preserve explicit false/invalid label state.

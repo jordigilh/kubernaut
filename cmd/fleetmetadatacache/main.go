@@ -324,15 +324,40 @@ func buildFMCSyncerDependencies(deps *fmcDeps) fmc.Dependencies {
 	}
 }
 
-func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) *fmc.Syncer {
+func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) (*fmc.Syncer, error) {
 	syncerConfig := fmc.Config{
 		SyncInterval:       cfg.Sync.Interval,
 		KeyTTL:             cfg.Sync.KeyTTL,
 		ResourceKinds:      cfg.Sync.ResourceKinds,
 		WaitForBrokerReady: cfg.Sync.WaitForBrokerReady,
 	}
+	// DD-FLEET-017 D4.1a rule 2: source selection is per deployment and is
+	// decided here, once, from the validated config. The collectors are
+	// interchangeable behind observation.ObservedReader, so the sync cycle
+	// does not branch on the source.
+	var factory fmc.ObservedReaderFactory
+	switch cfg.SourceKind() {
+	case fmcconfig.SourceACM:
+		acmSource, err := buildACMSource(cfg)
+		if err != nil {
+			return nil, err
+		}
+		factory = acmSource
+	case fmcconfig.SourceMCP:
+		factory = buildMCPReaderFactory(deps)
+	default:
+		return nil, fmt.Errorf("unsupported fleet inventory source %q", cfg.SourceKind())
+	}
+	syncerDeps := buildFMCSyncerDependencies(deps)
+	syncerDeps.Readers = factory
+	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics), nil
+}
+
+// buildMCPReaderFactory is the GitOps/default collector: one MCP client reader
+// per registered cluster.
+func buildMCPReaderFactory(deps *fmcDeps) fmc.ObservedReaderFactory {
 	sessionProvider := deps.mcpClient.SessionProvider()
-	readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, cluster registry.ClusterInfo) (mcpclient.ObservedReader, error) {
+	return fmc.ObservedReaderFactoryFunc(func(_ context.Context, cluster registry.ClusterInfo) (mcpclient.ObservedReader, error) {
 		// WithReconnect: SessionProvider() alone only re-reads whatever session
 		// mcpClient currently holds; it cannot repair a session that died from a
 		// protocol-level error during a startup race with broker config reload.
@@ -342,9 +367,25 @@ func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Log
 		}
 		return mcpclient.NewFromSessionProvider(sessionProvider, cluster.ID, opts...), nil
 	})
-	syncerDeps := buildFMCSyncerDependencies(deps)
-	syncerDeps.Readers = readerFactory
-	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics)
+}
+
+// buildACMSource is the ACM Search collector (DD-FLEET-017 D4). Construction
+// fails closed: an unreadable token or CA file stops FMC at startup rather than
+// letting the first sync discover it.
+func buildACMSource(cfg *fmcconfig.ServiceConfig) (*fmc.ACMSource, error) {
+	acmConfig := cfg.Sources.ACM
+	if acmConfig == nil {
+		return nil, fmt.Errorf("fleet inventory source acm is selected but sources.acm is empty")
+	}
+	kinds, err := fmc.KindGVKs(cfg.Sync.ResourceKinds)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ACM source kinds: %w", err)
+	}
+	search, err := fmc.NewACMHTTPSearch(acmConfig.Endpoint, acmConfig.TokenPath, acmConfig.CAFile, 0)
+	if err != nil {
+		return nil, fmt.Errorf("build ACM search client: %w", err)
+	}
+	return fmc.NewACMSource(fmc.ACMSourceConfig{Search: search, Kinds: kinds})
 }
 
 func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*fmcDeps, error) {
@@ -373,7 +414,12 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		return nil, err
 	}
 	deps.clusterRegistry, deps.registrationGuard, deps.readiness = clusterRegistry, registrationGuard, readinessSnapshot
-	deps.syncer = buildFMCSyncer(cfg, deps, logger)
+	syncer, err := buildFMCSyncer(cfg, deps, logger)
+	if err != nil {
+		logger.Error(err, "Failed to build the FMC sync source")
+		os.Exit(1)
+	}
+	deps.syncer = syncer
 	return deps, nil
 }
 
