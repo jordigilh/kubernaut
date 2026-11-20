@@ -8,11 +8,15 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2.1. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
+**Status**: 📝 Draft v2.2. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
 approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
-for execution on 2026-11-20. Implemented so far: the `sources.acm` configuration
-surface, `UT-FMC-SRC-2661-001..010` (2026-11-20). No collector, IT or E2E result is
-claimed yet; increment 1 (PR #2681) carries its own evidence.
+for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
+configuration surface (`UT-FMC-SRC-2661-001..010`) and the unit-testable ACM
+collector (`UT-FMC-SRC-2661-011/013/014/015/016/017/018/019/021/022`).
+**Not yet proven:** production source selection (Wiring row 4), the repair-wide
+deadline wiring, request-level credential/CA proof (023), the fenced sync and
+selection ITs (IT-FMC-SRC-2661-001..004), and every E2E claim. Increment 1 carries
+its own evidence and is merged (`#2681`).
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
 (parent [#2593](https://github.com/jordigilh/kubernaut/issues/2593),
 investigation [#2599](https://github.com/jordigilh/kubernaut/issues/2599))
@@ -59,7 +63,7 @@ production path.
 | Metric | Target |
 |---|---|
 | In-scope unit scenarios proven | ≥ 90%, critical 100% |
-| Wiring rows proven through production dispatch | 7/7 |
+| Wiring rows proven through production dispatch | 8/8 |
 | Live control objectives assessed (AC-4, AC-6, SI-10; ASVS V5/V8) | all, on the recorded clusters only |
 | Regressions in local inventory, scope lane, FMC scope checks | zero |
 
@@ -115,7 +119,7 @@ over `httptest`, Valkey via the approved test dependency or the real instance in
 IT, Kubernetes via `envtest`/fake clients, MCP readers via fixtures. No
 `testing.T` business tests, no `XIt`/`PIt`/`Skip()`.
 
-**Pass criteria.** All listed scenarios green; 7/7 wiring rows through production
+**Pass criteria.** All listed scenarios green; 8/8 wiring rows through production
 dispatch; every P0 passing; `go build ./...` and `golangci-lint run` clean; local
 inventory, FMC scope and GW/RO scope suites unchanged; one live ACM journey and
 one GitOps journey executed with results recorded verbatim.
@@ -205,8 +209,8 @@ live run.
 | UT-FMC-SRC-2661-019 | A successfully traversed zero-item collection is recorded as an **applied observation** (never `unavailable`, never the failure envelope) and commits through `empty_verified`; the page layer, not the adapter, decides `empty` vs `partial` (G10) | ✅ |
 | UT-FMC-SRC-2661-020 | One atomic commit writes **both** indexes from the same staged generation: member counts must agree (`LEX_COUNT_MISMATCH` otherwise), the next `begin` clears an abandoned staging's lex index, both enforce the 10 000-member bound, and an empty commit removes both | ✅ |
 | UT-FMC-SRC-2661-021 | **Derived request budget** (D4.1a 7a): each request takes `min(10 s, remaining − 5 s commit reserve)`; when remaining is below the 2 s start floor the collector abandons staging and starts no request, so the previous proof ages out instead of being half-replaced | ✅ |
-| UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: the per-kind walk respects 50 items/page, 100 pages and 5 000 items, and the syncer's summed totals are checked before any staged write — exceeding any bound yields an incomplete collection with no clean commit, never a smaller clean set | ✅ |
-| UT-FMC-SRC-2661-023 | **Reuse, not reinvention** (D4.1a rule 6): the collector obtains its bearer token through the existing file token source and its trust through the existing CA reloader; the adapter adds no second credential or TLS mechanism | ✅ |
+| UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: a syncer fixture runs two configured kinds, each individually inside 50 items/page and 100 pages, whose *summed* pages or items exceed the partition-wide ceilings — assert no `Repair`, no staged write, no `CommitRepair`, and that the previous proven generation stays readable | ✅ |
+| UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **without rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
 
 ### Tier 2 — Integration
 
@@ -214,10 +218,10 @@ live run.
 |---|---|---|
 | IT-FMC-INV-2661-001 | Production mux serves list and exact read; response is the shared sanitized schema; unknown route/method behaviour unchanged | ✅ |
 | IT-FMC-INV-2661-002 | End-to-end over real cache semantics: proven partition → `success`/`empty`; broken/staged/incomplete partition → `partial`/`unavailable`, with no staging key ever served | ✅ |
-| IT-FMC-SRC-2661-001 | The ACM adapter runs inside the real sync cycle and writes through the fenced/staged path (no direct Valkey writes) | ✅ |
-| IT-FMC-SRC-2661-002 | **Deployment-level** source selection (D4.1a rule 2): an FMC deployment with no `sources` block never calls Search and keeps the MCP collector; one with `sources.acm` collects from Search. There is no per-cluster classifier — an unknown `sources.*` entry fails startup, it is never a runtime `unavailable` | ✅ |
-| IT-FMC-SRC-2661-003 | Request-level trust and auth (D4.1a rule 6): every Search request carries the bearer token from the configured file token source and verifies against `caFile` through the existing CA reloader; rotating either file takes effect without a restart | ✅ |
-| IT-FMC-SRC-2661-004 | Staging-budget behaviour (D4.1a 7a): when the remaining budget is below the start floor the collector abandons staging instead of starting a request that cannot finish — no clean commit, the previous proof ages to `stale` then `unavailable` | ✅ |
+| IT-FMC-SRC-2661-001 | From `buildFMCSyncer`→sync, an ACM-configured deployment makes Search calls and reaches `BeginRepair`→`Repair`→`CommitRepair`; a direct Valkey write, or a missing Search call, fails the spec | ✅ |
+| IT-FMC-SRC-2661-002 | Build two production syncers — one from an absent-`sources` config, one from `sources.acm` — and assert MCP-only versus ACM-only call surfaces; an invalid `sources` block fails **before** syncer construction | ✅ |
+| IT-FMC-SRC-2661-003 | Through the production `ACMHTTPSearch` construction: bearer header present, TLS validated against `caFile`, then token rotation and CA rotation both take effect on the same client | ✅ |
+| IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7a): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
@@ -268,6 +272,7 @@ Identical to DD-FLEET-017 §8 (single authority).
 | # | Component | Production entry point | Wiring location | IT ID |
 |---|---|---|---|---|
 | 1 | FMC inventory route | `GET /api/v1/inventory/managed-resources` | `pkg/fleet/fmc/handler.go` `RegisterRoutes` | IT-FMC-INV-2661-001 |
+| 1a | FMC inventory production assembly | same route, real mux | `buildFMCServers` in `cmd/fleetmetadatacache/main.go` — done only when the authenticated production mux returns 503 state-only for an unproven partition, the exact route is registered, and an unknown route stays 404 | IT-FMC-INV-2661-001W |
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
 | 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
@@ -282,8 +287,14 @@ Identical to DD-FLEET-017 §8 (single authority).
 | 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | 60–90 min (excluding approval latency) |
 | RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | 130 min |
 | GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | 120 min |
-| RED b | UT-FMC-SRC-2661-011..023 (collector, traversal guards, derived budget, aggregate bounds, credential/CA reuse) | 120 min |
-| GREEN b | ACM source adapter + deployment-level source selection + fenced publication incl. the lex identity key in the staged commit | 200 min |
+| RED b1 — collector contracts | `pkg/fleet/fmc/acm_source.go`, `acm_search.go` | UT-FMC-SRC-2661-011..019, 021..022 | Done only when every collector UT passes; no production caller is claimed |
+| GREEN b1 — collector package | `ACMSource`, `ACMHTTPSearch`, traversal guards | same UTs | Done only when the collector is independently testable and still unwired |
+| RED b2 — source composition | `cmd/fleetmetadatacache/main.go` `buildFMCSyncer` | IT-FMC-SRC-2661-002 | Fails while `buildFMCSyncer` always builds the MCP reader |
+| GREEN b2 — deployment selection | `buildFMCSyncer` reads `cfg.SourceKind()` | IT-FMC-SRC-2661-002 | Done only when absent `sources` selects MCP and `sources.acm` selects ACM **through production construction** |
+| RED b3 — repair publication and budget | `pkg/fleet/fmc/syncer.go` repair path | IT-FMC-SRC-2661-001, -004; UT-FMC-SRC-2661-020/022 | Fails without fenced repair, one repair-wide deadline and the commit reserve |
+| GREEN b3 — fenced publication | same repair path | same | Done only when Search observations reach BeginRepair→Repair→CommitRepair, with the shared deadline set once per repair and no direct Valkey write |
+| RED b4 — transport credentials | `NewACMHTTPSearch` production construction | UT-FMC-SRC-2661-023; IT-FMC-SRC-2661-003 | Fails without bearer, CA and rotation assertions |
+| GREEN b4 — transport credentials | `NewACMHTTPSearch` | same | Done only when request-level auth, trust and rotation pass without client recreation |
 | RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping | 120 min |
 | REFACTOR | Collapse the two page-assembly paths into one projection helper; single state/status table; no new types | 45 min |
 | Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | 60–90 min |
@@ -292,6 +303,25 @@ Identical to DD-FLEET-017 §8 (single authority).
 Total ≈ 12–15 h plus CI. The lex index adds ~1.5–2.5 h of code and, critically,
 **re-qualification of the DD-FLEET-016 atomic swap** (~0.5–1 day of IT/live
 evidence) because it changes the committed keyspace.
+
+### 11a. Budget ownership (D4.1a rule 7a) — one deadline per repair
+
+The collector reads its deadline from the context, so exactly one component may
+set it. That component is the repair path, not the collector:
+
+- `repairPartition` computes **one** deadline immediately after a successful
+  `BeginRepair`, from that generation's staging lifetime, and wraps the context
+  with `fmc.WithCollectionDeadline`.
+- The same context is passed through every kind's `ReaderFor`/`ListObserved`, so
+  N kinds share one window instead of each receiving a fresh fallback. The
+  per-kind path must never derive a new budget.
+- Within the window the collector reserves the commit cost (5 s), refuses to
+  start a request below the 2 s floor, and abandons the repair when the deadline
+  is exhausted — no clean commit, the previous proof ages out.
+
+Proving this is `IT-FMC-SRC-2661-004` (two kinds, one context) and
+`UT-FMC-SRC-2661-021` (start floor). Without this rule the 55 s fallback is a
+per-kind constant and a seven-kind sync can outlive a 60 s staging generation.
 
 ## 12. Rollback
 
