@@ -303,8 +303,10 @@ func (c FleetConfig) ValidateFullFederation() error {
 		return nil
 	}
 
-	if c.Backend == "" && c.Endpoint == "" {
-		return fmt.Errorf("fleet: backend+endpoint is required when fleet is enabled " +
+	// Increment 1d: an absent backend resolves to FMC, whose endpoint is
+	// derivable, so only a genuinely unresolvable endpoint is a failure here.
+	if c.EffectiveEndpoint() == "" {
+		return fmt.Errorf("fleet: an endpoint is required when fleet is enabled " +
 			"(federated scope-check; without it, resource ownership cannot be determined)")
 	}
 
@@ -323,8 +325,17 @@ func (c FleetConfig) EffectiveMCPGatewayType() MCPGatewayType {
 	return c.MCPGatewayType
 }
 
-// effectiveBackend returns the configured backend, or empty if not set.
+// effectiveBackend returns the configured backend, defaulting an absent value
+// to the facade default.
+//
+// DD-FLEET-017 increment 1d (ADR-068 2026-11-18 amendment): FMC is the single
+// caller-facing fleet-control-plane contact, so callers no longer express a peer
+// choice. "No backend" therefore means FMC, not "invalid"; explicit backends
+// keep their current behaviour until the peer scaffolding is removed.
 func (c FleetConfig) effectiveBackend() string {
+	if c.Backend == "" {
+		return BackendFMC
+	}
 	return c.Backend
 }
 
@@ -346,7 +357,9 @@ func (c FleetConfig) EffectiveEndpoint() string {
 	if c.Endpoint != "" {
 		return c.Endpoint
 	}
-	if c.Backend == BackendFMC {
+	// An absent backend resolves to FMC (increment 1d), so the FMC service URL
+	// is derived for it exactly as for an explicit fleetmetadatacache backend.
+	if c.effectiveBackend() == BackendFMC {
 		ns := detectNamespace()
 		return fmt.Sprintf("https://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
 	}

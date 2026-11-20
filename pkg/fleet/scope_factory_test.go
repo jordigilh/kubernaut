@@ -175,12 +175,16 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		Expect(checker).To(BeNil())
 	})
 
-	It("UT-FLEET-FAC-007 [CM-6]: empty backend with endpoint returns unsupported backend error", func() {
+	// DD-FLEET-017 increment 1d: an absent backend is the facade default (FMC),
+	// not an unsupported value. The factory must build the FMC checker.
+	It("UT-FLEET-FAC-007 [CM-6]: empty backend with endpoint builds the FMC checker", func() {
 		cfg := fleet.FleetConfig{Enabled: true, Endpoint: "http://fmc:8080"}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
-		Expect(err).To(HaveOccurred(),
-			"empty backend with endpoint must fail validation in factory")
-		Expect(checker).To(BeNil())
+		Expect(err).ToNot(HaveOccurred(),
+			"absent backend must resolve to FMC instead of failing the factory")
+		Expect(checker).ToNot(BeNil())
+		Expect(checker).To(BeAssignableToTypeOf(&fleet.FederatedScopeChecker{}),
+			"the facade default is FMC's federated checker")
 	})
 
 	// #1556: proves the factory actually composes the bearer-token transport,

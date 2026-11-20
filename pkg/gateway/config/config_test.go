@@ -231,14 +231,24 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 				Expect(err.Error()).To(ContainSubstring("mcpGatewayEndpoint"))
 			})
 
-			It("[UT-GW-FLEET-002] should reject fleet enabled with only MCPGatewayEndpoint (no Backend/Endpoint)", func() {
+			// DD-FLEET-017 increment 1d (ADR-068 peer→facade, 2026-11-18
+			// amendment): an absent backend IS the facade default (FMC) and its
+			// endpoint is derivable, so "only MCP configured" is the operator's
+			// post-facade shape and must validate. The spec keeps its original
+			// intent — GW must refuse to start when the fleet scope-check target
+			// is genuinely unresolvable — by proving that an explicit acm
+			// backend with no endpoint still fails through this same Validate()
+			// chain.
+			It("[UT-GW-FLEET-002] should accept fleet enabled with only MCPGatewayEndpoint, deriving the FMC scope endpoint, and still reject an explicit backend with no endpoint", func() {
+				GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
 				cfg := config.DefaultServerConfig()
 				cfg.Fleet = fleet.FleetConfig{
 					Enabled:            true,
 					MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
 					MCPGatewayType:     fleet.GatewayEAIGW,
-					// OAuth2 configured so this case isolates the backend/endpoint
-					// gap (ADR-068's mandatory-OAuth2 check, pkg/fleet/config.go,
+					// OAuth2 configured so this case isolates the scope-check
+					// target (ADR-068's mandatory-OAuth2 check, pkg/fleet/config.go,
 					// would otherwise fire first and mask the intended assertion).
 					OAuth2: fleet.FleetOAuth2Config{
 						Enabled:              true,
@@ -247,9 +257,32 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					},
 				}
 
-				err := cfg.Validate()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("backend"))
+				Expect(cfg.Validate()).To(Succeed(),
+					"absent backend resolves to FMC; the endpoint is derived, not rendered")
+				Expect(cfg.Fleet.EffectiveEndpoint()).To(Equal(
+					"https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
+					"GW must reach FMC even when the renderer omits backend and endpoint")
+
+				unresolvable := config.DefaultServerConfig()
+				unresolvable.Fleet = fleet.FleetConfig{
+					Enabled:            true,
+					Backend:            "acm",
+					MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
+					MCPGatewayType:     fleet.GatewayEAIGW,
+					// #1556: the ACM bearer token is supplied so the missing
+					// endpoint is the only defect under test.
+					TokenPath: "/var/run/secrets/acm/token",
+					OAuth2: fleet.FleetOAuth2Config{
+						Enabled:              true,
+						TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+						CredentialsSecretRef: "fleet-oauth2-creds",
+					},
+				}
+
+				err := unresolvable.Validate()
+				Expect(err).To(HaveOccurred(),
+					"an explicit backend must name its scope-check endpoint; GW cannot derive one for it")
+				Expect(err.Error()).To(ContainSubstring("endpoint"))
 			})
 
 			It("[UT-GW-FLEET-003] should accept fleet enabled with both capabilities fully configured", func() {
