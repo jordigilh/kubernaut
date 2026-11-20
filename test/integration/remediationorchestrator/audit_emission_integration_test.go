@@ -642,7 +642,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(payload.BlockReason.Value).To(Equal(string(blocked.Status.EnsureRoutingStatus().BlockReason)))
 			Expect(payload.BlockMessage.Value).To(Equal(blocked.Status.EnsureRoutingStatus().BlockMessage))
 			Expect(payload.BlockMessage.Value).To(ContainSubstring("kubernaut.ai/managed=true"))
-			Expect(payload.TargetResource.Value).To(ContainSubstring("test-app"))
+			Expect(payload.TargetResource.Value).To(Equal(unmanagedNS+"/Deployment/test-app"),
+				"target_resource must preserve Kind casing through the production wiring path")
 			Expect(payload.RequeueAfterSeconds.Value).To(BeNumerically(">", 0))
 			Expect(payload.BlockedUntil.IsSet()).To(BeTrue())
 			Expect(payload.BlockedUntil.Value.Format(time.RFC3339)).To(Equal(
