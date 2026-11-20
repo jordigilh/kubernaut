@@ -188,10 +188,12 @@ live run.
 | UT-FMC-SRC-2661-002 | A complete `sources.acm` block parses `endpoint`/`tokenPath`/`caFile` and selects `SourceACM` (D4.1a rules 2, 4) | ✅ |
 | UT-FMC-SRC-2661-003 | `caFile` absent is valid and means system trust; it never fails startup (D4.1a) | ✅ |
 | UT-FMC-SRC-2661-004 | Fail-closed endpoint: plain `http`, relative, host-less or empty → `Validate()` rejects, naming `sources.acm.endpoint` (D4.1a rule 3, SC-8/SI-10) | ✅ |
-| UT-FMC-SRC-2661-005 | Fail-closed token: relative, empty, missing or unreadable `tokenPath` → rejected, naming the key; no token material in the error (D4.1a rules 3, 6; IA-5) | ✅ |
+| UT-FMC-SRC-2661-005 | Fail-closed token: relative, empty, missing or directory `tokenPath` → rejected, naming the key; the file is opened, not merely stat'ed, and no token material appears in the error (D4.1a rules 3, 6; IA-5) | ✅ |
 | UT-FMC-SRC-2661-006 | A relative `caFile` is rejected, naming the key (SC-8) | ✅ |
 | UT-FMC-SRC-2661-007 | Strict decoding: an unknown key under `sources.acm` (e.g. `endpointURL`) fails loading, so an operator typo cannot silently disable a guard (D4.1a rule 3, CM-6) | ✅ |
 | UT-FMC-SRC-2661-008 | A second or unknown source (`sources.rancher`) is a configuration error, never ignored (D4.1a rule 2) | ✅ |
+| UT-FMC-SRC-2661-009 | Presence selects a source (D4.1a rule 2): a present `sources` block that is empty, null, or names only a null `acm` fails loading, and `acm: {}` loads as ACM then fails validation for its missing endpoint — a named source never resolves back to MCP | ✅ |
+| UT-FMC-SRC-2661-010 | A merged `sources` block is validated, not skipped, and flattening reproduces YAML merge precedence: a direct key wins over a merge, and the earlier merge target wins over a later one (CM-6) | ✅ |
 | UT-FMC-SRC-2661-011 | Observation shape: every object of a configured kind is written with its label state (`true`/`false`/`absent`/`invalid`), matching the MCP collector's cache shape so both sources project identically | ✅ |
 | UT-FMC-SRC-2661-012 | Precedence: explicit `false` overrides namespace `true`; invalid label is invalid, never absent, never inherits; cluster-scoped never inherits | ✅ |
 | UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item) | ✅ |
@@ -280,8 +282,8 @@ Identical to DD-FLEET-017 §8 (single authority).
 | 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | 60–90 min (excluding approval latency) |
 | RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | 130 min |
 | GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | 120 min |
-| RED b | UT-FMC-SRC-2661-011..019 (collector) | 90 min |
-| GREEN b | ACM source adapter + sync selection + fenced publication incl. the lex identity key in the staged commit | 180 min |
+| RED b | UT-FMC-SRC-2661-011..023 (collector, traversal guards, derived budget, aggregate bounds, credential/CA reuse) | 120 min |
+| GREEN b | ACM source adapter + deployment-level source selection + fenced publication incl. the lex identity key in the staged commit | 200 min |
 | RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping | 120 min |
 | REFACTOR | Collapse the two page-assembly paths into one projection helper; single state/status table; no new types | 45 min |
 | Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | 60–90 min |

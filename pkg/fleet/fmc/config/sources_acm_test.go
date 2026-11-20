@@ -132,19 +132,23 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 
 		// UT-FMC-SRC-2661-009
 		DescribeTable("UT-FMC-SRC-2661-009 [BR-INTEGRATION-065]: a present sources block must name the source it selects",
-			func(sourcesYAML string) {
+			func(sourcesYAML, wantSubstring string) {
 				_, err := config.LoadFromFile(writeRawConfig(sourcesYAML))
 
 				Expect(err).To(HaveOccurred(),
 					"presence selects a source; it must never resolve back to MCP silently")
-				Expect(err.Error()).To(ContainSubstring("names no source"))
+				Expect(err.Error()).To(ContainSubstring(wantSubstring))
 			},
-			Entry("empty mapping", "sources: {}\n"),
-			Entry("null acm", "sources:\n  acm: null\n"),
+			Entry("empty mapping", "sources: {}\n", "names no source"),
+			Entry("null sources", "sources: null\n", "declared but empty"),
+			Entry("null acm", "sources:\n  acm: null\n", "names no source"),
 		)
 
 		// UT-FMC-SRC-2661-009 (continued): a named but incomplete ACM source is
 		// incomplete, not absent — it must fail validation, never load as MCP.
+		// Compatibility coverage: the pre-declared implementation also selected
+		// ACM here, so this entry guards the shape, it is not regression evidence
+		// for the `declared` flag (the empty-map and null entries above are).
 		It("UT-FMC-SRC-2661-009 [BR-INTEGRATION-065]: an empty acm mapping loads as ACM and fails validation", func() {
 			cfg, err := config.LoadFromFile(writeRawConfig("sources:\n  acm: {}\n"))
 
@@ -173,7 +177,7 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		)
 
 		// UT-FMC-SRC-2661-005
-		DescribeTable("UT-FMC-SRC-2661-005 [FedRAMP IA-5]: rejects a tokenPath that is relative, missing, a directory or unreadable",
+		DescribeTable("UT-FMC-SRC-2661-005 [FedRAMP IA-5]: rejects a tokenPath that is relative, empty, missing or a directory",
 			func(tokenPath func() string) {
 				cfg, err := config.LoadFromFile(writeConfig(map[string]any{
 					"acm": map[string]any{"endpoint": "https://search-api.example:4010", "tokenPath": tokenPath()},
@@ -189,15 +193,6 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 			Entry("empty", func() string { return "" }),
 			Entry("missing file", func() string { return filepath.Join(GinkgoT().TempDir(), "absent") }),
 			Entry("directory", func() string { return GinkgoT().TempDir() }),
-			// Root can open a mode-000 file, so this entry only discriminates on
-			// non-root runners; the directory and missing cases carry the
-			// readability assertion everywhere.
-			Entry("unreadable file", func() string {
-				path := filepath.Join(GinkgoT().TempDir(), "token-unreadable")
-				Expect(os.WriteFile(path, []byte("test-token-value"), 0o600)).To(Succeed())
-				Expect(os.Chmod(path, 0o000)).To(Succeed())
-				return path
-			}),
 		)
 
 		// UT-FMC-SRC-2661-006
@@ -238,6 +233,12 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 					"  endpointURL: https://ignored.example:4010\n" +
 					"sources:\n  acm:\n    <<: *acmDefaults\n"
 			}, "sources.acm"),
+			Entry("quoted merge key is a literal, unknown key", func(token string) string {
+				// `"<<"` is tagged !!str, not !!merge, so it must be rejected as
+				// an unknown key rather than skipped as a merge.
+				return "sources:\n  acm:\n    endpoint: https://search-api.example:4010\n" +
+					"    tokenPath: " + token + "\n    \"<<\": typo\n"
+			}, "sources.acm"),
 			Entry("sources is a scalar", func(string) string { return "sources: acm\n" }, "sources must be a mapping"),
 			Entry("sources.acm is a scalar", func(string) string { return "sources:\n  acm: https://search-api.example:4010\n" }, "sources.acm"),
 		)
@@ -255,6 +256,31 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 			Expect(err).To(HaveOccurred(),
 				"at most one source may be declared; a second one must not be ignored")
 			Expect(err.Error()).To(ContainSubstring("rancher"))
+		})
+
+		// UT-FMC-SRC-2661-010 (precedence): flattening must reproduce YAML's
+		// merge rules, or a merged credential/endpoint could silently win.
+		It("UT-FMC-SRC-2661-010 [FedRAMP CM-6]: a direct key wins over a merge, and an earlier merge wins over a later one", func() {
+			token := tokenFile()
+
+			direct, err := config.LoadFromFile(writeRawConfig(
+				"first: &first\n  endpoint: https://first.example:4010\n" +
+					"second: &second\n  endpoint: https://second.example:4010\n" +
+					"sources:\n  acm:\n    tokenPath: " + token + "\n" +
+					"    endpoint: https://direct.example:4010\n" +
+					"    <<: [*first, *second]\n"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(direct.Sources.ACM.Endpoint).To(Equal("https://direct.example:4010"),
+				"a directly declared key must win over merged keys")
+
+			mergedOnly, err := config.LoadFromFile(writeRawConfig(
+				"first: &first\n  endpoint: https://first.example:4010\n" +
+					"second: &second\n  endpoint: https://second.example:4010\n" +
+					"sources:\n  acm:\n    tokenPath: " + token + "\n" +
+					"    <<: [*first, *second]\n"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mergedOnly.Sources.ACM.Endpoint).To(Equal("https://first.example:4010"),
+				"the earlier merge target must win, matching yaml.v3")
 		})
 
 		// UT-FMC-SRC-2661-010

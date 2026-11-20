@@ -86,8 +86,13 @@ func decodeSourcesStrict(data []byte) (*SourcesConfig, error) {
 		return nil, err
 	}
 	sourcesNode, found := rootValues["sources"]
-	if !found || isNull(sourcesNode) {
+	if !found {
 		return nil, nil //nolint:nilnil // absence means today's collector
+	}
+	if isNull(sourcesNode) {
+		// Presence selects a source (D4.1a rule 2). A rendered but empty block
+		// is a wiring defect, not a request to fall back to MCP.
+		return nil, fmt.Errorf("sources is declared but empty; expected sources.acm")
 	}
 	acmNode, err := acmSourceNode(sourcesNode)
 	if err != nil {
@@ -187,7 +192,7 @@ func mergeEntries(mapping *yaml.Node, path string) ([]string, map[string]*yaml.N
 	order := make([]string, 0, len(mapping.Content)/2)
 	values := make(map[string]*yaml.Node, len(mapping.Content)/2)
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
-		if mapping.Content[index].Value != "<<" {
+		if !isMergeKey(mapping.Content[index]) {
 			continue
 		}
 		for _, merged := range mergeMappings(mapping.Content[index+1]) {
@@ -213,10 +218,11 @@ func directEntries(mapping *yaml.Node) ([]string, map[string]*yaml.Node) {
 	order := make([]string, 0, len(mapping.Content)/2)
 	values := make(map[string]*yaml.Node, len(mapping.Content)/2)
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
-		key := mapping.Content[index].Value
-		if key == "<<" {
+		keyNode := mapping.Content[index]
+		if isMergeKey(keyNode) {
 			continue
 		}
+		key := keyNode.Value
 		if _, exists := values[key]; !exists {
 			order = append(order, key)
 		}
@@ -276,6 +282,13 @@ func unexpectedKeys(keys, allowed []string) []string {
 	return unexpected
 }
 
+// isMergeKey reports whether a mapping key is YAML's merge key. The tag is the
+// only reliable signal: a quoted "<<" or '<<' is an ordinary string key, and
+// treating it as a merge would drop an unknown key from the closed-set check.
+func isMergeKey(node *yaml.Node) bool {
+	return node != nil && node.Tag == "!!merge"
+}
+
 // resolveNode follows alias nodes so an anchored value is inspected through
 // its real content.
 func resolveNode(node *yaml.Node) *yaml.Node {
@@ -307,7 +320,7 @@ func nodeKindName(node *yaml.Node) string {
 }
 
 // decodeMapping decodes one already-validated mapping node into target.
-func decodeMapping(node *yaml.Node, target any) error {
+func decodeMapping(node *yaml.Node, target *ACMSourceConfig) error {
 	rendered, err := yaml.Marshal(node)
 	if err != nil {
 		return fmt.Errorf("failed to parse config sources: %w", err)
