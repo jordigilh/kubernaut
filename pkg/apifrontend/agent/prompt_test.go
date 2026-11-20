@@ -753,3 +753,33 @@ var _ = Describe("Prompt — Ambiguous Signal/Severity Correlation (DD-AF-012, #
 			"internal issue numbers must never appear in the model-facing prompt (leakage risk)")
 	})
 })
+
+// UT-AF-2658-008: constraint 7 must give the model a distinct, executable
+// action per ambiguity reason -- a single "confirm the signal" script would
+// make the model ask for a signal name when the missing fact is the API group
+// (BR-SEVERITY-001 AC-8).
+var _ = Describe("System Prompt: ambiguity reasons (#2658)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		instruction = agentpkg.DefaultTestConfig().Instruction
+	})
+
+	It("UT-AF-2658-008: names every ambiguity reason and its confirmation field", func() {
+		Expect(instruction).To(ContainSubstring("ambiguity_reason"))
+		Expect(instruction).To(ContainSubstring("cluster_scoped_only"))
+		Expect(instruction).To(ContainSubstring("group_unscopable"))
+		Expect(instruction).To(ContainSubstring("alert_belongs_to_sibling"))
+		Expect(instruction).To(ContainSubstring("candidate_api_groups"))
+		Expect(instruction).To(ContainSubstring("confirmed_api_group"))
+	})
+
+	It("UT-AF-2658-008: instructs a distinct action per reason", func() {
+		Expect(instruction).To(ContainSubstring("confirmed_signal_name"),
+			"cluster_scoped_only is resolved by confirming the signal name")
+		Expect(instruction).To(ContainSubstring("re-call the same tool with `confirmed_api_group`"),
+			"group_unscopable is resolved by confirming the API group")
+		Expect(instruction).To(ContainSubstring("Do NOT create a remediation request for this resource"),
+			"alert_belongs_to_sibling must stop the model from remediating the wrong resource")
+	})
+})

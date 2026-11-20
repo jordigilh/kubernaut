@@ -1438,7 +1438,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, target enrichmen
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
 		if enrichment.IsHistoryUnavailableError(err) || errors.Is(err, enrichment.ErrRBACForbidden) {
-			status := enrichment.HistoryEvidenceStatusForError(err, target.Kind, target.Name, target.Namespace, clusterID, incidentID)
+			status := enrichment.HistoryEvidenceStatusForError(err, target.APIVersion, target.Kind, target.Name, target.Namespace, clusterID, incidentID)
 			evidenceStatus := &katypes.EvidenceStatus{
 				Version:         status.Version,
 				Class:           status.Class,

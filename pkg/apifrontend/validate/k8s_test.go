@@ -172,6 +172,11 @@ var _ = Describe("APIVersion (F2)", func() {
 		Entry("grouped numeric-only version", "apps/1", "invalid api_version"),
 		Entry("space", "apps /v1", "invalid api_version"),
 		Entry("too long", strings.Repeat("a", 254), "exceeds max length"),
+		// #2658: the core API group must be spelled by version alone. A
+		// "core/<version>" api_version parses as the literal group "core",
+		// which matches no GVK and no persisted identity row.
+		Entry("core group alias", "core/v1", `use "v1" for core resources`),
+		Entry("core group alias with prerelease version", "core/v1beta1", "v1beta1"),
 	)
 })
 

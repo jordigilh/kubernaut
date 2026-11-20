@@ -38,14 +38,21 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/go-chi/chi/v5/middleware"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// kindPattern mirrors the OpenAPI targetKind pattern (SI-10).
+var kindPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 
 // Default lookback windows per DD-KA-016 v1.1.
 const (
@@ -56,6 +63,8 @@ const (
 // remediationHistoryRequest holds the parsed and validated request
 // parameters for HandleGetRemediationHistoryContext.
 type remediationHistoryRequest struct {
+	// targetResource is the canonical target identity (#2658):
+	// namespace/group/version/Kind/name.
 	targetResource  string
 	clusterID       string // Issue #1802: optional fleet scoping (main only; empty = unscoped)
 	currentSpecHash string
@@ -279,15 +288,21 @@ func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.
 		return remediationHistoryRequest{}, false
 	}
 
-	// Build target resource string: unconditional "{namespace}/{kind}/{name}"
-	// (Issue #1802). This MUST match the exact format RO's audit emission
-	// writes to event_data->>'target_resource' (emitWorkflowCreatedAudit,
-	// internal/controller/remediationorchestrator/audit_events.go), which
-	// always uses this 3-part form — cluster-scoped resources produce a
-	// leading "/" (empty namespace segment). Now that QueryROEventsBySpecHash
-	// filters on target_resource equality, a mismatched format here would
-	// silently exclude all history for cluster-scoped resources.
-	targetResource := fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
+	apiVersion, ok := parseTargetAPIVersion(w, q, h)
+	if !ok {
+		return remediationHistoryRequest{}, false
+	}
+	if !validHistoryIdentityParam(w, targetKind, targetName, targetNamespace, h) {
+		return remediationHistoryRequest{}, false
+	}
+
+	// Build the canonical identity key (#2658). This MUST match the exact value
+	// RO's audit emission writes to event_data->>'target_resource'
+	// (creator.TargetIdentity.AuditKey): group and version are ordinary path
+	// parts, so the query is a single equality predicate. An unestablished
+	// apiVersion renders the reserved unresolved form and can therefore never
+	// equal a genuine core resource's key.
+	targetResource := scope.BuildTargetIdentity(apiVersion, targetNamespace, targetKind, targetName)
 
 	return remediationHistoryRequest{
 		targetResource:  targetResource,
@@ -296,6 +311,59 @@ func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.
 		tier1Window:     tier1Window,
 		tier2Window:     tier2Window,
 	}, true
+}
+
+// parseTargetAPIVersion reads the REQUIRED targetApiVersion parameter (#2658).
+// q.Has is used rather than q.Get so an absent parameter (400) stays
+// distinguishable from an empty value (also 400): empty is not a valid
+// apiVersion spelling and must not silently mean the core group. "v1"/"core/v1"
+// normalize to the core form; the reserved "unresolved" selects the unknown form.
+func parseTargetAPIVersion(w http.ResponseWriter, q url.Values, h *Handler) (apiVersion string, ok bool) {
+	if !q.Has("targetApiVersion") {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"missing-parameter", "Missing Required Parameter",
+			"targetApiVersion query parameter is required (send \"v1\" for the core API group)", h.logger)
+		return "", false
+	}
+	raw := q.Get("targetApiVersion")
+	if raw == scope.UnknownAPIVersionSentinel {
+		return "", true // BuildTargetIdentity renders the unresolved form
+	}
+	wired := scope.WireAPIVersion(raw)
+	if wired == scope.UnknownAPIVersionSentinel {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-parameter", "Invalid Parameter",
+			fmt.Sprintf("targetApiVersion %q is not a valid apiVersion", raw), h.logger)
+		return "", false
+	}
+	return wired, true
+}
+
+// validHistoryIdentityParam applies the OpenAPI patterns server-side (SI-10):
+// a malformed kind/name/namespace is never a real target, so it is rejected
+// before the identity is composed rather than persisted into an equality key.
+func validHistoryIdentityParam(w http.ResponseWriter, targetKind, targetName, targetNamespace string, h *Handler) bool {
+	if !kindPattern.MatchString(targetKind) {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-parameter", "Invalid Parameter",
+			fmt.Sprintf("targetKind %q is not a valid Kubernetes kind", targetKind), h.logger)
+		return false
+	}
+	if errs := validation.IsDNS1123Subdomain(targetName); len(errs) > 0 {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-parameter", "Invalid Parameter",
+			fmt.Sprintf("targetName %q is not a valid resource name", targetName), h.logger)
+		return false
+	}
+	if targetNamespace != "" {
+		if errs := validation.IsDNS1123Label(targetNamespace); len(errs) > 0 {
+			response.WriteRFC7807Error(w, http.StatusBadRequest,
+				"invalid-parameter", "Invalid Parameter",
+				fmt.Sprintf("targetNamespace %q is not a valid namespace", targetNamespace), h.logger)
+			return false
+		}
+	}
+	return true
 }
 
 // parseHistoryWindow parses an optional duration query parameter, falling
@@ -322,7 +390,10 @@ func (h *Handler) parseHistoryWindow(w http.ResponseWriter, q url.Values, param 
 // RFC 7807 error response) on any query failure.
 func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, req remediationHistoryRequest, now time.Time) ([]api.RemediationHistoryEntry, time.Time, bool) {
 	tier1Since := now.Add(-req.tier1Window)
-	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier1Since, now)
+	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, repository.RemediationHistoryQuery{
+		TargetResource: req.targetResource, ClusterID: req.clusterID,
+		SpecHash: req.currentSpecHash, Since: tier1Since, Until: now,
+	})
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 1 RO events",
 			"spec_hash", req.currentSpecHash, "since", tier1Since, "until", now)
@@ -360,7 +431,10 @@ func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryR
 	// recursive history query needs recent entries as bridge nodes to reach
 	// older remediations. The response remains disjoint by filtering the
 	// recent entries before building Tier 2 summaries.
-	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier2Since, now)
+	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, repository.RemediationHistoryQuery{
+		TargetResource: req.targetResource, ClusterID: req.clusterID,
+		SpecHash: req.currentSpecHash, Since: tier2Since, Until: now,
+	})
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 2 events",
 			"spec_hash", req.currentSpecHash, "since", tier2Since, "until", now)

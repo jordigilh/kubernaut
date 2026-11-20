@@ -39,7 +39,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			resolved := true
 			client := &stubDSClient{
 				response: &ogenclient.RemediationHistoryContext{
-					TargetResource:     "default/Deployment/api-server",
+					TargetResource:     "default/apps/v1/Deployment/api-server",
 					CurrentSpecHash:    "abc123",
 					RegressionDetected: true,
 					Tier1: ogenclient.RemediationHistoryTier1{
@@ -86,10 +86,10 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "abc123"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.TargetResource).To(Equal("default/Deployment/api-server"))
+			Expect(result.TargetResource).To(Equal("default/apps/v1/Deployment/api-server"))
 			Expect(result.RegressionDetected).To(BeTrue())
 			Expect(result.Tier1Window).To(Equal("24h"))
 			Expect(result.Tier2Window).To(Equal("2160h"))
@@ -133,7 +133,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 			adapter := enrichment.NewDSAdapter(client)
 
-			_, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "app", "prod", "cluster-a", "abc123")
+			_, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "app", Namespace: "prod", ClusterID: "cluster-a", SpecHash: "abc123"})
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(client.capturedParams.ClusterId.IsSet()).To(BeTrue(),
@@ -147,7 +147,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 			adapter := enrichment.NewDSAdapter(client)
 
-			_, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "app", "prod", "", "abc123")
+			_, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "app", Namespace: "prod", ClusterID: "", SpecHash: "abc123"})
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(client.capturedParams.ClusterId.IsSet()).To(BeFalse(),
@@ -188,7 +188,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Node", "worker-1", "", "", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Node", Name: "worker-1", Namespace: "", ClusterID: "", SpecHash: "abc123"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Tier1).To(HaveLen(1))
 			md := result.Tier1[0].MetricDeltas
@@ -225,7 +225,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "abc123"})
 			Expect(err).NotTo(HaveOccurred())
 			md := result.Tier1[0].MetricDeltas
 			Expect(md.ThroughputBeforeRps).To(BeNil())
@@ -238,7 +238,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		It("should return empty Tier1/Tier2 slices, not nil", func() {
 			client := &stubDSClient{
 				response: &ogenclient.RemediationHistoryContext{
-					TargetResource:  "default/Deployment/api-server",
+					TargetResource:  "default/apps/v1/Deployment/api-server",
 					CurrentSpecHash: "abc123",
 					Tier1: ogenclient.RemediationHistoryTier1{
 						Window: "24h",
@@ -252,7 +252,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "abc123"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Tier1).NotTo(BeNil())
@@ -266,7 +266,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		It("should not panic when optional fields are unset", func() {
 			client := &stubDSClient{
 				response: &ogenclient.RemediationHistoryContext{
-					TargetResource:  "default/Deployment/api-server",
+					TargetResource:  "default/apps/v1/Deployment/api-server",
 					CurrentSpecHash: "",
 					Tier1: ogenclient.RemediationHistoryTier1{
 						Window: "24h",
@@ -283,7 +283,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 
 			adapter := enrichment.NewDSAdapter(client)
 			Expect(func() {
-				result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "test-hash")
+				result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "test-hash"})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Tier1).To(HaveLen(1))
 				Expect(result.Tier1[0].RemediationUID).To(Equal("wf-123"))
@@ -309,7 +309,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 				}
 
 				resp := map[string]interface{}{
-					"targetResource":     "staging/StatefulSet/redis",
+					"targetResource":     "staging/apps/v1/StatefulSet/redis",
 					"currentSpecHash":    "hash789",
 					"regressionDetected": false,
 					"tier1": map[string]interface{}{
@@ -330,7 +330,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			adapter := enrichment.NewDSAdapter(ogenClient)
-			_, err = adapter.GetRemediationHistory(context.Background(), "StatefulSet", "redis", "staging", "", "hash789")
+			_, err = adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "StatefulSet", Name: "redis", Namespace: "staging", ClusterID: "", SpecHash: "hash789"})
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(capturedURL).To(ContainSubstring("remediation-history"))
@@ -348,7 +348,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "test-hash")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "test-hash"})
 			Expect(err).To(HaveOccurred(), "#762: 400 responses must surface as errors")
 			Expect(err.Error()).To(ContainSubstring("bad request"))
 			Expect(result).To(BeNil())
@@ -366,7 +366,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			adapter := enrichment.NewDSAdapter(ogenClient)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api", "default", "", "test-hash")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api", Namespace: "default", ClusterID: "", SpecHash: "test-hash"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("ds adapter"))
 			Expect(result).To(BeNil())

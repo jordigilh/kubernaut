@@ -232,6 +232,10 @@ type InvestigateMCPArgs struct {
 	// candidate's alert name after the user has explicitly confirmed it
 	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
 	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
+	// ConfirmedAPIGroup is the API group the user confirmed the correlated
+	// alert refers to (#2658), used when the ambiguous result's
+	// ambiguity_reason is group_unscopable. Leave empty on the first call.
+	ConfirmedAPIGroup string `json:"confirmed_api_group,omitempty"`
 	// SessionID is an ambient hint the LLM propagates via cross-phase
 	// preservation (#2364 Tier 2). Tolerated here so strict ADK schema
 	// validation does not kill the turn; ignored by the handler, which owns
@@ -256,6 +260,9 @@ type InvestigateMCPResult struct {
 	Ambiguous           bool   `json:"ambiguous,omitempty"`
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AmbiguityReason/CandidateAPIGroups classify the ambiguity (#2658).
+	AmbiguityReason    string   `json:"ambiguity_reason,omitempty"`
+	CandidateAPIGroups []string `json:"candidate_api_groups,omitempty"`
 	// AlignmentVerdict carries KA's #1096 shadow-agent full-context grounding
 	// review verdict for this investigation, when ai.alignmentCheck is
 	// enabled on KA (#2071, forward-port of release/v1.5's #2034 Stage 3b).
@@ -383,12 +390,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		return InvestigateMCPResult{}, err
 	}
 	if ambiguous != nil {
-		return InvestigateMCPResult{
-			Ambiguous:           true,
-			CandidateSignalName: ambiguous.CandidateSignalName,
-			CandidateSeverity:   ambiguous.CandidateSeverity,
-			Error:               ambiguous.Message,
-		}, nil
+		return ambiguousInvestigationMCPResult(ambiguous), nil
 	}
 
 	// BR-INTERACTIVE-004: reject a known interactive lease holder before the
@@ -548,6 +550,20 @@ func setTakeoverRRContext(ctx context.Context, cfg *InvestigateConfig, rrID stri
 	})
 }
 
+// ambiguousInvestigationMCPResult mirrors an ambiguous CreateRRResult into this
+// tool's result type (#2658): reason + candidate API groups drive the agent's
+// next question.
+func ambiguousInvestigationMCPResult(ambiguous *CreateRRResult) InvestigateMCPResult {
+	return InvestigateMCPResult{
+		Ambiguous:           true,
+		CandidateSignalName: ambiguous.CandidateSignalName,
+		CandidateSeverity:   ambiguous.CandidateSeverity,
+		AmbiguityReason:     ambiguous.AmbiguityReason,
+		CandidateAPIGroups:  ambiguous.CandidateAPIGroups,
+		Error:               ambiguous.Message,
+	}
+}
+
 // createRRForInvestigation creates a new RemediationRequest from
 // api_version/kind/name/namespace args, resolving cluster-scoped namespace
 // stripping and rejecting service-account-initiated interactive
@@ -584,6 +600,7 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 		ClusterScoped:                clusterScoped,
 		ClusterID:                    args.ClusterID,
 		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
+		ConfirmedAmbiguousAPIGroup:   args.ConfirmedAPIGroup,
 	}
 	createUser := ""
 	if identity != nil {

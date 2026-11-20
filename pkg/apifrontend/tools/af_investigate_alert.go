@@ -75,6 +75,10 @@ type InvestigateAlertArgs struct {
 	// Note AlertName above is always the RR's signalName here (already
 	// user-confirmed) -- this field only affects severity resolution.
 	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
+	// ConfirmedAPIGroup is the API group the user confirmed the alert refers
+	// to (#2658), used when the ambiguous result's ambiguity_reason is
+	// group_unscopable. Leave empty on the first call.
+	ConfirmedAPIGroup string `json:"confirmed_api_group,omitempty"`
 }
 
 // InvestigateAlertResult is the output of kubernaut_investigate_alert.
@@ -92,6 +96,9 @@ type InvestigateAlertResult struct {
 	Ambiguous           bool   `json:"ambiguous,omitempty"`
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AmbiguityReason/CandidateAPIGroups classify the ambiguity (#2658).
+	AmbiguityReason    string   `json:"ambiguity_reason,omitempty"`
+	CandidateAPIGroups []string `json:"candidate_api_groups,omitempty"`
 }
 
 // HandleInvestigateAlert creates a RemediationRequest for a specific alert+resource pair.
@@ -148,6 +155,7 @@ func HandleInvestigateAlert(
 		SignalNameOverride:           args.AlertName,
 		ClusterID:                    args.ClusterID,
 		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
+		ConfirmedAmbiguousAPIGroup:   args.ConfirmedAPIGroup,
 	}
 
 	hooks, hookFired := buildAlertPreCreateISHooks(cfg.Signaler, username)
@@ -157,14 +165,7 @@ func HandleInvestigateAlert(
 	}
 
 	if result.Ambiguous {
-		return InvestigateAlertResult{
-			AlertValidated:      alertValidated,
-			SignalName:          args.AlertName,
-			Ambiguous:           true,
-			CandidateSignalName: result.CandidateSignalName,
-			CandidateSeverity:   result.CandidateSeverity,
-			Message:             result.Message,
-		}, nil
+		return ambiguousInvestigateAlertResult(args.AlertName, alertValidated, result), nil
 	}
 
 	// #2265: the dedup (AlreadyExists) branch predates this call -- its RR
@@ -187,6 +188,22 @@ func HandleInvestigateAlert(
 		Severity:       result.Severity,
 		SeveritySource: result.SeveritySource,
 	}, nil
+}
+
+// ambiguousInvestigateAlertResult mirrors an ambiguous CreateRRResult into this
+// tool's result type (#2658): the reason and candidate API groups are what let
+// the agent pick the right confirmation field.
+func ambiguousInvestigateAlertResult(alertName string, alertValidated bool, result CreateRRResult) InvestigateAlertResult {
+	return InvestigateAlertResult{
+		AlertValidated:      alertValidated,
+		SignalName:          alertName,
+		Ambiguous:           true,
+		CandidateSignalName: result.CandidateSignalName,
+		CandidateSeverity:   result.CandidateSeverity,
+		AmbiguityReason:     result.AmbiguityReason,
+		CandidateAPIGroups:  result.CandidateAPIGroups,
+		Message:             result.Message,
+	}
 }
 
 // validateInvestigateAlertFields validates the required, well-formed-input

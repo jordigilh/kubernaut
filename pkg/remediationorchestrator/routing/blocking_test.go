@@ -1113,7 +1113,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource: "demo-hpa/Deployment/api-frontend",
+					TargetResource: "demo-hpa/apps/v1/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID: "patch-hpa-v1",
@@ -1143,7 +1143,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/Deployment/api-frontend")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/apps/v1/Deployment/api-frontend")
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).ToNot(BeNil(),
@@ -1165,7 +1165,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource: "demo-hpa/Deployment/api-frontend",
+					TargetResource: "demo-hpa/apps/v1/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID: "patch-hpa-v1",
@@ -1966,8 +1966,17 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 		})
 
 		It("UT-RO-AUDIT-2663-011: renders cluster-scoped targets without an empty namespace [BR-AUDIT-005, FedRAMP AU-3]", func() {
-			Expect(routing.TargetResource{Kind: "Node", Name: "worker-1"}.String()).To(Equal("Node/worker-1"))
-			Expect(routing.TargetResource{Namespace: "prod", Kind: "Pod", Name: "api"}.String()).To(Equal("prod/Pod/api"))
+			// #2658: the canonical identity is namespace/group/version/Kind/
+			// name (cluster-scoped: group/version/Kind/name) - a cluster-scoped
+			// target still renders no empty namespace slot.
+			Expect(routing.TargetResource{Kind: "Node", Name: "worker-1", APIVersion: "v1"}.String()).
+				To(Equal("core/v1/Node/worker-1"))
+			// An unestablished apiVersion renders the reserved unresolved form
+			// rather than colliding with a core resource's identity.
+			Expect(routing.TargetResource{Kind: "Node", Name: "worker-1"}.String()).
+				To(Equal("unresolved/unresolved/Node/worker-1"))
+			Expect(routing.TargetResource{Namespace: "prod", Kind: "Pod", Name: "api", APIVersion: "v1"}.String()).
+				To(Equal("prod/core/v1/Pod/api"))
 		})
 	})
 })

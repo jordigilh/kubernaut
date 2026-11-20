@@ -45,7 +45,7 @@ var _ = Describe("Issue #1033 Gap 2: workflow_name in selection audit (BR-AUDIT-
 	})
 
 	wfe := func(name string) *workflowexecutionv1alpha1.WorkflowExecution {
-		return newTestWFE(name, "default", "default/Deployment/test-app", "wf-test-123", "quay.io/kubernaut/test:v1", nil)
+		return newTestWFE(name, "default", "default/apps/v1/Deployment/test-app", "wf-test-123", "quay.io/kubernaut/test:v1", nil)
 	}
 
 	// ========================================

@@ -55,7 +55,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 	BeforeEach(func() {
 		testCtx = context.Background()
 		testID = generateTestID()
-		targetResource = fmt.Sprintf("default/Deployment/nginx-%s", testID)
+		targetResource = fmt.Sprintf("default/apps/v1/Deployment/nginx-%s", testID)
 		currentSpecHash = "sha256:current_" + testID
 
 		// Create repository backed by the real PostgreSQL instance from suite_test.go
@@ -109,11 +109,11 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 		GinkgoHelper()
 		insertAuditEvent("remediation.workflow_created", "remediation", correlationID,
 			map[string]interface{}{
-				"target_resource":            target,
-				"pre_remediation_spec_hash":  preHash,
-				"action_type":                actionType,
+				"target_resource":           target,
+				"pre_remediation_spec_hash": preHash,
+				"action_type":               actionType,
 				"signal_type":               "HighCPULoad",
-				"signal_fingerprint":         "fp-" + testID,
+				"signal_fingerprint":        "fp-" + testID,
 				"outcome":                   "success",
 			},
 			ts,
@@ -179,9 +179,9 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 		// effectiveness.health.assessed
 		insertAuditEvent("effectiveness.health.assessed", "effectiveness", correlationID,
 			map[string]interface{}{
-				"assessed":      true,
-				"score":         0.85,
-				"pod_running":   true,
+				"assessed":       true,
+				"score":          0.85,
+				"pod_running":    true,
 				"readiness_pass": true,
 			},
 			ts.Add(1*time.Minute),
@@ -190,9 +190,9 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 		// effectiveness.alert.assessed
 		insertAuditEvent("effectiveness.alert.assessed", "effectiveness", correlationID,
 			map[string]interface{}{
-				"assessed":         true,
-				"score":            0.9,
-				"signal_resolved":  true,
+				"assessed":        true,
+				"score":           0.9,
+				"signal_resolved": true,
 			},
 			ts.Add(2*time.Minute),
 		)
@@ -253,7 +253,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			insertROEvent(cidOther, targetResource, "sha256:different_hash", "ScaleUp", now.Add(-1*time.Hour))
 
 			// Act: query by spec hash with 3-hour lookback
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", matchHash, now.Add(-3*time.Hour), now)
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: matchHash, Since: now.Add(-3 * time.Hour), Until: now})
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -300,7 +300,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			insertROEvent(cidNoMatch, targetResource, "sha256:different_hash", "ScaleDown", now.Add(-40*time.Hour))
 
 			// Act: query for matchHash within 72h-24h window (Tier 2)
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", matchHash, now.Add(-72*time.Hour), now.Add(-24*time.Hour))
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetResource, ClusterID: "", SpecHash: matchHash, Since: now.Add(-72 * time.Hour), Until: now.Add(-24 * time.Hour)})
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -326,8 +326,8 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			// must NOT return ns-b's row, even though both match the hash.
 			now := time.Now().UTC()
 			sharedHash := "sha256:shared_" + testID
-			targetA := fmt.Sprintf("ns-a-%s/Deployment/app", testID)
-			targetB := fmt.Sprintf("ns-b-%s/Deployment/app", testID)
+			targetA := fmt.Sprintf("ns-a-%s/apps/v1/Deployment/app", testID)
+			targetB := fmt.Sprintf("ns-b-%s/apps/v1/Deployment/app", testID)
 			cidA := fmt.Sprintf("corr-1802-a-%s", testID)
 			cidB := fmt.Sprintf("corr-1802-b-%s", testID)
 
@@ -335,7 +335,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			insertROEvent(cidB, targetB, sharedHash, "ScaleUp", now.Add(-1*time.Hour))
 
 			// Act: query for ns-a's target only
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetA, "", sharedHash, now.Add(-3*time.Hour), now)
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetA, ClusterID: "", SpecHash: sharedHash, Since: now.Add(-3 * time.Hour), Until: now})
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -343,7 +343,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			Expect(rows[0].CorrelationID).To(Equal(cidA))
 
 			// Cross-check: querying for ns-b's target returns only ns-b's row (symmetric proof)
-			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetB, "", sharedHash, now.Add(-3*time.Hour), now)
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: targetB, ClusterID: "", SpecHash: sharedHash, Since: now.Add(-3 * time.Hour), Until: now})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rowsB).To(HaveLen(1), "must return only ns-b's row")
 			Expect(rowsB[0].CorrelationID).To(Equal(cidB))
@@ -363,7 +363,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 
 			insertROEvent(cid, clusterScopedTarget, hash, "CordonNode", now.Add(-1*time.Hour))
 
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, clusterScopedTarget, "", hash, now.Add(-3*time.Hour), now)
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: clusterScopedTarget, ClusterID: "", SpecHash: hash, Since: now.Add(-3 * time.Hour), Until: now})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rows).To(HaveLen(1), "the 3-part canonical format (leading slash for empty namespace) must match the stored row")
@@ -376,7 +376,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			// same target-resource string alone is insufficient once fleet
 			// deployments are in play — cluster_id must additionally scope.
 			now := time.Now().UTC()
-			sameTarget := fmt.Sprintf("prod-%s/Deployment/app", testID)
+			sameTarget := fmt.Sprintf("prod-%s/apps/v1/Deployment/app", testID)
 			sameHash := "sha256:fleet_" + testID
 			cidClusterA := fmt.Sprintf("corr-1802-clusterA-%s", testID)
 			cidClusterB := fmt.Sprintf("corr-1802-clusterB-%s", testID)
@@ -385,19 +385,19 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			insertROEventWithCluster(cidClusterB, sameTarget, "cluster-b", sameHash, "ScaleUp", now.Add(-1*time.Hour))
 
 			// Act: scope to cluster-a only
-			rowsA, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-a", sameHash, now.Add(-3*time.Hour), now)
+			rowsA, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: sameTarget, ClusterID: "cluster-a", SpecHash: sameHash, Since: now.Add(-3 * time.Hour), Until: now})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rowsA).To(HaveLen(1), "must return only cluster-a's row, excluding cluster-b's same-target same-hash row")
 			Expect(rowsA[0].CorrelationID).To(Equal(cidClusterA))
 
 			// Cross-check: cluster-b scope returns only cluster-b's row
-			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-b", sameHash, now.Add(-3*time.Hour), now)
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: sameTarget, ClusterID: "cluster-b", SpecHash: sameHash, Since: now.Add(-3 * time.Hour), Until: now})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rowsB).To(HaveLen(1))
 			Expect(rowsB[0].CorrelationID).To(Equal(cidClusterB))
 
 			// Backward compatibility: empty clusterID (release/v1.5 semantics) is unscoped — returns both
-			rowsUnscoped, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "", sameHash, now.Add(-3*time.Hour), now)
+			rowsUnscoped, err := rhRepo.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: sameTarget, ClusterID: "", SpecHash: sameHash, Since: now.Add(-3 * time.Hour), Until: now})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rowsUnscoped).To(HaveLen(2), "empty clusterID must not filter by cluster, matching release/v1.5 behavior")
 		})
@@ -467,7 +467,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 			GinkgoHelper()
 
 			// Step 1: Query RO events by target resource + spec hash (#586, #1802)
-			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, target, "", specHash, since, time.Now().UTC())
+			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, repository.RemediationHistoryQuery{TargetResource: target, ClusterID: "", SpecHash: specHash, Since: since, Until: time.Now().UTC()})
 			Expect(err).ToNot(HaveOccurred())
 
 			// Step 2: Batch query EM events
@@ -595,7 +595,7 @@ var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1
 
 			// Act: query for target with no events
 			entries, regressionDetected := queryAndCorrelate(
-				"ghost-ns/Deployment/nonexistent-"+testID,
+				"ghost-ns/apps/v1/Deployment/nonexistent-"+testID,
 				"sha256:no_such_hash",
 				now.Add(-24*time.Hour),
 			)

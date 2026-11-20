@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 20: Security Headers & Observability", Ordered, ContinueOnFailure, func() {
@@ -49,10 +49,10 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, ContinueO
 		testLogger.Info("Test 20: Security Headers & Observability - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Pre-create managed namespace (Pattern: RO E2E)
-	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
-	helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id", "test-pod-metrics")
-	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		// Pre-create managed namespace (Pattern: RO E2E)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id", "test-pod-metrics")
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
@@ -76,14 +76,14 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, ContinueO
 			return
 		}
 
-	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-	// Clean up test namespace (Pattern: RO E2E)
-	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+		// Clean up test namespace (Pattern: RO E2E)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
-	if testCancel != nil {
-		testCancel()
-	}
-	testLogger.Info("✅ Test cleanup complete")
+		if testCancel != nil {
+			testCancel()
+		}
+		testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -239,15 +239,15 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, ContinueO
 			initialMetricsStr := string(initialMetrics)
 
 			testLogger.Info("Step 2: Send test request to Gateway")
-		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-			AlertName: "TestAlertMetrics",
-			Namespace: testNamespace,
-			Severity:  "warning",
-			PodName:   "test-pod-metrics",
-			Labels: map[string]string{
-				"scenario": "http-metrics",
-			},
-		})
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: "TestAlertMetrics",
+				Namespace: testNamespace,
+				Severity:  "warning",
+				PodName:   "test-pod-metrics",
+				Labels: map[string]string{
+					"scenario": "http-metrics",
+				},
+			})
 
 			resp, err := func() (*http.Response, error) {
 				req31, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))

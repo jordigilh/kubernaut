@@ -1136,7 +1136,7 @@ var _ = Describe("Audit Manager", func() {
 				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-					TargetResource:         "default/Deployment/nginx",
+					TargetResource:         "default/apps/v1/Deployment/nginx",
 					WorkflowID:             "wf-scale-001",
 					WorkflowVersion:        "1.0.0",
 					ActionType:             "ScaleReplicas",
@@ -1154,7 +1154,7 @@ var _ = Describe("Audit Manager", func() {
 				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-					TargetResource:         "production/Deployment/api-server",
+					TargetResource:         "production/apps/v1/Deployment/api-server",
 					WorkflowID:             "wf-restart-pods",
 					WorkflowVersion:        "2.1.0",
 					ActionType:             "RestartPod",
@@ -1168,7 +1168,7 @@ var _ = Describe("Audit Manager", func() {
 			_ = json.Unmarshal(eventDataBytes, &eventData)
 
 			Expect(eventData["pre_remediation_spec_hash"]).To(Equal("sha256:1111111111111111111111111111111111111111111111111111111111111111"))
-			Expect(eventData["target_resource"]).To(Equal("production/Deployment/api-server"))
+			Expect(eventData["target_resource"]).To(Equal("production/apps/v1/Deployment/api-server"))
 			Expect(eventData["workflow_id"]).To(Equal("wf-restart-pods"))
 			Expect(eventData["workflow_version"]).To(Equal("2.1.0"))
 		})
@@ -1181,7 +1181,7 @@ var _ = Describe("Audit Manager", func() {
 				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef",
-					TargetResource:         "default/Pod/test",
+					TargetResource:         "default/core/v1/Pod/test",
 					WorkflowID:             "wf-test",
 					WorkflowVersion:        "1.0.0",
 					ActionType:             "ScaleReplicas",
@@ -1202,7 +1202,7 @@ var _ = Describe("Audit Manager", func() {
 				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-					TargetResource:         "default/Deployment/nginx",
+					TargetResource:         "default/apps/v1/Deployment/nginx",
 					WorkflowID:             "wf-scale-001",
 					ActionType:             "ScaleReplicas",
 				},
@@ -1380,7 +1380,7 @@ var _ = Describe("Audit Manager", func() {
 				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:prehash",
-					TargetResource:         "default/Deployment/api-server",
+					TargetResource:         "default/apps/v1/Deployment/api-server",
 					WorkflowID:             "wf-scale-replicas",
 					WorkflowVersion:        "v2.1",
 					ActionType:             "ScaleReplicas",

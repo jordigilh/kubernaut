@@ -75,7 +75,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			)
 
 			By("Creating WorkflowExecution")
-			targetResource := "test-namespace/deployment/metrics-completed"
+			targetResource := "test-namespace/apps/v1/Deployment/metrics-completed"
 			wfe := metricsWFE("metrics-completed", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -126,7 +126,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			)
 
 			By("Creating WorkflowExecution")
-			targetResource := "test-namespace/deployment/metrics-failed"
+			targetResource := "test-namespace/apps/v1/Deployment/metrics-failed"
 			wfe := metricsWFE("metrics-failed", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -173,7 +173,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 		// ========================================
 		It("should record execution duration in histogram for both success and failure", func() {
 			By("Test Case 1: Recording duration for successful completion")
-			targetResourceSuccess := "test-namespace/deployment/metrics-duration-success"
+			targetResourceSuccess := "test-namespace/apps/v1/Deployment/metrics-duration-success"
 			wfeSuccess := metricsWFE("metrics-duration-success", targetResourceSuccess)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeSuccess)).To(Succeed())
 
@@ -207,7 +207,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for successful completion")
 
 			By("Test Case 2: Recording duration for failed execution")
-			targetResourceFailed := "test-namespace/deployment/metrics-duration-failed"
+			targetResourceFailed := "test-namespace/apps/v1/Deployment/metrics-duration-failed"
 			wfeFailed := metricsWFE("metrics-duration-failed", targetResourceFailed)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeFailed)).To(Succeed())
 
@@ -252,7 +252,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 				"Label constant must match metric label value")
 
 			By("Creating workflow that transitions through lifecycle")
-			targetResource := "test-namespace/deployment/metrics-labels"
+			targetResource := "test-namespace/apps/v1/Deployment/metrics-labels"
 			wfe := metricsWFE("metrics-labels", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -298,7 +298,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			)
 
 			By("Creating successful workflow")
-			targetSuccess := "test-namespace/deployment/slo-success"
+			targetSuccess := "test-namespace/apps/v1/Deployment/slo-success"
 			wfeSuccess := metricsWFE("slo-success", targetSuccess)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeSuccess)).To(Succeed())
 
@@ -316,7 +316,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Creating failed workflow")
-			targetFailed := "test-namespace/deployment/slo-failed"
+			targetFailed := "test-namespace/apps/v1/Deployment/slo-failed"
 			wfeFailed := metricsWFE("slo-failed", targetFailed)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfeFailed)).To(Succeed())
 

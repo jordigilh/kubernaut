@@ -65,8 +65,8 @@ func (s *spyAuditStore) eventsOfType(eventType string) []*audit.AuditEvent {
 }
 
 type failingAuditStore struct {
-	mu     sync.Mutex
-	calls  int
+	mu    sync.Mutex
+	calls int
 }
 
 func (f *failingAuditStore) StoreAudit(_ context.Context, _ *audit.AuditEvent) error {

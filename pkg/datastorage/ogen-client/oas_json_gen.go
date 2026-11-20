@@ -17022,6 +17022,328 @@ func (s *ApifrontendSessionRetentionDeletedPayloadEventType) UnmarshalJSON(data 
 }
 
 // Encode implements json.Marshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("ambiguity_reason")
+		s.AmbiguityReason.Encode(e)
+	}
+	{
+		if s.APIGroup.Set {
+			e.FieldStart("api_group")
+			s.APIGroup.Encode(e)
+		}
+	}
+	{
+		if s.Namespace.Set {
+			e.FieldStart("namespace")
+			s.Namespace.Encode(e)
+		}
+	}
+	{
+		if s.Kind.Set {
+			e.FieldStart("kind")
+			s.Kind.Encode(e)
+		}
+	}
+	{
+		if s.Name.Set {
+			e.FieldStart("name")
+			s.Name.Encode(e)
+		}
+	}
+	{
+		if s.CandidateAlert.Set {
+			e.FieldStart("candidate_alert")
+			s.CandidateAlert.Encode(e)
+		}
+	}
+	{
+		if s.CandidateSeverity.Set {
+			e.FieldStart("candidate_severity")
+			s.CandidateSeverity.Encode(e)
+		}
+	}
+	{
+		if s.CandidateAPIGroups != nil {
+			e.FieldStart("candidate_api_groups")
+			e.ArrStart()
+			for _, elem := range s.CandidateAPIGroups {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfApifrontendSeverityTriageAmbiguousPayload = [9]string{
+	0: "event_type",
+	1: "ambiguity_reason",
+	2: "api_group",
+	3: "namespace",
+	4: "kind",
+	5: "name",
+	6: "candidate_alert",
+	7: "candidate_severity",
+	8: "candidate_api_groups",
+}
+
+// Decode decodes ApifrontendSeverityTriageAmbiguousPayload from json.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendSeverityTriageAmbiguousPayload to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "ambiguity_reason":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.AmbiguityReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ambiguity_reason\"")
+			}
+		case "api_group":
+			if err := func() error {
+				s.APIGroup.Reset()
+				if err := s.APIGroup.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"api_group\"")
+			}
+		case "namespace":
+			if err := func() error {
+				s.Namespace.Reset()
+				if err := s.Namespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		case "kind":
+			if err := func() error {
+				s.Kind.Reset()
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "name":
+			if err := func() error {
+				s.Name.Reset()
+				if err := s.Name.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "candidate_alert":
+			if err := func() error {
+				s.CandidateAlert.Reset()
+				if err := s.CandidateAlert.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"candidate_alert\"")
+			}
+		case "candidate_severity":
+			if err := func() error {
+				s.CandidateSeverity.Reset()
+				if err := s.CandidateSeverity.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"candidate_severity\"")
+			}
+		case "candidate_api_groups":
+			if err := func() error {
+				s.CandidateAPIGroups = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.CandidateAPIGroups = append(s.CandidateAPIGroups, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"candidate_api_groups\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendSeverityTriageAmbiguousPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00000011,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendSeverityTriageAmbiguousPayload) {
+					name = jsonFieldsNameOfApifrontendSeverityTriageAmbiguousPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason as json.
+func (s ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason from json.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason(v) {
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonClusterScopedOnly
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonGroupUnscopable
+	case ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReasonAlertBelongsToSibling
+	default:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadAmbiguityReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendSeverityTriageAmbiguousPayloadEventType as json.
+func (s ApifrontendSeverityTriageAmbiguousPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendSeverityTriageAmbiguousPayloadEventType from json.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendSeverityTriageAmbiguousPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendSeverityTriageAmbiguousPayloadEventType(v) {
+	case ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadEventTypeApifrontendSeverityTriageAmbiguous
+	default:
+		*s = ApifrontendSeverityTriageAmbiguousPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendSeverityTriageAmbiguousPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendSeverityTriageAmbiguousPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ApifrontendSeverityTriageCompletedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -17043,6 +17365,12 @@ func (s *ApifrontendSeverityTriageCompletedPayload) encodeFields(e *jx.Encoder) 
 		e.Str(s.SourceTier)
 	}
 	{
+		if s.APIGroup.Set {
+			e.FieldStart("api_group")
+			s.APIGroup.Encode(e)
+		}
+	}
+	{
 		if s.DurationMs.Set {
 			e.FieldStart("duration_ms")
 			s.DurationMs.Encode(e)
@@ -17050,11 +17378,12 @@ func (s *ApifrontendSeverityTriageCompletedPayload) encodeFields(e *jx.Encoder) 
 	}
 }
 
-var jsonFieldsNameOfApifrontendSeverityTriageCompletedPayload = [4]string{
+var jsonFieldsNameOfApifrontendSeverityTriageCompletedPayload = [5]string{
 	0: "event_type",
 	1: "severity",
 	2: "source_tier",
-	3: "duration_ms",
+	3: "api_group",
+	4: "duration_ms",
 }
 
 // Decode decodes ApifrontendSeverityTriageCompletedPayload from json.
@@ -17099,6 +17428,16 @@ func (s *ApifrontendSeverityTriageCompletedPayload) Decode(d *jx.Decoder) error 
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"source_tier\"")
+			}
+		case "api_group":
+			if err := func() error {
+				s.APIGroup.Reset()
+				if err := s.APIGroup.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"api_group\"")
 			}
 		case "duration_ms":
 			if err := func() error {
@@ -23914,6 +24253,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.SourceTier)
 			}
 			{
+				if s.APIGroup.Set {
+					e.FieldStart("api_group")
+					s.APIGroup.Encode(e)
+				}
+			}
+			{
 				if s.DurationMs.Set {
 					e.FieldStart("duration_ms")
 					s.DurationMs.Encode(e)
@@ -23937,6 +24282,62 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.FailedTier.Set {
 					e.FieldStart("failed_tier")
 					s.FailedTier.Encode(e)
+				}
+			}
+		}
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.severity_triage.ambiguous")
+		{
+			s := s.ApifrontendSeverityTriageAmbiguousPayload
+			{
+				e.FieldStart("ambiguity_reason")
+				s.AmbiguityReason.Encode(e)
+			}
+			{
+				if s.APIGroup.Set {
+					e.FieldStart("api_group")
+					s.APIGroup.Encode(e)
+				}
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				if s.Kind.Set {
+					e.FieldStart("kind")
+					s.Kind.Encode(e)
+				}
+			}
+			{
+				if s.Name.Set {
+					e.FieldStart("name")
+					s.Name.Encode(e)
+				}
+			}
+			{
+				if s.CandidateAlert.Set {
+					e.FieldStart("candidate_alert")
+					s.CandidateAlert.Encode(e)
+				}
+			}
+			{
+				if s.CandidateSeverity.Set {
+					e.FieldStart("candidate_severity")
+					s.CandidateSeverity.Encode(e)
+				}
+			}
+			{
+				if s.CandidateAPIGroups != nil {
+					e.FieldStart("candidate_api_groups")
+					e.ArrStart()
+					for _, elem := range s.CandidateAPIGroups {
+						e.Str(elem)
+					}
+					e.ArrEnd()
 				}
 			}
 		}
@@ -24843,6 +25244,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.severity_triage.failed":
 					s.Type = ApifrontendSeverityTriageFailedPayloadAuditEventEventData
 					found = true
+				case "apifrontend.severity_triage.ambiguous":
+					s.Type = ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData
+					found = true
 				case "apifrontend.config.reloaded":
 					s.Type = ApifrontendConfigReloadedPayloadAuditEventEventData
 					found = true
@@ -25312,6 +25716,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendSeverityTriageFailedPayloadAuditEventEventData:
 		if err := s.ApifrontendSeverityTriageFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventEventData:
+		if err := s.ApifrontendSeverityTriageAmbiguousPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendConfigReloadedPayloadAuditEventEventData:
@@ -30192,6 +30600,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.SourceTier)
 			}
 			{
+				if s.APIGroup.Set {
+					e.FieldStart("api_group")
+					s.APIGroup.Encode(e)
+				}
+			}
+			{
 				if s.DurationMs.Set {
 					e.FieldStart("duration_ms")
 					s.DurationMs.Encode(e)
@@ -30215,6 +30629,62 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.FailedTier.Set {
 					e.FieldStart("failed_tier")
 					s.FailedTier.Encode(e)
+				}
+			}
+		}
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.severity_triage.ambiguous")
+		{
+			s := s.ApifrontendSeverityTriageAmbiguousPayload
+			{
+				e.FieldStart("ambiguity_reason")
+				s.AmbiguityReason.Encode(e)
+			}
+			{
+				if s.APIGroup.Set {
+					e.FieldStart("api_group")
+					s.APIGroup.Encode(e)
+				}
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				if s.Kind.Set {
+					e.FieldStart("kind")
+					s.Kind.Encode(e)
+				}
+			}
+			{
+				if s.Name.Set {
+					e.FieldStart("name")
+					s.Name.Encode(e)
+				}
+			}
+			{
+				if s.CandidateAlert.Set {
+					e.FieldStart("candidate_alert")
+					s.CandidateAlert.Encode(e)
+				}
+			}
+			{
+				if s.CandidateSeverity.Set {
+					e.FieldStart("candidate_severity")
+					s.CandidateSeverity.Encode(e)
+				}
+			}
+			{
+				if s.CandidateAPIGroups != nil {
+					e.FieldStart("candidate_api_groups")
+					e.ArrStart()
+					for _, elem := range s.CandidateAPIGroups {
+						e.Str(elem)
+					}
+					e.ArrEnd()
 				}
 			}
 		}
@@ -31121,6 +31591,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.severity_triage.failed":
 					s.Type = ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData
 					found = true
+				case "apifrontend.severity_triage.ambiguous":
+					s.Type = ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData
+					found = true
 				case "apifrontend.config.reloaded":
 					s.Type = ApifrontendConfigReloadedPayloadAuditEventRequestEventData
 					found = true
@@ -31590,6 +32063,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendSeverityTriageFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendSeverityTriageAmbiguousPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSeverityTriageAmbiguousPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendConfigReloadedPayloadAuditEventRequestEventData:

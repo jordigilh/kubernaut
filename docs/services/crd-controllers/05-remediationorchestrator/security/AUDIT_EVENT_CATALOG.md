@@ -73,6 +73,13 @@ historical mappings in the catalog.
 6. **Minor dead code, out of scope for this catalog**: `ActionFailed` and `ActionUnblocked` (marked "future") constants in `manager.go` are defined but never referenced by any builder; `EventCategoryOrchestration` duplicates `CategoryOrchestration` (same `"orchestration"` value, two names in use across the package and its test/controller callers).
 7. **Ineffective-chain counts are message-only.** `orchestrator.routing.blocked` carries structured `consecutive_failures` for `ConsecutiveFailures`, `ExponentialBackoff`, and scope re-blocks. `IneffectiveChain` still records its computed chain/recurrence count only in `block_message`; adding a structured field would require a separate additive schema decision.
 
+> **Resolved since this catalog was written (#2663, #2658)**: the former
+> payload-mapping gap for `orchestrator.routing.blocked` — `BuildRoutingBlockedEvent`
+> dropped the rich `RoutingBlockedData` fields — is closed: the payload now carries
+> the blocking decision fields, and #2658 makes the caller record the canonical
+> identity the gate actually evaluated (`BlockingCondition.TargetResource`, populated
+> by the target-scoped busy/cooldown checks) rather than the RR's signal target.
+
 ---
 
 ## Adding New Events

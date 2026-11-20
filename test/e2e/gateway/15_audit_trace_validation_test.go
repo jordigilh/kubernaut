@@ -31,8 +31,8 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
@@ -79,7 +79,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, Cont
 			GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-		
+
 		// Get token for E2E ServiceAccount
 		testLogger.Info("🎫 Retrieving ServiceAccount token...")
 		e2eToken, err := infrastructure.GetServiceAccountToken(

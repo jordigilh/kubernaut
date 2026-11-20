@@ -122,7 +122,7 @@ var _ = Describe("Issue #2588 deployed cancellation", Label("e2e", "cancellation
 					WorkflowID: "e2e-cancel-workflow", WorkflowName: "e2e-cancel-workflow",
 					ActionType: "RestartPod", Version: "v1", ExecutionBundle: "e2e/cancel:v1",
 				}},
-				TargetResource: fmt.Sprintf("%s/deployment/cancel-target", targetNamespace),
+				TargetResource: fmt.Sprintf("%s/apps/v1/Deployment/cancel-target", targetNamespace),
 			},
 		}
 		Expect(controllerutil.SetControllerReference(rr, wfe, scheme.Scheme)).To(Succeed())

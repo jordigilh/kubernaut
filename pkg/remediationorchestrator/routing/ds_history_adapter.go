@@ -24,6 +24,7 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
@@ -96,7 +97,10 @@ func (a *DSHistoryAdapter) GetRemediationHistory(
 		TargetKind:      target.Kind,
 		TargetName:      target.Name,
 		TargetNamespace: target.Namespace,
-		CurrentSpecHash: currentSpecHash,
+		// #2658: the apiVersion is REQUIRED and must match the identity RO
+		// emitted (group+version are part of the identity path).
+		TargetApiVersion: scope.WireAPIVersion(target.APIVersion),
+		CurrentSpecHash:  currentSpecHash,
 		Tier1Window: ogenclient.OptString{
 			Value: window.String(),
 			Set:   true,

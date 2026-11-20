@@ -78,7 +78,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should create PipelineRun when WFE is created", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("pr-create", "default/deployment/test-app")
+			wfe = reconcilerWFE("pr-create", "default/apps/v1/Deployment/test-app")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for controller to create PipelineRun")
@@ -100,7 +100,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should pass parameters to PipelineRun", func() {
 			By("Creating a WorkflowExecution with parameters")
-			wfe = reconcilerWFE("pr-params", "production/deployment/my-service")
+			wfe = reconcilerWFE("pr-params", "production/apps/v1/Deployment/my-service")
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"NAMESPACE":       `"production"`,
 				"DEPLOYMENT_NAME": `"my-service"`,
@@ -127,7 +127,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should include TARGET_RESOURCE parameter", func() {
 			By("Creating a WorkflowExecution")
-			targetResource := "monitoring/deployment/prometheus"
+			targetResource := "monitoring/apps/v1/Deployment/prometheus"
 			wfe = reconcilerWFE("pr-target", targetResource)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -163,7 +163,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should sync WFE status when PipelineRun succeeds", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("status-sync-success", "default/deployment/status-test")
+			wfe = reconcilerWFE("status-sync-success", "default/apps/v1/Deployment/status-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -184,7 +184,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should sync WFE status when PipelineRun fails", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("status-sync-fail", "default/deployment/fail-test")
+			wfe = reconcilerWFE("status-sync-fail", "default/apps/v1/Deployment/fail-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -205,7 +205,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should populate ExecutionStatus during Running phase", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("status-running", "default/deployment/running-test")
+			wfe = reconcilerWFE("status-running", "default/apps/v1/Deployment/running-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
@@ -237,7 +237,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should set owner reference on PipelineRun", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("owner-ref", "default/deployment/owner-test")
+			wfe = reconcilerWFE("owner-ref", "default/apps/v1/Deployment/owner-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -265,7 +265,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should leave TaskRunTemplate serviceAccount empty when WFE has no ExecutionConfig SA (DD-WE-005 v2)", func() {
 			By("Creating a WorkflowExecution without ExecutionConfig service account")
-			wfe = reconcilerWFE("sa-default", "default/deployment/sa-test")
+			wfe = reconcilerWFE("sa-default", "default/apps/v1/Deployment/sa-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -281,7 +281,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// DataStorage/querier round-trip, Issue #650).
 		It("should use Spec.WorkflowRef.ServiceAccountName on PipelineRun when set", func() {
 			By("Creating a WorkflowExecution with a custom ServiceAccountName in WorkflowRef")
-			wfe = reconcilerWFE("sa-custom", "default/deployment/sa-custom-test")
+			wfe = reconcilerWFE("sa-custom", "default/apps/v1/Deployment/sa-custom-test")
 			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-workflow-sa"
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -309,7 +309,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should transition Pending → Running → Completed", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("phase-complete", "default/deployment/phase-test")
+			wfe = reconcilerWFE("phase-complete", "default/apps/v1/Deployment/phase-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Verifying initial phase is empty or Pending")
@@ -336,7 +336,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should transition Pending → Running → Failed", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("phase-fail", "default/deployment/phase-fail-test")
+			wfe = reconcilerWFE("phase-fail", "default/apps/v1/Deployment/phase-fail-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
@@ -393,7 +393,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should persist workflowexecution.execution.started audit event (BR-AUDIT-005 Gap #6, ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("audit-started", "default/deployment/audit-started-test")
+			wfe = reconcilerWFE("audit-started", "default/apps/v1/Deployment/audit-started-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
@@ -452,7 +452,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should persist workflowexecution.workflow.completed audit event with correct field values (ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("audit-complete", "default/deployment/audit-complete-test")
+			wfe = reconcilerWFE("audit-complete", "default/apps/v1/Deployment/audit-complete-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
@@ -517,7 +517,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should persist workflowexecution.workflow.failed audit event with failure details (ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
-			wfe = reconcilerWFE("audit-fail", "default/deployment/audit-fail-test")
+			wfe = reconcilerWFE("audit-fail", "default/apps/v1/Deployment/audit-fail-test")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
 			By("Waiting for Running phase")
@@ -593,7 +593,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		It("should include correlation ID in audit events from RemediationRequestRef (DD-AUDIT-CORRELATION-001)", func() {
 			By("Creating a WorkflowExecution (correlation ID = RemediationRequestRef.Name)")
-			wfe = reconcilerWFE("audit-corr", "default/deployment/audit-corr-test")
+			wfe = reconcilerWFE("audit-corr", "default/apps/v1/Deployment/audit-corr-test")
 			// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is the authoritative source
 			expectedCorrID := wfe.Spec.RemediationRequestRef.Name
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
@@ -638,7 +638,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		Context("BR-WE-009: Resource Locking for Target Resources", func() {
 			It("should prevent parallel execution on the same target resource via deterministic PipelineRun names", func() {
 				By("Creating first WorkflowExecution for target resource")
-				targetResource := "test-namespace/deployment/payment-api"
+				targetResource := "test-namespace/apps/v1/Deployment/payment-api"
 				wfe1 := reconcilerWFE("lock-test-1", targetResource)
 				wfe1.Labels = map[string]string{"test-id": "parallel-lock-test"}
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
@@ -673,8 +673,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should allow parallel execution on different target resources", func() {
 				By("Creating two WorkflowExecutions for DIFFERENT target resources")
-				targetResource1 := "test-namespace/deployment/frontend-api"
-				targetResource2 := "test-namespace/deployment/backend-api"
+				targetResource1 := "test-namespace/apps/v1/Deployment/frontend-api"
+				targetResource2 := "test-namespace/apps/v1/Deployment/backend-api"
 
 				wfe1 := reconcilerWFE("different-lock-1", targetResource1)
 				wfe2 := reconcilerWFE("different-lock-2", targetResource2)
@@ -694,7 +694,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should use deterministic PipelineRun names based on target resource hash", func() {
 				By("Creating WorkflowExecution with known target resource")
-				targetResource := "test-namespace/deployment/deterministic-test"
+				targetResource := "test-namespace/apps/v1/Deployment/deterministic-test"
 				wfe := reconcilerWFE("deterministic-name", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -717,7 +717,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should release lock after cooldown period expires", func() {
 				By("Creating WorkflowExecution that will complete")
-				targetResource := "test-namespace/deployment/cooldown-release-test"
+				targetResource := "test-namespace/apps/v1/Deployment/cooldown-release-test"
 				wfe1 := reconcilerWFE("cooldown-release-1", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe1)).To(Succeed())
 
@@ -776,7 +776,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		Context("BR-WE-010: Cooldown Period Between Sequential Executions", func() {
 			It("should wait cooldown period before releasing lock after completion", func() {
 				By("Creating WorkflowExecution")
-				targetResource := "test-namespace/deployment/cooldown-wait"
+				targetResource := "test-namespace/apps/v1/Deployment/cooldown-wait"
 				wfe := reconcilerWFE("cooldown-wait", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -823,7 +823,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should calculate cooldown remaining time correctly", func() {
 				By("Creating and completing WorkflowExecution")
-				targetResource := "test-namespace/deployment/cooldown-calculation"
+				targetResource := "test-namespace/apps/v1/Deployment/cooldown-calculation"
 				wfe := reconcilerWFE("cooldown-calc", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -863,7 +863,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should emit LockReleased event when cooldown expires", func() {
 				By("Creating and completing WorkflowExecution")
-				targetResource := "test-namespace/deployment/lock-released-event"
+				targetResource := "test-namespace/apps/v1/Deployment/lock-released-event"
 				wfe := reconcilerWFE("lock-released", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 
@@ -924,7 +924,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		Context("BR-WE-008: Prometheus Metrics Recording", func() {
 			It("should record workflowexecution_duration_seconds histogram", func() {
 				By("Creating and completing WorkflowExecution")
-				targetResource := "test-namespace/deployment/metrics-duration"
+				targetResource := "test-namespace/apps/v1/Deployment/metrics-duration"
 				wfe := reconcilerWFE("metrics-duration", targetResource)
 				Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 

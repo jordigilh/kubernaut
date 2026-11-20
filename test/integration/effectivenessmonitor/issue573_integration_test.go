@@ -228,7 +228,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 					"event_type":       eventType,
 					"workflow_id":      "test-wf",
 					"workflow_version": "1.0.0",
-					"target_resource":  "default/Deployment/test-app",
+					"target_resource":  "default/apps/v1/Deployment/test-app",
 					"phase":            "Running",
 					"container_image":  "test:latest",
 					"execution_name":   "test-exec",

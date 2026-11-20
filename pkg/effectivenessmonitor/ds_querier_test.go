@@ -188,7 +188,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 					testAuditEvent("workflowexecution.execution.started", "corr-started", map[string]interface{}{
 						"workflow_id":      "test-wf",
 						"workflow_version": "1.0.0",
-						"target_resource":  "test-ns/Deployment/test",
+						"target_resource":  "test-ns/apps/v1/Deployment/test",
 						"phase":            "Running",
 						"container_image":  "test:latest",
 						"execution_name":   "test-exec",
@@ -243,7 +243,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 					testAuditEvent("workflowexecution.workflow.completed", "rr-completed", map[string]interface{}{
 						"workflow_id":      "test-wf",
 						"workflow_version": "1.0.0",
-						"target_resource":  "test-ns/Deployment/test",
+						"target_resource":  "test-ns/apps/v1/Deployment/test",
 						"phase":            "Completed",
 						"container_image":  "test:latest",
 						"execution_name":   "test-exec",

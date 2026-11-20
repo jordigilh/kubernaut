@@ -81,7 +81,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, secret) }()
 
-			wfe := dependencyWFE("depres-001", "default/deployment/dep-test-001")
+			wfe := dependencyWFE("depres-001", "default/apps/v1/Deployment/dep-test-001")
 			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
 				"Dependency resolution secret fixture",
 				"job",
@@ -138,7 +138,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, cm) }()
 
-			wfe := dependencyWFE("depres-002", "default/deployment/dep-test-002")
+			wfe := dependencyWFE("depres-002", "default/apps/v1/Deployment/dep-test-002")
 			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
 				"Dependency resolution ConfigMap fixture",
 				"job",
@@ -174,7 +174,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-2390-002 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
-			wfe := dependencyWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
+			wfe := dependencyWFE("depres-1481-001", "default/apps/v1/Deployment/dep-test-1481-001")
 			wfe.Spec.WorkflowRef.WorkflowID = trustedWorkflowFixtureWithDependencies(
 				"Dependency resolution missing secret fixture",
 				"job",
@@ -220,7 +220,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-1645-001 [BR-WORKFLOW-008]: should enrich the Failed message from the Pod's image-pull-failure event", func() {
-			wfe := dependencyWFE("depres-1645-001", "default/deployment/dep-test-1645-001")
+			wfe := dependencyWFE("depres-1645-001", "default/apps/v1/Deployment/dep-test-1645-001")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -245,7 +245,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
-			wfe := dependencyWFE("depres-005", "default/deployment/dep-test-005")
+			wfe := dependencyWFE("depres-005", "default/apps/v1/Deployment/dep-test-005")
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 

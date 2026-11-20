@@ -225,11 +225,25 @@ spec:
                 x-kubernetes-map-type: atomic
               targetResource:
                 description: |-
-                  TargetResource identifies the K8s resource being remediated
-                  Used for resource locking (DD-WE-001) - prevents parallel workflows on same target
-                  Format: "namespace/kind/name" for namespaced resources
-                          "kind/name" for cluster-scoped resources
-                  Example: "payment/deployment/payment-api", "node/worker-node-1"
+                  TargetResource identifies the K8s resource being remediated, as the
+                  canonical resource identity (#2658):
+                    namespaced:     namespace/group/version/Kind/name
+                    cluster-scoped: group/version/Kind/name
+                  The group and version are ordinary path parts of the identity, so a
+                  resource registered in several API groups (e.g. Ingress in
+                  networking.k8s.io and extensions) gets a distinct lock/busy/cooldown
+                  identity per group without any annotation on the name. The core group
+                  renders as "core"; an apiVersion that could not be established renders
+                  "unresolved" in both the group and version slots.
+                  The version slot follows the CRD rule ParseAPIVersion accepts (DNS1035
+                  label), so a CRD served at a non-v<N> version such as
+                  "example.com/stable" is a legal identity; the group slot follows the
+                  DNS1123 subdomain rule, so hyphenated groups (cert-manager.io,
+                  external-secrets.io) are legal too.
+                  Example: "payment/apps/v1/Deployment/payment-api", "core/v1/Node/worker-node-1",
+                           "prod/example.com/stable/Gateway/edge",
+                           "prod/unresolved/unresolved/Pod/api"
+                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?/)?(core|unresolved|[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)/([a-z]([-a-z0-9]*[a-z0-9])?|unresolved)/[A-Za-z][A-Za-z0-9]*/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
                 type: string
               timesOutAt:
                 description: |-

@@ -145,7 +145,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 						Version:      "v1.0.0",
 					},
 				},
-				TargetResource: ns + "/deployment/test-app",
+				TargetResource: ns + "/apps/v1/Deployment/test-app",
 			},
 			Status: workflowexecutionv1.WorkflowExecutionStatus{
 				Phase: workflowexecutionv1.PhaseCompleted,
@@ -216,7 +216,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 						Version:      "v1.0.0",
 					},
 				},
-				TargetResource: ns + "/deployment/test-app",
+				TargetResource: ns + "/apps/v1/Deployment/test-app",
 			},
 			Status: workflowexecutionv1.WorkflowExecutionStatus{
 				Phase: workflowexecutionv1.PhaseFailed,
@@ -312,7 +312,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 						Version:      "v1.0.0",
 					},
 				},
-				TargetResource: ns + "/deployment/test-app",
+				TargetResource: ns + "/apps/v1/Deployment/test-app",
 			},
 		}
 		Expect(k8sClient.Create(ctx, originalWFE)).To(Succeed())

@@ -130,9 +130,9 @@ func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
 	body, _ := json.Marshal(alert)
 	return body
 }
+
 // lastK8sClientError holds the last error from getKubernetesClientSafe for debugging
 var lastK8sClientError error
-
 
 // GetLastK8sClientError returns the last error from getKubernetesClientSafe
 func GetLastK8sClientError() error {
@@ -170,7 +170,6 @@ type ResourceIdentifier struct {
 	Kind string
 	Name string
 }
-
 
 // sendWebhook is a compatibility shim for E2E tests
 // TODO (GW Team): Replace calls with direct HTTP requests to gatewayURL

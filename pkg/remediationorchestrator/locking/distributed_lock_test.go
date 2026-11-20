@@ -303,7 +303,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 
 	Describe("UT-RO-189-007: Long target resource = stable DNS-compliant name", func() {
 		It("should produce a DNS-compliant name for long target strings", func() {
-			longTarget := "my-namespace/Deployment/my-very-long-application-name-that-exceeds-normal-lengths"
+			longTarget := "my-namespace/apps/v1/Deployment/my-very-long-application-name-that-exceeds-normal-lengths"
 			name := locking.GenerateLeaseName(longTarget)
 
 			Expect(name).NotTo(BeEmpty())
@@ -322,7 +322,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 		})
 
 		It("should produce same name for same long target", func() {
-			longTarget := "production/StatefulSet/very-long-database-cluster-name-primary-replica-set"
+			longTarget := "production/apps/v1/StatefulSet/very-long-database-cluster-name-primary-replica-set"
 			name1 := locking.GenerateLeaseName(longTarget)
 			name2 := locking.GenerateLeaseName(longTarget)
 			Expect(name1).To(Equal(name2), "deterministic naming required")

@@ -243,7 +243,7 @@ func signalProcessingSpec() map[string]interface{} {
 func workflowExecutionSpec() map[string]interface{} {
 	return map[string]interface{}{
 		"remediationRequestRef": map[string]interface{}{"name": "rr-2582"},
-		"targetResource":        "default/deployment/schema-target",
+		"targetResource":        "default/apps/v1/Deployment/schema-target",
 		"workflowRef": map[string]interface{}{
 			"workflowId":      "workflow-2582",
 			"workflowName":    "schema-foundation",

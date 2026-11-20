@@ -512,7 +512,7 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			// zero-match List call (IsError=false) rather than returning
 			// `{"items": []}`. pkg/fleet/fmc's syncer hit this for every
 			// resource kind with zero kubernaut.ai/managed=true matches
-			// (StatefulSet/DaemonSet/Service), logging "structuredContent
+			// (StatefulSet/apps/v1/DaemonSet/Service), logging "structuredContent
 			// required but not present in response" on every 10s sync cycle
 			// for the pod's entire lifetime -- a successful "nothing matched"
 			// outcome must not be treated as a parse failure.

@@ -33,7 +33,7 @@ var _ = Describe("#2496 chronological history and honest failure evidence", func
 	It("UT-KA-2496-001: globally numbers both tiers oldest first without mutating history", func() {
 		now := time.Date(2026, 10, 9, 10, 0, 0, 0, time.FixedZone("offset", 3600))
 		history := &enrichment.RemediationHistoryResult{
-			TargetResource: "prod/Deployment/controller",
+			TargetResource: "prod/apps/v1/Deployment/controller",
 			Tier1Window:    "24h", Tier2Window: "2160h",
 			Tier1: []enrichment.Tier1Entry{
 				{RemediationUID: "rr-third", WorkflowID: "id-a", WorkflowName: "IncreaseMemoryLimits", WorkflowSelectionConfidence: floatPtr(.84), CompletedAt: now, EffectivenessScore: floatPtr(0)},

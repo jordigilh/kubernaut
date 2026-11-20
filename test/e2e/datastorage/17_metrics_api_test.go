@@ -100,7 +100,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, Cont
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-					SignalName:   "LagTest",
+					SignalName:  "LagTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				},
@@ -156,7 +156,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, Cont
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-					SignalName:   "DurationTest",
+					SignalName:  "DurationTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				},

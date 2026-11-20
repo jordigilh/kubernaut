@@ -434,6 +434,9 @@ data:
           name: "kubernaut_get_remediation_history"
           arguments:
             namespace: "payments"
+            kind: "Deployment"
+            name: "payments-api"
+            api_version: "apps/v1"
 
       - name: "af_get_effectiveness"
         keywords: ["effectiveness", "remediation effectiveness"]

@@ -18,10 +18,14 @@ import (
 )
 
 var regexMap = map[string]ogenregex.Regexp{
-	"\\S":                   ogenregex.MustCompile("\\S"),
-	"^[a-f0-9]{64}$":        ogenregex.MustCompile("^[a-f0-9]{64}$"),
-	"^[a-zA-Z0-9_]+$":       ogenregex.MustCompile("^[a-zA-Z0-9_]+$"),
-	"^sha256:[a-f0-9]{64}$": ogenregex.MustCompile("^sha256:[a-f0-9]{64}$"),
+	"\\S":                                ogenregex.MustCompile("\\S"),
+	"^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$": ogenregex.MustCompile("^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"),
+	"^(unresolved|v[0-9]+((alpha|beta)[0-9]+)?|[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z]([-a-z0-9]*[a-z0-9])?)$": ogenregex.MustCompile("^(unresolved|v[0-9]+((alpha|beta)[0-9]+)?|[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z]([-a-z0-9]*[a-z0-9])?)$"),
+	"^[A-Za-z][A-Za-z0-9]*$":           ogenregex.MustCompile("^[A-Za-z][A-Za-z0-9]*$"),
+	"^[a-f0-9]{64}$":                   ogenregex.MustCompile("^[a-f0-9]{64}$"),
+	"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$": ogenregex.MustCompile("^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"),
+	"^[a-zA-Z0-9_]+$":                  ogenregex.MustCompile("^[a-zA-Z0-9_]+$"),
+	"^sha256:[a-f0-9]{64}$":            ogenregex.MustCompile("^sha256:[a-f0-9]{64}$"),
 }
 var (
 	// Allocate option closure once.

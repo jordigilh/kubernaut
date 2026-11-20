@@ -53,19 +53,19 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
 
-	// Pre-create managed namespace for E2E tests (Pattern: RO E2E)
-	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
-	helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
+		// Pre-create managed namespace for E2E tests (Pattern: RO E2E)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
 
 		// Clear Redis
 	})
 
-AfterEach(func() {
-	// Clean up test namespace (Pattern: RO E2E)
-	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+	AfterEach(func() {
+		// Clean up test namespace (Pattern: RO E2E)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
-	// Previous code (REMOVED - namespace cleanup now handled properly):
-	// ns := &corev1.Namespace{
+		// Previous code (REMOVED - namespace cleanup now handled properly):
+		// ns := &corev1.Namespace{
 		//     ObjectMeta: metav1.ObjectMeta{
 		//         Name: testNamespace,
 		//     },

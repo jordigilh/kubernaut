@@ -38,7 +38,7 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 	It("UT-KA-2533-004: carries bounded decision context without changing repeat identity", func() {
 		inv := New(Config{Logger: logr.Discard()})
 		history := &enrichment.RemediationHistoryResult{
-			TargetResource: "prod/Deployment/api",
+			TargetResource: "prod/apps/v1/Deployment/api",
 			Tier1: []enrichment.Tier1Entry{{
 				RemediationUID:   "rr-2533",
 				WorkflowID:       "catalog-workflow",
@@ -83,7 +83,7 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 
 	It("UT-KA-2533-005: complete frozen-packet budget remains fail-closed for historical context", func() {
 		inv := New(Config{Logger: logr.Discard(), Pipeline: Pipeline{StructuredPhase3ContextBudget: 512}})
-		history := &enrichment.RemediationHistoryResult{TargetResource: "prod/Deployment/api"}
+		history := &enrichment.RemediationHistoryResult{TargetResource: "prod/apps/v1/Deployment/api"}
 		for i := 0; i < 2; i++ {
 			history.Tier1 = append(history.Tier1, enrichment.Tier1Entry{
 				RemediationUID:    fmt.Sprintf("rr-budget-2533-%d", i),
@@ -101,7 +101,7 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 	It("UT-KA-2533-006: the rendered Phase 3 request remains bounded after frozen history validation", func() {
 		inv := New(Config{Logger: logr.Discard()})
 		maxText := strings.Repeat("x", sharedtypes.HistoricalDecisionTextLimit)
-		history := &enrichment.RemediationHistoryResult{TargetResource: "prod/Deployment/api", Tier1: []enrichment.Tier1Entry{{
+		history := &enrichment.RemediationHistoryResult{TargetResource: "prod/apps/v1/Deployment/api", Tier1: []enrichment.Tier1Entry{{
 			RemediationUID:    "rr-prompt-budget-2533",
 			WorkflowRationale: maxText,
 			RepeatJustification: &sharedtypes.RepeatJustification{

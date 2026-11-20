@@ -24,6 +24,10 @@ type HistoryOpts struct {
 	Name      string
 	Since     string
 	SpecHash  string
+	// APIVersion is the target's apiVersion (#2658). The client derives the
+	// required targetApiVersion wire value from it: the canonical apiVersion
+	// ("apps/v1", "v1"), or "unresolved" when it is absent/unparseable.
+	APIVersion string
 }
 
 // HistoricalRemediation is a past remediation record from the Data Store.

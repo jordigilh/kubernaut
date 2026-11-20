@@ -48,7 +48,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 		It("should execute workflow to completion", func() {
 			// Unique target for this test
 			testName := fmt.Sprintf("e2e-lifecycle-%s", uuid.New().String()[:8])
-			targetResource := "default/deployment/test-app"
+			targetResource := "default/apps/v1/Deployment/test-app"
 			wfe := createTestWFE(testName, targetResource)
 
 			// Cleanup
@@ -160,7 +160,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 		It("should populate failure details when workflow fails", func() {
 			// Create a WFE that uses the intentionally failing pipeline
 			testName := fmt.Sprintf("e2e-failure-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/fail-test-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/fail-test-%s", uuid.New().String()[:8])
 
 			// Issue #518: WorkflowID must be a valid UUID (resolved at runtime via DS)
 			failureUUID := infrastructure.RegisteredWorkflowUUIDs["test-intentional-failure"]
@@ -248,7 +248,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				// This validates that missing CompletionTime doesn't cause panics or deadlocks
 
 				testName := fmt.Sprintf("e2e-cooldown-no-completion-%s", uuid.New().String()[:8])
-				targetResource := fmt.Sprintf("default/deployment/cooldown-test-%s", uuid.New().String()[:8])
+				targetResource := fmt.Sprintf("default/apps/v1/Deployment/cooldown-test-%s", uuid.New().String()[:8])
 				wfe := createTestWFE(testName, targetResource)
 
 				defer func() {
