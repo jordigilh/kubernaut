@@ -225,7 +225,10 @@ func fleetScopedHistory2496(targetNS, origin, hash string) (*ogenclient.Remediat
 	GinkgoHelper()
 	resp, err := dataStorageClient.GetRemediationHistoryContext(ctx, ogenclient.GetRemediationHistoryContextParams{
 		TargetKind: "Deployment", TargetName: "memory-eater", TargetNamespace: targetNS,
-		CurrentSpecHash: hash, ClusterId: ogenclient.NewOptString(origin),
+		// #2658: targetApiVersion is required and must match the canonical
+		// identity the lifecycle events were recorded with.
+		TargetApiVersion: "apps/v1",
+		CurrentSpecHash:  hash, ClusterId: ogenclient.NewOptString(origin),
 	})
 	if err != nil {
 		return nil, err
