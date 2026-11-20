@@ -74,6 +74,14 @@ GET /api/v1/console/inventory/managed-resources/{resourceID}
 The routes use the existing AF authentication and same-origin ingress path. They are
 additive and do not replace or alter A2A, MCP, or `/a2a/access` behavior.
 
+> **Amendment (2026-11-18, #2661):** for the **remote inventory** lane, AF
+> consumes FMC only — it must not list from ACM Search, MCP, or remote
+> Kubernetes (ADR-068 "One federation-facing contact" amendment;
+> DD-FLEET-017 v2). The statements below that name FMC *and* ACM as peers are
+> superseded for inventory; the **scope** lane and the existing `ScopeChecker`
+> routing are unchanged. The temporary ACM inventory gate remains closed until
+> FMC's ACM source is qualified.
+
 Every request has an explicit cluster identity. `local` identifies the hub cluster and
 uses AF's local Kubernetes clients. Console policy-scope and managed-resource list
 operations are local-only for this release; a non-local list request returns a
@@ -420,9 +428,12 @@ history source is unavailable.
 - The Console receives one same-origin, versioned, user-scoped read boundary.
 - Threshold display cannot drift from the value used by AIAnalysis.
 - Exact target SARs preserve per-user and per-resource least privilege.
-- FMC/ACM remain the single fleet boundary for remote exact reads and exact managed-scope
+- ~~FMC/ACM remain the single fleet boundary for remote exact reads and exact managed-scope
   checks; remote Console list operations remain unavailable and AF does not create a direct
-  remote-cluster reader.
+  remote-cluster reader.~~ *(amended 2026-11-18, #2661: for the **inventory** lane FMC is the
+  only contact and ACM is an FMC source — see the note in §1. The scope lane and the
+  no-direct-cluster-reader rule are unchanged; remote Console list stays unavailable until the
+  gate is removed.)*
 - Read attempts are attributable through the same typed DataStorage audit path as other
   AF business/security events.
 - A missing backend or incomplete history cannot produce a misleading partial view.
@@ -454,7 +465,7 @@ history source is unavailable.
 | Managed inventory list | `GET /api/v1/console/inventory/managed-resources` | AF router and projection service | IT-AF-2584-002/007 |
 | Managed inventory exact read | `.../managed-resources/{resourceID}` | AF router and projection service | IT-AF-2584-005 |
 | User/capability/target authorization | Authenticated Console request | AF auth adapter and SAR checker | IT-AF-2584-004/005 |
-| Fleet inventory projection | Remote Console exact/get read | FMC and ACM control-plane adapters | IT-FLEET-2584-001/002 |
+| Fleet inventory projection | Remote Console exact/get read | FMC control-plane adapter (ACM is an FMC source as of 2026-11-18) | IT-FLEET-2584-001/002, IT-AF-2661-001/002 |
 | SignalProcessing history | Policy projection | AF typed client plus operator RBAC | ~~IT-AF-2584-003/006~~ removed by #2651 (SP history not fetched; see §4) |
 | Typed read audit events | Every authenticated read outcome | AF audit registry/adapter and DataStorage union | IT-AF-2584-010/011 |
 
