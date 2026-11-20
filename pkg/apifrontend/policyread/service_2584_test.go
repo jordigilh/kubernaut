@@ -559,7 +559,24 @@ func (s *recordingScopeChecker) Check(_ context.Context, identity scope.Resource
 
 func (s *inventoryStub) List(context.Context, inventory.Filters) (inventory.Page, error) {
 	s.listCalls++
-	return s.page, nil
+	return withFixtureFreshness(s.page), nil
+}
+
+// withFixtureFreshness keeps these stubs contract-valid after DD-FLEET-017 D3
+// made freshness part of every page that claims inventory (Page.Validate
+// rejects a missing state or a zero as_of). The assertion each spec makes is
+// unchanged; only the fixture carries the now-required envelope.
+func withFixtureFreshness(page inventory.Page) inventory.Page {
+	if page.Freshness.State != "" && !page.Freshness.AsOf.IsZero() {
+		return page
+	}
+	if page.Freshness.State == "" {
+		page.Freshness.State = inventory.FreshnessFresh
+	}
+	if page.Freshness.AsOf.IsZero() {
+		page.Freshness.AsOf = time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	}
+	return page
 }
 
 func (s *inventoryStub) Get(context.Context, string, string) (inventory.Resource, error) {

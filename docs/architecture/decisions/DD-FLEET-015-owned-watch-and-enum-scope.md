@@ -87,6 +87,19 @@ remain unavailable with no row or fallback.
 
 ## Scope and verification
 
+> **Reading note (2026-11-18):** the "no RBAC/dependency changes" sentence below
+> applies to **this DD's** enum/WATCH work. The later #2661 amendment does add a
+> Console inventory route consumer, a namespace-list SAR on the AF read path and
+> an FMC outbound Search principal; those are owned by DD-FLEET-017 v2, not by
+> this DD.
+
+> **Amendment (2026-11-18, #2661):** the Console **inventory** lane is now
+> FMC-owned (ADR-068 peer → facade amendment; DD-FLEET-017 v2). "DD-AF-018
+> Console inventory stays closed" therefore means: closed until FMC's ACM source,
+> the configured hub Search identity, completeness and a production journey are
+> qualified. This DD's scope contract, enum migration and owned WATCH work are
+> unchanged, and the scope lane is not rerouted here.
+
 No CRD/operator, HA, RBAC, dependency, Console list/policy-scope, audit-event or
 producer-parser changes. Preserve DD-FLEET-011/012/013/014 and Redis ambiguous-write
 regressions. AC-4/AC-6/SI-10 and existing SC-8 TLS boundaries apply; CC8.1 records

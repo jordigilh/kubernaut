@@ -1,6 +1,6 @@
 # ADR-068: Fleet Federation Architecture
 
-**Status**: Implemented (MVP; amended 2026-09-22)
+**Status**: Implemented (MVP; amended 2026-09-22 and 2026-11-18 — see the peer → facade amendment at the top)
 **Date**: 2026-06-19
 **Deciders**: Architecture Team
 **Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, WE, and a new FMC Writer service (#54)
@@ -140,6 +140,117 @@ The Fleet Gateway path preserves this contract because its reader factory create
 an `ownerchain.K8sOwnerResolver` for each remote cluster, which implements the
 extension structurally. Legacy resolvers remain fail-closed under the strict GVK
 scope gate rather than guessing an API version.
+
+## Amendment (2026-11-18): One federation-facing contact (peer → facade)
+
+**User-approved 2026-11-18** (#2661, contract in
+[DD-FLEET-017](DD-FLEET-017-fleet-inventory-projection.md) v2); this text is in
+force as documentation. It changes the **documented target model** for
+fleet-control-plane queries. It does not by itself change routing,
+authorization or any running path; the migration is a separately bounded
+change.
+
+### Decision
+
+FMC is the **single caller-facing contact** for federated fleet-control-plane
+queries — managed-scope checks and fleet inventory alike. A caller (GW, RO, AF)
+states the capability it needs and the explicit cluster identity; it does **not**
+select, name, discover or contact the underlying source.
+
+FMC owns adapter selection and the source contract. Sources: MCP-backed
+collection for GitOps / no-control-plane clusters (**implemented**), and ACM
+Search for ACM-managed clusters (**planned for v1.6; not implemented — there is
+no ACM code in `pkg/fleet/fmc` today**). Further sources (for example Rancher)
+are added behind the same interface and must satisfy the same source contract
+below.
+
+### Supersession
+
+The caller-selected `fleet.backend` model described in "Federated Control Plane
+Interface" and "Backend A/B/C" is **superseded for fleet-control-plane queries**:
+those are FMC *sources*, not peer backends a caller chooses between. The
+`fleet.backend` configuration remains only as migration scaffolding, must not be
+extended, and must not be documented or relied on as the target model. Source
+selection input (per deployment, per registered cluster, or both) is an open
+question owned by the migration, not decided here.
+
+### Preserved boundaries
+
+- **Scope lane unchanged.** Direct ACM `ScopeChecker` behaviour for its existing
+  consumers remains as it is unless a separate bounded change reroutes it. That
+  consumer set is **GW, RO and AF** (`cmd/apifrontend/backend_deps.go` selects a
+  scope backend from `fleet.backend`); this amendment records the target, it does
+  not silently alter authorization behaviour.
+- **Live object reads are not fleet queries.** Kubernetes MCP tools remain the
+  path for live Kubernetes API object reads (KA arbitrary objects, GW/RO
+  owner-chain and object inspection). That traffic is outside this abstraction.
+- **ACM Console inventory stays closed.** The release gate remains `unavailable`
+  with no rows until FMC's ACM source, the configured hub Search identity,
+  completeness and a production journey are qualified (DD-AF-018, #2661).
+
+### Source contract (normative for every FMC source)
+
+1. **Visibility**: collection runs as an explicitly configured identity. A
+   successful empty result is **not** evidence of absence, and a source must not
+   widen visibility (no privileged enrichment, no `cluster-admin`, no
+   impersonation) to make a result look complete.
+2. **Identity**: exact group/version/kind, never inferred from `Kind` and never
+   filled by a discovery call in the query path. Source-internal identifiers
+   (for example ACM Search `_uid`) are used only for ordering and duplicate
+   detection and are never exposed as public identity.
+3. **Precedence**: ADR-053 resource/namespace resolution. An invalid label is
+   invalid, not absent; cluster-scoped objects never inherit; a missing namespace
+   observation is unknown, not unmanaged.
+4. **Traversal**: deterministic and bounded. Any truncation, ordering anomaly,
+   duplicate, or count inconsistency **must mark the collection incomplete** —
+   the guards must be applied and their failure must be propagated. This is a
+   detection obligation, not a claim that every skip is detectable: a source can
+   in principle mutate in a way no guard observes (recorded in the #2661 spike),
+   and such a case must not be asserted as impossible.
+5. **Publication**: only through the existing fenced/staged proof path
+   (DD-FLEET-012/013/016). An incomplete collection must never publish a clean
+   smaller set over a previously proven one.
+6. **Freshness and completeness**: derived from proof state — a fenced-clean
+   committed generation plus an age inside the freshness budget. A source query
+   time is never freshness proof, and a source without a watermark must not cause
+   a page to claim `fresh`. Cache entries and a "successful" sync are not by
+   themselves proof of *enumerable* completeness: the source may be incomplete
+   without failing (#2599). Per-kind completion tracking does not exist in the
+   proof today; introducing it is a separate, explicitly gated change
+   (DD-FLEET-017 D3).
+
+### Consequences and blast radius
+
+- Documentation: this ADR, DD-FLEET-011 (target-read policy), DD-FLEET-015
+  (scope contract), DD-AF-018 (Console read boundary) carry cross-references.
+- Code still implements the peer model in **four** places: `pkg/fleet/config.go`
+  backend selection, `fleet.NewInventoryReader`, `fleet.NewScopeChecker`
+  (`pkg/fleet/scope_factory.go`), and AF's own two `fleet.backend` branches in
+  `cmd/apifrontend/backend_deps.go`. Removing them is the bounded migration
+  (inventory lane: #2661; scope lane: not authorized here).
+- **Routes**: no new *caller-facing* route. FMC gains the inventory route
+  reserved by DD-FLEET-017 D2.1 (`GET /api/v1/inventory/managed-resources` and its
+  exact-read child).
+- **Authority and privileges**: callers keep their existing RBAC. The change does
+  introduce (a) an FMC outbound principal for the ACM source — a hub Search
+  bearer identity, its credential mount, its egress path and its Search RBAC —
+  and (b) a new required `list/core/v1/namespaces` SAR check on the AF
+  federated-inventory read path. Neither grants a new caller permission; both are
+  AC-4/AC-6 surfaces that must be qualified.
+- No new audit event type.
+
+### Alternatives considered
+
+- **Keep the peer model** — every caller re-implements source semantics,
+  freshness and completeness policy; the same fleet is described differently by
+  different services. Rejected (superseded by the 2026-11-11 #2593 decision).
+- **Caller merges several sources** — duplicates visibility, identity and
+  authorization policy in the least suitable place and makes completeness
+  unprovable. Rejected.
+- **FMC as a cache in front of a caller-chosen source** — keeps the peer model's
+  defect while adding a hop. Rejected.
+
+---
 
 ## Context
 
@@ -315,9 +426,13 @@ Therefore:
 
 ### Key Design Decisions
 
-1. **Federated Control Plane interface** (adapter pattern): GW and RO depend on the `scope.ScopeChecker` interface (`pkg/shared/scope/checker.go`), not on any specific storage backend. The adapter is selected at startup based on the environment (FMC, ACM; Rancher and Clusterpedia are planned) via `fleet.NewScopeChecker()`. This decouples Kubernaut from any single fleet management platform and allows swapping backends without code changes in GW/RO. (Corrected 2026-07-26: this decision originally named the interface `FederatedControlPlane`, a type that was never implemented under that name — see "Interface Contract" below for the as-built contract.)
+1. **Federated Control Plane interface** (adapter pattern): GW and RO depend on the `scope.ScopeChecker` interface (`pkg/shared/scope/checker.go`), not on any specific storage backend. The adapter is selected at startup based on the environment (FMC, ACM; Rancher and Clusterpedia are planned) via `fleet.NewScopeChecker()`. This decouples Kubernaut from any single fleet management platform and allows swapping backends without code changes in GW/RO.
+
+   > **Amended 2026-11-18:** selection moves **into FMC** — callers stop choosing a backend, FMC owns the source. `fleet.NewScopeChecker()` and `fleet.backend` are migration scaffolding, not the target model. This decision's "swap backends without code changes" survives only as "swap sources inside FMC". (Corrected 2026-07-26: this decision originally named the interface `FederatedControlPlane`, a type that was never implemented under that name — see "Interface Contract" below for the as-built contract.)
 
 2. **FMC as default adapter** (for environments without a federated control plane): FMC Writer polls MCP Gateway, writes to Valkey (co-owned with DataStorage), and exposes a scope query API. Achieves p95 < 1ms. Rancher/ACM/Clusterpedia shops skip FMC entirely and use their native APIs.
+
+   > **Amended 2026-11-18:** "shops skip FMC and use native APIs" is the superseded peer model. In the target model every shop goes through FMC, and ACM/Rancher become FMC sources. No deployment is expected to bypass FMC for fleet-control-plane queries once the migration lands.
 
 3. **FMC Writer as dedicated service** (not sidecar): Keeps GW stateless. Separation of concerns between signal processing and metadata sync.
 
@@ -617,7 +732,7 @@ for the full method and results.
 The `test/e2e/fleet` full-pipeline suite runs against an **entirely
 remote-cluster** topology (every registration targets a genuinely separate
 Kind cluster, no local/loopback fallback) authenticated via Keycloak RFC
-8693 token exchange. See [DD-TEST-014](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md)
+8693 token exchange. See [DD-TEST-014](DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md)
 for the full rationale, including why a lighter-weight 2x-Dex alternative
 was evaluated and rejected (Spike S20: `kube-mcp-server`'s current STS
 client cannot drive Dex's token-exchange grant).
@@ -861,6 +976,11 @@ GW and RO are **consumers** of federated scope information — they must not kno
 that information is stored. The storage backend (Valkey, ACM Search, Rancher proxy, Clusterpedia)
 is an implementation detail owned by the adapter, not by GW or RO.
 
+> **Amended 2026-11-18:** the adapter belongs to **FMC**; callers no longer choose among peer
+> adapters. See the "One federation-facing contact (peer → facade)" amendment at the top of this
+> document. The diagram and the `fleet.backend` configuration below describe the superseded
+> model and are retained only as migration history.
+
 ```
 GW/RO  ──►  scope.ScopeChecker interface
                         │
@@ -975,10 +1095,14 @@ Current routing (DD-FLEET-015): the disabled-Fleet factory uses local K8s scope.
 With Fleet enabled, empty attribution is invalid and every explicit registered ID,
 including `hub`, uses the selected remote backend. No local fallback is allowed.
 
-Single-cluster deployments use `backend: "local"` (or omit `fleet` config entirely) —
+Single-cluster deployments omit `fleet` config entirely —
 no regression, no FMC/Valkey dependency.
 
 ### Backend A: FMC (Fleet Metadata Cache) — Default
+
+> **Amended 2026-11-18:** FMC is no longer merely the default *peer* backend — it is the single
+> caller-facing contact, and "Backend B" below is one of its **sources**. See the peer → facade
+> amendment.
 
 **When to use**: GitOps environments, standalone K8s clusters, environments **without** a
 federated control plane (no ACM, Rancher, or Clusterpedia deployed).
@@ -1035,6 +1159,11 @@ apply only to transient transport failures or valid unavailable responses.
 | **Kubernaut config** | `fleet.backend: "fmc"`, `fleet.fmc.endpoint: "http://fmc.kubernaut-system.svc:8080"`. |
 
 ### Backend B: ACM (Advanced Cluster Management)
+
+> **Amended 2026-11-18:** in the target model this is an **FMC source**, not a caller-selected
+> backend. Direct caller access is migration scaffolding only. The adapter lives in
+> `pkg/fleet/acm/` (not `pkg/fleet/controlplane/acm/`, as the table below states). See the
+> peer → facade amendment and DD-FLEET-017 v2 for the source contract.
 
 **When to use**: Red Hat ACM / Open Cluster Management (OCM) environments where ACM Search
 is already deployed and indexing resources across managed clusters.
@@ -1371,6 +1500,12 @@ Label values use `key=value` format per the
 - `ManagedClusterJoined` — `"True"` / `"False"`
 
 ### Backend C: Rancher
+
+> **Amended 2026-11-18:** like Backend B, Rancher is a **future FMC source**, not a
+> caller-selected backend. Note also that this section and "Backend D" document
+> `fleet.backend` values that the current loader rejects — `pkg/fleet/config.go` accepts only
+> `fleetmetadatacache` and `acm`, and rejects `rancher`, `clusterpedia` and `local`. Treat the
+> sections below as design intent, not as configuration documentation.
 
 **When to use**: SUSE Rancher environments managing multiple downstream clusters.
 
