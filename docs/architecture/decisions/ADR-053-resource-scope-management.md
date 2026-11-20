@@ -162,22 +162,21 @@ tracked as one follow-up.
 **Normalization and dedup.** The Gateway adapters drop a claimed namespace for a
 cluster-scoped target before the fingerprint is computed, so the dedup key, the
 persisted `spec.targetResource` and the scope identity agree (for cluster-scoped
-kinds this supersedes #1371's "honor an explicit namespace label"). The
-Prometheus adapter uses API discovery, so it also covers a discovered
-cluster-scoped CRD; the Kubernetes-event adapter has no discovery client and
-covers only the static kinds, which is acceptable because events for
-cluster-scoped objects normally carry no namespace.
+kinds this supersedes #1371's "honor an explicit namespace label"). Both adapters
+use the API-discovery registry: the classifier prefers the per-`(group, Kind)`
+answer selected by the target's `apiVersion`, then the static map, then the
+per-Kind discovery answer. A discovered cluster-scoped CRD is therefore
+normalized on the Prometheus lane and the Kubernetes-event lane alike
+(`UT-GW-2670-024`, `UT-GW-2670-025`). The owner-chain resolver applies the same
+rule when traversal advances to a cluster-scoped owner: a mirror Pod in
+`kube-system` that resolves to its Node hashes no namespace, matching a direct
+event for that Node (`UT-GW-2670-026`).
 
 The residual case is a cluster-scoped kind that **neither the adapters nor the
 Gateway's discovery snapshot** classifies, arriving with a namespace. That
 identity is treated as *namespaced* and can be authorized by that namespace's
-`kubernaut.ai/managed` label at level 2 rather than failing closed. When discovery
-does know the kind, the Gate normalizes it to level 1 regardless of the adapter,
-so the only remaining divergence there is the dedup key: the Kubernetes-event
-adapter has no discovery client and keeps the claimed namespace in the hash,
-while the RR target and the scope identity carry none. That can produce two RRs
-for one cluster-scoped CRD (BR-GATEWAY-004), and the same RESTMapper-based
-resolver follow-up closes both directions of the ambiguity.
+`kubernaut.ai/managed` label at level 2 rather than failing closed. Closing that
+gap needs a RESTMapper-based kind resolver and is tracked as one follow-up.
 
 **Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
 when the identity has none, but `searchScopeItem` re-verifies the returned item
@@ -212,12 +211,18 @@ malformed `kubernaut.ai/managed` value before it stages a repair
 never committed and a previously committed record keeps serving until a later
 repair replaces it or its TTL expires (45s by default). For a cluster-scoped
 target that means a record committed as `true` whose label later becomes invalid
-can still resolve `verified_managed` for that bounded window; the local lane,
-which reads the object live, returns `invalid` / `invalid_resource_label`
-immediately. Removing authorization on an invalid observation — instead of
-retaining the last committed snapshot — changes the DD-FLEET-016 staged-repair
-contract, applies to namespaced targets as well, and is a tracked follow-up
-rather than part of #2670.
+can still resolve `verified_managed` for that bounded window.
+
+The local lane reads the object through the informer-backed client that Gateway
+and RO inject into the scope manager, so it returns `invalid` /
+`invalid_resource_label` once the informer has processed the label update — not
+necessarily on the next check: until that cache catches up, a check can still see
+the previous label value. The fenced lane's retained-snapshot window is the same
+class of bounded staleness, only longer and explicit.
+
+Removing authorization on an invalid observation — instead of retaining the last
+committed snapshot — changes the DD-FLEET-016 staged-repair contract, applies to
+namespaced targets as well, and is a tracked follow-up rather than part of #2670.
 
 Failure states are fail-closed and lane-specific: an unreadable kind on the
 cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup

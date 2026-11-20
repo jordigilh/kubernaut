@@ -466,7 +466,7 @@ func (s *Server) sendSuccessResponse(
 // namespace, so an authorization-only normalization would let the gates diverge
 // (#2670).
 func (s *Server) scopeIdentityFor(signal *types.NormalizedSignal, apiVersion string) (scope.ResourceIdentity, error) {
-	signal.Resource.Namespace = scopeTargetNamespace(signal.Resource.Kind, signal.Namespace, signal.Resource.Namespace, s.apiResourceRegistry)
+	signal.Resource.Namespace = scopeTargetNamespace(signal.Resource.Kind, apiVersion, signal.Namespace, signal.Resource.Namespace, s.apiResourceRegistry)
 	return scope.ApplyAPIVersion(scope.ResourceIdentity{
 		ClusterID: signal.ClusterID,
 		Kind:      signal.Resource.Kind,
@@ -479,9 +479,12 @@ func (s *Server) scopeIdentityFor(signal *types.NormalizedSignal, apiVersion str
 // matches the RemediationRequest target: a cluster-scoped kind has none even
 // when the alert carries one, so passing the alert namespace would make the
 // identity ambiguous (#2670). The registry is the same classifier the adapters
-// use, so a discovered cluster-scoped CRD is normalised here too.
-func scopeTargetNamespace(kind, signalNamespace, resourceNamespace string, registry *adapters.APIResourceRegistry) string {
-	if adapters.IsClusterScopedTarget(registry, kind) {
+// use, so a discovered cluster-scoped CRD is normalised here too. apiVersion
+// selects the per-(group, Kind) discovery answer, so a Kind served cluster-scoped
+// by one group and namespaced by another is classified from the group the
+// signal names (#2670).
+func scopeTargetNamespace(kind, apiVersion, signalNamespace, resourceNamespace string, registry *adapters.APIResourceRegistry) string {
+	if adapters.IsClusterScopedTarget(registry, kind, apiVersion) {
 		return ""
 	}
 	if resourceNamespace != "" {

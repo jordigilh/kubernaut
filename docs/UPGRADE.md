@@ -76,6 +76,16 @@ observation, so a record committed earlier keeps serving until a later repair
 replaces it or its TTL expires. ADR-053 §"Recognized kinds" states that window
 and the follow-up that closes it.
 
+Supported targets differ by lane, so choose the lane accordingly. The local
+Gateway/RO lane and direct ACM can authorize any kind they can read. The fenced
+Fleet Metadata Cache observes only `Deployment`, `StatefulSet`, `DaemonSet`,
+`Pod`, `Service`, `Node` and `Namespace`: a `PersistentVolume` or a
+cluster-scoped CRD target can never resolve as managed there and ends in
+retryable `unavailable` (`cache_miss`). A read denied by RBAC is reported as
+terminal `unauthorized` (`scope_access_denied`) by a direct client such as the
+API Frontend's, whereas a cached Gateway/RO lookup that cannot read the kind ends
+in retryable `unavailable` (`scope_lookup_error`).
+
 `ScopeUnsupported` with reason `cluster_scoped_target_unsupported` is now
 reserved for a genuinely non-labelable target: `Kind: ClusterScope`, the
 reserved pseudo-kind for a cluster-level intent with no backing object to carry

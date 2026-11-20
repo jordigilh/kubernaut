@@ -54,6 +54,7 @@ type KubernetesEventAdapter struct {
 	version       string
 	description   string
 	ownerResolver types.OwnerResolver
+	registry      *APIResourceRegistry
 	logger        logr.Logger
 }
 
@@ -111,6 +112,16 @@ func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *Kubernetes
 // Called from cmd/gateway/main.go after construction.
 func (a *KubernetesEventAdapter) SetLogger(l logr.Logger) {
 	a.logger = l.WithName("kubernetes-event-adapter")
+}
+
+// SetRegistry supplies the API discovery registry used to classify target
+// scope. Called from cmd/gateway/main.go after construction, the same registry
+// the Prometheus adapter and the scope gate use. Without it only the static
+// scope map is available, so a cluster-scoped CRD event would keep the
+// namespace the event claims and fingerprint differently from the RR target
+// (#2670).
+func (a *KubernetesEventAdapter) SetRegistry(registry *APIResourceRegistry) {
+	a.registry = registry
 }
 
 // Name returns the adapter identifier
@@ -222,12 +233,10 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	}
 	// A cluster-scoped kind has no namespace, whatever the event claims.
 	// Normalizing before fingerprint resolution keeps the dedup key aligned with
-	// the RR target (#2670). This adapter has no discovery registry, so only the
-	// static kinds are normalized here; the Gate still blanks a discovered
-	// cluster-scoped CRD before the scope check and the RR target, which leaves
-	// only the event-lane fingerprint keyed on the claimed namespace (ADR-053
-	// §2a).
-	if scope.IsClusterScopedKind(resource.Kind) {
+	// the RR target (#2670). Discovery extends the answer to kinds the static map
+	// does not classify (cluster-scoped CRDs): the registry is optional, and when
+	// absent only the static kinds are normalized.
+	if targetClusterScoped(a.registry, resource.Kind, resource.APIVersion) {
 		resource.Namespace = ""
 	}
 

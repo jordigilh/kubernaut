@@ -56,27 +56,55 @@ func discoveryWithClusterScopedCRD() *fakediscovery.FakeDiscovery {
 var _ = Describe("Cluster-scoped target detection for fingerprint normalization (BR-GATEWAY-004, #2670)", func() {
 
 	It("UT-GW-2670-004: the static map classifies known cluster-scoped kinds without discovery", func() {
-		Expect(targetClusterScoped(nil, "Node")).To(BeTrue())
-		Expect(targetClusterScoped(nil, "PersistentVolume")).To(BeTrue())
-		Expect(targetClusterScoped(nil, "Namespace")).To(BeTrue())
+		Expect(targetClusterScoped(nil, "Node", "v1")).To(BeTrue())
+		Expect(targetClusterScoped(nil, "PersistentVolume", "v1")).To(BeTrue())
+		Expect(targetClusterScoped(nil, "Namespace", "v1")).To(BeTrue())
 	})
 
 	It("UT-GW-2670-005: discovery extends the classification to cluster-scoped CRDs", func() {
 		registry, err := NewAPIResourceRegistry(discoveryWithClusterScopedCRD())
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(targetClusterScoped(registry, "ClusterVolume")).To(BeTrue(),
+		Expect(targetClusterScoped(registry, "ClusterVolume", "storage.example.com/v1")).To(BeTrue(),
 			"a discovered cluster-scoped CRD must lose its alert namespace, or its dedup key and RR target disagree")
-		Expect(targetClusterScoped(registry, "Node")).To(BeTrue(), "static and discovery agree for Node")
+		Expect(targetClusterScoped(registry, "Node", "v1")).To(BeTrue(), "static and discovery agree for Node")
 	})
 
 	It("UT-GW-2670-006: an unknown or namespaced kind keeps its namespace", func() {
 		registry, err := NewAPIResourceRegistry(discoveryWithClusterScopedCRD())
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(targetClusterScoped(registry, "Pod")).To(BeFalse())
-		Expect(targetClusterScoped(registry, "NotDiscovered")).To(BeFalse(),
+		Expect(targetClusterScoped(registry, "Pod", "v1")).To(BeFalse())
+		Expect(targetClusterScoped(registry, "NotDiscovered", "example.com/v1")).To(BeFalse(),
 			"an unknown kind stays namespaced: dropping a namespace it might need is worse than keeping one it does not")
-		Expect(targetClusterScoped(nil, "NotDiscovered")).To(BeFalse())
+		Expect(targetClusterScoped(nil, "NotDiscovered", "example.com/v1")).To(BeFalse())
+	})
+
+	It("UT-GW-2670-022: a Kind served with different scopes by two groups is classified per group", func() {
+		// Same Kind, two groups, opposite scopes. The per-Kind map can only hold
+		// one answer (first group discovered wins), so the group named by the
+		// target's apiVersion must decide (#2670).
+		clusterGroup := &metav1.APIResourceList{GroupVersion: "cluster.example.com/v1", APIResources: []metav1.APIResource{
+			{Name: "widgets", SingularName: "widget", Kind: "Widget", Namespaced: false},
+		}}
+		tenantGroup := &metav1.APIResourceList{GroupVersion: "tenant.example.com/v1", APIResources: []metav1.APIResource{
+			{Name: "widgets", SingularName: "widget", Kind: "Widget", Namespaced: true},
+		}}
+		for _, discovery := range [][]*metav1.APIResourceList{
+			{clusterGroup, tenantGroup},
+			{tenantGroup, clusterGroup},
+		} {
+			cs := fakeclientset.NewSimpleClientset()
+			fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+			Expect(ok).To(BeTrue())
+			fd.Resources = discovery
+			registry, err := NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(targetClusterScoped(registry, "Widget", "cluster.example.com/v1")).To(BeTrue(),
+				"the cluster-scoped group must blank the namespace in either discovery order")
+			Expect(targetClusterScoped(registry, "Widget", "tenant.example.com/v1")).To(BeFalse(),
+				"the namespaced group must keep its namespace in either discovery order")
+		}
 	})
 })

@@ -135,9 +135,13 @@ them over-provision the default roles?
 - **`Namespace` is a legitimate target**, not an over-provisioning case: an alert can be *about* a
   namespace (stuck terminating, quota exhausted, namespace-level SLO), and its
   `kubernaut.ai/managed` label lives on the object, so ADR-053 §2 level 1 applies exactly as it does
-  for a Node. It adds no new authorization surface: the same label is already level-2 inheritance
-  evidence for unlabeled resources inside the namespace — pre-existing ADR-053 behavior, unaffected
-  by this fix.
+  for a Node. This **adds target eligibility**: before this change a `Namespace` target was refused,
+  and now a managed `Namespace` can itself be selected for remediation. That is a new authorization
+  surface in the narrow sense that the object's own label now authorizes work against the Namespace
+  object. It is not the same surface as namespace inheritance: inheritance lets a
+  `kubernaut.ai/managed=true` Namespace authorize resources *inside* it (level 2, pre-existing
+  ADR-053 behavior), while this change lets the same label authorize the Namespace *itself* at
+  level 1. Both are read-only authorization decisions; neither mutates the Namespace.
 
 **Decision (owner, 2026-11-19):** keep it as it is — no kind allowlist. The access is
 **read-only authorization**, not mutation: the local lane issues a metadata-only
@@ -207,7 +211,7 @@ Scope-side consequences in this repo:
 |--------|--------------|
 | Real cluster-scoped object (Node, PV, cluster-scoped CRD) with observed `kubernaut.ai/managed` | `verified_managed` / `verified_unmanaged`, provenance `resource-label` |
 | Real cluster-scoped object present, label absent | `verified_unmanaged`, provenance `none` (no namespace exists to inherit) — local and fleet-cache lanes. The direct-ACM lane returns `ScopeUnavailable` / `search_observation_unavailable` unless the Search item carries an explicit `label` projection: missing label evidence is not absence (§2 D3) |
-| Real cluster-scoped object, invalid label value | `ScopeInvalid`, `invalid_resource_label` (fail closed, SI-10) |
+| Real cluster-scoped object, invalid label value | `ScopeInvalid`, `invalid_resource_label` (fail closed, SI-10). Fenced lane caveat: the syncer refuses an invalid observation, so a record committed earlier keeps serving until a later repair replaces it or its TTL expires — see §11 and ADR-053 §2a |
 | Real cluster-scoped object not observed | `ScopeUnavailable`, `observation_missing` (local) / `cache_miss` (fleet) |
 | Real cluster-scoped object the caller may not read | GW/RO (cached) → retryable `ScopeUnavailable` / `scope_lookup_error`; API Frontend (direct client) → terminal `ScopeUnauthorized` / `scope_access_denied` (§3 RBAC reality check) |
 | *Known* cluster-scoped kind with a non-empty namespace | `ScopeInvalid`, `invalid_cluster_scoped_namespace` (SI-10; matches `inventory.ValidateResourceIdentity`) |
@@ -335,12 +339,17 @@ onto the signal, and builds the identity from it, so the Gateway checks exactly 
 re-checks — including for a discovered cluster-scoped CRD whose adapter had already dropped the
 namespace.
 
-The adapters blank the namespace for a cluster-scoped kind before fingerprint resolution. The
-Prometheus adapter uses `targetClusterScoped` (static map, extended by API discovery, so
-cluster-scoped CRDs are covered); the Kubernetes-event adapter has no discovery client and covers
-the static kinds only. That keeps the dedup key, the RR target and the scope identity aligned and
-supersedes #1371's "honor an explicit namespace label" for cluster-scoped kinds
-(`UT-GW-1371-014` updated).
+The adapters blank the namespace for a cluster-scoped kind before fingerprint resolution. Both use
+`targetClusterScoped`, which prefers the per-`(group, Kind)` API-discovery answer selected by the
+target's `apiVersion` and falls back to the static map and then the per-Kind discovery answer. The
+Prometheus adapter already had the registry; the Kubernetes-event adapter now receives the same
+registry from `cmd/gateway/main.go` (`SetRegistry`), so a discovered cluster-scoped CRD event is
+normalized before `types.ResolveFingerprint` too. That keeps the dedup key, the RR target and the
+scope identity aligned, and supersedes #1371's "honor an explicit namespace label" for
+cluster-scoped kinds (`UT-GW-1371-014` updated). The owner-chain resolver also clears the namespace
+when traversal advances to a cluster-scoped owner (e.g. a mirror Pod in `kube-system` resolving to
+its Node), so the hashed owner identity matches a direct event for that Node
+(`UT-GW-2670-026`).
 
 ## 5. TDD phases
 
@@ -355,7 +364,7 @@ body.
 | 4. Fleet IT | `fmc_broker_readiness_test.go` `IT-FMC-DEFERRED-001`; `valkey_scope_cache_test.go` `IT-FLEET-VALKEY-007` | no production change expected — `mapFencedRecord` already returns `none` for cluster-scoped identities (`pkg/fleet/scopecache/client.go:237-240`); fix in §4.2 only if the IT exposes an ordering defect | N/A unless phase 4 exposes duplication |
 | 5. RO IT | `ea_creation_integration_test.go` `IT-RO-192-001` restored to its pre-#2637 body | covered by phase 1 (no new code) | N/A |
 | 6. Gateway identity | `pkg/gateway/scope_validation_test.go`: `UT-GW-2670-001/002`; `pkg/gateway/scope_target_namespace_test.go`: `UT-GW-2670-007..009` | `pkg/gateway/signal_ingestion.go` §4.4 (`scopeTargetNamespace`/`scopeIdentityFor`) | shared helper replaces the inline identity construction; doc comment restored |
-| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004..006`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: `UT-GW-2670-010` (Prometheus fingerprint normalization) | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` §4.4 | shared `targetClusterScoped` helper replaces the duplicated static check |
+| 7. Gateway adapters | `pkg/gateway/adapters/cluster_scope_classification_test.go`: `UT-GW-2670-004..006`, `..022`; `pkg/gateway/adapters/kubernetes_event_registry_scope_test.go`: `UT-GW-2670-024/025`; `pkg/shared/k8s/ownerchain/owner_resolver_cluster_scope_test.go`: `UT-GW-2670-026/027`; `pkg/gateway/kubernetes_event_dedup_test.go`: `UT-GW-2670-003`; `pkg/gateway/adapters/resource_extraction_business_test.go`: `UT-GW-2670-010` (Prometheus fingerprint normalization) | `prometheus_adapter.go` + `kubernetes_event_adapter.go` + `resource_registry.go` + `pkg/shared/k8s/ownerchain/owner_resolver.go` §4.4 | per-`(group, Kind)` scope map replaces the first-seen-per-Kind answer; shared `targetClusterScoped` helper replaces the duplicated static check |
 | 8. Docs | — | §8 | N/A |
 
 REFACTOR phases name a concrete change; build/lint/test is the safety net, not the content.

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -404,6 +405,15 @@ func (r *K8sOwnerResolver) traverseOwnerIdentityChain(
 		}
 		if step.advanced {
 			current.Kind, current.Name, current.APIVersion = step.nextKind, step.nextName, step.nextAPIVersion
+			// A cluster-scoped owner (Node, PersistentVolume, Namespace) has no
+			// namespace: the current resource's namespace must not be carried onto
+			// it. Without this, a mirror Pod in kube-system resolving to its Node
+			// would hash kube-system into the identity while the RR target is
+			// cluster-scoped, producing a second fingerprint for one target
+			// (#2670). Mirrors pkg/signalprocessing/ownerchain/builder.go.
+			if scope.IsClusterScopedKind(current.Kind) {
+				current.Namespace = ""
+			}
 			// Validate at the transition, including the last permitted depth.
 			var err error
 			gvk, err = ownerIdentityGVK(current)

@@ -373,7 +373,7 @@ func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert Aler
 	// key, the RR target and the scope identity stay aligned (#2670). Discovery
 	// extends the answer to kinds the static map does not classify, which
 	// covers cluster-scoped CRDs.
-	if targetClusterScoped(a.registry, kind) {
+	if targetClusterScoped(a.registry, kind, apiVersion) {
 		ns = ""
 	}
 	return types.ResourceIdentifier{
