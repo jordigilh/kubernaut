@@ -165,20 +165,26 @@ func testFMCDeps(k8sClientset kubernetes.Interface, valkeyAddr string) *fmcDeps 
 	}
 }
 
+// testCallerIdentity is the ServiceAccount the fake TokenReview authenticates
+// every request as. It stays a single identity on purpose: these tests prove
+// the middleware wiring (authenticate -> authorize -> handler), not identity
+// variation.
+const testCallerIdentity = "system:serviceaccount:kubernaut-system:test-caller"
+
 // fakeAuthorizedK8sClient returns a fake kubernetes.Interface whose
-// TokenReview always authenticates any non-empty Bearer token as username,
-// and whose SubjectAccessReview always returns Allowed. Mirrors the
-// PrependReactor pattern in pkg/shared/auth/k8s_auth_test.go -- this
-// package has no envtest, so the real TokenReview/SAR API isn't available;
-// the fake clientset instead lets these tests exercise the real
+// TokenReview always authenticates any non-empty Bearer token as
+// testCallerIdentity, and whose SubjectAccessReview always returns Allowed.
+// Mirrors the PrependReactor pattern in pkg/shared/auth/k8s_auth_test.go --
+// this package has no envtest, so the real TokenReview/SAR API isn't
+// available; the fake clientset instead lets these tests exercise the real
 // auth.NewMiddleware wiring path (buildFMCServers) end-to-end.
-func fakeAuthorizedK8sClient(username string) kubernetes.Interface {
+func fakeAuthorizedK8sClient() kubernetes.Interface {
 	client := k8sfake.NewSimpleClientset()
 	client.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		review := action.(k8stesting.CreateAction).GetObject().(*authenticationv1.TokenReview) //nolint:forcetypeassert // test-only reactor, type is fixed by the fake clientset's dispatch
 		review.Status = authenticationv1.TokenReviewStatus{
 			Authenticated: true,
-			User:          authenticationv1.UserInfo{Username: username},
+			User:          authenticationv1.UserInfo{Username: testCallerIdentity},
 		}
 		return true, review, nil
 	})
@@ -332,7 +338,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		cfg.Server.MetricsAddr = osAssignedAddr
 		cfg.Server.TLS.CertDir = certDir
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
-		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
+		deps = testFMCDeps(fakeAuthorizedK8sClient(), unreachableValkeyAddr)
 	})
 
 	AfterEach(func() {
@@ -380,7 +386,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
-		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
+		readyDeps := testFMCDeps(fakeAuthorizedK8sClient(), mr.Addr())
 		Expect(readyDeps.statusStore.LoadScript(context.Background())).To(Succeed())
 
 		servers := buildFMCServers(cfg, readyDeps, logr.Discard())
@@ -408,7 +414,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		mr, err := miniredis.Run()
 		Expect(err).ToNot(HaveOccurred(), "miniredis should start so /readyz's backend ping has something real to succeed against")
 		defer mr.Close()
-		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
+		readyDeps := testFMCDeps(fakeAuthorizedK8sClient(), mr.Addr())
 		Expect(readyDeps.statusStore.LoadScript(context.Background())).To(Succeed())
 
 		servers := buildFMCServers(cfg, readyDeps, logr.Discard())
@@ -559,7 +565,7 @@ var _ = Describe("FMC inventory route production wiring (DD-FLEET-017 D2.1)", fu
 		cfg.Server.MetricsAddr = osAssignedAddr
 		cfg.Server.TLS.CertDir = certDir
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
-		deps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
+		deps := testFMCDeps(fakeAuthorizedK8sClient(), unreachableValkeyAddr)
 		DeferCleanup(sharedtls.ResetDefaultSecurityProfileForTesting)
 
 		servers := buildFMCServers(cfg, deps, logr.Discard())

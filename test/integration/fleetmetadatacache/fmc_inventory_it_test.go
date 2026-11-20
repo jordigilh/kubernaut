@@ -89,6 +89,11 @@ type itInventoryFixture struct {
 
 const itInventoryRevision = uint64(1)
 
+// itInventoryVersion is the apiVersion every fixture observation is stored
+// under. The projection tests exercise ordering and freshness, not version
+// variation, so the version stays fixed.
+const itInventoryVersion = "v1"
+
 func newITInventoryFixture(ctx context.Context) *itInventoryFixture {
 	store, err := scopecache.NewValkeyStatusStoreAt(valkeyAddr)
 	Expect(err).ToNot(HaveOccurred())
@@ -163,14 +168,14 @@ func (f *itInventoryFixture) partition(clusterID string) scopecache.PartitionSta
 	return scopecache.PartitionStateKey{ClusterID: clusterID, RegistrationUID: registrationUID}
 }
 
-func itObservation(partition scopecache.PartitionStateKey, namespace, kind, group, version, name, label string) scopecache.RepairObservation {
-	apiVersion := version
+func itObservation(partition scopecache.PartitionStateKey, namespace, kind, group, name, label string) scopecache.RepairObservation {
+	apiVersion := itInventoryVersion
 	if group != "" {
-		apiVersion = group + "/" + version
+		apiVersion = group + "/" + itInventoryVersion
 	}
 	return scopecache.RepairObservation{
 		Identity: scopecache.ResourceIdentity{
-			ClusterID: partition.ClusterID, Group: group, Version: version, Kind: kind, Namespace: namespace, Name: name,
+			ClusterID: partition.ClusterID, Group: group, Version: itInventoryVersion, Kind: kind, Namespace: namespace, Name: name,
 		},
 		APIVersion:    apiVersion,
 		LabelsPresent: true,
@@ -324,9 +329,9 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		partition := fixture.partition("it-inv-paging")
 		start := fixture.begin(partition)
 		fixture.commit(start, []scopecache.RepairObservation{
-			itObservation(partition, "", "Namespace", "", "v1", "payments", "true"),
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "api", "true"),
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "web", "absent"),
+			itObservation(partition, "", "Namespace", "", "payments", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "api", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "web", "absent"),
 		})
 
 		first, body := fixture.getPage("it-inv-paging", "", 1)
@@ -362,7 +367,7 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		partition := fixture.partition("it-inv-staged")
 		start := fixture.begin(partition)
 		fixture.commit(start, []scopecache.RepairObservation{
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "committed", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "committed", "true"),
 		})
 
 		// A repair is in flight: the staging holds a distinctive identity that
@@ -370,8 +375,8 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		before := fixture.liveKeys("kubernaut:fmc:v2:*:status:staged")
 		staged := fixture.begin(partition)
 		fixture.repair(staged, []scopecache.RepairObservation{
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "staged-only-identity", "true"),
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "second-staged-identity", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "staged-only-identity", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "second-staged-identity", "true"),
 		})
 		Expect(fixture.keysAdded("kubernaut:fmc:v2:*:status:staged", before)).To(HaveLen(1),
 			"the staging must really be present")
@@ -395,7 +400,7 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		partition := fixture.partition("it-inv-broken")
 		start := fixture.begin(partition)
 		fixture.commit(start, []scopecache.RepairObservation{
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "api", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "api", "true"),
 		})
 
 		// An expired proof leaves no committed status behind.
@@ -437,7 +442,7 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		partition := fixture.partition("it-inv-nolex")
 		start := fixture.begin(partition)
 		fixture.commit(start, []scopecache.RepairObservation{
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "api", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "api", "true"),
 		})
 
 		lexKeys := fixture.keysAdded("kubernaut:fmc:v2:*:index:lex", before)
@@ -455,7 +460,7 @@ var _ = Describe("IT-FMC-INV-2661-002 [BR-API-001, BR-SAFETY-001]: cache-backed 
 		// The next clean commit restores the index and the page.
 		next := fixture.begin(partition)
 		fixture.commit(next, []scopecache.RepairObservation{
-			itObservation(partition, "payments", "Deployment", "apps", "v1", "api", "true"),
+			itObservation(partition, "payments", "Deployment", "apps", "api", "true"),
 		})
 		recovered, _ := fixture.getPage("it-inv-nolex", "", 10)
 		Expect(recovered.State).To(Equal(inventory.StateSuccess))
