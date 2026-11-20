@@ -44,6 +44,10 @@ type ServiceConfig struct {
 	Sync       SyncConfig             `yaml:"sync"`
 	OAuth2     OAuth2Config           `yaml:"oauth2"`
 
+	// Sources selects the inventory collector (DD-FLEET-017 D4.1a). Absent
+	// means today's MCP/GitOps collector keeps running unchanged.
+	Sources SourcesConfig `yaml:"sources,omitempty"`
+
 	// Debug gates diagnostic surfaces (currently: /debug/pprof/* on the
 	// dedicated health port). BR-PLATFORM-012, Issue #2275: replaces the
 	// pre-#2275 hardcoded enableProfiling=true in buildFMCServers --
@@ -166,6 +170,16 @@ func LoadFromFile(path string) (*ServiceConfig, error) {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
+	// D4.1a rule 3: the sources subtree is decoded strictly so an operator typo
+	// cannot silently disable a guard.
+	sources, err := decodeSourcesStrict(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	}
+	if sources != nil {
+		cfg.Sources = *sources
+	}
+
 	return cfg, nil
 }
 
@@ -202,6 +216,11 @@ func (c *ServiceConfig) Validate() error {
 	}
 	if c.OAuth2.TokenURL == "" {
 		return fmt.Errorf("oauth2.tokenUrl is required — MCP Gateway requires authentication")
+	}
+	if c.Sources.ACM != nil {
+		if err := c.validateACM(c.Sources.ACM); err != nil {
+			return err
+		}
 	}
 	return nil
 }

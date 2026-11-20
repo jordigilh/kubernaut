@@ -182,6 +182,14 @@ live run.
 
 | ID | Scenario | Critical |
 |---|---|---|
+| UT-FMC-SRC-2661-001 | `sources` absent → `Sources.ACM` is nil, validation passes, collector stays `SourceMCP`: the rendered config behaves exactly as today (D4.1a rule 1) | ✅ |
+| UT-FMC-SRC-2661-002 | A complete `sources.acm` block parses `endpoint`/`tokenPath`/`caFile` and selects `SourceACM` (D4.1a rules 2, 4) | ✅ |
+| UT-FMC-SRC-2661-003 | `caFile` absent is valid and means system trust; it never fails startup (D4.1a) | ✅ |
+| UT-FMC-SRC-2661-004 | Fail-closed endpoint: plain `http`, relative, host-less or empty → `Validate()` rejects, naming `sources.acm.endpoint` (D4.1a rule 3, SC-8/SI-10) | ✅ |
+| UT-FMC-SRC-2661-005 | Fail-closed token: relative, empty, missing or unreadable `tokenPath` → rejected, naming the key; no token material in the error (D4.1a rules 3, 6; IA-5) | ✅ |
+| UT-FMC-SRC-2661-006 | A relative `caFile` is rejected, naming the key (SC-8) | ✅ |
+| UT-FMC-SRC-2661-007 | Strict decoding: an unknown key under `sources.acm` (e.g. `endpointURL`) fails loading, so an operator typo cannot silently disable a guard (D4.1a rule 3, CM-6) | ✅ |
+| UT-FMC-SRC-2661-008 | A second or unknown source (`sources.rancher`) is a configuration error, never ignored (D4.1a rule 2) | ✅ |
 | UT-FMC-SRC-2661-011 | Observation shape: every object of a configured kind is written with its label state (`true`/`false`/`absent`/`invalid`), matching the MCP collector's cache shape so both sources project identically | ✅ |
 | UT-FMC-SRC-2661-012 | Precedence: explicit `false` overrides namespace `true`; invalid label is invalid, never absent, never inherits; cluster-scoped never inherits | ✅ |
 | UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item) | ✅ |
