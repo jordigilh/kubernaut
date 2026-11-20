@@ -21,7 +21,7 @@ configs from the production loader; the fenced commit path against miniredis
 with pinned server time). Known limitation: `IT-FMC-SRC-2661-004` proves the
 one-deadline-per-repair sharing semantics (D4.1a rule 7b) through the
 production context seam with a shortened staging lifetime — the repair path's
-own 55 s budget-setting is verified by code inspection, not observationally.
+own 55 s budget-setting is proven by `UT-FMC-SRC-2661-024` (§11b).
 **Not yet proven:** the AF dispatch/SAR ITs (`IT-AF-2661-001..003`) and every
 E2E claim. Increment 1 carries its own evidence and is merged (`#2681`).
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
@@ -217,7 +217,8 @@ live run.
 | UT-FMC-SRC-2661-020 | One atomic commit writes **both** indexes from the same staged generation: member counts must agree (`LEX_COUNT_MISMATCH` otherwise), the next `begin` clears an abandoned staging's lex index, both enforce the 10 000-member bound, and an empty commit removes both | ✅ |
 | UT-FMC-SRC-2661-021 | **Derived request budget** (D4.1a 7a): each request takes `min(10 s, remaining − 5 s commit reserve)`; when remaining is below the 2 s start floor the collector abandons staging and starts no request, so the previous proof ages out instead of being half-replaced | ✅ |
 | UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: a syncer fixture runs two configured kinds, each individually inside 50 items/page and 100 pages, whose *summed* pages or items exceed the partition-wide ceilings — assert no `Repair`, no staged write, no `CommitRepair`, and that the previous proven generation stays readable | ✅ |
-| UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **without rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
+| UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **WITHOUT rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
+| UT-FMC-SRC-2661-024 | **Deadline ownership (D4.1a rule 7b)**: `repairPartition` sets exactly one collection deadline per repair, at repair start, from `RepairCollectionBudget` — every configured kind's collection sees the identical value — and never overwrites a deadline already present on the context | ✅ |
 
 ### Tier 2 — Integration
 
@@ -337,6 +338,45 @@ set it. That component is the repair path, not the collector:
 Proving this is `IT-FMC-SRC-2661-004` (two kinds, one context) and
 `UT-FMC-SRC-2661-021` (start floor). Without this rule the 55 s fallback is a
 per-kind constant and a seven-kind sync can outlive a 60 s staging generation.
+
+### 11b. TDD compliance record (methodology enforcement)
+
+The project methodology is RED-first without exception. This section records
+a breach found in increment 2 and its remediation, and binds the remaining
+phases.
+
+**Breach.** The b2 wiring (source selection, `7d905be27`) and the b3 deadline
+wiring (inside the review-fix commit `457c37f9c`) landed **before** their RED
+specs existed — the IT specs were written afterwards against committed code,
+which inverts this plan's own §11 ordering ("Fails while `buildFMCSyncer`
+always builds the MCP reader").
+
+**Remediation (executed 2026-11-20).** The RED phases were recovered against
+the true pre-wiring baselines rather than simulated:
+
+- **b3 / rule 7b ownership**: `UT-FMC-SRC-2661-024` (internal to `pkg/fleet/fmc`
+  because `deadlineKey` is deliberately unexported) was written first, then run
+  against `c72b0503e` (the last commit without the deadline wiring): it fails
+  with the deadline unset — the right reason. Green at HEAD.
+- **b2 / source selection**: the four IT specs do not compile against
+  `8ec562999` (the pre-wiring `buildFMCSyncer` returns one value, no error) —
+  the authentic first RED for the wiring. Green at HEAD; behavioral failure
+  modes are additionally pinned by the mutation-control runs recorded with
+  `73e66c805` (severed catalog, severed sources, removed rotation, removed
+  shared deadline).
+- `IT-FMC-SRC-2661-004`'s sharing semantics remain proven through the
+  production context seam (Status note above); `UT-FMC-SRC-2661-024` now
+  proves the repair path's own deadline-setting that the IT could not observe.
+
+**b1 (config and collector unit slices).** RED evidence rests on the owning
+sessions' reports; those commits are end states (spec and code together), so
+the RED runs are not replayable from history. Replaying them would mean
+re-deriving committed unit work and requires explicit approval.
+
+**Standing rule for the remaining phases** (c, REFACTOR, Live): strict
+RED-first — write the failing spec, show it failing for the right reason,
+then implement. Implement-first is not an option; when RED-first is genuinely
+impossible, escalate for approval before writing any implementation code.
 
 ## 12. Rollback
 
