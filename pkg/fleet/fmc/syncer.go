@@ -344,16 +344,17 @@ func (s *Syncer) syncLegacyCluster(ctx context.Context, cluster registry.Cluster
 			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "duplicate_identity").Inc()
 			return err
 		}
+		// #2686: both write lanes share writableLabelState as the single
+		// write-boundary rule, so a non-conforming reader state fails the
+		// cycle closed before any cache mutation, mirroring the fenced
+		// lane's whole-set validation before staging.
+		if err := observation.cacheObservation.Validate(); err != nil {
+			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "invalid_observation").Inc()
+			return fmt.Errorf("sync cluster %s invalid observation %q: %w", cluster.ID, observation.key, err)
+		}
 		seenKeys[observation.key] = struct{}{}
 	}
 	for _, observed := range observations {
-		// #2686: both write lanes share writableLabelState as the single
-		// write-boundary rule, so a non-conforming reader state fails the
-		// cycle closed instead of being written raw.
-		if err := observed.cacheObservation.Validate(); err != nil {
-			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "invalid_observation").Inc()
-			return fmt.Errorf("sync cluster %s invalid observation %q: %w", cluster.ID, observed.key, err)
-		}
 		if err := observed.writer.SetObservation(ctx, observed.key, observed.labelState, s.config.KeyTTL); err != nil {
 			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "write_failed").Inc()
 			return fmt.Errorf("sync cluster %s write observation %q: %w", cluster.ID, observed.key, err)
