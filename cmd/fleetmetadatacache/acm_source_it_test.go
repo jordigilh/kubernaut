@@ -117,10 +117,13 @@ func (r *acmITRegistry) WithCurrent(_ context.Context, clusterID, registrationUI
 
 // acmSearchFixtureItem is the typed wire shape of one Search projection
 // item, so a field rename in the contract breaks the fixture at compile time
-// instead of silently serving the wrong key.
+// instead of silently serving the wrong key. APIGroup and APIVersion are
+// separate properties with an absent group meaning core, matching the live
+// wire shape (#2592) and our own request filters.
 type acmSearchFixtureItem struct {
 	UID        string `json:"_uid"`
 	Cluster    string `json:"cluster"`
+	APIGroup   string `json:"apigroup,omitempty"`
 	APIVersion string `json:"apiversion"`
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
@@ -150,6 +153,7 @@ type acmSearchServer struct {
 	mu             sync.Mutex
 	clusterID      string
 	pods           []acmSearchFixtureItem
+	deployments    []acmSearchFixtureItem
 	namespaces     []acmSearchFixtureItem
 	podDelays      []time.Duration
 	requestsByKind map[string]int
@@ -181,6 +185,9 @@ func (s *acmSearchServer) setBulkCatalog(podCount, namespaceCount int) {
 			Namespace: "payments", Name: fmt.Sprintf("p-%05d", index), Label: "kubernaut.ai/managed=true",
 		})
 	}
+	s.deployments = []acmSearchFixtureItem{
+		{UID: "uid-d0000", Cluster: s.clusterID, APIGroup: "apps", APIVersion: "v1", Kind: "Deployment", Namespace: "payments", Name: "d-checkout", Label: "kubernaut.ai/managed=true"},
+	}
 	s.namespaces = make([]acmSearchFixtureItem, 0, namespaceCount)
 	for index := 0; index < namespaceCount; index++ {
 		s.namespaces = append(s.namespaces, acmSearchFixtureItem{
@@ -202,6 +209,12 @@ func (s *acmSearchServer) setDefaultCatalog() {
 	}
 	s.namespaces = []acmSearchFixtureItem{
 		{UID: "uid-0", Cluster: s.clusterID, APIVersion: "v1", Kind: "Namespace", Name: "payments"},
+	}
+	// One group-ful kind in every catalog (AGENTS.md Review Requirements):
+	// core-only fixtures cannot discriminate combined from separate
+	// group/version wire shapes.
+	s.deployments = []acmSearchFixtureItem{
+		{UID: "uid-3", Cluster: s.clusterID, APIGroup: "apps", APIVersion: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout", Label: "kubernaut.ai/managed=true"},
 	}
 	s.podDelays = nil
 }
@@ -286,6 +299,9 @@ func (s *acmSearchServer) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	catalog := s.pods
+	if kind == "Deployment" {
+		catalog = s.deployments
+	}
 	if kind == "Namespace" {
 		catalog = s.namespaces
 	}
@@ -548,7 +564,7 @@ var _ = Describe("FMC ACM source production sync (DD-FLEET-017 D4, wiring rows 3
 
 		mcp := newFakeMCPGateway()
 		DeferCleanup(mcp.Close)
-		cfgPath := writeITConfig(dir, mcp.URL, acmSourcesBlock(search.URL, tokenPath, caPath), "Pod", "Namespace")
+		cfgPath := writeITConfig(dir, mcp.URL, acmSourcesBlock(search.URL, tokenPath, caPath), "Pod", "Namespace", "Deployment")
 		fixture := newACMSyncITFixture(loadValidatedITConfig(cfgPath), newITMCPClient(mcp.URL))
 
 		ctx := context.Background()
@@ -558,6 +574,8 @@ var _ = Describe("FMC ACM source production sync (DD-FLEET-017 D4, wiring rows 3
 		Expect(search.kindRequests("Pod")).To(BeNumerically(">", 0),
 			"a missing Search call for a configured kind must fail the spec")
 		Expect(search.kindRequests("Namespace")).To(BeNumerically(">", 0),
+			"a missing Search call for a configured kind must fail the spec")
+		Expect(search.kindRequests("Deployment")).To(BeNumerically(">", 0),
 			"a missing Search call for a configured kind must fail the spec")
 		Expect(mcp.toolCalls()).To(BeZero(),
 			"an ACM-configured deployment must never collect through MCP tools")
@@ -588,11 +606,16 @@ var _ = Describe("FMC ACM source production sync (DD-FLEET-017 D4, wiring rows 3
 		Expect(err).NotTo(HaveOccurred())
 		Expect(page.State).To(Equal(inventory.StateSuccess))
 		Expect(page.Freshness.State).To(Equal(inventory.FreshnessFresh))
-		Expect(page.Items).To(HaveLen(1), "the managed pod is included; the explicit-false pod and the unlabeled namespace are not")
-		Expect(page.Items[0].Kind).To(Equal("Pod"))
-		Expect(page.Items[0].Namespace).To(Equal("payments"))
-		Expect(page.Items[0].Name).To(Equal("web"))
-		Expect(page.Items[0].Scope.Included).To(BeTrue())
+		Expect(page.Items).To(HaveLen(2),
+			"the managed pod and the managed group-ful Deployment are included; the explicit-false pod and the unlabeled namespace are not")
+		managed := make([]string, 0, len(page.Items))
+		for _, item := range page.Items {
+			managed = append(managed, item.Kind+"/"+item.Name)
+			Expect(item.Namespace).To(Equal("payments"))
+			Expect(item.Scope.Included).To(BeTrue())
+		}
+		Expect(managed).To(ConsistOf("Pod/web", "Deployment/checkout"),
+			"the group-ful kind proves the separate apigroup/apiversion wire shape end to end (AGENTS.md Review Requirements)")
 	})
 
 	It("IT-FMC-SRC-2661-007 [BR-SAFETY-001, D2.7]: aggregate bounds across kinds refuse the commit, never a smaller clean set", func() {

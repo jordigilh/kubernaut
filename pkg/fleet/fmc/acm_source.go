@@ -452,9 +452,16 @@ func requireClusterOwnership(raw map[string]json.RawMessage, clusterID string) e
 	return nil
 }
 
-// requireExactAPIVersion enforces exact GVK: a missing or mismatched apiVersion
-// fails the kind because group/version are never inferred (D4.1).
+// requireExactAPIVersion enforces exact GVK: a missing or mismatched
+// group/version fails the kind because group/version are never inferred
+// (D4.1). The wire shape is the one the live Check lane recorded (#2592) and
+// our own request builder mirrors: `apigroup` and `apiversion` are separate
+// item properties, and an absent apigroup means the core group.
 func requireExactAPIVersion(raw map[string]json.RawMessage, gvk schema.GroupVersionKind, kind string) (string, error) {
+	apiGroup, err := searchString(raw, "apigroup")
+	if err != nil {
+		return "", identityFailure(observation.FailureItem, err)
+	}
 	apiVersion, err := searchString(raw, "apiversion")
 	if err != nil {
 		return "", identityFailure(observation.FailureItem, err)
@@ -463,20 +470,16 @@ func requireExactAPIVersion(raw map[string]json.RawMessage, gvk schema.GroupVers
 		return "", identityFailure(observation.FailureItem,
 			fmt.Errorf("acm item has no apiversion; GVK is never inferred"))
 	}
-	itemGV, err := schema.ParseGroupVersion(apiVersion)
-	if err != nil {
-		return "", identityFailure(observation.FailureItem,
-			fmt.Errorf("acm item has an unparseable apiversion %q: %w", apiVersion, err))
-	}
+	itemGV := schema.GroupVersion{Group: apiGroup, Version: apiVersion}
 	itemKind, err := searchString(raw, "kind")
 	if err != nil {
 		return "", identityFailure(observation.FailureItem, err)
 	}
-	if itemKind != kind || itemGV.Group != gvk.Group || itemGV.Version != gvk.Version {
+	if itemKind != kind || itemGV != gvk.GroupVersion() {
 		return "", identityFailure(observation.FailureConflict,
-			fmt.Errorf("acm item %s/%s does not match the requested %s", apiVersion, itemKind, gvk.String()))
+			fmt.Errorf("acm item %s/%s does not match the requested %s", itemGV.String(), itemKind, gvk.String()))
 	}
-	return apiVersion, nil
+	return itemGV.String(), nil
 }
 
 // requireNamespaceFor enforces the namespace contract: a cluster-scoped item

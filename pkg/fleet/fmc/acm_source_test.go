@@ -78,12 +78,18 @@ func chunked(items []map[string]json.RawMessage) []fakeACMReply {
 	return replies
 }
 
+// searchItem builds one Search projection item in the wire shape the live
+// Check lane recorded (#2592): the API group and version are SEPARATE
+// properties (`apigroup`, `apiversion`), with an absent apigroup meaning the
+// core group — the same shape our own request builder sends as filters
+// (request/response symmetry, AGENTS.md Review Requirements).
 func searchItem(uid, name, label string) map[string]json.RawMessage {
 	const namespace = "payments"
 	item := map[string]json.RawMessage{
 		"_uid":       mustJSON(uid),
 		"cluster":    mustJSON(acmSourceCluster),
-		"apiversion": mustJSON("apps/v1"),
+		"apigroup":   mustJSON("apps"),
+		"apiversion": mustJSON("v1"),
 		"kind":       mustJSON("Deployment"),
 		"name":       mustJSON(name),
 	}
@@ -206,6 +212,7 @@ var _ = Describe("ACM source collector (DD-FLEET-017 D4)", func() {
 		Entry("cross-cluster item", func(item map[string]json.RawMessage) { item["cluster"] = mustJSON("prod-west") }),
 		Entry("kind mismatch", func(item map[string]json.RawMessage) { item["kind"] = mustJSON("StatefulSet") }),
 		Entry("group mismatch", func(item map[string]json.RawMessage) { item["apiversion"] = mustJSON("batch/v1") }),
+		Entry("foreign apigroup on the requested group", func(item map[string]json.RawMessage) { item["apigroup"] = mustJSON("batch") }),
 		Entry("missing name", func(item map[string]json.RawMessage) { delete(item, "name") }),
 		Entry("namespaced item without namespace", func(item map[string]json.RawMessage) { delete(item, "namespace") }),
 	)

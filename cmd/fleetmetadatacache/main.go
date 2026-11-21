@@ -132,7 +132,14 @@ func (d *fmcDeps) Ready() bool {
 	// membership comes from the registration CRs watched through the
 	// Kubernetes API, and its collector never calls MCP, so an MCP gateway
 	// outage must not block ACM inventory readiness (IT-FMC-SRC-2661-006).
-	if d.mcpReadiness != nil && d.sourceKind != fmcconfig.SourceACM {
+	// For ACM the field is set true here — it records "initial collection
+	// cycle prerequisite met", and with ACM there is no protocol
+	// prerequisite; the cold-start state (zero registrations: nothing ever
+	// runs a cycle, and the syncer's publishGlobal is never reached) has no
+	// other writer.
+	if d.sourceKind == fmcconfig.SourceACM {
+		global.MCPInitialSync = true
+	} else if d.mcpReadiness != nil {
 		global.MCPInitialSync = d.mcpReadiness.Ready()
 	}
 	if d.clusterRegistry != nil {

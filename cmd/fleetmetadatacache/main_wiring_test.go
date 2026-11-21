@@ -361,6 +361,32 @@ var _ = Describe("FMC readiness production wiring (BR-SCOPE-001)", func() {
 		Expect(deps.Ready()).To(BeFalse(),
 			"the GitOps collector collects through MCP, so its gateway being down must keep the MCP-selected deployment unready")
 	})
+
+	It("IT-FMC-SRC-2661-006 [BR-INTEGRATION-065]: an ACM-selected cold start with zero registrations is ready immediately", func() {
+		// The production initial publish (buildFMCRegistryDependencies)
+		// never sets MCPInitialSync, and with zero registrations syncAll
+		// returns before the syncer's publishGlobal runs — so nothing ever
+		// writes the field unless the wiring layer does. This spec pins the
+		// cold-start state with those production values, not a pre-true
+		// publish like the specs above.
+		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			LeasePolicy:          scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		deps := &fmcDeps{
+			clusterRegistry: &fakeClusterRegistry{},
+			readiness:       readiness,
+			sourceKind:      fmcconfig.SourceACM,
+		}
+		Expect(deps.Ready()).To(BeTrue(),
+			"an ACM cold start with no registrations has nothing to collect and no MCP prerequisite; it must be ready, not permanently unready on an unset flag")
+	})
 })
 
 var _ = Describe("FMC writer production composition (BR-SCOPE-001)", func() {
