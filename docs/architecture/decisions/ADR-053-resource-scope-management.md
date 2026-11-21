@@ -17,6 +17,15 @@
 > `ErrScopeUnavailable` for missing/invalid/unsupported/denied authority or errors.
 > Existing-RR takeover remains distinct from new-RR admission under ADR-068.
 
+> **Fenced-lane invalid-label amendment (2026-11-20, #2686):** an invalid
+> `kubernaut.ai/managed` label value is a complete, decisive source observation.
+> The FMC writer stages and commits it (DD-FLEET-016 "Invalid-label
+> observations"), so a committed `invalid` record revokes a previously committed
+> authorization at the next committed repair instead of retaining the last-good
+> record until TTL. Local and fenced lanes share the rule; missing/uncertain
+> evidence stays `unavailable` and is never flattened into `invalid` or
+> `unmanaged`.
+
 > **Note (2026-02-24)**: [ADR-057](ADR-057-crd-namespace-consolidation.md) supersedes this ADR's
 > implicit assumption that CRDs are created in the signal/workload namespace. Per ADR-057, **all
 > kubernaut CRDs are created in the controller namespace** (`kubernaut-system`). The target resource
@@ -205,20 +214,20 @@ ACM Search query; no mutating verb is required or performed.
 - Direct ACM has no per-kind grant: visibility is bounded by ACM Search RBAC
   (see ADR-068 §ACM Search RBAC), which is broader than the fenced lane's list.
 
-**Invalid-label observations on the fenced lane.** The FMC syncer rejects a
-malformed `kubernaut.ai/managed` value before it stages a repair
-(`pkg/fleet/fmc/syncer.go` `buildObservedResource`), so an invalid observation is
-never committed and a previously committed record keeps serving until a later
-repair replaces it or its TTL expires (45s by default). For a cluster-scoped
-target that means a record committed as `true` whose label later becomes invalid
-can still resolve `verified_managed` for that bounded window.
+**Invalid-label observations on the fenced lane.** An invalid `kubernaut.ai/managed`
+value is a complete, decisive source observation: the FMC syncer stages and commits it
+like any other label state (`pkg/fleet/fmc/syncer.go` `buildObservedResource`; DD-FLEET-016
+"Invalid-label observations" amendment), so a previously committed record is **revoked**
+at the next committed repair — a target whose label becomes invalid resolves
+`invalid` / `invalid_resource_label` immediately after that commit, instead of keeping
+`verified_managed` until a later repair or its TTL expires (45s by default).
 
 The local lane reads the object through the informer-backed client that Gateway
 and RO inject into the scope manager, so it returns `invalid` /
 `invalid_resource_label` once the informer has processed the label update — not
 necessarily on the next check: until that cache catches up, a check can still see
-the previous label value. The fenced lane's retained-snapshot window is the same
-class of bounded staleness, only longer and explicit.
+the previous label value. The fenced lane's committed-snapshot window is the same
+class of bounded staleness, bounded by the sync interval rather than the informer.
 
 When the fenced lane has **no** retained record for an invalid observation, the
 read is `unavailable` / `cache_miss` — or `partition_unavailable` when readiness
@@ -227,9 +236,11 @@ label. `invalid` / `invalid_resource_label` is produced only for a committed
 record that itself carries `LabelStateInvalid`.
 
 Removing authorization on an invalid observation — instead of retaining the last
-committed snapshot — changes the DD-FLEET-016 staged-repair contract, applies to
-namespaced targets as well, and is tracked as
-[#2686](https://github.com/jordigilh/kubernaut/issues/2686) rather than part of #2670.
+committed snapshot — changed the DD-FLEET-016 staged-repair contract for every
+kind, namespaced targets included, and is implemented by
+[#2686](https://github.com/jordigilh/kubernaut/issues/2686); before that change the
+syncer rejected invalid observations and retained the last committed record until
+TTL.
 
 Failure states are fail-closed and lane-specific: an unreadable kind on the
 cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup

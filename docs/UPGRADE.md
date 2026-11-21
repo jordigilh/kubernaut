@@ -71,10 +71,10 @@ unlabeled target is `verified_unmanaged` with `none` provenance, and a target
 that cannot be observed is `unavailable` (`observation_missing` locally,
 `cache_miss` on the fenced fleet lane, `search_observation_unavailable` on direct
 ACM). An invalid label value is `invalid`, exactly as for a
-namespaced target — with one fenced-lane caveat: the syncer refuses an invalid
-observation, so a record committed earlier keeps serving until a later repair
-replaces it or its TTL expires. ADR-053 §"Recognized kinds" states that window
-and the follow-up that closes it ([#2686](https://github.com/jordigilh/kubernaut/issues/2686)).
+namespaced target: since [#2686](https://github.com/jordigilh/kubernaut/issues/2686)
+the fenced syncer stages and commits the invalid observation, so the previously
+committed authorization is revoked at the next committed repair rather than
+serving until TTL. ADR-053 §"Recognized kinds" records the rule.
 
 Supported targets differ by lane, so choose the lane accordingly. The local
 Gateway/RO lane and direct ACM can authorize any kind they can read. The fenced
@@ -129,6 +129,21 @@ Fleet is **disabled**; with Fleet enabled, every scope request must carry a
 `ClusterID` — an unattributed request returns `ScopeInvalid`
 (`missing_cluster_attribution`) and never falls back to the local checker
 (DD-FLEET-015).
+
+## Invalid managed-label observations now revoke (#2686)
+
+On the fenced fleet lane, a target whose `kubernaut.ai/managed` label value becomes
+invalid (anything other than `"true"`/`"false"`) used to keep its previously committed
+authorization until a later repair replaced the record or its TTL expired (45s default),
+because the FMC syncer rejected the invalid observation and failed the whole sync cycle.
+The syncer now stages and commits the invalid observation like any other label state
+(DD-FLEET-016 "Invalid-label observations" amendment), and the already-shipped read-side
+mapping turns it into `ScopeInvalid` (`invalid_resource_label`) immediately — the same
+fail-closed rule the local lane applies. Readiness and partition failures are unchanged:
+they keep returning `unavailable` (`partition_unavailable`/`partition_invalid`) and are
+never flattened into `invalid`. A structurally malformed source payload still fails the
+scan as incomplete; the scan commits no observation, so the committed record and its
+clean proof remain readable until the next committed repair or their TTL expires.
 
 ### `ScopeResult.Managed` is removed
 
