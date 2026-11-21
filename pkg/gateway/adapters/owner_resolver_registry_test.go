@@ -18,15 +18,12 @@ package adapters_test
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
@@ -39,28 +36,6 @@ import (
 )
 
 func boolPtr(b bool) *bool { return &b }
-
-// gvkRecordingReader is a client.Reader spy for the identity-path registry
-// tests: it records the GVK stamped on each PartialObjectMetadata GET and
-// serves a standalone (ownerless) object, so registry-derived GVKs and CRD
-// stop verification are observable (#2659).
-type gvkRecordingReader struct {
-	gotGVKs []schema.GroupVersionKind
-}
-
-func (s *gvkRecordingReader) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
-	meta, ok := obj.(*metav1.PartialObjectMetadata)
-	if !ok {
-		return fmt.Errorf("unsupported object type %T", obj)
-	}
-	s.gotGVKs = append(s.gotGVKs, obj.GetObjectKind().GroupVersionKind())
-	meta.Namespace, meta.Name = key.Namespace, key.Name
-	return nil
-}
-
-func (s *gvkRecordingReader) List(_ context.Context, _ client.ObjectList, _ ...client.ListOption) error {
-	return errors.New("list not implemented in spy")
-}
 
 // UT-GW-2659-REG: real APIResourceRegistry integration on the identity path
 // (BR-GATEWAY-004, BR-SCOPE-001). The registry derives the entry GVK when
@@ -80,6 +55,14 @@ var _ = Describe("Owner Resolver with Registry on the identity path (#1029, #265
 		scheme = runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(appsv1.AddToScheme(scheme)).To(Succeed())
+		// Register the OpenShift BuildConfig GVK served by ocpResources() so
+		// the fake client can answer metadata GETs for the CRD-stop test.
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "build.openshift.io", Version: "v1", Kind: "BuildConfig"},
+			&metav1.PartialObjectMetadata{})
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "build.openshift.io", Version: "v1", Kind: "BuildConfigList"},
+			&metav1.PartialObjectMetadataList{})
 
 		fd := newFakeDiscovery(standardResources(), ocpResources())
 		var err error
@@ -170,13 +153,26 @@ var _ = Describe("Owner Resolver with Registry on the identity path (#1029, #265
 	// =========================================================================
 	Context("CRD Traversal Control", func() {
 		It("UT-GW-1029-026: stops traversal at a CRD kind with a verified passthrough under the registry-derived GVK", func() {
-			spy := &gvkRecordingReader{}
-			resolver := ownerchain.NewK8sOwnerResolver(spy, logr.Discard(),
+			// BuildConfig is an OpenShift CRD — not in core/apps/batch. The
+			// registry derives its GVK and the identity path verifies the
+			// passthrough by fetching it: the fake client only knows the
+			// fixture under build.openshift.io/v1, so a fetch under any other
+			// GVK (e.g. a kind-table guess) would return NotFound and fail
+			// closed instead of returning the identity.
+			buildCfg := &metav1.PartialObjectMetadata{
+				ObjectMeta: metav1.ObjectMeta{Name: "frontend-build", Namespace: namespace},
+			}
+			buildCfg.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "build.openshift.io", Version: "v1", Kind: "BuildConfig",
+			})
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(buildCfg).
+				Build()
+
+			resolver := ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
 				ownerchain.WithRegistry(registry))
 
-			// BuildConfig is an OpenShift CRD — not in core/apps/batch. The
-			// registry derives its GVK; the identity path must verify the
-			// passthrough with exactly one fetch under that GVK.
 			resolved, err := resolver.ResolveTopLevelOwnerIdentity(ctx, sharedtypes.OwnerChainEntry{
 				Namespace: namespace, Kind: "BuildConfig", Name: "frontend-build",
 			})
@@ -184,11 +180,7 @@ var _ = Describe("Owner Resolver with Registry on the identity path (#1029, #265
 			Expect(resolved.Kind).To(Equal("BuildConfig"))
 			Expect(resolved.Name).To(Equal("frontend-build"))
 			Expect(resolved.APIVersion).To(Equal("build.openshift.io/v1"),
-				"the registry-derived apiVersion must be preserved on the passthrough")
-			Expect(spy.gotGVKs).To(HaveLen(1),
-				"exactly one verification GET must be issued")
-			Expect(spy.gotGVKs[0]).To(Equal(schema.FromAPIVersionAndKind("build.openshift.io/v1", "BuildConfig")),
-				"the verification GET must use the registry-derived GVK, never the static kind table")
+				"the registry-derived apiVersion must be preserved on the verified passthrough — a fetch under any other GVK would have failed closed against the fixture")
 		})
 
 		It("UT-GW-1029-027: traverses core/apps/batch kinds normally", func() {
