@@ -797,6 +797,29 @@ var _ = Describe("UT-FMC-INV-2661-011 [BR-SCOPE-001]: managed projection", func(
 			"an unproven inherited label must never be published as unmanaged")
 		Expect(page.Items).To(BeEmpty())
 	})
+
+	It("never inherits for cluster-scoped kinds: an absent label stays excluded without a namespace lookup", func() {
+		// ADR-053 / DD-FLEET-017 §3.7: cluster-scoped objects never inherit.
+		// The reader must skip the namespace record entirely — an unlabeled
+		// cluster-scoped item is simply excluded, not resolved through (or
+		// failed by) a namespace it does not have.
+		store := newFakeInventoryStore()
+		unlabeled := store.put("", "Node", "", "v1", "worker", "absent")
+		labelled := store.put("", "Node", "", "v1", "control", "true")
+		reader, _ := newInventoryReaderFixture(store, fmc.InventoryReaderConfig{})
+		page, err := reader.List(context.Background(), inventoryFilters())
+		Expect(err).ToNot(HaveOccurred(),
+			"the cluster-scoped path must not consult a namespace record; consulting one would fail closed on the missing lookup")
+		Expect(page.Validate()).To(Succeed())
+
+		ids := make([]string, 0, len(page.Items))
+		for _, item := range page.Items {
+			ids = append(ids, item.ID)
+		}
+		Expect(ids).To(ConsistOf(labelled), "only the explicitly labelled cluster-scoped item is managed")
+		Expect(ids).ToNot(ContainElement(unlabeled), "cluster-scoped never inherits: absent stays excluded")
+		Expect(page.Items[0].Scope.ClusterScoped).To(BeTrue())
+	})
 })
 
 var _ = Describe("UT-FMC-INV-2661-012/013 [BR-API-001]: lexicographic ordering and prefix filters", func() {
