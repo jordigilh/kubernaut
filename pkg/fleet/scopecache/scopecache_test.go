@@ -35,6 +35,10 @@ func TestScopeCache(t *testing.T) {
 
 type mockCacheReader struct {
 	store map[string]bool
+	// labels carries presence-aware observations for cases a boolean cannot
+	// express (absent, invalid). It takes precedence over store; a key in
+	// neither map is a cache miss.
+	labels map[string]scope.LabelState
 }
 
 func (m *mockCacheReader) Exists(_ context.Context, key string) (bool, error) {
@@ -46,6 +50,9 @@ func (m *mockCacheReader) Exists(_ context.Context, key string) (bool, error) {
 }
 
 func (m *mockCacheReader) Read(_ context.Context, key string) (scopecache.CachedObservation, error) {
+	if state, ok := m.labels[key]; ok {
+		return scopecache.CachedObservation{State: scopecache.RecordVerifiedPresent, LabelState: state}, nil
+	}
 	value, exists := m.store[key]
 	if !exists {
 		return scopecache.CachedObservation{State: scopecache.RecordMissing}, nil
@@ -66,7 +73,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		reader = &mockCacheReader{store: make(map[string]bool)}
+		reader = &mockCacheReader{store: make(map[string]bool), labels: make(map[string]scope.LabelState)}
 		client = scopecache.NewClient(reader)
 	})
 
@@ -209,13 +216,17 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 		})
 
-		It("UT-FLEET-SC-016 [Issue #2311]: Check does not fall back to a namespace for cluster-scoped kinds, mirroring scope.Manager", func() {
+		It("UT-FLEET-SC-016 [Issue #2311, #2670]: a cluster-scoped target never falls back to a namespace", func() {
 			// A coincidentally-matching "namespace" key must never be
 			// consulted for a cluster-scoped resource (e.g. Node) -- it has
-			// no namespace to inherit from (ADR-053).
+			// no namespace to inherit from (ADR-053, AC-6). The Node is
+			// present with an absent label, which is decisive unmanaged.
 			nsKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "worker-node-1")
 			Expect(err).ToNot(HaveOccurred())
 			reader.store[nsKey] = true
+			nodeKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Node", "", "worker-node-1")
+			Expect(err).ToNot(HaveOccurred())
+			reader.labels[nodeKey] = scope.LabelStateAbsent
 
 			managed, _ := client.Check(ctx, scope.ResourceIdentity{
 				ClusterID: "remote-cluster",
@@ -224,8 +235,9 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 				Namespace: "",
 				Name:      "worker-node-1",
 			})
-			Expect(managed.State).To(Equal(scope.ScopeUnsupported),
-				"Node is cluster-scoped and must only ever check its own resource-level label")
+			Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged),
+				"Node resolves at level 1 only; the namespace key must not authorize it")
+			Expect(managed.Provenance).To(Equal(scope.ScopeSourceNone))
 		})
 	})
 

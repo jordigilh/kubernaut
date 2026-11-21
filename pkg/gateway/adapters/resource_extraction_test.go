@@ -481,7 +481,11 @@ var _ = Describe("Prometheus Adapter - Scope-Aware Namespace Resolution (#1371)"
 				"Explicit namespace always honored regardless of kind scope")
 		})
 
-		It("UT-GW-1371-014: cluster-scoped Node alert with explicit namespace label honors it", func() {
+		It("UT-GW-1371-014: a cluster-scoped Node alert drops an explicit namespace label", func() {
+			// #2670 supersedes #1371 here: a cluster-scoped kind has no
+			// namespace, and keeping one makes the scope identity ambiguous
+			// (invalid_cluster_scoped_namespace) while the dedup key and the
+			// persisted RR target disagree with what AF hashes for the same Node.
 			payload := map[string]interface{}{
 				"alerts": []map[string]interface{}{
 					{
@@ -506,8 +510,8 @@ var _ = Describe("Prometheus Adapter - Scope-Aware Namespace Resolution (#1371)"
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(signal.Resource.Kind).To(Equal("Node"))
-			Expect(signal.Resource.Namespace).To(Equal("monitoring"),
-				"Explicit namespace label honored even for cluster-scoped resources")
+			Expect(signal.Resource.Namespace).To(BeEmpty(),
+				"#2670: a cluster-scoped target has no namespace, whatever the alert labels say")
 		})
 	})
 
