@@ -277,8 +277,9 @@ func (s *acmSearchServer) serve(w http.ResponseWriter, r *http.Request) {
 					Property string   `json:"property"`
 					Values   []string `json:"values"`
 				} `json:"filters"`
-				Limit  int `json:"limit"`
-				Offset int `json:"offset"`
+				Limit   int    `json:"limit"`
+				Offset  int    `json:"offset"`
+				OrderBy string `json:"orderBy"`
 			} `json:"input"`
 		} `json:"variables"`
 	}
@@ -291,11 +292,34 @@ func (s *acmSearchServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := request.Variables.Input[0]
-	kind := ""
+	filters := make(map[string]string, len(input.Filters))
 	for _, filter := range input.Filters {
-		if filter.Property == "kind" && len(filter.Values) == 1 {
-			kind = filter.Values[0]
+		if len(filter.Values) == 1 {
+			filters[filter.Property] = filter.Values[0]
 		}
+	}
+	// The fixture validates the complete expected request (AGENTS.md fixture
+	// ground-truth fidelity: verify fixtures against our own request builder)
+	// so a request-serialization regression fails the production-construction
+	// specs instead of yielding a partial match.
+	kind := filters["kind"]
+	expectedVersion := map[string]string{"Pod": "v1", "Namespace": "v1", "Deployment": "v1"}
+	expectedGroup := map[string]string{"Deployment": "apps"}
+	version, knownKind := expectedVersion[kind]
+	badRequest := kind == "" || !knownKind ||
+		filters["cluster"] != s.clusterID ||
+		filters["apiversion"] != version ||
+		input.OrderBy != "uid asc"
+	if group, hasGroup := expectedGroup[kind]; hasGroup {
+		badRequest = badRequest || filters["apigroup"] != group
+	} else if _, coreWithGroup := filters["apigroup"]; coreWithGroup {
+		// The request builder omits empty group filters, so a core kind must
+		// not carry one.
+		badRequest = true
+	}
+	if badRequest {
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 	s.mu.Lock()
 	catalog := s.pods

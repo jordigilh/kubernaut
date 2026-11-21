@@ -696,10 +696,12 @@ func searchStringValue(raw map[string]json.RawMessage, key string) (string, bool
 	return decoded, true
 }
 
-// searchString reads one string-valued identity field. A JSON null is
-// corruption, not a missing field: it is rejected rather than read as an
-// empty string, while an omitted field or an explicit empty string keeps its
-// existing meaning so cluster-scoped items stay valid.
+// searchString reads one string-valued identity field. A JSON null or a
+// non-string value is corruption, not a missing field: both are rejected
+// rather than read as an empty string, because the empty value is VALID for
+// apigroup on core kinds and must never be reachable from corrupt data. An
+// omitted field keeps its existing meaning so cluster-scoped items stay
+// valid.
 func searchString(raw map[string]json.RawMessage, key string) (string, error) {
 	value, present := raw[key]
 	if !present {
@@ -709,10 +711,9 @@ func searchString(raw map[string]json.RawMessage, key string) (string, error) {
 		return "", fmt.Errorf("acm item field %q is JSON null, not a string", key)
 	}
 	var decoded string
-	// A present-but-unstringable value keeps its historical meaning of
-	// "unusable": the caller's empty-string check fails the item, and the
-	// JSON null case above carries the explicit corruption verdict.
-	_ = json.Unmarshal(value, &decoded) //nolint:errcheck // an unstringable value reads as empty and fails the caller's check
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return "", fmt.Errorf("acm item field %q is not a JSON string", key)
+	}
 	return decoded, nil
 }
 

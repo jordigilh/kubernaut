@@ -213,9 +213,35 @@ var _ = Describe("ACM source collector (DD-FLEET-017 D4)", func() {
 		Entry("kind mismatch", func(item map[string]json.RawMessage) { item["kind"] = mustJSON("StatefulSet") }),
 		Entry("group mismatch", func(item map[string]json.RawMessage) { item["apiversion"] = mustJSON("batch/v1") }),
 		Entry("foreign apigroup on the requested group", func(item map[string]json.RawMessage) { item["apigroup"] = mustJSON("batch") }),
+		Entry("numeric apigroup on a core kind", func(item map[string]json.RawMessage) { item["apigroup"] = json.RawMessage("42") }),
 		Entry("missing name", func(item map[string]json.RawMessage) { delete(item, "name") }),
 		Entry("namespaced item without namespace", func(item map[string]json.RawMessage) { delete(item, "namespace") }),
 	)
+
+	// UT-FMC-SRC-2661-013 (continued): a non-string apigroup must never
+	// decode as "omitted" on a core kind — the empty group is valid there,
+	// so a numeric value would silently pass as core.
+	It("UT-FMC-SRC-2661-013 [BR-SCOPE-002]: a numeric apigroup on a core kind fails the kind", func() {
+		item := map[string]json.RawMessage{
+			"_uid":       mustJSON("uid-1"),
+			"cluster":    mustJSON(acmSourceCluster),
+			"apiversion": mustJSON("v1"),
+			"apigroup":   json.RawMessage("42"),
+			"kind":       mustJSON("Pod"),
+			"name":       mustJSON("web"),
+			"namespace":  mustJSON("payments"),
+			"label":      mustJSON("kubernaut.ai/managed=true"),
+		}
+		source := newACMSource(&fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}, func(config *fmc.ACMSourceConfig) {
+			config.Kinds = map[string]schema.GroupVersionKind{"Pod": {Version: "v1", Kind: "Pod"}}
+		})
+
+		observed, err := readAllKind(source, "v1", "Pod")
+
+		Expect(err).To(HaveOccurred(),
+			"a numeric apigroup is corruption, not an omitted core group; it must never launder into a valid core identity")
+		Expect(observed.Complete).To(BeFalse())
+	})
 
 	// UT-FMC-SRC-2661-015
 	It("UT-FMC-SRC-2661-015 [BR-SAFETY-001]: restarts once from offset 0 when the count moves, then completes", func() {
