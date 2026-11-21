@@ -25,6 +25,26 @@ Authoritative reference for all structured audit events emitted by the `gateway`
 
 ---
 
+## Shared Auth Middleware Security Events (Issue #2664)
+
+Gateway signal routes run [`pkg/shared/auth/middleware.go`](../../../../../../pkg/shared/auth/middleware.go) (`Server.RegisterAdapter` applies `s.authMiddleware.Handler` as the outermost layer), which emits structured `security_event` **log** records — not audit-table rows.
+
+| Log Event | `event_type` / `event_action` / `event_outcome` | Trigger | Detail Fields |
+|-----------|------------------------------------------------|---------|---------------|
+| `security_event` (reason `missing_auth_header`, `invalid_auth_format`, `empty_bearer_token`, `invalid_token`, `invalid_token_audience`) | `authentication` / `authenticate` / `failure` | TokenReview rejects the webhook (401) | `event_id` (UUIDv4), `actor_type="external"`, `actor_id=""`, `reason`, `status_code`, `method`, `path`, `remote_addr`, `resource`, `resource_name`, `verb` |
+| `security_event` (reason `authorization_denied`) | `authorization` / `deny` / `failure` | SAR denies the authenticated caller (403) | Same fields, with `actor_type="user"`, `actor_id=<username>`, `user=<username>` |
+| `security_event` (reason `authentication_service_unavailable`) | `authentication` / `authenticate` / `failure` | TokenReview API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="external"`, `status_code=500` |
+| `security_event` (reason `authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
+| `security_event` (reason `authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the webhook (Issue #2664: granted decisions are now observable) | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
+
+**Controls:** FedRAMP AU-2, AU-3, AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7.
+
+**Volume:** one `grant` line per authorization decision (SAR check). Gateway signal routes run a single auth middleware, so this is one line per authorized request, in addition to Gateway's existing per-request "Request completed" line. Not sampled or config-gated: BR-SECURITY-016 requires every authorization decision to be observable.
+
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..011); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..054, production `RegisterAdapter` chain).
+
+---
+
 ## Known Gaps (tracked, not fixed by this catalog)
 
 1. **Event renamed, DD-AUDIT-003 never updated**: the baseline's `gateway.crd.creation_failed` does not exist in code. The actual (and long-standing) constant is `gateway.crd.failed` — confirmed consistent across the Go constant, both emission call sites, the OpenAPI schema, `docs/requirements/BR-GATEWAY-058-audit-event-emission-requirements.md`, and the integration test suite (`GW-INT-AUD-016`/`GW-INT-AUD-019`). Only `DD-AUDIT-003` and the older `DD-ERROR-001` still use the stale `creation_failed` spelling.

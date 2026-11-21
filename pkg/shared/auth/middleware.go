@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 // ContextKey is the type for context keys used in the auth middleware.
@@ -203,6 +204,9 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 			"path", r.URL.Path,
 			"method", r.Method,
 		)
+		// Issue #2664 (AU-2/AU-3): a TokenReview outage is a security-relevant,
+		// fail-closed decision and must be auditable, not only logged as an error.
+		m.logSecurityEvent(r, "authentication_service_unavailable", "", http.StatusInternalServerError)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 		return UserInfo{}, false
@@ -234,6 +238,9 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 			"user", user,
 			"path", r.URL.Path,
 		)
+		// Issue #2664 (AU-2/AU-3): a SAR outage is a security-relevant,
+		// fail-closed decision and must be auditable, not only logged as an error.
+		m.logSecurityEvent(r, "authorization_service_unavailable", user, http.StatusInternalServerError)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
 		return false
@@ -249,6 +256,7 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 		"user", user,
 		"path", r.URL.Path,
 	)
+	m.logSecurityGrant(r, user)
 	return true
 }
 
@@ -318,16 +326,35 @@ func invalidTokenReason(err error) string {
 	return "invalid_token"
 }
 
-// writeError writes an RFC 7807 Problem Details JSON error response.
+// ADR-034 event_type values used by the shared auth middleware.
+const (
+	securityEventTypeAuthentication = "authentication"
+	securityEventTypeAuthorization  = "authorization"
+)
+
 // logSecurityEvent emits a structured security audit log entry for FedRAMP AU-2 compliance.
 // FED-M1: Every 401/403 must produce a traceable security event.
+//
+// Issue #2664 (BR-AUDIT-005, ADR-034): each entry carries the mandated event
+// identity and classification fields -- event_id (UUIDv4), event_type,
+// event_action, event_outcome, actor_type and actor_id -- so a security
+// decision can be attributed and correlated without parsing free text
+// (FedRAMP AU-2/AU-3, SOC2 CC7.2). The action/type are derived from the
+// reason rather than hardcoded: a fail-closed TokenReview/SAR outage is an
+// outage ("authenticate"/"authorize"), not a denial decision ("deny").
 func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
 	if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
 		*holder = reason
 	}
+	eventType, eventAction := securityEventClassification(reason)
 	m.logger.Info("security_event",
-		"event_type", "authentication",
+		"event_id", uuid.NewString(),
+		"event_type", eventType,
+		"event_action", eventAction,
+		"event_outcome", "failure",
 		"reason", reason,
+		"actor_type", securityActorType(user),
+		"actor_id", user,
 		"user", user,
 		"status_code", statusCode,
 		"method", r.Method,
@@ -339,6 +366,85 @@ func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, stat
 	)
 }
 
+// logSecurityGrant emits the positive authorization decision required by
+// BR-SECURITY-016 ("every authorization decision (grant or deny) is observable
+// as a structured security-event log entry", FedRAMP AU-2).
+//
+// Volume: one Info line per authorization decision (SAR check), i.e. one per
+// authorized read request and two per DS write/mutate request because those
+// routes run both the base "get" and the route-level "create"/"update"
+// middleware. That roughly doubles the per-request log line count of a service
+// that already writes an access-log line per request. It is intentionally not
+// sampled or config-gated: BR-SECURITY-016 requires every grant to be
+// observable, and a sampling knob would make AC-6 least-privilege review
+// depend on an operator setting.
+//
+// The event is emitted as soon as the SAR check allows the request, before the
+// downstream handler runs: status_code=200 records the authorization decision
+// (allowed), not the eventual HTTP response, which the handler may still turn
+// into a 4xx/5xx.
+func (m *Middleware) logSecurityGrant(r *http.Request, user string) {
+	m.logger.Info("security_event",
+		"event_id", uuid.NewString(),
+		"event_type", securityEventTypeAuthorization,
+		"event_action", "grant",
+		"event_outcome", "success",
+		"reason", "authorization_granted",
+		"actor_type", securityActorType(user),
+		"actor_id", user,
+		"user", user,
+		"status_code", http.StatusOK,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+		"resource", m.config.Resource,
+		"resource_name", m.config.ResourceName,
+		"verb", m.config.Verb,
+	)
+}
+
+// securityActorType classifies who made the decision for ADR-034 actor_type,
+// whose enum is 'service', 'external', 'user' (ADR-034 schema). A request
+// rejected before identity resolution has no authenticated principal, so it is
+// classified as 'external' with an empty actor_id -- matching the audit-table
+// precedent for unauthenticated callers (test/e2e/gateway/23_audit_emission_test.go).
+func securityActorType(user string) string {
+	if user == "" {
+		return "external"
+	}
+	return "user"
+}
+
+// securityEventClassification derives the ADR-034 event_type and event_action
+// for a security_event reason in one place, so the two fields can never
+// disagree about the decision domain. A denial is "deny"; a fail-closed
+// dependency outage is the operation that could not be completed
+// ("authenticate"/"authorize"), never a deny decision. The complete reason
+// vocabulary is pinned by UT-AUTH-2664-011.
+func securityEventClassification(reason string) (eventType, action string) {
+	switch reason {
+	case "authorization_denied":
+		return securityEventTypeAuthorization, "deny"
+	case "authorization_service_unavailable":
+		return securityEventTypeAuthorization, "authorize"
+	case "authentication_service_unavailable",
+		"missing_auth_header",
+		"invalid_auth_format",
+		"empty_bearer_token",
+		"invalid_token",
+		"invalid_token_audience":
+		return securityEventTypeAuthentication, "authenticate"
+	default:
+		// Forward-compatible fail-safe: a newly introduced authorization reason
+		// must never be classified as an authentication attempt or a denial.
+		if strings.HasPrefix(reason, "authorization_") {
+			return securityEventTypeAuthorization, "authorize"
+		}
+		return securityEventTypeAuthentication, "authenticate"
+	}
+}
+
+// writeError writes an RFC 7807 Problem Details JSON error response.
 func (m *Middleware) writeError(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)

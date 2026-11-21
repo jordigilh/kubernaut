@@ -174,6 +174,20 @@ execution status. Declaring these obligations does not certify unrun journeys.
 
 **Emitted from:** `internal/kubernautagent/server/audit_middleware.go`, `ratelimit.go`, `cmd/kubernautagent/toolregistry.go`
 
+### Shared Auth Middleware Security Log Events (Issue #2664)
+
+KA's HTTP routes also run [`pkg/shared/auth/middleware.go`](../../../../pkg/shared/auth/middleware.go) (`cmd/kubernautagent/routes.go`, `newAuthMiddleware`), which emits structured `security_event` **log** records — not audit-table rows. KA's `AuditAuthMiddleware` separately persists 401/403 as `aiagent.auth.failure`/`aiagent.auth.denied` and reads the shared `failure_reason` capture; it ignores the 500 outage reasons by design.
+
+| Log Event | `event_type` / `event_action` / `event_outcome` | Trigger | Detail Fields |
+|-----------|------------------------------------------------|---------|---------------|
+| `security_event` (`missing_auth_header`, `invalid_auth_format`, `empty_bearer_token`, `invalid_token`, `invalid_token_audience`) | `authentication` / `authenticate` / `failure` | TokenReview rejects the request (401) | `event_id` (UUIDv4), `actor_type="external"`, `actor_id=""`, `reason`, `status_code`, `method`, `path`, `remote_addr`, `resource`, `resource_name`, `verb` |
+| `security_event` (`authorization_denied`) | `authorization` / `deny` / `failure` | SAR denies the authenticated user (403) | `actor_type="user"`, `actor_id=<username>`, `user=<username>` |
+| `security_event` (`authentication_service_unavailable`) | `authentication` / `authenticate` / `failure` | TokenReview call fails; fail-closed 500 (previously unlogged) | `actor_type="external"`, `status_code=500` |
+| `security_event` (`authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR call fails; fail-closed 500 (previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
+| `security_event` (`authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the request | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
+
+**Controls:** FedRAMP AU-2/AU-3/AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7. **Volume:** one grant line per SAR decision (KA routes run a single auth middleware). Not sampled or config-gated per BR-SECURITY-016. FleetMetadataCache (`cmd/fleetmetadatacache/main.go`) is a fourth consumer of the same middleware and has no audit catalog yet — a pre-existing documentation gap, not introduced here.
+
 ---
 
 ## Workflow Catalog Discovery (Issue #1677/#2459, DD-WORKFLOW-019, DD-AUDIT-009)

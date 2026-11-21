@@ -42,6 +42,26 @@ DD-AUDIT-003's 11-event Data Storage baseline predates two design decisions that
 
 ---
 
+## Shared Auth Middleware Security Events (Issue #2664)
+
+DS's `/api/v1` routes run [`pkg/shared/auth/middleware.go`](../../../../../../pkg/shared/auth/middleware.go) (`Server.registerAPIV1AuthMiddleware`), which emits structured `security_event` **log** records — not audit-table rows. They are the real-time AU-2 record of every authentication/authorization decision before a request reaches a DS handler.
+
+| Log Event | `event_type` / `event_action` / `event_outcome` | Trigger | Detail Fields |
+|-----------|------------------------------------------------|---------|---------------|
+| `security_event` (reason `missing_auth_header`, `invalid_auth_format`, `empty_bearer_token`, `invalid_token`, `invalid_token_audience`) | `authentication` / `authenticate` / `failure` | TokenReview rejects the request (401) | `event_id` (UUIDv4), `actor_type="external"`, `actor_id=""`, `reason`, `status_code`, `method`, `path`, `remote_addr`, `resource`, `resource_name`, `verb` |
+| `security_event` (reason `authorization_denied`) | `authorization` / `deny` / `failure` | SAR denies the authenticated user (403) | Same fields, with `actor_type="user"`, `actor_id=<username>`, `user=<username>` |
+| `security_event` (reason `authentication_service_unavailable`) | `authentication` / `authenticate` / `failure` | TokenReview API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="external"`, `status_code=500` |
+| `security_event` (reason `authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
+| `security_event` (reason `authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the request (Issue #2664: granted decisions are now observable) | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
+
+**Controls:** FedRAMP AU-2 (auditable events), AU-3 (record content and actor attribution), AC-6 (least-privilege grant/deny decisions); SOC2 CC7.2 (monitoring of security decisions); OWASP ASVS V2 (authentication), V3 (identity attribution), V7 (no credential material in logs — the bearer token is never a field).
+
+**Volume:** one `grant` line per authorization decision (SAR check): one per authorized read request, two per write/mutate request because those routes run both the router-wide `get` middleware and the route-level `create`/`update` middleware. Alongside DS's existing access-log line this is roughly 2 lines/request for reads and 3 for writes. Not sampled or config-gated: BR-SECURITY-016 requires every authorization decision to be observable.
+
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..011) proves the field contract and classifications; `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..054) proves the same events flow through a production `RegisterAdapter` auth chain.
+
+---
+
 ## Known Gaps (tracked, not fixed by this catalog)
 
 1. **Dead/unused builder code in `pkg/datastorage/audit/`**: `event_builder.go` (`BaseEventBuilder`), `gateway_event.go` (`GatewayEventBuilder`), `workflow_event.go` (`WorkflowEventBuilder`), `aianalysis_event.go` (`AIAnalysisEventBuilder`), and `interfaces.go` (`Writer`/`Reader`/`Repository`) have **zero production callers anywhere in the repo** — confirmed via repo-wide import grep. They appear to be either superseded pre-ADR-034 scaffolding or shared builders other services were meant to adopt but never did. Not removed here (out of scope for a doc-only catalog migration); flagged for a future dead-code decision.
