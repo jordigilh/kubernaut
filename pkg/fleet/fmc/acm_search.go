@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -107,9 +109,11 @@ type ACMSearch interface {
 // ACMHTTPSearch is the production ACM Search chunk reader. Credentials and
 // trust reuse the existing mechanisms the rest of the fleet lane uses: the file
 // token source and the CA reloader (DD-FLEET-017 D4.1a rule 6), so rotation
-// needs no new machinery and no token ever enters this package.
+// needs no new machinery and no token ever enters this package. Redirects are
+// refused outright: an endpoint that answers with one must not be able to
+// route the request — and the bearer — anywhere else.
 type ACMHTTPSearch struct {
-	endpoint string
+	endpoint *url.URL
 	client   *http.Client
 	// reloader is retained so CA rotation has an owner: a watcher (or a caller)
 	// can hand it new PEM without rebuilding the client (D4.1a rule 6).
@@ -133,10 +137,17 @@ func (s *ACMHTTPSearch) ReloadCA(pemData []byte) error {
 // NewACMHTTPSearch builds the chunk reader for one ACM Search endpoint.
 func NewACMHTTPSearch(endpoint, tokenPath, caFile string, timeout time.Duration) (*ACMHTTPSearch, error) {
 	if endpoint == "" {
-		return nil, fmt.Errorf("ACM search endpoint is required")
+		return nil, fmt.Errorf("acm search endpoint is required")
 	}
 	if tokenPath == "" {
-		return nil, fmt.Errorf("ACM search token path is required")
+		return nil, fmt.Errorf("acm search token path is required")
+	}
+	// The request route is derived from the endpoint's path so a trailing
+	// slash or an embedded query cannot alter it. A query or fragment in the
+	// configured endpoint is a configuration error, not a request feature.
+	parsed, err := url.Parse(endpoint)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawFragment != "" {
+		return nil, fmt.Errorf("acm search endpoint must be an absolute URL without a query or fragment, got %q", endpoint)
 	}
 	transport := http.DefaultTransport
 	var reloader *sharedtls.CAReloader
@@ -152,11 +163,14 @@ func NewACMHTTPSearch(endpoint, tokenPath, caFile string, timeout time.Duration)
 		timeout = defaultACMRequestCap
 	}
 	return &ACMHTTPSearch{
-		endpoint: endpoint,
+		endpoint: parsed,
 		reloader: reloader,
 		client: &http.Client{
 			Timeout:   timeout,
 			Transport: auth.NewAuthTransport(auth.NewTokenSource(tokenPath), transport),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return fmt.Errorf("acm search endpoint answered with a redirect; redirects are not supported")
+			},
 		},
 	}, nil
 }
@@ -165,12 +179,14 @@ func NewACMHTTPSearch(endpoint, tokenPath, caFile string, timeout time.Duration)
 func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (ACMSearchPage, error) {
 	body, err := json.Marshal(acmGraphQLRequest{
 		Query:     paginatedSearchQuery,
-		Variables: map[string]any{"input": []acmSearchInput{acmSearchInputFor(options)}},
+		Variables: acmGraphQLVariables{Input: []acmSearchInput{acmSearchInputFor(options)}},
 	})
 	if err != nil {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint+acmGraphQLPath, bytes.NewReader(body))
+	requestURL := *s.endpoint
+	requestURL.Path = strings.TrimSuffix(s.endpoint.Path, "/") + acmGraphQLPath
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
 	}
@@ -189,22 +205,47 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 			fmt.Errorf("ACM search response is %d bytes, above the %d byte bound", response.ContentLength, maxACMResponseBytes))
 	}
 	limited := io.LimitReader(response.Body, maxACMResponseBytes+1)
+	// The whole payload is read and decoded as exactly one JSON value, so a
+	// reply with valid data followed by trailing garbage is malformed rather
+	// than silently truncated-and-accepted.
+	payload, err := io.ReadAll(limited)
+	if err != nil {
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
+			fmt.Errorf("read ACM search response: %w", err))
+	}
+	if len(payload) > maxACMResponseBytes {
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
+			fmt.Errorf("ACM search response is above the %d byte bound", maxACMResponseBytes))
+	}
 	var decoded acmGraphQLResponse
-	if err := json.NewDecoder(limited).Decode(&decoded); err != nil {
+	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
 			fmt.Errorf("decode ACM search response: %w", err))
 	}
-	if len(decoded.Errors) > 0 || decoded.Data == nil || len(decoded.Data.SearchResult) == 0 {
+	if len(decoded.Errors) > 0 || decoded.Data == nil || len(decoded.Data.SearchResult) != 1 {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("ACM search query failed"))
 	}
 	result := decoded.Data.SearchResult[0]
-	return ACMSearchPage(result), nil
+	// An explicit, nonnegative count is the only proof a traversal can be
+	// checked against; a missing, null or negative count must never publish
+	// an empty-looking inventory (DD-FLEET-017 D4.4, G10).
+	if result.Count == nil || *result.Count < 0 {
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool,
+			fmt.Errorf("ACM search reply has no explicit nonnegative count"))
+	}
+	return ACMSearchPage{Count: *result.Count, Items: result.Items}, nil
 }
 
 // acmGraphQLRequest is the POST body sent to ACM Search's GraphQL endpoint.
 type acmGraphQLRequest struct {
-	Query     string         `json:"query"`
-	Variables map[string]any `json:"variables"`
+	Query     string              `json:"query"`
+	Variables acmGraphQLVariables `json:"variables"`
+}
+
+// acmGraphQLVariables is the typed variables envelope: one fixed field, so a
+// misspelled key cannot compile and defer the error to Search.
+type acmGraphQLVariables struct {
+	Input []acmSearchInput `json:"input"`
 }
 
 type acmGraphQLResponse struct {
@@ -217,7 +258,9 @@ type acmSearchData struct {
 }
 
 type acmSearchResultItem struct {
-	Count int                          `json:"count"`
+	// Count is a pointer so an absent or null count is distinguishable from
+	// an explicit zero: only a provided, nonnegative count proves a traversal.
+	Count *int                         `json:"count"`
 	Items []map[string]json.RawMessage `json:"items"`
 }
 

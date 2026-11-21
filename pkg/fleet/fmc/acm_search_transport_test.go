@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -150,7 +151,85 @@ var _ = Describe("ACM search transport hardening (DD-FLEET-017 D4.3)", func() {
 		ExpectWithOffset(1, observed.Failure).To(Equal(observation.FailureTransport),
 			"a handshake failure is a network-level outage, not a source problem")
 	})
+
+	It("UT-FMC-SRC-2661-026: a redirect answer is refused, never followed", func() {
+		var targetHits int
+		redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			targetHits++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1,"items":[` +
+				`{"_uid":"uid-1","cluster":"` + acmSourceCluster + `","apiversion":"v1","kind":"Pod","name":"web","namespace":"payments","label":"kubernaut.ai/managed=true"}]}]}}`))
+		}))
+		DeferCleanup(redirectTarget.Close)
+		redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+		}))
+		DeferCleanup(redirecting.Close)
+
+		search, err := fmc.NewACMHTTPSearch(redirecting.URL, tokenPath, "", 5*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		observed, listErr := listPods(search)
+		ExpectWithOffset(1, listErr).To(HaveOccurred(),
+			"a redirect answer must fail the collection; following it would let the endpoint route the request — and the bearer — elsewhere")
+		ExpectWithOffset(1, observed.Complete).To(BeFalse())
+		ExpectWithOffset(1, targetHits).To(BeZero(),
+			"the redirect target must never receive the request, so it can never receive the bearer token")
+	})
+
+	It("UT-FMC-SRC-2661-026: trailing data after the JSON reply is malformed, never accepted", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0,"items":[]}]}} not-json-trailing`))
+		}))
+		DeferCleanup(server.Close)
+		search, err := fmc.NewACMHTTPSearch(server.URL, tokenPath, "", 5*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		observed, listErr := listPods(search)
+		ExpectWithOffset(1, listErr).To(HaveOccurred(),
+			"a reply that is not exactly one JSON value is malformed; accepting its first value would publish a truncated answer as complete")
+		ExpectWithOffset(1, observed.Failure).To(Equal(observation.FailureMalformedContent))
+	})
+
+	DescribeTable("UT-FMC-SRC-2661-026: a reply without an explicit nonnegative count is a tool failure, never a proven empty collection",
+		func(body string) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			}))
+			DeferCleanup(server.Close)
+			search, err := fmc.NewACMHTTPSearch(server.URL, tokenPath, "", 5*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			observed, listErr := listPods(search)
+			ExpectWithOffset(1, listErr).To(HaveOccurred(),
+				"only an explicitly provided nonnegative count can prove a traversal; a missing, null or negative count must not publish an empty inventory")
+			ExpectWithOffset(1, observed.Failure).To(Equal(observation.FailureTool))
+		},
+		Entry("count absent", `{"data":{"searchResult":[{"items":[]}]}}`),
+		Entry("count null", `{"data":{"searchResult":[{"count":null,"items":[]}]}}`),
+		Entry("count negative", `{"data":{"searchResult":[{"count":-1,"items":[]}]}}`),
+	)
+
+	It("UT-FMC-SRC-2661-026: a valid explicit zero count with empty items remains a complete empty page", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0,"items":[]}]}}`))
+		}))
+		DeferCleanup(server.Close)
+		search, err := fmc.NewACMHTTPSearch(server.URL, tokenPath, "", 5*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		observed, listErr := listPods(search)
+		ExpectWithOffset(1, listErr).NotTo(HaveOccurred(),
+			"an explicit count of zero with no items is the well-formed empty answer")
+		Expect(observed.Complete).To(BeTrue())
+		Expect(observed.Items).To(BeEmpty())
+	})
 })
+
+func mustParse(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return parsed
+}
 
 // transportUnrelatedCA writes a throwaway self-signed certificate that signs
 // nothing the test serves, so a client trusting it fails the TLS handshake.
