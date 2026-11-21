@@ -60,6 +60,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 		}, timeout, interval).Should(Succeed())
 
 		By("Verifying WFE carries clusterID=remote-cluster (AC-3)")
+		var ownedWFEName string
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
@@ -82,6 +83,13 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 				"RO should have created a WFE owned by this RR")
 			g.Expect(owned.Spec.ClusterID).To(Equal("remote-cluster"),
 				"AC-3: WFE must carry ClusterID for remote cluster execution routing")
+			ownedWFEName = owned.Name
 		}, timeout, interval).Should(Succeed())
+
+		// Issue #2688: routing assertions alone let BackoffLimitExceeded spoke
+		// Jobs pass silently. The routed remediation must actually succeed on
+		// the spoke.
+		By("Verifying the spoke remediation Job completes successfully (issue #2688)")
+		expectRemoteWorkflowJobSucceeds(ownedWFEName)
 	})
 })

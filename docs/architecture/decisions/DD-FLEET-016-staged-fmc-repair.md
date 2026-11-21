@@ -55,6 +55,29 @@ Repairs write to a **staged generation**, and a single atomic Lua
    *previous* committed proof; `PublishPartitionClean` after `commit_swap`
    installs the new proof.
 
+## Invalid-label observations (#2686)
+
+An observation whose managed-label *value* is anything other than `"true"`/`"false"` is a
+**complete, decisive source observation**, not a failed scan. (A structurally malformed
+labels object still fails the scan as an incomplete source.) The staged-repair contract
+therefore carries it like any other label state:
+
+- `buildObservedResource` no longer rejects `scope.LabelStateInvalid`; the item is staged
+  by `repair_reconcile` with `label_state=invalid` and installed by the atomic commit swap.
+- `Observation.Validate`, `RepairObservation.Validate`, `decodeReadVerified` and the Lua
+  `read_verified` whitelist accept `invalid` (`knownLabelState` is the single Go rule).
+- The read side (already shipped before this amendment) maps a committed `invalid` record
+  to `ScopeInvalid`/`invalid_resource_label` — fail closed.
+
+Consequence: an invalid label **revokes** a previously committed authorization at the next
+committed repair, instead of retaining the last-good record until its TTL (45s default).
+Local and fenced lanes now share the same rule (the local `scope.Manager` was already
+decisive on invalid labels), and readiness/partition failures keep their own outcomes
+(`partition_unavailable`/`partition_invalid`) — they are never flattened into `invalid`.
+A structurally malformed source payload still fails the scan as incomplete. The scan
+commits no observation, so the committed record and its clean proof remain readable
+until the next committed repair or until their TTL expires.
+
 ## Alternatives considered
 
 - **Reduce repair cadence** (skip repair while TTL fresh): keeps outages,
@@ -67,6 +90,19 @@ Repairs write to a **staged generation**, and a single atomic Lua
 - **Status quo plus client retry expansion**: weakens the approved AF retry
   budget (3 attempts / 2s total) without fixing the availability defect.
   Rejected.
+
+### Invalid-label revocation (#2686) alternatives
+
+- **Keep rejecting invalid observations at the writer (fail to last-good
+  until TTL)**: retained a bounded fail-open authorization window after a
+  managed label became invalid (#2686). Rejected in favor of the
+  invalid-label observations amendment above.
+- **Distinguish "rejected as invalid" from "repair could not be staged" (#2686
+  option B)**: two failure channels for one domain outcome; an invalid label
+  is a complete observation, not a staging failure. Rejected.
+- **Tighten the TTL for label-bearing targets (#2686 option C)**: accepts a
+  fail-open window on an AC-6 control surface and penalizes every record for
+  a per-item condition. Rejected.
 
 ## Spike evidence (mechanism validated 2026-11-17, miniredis)
 
