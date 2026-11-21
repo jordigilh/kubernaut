@@ -90,7 +90,27 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": targetName}},
 					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{{Name: "app", Image: "busybox:1.36"}},
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "busybox:1.36",
+							// Issue #2688 RCA (captured pod log, CI run
+							// 44851417391): oomkill-increase-memory-job's
+							// remediate.sh patches the memory limit with a
+							// JSON `replace` on
+							// /spec/template/spec/containers/0/resources/limits/memory.
+							// A `replace` on a nonexistent path is rejected
+							// by the API server (422 Invalid: "The request
+							// is invalid: the server rejected our request
+							// due to an error in our request"), so a fixture
+							// without an initial memory limit makes the
+							// spoke Job fail BackoffLimitExceeded ~3s after
+							// start. A real OOMKill remediation target always
+							// carries the limit being raised.
+							Resources: corev1.ResourceRequirements{
+								Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi")},
+								Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("20Mi")},
+							},
+						}},
 					},
 				},
 			},
