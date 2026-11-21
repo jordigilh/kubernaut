@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -355,7 +356,9 @@ func decodeMapping(node *yaml.Node, target *ACMSourceConfig) error {
 // ever carries token material.
 func (c *ServiceConfig) validateACM(source *ACMSourceConfig) error {
 	parsed, err := url.Parse(source.Endpoint)
-	if err != nil || !parsed.IsAbs() || parsed.Scheme != "https" || parsed.Host == "" {
+	// Hostname() rather than Host: an endpoint like "https://:4010" carries a
+	// host part but no hostname, and must not pass as reachable.
+	if err != nil || !parsed.IsAbs() || parsed.Scheme != "https" || parsed.Hostname() == "" {
 		return fmt.Errorf("sources.acm.endpoint must be an absolute https URL with a host, got %q", source.Endpoint)
 	}
 	if source.TokenPath == "" || !filepath.IsAbs(source.TokenPath) {
@@ -373,13 +376,23 @@ func (c *ServiceConfig) validateACM(source *ACMSourceConfig) error {
 // checkReadableRegularFile opens the path, which is the only check that proves
 // FMC can actually read it. Stat alone accepts a file the process may not open,
 // so the failure would surface on the first Search request instead of at
-// startup (D4.1a rule 3).
+// startup (D4.1a rule 3). The file is opened nonblocking so a FIFO cannot
+// block startup before its type is known; the descriptor's own type check
+// then rejects anything that is not a regular file, while symlinks that
+// resolve to regular files (including projected secrets) stay supported.
 func checkReadableRegularFile(path string) error {
-	file, err := os.Open(path)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
+	file := os.NewFile(uintptr(fd), path)
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			// The descriptor was readable; a close error on a read-only file
+			// is not a validation verdict, but it is never silently dropped.
+			fmt.Fprintf(os.Stderr, "config file close error for %s: %v\n", path, closeErr)
+		}
+	}()
 	info, err := file.Stat()
 	if err != nil {
 		return err

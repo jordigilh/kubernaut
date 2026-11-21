@@ -88,8 +88,9 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Expect(observed.Failure).To(Equal(observation.FailureMalformedContent))
 	})
 
-	// UT-FMC-SRC-2661-022
-	It("UT-FMC-SRC-2661-022: refuses a collection above the partition item ceiling", func() {
+	// UT-FMC-SRC-2661-022: the page budget, not the item ceiling, is the bound
+	// this walk reaches; the item ceiling remains defense in depth.
+	It("UT-FMC-SRC-2661-022: refuses a collection above the page budget without sending the overflowing request", func() {
 		replies := make([]fakeACMReply, 0, 102)
 		total := 0
 		for page := 0; page < 102; page++ {
@@ -101,12 +102,15 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			replies = append(replies, fakeACMReply{count: 5100, items: items})
 		}
 
-		observed, err := readAll(newACMSource(&fakeACMSearch{replies: replies}))
+		search := &fakeACMSearch{replies: replies}
+		observed, err := readAll(newACMSource(search))
 
 		Expect(err).To(HaveOccurred())
 		Expect(observed.Complete).To(BeFalse())
 		Expect(observed.Failure).To(Equal(observation.FailureBounds),
 			"the partition ceiling is a bound, not a truncation point")
+		Expect(search.calls).To(HaveLen(100),
+			"the budget is enforced before the overflowing request, so exactly the allowed pages are sent")
 	})
 
 	// UT-FMC-SRC-2661-012: the collector-side label-state shapes
@@ -224,7 +228,10 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			config.Kinds = map[string]schema.GroupVersionKind{"Namespace": {Version: "v1", Kind: "Namespace"}}
 		})
 
-		observed, err := readAll(source)
+		// The request names the cluster-scoped kind under test, so the
+		// observation actually exercises the numeric-namespace validation
+		// instead of failing on a kind mismatch first.
+		observed, err := readAllKind(source, "v1", "Namespace")
 
 		Expect(err).To(HaveOccurred())
 		Expect(observed.Complete).To(BeFalse())

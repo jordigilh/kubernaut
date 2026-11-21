@@ -438,6 +438,13 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		return scopecache.RepairResult{}, err
 	}
 	partition := scopecache.PartitionStateKey{ClusterID: cluster.ID, RegistrationUID: cluster.RegistrationUID}
+	// DD-FLEET-017 D4.1a rule 7b: exactly one component sets the collection
+	// deadline, and it is this one. The staging generation has a fixed lifetime,
+	// so every kind of this repair shares one window instead of each deriving a
+	// fresh fallback (a seven-kind sync would otherwise outlive the generation).
+	// The start time is captured before beginRepair so the budget measures the
+	// whole repair, not just the part after the begin round trip.
+	repairStart := time.Now()
 	start, err := s.beginRepair(ctx, partition, cluster, snapshot, fence)
 	if err != nil {
 		if start.Token.Value != "" {
@@ -458,13 +465,9 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		s.markRepairUncertain(ctx, start, cluster.ID, repairUncertainFailureFromResult(result, commitFailure, retErr))
 	}()
 
-	// DD-FLEET-017 D4.1a rule 7b: exactly one component sets the collection
-	// deadline, and it is this one. The staging generation has a fixed lifetime,
-	// so every kind of this repair shares one window instead of each deriving a
-	// fresh fallback (a seven-kind sync would otherwise outlive the generation).
 	repairCtx := ctx
 	if !isACMCollectionDeadlineSet(ctx) {
-		repairCtx = WithCollectionDeadline(ctx, time.Now().Add(RepairCollectionBudget))
+		repairCtx = WithCollectionDeadline(ctx, repairStart.Add(RepairCollectionBudget))
 	}
 	observations, err := s.collectRepairObservations(repairCtx, cluster)
 	if err != nil {

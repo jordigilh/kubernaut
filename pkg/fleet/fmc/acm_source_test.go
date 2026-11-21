@@ -117,10 +117,16 @@ func newACMSource(search fmc.ACMSearch, configure ...func(*fmc.ACMSourceConfig))
 }
 
 func readAll(source *fmc.ACMSource) (observation.ListObservation, error) {
+	return readAllKind(source, "apps/v1", "Deployment")
+}
+
+// readAllKind collects one specific kind, so specs about cluster-scoped kinds
+// request the kind they actually assert against.
+func readAllKind(source *fmc.ACMSource, apiVersion, kind string) (observation.ListObservation, error) {
 	reader, err := source.ReaderFor(context.Background(), registry.ClusterInfo{ID: acmSourceCluster, RegistrationUID: "registration-1"})
 	ExpectWithOffset(1, err).ToNot(HaveOccurred())
 	return reader.ListObserved(context.Background(), observation.ListRequest{
-		APIVersion: "apps/v1", Kind: "Deployment", Limit: observation.ObservationPageLimit,
+		APIVersion: apiVersion, Kind: kind, Limit: observation.ObservationPageLimit,
 	})
 }
 
@@ -229,16 +235,33 @@ var _ = Describe("ACM source collector (DD-FLEET-017 D4)", func() {
 	})
 
 	It("UT-FMC-SRC-2661-015 [BR-SAFETY-001]: a second count transition leaves the collection incomplete", func() {
+		// A full chunk keeps the walk going (a short page legitimately ends
+		// it), so both transitions are observed on continued pages and the
+		// failure comes from the restart guard, not an items/count mismatch
+		// on a terminal short page.
+		fullPage := make([]map[string]json.RawMessage, 0, 50)
+		for index := 0; index < 50; index++ {
+			fullPage = append(fullPage, searchItem(fmt.Sprintf("uid-%03d", index), fmt.Sprintf("app-%03d", index), "kubernaut.ai/managed=true"))
+		}
+		shortTail := []map[string]json.RawMessage{searchItem("uid-050", "tail", "kubernaut.ai/managed=true")}
 		search := &fakeACMSearch{replies: []fakeACMReply{
-			{count: 2, items: []map[string]json.RawMessage{searchItem("uid-1", "one", "kubernaut.ai/managed=true")}},
-			{count: 3, items: []map[string]json.RawMessage{searchItem("uid-2", "two", "kubernaut.ai/managed=true")}},
-			{count: 4, items: []map[string]json.RawMessage{searchItem("uid-3", "three", "kubernaut.ai/managed=true")}},
+			{count: 51, items: fullPage},  // full page: the walk continues
+			{count: 50, items: shortTail}, // first transition: restart from 0
+			{count: 49, items: fullPage},  // second transition: the guard fires
 		}}
 
 		observed, err := readAll(newACMSource(search))
 
 		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("count changed twice"),
+			"the failure must come from the restart guard, not a terminal short page")
 		Expect(observed.Complete).To(BeFalse())
+		offsets := make([]int, 0, len(search.calls))
+		for _, call := range search.calls {
+			offsets = append(offsets, call.Offset)
+		}
+		Expect(offsets).To(Equal([]int{0, 50, 0}),
+			"the walk continues past the full page, then restarts from offset 0")
 	})
 
 	// UT-FMC-SRC-2661-016

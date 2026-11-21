@@ -29,7 +29,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -224,12 +223,6 @@ var _ = Describe("ACM search transport hardening (DD-FLEET-017 D4.3)", func() {
 		Expect(observed.Items).To(BeEmpty())
 	})
 })
-
-func mustParse(raw string) *url.URL {
-	parsed, err := url.Parse(raw)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	return parsed
-}
 
 // transportUnrelatedCA writes a throwaway self-signed certificate that signs
 // nothing the test serves, so a client trusting it fails the TLS handshake.

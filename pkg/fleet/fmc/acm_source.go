@@ -120,10 +120,10 @@ type ACMSource struct {
 // NewACMSource validates and creates the ACM collector.
 func NewACMSource(config ACMSourceConfig) (*ACMSource, error) {
 	if config.Search == nil {
-		return nil, fmt.Errorf("ACM source requires a search client")
+		return nil, fmt.Errorf("acm source requires a search client")
 	}
 	if len(config.Kinds) == 0 {
-		return nil, fmt.Errorf("ACM source requires at least one resource kind")
+		return nil, fmt.Errorf("acm source requires at least one resource kind")
 	}
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
@@ -148,7 +148,7 @@ func NewACMSource(config ACMSourceConfig) (*ACMSource, error) {
 // only refuses to invent a cluster identity the registry did not provide.
 func (s *ACMSource) ReaderFor(_ context.Context, cluster registry.ClusterInfo) (observation.ObservedReader, error) {
 	if cluster.ID == "" {
-		return nil, fmt.Errorf("ACM source requires an explicit cluster identity")
+		return nil, fmt.Errorf("acm source requires an explicit cluster identity")
 	}
 	return &acmClusterReader{source: s, clusterID: cluster.ID}, nil
 }
@@ -166,7 +166,7 @@ func (r *acmClusterReader) ListObserved(ctx context.Context, request observation
 	gvk, known := r.source.config.Kinds[request.Kind]
 	if !known {
 		return incompleteObservation(observation.FailureTool,
-			fmt.Errorf("ACM source has no GVK for kind %q", request.Kind))
+			fmt.Errorf("acm source has no GVK for kind %q", request.Kind))
 	}
 	deadline := collectionDeadline(ctx, r.source.config.Now(), r.source.config.CollectionBudget)
 	return r.traverse(ctx, deadline, gvk, request.Kind)
@@ -195,7 +195,6 @@ func searchFailureClass(err error) observation.ObservationFailure {
 // as one long function.
 type acmWalk struct {
 	items    []observation.ObservedItem
-	seenUIDs map[string]struct{}
 	offset   int
 	pages    int
 	restarts int
@@ -204,7 +203,7 @@ type acmWalk struct {
 }
 
 func newACMWalk() *acmWalk {
-	return &acmWalk{seenUIDs: make(map[string]struct{}, observation.MaxObservationItems), total: -1}
+	return &acmWalk{total: -1}
 }
 
 // traverse is the guarded offset walk: explicit ascending uid order, strict
@@ -219,7 +218,18 @@ func newACMWalk() *acmWalk {
 func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk schema.GroupVersionKind, kind string) (observation.ListObservation, error) {
 	walk := newACMWalk()
 	for {
-		timeout, err := r.chunkTimeout(r.source.config.Now(), deadline)
+		// The page budget is enforced before the next request, so an
+		// exhausted budget is reported without sending a request the guard
+		// would reject. Reaching the top of the loop with a full budget means
+		// the previous page was not final; a page that completes the walk
+		// breaks out below and never returns here. The item ceiling in
+		// addPage stays as defense in depth: with 50 items per page and 100
+		// pages the walk can never legitimately reach it.
+		if walk.pages >= observation.MaxObservationPages {
+			return incompleteObservation(observation.FailureBounds,
+				fmt.Errorf("acm collection exceeded %d pages", observation.MaxObservationPages))
+		}
+		timeout, err := r.chunkTimeout(ctx, r.source.config.Now(), deadline)
 		if err != nil {
 			// D4.1a rule 7a: a request that cannot finish must not start, so
 			// the collection is abandoned and the previous proof ages out.
@@ -230,10 +240,6 @@ func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk
 			return incompleteObservation(searchFailureClass(err), err)
 		}
 		walk.pages++
-		if walk.pages > observation.MaxObservationPages {
-			return incompleteObservation(observation.FailureBounds,
-				fmt.Errorf("ACM collection exceeded %d pages", observation.MaxObservationPages))
-		}
 		restarted, err := walk.applyCount(page.Count)
 		if err != nil {
 			return incompleteObservation(observation.FailureBounds, err)
@@ -252,11 +258,20 @@ func (r *acmClusterReader) traverse(ctx context.Context, deadline time.Time, gvk
 }
 
 // chunkTimeout derives this request's ceiling from the staging budget rather
-// than a configured value (D4.1a rule 7a).
-func (r *acmClusterReader) chunkTimeout(now time.Time, deadline time.Time) (time.Duration, error) {
+// than a configured value (D4.1a rule 7a). The caller's context deadline, when
+// earlier, tightens the budget: a request the caller has already bounded
+// shorter must not outlive that bound. A context that is already done refuses
+// the request outright.
+func (r *acmClusterReader) chunkTimeout(ctx context.Context, now time.Time, deadline time.Time) (time.Duration, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("acm collection context is done: %w", err)
+	}
+	if ctxDeadline, hasDeadline := ctx.Deadline(); hasDeadline && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
 	remaining := deadline.Sub(now) - r.source.config.CommitReserve
 	if remaining < r.source.config.StartFloor {
-		return 0, fmt.Errorf("ACM collection has %s of budget left, below the %s start floor",
+		return 0, fmt.Errorf("acm collection has %s of budget left, below the %s start floor",
 			remaining.Round(time.Millisecond), r.source.config.StartFloor)
 	}
 	if remaining < r.source.config.RequestCap {
@@ -275,14 +290,13 @@ func (w *acmWalk) applyCount(count int) (bool, error) {
 	case count == w.total:
 		return false, nil
 	case w.restarts >= 1:
-		return false, fmt.Errorf("ACM collection count changed twice (%d then %d)", w.total, count)
+		return false, fmt.Errorf("acm collection count changed twice (%d then %d)", w.total, count)
 	default:
 		w.restarts++
 		w.offset = 0
 		w.items = nil
 		w.lastUID = ""
 		w.total = count
-		w.seenUIDs = make(map[string]struct{}, observation.MaxObservationItems)
 		return true, nil
 	}
 }
@@ -292,29 +306,29 @@ func (w *acmWalk) applyCount(count int) (bool, error) {
 func (w *acmWalk) addPage(rawItems []map[string]json.RawMessage, clusterID string, gvk schema.GroupVersionKind, kind string) error {
 	if len(rawItems) > acmSearchChunk {
 		return observationError(observation.FailureMalformedContent,
-			fmt.Errorf("ACM page returned %d items for a %d chunk", len(rawItems), acmSearchChunk))
+			fmt.Errorf("acm page returned %d items for a %d chunk", len(rawItems), acmSearchChunk))
 	}
 	if len(w.items)+len(rawItems) > observation.MaxObservationItems {
 		return observationError(observation.FailureBounds,
-			fmt.Errorf("ACM collection exceeded %d items", observation.MaxObservationItems))
+			fmt.Errorf("acm collection exceeded %d items", observation.MaxObservationItems))
 	}
 	for _, raw := range rawItems {
-		uid := searchString(raw, "_uid")
+		uid, err := searchString(raw, "_uid")
+		if err != nil {
+			return observationError(observation.FailureMalformedContent, err)
+		}
 		if uid == "" {
-			return observationError(observation.FailureMalformedContent, fmt.Errorf("ACM page item has no _uid"))
+			return observationError(observation.FailureMalformedContent, fmt.Errorf("acm page item has no _uid"))
 		}
 		// Bytewise comparison, matching `orderBy: "uid asc"` for the
 		// lowercase-hex uids Search returns; a collation divergence would
-		// fail the kind closed here, never publish a reordered walk.
+		// fail the kind closed here, never publish a reordered walk. This
+		// strict-increase check also rejects any later occurrence of an
+		// already-accepted uid, so no separate duplicate set is needed.
 		if w.lastUID != "" && uid <= w.lastUID {
 			return observationError(observation.FailureMalformedContent,
-				fmt.Errorf("ACM traversal uid %q does not follow %q", uid, w.lastUID))
+				fmt.Errorf("acm traversal uid %q does not follow %q", uid, w.lastUID))
 		}
-		if _, duplicate := w.seenUIDs[uid]; duplicate {
-			return observationError(observation.FailureDuplicate,
-				fmt.Errorf("ACM traversal returned uid %q twice", uid))
-		}
-		w.seenUIDs[uid] = struct{}{}
 		w.lastUID = uid
 		item, failure, err := observedItemFromSearch(raw, clusterID, gvk, kind)
 		if err != nil {
@@ -336,11 +350,11 @@ func (w *acmWalk) chunkEndsWalk(received int) bool {
 // completed-looking walk whose total does not match its items.
 func (w *acmWalk) observation() (observation.ListObservation, error) {
 	if w.total < 0 {
-		return incompleteObservation(observation.FailureMalformedContent, fmt.Errorf("ACM collection returned no page"))
+		return incompleteObservation(observation.FailureMalformedContent, fmt.Errorf("acm collection returned no page"))
 	}
 	if len(w.items) != w.total {
 		return incompleteObservation(observation.FailureMalformedContent,
-			fmt.Errorf("ACM collection returned %d items for a reported count of %d", len(w.items), w.total))
+			fmt.Errorf("acm collection returned %d items for a reported count of %d", len(w.items), w.total))
 	}
 	return observation.ListObservation{
 		Items:     w.items,
@@ -370,7 +384,7 @@ func (r *acmClusterReader) searchChunk(ctx context.Context, timeout time.Duratio
 		Limit:     acmSearchChunk,
 	})
 	if err != nil {
-		return ACMSearchPage{}, fmt.Errorf("ACM search offset %d: %w", offset, err)
+		return ACMSearchPage{}, fmt.Errorf("acm search offset %d: %w", offset, err)
 	}
 	return page, nil
 }
@@ -386,9 +400,12 @@ func observedItemFromSearch(raw map[string]json.RawMessage, clusterID string, gv
 	if err != nil {
 		return observation.ObservedItem{}, observationFailureOf(err), err
 	}
-	name := searchString(raw, "name")
+	name, err := searchString(raw, "name")
+	if err != nil {
+		return observation.ObservedItem{}, observation.FailureItem, err
+	}
 	if name == "" {
-		return observation.ObservedItem{}, observation.FailureItem, fmt.Errorf("ACM item has no name")
+		return observation.ObservedItem{}, observation.FailureItem, fmt.Errorf("acm item has no name")
 	}
 	namespace, err := requireNamespaceFor(raw, kind, name)
 	if err != nil {
@@ -426,11 +443,11 @@ func requireClusterOwnership(raw map[string]json.RawMessage, clusterID string) e
 	itemCluster, present := searchStringValue(raw, "cluster")
 	if !present || itemCluster == "" {
 		return identityFailure(observation.FailureItem,
-			fmt.Errorf("ACM item has no cluster attribution; ownership is never assumed"))
+			fmt.Errorf("acm item has no cluster attribution; ownership is never assumed"))
 	}
 	if itemCluster != clusterID {
 		return identityFailure(observation.FailureConflict,
-			fmt.Errorf("ACM item belongs to cluster %q while collecting %q", itemCluster, clusterID))
+			fmt.Errorf("acm item belongs to cluster %q while collecting %q", itemCluster, clusterID))
 	}
 	return nil
 }
@@ -438,19 +455,26 @@ func requireClusterOwnership(raw map[string]json.RawMessage, clusterID string) e
 // requireExactAPIVersion enforces exact GVK: a missing or mismatched apiVersion
 // fails the kind because group/version are never inferred (D4.1).
 func requireExactAPIVersion(raw map[string]json.RawMessage, gvk schema.GroupVersionKind, kind string) (string, error) {
-	apiVersion := searchString(raw, "apiversion")
+	apiVersion, err := searchString(raw, "apiversion")
+	if err != nil {
+		return "", identityFailure(observation.FailureItem, err)
+	}
 	if apiVersion == "" {
 		return "", identityFailure(observation.FailureItem,
-			fmt.Errorf("ACM item has no apiversion; GVK is never inferred"))
+			fmt.Errorf("acm item has no apiversion; GVK is never inferred"))
 	}
 	itemGV, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
 		return "", identityFailure(observation.FailureItem,
-			fmt.Errorf("ACM item has an unparseable apiversion %q: %w", apiVersion, err))
+			fmt.Errorf("acm item has an unparseable apiversion %q: %w", apiVersion, err))
 	}
-	if itemKind := searchString(raw, "kind"); itemKind != kind || itemGV.Group != gvk.Group || itemGV.Version != gvk.Version {
+	itemKind, err := searchString(raw, "kind")
+	if err != nil {
+		return "", identityFailure(observation.FailureItem, err)
+	}
+	if itemKind != kind || itemGV.Group != gvk.Group || itemGV.Version != gvk.Version {
 		return "", identityFailure(observation.FailureConflict,
-			fmt.Errorf("ACM item %s/%s does not match the requested %s", apiVersion, itemKind, gvk.String()))
+			fmt.Errorf("acm item %s/%s does not match the requested %s", apiVersion, itemKind, gvk.String()))
 	}
 	return apiVersion, nil
 }
@@ -462,7 +486,7 @@ func requireNamespaceFor(raw map[string]json.RawMessage, kind, name string) (str
 	namespace, present := searchStringValue(raw, "namespace")
 	if _, found := raw["namespace"]; found && !present {
 		return "", identityFailure(observation.FailureItem,
-			fmt.Errorf("ACM item %s/%s has a namespace field that is not a string", kind, name))
+			fmt.Errorf("acm item %s/%s has a namespace field that is not a string", kind, name))
 	}
 	clusterScoped := scope.IsClusterScopedKind(kind)
 	if clusterScoped && namespace != "" {
@@ -669,16 +693,24 @@ func searchStringValue(raw map[string]json.RawMessage, key string) (string, bool
 	return decoded, true
 }
 
-func searchString(raw map[string]json.RawMessage, key string) string {
+// searchString reads one string-valued identity field. A JSON null is
+// corruption, not a missing field: it is rejected rather than read as an
+// empty string, while an omitted field or an explicit empty string keeps its
+// existing meaning so cluster-scoped items stay valid.
+func searchString(raw map[string]json.RawMessage, key string) (string, error) {
 	value, present := raw[key]
 	if !present {
-		return ""
+		return "", nil
+	}
+	if isJSONNull(value) {
+		return "", fmt.Errorf("acm item field %q is JSON null, not a string", key)
 	}
 	var decoded string
-	if err := json.Unmarshal(value, &decoded); err != nil {
-		return ""
-	}
-	return decoded
+	// A present-but-unstringable value keeps its historical meaning of
+	// "unusable": the caller's empty-string check fails the item, and the
+	// JSON null case above carries the explicit corruption verdict.
+	_ = json.Unmarshal(value, &decoded) //nolint:errcheck // an unstringable value reads as empty and fails the caller's check
+	return decoded, nil
 }
 
 // incompleteObservation wraps a failure so the syncer aborts before any write

@@ -268,8 +268,12 @@ var _ = Describe("FMC repair collection deadline ownership (DD-FLEET-017 D4.1a r
 		syncer := newDeadlineWiringSyncer(reader)
 		cluster := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a"}
 
+		// The context is cancellable so the lease-renewal goroutine the syncer
+		// spawns stops when the spec ends, instead of leaking past it.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		started := time.Now()
-		Expect(syncer.SyncCluster(context.Background(), cluster)).To(Succeed())
+		Expect(syncer.SyncCluster(ctx, cluster)).To(Succeed())
 		finished := time.Now()
 
 		podDeadline, podSet := reader.deadlineFor("Pod")
@@ -292,8 +296,12 @@ var _ = Describe("FMC repair collection deadline ownership (DD-FLEET-017 D4.1a r
 		syncer := newDeadlineWiringSyncer(reader)
 		cluster := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a"}
 
+		// Derived from a cancellable context for the same reason as above:
+		// cancellation stops lease renewal when the spec ends.
 		callerDeadline := time.Now().Add(20 * time.Second)
-		ctx := WithCollectionDeadline(context.Background(), callerDeadline)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ctx = WithCollectionDeadline(ctx, callerDeadline)
 		Expect(syncer.SyncCluster(ctx, cluster)).To(Succeed())
 
 		for _, kind := range []string{"Pod", "Namespace"} {

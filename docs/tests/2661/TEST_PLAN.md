@@ -220,6 +220,7 @@ live run.
 | UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **WITHOUT rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
 | UT-FMC-SRC-2661-024 | **Deadline ownership (D4.1a rule 7b)**: `repairPartition` sets exactly one collection deadline per repair, at repair start, from `RepairCollectionBudget` — every configured kind's collection sees the identical value — and never overwrites a deadline already present on the context | ✅ |
 | UT-FMC-SRC-2661-025 | **Transport hardening (review round 1)**: one Search reply is byte-bounded before decoding, so the 50-item logical guard is never the only defense against a hostile or broken endpoint; chunk failures are classified transport/tool/malformed and mapped onto the matching observation failure — an HTTP or GraphQL answer is never reported as a network outage, and a TLS failure as a tool failure | ✅ |
+| UT-FMC-SRC-2661-026 | **Transport reply integrity (#2691 review)**: redirect answers are refused outright (the bearer can never be routed to a different target); the reply is exactly one JSON value under the byte bound (trailing data is malformed); the searchResult count is explicitly provided and nonnegative — a missing, null or negative count is a tool failure, never a proven empty collection, while an explicit zero with empty items remains the well-formed empty answer; the endpoint is parsed once and the route joined to its path (no query or fragment) | ✅ |
 
 ### Tier 2 — Integration
 
@@ -300,11 +301,11 @@ Identical to DD-FLEET-017 §8 (single authority).
 
 ## 11. Implementation sequence and TDD budget
 
-| Phase | Work | Budget |
-|---|---|---|
-| 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | 60–90 min (excluding approval latency) |
-| RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | 130 min |
-| GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | 120 min |
+| Phase | Work | Evidence / IDs | Done only when (completion condition) |
+|---|---|---|---|
+| 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | — | 60–90 min (excluding approval latency) |
+| RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | — | 130 min |
+| GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | — | 120 min |
 | RED b1 — collector contracts | `pkg/fleet/fmc/acm_source.go`, `acm_search.go` | UT-FMC-SRC-2661-011..019, 021..022 | Done only when every collector UT passes; no production caller is claimed |
 | GREEN b1 — collector package | `ACMSource`, `ACMHTTPSearch`, traversal guards | same UTs | Done only when the collector is independently testable and still unwired |
 | RED b2 — source composition | `cmd/fleetmetadatacache/main.go` `buildFMCSyncer` | IT-FMC-SRC-2661-002 | Fails while `buildFMCSyncer` always builds the MCP reader |
@@ -313,10 +314,10 @@ Identical to DD-FLEET-017 §8 (single authority).
 | GREEN b3 — fenced publication | same repair path | same | Done only when Search observations reach BeginRepair→Repair→CommitRepair, with the shared deadline set once per repair and no direct Valkey write |
 | RED b4 — transport credentials | `NewACMHTTPSearch` production construction | UT-FMC-SRC-2661-023; IT-FMC-SRC-2661-003 | Fails without bearer, CA and rotation assertions |
 | GREEN b4 — transport credentials | `NewACMHTTPSearch` | same | Done only when request-level auth, trust and rotation pass without client recreation |
-| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping | 120 min |
-| REFACTOR | Collapse the two page-assembly paths into one projection helper; single state/status table; no new types | 45 min |
-| Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | 60–90 min |
-| Live | E2E-FMC-INV-2661-001/002, evidence captured | 90–120 min |
+| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping | — | 120 min |
+| REFACTOR | Collapse the two page-assembly paths into one projection helper; single state/status table; no new types | — | 45 min |
+| Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | — | 60–90 min |
+| Live | E2E-FMC-INV-2661-001/002, evidence captured | — | 90–120 min |
 
 Total ≈ 12–15 h plus CI. The lex index adds ~1.5–2.5 h of code and, critically,
 **re-qualification of the DD-FLEET-016 atomic swap** (~0.5–1 day of IT/live

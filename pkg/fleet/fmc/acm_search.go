@@ -198,11 +198,11 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool,
-			fmt.Errorf("ACM search returned status %d", response.StatusCode))
+			fmt.Errorf("acm search returned status %d", response.StatusCode))
 	}
 	if response.ContentLength > maxACMResponseBytes {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
-			fmt.Errorf("ACM search response is %d bytes, above the %d byte bound", response.ContentLength, maxACMResponseBytes))
+			fmt.Errorf("acm search response is %d bytes, above the %d byte bound", response.ContentLength, maxACMResponseBytes))
 	}
 	limited := io.LimitReader(response.Body, maxACMResponseBytes+1)
 	// The whole payload is read and decoded as exactly one JSON value, so a
@@ -215,7 +215,7 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 	}
 	if len(payload) > maxACMResponseBytes {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureMalformed,
-			fmt.Errorf("ACM search response is above the %d byte bound", maxACMResponseBytes))
+			fmt.Errorf("acm search response is above the %d byte bound", maxACMResponseBytes))
 	}
 	var decoded acmGraphQLResponse
 	if err := json.Unmarshal(payload, &decoded); err != nil {
@@ -223,7 +223,7 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 			fmt.Errorf("decode ACM search response: %w", err))
 	}
 	if len(decoded.Errors) > 0 || decoded.Data == nil || len(decoded.Data.SearchResult) != 1 {
-		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("ACM search query failed"))
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("acm search query failed"))
 	}
 	result := decoded.Data.SearchResult[0]
 	// An explicit, nonnegative count is the only proof a traversal can be
@@ -231,7 +231,7 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 	// an empty-looking inventory (DD-FLEET-017 D4.4, G10).
 	if result.Count == nil || *result.Count < 0 {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool,
-			fmt.Errorf("ACM search reply has no explicit nonnegative count"))
+			fmt.Errorf("acm search reply has no explicit nonnegative count"))
 	}
 	return ACMSearchPage{Count: *result.Count, Items: result.Items}, nil
 }
