@@ -17,6 +17,7 @@ limitations under the License.
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -32,21 +33,41 @@ import (
 // receive paths, never policy, and must fail closed at startup rather than at
 // the first sync.
 var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
-	// baseConfig is a config that is already valid for every non-source key,
-	// so a failing spec can only be failing because of the sources block.
-	baseConfig := func() map[string]any {
-		return map[string]any{
-			"mcpGateway": map[string]any{
-				"endpoint":    "https://mcp-gateway.kubernaut-system.svc:8080/mcp",
-				"gatewayType": "eaigw",
-				"namespace":   "kubernaut-system",
-			},
-			"valkey": map[string]any{"addr": "valkey:6379"},
-			"oauth2": map[string]any{"tokenUrl": "https://keycloak/token"},
-		}
+	// fixtureSources is the typed sources envelope: the ACM value reuses the
+	// production ACMSourceConfig, whose yaml tags are the contract.
+	type fixtureSources struct {
+		ACM *config.ACMSourceConfig `yaml:"acm,omitempty"`
 	}
 
-	mustYAML := func(body map[string]any) []byte {
+	// fixtureConfig mirrors the ordinary (non-sources) configuration shape as
+	// a typed struct, so a field rename in the contract breaks the fixture at
+	// compile time instead of silently rendering the wrong key.
+	type fixtureConfig struct {
+		MCPGateway struct {
+			Endpoint    string `yaml:"endpoint"`
+			GatewayType string `yaml:"gatewayType"`
+			Namespace   string `yaml:"namespace"`
+		} `yaml:"mcpGateway"`
+		Valkey struct {
+			Addr string `yaml:"addr"`
+		} `yaml:"valkey"`
+		OAuth2 struct {
+			TokenURL string `yaml:"tokenUrl"`
+		} `yaml:"oauth2"`
+		Sources *fixtureSources `yaml:"sources,omitempty"`
+	}
+
+	baseConfig := func() fixtureConfig {
+		body := fixtureConfig{}
+		body.MCPGateway.Endpoint = "https://mcp-gateway.kubernaut-system.svc:8080/mcp"
+		body.MCPGateway.GatewayType = "eaigw"
+		body.MCPGateway.Namespace = "kubernaut-system"
+		body.Valkey.Addr = "valkey:6379"
+		body.OAuth2.TokenURL = "https://keycloak/token"
+		return body
+	}
+
+	mustYAML := func(body any) []byte {
 		rendered, err := yaml.Marshal(body)
 		Expect(err).ToNot(HaveOccurred())
 		return rendered
@@ -58,17 +79,17 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		return path
 	}
 
-	writeConfig := func(sources any) string {
+	writeConfig := func(acm *config.ACMSourceConfig) string {
 		body := baseConfig()
-		if sources != nil {
-			body["sources"] = sources
+		if acm != nil {
+			body.Sources = &fixtureSources{ACM: acm}
 		}
 		return writeFile(mustYAML(body))
 	}
 
-	// writeRawConfig exists for YAML the fixture map cannot express: merge keys
-	// and anchors, which are exactly the inputs that could hide a key from a
-	// literal-only check.
+	// writeRawConfig exists for YAML the typed fixture cannot express: merge
+	// keys, anchors and alias keys, which are exactly the inputs that could
+	// hide a key from a literal-only check.
 	writeRawConfig := func(sourcesYAML string) string {
 		body := mustYAML(baseConfig())
 		return writeFile(append(body, []byte(sourcesYAML)...))
@@ -98,12 +119,10 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		// UT-FMC-SRC-2661-002
 		It("UT-FMC-SRC-2661-002 [BR-INTEGRATION-065]: a complete sources.acm block selects the ACM collector", func() {
 			token := tokenFile()
-			cfg, err := config.LoadFromFile(writeConfig(map[string]any{
-				"acm": map[string]any{
-					"endpoint":  "https://search-api.example:4010",
-					"tokenPath": token,
-					"caFile":    "/etc/fleet-tls/acm-source/ca.crt",
-				},
+			cfg, err := config.LoadFromFile(writeConfig(&config.ACMSourceConfig{
+				Endpoint:  "https://search-api.example:4010",
+				TokenPath: token,
+				CAFile:    "/etc/fleet-tls/acm-source/ca.crt",
 			}))
 
 			Expect(err).ToNot(HaveOccurred())
@@ -117,11 +136,9 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		// UT-FMC-SRC-2661-003
 		It("UT-FMC-SRC-2661-003 [BR-INTEGRATION-065]: caFile is optional and absent means system trust", func() {
 			token := tokenFile()
-			cfg, err := config.LoadFromFile(writeConfig(map[string]any{
-				"acm": map[string]any{
-					"endpoint":  "https://search-api.example:4010",
-					"tokenPath": token,
-				},
+			cfg, err := config.LoadFromFile(writeConfig(&config.ACMSourceConfig{
+				Endpoint:  "https://search-api.example:4010",
+				TokenPath: token,
 			}))
 
 			Expect(err).ToNot(HaveOccurred())
@@ -164,9 +181,7 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		// UT-FMC-SRC-2661-004
 		DescribeTable("UT-FMC-SRC-2661-004 [FedRAMP SC-8, SI-10]: rejects a non-HTTPS, non-absolute or host-less endpoint",
 			func(endpoint string) {
-				cfg, err := config.LoadFromFile(writeConfig(map[string]any{
-					"acm": map[string]any{"endpoint": endpoint, "tokenPath": tokenFile()},
-				}))
+				cfg, err := config.LoadFromFile(writeConfig(&config.ACMSourceConfig{Endpoint: endpoint, TokenPath: tokenFile()}))
 				Expect(err).ToNot(HaveOccurred(), "loading must succeed; validation is the fail-closed gate")
 				Expect(cfg.Validate()).To(MatchError(ContainSubstring("sources.acm.endpoint")))
 			},
@@ -179,9 +194,7 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 		// UT-FMC-SRC-2661-005
 		DescribeTable("UT-FMC-SRC-2661-005 [FedRAMP IA-5]: rejects a tokenPath that is relative, empty, missing or a directory",
 			func(tokenPath func() string) {
-				cfg, err := config.LoadFromFile(writeConfig(map[string]any{
-					"acm": map[string]any{"endpoint": "https://search-api.example:4010", "tokenPath": tokenPath()},
-				}))
+				cfg, err := config.LoadFromFile(writeConfig(&config.ACMSourceConfig{Endpoint: "https://search-api.example:4010", TokenPath: tokenPath()}))
 				Expect(err).ToNot(HaveOccurred())
 				err = cfg.Validate()
 				Expect(err).To(HaveOccurred())
@@ -197,12 +210,10 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 
 		// UT-FMC-SRC-2661-006
 		It("UT-FMC-SRC-2661-006 [FedRAMP SC-8]: rejects a relative caFile", func() {
-			cfg, err := config.LoadFromFile(writeConfig(map[string]any{
-				"acm": map[string]any{
-					"endpoint":  "https://search-api.example:4010",
-					"tokenPath": tokenFile(),
-					"caFile":    "ca.crt",
-				},
+			cfg, err := config.LoadFromFile(writeConfig(&config.ACMSourceConfig{
+				Endpoint:  "https://search-api.example:4010",
+				TokenPath: tokenFile(),
+				CAFile:    "ca.crt",
 			}))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sources.acm.caFile")))
@@ -249,15 +260,33 @@ var _ = Describe("FMC ACM source configuration (DD-FLEET-017 D4.1a)", func() {
 			Entry("sources.acm is a scalar", func(string) string { return "sources:\n  acm: https://search-api.example:4010\n" }, "sources.acm"),
 		)
 
+		// UT-FMC-SRC-2661-007 (continued): an alias used as a mapping key must
+		// resolve like the ordinary YAML decoder resolves it, so an alias to
+		// "sources" selects ACM while an alias to an unsupported key stays
+		// rejected — the closed-set check must not see a literal-only key.
+		It("UT-FMC-SRC-2661-007 [FedRAMP CM-6]: an alias resolving to the sources key selects ACM", func() {
+			cfg, err := config.LoadFromFile(writeRawConfig(fmt.Sprintf(
+				"key-anchor: &k sources\n*k:\n  acm:\n    endpoint: https://search-api.example:4010\n    tokenPath: %s\n", tokenFile())))
+
+			Expect(err).ToNot(HaveOccurred(),
+				"the strict decoder must resolve an aliased key the way the lenient decode does, not read it as a literal empty key")
+			Expect(cfg.SourceKind()).To(Equal(config.SourceACM))
+			Expect(cfg.Sources.ACM.Endpoint).To(Equal("https://search-api.example:4010"))
+		})
+
+		It("UT-FMC-SRC-2661-007 [FedRAMP CM-6]: an alias resolving to an unsupported key under sources stays rejected", func() {
+			_, err := config.LoadFromFile(writeRawConfig(
+				"key-anchor: &k rancher\nsources:\n  *k:\n    endpoint: https://rancher.example\n"))
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("rancher"),
+				"the resolved key must be checked against the closed source set, and the error must name it")
+		})
+
 		// UT-FMC-SRC-2661-008
 		It("UT-FMC-SRC-2661-008 [BR-INTEGRATION-065]: a second or unknown source is a configuration error", func() {
-			_, err := config.LoadFromFile(writeConfig(map[string]any{
-				"acm": map[string]any{
-					"endpoint":  "https://search-api.example:4010",
-					"tokenPath": tokenFile(),
-				},
-				"rancher": map[string]any{"endpoint": "https://rancher.example"},
-			}))
+			_, err := config.LoadFromFile(writeRawConfig(fmt.Sprintf(
+				"sources:\n  acm:\n    endpoint: https://search-api.example:4010\n    tokenPath: %s\n  rancher:\n    endpoint: https://rancher.example\n", tokenFile())))
 
 			Expect(err).To(HaveOccurred(),
 				"at most one source may be declared; a second one must not be ignored")

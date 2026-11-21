@@ -115,6 +115,31 @@ func (r *acmITRegistry) WithCurrent(_ context.Context, clusterID, registrationUI
 	return callback(r.current)
 }
 
+// acmSearchFixtureItem is the typed wire shape of one Search projection
+// item, so a field rename in the contract breaks the fixture at compile time
+// instead of silently serving the wrong key.
+type acmSearchFixtureItem struct {
+	UID        string `json:"_uid"`
+	Cluster    string `json:"cluster"`
+	APIVersion string `json:"apiversion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace,omitempty"`
+	Label      string `json:"label,omitempty"`
+}
+
+// acmSearchFixtureReply is the typed GraphQL reply envelope; the count is a
+// plain int so the fixture always sends it explicitly, matching the
+// production contract (UT-FMC-SRC-2661-026).
+type acmSearchFixtureReply struct {
+	Data struct {
+		SearchResult []struct {
+			Count int                    `json:"count"`
+			Items []acmSearchFixtureItem `json:"items"`
+		} `json:"searchResult"`
+	} `json:"data"`
+}
+
 // acmSearchServer is an httptest TLS stand-in for one ACM Search endpoint.
 // It serves the paginated GraphQL document the collector sends, honors
 // offset/limit windows against a mutable per-kind catalog, requires a bearer
@@ -124,8 +149,8 @@ type acmSearchServer struct {
 
 	mu             sync.Mutex
 	clusterID      string
-	pods           []map[string]any
-	namespaces     []map[string]any
+	pods           []acmSearchFixtureItem
+	namespaces     []acmSearchFixtureItem
 	podDelays      []time.Duration
 	requestsByKind map[string]int
 	requestCount   int
@@ -148,12 +173,12 @@ func newACMSearchServer(clusterID, token string) *acmSearchServer {
 func (s *acmSearchServer) setDefaultCatalog() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pods = []map[string]any{
-		acmSearchItem("uid-1", s.clusterID, "Pod", "payments", "api", "kubernaut.ai/managed=false"),
-		acmSearchItem("uid-2", s.clusterID, "Pod", "payments", "web", "kubernaut.ai/managed=true"),
+	s.pods = []acmSearchFixtureItem{
+		{UID: "uid-1", Cluster: s.clusterID, APIVersion: "v1", Kind: "Pod", Namespace: "payments", Name: "api", Label: "kubernaut.ai/managed=false"},
+		{UID: "uid-2", Cluster: s.clusterID, APIVersion: "v1", Kind: "Pod", Namespace: "payments", Name: "web", Label: "kubernaut.ai/managed=true"},
 	}
-	s.namespaces = []map[string]any{
-		acmSearchItem("uid-0", s.clusterID, "Namespace", "", "payments", ""),
+	s.namespaces = []acmSearchFixtureItem{
+		{UID: "uid-0", Cluster: s.clusterID, APIVersion: "v1", Kind: "Namespace", Name: "payments"},
 	}
 	s.podDelays = nil
 }
@@ -165,11 +190,12 @@ func (s *acmSearchServer) setDefaultCatalog() {
 func (s *acmSearchServer) setDelayedPodCatalog(count int, delays []time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pods = make([]map[string]any, 0, count)
+	s.pods = make([]acmSearchFixtureItem, 0, count)
 	for index := 0; index < count; index++ {
-		s.pods = append(s.pods, acmSearchItem(
-			fmt.Sprintf("uid-%05d", index), s.clusterID, "Pod", "payments",
-			fmt.Sprintf("p-%05d", index), "kubernaut.ai/managed=true"))
+		s.pods = append(s.pods, acmSearchFixtureItem{
+			UID: fmt.Sprintf("uid-%05d", index), Cluster: s.clusterID, APIVersion: "v1", Kind: "Pod",
+			Namespace: "payments", Name: fmt.Sprintf("p-%05d", index), Label: "kubernaut.ai/managed=true",
+		})
 	}
 	s.podDelays = delays
 }
@@ -254,7 +280,7 @@ func (s *acmSearchServer) serve(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 50
 	}
-	var items []map[string]any
+	var items []acmSearchFixtureItem
 	if input.Offset >= 0 && input.Offset < len(catalog) {
 		end := input.Offset + limit
 		if end > len(catalog) {
@@ -262,33 +288,13 @@ func (s *acmSearchServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		items = catalog[input.Offset:end]
 	}
-	reply := map[string]any{
-		"data": map[string]any{
-			"searchResult": []map[string]any{{"count": len(catalog), "items": items}},
-		},
-	}
+	var reply acmSearchFixtureReply
+	reply.Data.SearchResult = append(reply.Data.SearchResult, struct {
+		Count int                    `json:"count"`
+		Items []acmSearchFixtureItem `json:"items"`
+	}{Count: len(catalog), Items: items})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(reply)
-}
-
-// acmSearchItem builds one Search projection item in the spike-recorded shape
-// (SPIKE_2026-11-18): lowercase keys, `_uid` for ordering, `label` as the
-// semicolon projection. Every catalog kind in these fixtures is core/v1.
-func acmSearchItem(uid, clusterID, kind, namespace, name, label string) map[string]any {
-	item := map[string]any{
-		"_uid":       uid,
-		"cluster":    clusterID,
-		"apiversion": "v1",
-		"kind":       kind,
-		"name":       name,
-	}
-	if namespace != "" {
-		item["namespace"] = namespace
-	}
-	if label != "" {
-		item["label"] = label
-	}
-	return item
 }
 
 // fakeMCPGateway is a minimal MCP-over-HTTP gateway: enough JSON-RPC for the

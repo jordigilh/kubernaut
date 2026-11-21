@@ -77,6 +77,14 @@ type fmcDeps struct {
 	registrationGuard registry.CurrentRegistrationGuard
 	syncer            *fmc.Syncer
 
+	// sourceKind records which inventory collector this deployment runs
+	// (DD-FLEET-017 D4.1a rule 2), fixed at wiring time from the validated
+	// config. It scopes the MCP protocol readiness gate: an ACM-selected
+	// deployment's membership comes from the registration CRs and its
+	// collector never calls MCP, so an MCP gateway outage must not block
+	// its readiness (IT-FMC-SRC-2661-006).
+	sourceKind fmcconfig.Source
+
 	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): TokenReview/SAR auth for
 	// the GW/RO -> FMC scope-check API. k8sClientset backs auth.NewK8sAuthenticator
 	// / auth.NewK8sAuthorizer; releaseNamespace is the SAR target namespace
@@ -119,7 +127,12 @@ func (d *fmcDeps) Ready() bool {
 		return false
 	}
 	global := d.readiness.View().Global
-	if d.mcpReadiness != nil {
+	// DD-FLEET-017 D1/D4.1a: the MCP protocol gate applies only when the MCP
+	// collector is the selected source. An ACM-selected deployment's
+	// membership comes from the registration CRs watched through the
+	// Kubernetes API, and its collector never calls MCP, so an MCP gateway
+	// outage must not block ACM inventory readiness (IT-FMC-SRC-2661-006).
+	if d.mcpReadiness != nil && d.sourceKind != fmcconfig.SourceACM {
 		global.MCPInitialSync = d.mcpReadiness.Ready()
 	}
 	if d.clusterRegistry != nil {
@@ -401,6 +414,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		metrics:          metrics,
 		mcpClient:        mcpClient,
 		mcpReadiness:     mcpReadiness,
+		sourceKind:       cfg.SourceKind(),
 		writer:           writer,
 		cacheReader:      cacheReader,
 		statusStore:      statusStore,

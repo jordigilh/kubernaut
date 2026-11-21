@@ -14,8 +14,8 @@ for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
 configuration surface (`UT-FMC-SRC-2661-001..010`), the ACM collector
 (`UT-FMC-SRC-2661-011..019`, `021..025`; `020` lives in
 `pkg/fleet/scopecache/inventory_page_test.go`), and the Tier 2 integration
-specs `IT-FMC-SRC-2661-001..005` (commits `73e66c805` and `06a017fe9`,
-`work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
+specs `IT-FMC-SRC-2661-001..006` (commits `73e66c805`, `06a017fe9` and the
+#2691 review fixes, `work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
 construction (`buildFMCSyncer`/`buildACMSource`/`NewACMHTTPSearch` over
 configs from the production loader; the fenced commit path against miniredis
 with pinned server time). Known limitation: `IT-FMC-SRC-2661-004` proves the
@@ -233,6 +233,7 @@ live run.
 | IT-FMC-SRC-2661-003 | Through the production `ACMHTTPSearch` construction: bearer header present, TLS validated against `caFile`, then token rotation and CA rotation both take effect on the same client | ✅ |
 | IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7b): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
 | IT-FMC-SRC-2661-005 | A `sources.acm` block that fails production construction (e.g. an absent `caFile` that passes path-shape validation) exits through main's dependency-wiring choreography — the "Failed to construct FMC dependencies" log and the bootstrap health-server shutdown — never a bare `os.Exit` inside `wireFMCDependencies` (D4.1a rule 3, fail closed observably) | ✅ |
+| IT-FMC-SRC-2661-006 | **MCP readiness scoping (DD-FLEET-017 D1)**: an ACM-selected deployment stays ready when the MCP gateway is down (membership comes from the registration CRs; the ACM collector never calls MCP), while an MCP-selected deployment stays unready for the same outage — the protocol gate applies only to the selected source | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |

@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
+	fleetreadiness "github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -307,6 +308,58 @@ var _ = Describe("FMC readiness production wiring (BR-SCOPE-001)", func() {
 
 		Expect(deps.Ready()).To(BeFalse(),
 			"a registered cluster whose sync has not acquired the required writer lease must keep FMC unready")
+	})
+
+	It("IT-FMC-SRC-2661-006 [BR-INTEGRATION-065, DD-FLEET-017 D1]: an ACM-selected deployment stays ready when the MCP gateway is down", func() {
+		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+			MCPInitialSync:       true,
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			LeasePolicy:          scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		// An unstarted gate has never completed a probe: it reports the MCP
+		// gateway as down, which is exactly the outage the spec pins.
+		mcpDown := fleetreadiness.NewGate(time.Second, logr.Discard())
+		DeferCleanup(mcpDown.Stop)
+
+		deps := &fmcDeps{
+			clusterRegistry: &fakeClusterRegistry{},
+			readiness:       readiness,
+			mcpReadiness:    mcpDown,
+			sourceKind:      fmcconfig.SourceACM,
+		}
+		Expect(deps.Ready()).To(BeTrue(),
+			"an ACM-selected deployment's readiness must not depend on the MCP gateway: membership comes from the registration CRs watched through the Kubernetes API, and the ACM collector never calls MCP")
+	})
+
+	It("IT-FMC-SRC-2661-006 [BR-INTEGRATION-065]: an MCP-selected deployment stays unready while the MCP gateway is down", func() {
+		readiness, err := scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(readiness.PublishGlobal(scopecache.FMCGlobalReadiness{
+			MCPInitialSync:       true,
+			RegistryInitialSync:  true,
+			RegistryWatchHealthy: true,
+			ScriptReady:          true,
+			ValkeyReady:          true,
+			LeasePolicy:          scopecache.LeasePolicyProcessWideRequired,
+		})).To(Succeed())
+
+		mcpDown := fleetreadiness.NewGate(time.Second, logr.Discard())
+		DeferCleanup(mcpDown.Stop)
+
+		deps := &fmcDeps{
+			clusterRegistry: &fakeClusterRegistry{},
+			readiness:       readiness,
+			mcpReadiness:    mcpDown,
+			sourceKind:      fmcconfig.SourceMCP,
+		}
+		Expect(deps.Ready()).To(BeFalse(),
+			"the GitOps collector collects through MCP, so its gateway being down must keep the MCP-selected deployment unready")
 	})
 })
 

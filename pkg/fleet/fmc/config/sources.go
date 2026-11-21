@@ -173,12 +173,27 @@ func decodeACMStrict(acmNode *yaml.Node) (*ACMSourceConfig, error) {
 // declared key wins, and an earlier merge target wins over a later one. The
 // result is what a lenient decode would see, which is exactly what must be
 // validated.
+//
+// The active-merge path guards against cyclic merge chains. YAML alias
+// ordering (an anchor must be defined before its alias) makes a cycle
+// unconstructible in a parsed document, so no spec can reach it; the guard is
+// defense in depth for future input paths, and it fails closed by naming the
+// key instead of overflowing the stack.
 func flattenMapping(node *yaml.Node, path string) ([]string, map[string]*yaml.Node, error) {
+	return flattenMappingOnPath(node, path, make(map[*yaml.Node]struct{}))
+}
+
+func flattenMappingOnPath(node *yaml.Node, path string, active map[*yaml.Node]struct{}) ([]string, map[string]*yaml.Node, error) {
 	resolved := resolveNode(node)
 	if resolved == nil || resolved.Kind != yaml.MappingNode {
 		return nil, nil, fmt.Errorf("%s must be a mapping, got %s", path, nodeKindName(node))
 	}
-	order, values, err := mergeEntries(resolved, path)
+	if _, cyclic := active[resolved]; cyclic {
+		return nil, nil, fmt.Errorf("%s has a cyclic merge chain", path)
+	}
+	active[resolved] = struct{}{}
+	defer delete(active, resolved)
+	order, values, err := mergeEntriesOnPath(resolved, path, active)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -194,9 +209,7 @@ func flattenMapping(node *yaml.Node, path string) ([]string, map[string]*yaml.No
 	return order, values, nil
 }
 
-// mergeEntries contributes the mappings named by `<<` keys, earlier merge
-// targets winning over later ones.
-func mergeEntries(mapping *yaml.Node, path string) ([]string, map[string]*yaml.Node, error) {
+func mergeEntriesOnPath(mapping *yaml.Node, path string, active map[*yaml.Node]struct{}) ([]string, map[string]*yaml.Node, error) {
 	order := make([]string, 0, len(mapping.Content)/2)
 	values := make(map[string]*yaml.Node, len(mapping.Content)/2)
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
@@ -204,7 +217,7 @@ func mergeEntries(mapping *yaml.Node, path string) ([]string, map[string]*yaml.N
 			continue
 		}
 		for _, merged := range mergeMappings(mapping.Content[index+1]) {
-			mergedOrder, mergedValues, err := flattenMapping(merged, path)
+			mergedOrder, mergedValues, err := flattenMappingOnPath(merged, path, active)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -230,13 +243,30 @@ func directEntries(mapping *yaml.Node) ([]string, map[string]*yaml.Node) {
 		if isMergeKey(keyNode) {
 			continue
 		}
-		key := keyNode.Value
+		key := resolvedKeyValue(keyNode)
 		if _, exists := values[key]; !exists {
 			order = append(order, key)
 		}
 		values[key] = resolveNode(mapping.Content[index+1])
 	}
 	return order, values
+}
+
+// resolvedKeyValue reads a mapping key with the same alias-resolution
+// semantics as the ordinary YAML decoder: an alias node used as a key resolves
+// to its target's value, so `*k: ...` names the key the anchor holds. Without
+// this, an aliased key reads as an empty literal and a `sources` block hidden
+// behind one would silently select the MCP collector (UT-FMC-SRC-2661-007).
+// A non-scalar resolved key keeps its (unusable) literal value and is
+// rejected by the closed-set check, matching the lenient decode's failure.
+func resolvedKeyValue(keyNode *yaml.Node) string {
+	if keyNode == nil {
+		return ""
+	}
+	if resolved := resolveNode(keyNode); resolved != nil && resolved.Kind == yaml.ScalarNode {
+		return resolved.Value
+	}
+	return keyNode.Value
 }
 
 // mergeMappings flattens the value of a `<<` merge key into the mappings it
