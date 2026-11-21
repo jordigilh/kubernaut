@@ -15,7 +15,9 @@
 > require observed target presence before namespace inheritance. Missing target
 > or namespace evidence is unavailable, never verified unmanaged; invalid labels
 > cannot inherit. The enum-only `Check` contract authorizes only
-> `verified_managed`; cluster-scoped target authorization remains deferred.
+> `verified_managed`; cluster-scoped targets authorize through their own observed
+> label (FR-SCOPE-004 Option A, #2670), and only the non-labelable
+> `ClusterScope` pseudo-target remains deferred.
 > Namespace observations still support namespaced inheritance. The approved
 > [26-contract test plan](../tests/2593/TEST_PLAN.md) defines acceptance.
 
@@ -206,11 +208,12 @@ retryConfig:
 
 ---
 
-### FR-SCOPE-004: Cluster-Scoped Resource Support (V2.0 - Future)
+### FR-SCOPE-004: Cluster-Scoped Resource Support
 
 **Requirement**: Operators MUST be able to mark cluster-scoped resources (Nodes, PersistentVolumes) as managed by Kubernaut.
 
-**Configuration Options** (TBD - requires design decision):
+**Configuration Options** (decided: Option A is implemented and is the supported
+mechanism; Option B remains open for V2.0):
 
 **Option A: Resource Labels/Annotations**
 ```yaml
@@ -240,7 +243,9 @@ spec:
           storage.kubernaut.io/managed: "true"
 ```
 
-**Status**: Deferred to V2.0 (V1.0 focuses on namespace-scoped resources only)
+**Status**: Option A (per-object resource labels) is implemented (#2670) and is the
+supported mechanism. Option B (`RemediationScope` CRD selectors) remains deferred
+to V2.0.
 
 ---
 
@@ -464,8 +469,8 @@ notificationRules:
 
 The following are explicitly OUT OF SCOPE for V1.0:
 
-1. ❌ **Cluster-Scoped Resources**: Nodes, PersistentVolumes (deferred to V2.0)
-2. ❌ **Resource-Level Granularity**: Per-deployment, per-pod scope (namespace-level only)
+1. ❌ **Cluster-Scoped Selection Policies**: `RemediationScope`-style selectors (FR-SCOPE-004 Option B) remain deferred to V2.0; per-object labels (Option A) are implemented (#2670)
+2. ❌ **Dynamic Resource-Level Policies**: selector-driven per-resource scope rules; per-object `kubernaut.ai/managed` labels (FR-SCOPE-004 Option A) are supported
 3. ❌ **Dynamic Scope Policies**: Rego policies for scope decisions (static labels only)
 4. ❌ **Scope Inheritance**: Child resources inheriting parent scope (flat namespace model)
 5. ❌ **Scope Change Notifications**: Proactive alerts when scope changes (reactive only)
@@ -507,7 +512,7 @@ The following are explicitly OUT OF SCOPE for V1.0:
 - ✅ Defense-in-depth (Gateway + RO)
 - ✅ Graceful failure (clear error messages)
 - ✅ Observable (metrics, logs, audit)
-- ✅ Extensible (V2.0 can add cluster-scoped, CRD-based config)
+- ✅ Extensible (V2.0 can add selector-based cluster-scoped config — FR-SCOPE-004 Option B; per-object labels are the shipped Option A)
 
 **Next Steps**:
 1. Implement shared scope manager (`pkg/shared/scope/manager.go`)

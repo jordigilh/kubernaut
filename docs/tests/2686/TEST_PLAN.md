@@ -114,10 +114,10 @@ No new components; the change relaxes validation on the existing wired chain.
 | `docs/UPGRADE.md` | Fleet scope lanes section: behavior change entry |
 
 Note: ADR-053 §2a "Recognized kinds" / "Invalid-label observations on the fenced lane" and
-the UPGRA.md cluster-scoped caveat describing the retention window live on the unmerged
-PR #2673 branch (`work/2670-cluster-scoped-restore`, commit `0bcbbf965`) and are not
-modified here; this PR amends the same documents on `main`, so a small doc reconciliation
-is expected when both land.
+the UPGRADE.md cluster-scoped caveat originally landed with PR #2673 documenting the
+retention window. That PR has since merged to `main`, and this branch reconciles both
+sections with the implemented revocation behavior (invalid observations are staged and
+committed; the previously committed outcome is revoked at the next committed repair).
 
 ## Validation
 

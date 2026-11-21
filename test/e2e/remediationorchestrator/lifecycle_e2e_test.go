@@ -437,14 +437,21 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
 
 			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
-			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
-				FirstSeenAt:     &fiveMinutesAgo,
-				LastSeenAt:      &now,
-				OccurrenceCount: 2,
-			}
-			createdRR.Status.EnsureRoutingStatus().DuplicateOf = "rr-original-parent"
-			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
+			// RO reconciles the RR concurrently and can write status between this
+			// read and the update; retry the status write on conflict instead of
+			// failing the spec (E2E-RO-163-002: 409 "the object has been
+			// modified"). Test-only hardening: no production behavior changes.
+			Eventually(func(g Gomega) {
+				current := &remediationv1.RemediationRequest{}
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), current)).To(Succeed())
+				current.Status.Deduplication = &remediationv1.DeduplicationStatus{
+					FirstSeenAt:     &fiveMinutesAgo,
+					LastSeenAt:      &now,
+					OccurrenceCount: 2,
+				}
+				current.Status.EnsureRoutingStatus().DuplicateOf = "rr-original-parent"
+				g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
 
 			By("Letting RO reconcile again to verify deduplication survives")
 			// The RO reconciles on status updates (GenerationChangedPredicate removed)

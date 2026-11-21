@@ -72,6 +72,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		available         atomic.Bool
 		empty             atomic.Bool
 		deferred          atomic.Bool
+		nodeUnlabeled     atomic.Bool
 		namespaceFalse    atomic.Bool
 		labelInvalid      atomic.Bool
 		calls             atomic.Int32
@@ -87,6 +88,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		available.Store(false)
 		empty.Store(false)
 		deferred.Store(false)
+		nodeUnlabeled.Store(false)
 		namespaceFalse.Store(false)
 		labelInvalid.Store(false)
 		calls.Store(0)
@@ -131,6 +133,9 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 				metadata := map[string]interface{}{"name": "observed", "namespace": "default"}
 				if args.Kind != "Pod" {
 					metadata = map[string]interface{}{"name": "observed", "labels": map[string]interface{}{"kubernaut.ai/managed": "true"}}
+					if args.Kind == "Node" && nodeUnlabeled.Load() {
+						metadata = map[string]interface{}{"name": "observed"}
+					}
 					if args.Kind == "Namespace" {
 						metadata["name"] = "default"
 					}
@@ -390,7 +395,7 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		Expect(string(body)).NotTo(ContainSubstring(`"state":"verified_managed"`))
 	})
 
-	It("IT-FMC-DEFERRED-001 [BR-SCOPE-001]: observed managed Nodes cannot authorize targets but Namespace observations still support inheritance", func() {
+	It("IT-FMC-DEFERRED-001 [BR-SCOPE-001, AC-4, AC-6]: observed managed Nodes authorize targets and Namespace observations still support inheritance", func() {
 		available.Store(true)
 		deferred.Store(true)
 		info, found := clusterReg.Get(cluster)
@@ -400,8 +405,8 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		node := scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Node", Name: "observed"}
 		result, err := checker.Check(ctx, node)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result.State).To(Equal(scope.ScopeUnsupported))
-		Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+		Expect(result.State).To(Equal(scope.ScopeVerifiedManaged), "#2670: a labeled Node must authorize remediation")
+		Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
 		mux := http.NewServeMux()
 		fmc.NewHandler(checker, clusterReg, logr.Discard()).RegisterRoutes(mux)
 		server := httptest.NewServer(mux)
@@ -411,12 +416,29 @@ var _ = Describe("FMC observed repair wiring (BR-SCOPE-001, BR-INTEGRATION-065)"
 		body, err := io.ReadAll(response.Body)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(response.Body.Close()).To(Succeed())
-		Expect(response.StatusCode).To(Equal(http.StatusUnprocessableEntity))
-		Expect(string(body)).NotTo(ContainSubstring("managed"))
+		Expect(response.StatusCode).To(Equal(http.StatusOK), "a verified cluster-scoped decision is a 200, not a 422: %s", body)
+		Expect(string(body)).To(ContainSubstring("verified_managed"))
 		remote := fmc.NewHTTPClient(server.URL)
 		managed, err := remote.Check(ctx, node)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed.State).To(Equal(scope.ScopeUnsupported))
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged))
+
+		// A present Node with no managed label is decisive unmanaged: no
+		// namespace exists to inherit, and a coincidentally matching Namespace
+		// observation must not authorize it (AC-6).
+		nodeUnlabeled.Store(true)
+		Expect(syncer.SyncCluster(ctx, info)).To(Succeed())
+		managed, err = remote.Check(ctx, node)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged))
+		Expect(managed.Provenance).To(Equal(scope.ScopeSourceNone))
+		response, err = http.Get(server.URL + fmc.ScopeCheckPath + "?cluster=" + cluster + "&version=v1&kind=Node&name=observed")
+		Expect(err).ToNot(HaveOccurred())
+		body, err = io.ReadAll(response.Body)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(response.StatusCode).To(Equal(http.StatusOK), "verified_unmanaged is a 200 decision: %s", body)
+
 		managed, err = remote.Check(ctx, scope.ResourceIdentity{ClusterID: cluster, Version: "v1", Kind: "Pod", Namespace: "default", Name: "observed"})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed.State).To(Equal(scope.ScopeVerifiedManaged), "internal Namespace observations must remain available for inheritance")
