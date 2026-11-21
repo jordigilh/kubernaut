@@ -642,7 +642,12 @@ func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Lo
 // before returning.
 func runFMCServers(ctx context.Context, cancel context.CancelFunc, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
 	if deps.mcpReadiness != nil {
-		deps.mcpReadiness.Start(ctx)
+		// The MCP protocol gate's value is consumed only by MCP-selected
+		// deployments (IT-FMC-SRC-2661-006); an ACM-selected deployment
+		// neither reads it nor needs its probe loop started.
+		if deps.sourceKind != fmcconfig.SourceACM {
+			deps.mcpReadiness.Start(ctx)
+		}
 		_ = deps.Ready()
 		go func() {
 			ticker := time.NewTicker(100 * time.Millisecond)

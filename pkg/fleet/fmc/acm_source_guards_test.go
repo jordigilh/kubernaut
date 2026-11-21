@@ -113,6 +113,25 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			"the budget is enforced before the overflowing request, so exactly the allowed pages are sent")
 	})
 
+	It("UT-FMC-SRC-2661-022: a walk that completes on the final allowed page still succeeds", func() {
+		// 5000 items over exactly 100 full pages: the boundary of both
+		// ceilings. The pre-request budget check must not reject the walk's
+		// 100th page — a page that completes the walk is never re-checked.
+		items := make([]map[string]json.RawMessage, 0, 5000)
+		for index := 0; index < 5000; index++ {
+			items = append(items, searchItem(fmt.Sprintf("uid-%05d", index), fmt.Sprintf("app-%05d", index), "kubernaut.ai/managed=true"))
+		}
+		search := &fakeACMSearch{replies: chunked(items)}
+
+		observed, err := readAll(newACMSource(search))
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(observed.Complete).To(BeTrue(),
+			"a walk inside every ceiling completes; the budget refuses only the request after page 100")
+		Expect(observed.Items).To(HaveLen(5000))
+		Expect(search.calls).To(HaveLen(100))
+	})
+
 	// UT-FMC-SRC-2661-012: the collector-side label-state shapes
 	DescribeTable("UT-FMC-SRC-2661-012: malformed projected labels are invalid, never absent and never resolved",
 		func(label string, expected scope.LabelState) {

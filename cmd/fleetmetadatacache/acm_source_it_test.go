@@ -168,6 +168,29 @@ func newACMSearchServer(clusterID, token string) *acmSearchServer {
 	return server
 }
 
+// setBulkCatalog serves large per-kind catalogs for the aggregate-bounds
+// spec: every kind individually inside the walk ceilings, with the summed
+// items and pages over the partition-wide bounds.
+func (s *acmSearchServer) setBulkCatalog(podCount, namespaceCount int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pods = make([]acmSearchFixtureItem, 0, podCount)
+	for index := 0; index < podCount; index++ {
+		s.pods = append(s.pods, acmSearchFixtureItem{
+			UID: fmt.Sprintf("uid-p%05d", index), Cluster: s.clusterID, APIVersion: "v1", Kind: "Pod",
+			Namespace: "payments", Name: fmt.Sprintf("p-%05d", index), Label: "kubernaut.ai/managed=true",
+		})
+	}
+	s.namespaces = make([]acmSearchFixtureItem, 0, namespaceCount)
+	for index := 0; index < namespaceCount; index++ {
+		s.namespaces = append(s.namespaces, acmSearchFixtureItem{
+			UID: fmt.Sprintf("uid-n%05d", index), Cluster: s.clusterID, APIVersion: "v1", Kind: "Namespace",
+			Name: fmt.Sprintf("ns-%05d", index), Label: "kubernaut.ai/managed=true",
+		})
+	}
+	s.podDelays = nil
+}
+
 // setDefaultCatalog serves a small mixed fleet: a managed pod, an explicitly
 // unmanaged pod, and one unlabeled namespace.
 func (s *acmSearchServer) setDefaultCatalog() {
@@ -570,6 +593,36 @@ var _ = Describe("FMC ACM source production sync (DD-FLEET-017 D4, wiring rows 3
 		Expect(page.Items[0].Namespace).To(Equal("payments"))
 		Expect(page.Items[0].Name).To(Equal("web"))
 		Expect(page.Items[0].Scope.Included).To(BeTrue())
+	})
+
+	It("IT-FMC-SRC-2661-007 [BR-SAFETY-001, D2.7]: aggregate bounds across kinds refuse the commit, never a smaller clean set", func() {
+		dir := GinkgoT().TempDir()
+		search := newACMSearchServer(acmITCluster.ID, "token-from-file")
+		// Two kinds, each 3000 items over 60 pages: individually inside the
+		// 50-per-page and 100-page walk ceilings, but summed 6000 items and
+		// 120 pages exceed the partition-wide ceilings the repair contract
+		// enforces (D2.7 inherited bounds).
+		search.setBulkCatalog(3000, 3000)
+		DeferCleanup(search.Close)
+		tokenPath := filepath.Join(dir, "token")
+		Expect(os.WriteFile(tokenPath, []byte("token-from-file"), 0o600)).To(Succeed())
+		caPath := filepath.Join(dir, "ca.crt")
+		writeServerCA(caPath, search.Server)
+		mcp := newFakeMCPGateway()
+		DeferCleanup(mcp.Close)
+		cfgPath := writeITConfig(dir, mcp.URL, acmSourcesBlock(search.URL, tokenPath, caPath), "Pod", "Namespace")
+		fixture := newACMSyncITFixture(loadValidatedITConfig(cfgPath), newITMCPClient(mcp.URL))
+
+		err := fixture.syncer.SyncCluster(context.Background(), acmITCluster)
+		Expect(err).To(HaveOccurred(),
+			"a summed observation set over the partition-wide ceilings must fail the sync")
+		Expect(err.Error()).To(ContainSubstring("out of bounds"),
+			"the failure is the repair contract's aggregate bound, not a source error")
+		Expect(fixture.keyExists(":status")).To(BeFalse(),
+			"no clean commit is published for an over-ceiling aggregate")
+		Expect(search.kindRequests("Pod")).To(Equal(60),
+			"each kind's walk is individually legal: 3000 items over 60 pages")
+		Expect(search.kindRequests("Namespace")).To(Equal(60))
 	})
 
 	It("IT-FMC-SRC-2661-002 [BR-INTEGRATION-065]: absent sources selects the MCP collector, sources.acm selects the ACM collector, and an invalid sources block fails before syncer construction", func() {

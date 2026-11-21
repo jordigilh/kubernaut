@@ -222,6 +222,36 @@ var _ = Describe("ACM search transport hardening (DD-FLEET-017 D4.3)", func() {
 		Expect(observed.Complete).To(BeTrue())
 		Expect(observed.Items).To(BeEmpty())
 	})
+
+	DescribeTable("UT-FMC-SRC-2661-026: an endpoint carrying a query or fragment is rejected at construction",
+		func(endpoint string) {
+			_, err := fmc.NewACMHTTPSearch(endpoint, tokenPath, "", 5*time.Second)
+			ExpectWithOffset(1, err).To(HaveOccurred(),
+				"a query or fragment in the configured endpoint could alter the request route; it is a configuration error")
+			ExpectWithOffset(1, err.Error()).To(ContainSubstring("query or fragment"))
+		},
+		Entry("query", "https://search.example:4010/search?q=1"),
+		Entry("fragment", "https://search.example:4010#section"),
+		Entry("encoded fragment", "https://search.example:4010%23section"),
+	)
+
+	It("UT-FMC-SRC-2661-026: a trailing slash on the endpoint does not alter the request route", func() {
+		var paths []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0,"items":[]}]}}`))
+		}))
+		DeferCleanup(server.Close)
+		search, err := fmc.NewACMHTTPSearch(server.URL+"/", tokenPath, "", 5*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = search.Search(context.Background(), fmc.ACMSearchOptions{
+			ClusterID: acmSourceCluster, Version: "v1", Kind: "Pod", OrderBy: "uid asc", Limit: 50,
+		})
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		ExpectWithOffset(1, paths).To(ConsistOf("/searchapi/graphql"),
+			"the route is joined to the endpoint's path, so a trailing slash cannot double it")
+	})
 })
 
 // transportUnrelatedCA writes a throwaway self-signed certificate that signs

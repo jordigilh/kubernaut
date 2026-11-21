@@ -12,9 +12,9 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
 for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
 configuration surface (`UT-FMC-SRC-2661-001..010`), the ACM collector
-(`UT-FMC-SRC-2661-011..019`, `021..025`; `020` lives in
+(`UT-FMC-SRC-2661-011..019`, `021..026`; `020` lives in
 `pkg/fleet/scopecache/inventory_page_test.go`), and the Tier 2 integration
-specs `IT-FMC-SRC-2661-001..006` (commits `73e66c805`, `06a017fe9` and the
+specs `IT-FMC-SRC-2661-001..007` (commits `73e66c805`, `06a017fe9` and the
 #2691 review fixes, `work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
 construction (`buildFMCSyncer`/`buildACMSource`/`NewACMHTTPSearch` over
 configs from the production loader; the fenced commit path against miniredis
@@ -216,7 +216,7 @@ live run.
 | UT-FMC-SRC-2661-019 | A successfully traversed zero-item collection is recorded as an **applied observation** (never `unavailable`, never the failure envelope) and commits through `empty_verified`; the page layer, not the adapter, decides `empty` vs `partial` (G10) | ✅ |
 | UT-FMC-SRC-2661-020 | One atomic commit writes **both** indexes from the same staged generation: member counts must agree (`LEX_COUNT_MISMATCH` otherwise), the next `begin` clears an abandoned staging's lex index, both enforce the 10 000-member bound, and an empty commit removes both | ✅ |
 | UT-FMC-SRC-2661-021 | **Derived request budget** (D4.1a 7a): each request takes `min(10 s, remaining − 5 s commit reserve)`; when remaining is below the 2 s start floor the collector abandons staging and starts no request, so the previous proof ages out instead of being half-replaced | ✅ |
-| UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: a syncer fixture runs two configured kinds, each individually inside 50 items/page and 100 pages, whose *summed* pages or items exceed the partition-wide ceilings — assert no `Repair`, no staged write, no `CommitRepair`, and that the previous proven generation stays readable | ✅ |
+| UT-FMC-SRC-2661-022 | **Walk-level page budget**: the 100-page budget is enforced *before* the request — an exhausted budget is reported without sending page 101 — while a walk that completes on the final allowed page still succeeds; the 5000-item ceiling remains defense in depth inside `addPage`. The **aggregate bounds across kinds** (two kinds individually inside every ceiling whose summed pages or items exceed the partition-wide bounds → no `Repair`, no staged write, no `CommitRepair`) are enforced by the repair contract (`ValidatedObservationSet.Validate`) and proven by `IT-FMC-SRC-2661-007` | ✅ |
 | UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **WITHOUT rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
 | UT-FMC-SRC-2661-024 | **Deadline ownership (D4.1a rule 7b)**: `repairPartition` sets exactly one collection deadline per repair, at repair start, from `RepairCollectionBudget` — every configured kind's collection sees the identical value — and never overwrites a deadline already present on the context | ✅ |
 | UT-FMC-SRC-2661-025 | **Transport hardening (review round 1)**: one Search reply is byte-bounded before decoding, so the 50-item logical guard is never the only defense against a hostile or broken endpoint; chunk failures are classified transport/tool/malformed and mapped onto the matching observation failure — an HTTP or GraphQL answer is never reported as a network outage, and a TLS failure as a tool failure | ✅ |
@@ -234,6 +234,7 @@ live run.
 | IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7b): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
 | IT-FMC-SRC-2661-005 | A `sources.acm` block that fails production construction (e.g. an absent `caFile` that passes path-shape validation) exits through main's dependency-wiring choreography — the "Failed to construct FMC dependencies" log and the bootstrap health-server shutdown — never a bare `os.Exit` inside `wireFMCDependencies` (D4.1a rule 3, fail closed observably) | ✅ |
 | IT-FMC-SRC-2661-006 | **MCP readiness scoping (DD-FLEET-017 D1)**: an ACM-selected deployment stays ready when the MCP gateway is down (membership comes from the registration CRs; the ACM collector never calls MCP), while an MCP-selected deployment stays unready for the same outage — the protocol gate applies only to the selected source | ✅ |
+| IT-FMC-SRC-2661-007 | **Aggregate bounds across kinds (D2.7)**: two configured kinds, each individually inside the 50-per-page and 100-page walk ceilings, whose summed items and pages exceed the partition-wide ceilings — the repair contract refuses the sync ("out of bounds"), no clean commit is published, and each kind's walk completed individually legally | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |

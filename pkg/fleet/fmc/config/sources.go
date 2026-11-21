@@ -410,17 +410,18 @@ func (c *ServiceConfig) validateACM(source *ACMSourceConfig) error {
 // block startup before its type is known; the descriptor's own type check
 // then rejects anything that is not a regular file, while symlinks that
 // resolve to regular files (including projected secrets) stay supported.
-func checkReadableRegularFile(path string) error {
+func checkReadableRegularFile(path string) (validationErr error) {
 	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return err
 	}
 	file := os.NewFile(uintptr(fd), path)
 	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			// The descriptor was readable; a close error on a read-only file
-			// is not a validation verdict, but it is never silently dropped.
-			fmt.Fprintf(os.Stderr, "config file close error for %s: %v\n", path, closeErr)
+		if closeErr := file.Close(); closeErr != nil && validationErr == nil {
+			// The descriptor was readable and passed validation; a close
+			// error on that path is surfaced, never silently dropped, but it
+			// never masks the primary validation failure either.
+			validationErr = fmt.Errorf("close config file %s: %w", path, closeErr)
 		}
 	}()
 	info, err := file.Stat()
