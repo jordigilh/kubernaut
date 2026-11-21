@@ -442,9 +442,12 @@ the cache.
 5. **Identity projection.** Canonical six-field ID, `_uid` used only for
    ordering and duplicate detection, never serialized, never part of the public
    ID (DD-FLEET-015: no target-UID claim). Cross-cluster, missing-`apiversion`
-   or ambiguous items fail the kind, not just the item. Collection also emits
-   the lexicographic identity key (D2.5a) so one atomic commit writes both
-   indexes from the same staged generation.
+   or ambiguous items fail the kind, not just the item. The collector emits a
+   validated canonical identity and nothing index-shaped: the repair writer
+   passes identity plus `public_id` to `repair_reconcile`, which composes the
+   lexicographic member and atomically stages and swaps **both** indexes for one
+   staged generation (D2.5a). Index ownership lives in the writer, not in the
+   source adapter.
 6. **Label precedence** stays ADR-053, evaluated by the shared resolver; an
    invalid label is invalid, never absent, and never falls through to
    inheritance.
@@ -517,6 +520,30 @@ Rules:
    and a value below normal Search latency makes it fail under load. Tuning
    latency means changing the staging cap or the chunking (DD-FLEET-016
    territory), not a per-deployment knob.
+7b. **One deadline per repair, owned by the repair path.** The collector reads its
+   deadline from the context; exactly one component may put it there. The FMC
+   repair path sets it once, immediately after a successful `BeginRepair`, from
+   that generation's staging lifetime, and passes the same context through every
+   kind's collection. N kinds share one window. A per-kind fallback would let a
+   seven-kind sync outlive the 60 s staged generation, which is why the collector
+   must never derive its own budget in production.
+
+**Cross-repo status (2026-11-20).** The operator half of D4.1a is implemented and
+merged: kubernaut-operator#649 (`feat/647-fmc-acm-source-config`, merge commit
+`fb8a3f0c`, closes kubernaut-operator#647). It renders exactly
+`sources.acm.{endpoint, tokenPath, caFile}` and, for consumers, the key-less
+fleet block that increment 1d accepts. Two facts from that landing bind this
+side:
+
+1. **Our strict decoding is now load-bearing.** The operator relies on FMC
+   rejecting a mismatch rather than silently ignoring it; an operand without
+   increment 2 decodes `sources` leniently and would drop the block while
+   running the MCP collector.
+2. **A present-but-empty `sources` block is a startup failure here.** The
+   operator therefore rejects an empty declaration at admission
+   (`UT-FLEET-647-VALIDATE-005`) and its renderer cannot emit one
+   (`UT-FLEET-647-SRC-009`); rules 1-2 of this section are the contract both
+   sides now test.
 
 **Alternatives.** (i) Reuse the v1 per-request adapter (rejected in D2).
 (ii) Keyset continuation — unsupported (spike: silent `count=0`).

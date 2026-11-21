@@ -84,6 +84,14 @@ type LeaseView struct {
 
 // FMCGlobalReadiness records prerequisites shared by all cache partitions.
 type FMCGlobalReadiness struct {
+	// MCPInitialSync records that the initial collection cycle completed,
+	// not the state of the MCP protocol: for MCP-selected deployments the
+	// wiring layer derives it from the gateway gate; for ACM-selected
+	// deployments the syncer sets it after the first successful cycle
+	// regardless of the gateway (the ACM collector never calls MCP), so the
+	// deployment is unready until its first cycle by design, never by a
+	// gateway outage. (A follow-up rename to InitialSyncCompleted is
+	// tracked with the PR #2691 review notes.)
 	MCPInitialSync       bool
 	RegistryInitialSync  bool
 	RegistryWatchHealthy bool

@@ -656,6 +656,45 @@ MANDATORY USER DECISION REQUIRED: Which approach? (A/B/C)
 
 ---
 
+## Review Requirements
+
+Every review — human, AI agent, or automated-reviewer disposition — must include
+these checks in addition to the change-specific contract under review. They
+exist because two defect classes repeatedly escaped internally consistent
+reviews (plan ↔ spec ↔ code all agreed, and the code was still wrong): a
+scoping change that orphaned a field's only writer in one reachable state, and
+a test fixture whose wire shape was never checked against the ground truth.
+
+### Write-set enumeration (removed-condition analysis)
+
+For every field, goroutine, or resource the diff **stops writing, stops
+starting, or newly conditions**, enumerate the remaining writers/starters in
+**every reachable state** — cold start, empty registry, zero registrations,
+first cycle, steady state, shutdown. A change that removes or scopes a
+condition must answer *"who still writes this field now, in each state?"*
+before approval. A plausible rationale ("by design", "fence semantics") is not
+evidence: trace the state machine to its terminal state. Reviews of a diff
+must ask the inverse question, not only whether the change does what its spec
+claims.
+
+### Fixture ground-truth fidelity
+
+Every test fixture that stands in for an external system's wire shape must be
+verified against the ground truth for that wire — the spike record, the
+vendored SDL, or the live-proven client in the same lane — **and against our
+own request builder for the same protocol** (request/response symmetry).
+Verifying a fixture only against the code under test proves internal
+consistency, not wire fidelity. Integration fixtures for protocols that carry
+API groups must include at least one group-ful kind (e.g. `apps/v1`): core-only
+kinds cannot discriminate a combined `apiversion` value from separate
+`apigroup`/`apiversion` properties, so the fixture passes for the wrong shape.
+
+### Standing rule for review dispatchers
+
+When dispatching a review (subagent or otherwise), include the two checks
+above in the review prompt as explicit verification items. A review that
+verifies only the spec's positive and negative claims is not complete.
+
 ## Code Quality Standards
 
 ### Error Handling (Mandatory)

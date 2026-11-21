@@ -77,6 +77,14 @@ type fmcDeps struct {
 	registrationGuard registry.CurrentRegistrationGuard
 	syncer            *fmc.Syncer
 
+	// sourceKind records which inventory collector this deployment runs
+	// (DD-FLEET-017 D4.1a rule 2), fixed at wiring time from the validated
+	// config. It scopes the MCP protocol readiness gate: an ACM-selected
+	// deployment's membership comes from the registration CRs and its
+	// collector never calls MCP, so an MCP gateway outage must not block
+	// its readiness (IT-FMC-SRC-2661-006).
+	sourceKind fmcconfig.Source
+
 	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): TokenReview/SAR auth for
 	// the GW/RO -> FMC scope-check API. k8sClientset backs auth.NewK8sAuthenticator
 	// / auth.NewK8sAuthorizer; releaseNamespace is the SAR target namespace
@@ -119,7 +127,19 @@ func (d *fmcDeps) Ready() bool {
 		return false
 	}
 	global := d.readiness.View().Global
-	if d.mcpReadiness != nil {
+	// DD-FLEET-017 D1/D4.1a: the MCP protocol gate applies only when the MCP
+	// collector is the selected source. An ACM-selected deployment's
+	// membership comes from the registration CRs watched through the
+	// Kubernetes API, and its collector never calls MCP, so an MCP gateway
+	// outage must not block ACM inventory readiness (IT-FMC-SRC-2661-006).
+	// For ACM the field is set true here — it records "initial collection
+	// cycle prerequisite met", and with ACM there is no protocol
+	// prerequisite; the cold-start state (zero registrations: nothing ever
+	// runs a cycle, and the syncer's publishGlobal is never reached) has no
+	// other writer.
+	if d.sourceKind == fmcconfig.SourceACM {
+		global.MCPInitialSync = true
+	} else if d.mcpReadiness != nil {
 		global.MCPInitialSync = d.mcpReadiness.Ready()
 	}
 	if d.clusterRegistry != nil {
@@ -324,15 +344,40 @@ func buildFMCSyncerDependencies(deps *fmcDeps) fmc.Dependencies {
 	}
 }
 
-func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) *fmc.Syncer {
+func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Logger) (*fmc.Syncer, error) {
 	syncerConfig := fmc.Config{
 		SyncInterval:       cfg.Sync.Interval,
 		KeyTTL:             cfg.Sync.KeyTTL,
 		ResourceKinds:      cfg.Sync.ResourceKinds,
 		WaitForBrokerReady: cfg.Sync.WaitForBrokerReady,
 	}
+	// DD-FLEET-017 D4.1a rule 2: source selection is per deployment and is
+	// decided here, once, from the validated config. The collectors are
+	// interchangeable behind observation.ObservedReader, so the sync cycle
+	// does not branch on the source.
+	var factory fmc.ObservedReaderFactory
+	switch cfg.SourceKind() {
+	case fmcconfig.SourceACM:
+		acmSource, err := buildACMSource(cfg)
+		if err != nil {
+			return nil, err
+		}
+		factory = acmSource
+	case fmcconfig.SourceMCP:
+		factory = buildMCPReaderFactory(deps)
+	default:
+		return nil, fmt.Errorf("unsupported fleet inventory source %q", cfg.SourceKind())
+	}
+	syncerDeps := buildFMCSyncerDependencies(deps)
+	syncerDeps.Readers = factory
+	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics), nil
+}
+
+// buildMCPReaderFactory is the GitOps/default collector: one MCP client reader
+// per registered cluster.
+func buildMCPReaderFactory(deps *fmcDeps) fmc.ObservedReaderFactory {
 	sessionProvider := deps.mcpClient.SessionProvider()
-	readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, cluster registry.ClusterInfo) (mcpclient.ObservedReader, error) {
+	return fmc.ObservedReaderFactoryFunc(func(_ context.Context, cluster registry.ClusterInfo) (mcpclient.ObservedReader, error) {
 		// WithReconnect: SessionProvider() alone only re-reads whatever session
 		// mcpClient currently holds; it cannot repair a session that died from a
 		// protocol-level error during a startup race with broker config reload.
@@ -342,9 +387,25 @@ func buildFMCSyncer(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Log
 		}
 		return mcpclient.NewFromSessionProvider(sessionProvider, cluster.ID, opts...), nil
 	})
-	syncerDeps := buildFMCSyncerDependencies(deps)
-	syncerDeps.Readers = readerFactory
-	return fmc.NewSyncer(syncerDeps, syncerConfig, logger, deps.metrics)
+}
+
+// buildACMSource is the ACM Search collector (DD-FLEET-017 D4). Construction
+// fails closed: an unreadable token or CA file stops FMC at startup rather than
+// letting the first sync discover it.
+func buildACMSource(cfg *fmcconfig.ServiceConfig) (*fmc.ACMSource, error) {
+	acmConfig := cfg.Sources.ACM
+	if acmConfig == nil {
+		return nil, fmt.Errorf("fleet inventory source acm is selected but sources.acm is empty")
+	}
+	kinds, err := fmc.KindGVKs(cfg.Sync.ResourceKinds)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ACM source kinds: %w", err)
+	}
+	search, err := fmc.NewACMHTTPSearch(acmConfig.Endpoint, acmConfig.TokenPath, acmConfig.CAFile, 0)
+	if err != nil {
+		return nil, fmt.Errorf("build ACM search client: %w", err)
+	}
+	return fmc.NewACMSource(fmc.ACMSourceConfig{Search: search, Kinds: kinds})
 }
 
 func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) (*fmcDeps, error) {
@@ -360,6 +421,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		metrics:          metrics,
 		mcpClient:        mcpClient,
 		mcpReadiness:     mcpReadiness,
+		sourceKind:       cfg.SourceKind(),
 		writer:           writer,
 		cacheReader:      cacheReader,
 		statusStore:      statusStore,
@@ -373,7 +435,16 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		return nil, err
 	}
 	deps.clusterRegistry, deps.registrationGuard, deps.readiness = clusterRegistry, registrationGuard, readinessSnapshot
-	deps.syncer = buildFMCSyncer(cfg, deps, logger)
+	syncer, err := buildFMCSyncer(cfg, deps, logger)
+	if err != nil {
+		// Return the error so main's dependency-wiring choreography runs
+		// (bootstrap health server shutdown, "Failed to construct FMC
+		// dependencies", exit code 1). An os.Exit here would skip both
+		// (IT-FMC-SRC-2661-005).
+		deps.close()
+		return nil, fmt.Errorf("build FMC sync source: %w", err)
+	}
+	deps.syncer = syncer
 	return deps, nil
 }
 
@@ -578,7 +649,12 @@ func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Lo
 // before returning.
 func runFMCServers(ctx context.Context, cancel context.CancelFunc, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
 	if deps.mcpReadiness != nil {
-		deps.mcpReadiness.Start(ctx)
+		// The MCP protocol gate's value is consumed only by MCP-selected
+		// deployments (IT-FMC-SRC-2661-006); an ACM-selected deployment
+		// neither reads it nor needs its probe loop started.
+		if deps.sourceKind != fmcconfig.SourceACM {
+			deps.mcpReadiness.Start(ctx)
+		}
 		_ = deps.Ready()
 		go func() {
 			ticker := time.NewTicker(100 * time.Millisecond)
