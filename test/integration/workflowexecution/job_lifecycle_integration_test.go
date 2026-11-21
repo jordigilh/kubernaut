@@ -68,7 +68,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		return wfe
 	}
 	It("IT-WE-2570-040: BR-ORCH-025 rejects an unverifiable workflow before dispatch", func() {
-		wfe := trustedJobWFE("missing-declarations", fmt.Sprintf("default/deployment/missing-declarations-%d", time.Now().UnixNano()))
+		wfe := trustedJobWFE("missing-declarations", fmt.Sprintf("default/apps/v1/Deployment/missing-declarations-%d", time.Now().UnixNano()))
 		wfe.Spec.WorkflowRef.WorkflowID = missingWorkflowID
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
@@ -79,7 +79,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		Expect(jobs.Items).To(BeEmpty())
 	})
 	It("IT-WE-2570-042: BR-ORCH-025 rejects inputs not declared by the live schema", func() {
-		wfe := trustedJobWFE("undeclared-input", fmt.Sprintf("default/deployment/undeclared-input-%d", time.Now().UnixNano()))
+		wfe := trustedJobWFE("undeclared-input", fmt.Sprintf("default/apps/v1/Deployment/undeclared-input-%d", time.Now().UnixNano()))
 		wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{"UNDECLARED": `"must-not-run"`})
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
@@ -117,7 +117,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			rw.Spec.Version = "2.0.0"
 			Expect(k8sClient.Update(ctx, rw)).To(Succeed())
 		}
-		wfe := createUniqueJobWFE(fmt.Sprintf("identity-%d", time.Now().UnixNano()), fmt.Sprintf("default/deployment/identity-%d", time.Now().UnixNano()))
+		wfe := createUniqueJobWFE(fmt.Sprintf("identity-%d", time.Now().UnixNano()), fmt.Sprintf("default/apps/v1/Deployment/identity-%d", time.Now().UnixNano()))
 		wfe.Spec.WorkflowRef.WorkflowID = workflowID
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
 		Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
@@ -146,7 +146,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	)
 
 	It("IT-WE-2570-012: BR-ORCH-025 rejects an unregistered workflow before creating a Job", func() {
-		targetResource := fmt.Sprintf("default/deployment/no-catalog-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/no-catalog-%d", time.Now().UnixNano())
 		wfe := createUniqueJobWFE("no-catalog", targetResource)
 		wfe.Spec.WorkflowRef.WorkflowID = fmt.Sprintf("missing-%d", time.Now().UnixNano())
 		DeferCleanup(func() { cleanupJobWFE(wfe) })
@@ -160,7 +160,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("Job Creation and Status Sync", func() {
 
 		It("should create a Job and transition to Running (IT-WE-014-001)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-lifecycle-success-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-lifecycle-success-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("success", targetResource)
 
 			defer func() {
@@ -207,7 +207,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("should handle Job failure correctly (IT-WE-014-002)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-lifecycle-fail-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-lifecycle-fail-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("failure", targetResource)
 
 			defer func() {
@@ -250,7 +250,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("Job Spec Correctness", func() {
 
 		It("should create Job with correct labels and env vars (IT-WE-014-003)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-spec-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-spec-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("spec-check", targetResource)
 			wfe.Spec.Parameters = typedParametersFromStrings(map[string]string{
 				"REMEDIATION_TYPE": "restart",
@@ -308,7 +308,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	// authoritative absolute deadline, rather than the 30m default.
 	Context("DD-TIMEOUT-002: TimesOutAt propagation to Job ActiveDeadlineSeconds", func() {
 		It("IT-WE-2176-001: sets Job ActiveDeadlineSeconds from WFE Spec.TimesOutAt", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-timeout-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-timeout-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("timeout-2176", targetResource)
 			deadline := metav1.NewTime(time.Now().Add(5 * time.Minute))
 			wfe.Spec.TimesOutAt = &deadline
@@ -338,7 +338,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("Job Cleanup via Finalizer", func() {
 
 		It("should clean up Job when WFE is deleted (IT-WE-014-004)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-cleanup-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-cleanup-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("cleanup", targetResource)
 
 			By("Creating a WFE with executionEngine=job")
@@ -389,7 +389,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			// Two WFEs targeting the same resource should produce the same Job name
 			// This is how resource locking works - the second WFE gets an "AlreadyExists"
 			// error when trying to create a Job with the same name
-			targetResource := fmt.Sprintf("default/deployment/job-lock-test-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-lock-test-%d", time.Now().UnixNano())
 
 			wfe1 := trustedJobWFE("lock1", targetResource)
 			defer func() {
@@ -422,7 +422,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("Executor Dispatch", func() {
 
 		It("should select Job executor for executionEngine=job (IT-WE-014-006)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-dispatch-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-dispatch-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("dispatch", targetResource)
 
 			defer func() {
@@ -461,7 +461,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("IT-WE-2512-003: repeated production reconciles keep one Job and one execution reference", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-reentry-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-reentry-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("reentry", targetResource)
 			defer cleanupJobWFE(wfe)
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
@@ -515,7 +515,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("External Job Deletion (BR-WE-007)", func() {
 
 		It("should detect external Job deletion and mark WFE as Failed (IT-WE-014-010)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-ext-del-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-ext-del-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("ext-del", targetResource)
 
 			defer func() {
@@ -571,7 +571,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("should set AuditRecorded condition on external Job deletion (IT-WE-014-011)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-ext-del-audit-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-ext-del-audit-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("ext-del-audit", targetResource)
 
 			defer func() {
@@ -618,7 +618,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("should NOT misidentify normal Job completion as external deletion (IT-WE-014-012)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-normal-complete-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-normal-complete-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("normal-complete", targetResource)
 
 			defer func() {
@@ -669,7 +669,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 	Context("Job Condition Lifecycle (BR-WE-006)", func() {
 
 		It("should set ExecutionCreated condition after Job creation (IT-WE-014-013)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-cond-created-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-cond-created-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("cond-created", targetResource)
 
 			defer func() {
@@ -707,7 +707,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("should set all conditions during successful Job lifecycle (IT-WE-014-014)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-cond-lifecycle-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-cond-lifecycle-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("cond-lifecycle", targetResource)
 
 			defer func() {
@@ -768,7 +768,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 
 		It("should set conditions and FailureDetails on Job failure (IT-WE-014-015)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-cond-fail-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-cond-fail-%d", time.Now().UnixNano())
 			wfe := trustedJobWFE("cond-fail", targetResource)
 
 			defer func() {
@@ -842,7 +842,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 	Context("Sequential Remediation", func() {
 
 		It("should allow a different workflow WFE after first completes for same target (IT-WE-2512-001, IT-WE-374-001)", func() {
-			targetResource := fmt.Sprintf("default/deployment/seq-remediation-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/seq-remediation-%d", time.Now().UnixNano())
 
 			By("Phase 1: Creating first WFE targeting the resource")
 			wfe1 := sequentialWFE("seq1", targetResource)
@@ -924,7 +924,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 		})
 
 		It("should apply cooldown only to the same workflow and allow a different workflow (IT-WE-2512-004)", func() {
-			targetResource := fmt.Sprintf("default/deployment/cooldown-scope-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/cooldown-scope-%d", time.Now().UnixNano())
 			wfe1 := sequentialWFE("cooldown-scope-1", targetResource)
 			wfeSame := sequentialWFE("cooldown-scope-same", targetResource)
 			wfeDifferent := sequentialWFE("cooldown-scope-different", targetResource)
@@ -991,7 +991,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 	Context("Retained failed execution", func() {
 		It("should keep the failed Job while a different workflow creates a new Job (IT-WE-2512-002)", func() {
 			previousRetain, previousRetention := reconciler.FailedExecutionRetentionConfig()
-			wfe1 := sequentialWFE("retained-failed-job1", fmt.Sprintf("default/deployment/job-failed-cycle-%d", time.Now().UnixNano()))
+			wfe1 := sequentialWFE("retained-failed-job1", fmt.Sprintf("default/apps/v1/Deployment/job-failed-cycle-%d", time.Now().UnixNano()))
 			wfe1.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/failed-a:v1"
 			wfe2 := sequentialWFE("retained-failed-job2", wfe1.Spec.TargetResource)
 			wfe2.Spec.WorkflowRef.WorkflowID = differentID
@@ -1068,7 +1068,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	}
 
 	It("should apply catalog-resolved resources to the Job's workflow container (IT-WE-019-001)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-resources-%d", time.Now().UnixNano())
 		wfe := governanceWFE("resources", targetResource)
 		wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
@@ -1108,7 +1108,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	})
 
 	It("should leave the workflow container BestEffort when the catalog declares no resources (backward compat)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-no-resources-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-no-resources-%d", time.Now().UnixNano())
 		wfe := governanceWFE("no-resources", targetResource)
 
 		defer func() {
@@ -1136,7 +1136,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	// valid and accepted by the API server -- not that Ignore semantics are
 	// actually evaluated on a failure (that is Phase 6's real-cluster job).
 	It("should create a Job whose spec is accepted by the API server with the PodFailurePolicy shape (IT-WE-019-002)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-podfailurepolicy-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-podfailurepolicy-%d", time.Now().UnixNano())
 		wfe := governanceWFE("podfailurepolicy", targetResource)
 
 		defer func() {
@@ -1187,7 +1187,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	// reconcile count. Written as a permanent regression guard, not new-
 	// behavior proof.
 	It("should record exactly 1 workflow.completed audit event despite N repeated Active reconciles before success (IT-WE-019-003)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-audit-repeat-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-audit-repeat-%d", time.Now().UnixNano())
 		wfe := governanceWFE("audit-repeat-active", targetResource)
 
 		defer func() {
@@ -1235,7 +1235,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 
 	// Wiring Point C: audit retry-count completeness (BR-WE-019 AC10).
 	It("should record retry_count == N in the workflow.completed audit event when the Job tolerated N pod failures before succeeding (IT-WE-019-004)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-retry-count-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-retry-count-%d", time.Now().UnixNano())
 		wfe := governanceWFE("retry-count", targetResource)
 
 		defer func() {
@@ -1293,7 +1293,7 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	})
 
 	It("should reconstruct sequential Job identities from each RR correlation (IT-WE-2512-005)", func() {
-		targetResource := fmt.Sprintf("default/deployment/job-audit-identity-%d", time.Now().UnixNano())
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/job-audit-identity-%d", time.Now().UnixNano())
 		wfe1 := governanceWFE("audit-identity-1", targetResource)
 		wfe1.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/audit-a:v1"
 		wfe2 := governanceWFE("audit-identity-2", targetResource)

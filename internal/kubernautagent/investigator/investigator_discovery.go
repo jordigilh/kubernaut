@@ -116,7 +116,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		// snapshot, without an Enricher to attach source status. Preserve the
 		// same typed terminal evidence contract as the autonomous path.
 		status := enrichment.HistoryEvidenceStatusForError(
-			enrichment.ErrHistoryUnavailable,
+			enrichment.ErrHistoryUnavailable, signal.ResourceAPIVersion,
 			signal.ResourceKind, signal.ResourceName, signal.Namespace,
 			signal.ClusterID, correlationID,
 		)

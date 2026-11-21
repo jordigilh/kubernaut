@@ -37,26 +37,33 @@ import (
 var namespacedResourceContextSchema = json.RawMessage(`{
 	"type": "object",
 	"properties": {
-		"kind":      {"type": "string", "description": "Kubernetes resource kind"},
-		"name":      {"type": "string", "description": "Resource name"},
-		"namespace": {"type": "string", "description": "Kubernetes namespace"}
+		"kind":        {"type": "string", "description": "Kubernetes resource kind"},
+		"name":        {"type": "string", "description": "Resource name"},
+		"namespace":   {"type": "string", "description": "Kubernetes namespace"},
+		"api_version": {"type": "string", "description": "Resource apiVersion (e.g. apps/v1 or v1); required for a group-scoped remediation-history lookup. Omit only when the API group is genuinely unknown."}
 	},
-	"required": ["kind", "name", "namespace"]
+	"required": ["kind", "name", "namespace", "api_version"]
 }`)
 
 var clusterResourceContextSchema = json.RawMessage(`{
 	"type": "object",
 	"properties": {
-		"kind": {"type": "string", "description": "Kubernetes resource kind"},
-		"name": {"type": "string", "description": "Resource name"}
+		"kind":        {"type": "string", "description": "Kubernetes resource kind"},
+		"name":        {"type": "string", "description": "Resource name"},
+		"api_version": {"type": "string", "description": "Resource apiVersion (e.g. v1 or metrics.k8s.io/v1); required for a group-scoped remediation-history lookup. Omit only when the API group is genuinely unknown."}
 	},
-	"required": ["kind", "name"]
+	"required": ["kind", "name", "api_version"]
 }`)
 
 type rootOwnerResponse struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion is the root owner's apiVersion (#2658): taken from the last
+	// owner-chain entry, falling back to the caller-supplied api_version only
+	// when the chain is empty. The history query keys on the owner-chain root,
+	// not on the LLM-supplied resource.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 type namespacedResponse struct {
@@ -108,11 +115,22 @@ func ResolveLabelDetector(ctx context.Context, hub *enrichment.LabelDetector, ma
 	return NewOverlayLabelDetector(overlay[mcpclient.ToolGet], overlay[mcpclient.ToolList], mapper, logger)
 }
 
-func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8sClient, kind, name, namespace, toolName string) string {
-	computed, err := k8s.GetSpecHash(ctx, kind, name, namespace, "")
+// specHashQuery scopes one spec-hash computation (#2658: the apiVersion is
+// part of the identity, so it is threaded through instead of the previous
+// hardcoded empty string).
+type specHashQuery struct {
+	Kind       string
+	Name       string
+	Namespace  string
+	APIVersion string
+	ToolName   string
+}
+
+func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8sClient, q specHashQuery) string {
+	computed, err := k8s.GetSpecHash(ctx, q.Kind, q.Name, q.Namespace, q.APIVersion)
 	if err != nil {
-		logger.Info(toolName+": specHash computation failed, proceeding with empty",
-			"kind", kind, "name", name, "namespace", namespace, "error", err)
+		logger.Info(q.ToolName+": specHash computation failed, proceeding with empty",
+			"kind", q.Kind, "name", q.Name, "namespace", q.Namespace, "error", err)
 		return ""
 	}
 	return computed
@@ -122,12 +140,13 @@ func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8s
 // fetchRemediationHistory. Extracted per AGENTS.md's 8+-param Options-pattern
 // rule.
 type remediationHistoryQuery struct {
-	Kind      string
-	Name      string
-	Namespace string
-	ClusterID string
-	SpecHash  string
-	ToolName  string
+	Kind       string
+	Name       string
+	Namespace  string
+	ClusterID  string
+	SpecHash   string
+	APIVersion string
+	ToolName   string
 }
 
 func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichment.DataStorageClient, q remediationHistoryQuery) *enrichment.RemediationHistoryResult {
@@ -147,7 +166,10 @@ func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichm
 		}
 		return &enrichment.RemediationHistoryResult{EvidenceStatus: status}
 	}
-	result, err := ds.GetRemediationHistory(ctx, q.Kind, q.Name, q.Namespace, q.ClusterID, q.SpecHash)
+	result, err := ds.GetRemediationHistory(ctx, enrichment.RemediationHistoryQuery{
+		Kind: q.Kind, Name: q.Name, Namespace: q.Namespace, ClusterID: q.ClusterID,
+		SpecHash: q.SpecHash, APIVersion: q.APIVersion,
+	})
 	if err != nil {
 		logger.Info(q.ToolName+": remediation history fetch failed",
 			"kind", q.Kind, "name", q.Name, "namespace", q.Namespace, "error", err)
@@ -210,9 +232,10 @@ func (t *namespacedResourceContextTool) Parameters() json.RawMessage {
 
 func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {
-		Kind      string `json:"kind"`
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
+		Kind       string `json:"kind"`
+		Name       string `json:"name"`
+		Namespace  string `json:"namespace"`
+		APIVersion string `json:"api_version"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
@@ -220,31 +243,40 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 
 	k8sClient := ResolveK8sClient(ctx, t.k8s, t.logger)
 
-	chain, chainErr := k8sClient.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace, "")
+	chain, chainErr := k8sClient.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace, params.APIVersion)
 	if chainErr != nil {
 		t.logger.Info("get_namespaced_resource_context: owner chain resolution failed",
 			"kind", params.Kind, "name", params.Name, "namespace", params.Namespace, "error", chainErr)
 	}
 
 	rootOwner := rootOwnerResponse{
-		Kind:      params.Kind,
-		Name:      params.Name,
-		Namespace: params.Namespace,
+		Kind:       params.Kind,
+		Name:       params.Name,
+		Namespace:  params.Namespace,
+		APIVersion: params.APIVersion,
 	}
 	if len(chain) > 0 {
 		last := chain[len(chain)-1]
 		rootOwner = rootOwnerResponse{
-			Kind:      last.Kind,
-			Name:      last.Name,
-			Namespace: last.Namespace,
+			Kind:       last.Kind,
+			Name:       last.Name,
+			Namespace:  last.Namespace,
+			APIVersion: last.APIVersion,
 		}
 	}
+	if rootOwner.APIVersion == "" {
+		rootOwner.APIVersion = params.APIVersion
+	}
 
-	specHash := computeSpecHash(ctx, t.logger, k8sClient, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "get_namespaced_resource_context")
+	specHash := computeSpecHash(ctx, t.logger, k8sClient, specHashQuery{
+		Kind: rootOwner.Kind, Name: rootOwner.Name, Namespace: rootOwner.Namespace,
+		APIVersion: rootOwner.APIVersion, ToolName: "get_namespaced_resource_context",
+	})
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
 	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, remediationHistoryQuery{
 		Kind: rootOwner.Kind, Name: rootOwner.Name, Namespace: rootOwner.Namespace,
-		ClusterID: clusterID, SpecHash: specHash, ToolName: "get_namespaced_resource_context",
+		ClusterID: clusterID, SpecHash: specHash, APIVersion: rootOwner.APIVersion,
+		ToolName: "get_namespaced_resource_context",
 	})
 
 	resp := namespacedResponse{
@@ -281,8 +313,9 @@ func (t *clusterResourceContextTool) Parameters() json.RawMessage {
 
 func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
+		Kind       string `json:"kind"`
+		Name       string `json:"name"`
+		APIVersion string `json:"api_version"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
@@ -290,11 +323,14 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 
 	k8sClient := ResolveK8sClient(ctx, t.k8s, t.logger)
 
-	specHash := computeSpecHash(ctx, t.logger, k8sClient, params.Kind, params.Name, "", "get_cluster_resource_context")
+	specHash := computeSpecHash(ctx, t.logger, k8sClient, specHashQuery{
+		Kind: params.Kind, Name: params.Name, APIVersion: params.APIVersion,
+		ToolName: "get_cluster_resource_context",
+	})
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
 	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, remediationHistoryQuery{
 		Kind: params.Kind, Name: params.Name, ClusterID: clusterID, SpecHash: specHash,
-		ToolName: "get_cluster_resource_context",
+		APIVersion: params.APIVersion, ToolName: "get_cluster_resource_context",
 	})
 
 	resp := clusterResponse{

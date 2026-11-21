@@ -65,7 +65,7 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 		suffix := uuid.New().String()[:8]
 		rwName := fmt.Sprintf("e2e-snapshot-source-%s", suffix)
 		wfeName := fmt.Sprintf("e2e-snapshot-wfe-%s", suffix)
-		targetResource := fmt.Sprintf("default/deployment/snapshot-test-%s", suffix)
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/snapshot-test-%s", suffix)
 
 		By("Creating a dedicated RemediationWorkflow CRD and waiting for AuthWebhook to admit it")
 		rw := &rwv1alpha1.RemediationWorkflow{

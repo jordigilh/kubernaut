@@ -69,7 +69,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/condition-test-app",
+					TargetResource: "default/apps/v1/Deployment/condition-test-app",
 					Parameters: typedParametersFromStrings(map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
 					}),
@@ -139,7 +139,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/running-test-app",
+					TargetResource: "default/apps/v1/Deployment/running-test-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -208,7 +208,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/complete-success-app",
+					TargetResource: "default/apps/v1/Deployment/complete-success-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -297,7 +297,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/audit-test-app",
+					TargetResource: "default/apps/v1/Deployment/audit-test-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}
@@ -357,7 +357,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 							ExecutionEngine: "tekton",
 						},
 					},
-					TargetResource: "default/deployment/full-lifecycle-app",
+					TargetResource: "default/apps/v1/Deployment/full-lifecycle-app",
 					Parameters:     sharedtypes.TypedParameterMap{},
 				},
 			}

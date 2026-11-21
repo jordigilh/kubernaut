@@ -102,7 +102,7 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 
 		const oldOwner = "wfe-remote-collision-owner"
-		targetResource := fmt.Sprintf("default/deployment/e2e-remote-iscompleted-%s", uuid.New().String()[:8])
+		targetResource := fmt.Sprintf("default/apps/v1/Deployment/e2e-remote-iscompleted-%s", uuid.New().String()[:8])
 		jobName := ""
 		wfeName := "e2e-remote-iscompleted-" + uuid.New().String()[:8]
 
@@ -134,7 +134,7 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			}
 		}
 
-		targetResourceName := strings.TrimPrefix(targetResource, "default/deployment/")
+		targetResourceName := strings.TrimPrefix(targetResource, "default/apps/v1/Deployment/")
 		parameters, _, parameterErr := sharedtypes.TypedParameterMapFromValues(map[string]interface{}{
 			"TARGET_RESOURCE_NAME":      targetResourceName,
 			"TARGET_RESOURCE_KIND":      "Deployment",

@@ -194,11 +194,8 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testLogger.Info("Step 1: Create signal with rich metadata")
-		// #2593 (DD-FLEET-015): cluster-scoped targets (Node) are
-		// ScopeUnsupported in the Gateway's presence-first scope lane, so this
-		// field-population fixture now targets a namespaced Pod instead. The
-		// createNormalizedSignal helper creates the real target (worker-pod-01)
-		// in the managed test namespace.
+		// This spec validates field population, not scope authorization, so it
+		// targets a namespaced Pod created by the fixture helper.
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "DiskPressure",
 			Namespace:    testNamespace,

@@ -205,7 +205,7 @@ var _ = Describe("TP-762: DS Adapter 400 Error Surfacing (#762)", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "test-hash")
+			result, err := adapter.GetRemediationHistory(context.Background(), enrichment.RemediationHistoryQuery{Kind: "Deployment", Name: "api-server", Namespace: "default", ClusterID: "", SpecHash: "test-hash"})
 			Expect(err).To(HaveOccurred(),
 				"UT-KA-762-008: DS adapter must return error on 400, not silently swallow")
 			Expect(err.Error()).To(ContainSubstring("bad request"))

@@ -256,6 +256,24 @@ func (c *Client) drainStream(ctx context.Context, auditType string, writeFn mess
 	return total, nil
 }
 
+// readDrainBatch reads one page of the stream. DD-008: the deadline can expire
+// between the caller's ctx check and the read; a context-driven read error ends
+// the drain gracefully (the caller marks TimedOut) and is not a drain failure,
+// so it must not surface as a shutdown error. Returning an empty page stops the
+// sweep without an error.
+func (c *Client) readDrainBatch(ctx context.Context, streamKey, cursor string) ([]redis.XMessage, error) {
+	messages, err := c.redisClient.XRangeN(ctx, streamKey, cursor, "+", drainBatchSize).Result()
+	if err == nil {
+		return messages, nil
+	}
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		c.logger.Info("DLQ drain stopped by context while reading stream",
+			"stream", streamKey, "dd", "DD-008-drain-read-timeout")
+		return nil, nil
+	}
+	return nil, fmt.Errorf("failed to read stream: %w", err)
+}
+
 // drainStreamPass performs a single forward sweep of the stream.
 // Returns the number of messages successfully written+deleted, whether any
 // write failures occurred, and any stream-level read error.
@@ -271,9 +289,9 @@ func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType strin
 		default:
 		}
 
-		messages, err := c.redisClient.XRangeN(ctx, streamKey, cursor, "+", drainBatchSize).Result()
+		messages, err := c.readDrainBatch(ctx, streamKey, cursor)
 		if err != nil {
-			return processed, hadFailures, fmt.Errorf("failed to read stream: %w", err)
+			return processed, hadFailures, err
 		}
 
 		if len(messages) == 0 {

@@ -1144,6 +1144,7 @@ paths:
           description: Kubernetes resource kind (e.g. Deployment, StatefulSet)
           schema:
             type: string
+            pattern: '^[A-Za-z][A-Za-z0-9]*$'
           example: "Deployment"
         - name: targetName
           in: query
@@ -1151,14 +1152,38 @@ paths:
           description: Kubernetes resource name
           schema:
             type: string
+            pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
           example: "my-app"
         - name: targetNamespace
           in: query
           required: true
-          description: Kubernetes resource namespace
+          description: |
+            Kubernetes resource namespace. May be empty for cluster-scoped
+            resources (#762); an empty value is a legitimate cluster-scoped
+            scope, not "unscoped".
           schema:
             type: string
+            pattern: '^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
           example: "prod"
+        - name: targetApiVersion
+          in: query
+          required: true
+          description: |
+            Canonical apiVersion of the target resource (#2658). REQUIRED: an
+            absent parameter is a 400, and an empty value is rejected because it
+            is indistinguishable from "unknown". Send "v1" for the core API
+            group, "apps/v1" for a grouped resource, or the reserved sentinel
+            "unresolved" when the caller could not establish the apiVersion.
+            A grouped version follows the CRD rule (DNS1035 label), so a CRD
+            served at "example.com/stable" is accepted, exactly as
+            scope.ParseAPIVersion accepts it.
+            The group and version are ordinary parts of the stored target
+            identity (namespace/group/version/Kind/name), so history rows are
+            matched by exact identity equality.
+          schema:
+            type: string
+            pattern: '^(unresolved|v[0-9]+((alpha|beta)[0-9]+)?|[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z]([-a-z0-9]*[a-z0-9])?)$'
+          example: "apps/v1"
         - name: currentSpecHash
           in: query
           required: true
@@ -2030,6 +2055,7 @@ components:
             - $ref: '#/components/schemas/ApifrontendMCPSessionInitPayload'
             - $ref: '#/components/schemas/ApifrontendSeverityTriageCompletedPayload'
             - $ref: '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
+            - $ref: '#/components/schemas/ApifrontendSeverityTriageAmbiguousPayload'
             - $ref: '#/components/schemas/ApifrontendConfigReloadedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigRejectedPayload'
             - $ref: '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
@@ -2207,6 +2233,7 @@ components:
               'apifrontend.mcp.session_init': '#/components/schemas/ApifrontendMCPSessionInitPayload'
               'apifrontend.severity_triage.completed': '#/components/schemas/ApifrontendSeverityTriageCompletedPayload'
               'apifrontend.severity_triage.failed': '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
+              'apifrontend.severity_triage.ambiguous': '#/components/schemas/ApifrontendSeverityTriageAmbiguousPayload'
               'apifrontend.config.reloaded': '#/components/schemas/ApifrontendConfigReloadedPayload'
               'apifrontend.config.rejected': '#/components/schemas/ApifrontendConfigRejectedPayload'
               'apifrontend.interactive_signal.failed': '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
@@ -8231,6 +8258,9 @@ components:
         source_tier:
           type: string
           description: Tier that produced the final severity (prometheus_rules, llm, default)
+        api_group:
+          type: string
+          description: Canonical API group of the target resource (#2658); empty means the core group
         duration_ms:
           type: integer
           description: Triage pipeline execution time
@@ -8252,6 +8282,43 @@ components:
         failed_tier:
           type: string
           description: Tier where failure occurred
+
+    ApifrontendSeverityTriageAmbiguousPayload:
+      type: object
+      required: [event_type, ambiguity_reason]
+      description: Severity triage ambiguous event payload (apifrontend.severity_triage.ambiguous) — correlating evidence exists but cannot be attributed to the target resource, so no RemediationRequest is created until the user confirms (BR-SEVERITY-001 AC-8, DD-AF-012, #2658, SOC2 CC7.2, FedRAMP AU-3)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.severity_triage.ambiguous']
+          description: Event type for discriminator (matches parent event_type)
+        ambiguity_reason:
+          type: string
+          enum: ['cluster_scoped_only', 'group_unscopable', 'alert_belongs_to_sibling']
+          description: Why the correlation is ambiguous; selects the confirmation the user is asked for
+        api_group:
+          type: string
+          description: Canonical API group of the target resource (#2658); empty means the core group
+        namespace:
+          type: string
+          description: Namespace of the target resource (empty for cluster-scoped targets)
+        kind:
+          type: string
+          description: Kind of the target resource
+        name:
+          type: string
+          description: Name of the target resource
+        candidate_alert:
+          type: string
+          description: Alert name that correlated (empty when the candidate is unknown or cleared by the group gate)
+        candidate_severity:
+          type: string
+          description: Severity the candidate would have contributed
+        candidate_api_groups:
+          type: array
+          items:
+            type: string
+          description: API groups in which same-namespace/kind/name siblings exist (group_unscopable); empty string denotes the core group
 
     ApifrontendConfigReloadedPayload:
       type: object

@@ -28,6 +28,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 //go:embed templates/*.tmpl
@@ -41,6 +42,7 @@ type SignalData struct {
 	Message                    string
 	ResourceKind               string
 	ResourceName               string
+	ResourceAPIVersion         string
 	ClusterName                string
 	Environment                string
 	Priority                   string
@@ -105,6 +107,7 @@ type workflowTemplateData struct {
 	Namespace                       string
 	ResourceKind                    string
 	ResourceName                    string
+	ResourceIdentity                string
 	ClusterName                     string
 	SignalMode                      string
 	PriorityDescription             string
@@ -262,11 +265,21 @@ type WorkflowSelectionInput struct {
 func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, error) {
 	sanitized := sanitizeSignal(in.Signal)
 	data := workflowTemplateData{
-		Severity:                        withDefault(sanitized.Severity, "critical"),
-		SignalName:                      withDefault(sanitized.Name, "investigation"),
-		Namespace:                       withDefault(sanitized.Namespace, "default"),
-		ResourceKind:                    withDefault(sanitized.ResourceKind, "Pod"),
-		ResourceName:                    withDefault(sanitized.ResourceName, "unknown"),
+		Severity:     withDefault(sanitized.Severity, "critical"),
+		SignalName:   withDefault(sanitized.Name, "investigation"),
+		Namespace:    withDefault(sanitized.Namespace, "default"),
+		ResourceKind: withDefault(sanitized.ResourceKind, "Pod"),
+		ResourceName: withDefault(sanitized.ResourceName, "unknown"),
+		// #2658: the prompt shows the canonical resource identity
+		// (namespace/group/version/Kind/name), the same coordinates the WFE,
+		// audit trail and DataStorage use, so the model never reasons about a
+		// group-blind spelling of the target.
+		ResourceIdentity: scope.BuildTargetIdentity(
+			sanitized.ResourceAPIVersion,
+			withDefault(sanitized.Namespace, "default"),
+			withDefault(sanitized.ResourceKind, "Pod"),
+			withDefault(sanitized.ResourceName, "unknown"),
+		),
 		ClusterName:                     withDefault(sanitized.ClusterName, "default"),
 		SignalMode:                      withDefault(sanitized.SignalMode, signalprocessingv1alpha1.SignalModeReactive),
 		PriorityDescription:             withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
@@ -404,6 +417,7 @@ func sanitizeSignal(signal SignalData) SignalData {
 		Severity:                   sanitizeField(signal.Severity),
 		Message:                    sanitizeField(signal.Message),
 		ResourceKind:               sanitizeField(signal.ResourceKind),
+		ResourceAPIVersion:         sanitizeField(signal.ResourceAPIVersion),
 		ResourceName:               sanitizeField(signal.ResourceName),
 		ClusterName:                sanitizeField(signal.ClusterName),
 		Environment:                sanitizeField(signal.Environment),

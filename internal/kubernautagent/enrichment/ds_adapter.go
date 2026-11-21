@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -54,18 +55,21 @@ func NewDSAdapter(client HistoryContextClient) *DSAdapter {
 // ogen-generated types to enrichment domain types.
 // clusterID optionally scopes the query to a single fleet cluster (Issue
 // #1802, main only); pass "" for unscoped (release/v1.5 semantics).
-func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, namespace, clusterID, specHash string) (*RemediationHistoryResult, error) {
-	specHash = strings.TrimSpace(specHash)
+func (a *DSAdapter) GetRemediationHistory(ctx context.Context, query RemediationHistoryQuery) (*RemediationHistoryResult, error) {
+	specHash := strings.TrimSpace(query.SpecHash)
+	apiVersion := query.APIVersion
+	kind, name, namespace, clusterID := query.Kind, query.Name, query.Namespace, query.ClusterID
 	if specHash == "" {
-		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+		status := historySourceStatus(historyStatusInput{APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace, ClusterID: clusterID, CorrelationID: correlationIDFromContext(ctx)},
 			katypes.EvidenceOutcomeSkipped, katypes.EvidenceFailureCodeHashUnavailable)
 		return &RemediationHistoryResult{EvidenceStatus: historyAggregateStatus(status)}, nil
 	}
 	params := ogenclient.GetRemediationHistoryContextParams{
-		TargetKind:      kind,
-		TargetName:      name,
-		TargetNamespace: namespace,
-		CurrentSpecHash: specHash,
+		TargetKind:       kind,
+		TargetName:       name,
+		TargetNamespace:  namespace,
+		TargetApiVersion: scope.WireAPIVersion(query.APIVersion),
+		CurrentSpecHash:  specHash,
 	}
 	if clusterID != "" {
 		params.ClusterId = ogenclient.OptString{Value: clusterID, Set: true}
@@ -79,31 +83,31 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 			outcome = katypes.EvidenceOutcomeCanceled
 			code = katypes.EvidenceFailureCodeCanceled
 		}
-		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx), outcome, code)
+		status := historySourceStatus(historyStatusInput{APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace, ClusterID: clusterID, CorrelationID: correlationIDFromContext(ctx)}, outcome, code)
 		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: history query for %s/%s/%s: %w", namespace, kind, name, err), status)
 	}
 
 	if _, isBadRequest := res.(*ogenclient.GetRemediationHistoryContextBadRequest); isBadRequest {
-		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+		status := historySourceStatus(historyStatusInput{APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace, ClusterID: clusterID, CorrelationID: correlationIDFromContext(ctx)},
 			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
 		return nil, newHistoryFetchError(fmt.Errorf("%w: ds adapter: bad request for %s/%s/%s (spec_hash=%s)", ErrHistorySchema, namespace, kind, name, specHash), status)
 	}
 
 	historyCtx, ok := res.(*ogenclient.RemediationHistoryContext)
 	if !ok {
-		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+		status := historySourceStatus(historyStatusInput{APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace, ClusterID: clusterID, CorrelationID: correlationIDFromContext(ctx)},
 			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
 		return nil, newHistoryFetchError(fmt.Errorf("%w: ds adapter: unexpected response type %T", ErrHistorySchema, res), status)
 	}
 
-	return mapHistoryContext(historyCtx, kind, name, namespace, clusterID, correlationIDFromContext(ctx)), nil
+	return mapHistoryContext(historyCtx, query.APIVersion, kind, name, namespace, clusterID, correlationIDFromContext(ctx)), nil
 }
 
 func newHistoryFetchError(err error, status katypes.EvidenceSourceStatus) error {
 	return &HistoryFetchError{Err: err, Status: status}
 }
 
-func mapHistoryContext(historyCtx *ogenclient.RemediationHistoryContext, kind, name, namespace, clusterID, correlationID string) *RemediationHistoryResult {
+func mapHistoryContext(historyCtx *ogenclient.RemediationHistoryContext, apiVersion, kind, name, namespace, clusterID, correlationID string) *RemediationHistoryResult {
 	result := &RemediationHistoryResult{
 		TargetResource:     historyCtx.TargetResource,
 		CurrentSpecHash:    historyCtx.CurrentSpecHash,
@@ -125,7 +129,7 @@ func mapHistoryContext(historyCtx *ogenclient.RemediationHistoryContext, kind, n
 	if len(result.Tier1) == 0 && len(result.Tier2) == 0 {
 		outcome = katypes.EvidenceOutcomeValidEmpty
 	}
-	status := historySourceStatus(kind, name, namespace, clusterID, correlationID, outcome, "")
+	status := historySourceStatus(historyStatusInput{APIVersion: apiVersion, Kind: kind, Name: name, Namespace: namespace, ClusterID: clusterID, CorrelationID: correlationID}, outcome, "")
 	result.EvidenceStatus = historyAggregateStatus(status)
 	return result
 }

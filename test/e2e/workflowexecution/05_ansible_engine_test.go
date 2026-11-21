@@ -64,7 +64,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	Context("Happy Path", func() {
 		It("E2E-WE-015-001: should execute ansible workflow to completion via AWX", func() {
 			testName := fmt.Sprintf("e2e-ansible-%s", uuid.New().String()[:8])
-			targetResource := "default/deployment/ansible-target"
+			targetResource := "default/apps/v1/Deployment/ansible-target"
 			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
 			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
 				"test-ansible-success UUID should have been captured during workflow registration")
@@ -117,7 +117,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	Context("Failure Path", func() {
 		It("E2E-WE-015-002: should populate failure details when AWX playbook fails", func() {
 			testName := fmt.Sprintf("e2e-ansible-fail-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/ansible-fail-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-fail-%s", uuid.New().String()[:8])
 			ansibleFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-failure"]
 			Expect(ansibleFailureUUID).ToNot(BeEmpty(),
 				"test-ansible-failure UUID should have been captured during workflow registration")
@@ -162,7 +162,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	Context("Status Sync", func() {
 		It("E2E-WE-015-003: should sync WFE status with AWX job status accurately", func() {
 			testName := fmt.Sprintf("e2e-ansible-sync-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/ansible-sync-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-sync-%s", uuid.New().String()[:8])
 			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
 			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
 				"test-ansible-success UUID should have been captured during workflow registration")
@@ -235,7 +235,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	Context("External Cancellation", func() {
 		It("E2E-WE-015-004: should mark WFE as Failed when AWX job is canceled externally", func() {
 			testName := fmt.Sprintf("e2e-ansible-cancel-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/ansible-cancel-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-cancel-%s", uuid.New().String()[:8])
 			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
 			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
 				"test-ansible-success UUID should have been captured during workflow registration")
@@ -310,7 +310,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				"test-dep-secret-ansible UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-ansible-dep-secret-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/ansible-dep-secret-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-dep-secret-%s", uuid.New().String()[:8])
 
 			engineCfgJSON, err := json.Marshal(map[string]string{
 				"playbookPath":    "playbooks/test-dep-secret.yml",
@@ -389,7 +389,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				"test-dep-configmap-ansible UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-ansible-dep-cm-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/ansible-dep-cm-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/ansible-dep-cm-%s", uuid.New().String()[:8])
 
 			engineCfgJSON, err := json.Marshal(map[string]string{
 				"playbookPath":    "playbooks/test-dep-configmap.yml",
@@ -470,7 +470,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				"test-dep-secret-ansible UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-cred-merge-%s", uuid.New().String()[:8])
-			targetResource := fmt.Sprintf("default/deployment/cred-merge-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/apps/v1/Deployment/cred-merge-%s", uuid.New().String()[:8])
 
 			engineCfgJSON, err := json.Marshal(map[string]string{
 				"playbookPath":    "playbooks/test-dep-secret.yml",

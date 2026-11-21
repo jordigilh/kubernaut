@@ -17,10 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -447,19 +447,17 @@ type ResourceIdentifier struct {
 	APIVersion string `json:"apiVersion,omitempty"`
 }
 
-// String returns the resource identifier in the format used by WorkflowExecution.
-// Format: "namespace/kind/name" for namespaced resources, "kind/name" for cluster-scoped.
-// Kind is lowercase to match WorkflowExecution format.
+// String returns the canonical resource identity (#2658):
+//
+//	namespace/group/version/Kind/name   namespaced
+//	group/version/Kind/name             cluster-scoped
+//
+// The core group renders as "core"; an absent apiVersion renders
+// "unresolved/unresolved" in the group/version slots. The Kind keeps its own
+// casing: this value is the target_resource of routing.blocked audit events and
+// of WorkflowExecution.spec.targetResource, so both identities are byte-identical.
 func (r ResourceIdentifier) String() string {
-	kind := r.Kind
-	if kind != "" {
-		// Convert first character to lowercase for consistent format
-		kind = string(kind[0]|0x20) + kind[1:]
-	}
-	if r.Namespace != "" {
-		return fmt.Sprintf("%s/%s/%s", r.Namespace, kind, r.Name)
-	}
-	return fmt.Sprintf("%s/%s", kind, r.Name)
+	return scope.BuildTargetIdentity(r.APIVersion, r.Namespace, r.Kind, r.Name)
 }
 
 // RemediationRequestStatus defines the observed state of RemediationRequest.

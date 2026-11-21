@@ -206,13 +206,22 @@ func buildTimeoutContext(rrName, timeoutPhase, phaseTimeout string, target remed
 			TimeoutPhase: timeoutPhase,
 		},
 		Target: &notificationv1.TargetContext{
-			TargetResource: fmt.Sprintf("%s/%s", target.Kind, target.Name),
+			TargetResource: notificationTargetIdentity(target),
 		},
 	}
 	if phaseTimeout != "" {
 		ctx.Execution.PhaseTimeout = phaseTimeout
 	}
 	return ctx
+}
+
+// notificationTargetIdentity renders the documented two-part "Kind/Name"
+// notification identity (api/notification/v1alpha1/notificationrequest_types.go).
+// #2658 keeps it exactly as documented: the notification contract has its own
+// shape, and appending an API group would annotate a string the delivery
+// channels parse rather than read.
+func notificationTargetIdentity(target remediationv1.ResourceIdentifier) string {
+	return fmt.Sprintf("%s/%s", target.Kind, target.Name)
 }
 
 // buildPhaseTimeoutNotificationRequest constructs the NotificationRequest

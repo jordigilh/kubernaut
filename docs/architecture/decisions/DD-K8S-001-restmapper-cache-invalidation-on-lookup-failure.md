@@ -216,8 +216,17 @@ if mapper != nil {
     `resolver.go`
 
 ### Neutral
-- 🔄 `ResolveGVKWithAPIVersion`'s explicit-`apiVersion` path is intentionally left unchanged —
-  its only callers use a different, unaffected RESTMapper implementation (see Context)
+- 🔄 `ResolveGVKWithAPIVersion`'s explicit-`apiVersion` path was historically left unchanged —
+  its callers use a different, unaffected RESTMapper implementation (see Context).
+  **#2658 amendment**: the path now delegates apiVersion parsing to `scope.ParseAPIVersion`
+  (instead of `schema.ParseGroupVersion`) so it inherits the `core/v1` canonicalization every
+  group-aware identity uses. This is a canonicalization change, not a cache-policy change: the
+  Reset-on-failure behavior documented above is untouched, and without the delegation the
+  effectiveness-monitor path would degrade a persisted `core/v1` through its group-blind
+  `ResolveGVKForKind` fallback.
+- 🔄 `KindsForKind` (#2658) is a new *enumeration* surface on the same mapper: it deliberately
+  bypasses the static Kind→GVK table so a cross-group sibling check can see every group a Kind is
+  registered in, and it reuses this record's single Reset retry before failing closed.
 
 ---
 

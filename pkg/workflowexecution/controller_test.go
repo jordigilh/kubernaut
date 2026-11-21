@@ -164,7 +164,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should generate different names for different targetResources", func() {
-			name1 := weexecutor.ExecutionResourceName("ns1/deployment/app1")
+			name1 := weexecutor.ExecutionResourceName("ns1/apps/v1/Deployment/app1")
 			name2 := weexecutor.ExecutionResourceName("ns1/deployment/app2")
 			name3 := weexecutor.ExecutionResourceName("ns2/deployment/app1")
 			Expect(name1).ToNot(Equal(name2))
@@ -207,9 +207,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(len(name1)).To(BeNumerically("<=", 63), "Should be valid K8s name for: %s", description)
 			},
 			// Standard cases
-			Entry("standard deployment", "default/deployment/nginx", "standard deployment"),
+			Entry("standard deployment", "default/apps/v1/Deployment/nginx", "standard deployment"),
 			Entry("statefulset resource", "prod/statefulset/postgres", "statefulset"),
-			Entry("daemonset resource", "kube-system/daemonset/fluentd", "daemonset"),
+			Entry("daemonset resource", "kube-system/apps/v1/DaemonSet/fluentd", "daemonset"),
 
 			// Edge cases - namespace variations
 			Entry("namespace with dash", "ns-1/deployment/app", "namespace with dash"),
@@ -425,7 +425,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Namespace: "payment",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "payment/deployment/payment-api",
+					TargetResource: "payment/apps/v1/Deployment/payment-api",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -473,9 +473,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-id", "restart-deployment"))
 			// Label value is sanitized (slashes replaced with __)
 			// Original value stored in annotation
-			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment__deployment__payment-api"))
+			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment__apps__v1__Deployment__payment-api"))
 			// Verify annotation contains original value
-			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment/deployment/payment-api"))
+			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment/apps/v1/Deployment/payment-api"))
 		})
 
 		It("should use bundle resolver with correct params", func() {
@@ -897,7 +897,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "default/deployment/test-app",
+					TargetResource: "default/apps/v1/Deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "restart-deployment",
@@ -2166,7 +2166,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							WorkflowID: "restart-deployment",
 						},
 					},
-					TargetResource: "payment/deployment/payment-api",
+					TargetResource: "payment/apps/v1/Deployment/payment-api",
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -2176,7 +2176,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.GenerateNaturalLanguageSummary(wfe, details)
 
-			Expect(summary).To(ContainSubstring("payment/deployment/payment-api"))
+			Expect(summary).To(ContainSubstring("payment/apps/v1/Deployment/payment-api"))
 		})
 
 		It("should include failure reason in summary", func() {
@@ -3643,7 +3643,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// Given: Valid WFE spec
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "production/deployment/my-app",
+						TargetResource: "production/apps/v1/Deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "increase-memory",
@@ -3664,7 +3664,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// Given: WFE without container image
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "production/deployment/my-app",
+						TargetResource: "production/apps/v1/Deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "increase-memory",
@@ -3708,7 +3708,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// Given: WFE with cluster-scoped target resource per DD-WE-001
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "node/worker-node-1", // Cluster-scoped: kind/name
+						TargetResource: "core/v1/Node/worker-node-1", // Cluster-scoped: kind/name
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "node-disk-cleanup",
@@ -3771,9 +3771,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("should accept valid TargetResource formats", func() {
 				validTargets := []string{
-					"default/deployment/nginx",
-					"production/statefulset/postgres",
-					"kube-system/daemonset/fluentd",
+					"default/apps/v1/Deployment/nginx",
+					"production/apps/v1/StatefulSet/postgres",
+					"kube-system/apps/v1/DaemonSet/fluentd",
 				}
 
 				for _, target := range validTargets {
@@ -3827,27 +3827,29 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						}
 					}
 				},
-				// Valid TargetResource formats (namespace/kind/name for namespaced, kind/name for cluster-scoped)
-				Entry("valid - standard deployment", "default/deployment/nginx", "workflow-1", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - statefulset", "prod/statefulset/postgres", "workflow-2", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - daemonset", "kube-system/daemonset/fluentd", "workflow-3", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - replicaset", "default/replicaset/my-rs", "workflow-4", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - namespace with dash", "ns-1/deployment/app", "workflow-5", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - name with numbers", "default/deployment/app123", "workflow-6", "ghcr.io/org/wf:v1", true, ""),
+				// Valid TargetResource formats (#2658):
+				//   namespaced:     namespace/group/version/Kind/name
+				//   cluster-scoped: group/version/Kind/name
+				Entry("valid - standard deployment", "default/apps/v1/Deployment/nginx", "workflow-1", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - statefulset", "prod/apps/v1/StatefulSet/postgres", "workflow-2", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - daemonset", "kube-system/apps/v1/DaemonSet/fluentd", "workflow-3", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - replicaset", "default/apps/v1/ReplicaSet/my-rs", "workflow-4", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - namespace with dash", "ns-1/apps/v1/Deployment/app", "workflow-5", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - name with numbers", "default/apps/v1/Deployment/app123", "workflow-6", "ghcr.io/org/wf:v1", true, ""),
 
-				// Valid cluster-scoped resources (DD-WE-001: {kind}/{name} format)
-				Entry("valid - cluster-scoped node", "node/worker-node-1", "workflow-7", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - cluster-scoped persistentvolume", "persistentvolume/pv-data-01", "workflow-8", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - cluster-scoped clusterrole", "clusterrole/admin", "workflow-9", "ghcr.io/org/wf:v1", true, ""),
-				Entry("valid - cluster-scoped namespace", "namespace/production", "workflow-10", "ghcr.io/org/wf:v1", true, ""),
+				// Valid cluster-scoped resources (group/version/Kind/name)
+				Entry("valid - cluster-scoped node", "core/v1/Node/worker-node-1", "workflow-7", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped persistentvolume", "core/v1/PersistentVolume/pv-data-01", "workflow-8", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped clusterrole", "rbac.authorization.k8s.io/v1/ClusterRole/admin", "workflow-9", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped namespace", "core/v1/Namespace/production", "workflow-10", "ghcr.io/org/wf:v1", true, ""),
 
 				// Invalid TargetResource - missing parts (must have valid executionBundle first)
 				Entry("invalid - empty targetResource", "", "workflow-1", "ghcr.io/org/wf:v1", false, "targetResource"),
 				Entry("invalid - only one part", "default", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
-				Entry("invalid - too many parts", "default/deployment/app/extra", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
+				Entry("invalid - too many parts", "default/apps/v1/Deployment/app/extra", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 
 				// Invalid WorkflowRef - executionBundle validation
-				Entry("invalid - empty ExecutionBundle", "default/deployment/app", "workflow-1", "", false, "executionBundle"),
+				Entry("invalid - empty ExecutionBundle", "default/apps/v1/Deployment/app", "workflow-1", "", false, "executionBundle"),
 
 				// Validation order: executionBundle checked first
 				Entry("invalid - all empty returns executionBundle error first", "", "", "", false, "executionBundle"),
@@ -4718,7 +4720,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 						},
 					},
-					TargetResource: "default//my-app", // Invalid: empty kind
+					TargetResource: "default//v1/Deployment/my-app", // Invalid: empty group
 				},
 			}
 
@@ -4727,7 +4729,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Then: Should return error
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("empty part"))
+			Expect(err.Error()).To(ContainSubstring("targetResource"))
 		})
 	})
 
@@ -5632,10 +5634,13 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// When: BuildPipelineRun is called
 				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 
-				// Then: Label should be truncated to 63 characters
+				// Then: Label should be truncated to 63 characters, with the
+				// deterministic sha256 suffix kept so two long, group-differing
+				// targets cannot collapse into one label value (#2658 E10).
 				labelValue := pr.Labels["kubernaut.ai/target-resource"]
 				Expect(labelValue).To(HaveLen(63))
-				Expect(labelValue).To(Equal(strings.Repeat("a", 63)))
+				Expect(labelValue).To(HavePrefix(strings.Repeat("a", 54)))
+				Expect(labelValue).To(MatchRegexp(`^a{54}-[0-9a-f]{8}$`))
 			})
 
 			It("should not truncate values under 63 characters", func() {

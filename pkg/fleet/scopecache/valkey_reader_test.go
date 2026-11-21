@@ -36,6 +36,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // generateSelfSignedCertPair writes a self-signed cert/key pair usable as
@@ -95,6 +96,15 @@ var _ = Describe("UT-FLEET-VALKEY-READ: ValkeyCacheReader", func() {
 		observation, err := reader.Read(ctx, "legacy")
 		Expect(err).To(HaveOccurred())
 		Expect(observation.State).To(Equal(scopecache.RecordUncertain))
+	})
+
+	It("UT-FMC-CACHE-017 [BR-SCOPE-001, #2686]: a committed invalid label state decodes as a verified fail-closed observation", func() {
+		Expect(mr.Set("kubernaut:managed:prod-east:apps/v1/Deployment:payments/checkout", "invalid")).To(Succeed())
+		observation, err := reader.Read(ctx, "kubernaut:managed:prod-east:apps/v1/Deployment:payments/checkout")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(observation.State).To(Equal(scopecache.RecordVerifiedPresent))
+		Expect(observation.LabelState).To(Equal(scope.LabelStateInvalid),
+			"the production legacy reader must surface committed invalid records so Client.Check fails closed")
 	})
 
 	Describe("Exists", func() {

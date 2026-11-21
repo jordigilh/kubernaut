@@ -44,7 +44,6 @@ package workflowexecution
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -55,7 +54,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -73,6 +71,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/pkg/shared/workflowidentity"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -616,47 +615,17 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 		}
 	}
 
-	// Validate targetResource format per DD-WE-001:
-	// - Namespaced resources: {namespace}/{kind}/{name} (3 parts)
-	// - Cluster-scoped resources: {kind}/{name} (2 parts)
-	// Examples:
-	//   - "payment/deployment/payment-api" (namespaced)
-	//   - "node/worker-node-1" (cluster-scoped)
-	//   - "kube-system/configmap/coredns" (namespaced)
-	parts := strings.Split(wfe.Spec.TargetResource, "/")
-	if len(parts) < 2 || len(parts) > 3 {
-		return fmt.Errorf("targetResource must be in format {namespace}/{kind}/{name} (namespaced) or {kind}/{name} (cluster-scoped), got %d parts", len(parts))
+	// Validate targetResource as the canonical resource identity (#2658):
+	//   namespaced:      namespace/group/version/Kind/name
+	//   cluster-scoped:  group/version/Kind/name
+	// The core group renders as "core"; an unestablished apiVersion renders
+	// "unresolved/unresolved". scope.ParseTargetIdentity validates every slot
+	// (kind shape, DNS1123 name, DNS1123 group, version shape), so a
+	// mis-split or legacy string can never be accepted as a target.
+	if _, _, _, _, err := scope.ParseTargetIdentity(wfe.Spec.TargetResource); err != nil {
+		return fmt.Errorf("targetResource must be in format {namespace}/{group}/{version}/{Kind}/{Name} (namespaced) or {group}/{version}/{Kind}/{Name} (cluster-scoped): %w", err)
 	}
 
-	if err := validateTargetResourceParts(parts); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func validateTargetResourceParts(parts []string) error {
-	for i, part := range parts {
-		if part == "" {
-			return fmt.Errorf("targetResource has empty part at position %d", i)
-		}
-	}
-
-	if len(parts) == 3 {
-		if errs := validation.IsDNS1123Label(parts[0]); len(errs) > 0 {
-			return fmt.Errorf("targetResource namespace is invalid: %s", strings.Join(errs, "; "))
-		}
-		parts = parts[1:]
-	}
-
-	// Kubernetes kinds are conventionally title-cased, so validate a lowercase
-	// projection while preserving the original target string for execution.
-	if errs := validation.IsDNS1123Subdomain(strings.ToLower(parts[0])); len(errs) > 0 {
-		return fmt.Errorf("targetResource kind is invalid: %s", strings.Join(errs, "; "))
-	}
-	if errs := validation.IsDNS1123Subdomain(parts[1]); len(errs) > 0 {
-		return fmt.Errorf("targetResource name is invalid: %s", strings.Join(errs, "; "))
-	}
 	return nil
 }
 

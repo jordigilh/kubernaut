@@ -325,7 +325,9 @@ spec:
     executionBundleDigest: string # PASS THROUGH from AIAnalysis.status.selectedWorkflow.executionBundleDigest
     executionEngine: string       # PASS THROUGH -- "tekton" | "job" | "ansible"
 
-  # REQUIRED: Resource lock target (DD-WE-001), format "namespace/kind/name"
+  # REQUIRED: Resource lock target (DD-WE-001). Canonical identity
+  # "namespace/group/version/Kind/name" or "group/version/Kind/name" (#2658);
+  # "unresolved" in the group/version slots when the apiVersion is unknown
   targetResource: string
 
   # OPTIONAL: Remote-cluster execution via MCP Gateway (BR-FLEET-054); empty = local/hub cluster

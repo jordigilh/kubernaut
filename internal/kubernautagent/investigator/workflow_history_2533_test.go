@@ -46,9 +46,9 @@ func (*issue2533K8sClient) GetSpecHash(context.Context, string, string, string, 
 
 type issue2533DSClient struct{}
 
-func (*issue2533DSClient) GetRemediationHistory(context.Context, string, string, string, string, string) (*enrichment.RemediationHistoryResult, error) {
+func (*issue2533DSClient) GetRemediationHistory(context.Context, enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{
-		TargetResource: "prod/Pod/api-server",
+		TargetResource: "prod/core/v1/Pod/api-server",
 		Tier1: []enrichment.Tier1Entry{{
 			RemediationUID:    "rr-prior-2533",
 			WorkflowID:        "prior-workflow",

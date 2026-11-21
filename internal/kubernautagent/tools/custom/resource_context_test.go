@@ -69,13 +69,15 @@ type fakeDS struct {
 	history *enrichment.RemediationHistoryResult
 	err     error
 
-	capturedSpecHash  string
-	capturedClusterID string
+	capturedSpecHash   string
+	capturedClusterID  string
+	capturedAPIVersion string
 }
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, clusterID, specHash string) (*enrichment.RemediationHistoryResult, error) {
-	f.capturedSpecHash = specHash
-	f.capturedClusterID = clusterID
+func (f *fakeDS) GetRemediationHistory(_ context.Context, query enrichment.RemediationHistoryQuery) (*enrichment.RemediationHistoryResult, error) {
+	f.capturedSpecHash = query.SpecHash
+	f.capturedClusterID = query.ClusterID
+	f.capturedAPIVersion = query.APIVersion
 	return f.history, f.err
 }
 

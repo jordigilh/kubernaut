@@ -10,10 +10,21 @@
 > older boolean checker, missing-target/namespace fallback and invalid-label
 > examples. `ScopeChecker.Check` returns enum state/provenance; only verified
 > managed authorizes action. Missing observation evidence is unavailable, invalid
-> labels cannot inherit, and cluster-scoped target authorization stays deferred.
+> labels cannot inherit, and cluster-scoped targets authorize through their own
+> observed label (FR-SCOPE-004 Option A, #2670); only the non-labelable
+> `ClusterScope` pseudo-target stays deferred.
 > AF uses `ErrResourceNotManaged` only for verified unmanaged and
 > `ErrScopeUnavailable` for missing/invalid/unsupported/denied authority or errors.
 > Existing-RR takeover remains distinct from new-RR admission under ADR-068.
+
+> **Fenced-lane invalid-label amendment (2026-11-20, #2686):** an invalid
+> `kubernaut.ai/managed` label value is a complete, decisive source observation.
+> The FMC writer stages and commits it (DD-FLEET-016 "Invalid-label
+> observations"), so a committed `invalid` record revokes a previously committed
+> authorization at the next committed repair instead of retaining the last-good
+> record until TTL. Local and fenced lanes share the rule; missing/uncertain
+> evidence stays `unavailable` and is never flattened into `invalid` or
+> `unmanaged`.
 
 > **Note (2026-02-24)**: [ADR-057](ADR-057-crd-namespace-consolidation.md) supersedes this ADR's
 > implicit assumption that CRDs are created in the signal/workload namespace. Per ADR-057, **all
@@ -117,6 +128,124 @@ metadata:
 - **Simplicity**: Only 2 levels (resource → namespace), not 5 (pod → replicaset → deployment → namespace)
 - **Performance**: Max 2 API calls (resource + namespace)
 - **Operator Control**: Resource-level override for exceptions (e.g., exclude legacy apps from managed namespace)
+
+### 2a. Recognized kinds (issue #2670)
+
+The scope lanes classify a target as cluster-scoped through a static kind map
+(`pkg/shared/scope/manager.go` `clusterScopedKinds`) plus an empty namespace, and
+resolve it at level 1 only. The map is a heuristic, not API discovery: an entry
+that the cluster does not serve is simply unobservable. An identity without a
+namespace is resolved at level 1 when its kind is unknown or known to be
+cluster-scoped; a kind known to be namespaced (`Pod`, `Deployment`, `Service`,
+`ConfigMap`, `Secret`, `PersistentVolumeClaim`, …) is rejected first as
+`invalid` / `namespaced_target_without_namespace`, because such an identity can
+never be satisfied and retrying it would loop. The inventory is pinned by
+`UT-SCOPE-2670-012`, so adding or removing a kind requires changing this section
+and the test together.
+
+**Upstream Kubernetes, shipped by default (19):** `Node`, `PersistentVolume`,
+`Namespace`, `ClusterRole`, `ClusterRoleBinding`, `StorageClass`,
+`CustomResourceDefinition`, `IngressClass`, `PriorityClass`,
+`ValidatingWebhookConfiguration`, `MutatingWebhookConfiguration`, `CSIDriver`,
+`CSINode`, `VolumeAttachment`, `RuntimeClass`, `APIService`,
+`CertificateSigningRequest`, `FlowSchema`, `PriorityLevelConfiguration`.
+(`APIService`, the CSI kinds and the flowcontrol kinds can be disabled in a
+stripped-down apiserver; absence only makes them unobservable.)
+
+**OpenShift-only (4):** `ClusterOperator`, `ClusterVersion`, `Infrastructure`,
+`ClusterNetwork`.
+
+**Namespaced kinds recognized by the same map** (they keep the 2-level
+hierarchy and are never treated as cluster-scoped): `Pod`, `Service`,
+`ConfigMap`, `Secret`, `PersistentVolumeClaim`, `ReplicaSet`, `Deployment`,
+`StatefulSet`, `DaemonSet`, `Job`, `CronJob`, `HorizontalPodAutoscaler`,
+`Ingress`, `PodDisruptionBudget`.
+
+A kind **outside** this map that carries no namespace stays ambiguous: it is
+resolved at level 1 like a cluster-scoped CRD, because the static map cannot
+prove it is namespaced. A cluster-scoped CRD that is never observed therefore
+ends in retryable `unavailable` rather than a terminal rejection. Closing that
+gap needs a RESTMapper-based kind resolver; both directions of the ambiguity are
+tracked as one follow-up.
+
+**Normalization and dedup.** The Gateway adapters drop a claimed namespace for a
+cluster-scoped target before the fingerprint is computed, so the dedup key, the
+persisted `spec.targetResource` and the scope identity agree (for cluster-scoped
+kinds this supersedes #1371's "honor an explicit namespace label"). Both adapters
+use the API-discovery registry: the classifier prefers the per-`(group, Kind)`
+answer selected by the target's `apiVersion`, then the static map, then the
+per-Kind discovery answer. A discovered cluster-scoped CRD is therefore
+normalized on the Prometheus lane and the Kubernetes-event lane alike
+(`UT-GW-2670-024`, `UT-GW-2670-025`). The owner-chain resolver applies the same
+rule when traversal advances to a cluster-scoped owner: a mirror Pod in
+`kube-system` that resolves to its Node hashes no namespace, matching a direct
+event for that Node (`UT-GW-2670-026`).
+
+The residual case is a cluster-scoped kind that **neither the adapters nor the
+Gateway's discovery snapshot** classifies, arriving with a namespace. That
+identity is treated as *namespaced* and can be authorized by that namespace's
+`kubernaut.ai/managed` label at level 2 rather than failing closed. Closing that
+gap needs a RESTMapper-based kind resolver and is tracked as one follow-up.
+
+**Direct ACM and an empty namespace.** `buildFilters` omits the namespace filter
+when the identity has none, but `searchScopeItem` re-verifies the returned item
+against the requested identity, namespace included. A namespaced object therefore
+cannot satisfy a namespace-less identity: the query is rejected as a mismatched
+identity and the lane returns `unavailable`. All lanes fail closed for that
+identity; only a genuinely cluster-scoped object passes and resolves at level 1
+from its own label.
+
+**Reads are read-only.** The check performs a metadata-only `Get` on
+`PartialObjectMetadata` (local lane), a cache read (fenced fleet lane), or an
+ACM Search query; no mutating verb is required or performed.
+
+**Read grants per lane** (nothing here is a mutation permission):
+- Gateway and API Frontend read the shared target set, which includes
+  `nodes`, `persistentvolumes` and `persistentvolumeclaims`.
+- RemediationOrchestrator reads `pods`, `nodes`, `services`, `namespaces`,
+  `persistentvolumes`, `persistentvolumeclaims` and `configmaps`, plus the `apps`
+  workload kinds. The PVC grant landed in
+  [kubernaut-operator#646](https://github.com/jordigilh/kubernaut-operator/pull/646)
+  (issue #645) at the same time as this behaviour, because a PVC scope check at
+  RO was otherwise unavailable.
+- The Fenced Fleet Metadata Cache syncs Deployment, StatefulSet, DaemonSet, Pod,
+  Service, Node and Namespace; for cluster-scoped **targets** that means `Node`
+  and `Namespace`, with Namespace also serving as inheritance evidence.
+- Direct ACM has no per-kind grant: visibility is bounded by ACM Search RBAC
+  (see ADR-068 §ACM Search RBAC), which is broader than the fenced lane's list.
+
+**Invalid-label observations on the fenced lane.** An invalid `kubernaut.ai/managed`
+value is a complete, decisive source observation: the FMC syncer stages and commits it
+like any other label state (`pkg/fleet/fmc/syncer.go` `buildObservedResource`; DD-FLEET-016
+"Invalid-label observations" amendment), so a previously committed record is **revoked**
+at the next committed repair — a target whose label becomes invalid resolves
+`invalid` / `invalid_resource_label` immediately after that commit, instead of keeping
+`verified_managed` until a later repair or its TTL expires (45s by default).
+
+The local lane reads the object through the informer-backed client that Gateway
+and RO inject into the scope manager, so it returns `invalid` /
+`invalid_resource_label` once the informer has processed the label update — not
+necessarily on the next check: until that cache catches up, a check can still see
+the previous label value. The fenced lane's committed-snapshot window is the same
+class of bounded staleness, bounded by the sync interval rather than the informer.
+
+When the fenced lane has **no** retained record for an invalid observation, the
+read is `unavailable` / `cache_miss` — or `partition_unavailable` when readiness
+is missing — never `invalid`: absence of a record is not evidence of an invalid
+label. `invalid` / `invalid_resource_label` is produced only for a committed
+record that itself carries `LabelStateInvalid`.
+
+Removing authorization on an invalid observation — instead of retaining the last
+committed snapshot — changed the DD-FLEET-016 staged-repair contract for every
+kind, namespaced targets included, and is implemented by
+[#2686](https://github.com/jordigilh/kubernaut/issues/2686); before that change the
+syncer rejected invalid observations and retained the last committed record until
+TTL.
+
+Failure states are fail-closed and lane-specific: an unreadable kind on the
+cached Gateway/RO lanes ends in retryable `unavailable` after the scope-lookup
+timeout, while the API Frontend's direct client surfaces the terminal
+`unauthorized` state.
 
 ---
 
@@ -472,7 +601,7 @@ spec:
 
 ### Neutral
 
-- ℹ️ **V1.0 Focuses on Namespaced Resources**: Cluster-scoped resources (Nodes, PVs) deferred to V2.0
+- ℹ️ **Cluster-Scoped Resources (Option A, #2670)**: labelable cluster-scoped targets (Node, PersistentVolume, labeled cluster-scoped CRDs, Namespace objects) authorize through their own `kubernaut.ai/managed` label at level 1; the `RemediationScope` CRD (FR-SCOPE-004 Option B) remains deferred to V2.0
 - ℹ️ **V1.0 Uses Direct API for RO**: V2.0 can add metadata-only cache if needed
 - ℹ️ **V1.0 Uses Simple 2-Level Hierarchy**: V2.0 can add CRD-based config for complex rules
 

@@ -31,6 +31,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
+// noSiblingCheckerIT satisfies severity.CrossGroupSiblingChecker with "no
+// cross-group sibling exists" (#2658) for fleet RR-creation fixtures. Fleet
+// targets adjudicate as today (the gate documents this deviation), and a
+// hub-local fixture must not fail closed either.
+type noSiblingCheckerIT struct{}
+
+func (noSiblingCheckerIT) CheckCrossGroupSiblings(context.Context, string, string, string, string) ([]string, error) {
+	return nil, nil
+}
+
 type runnableFleetTool interface {
 	tool.Tool
 	Run(ctx agent.Context, args any) (map[string]any, error)
@@ -162,6 +172,7 @@ func newFleetRemediateTool(clusterRegistry *fleetTestClusterRegistry, remoteScop
 		severity.NewNoopLLMTriager(logr.Discard()),
 		severity.DefaultConfig(),
 		logr.Discard(),
+		severity.WithCrossGroupSiblingChecker(noSiblingCheckerIT{}),
 	)
 
 	cfg := agentpkg.DefaultTestConfig()

@@ -78,9 +78,9 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				ResourceName:          "test-pod",
 				ErrorMessage:          "No automation available",
 				Environment:           "production",
-				Priority:         "P2",
-				RiskTolerance:    "medium",
-				BusinessCategory: "standard",
+				Priority:              "P2",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
 			}
 
 			// ========================================
@@ -140,9 +140,9 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Environment:           "production",
 				// generic-restart-v1 is cataloged at P2; using P1 filters the
 				// selected workflow out before KA can return the low-confidence result.
-				Priority:              "P2",
-				RiskTolerance:         "medium",
-				BusinessCategory:      "standard",
+				Priority:         "P2",
+				RiskTolerance:    "medium",
+				BusinessCategory: "standard",
 			}
 
 			// ========================================

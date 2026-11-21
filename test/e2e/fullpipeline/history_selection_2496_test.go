@@ -317,7 +317,10 @@ func fpAssertPriorHistory2496(rr *remediationv1.RemediationRequest, ea *eav1.Eff
 	Eventually(func(g Gomega) {
 		resp, err := dataStorageClient.GetRemediationHistoryContext(ctx, ogenclient.GetRemediationHistoryContextParams{
 			TargetKind: "Deployment", TargetName: "memory-eater", TargetNamespace: rr.Spec.TargetResource.Namespace,
-			CurrentSpecHash: ea.Status.Components.PostRemediationSpecHash,
+			// #2658: targetApiVersion is required and must match the canonical
+			// identity the lifecycle events were recorded with.
+			TargetApiVersion: "apps/v1",
+			CurrentSpecHash:  ea.Status.Components.PostRemediationSpecHash,
 		})
 		g.Expect(err).NotTo(HaveOccurred())
 		history, ok := resp.(*ogenclient.RemediationHistoryContext)

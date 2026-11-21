@@ -99,14 +99,25 @@ WE-1: increase-memory     WE-2: restart-pods
 
 ```
 spec:
-  targetResource: "namespace/kind/name"  # namespaced
-  targetResource: "kind/name"            # cluster-scoped
+  targetResource: "namespace/group/version/Kind/name"   # namespaced
+  targetResource: "group/version/Kind/name"             # cluster-scoped
 
 Examples:
-  - "payment/deployment/payment-api"
-  - "node/worker-node-1"
-  - "kube-system/configmap/coredns"
+  - "payment/apps/v1/Deployment/payment-api"
+  - "core/v1/Node/worker-node-1"
+  - "prod/networking.k8s.io/v1/Ingress/web"
+  - "prod/unresolved/unresolved/Pod/api"
 ```
+
+**#2658 amendment**: the identity carries the target's API group **and version**
+as ordinary path parts (DD-IDENTITY-001 §D2). Nothing is annotated onto the
+string: no `@`-style suffix and no extra sentinel segment. A Kind registered in
+several API groups therefore gets a distinct lock/busy/cooldown identity per
+group, and the `unresolved` form keeps an unknown apiVersion from ever colliding
+with a genuine core resource. The validator accepts exactly the 4- or 5-part
+form; migration is the documented accepted fail-open window
+(DD-IDENTITY-001 §D3).
+
 
 ### Lock Check Algorithm
 

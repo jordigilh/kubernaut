@@ -24,7 +24,6 @@ package server
 
 import (
 	"context"
-	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
@@ -65,8 +64,8 @@ func (a *remediationHistoryRepoAdapter) QueryEffectivenessEventsBatch(ctx contex
 	return result, nil
 }
 
-func (a *remediationHistoryRepoAdapter) QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error) {
-	return a.repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
+func (a *remediationHistoryRepoAdapter) QueryROEventsBySpecHash(ctx context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
+	return a.repo.QueryROEventsBySpecHash(ctx, query)
 }
 
 func (a *remediationHistoryRepoAdapter) QueryAIAnalysisDecisionContextBatch(ctx context.Context, correlationIDs []string, clusterID string) (map[string]repository.AIAnalysisDecisionContext, error) {

@@ -68,16 +68,16 @@ var _ = Describe("Issue #2533 target-scoped historical decision association", fu
 	It("IT-DS-2533-001: batches AI context for existing history correlations and leaves missing records unknown", func() {
 		queryCount := 0
 		base := &mockRemediationHistoryQuerier{}
-		base.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+		base.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 			queryCount++
 			if queryCount == 1 {
 				return []repository.RawAuditRow{
 					{CorrelationID: "rr-2533-known", EventTimestamp: time.Now().UTC(), EventData: map[string]interface{}{
-						"target_resource":           "prod/Deployment/api",
+						"target_resource":           "prod/apps/v1/Deployment/api",
 						"pre_remediation_spec_hash": "sha256:prior",
 					}},
 					{CorrelationID: "rr-2533-missing", EventTimestamp: time.Now().UTC(), EventData: map[string]interface{}{
-						"target_resource":           "prod/Deployment/api",
+						"target_resource":           "prod/apps/v1/Deployment/api",
 						"pre_remediation_spec_hash": "sha256:prior-2",
 					}},
 				}, nil
@@ -91,7 +91,7 @@ var _ = Describe("Issue #2533 target-scoped historical decision association", fu
 		handler := server.NewHandler(server.WithRemediationHistoryQuerier(mock))
 		recorder := httptest.NewRecorder()
 		handler.HandleGetRemediationHistoryContext(recorder, httptest.NewRequest(http.MethodGet,
-			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&clusterId=cluster-2533&currentSpecHash=sha256:current", nil))
+			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&targetApiVersion=apps%2Fv1&clusterId=cluster-2533&currentSpecHash=sha256:current", nil))
 
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		Expect(mock.aiCalls).To(Equal(1))
@@ -117,10 +117,10 @@ var _ = Describe("Issue #2533 target-scoped historical decision association", fu
 
 	It("IT-DS-2533-002: supplemental AI decision-source failure remains fail-closed", func() {
 		base := &mockRemediationHistoryQuerier{}
-		base.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+		base.queryROEventsBySpecHashFn = func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 			return []repository.RawAuditRow{{
 				CorrelationID: "rr-2533-context-unavailable", EventTimestamp: time.Now().UTC(), EventData: map[string]interface{}{
-					"target_resource": "prod/Deployment/api", "pre_remediation_spec_hash": "sha256:prior",
+					"target_resource": "prod/apps/v1/Deployment/api", "pre_remediation_spec_hash": "sha256:prior",
 				}}}, nil
 		}
 		base.queryEffectivenessEventsFn = func(_ context.Context, _ []string) (map[string][]*server.EffectivenessEvent, error) {
@@ -133,7 +133,7 @@ var _ = Describe("Issue #2533 target-scoped historical decision association", fu
 		handler := server.NewHandler(server.WithRemediationHistoryQuerier(mock))
 		recorder := httptest.NewRecorder()
 		handler.HandleGetRemediationHistoryContext(recorder, httptest.NewRequest(http.MethodGet,
-			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&clusterId=cluster-2533&currentSpecHash=sha256:current", nil))
+			"/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=prod&targetApiVersion=apps%2Fv1&clusterId=cluster-2533&currentSpecHash=sha256:current", nil))
 
 		Expect(mock.aiCalls).To(Equal(1))
 		Expect(recorder.Code).To(Equal(http.StatusInternalServerError))

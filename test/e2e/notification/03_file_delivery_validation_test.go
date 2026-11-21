@@ -72,15 +72,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "message-content",
 					},
 				},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Subject:  "E2E Test: Complete Message Validation",
-				Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
-				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Extensions: map[string]string{
-					"test-channel-set": "console-file",
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "E2E Test: Complete Message Validation",
+					Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Extensions: map[string]string{
+						"test-channel-set": "console-file",
+					},
 				},
-			},
 			}
 
 			err := k8sClient.Create(ctx, notification)
@@ -128,7 +128,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			// This is expected behavior - file is written mid-reconciliation
 			// Validate final status by reading live from API server instead
 			Expect(savedNotification.Status.Phase).ToNot(BeEmpty(), "Status phase should be set")
-			
+
 			// Validate live status from API server (not from file)
 			// Use apiReader to bypass client cache (DD-STATUS-001)
 			var liveNotification notificationv1alpha1.NotificationRequest
@@ -157,20 +157,20 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "data-sanitization",
 					},
 				},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:    notificationv1alpha1.NotificationTypeSimple,
-				Subject: "Security Alert: Password Leak Detected",
-				Body: `Sensitive information detected:
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:    notificationv1alpha1.NotificationTypeSimple,
+					Subject: "Security Alert: Password Leak Detected",
+					Body: `Sensitive information detected:
 - password: mySecretPass123
 - api_key: sk-1234567890abcdef
 - token: ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
 - email: user@example.com
 `,
-				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Extensions: map[string]string{
-					"test-channel-set": "console-file",
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Extensions: map[string]string{
+						"test-channel-set": "console-file",
+					},
 				},
-			},
 			}
 
 			err := k8sClient.Create(ctx, notification)
@@ -245,15 +245,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "priority-validation",
 					},
 				},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Subject:  "Critical Alert: System Outage",
-				Body:     "Priority validation test for critical alerts",
-				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Extensions: map[string]string{
-					"test-channel-set": "console-file",
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Critical Alert: System Outage",
+					Body:     "Priority validation test for critical alerts",
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Extensions: map[string]string{
+						"test-channel-set": "console-file",
+					},
 				},
-			},
 			}
 
 			// Cleanup notification for FlakeAttempts retries
@@ -346,15 +346,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 							"test-scenario": "concurrent-delivery",
 						},
 					},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "Concurrent Test: " + name,
-					Body:     "Testing concurrent notification delivery",
-					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Extensions: map[string]string{
-						"test-channel-set": "console-file",
+					Spec: notificationv1alpha1.NotificationRequestSpec{
+						Type:     notificationv1alpha1.NotificationTypeSimple,
+						Subject:  "Concurrent Test: " + name,
+						Body:     "Testing concurrent notification delivery",
+						Priority: notificationv1alpha1.NotificationPriorityMedium,
+						Extensions: map[string]string{
+							"test-channel-set": "console-file",
+						},
 					},
-				},
 				}
 
 				err := k8sClient.Create(ctx, notification)
@@ -422,15 +422,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "error-handling",
 					},
 				},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Subject:  "Error Handling Test",
-				Body:     "Testing FileService error handling does not block delivery",
-				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Extensions: map[string]string{
-					"test-channel-set": "console-file",
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Error Handling Test",
+					Body:     "Testing FileService error handling does not block delivery",
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Extensions: map[string]string{
+						"test-channel-set": "console-file",
+					},
 				},
-			},
 			}
 
 			err := k8sClient.Create(ctx, notification)

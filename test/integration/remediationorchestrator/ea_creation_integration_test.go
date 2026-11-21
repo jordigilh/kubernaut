@@ -812,25 +812,34 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		// #2593 (DD-FLEET-015) adaptation: cluster-scoped targets (Node) are
-		// ScopeUnsupported in RO's presence-first scope lane (Check #1 in the
-		// blocking pipeline), so the RR is blocked with UnmanagedResource
-		// (fail-closed) and never reaches Processing — no SP is created to
-		// fail. The business outcome under test (#240: no EA for a
-		// cluster-scoped Node whose remediation was never attempted) is
-		// asserted directly below.
-		By("Waiting for RR to be Blocked by the scope gate (cluster-scoped target)")
+		// #2670: a managed-labeled Node is authorized by BR-SCOPE-001
+		// FR-SCOPE-004 Option A, so the RR reaches Processing and SP runs. This
+		// restores the #240 contract that #2637's over-broad refusal had made
+		// untestable: an SP failure on a cluster-scoped target must not create
+		// an EffectivenessAssessment.
+		By("Driving RR to Processing phase")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing), "a labeled Node must pass the scope gate")
 
-		By("Verifying no SignalProcessing was created")
+		By("Failing SignalProcessing")
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
-		Consistently(func() error {
+		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
-		}, 5*time.Second, interval).ShouldNot(Succeed(), "No SP should exist for a scope-blocked cluster-scoped target")
+		}, timeout, interval).Should(Succeed())
+		sp.Status.Phase = signalprocessingv1.PhaseFailed
+		failedNow := metav1.Now()
+		sp.Status.CompletionTime = &failedNow
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for cluster-scoped Node test"
+		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+
+		By("Waiting for Failed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
 		By("Verifying EA was NOT created (Issue #240)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)

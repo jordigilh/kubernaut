@@ -132,6 +132,13 @@ const MaxAPIVersionLen = 253
 // (e.g. "v1", "apps/v1", "example.com/stable"). A regex-only check previously
 // rejected grouped non-v<N> versions (CRD versions like "stable") that the
 // fingerprint's group extraction accepts, splitting the identity contract.
+//
+// #2658: the core API group must be spelled by version alone. "core/v1" used
+// to pass the shape check and be persisted verbatim, but it parses as the
+// literal group "core", which matches no GVK and no persisted identity row --
+// every group-aware consumer would then look for an identity that cannot
+// exist. The rejection is explicit (not just a generic shape failure) so the
+// caller learns the correct spelling.
 func APIVersion(v string) error {
 	if v == "" {
 		return fmt.Errorf("api_version must not be empty")
@@ -141,6 +148,9 @@ func APIVersion(v string) error {
 	}
 	if _, _, err := scope.ParseAPIVersion(v); err != nil {
 		return fmt.Errorf("invalid api_version %q: must be a core 'v<N>' or '<group>/<version>' (e.g. 'v1', 'apps/v1', 'example.com/stable')", v)
+	}
+	if version, isCoreAlias := strings.CutPrefix(v, "core/"); isCoreAlias {
+		return fmt.Errorf("api_version %q must not name the core API group; use %q for core resources", v, version)
 	}
 	return nil
 }

@@ -250,10 +250,10 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				}
 
 				// TAMPER with middle event's hash (simulating post-tampering state).
-			// AU-9 trigger (migration 012) correctly blocks direct event_data
-			// modification, so we corrupt event_hash instead. The Export
-			// verification recalculates hashes from event_data and detects the
-			// mismatch -- exercising the same tamper-detection code path.
+				// AU-9 trigger (migration 012) correctly blocks direct event_data
+				// modification, so we corrupt event_hash instead. The Export
+				// verification recalculates hashes from event_data and detects the
+				// mismatch -- exercising the same tamper-detection code path.
 				_, err := db.ExecContext(ctx,
 					`UPDATE audit_events
 					 SET event_hash = 'TAMPERED_HASH_VALUE'

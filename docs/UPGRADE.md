@@ -59,20 +59,63 @@ Three scope-surface changes land together. Two remove lanes that had no
 reader; the third — cluster-scoped targets — is a behavior change already
 approved as the DD-FLEET-015 deferred-target boundary (see below).
 
-### Cluster-scoped targets remain unsupported
+### Cluster-scoped targets authorize through their own label
 
-BR-SCOPE-001 FR-SCOPE-004 (approved DD-FLEET-015 amendment): a
-cluster-scoped remediation target (`Namespace == ""` or a known cluster-scoped
-kind such as `Node`/`PersistentVolume`) returns `ScopeUnsupported` on both the
-local and the fleet scope lanes. The reason `cluster_scoped_target_unsupported`
-is observable on the **local lane only**: `ScopeResult.Reason` never crosses the
-Fleet wire (the scope-result wire format carries only `state` and `provenance`,
-DD-FLEET-015), so Fleet-lane consumers see bare `ScopeUnsupported` — including
-via the ACM backend, which never emits the reason. Hub `Node`/`PersistentVolume`
-remediation that formerly worked through a label no longer resolves as managed.
-This is a documented behavior change, not
-a regression: the target boundary is deferred until fleet cluster-scoped support
-is designed.
+BR-SCOPE-001 FR-SCOPE-004 Option A is restored (issue #2670). A real
+cluster-scoped remediation target — a `Node`, a `PersistentVolume`, a labeled
+cluster-scoped CRD, or a `Namespace` object — is authorized by the observed
+`kubernaut.ai/managed` label on the object itself, resolving `verified_managed`
+or `verified_unmanaged` with `resource-label` provenance. The 2-level hierarchy
+degenerates to level 1: no namespace exists to inherit, so a present-but-
+unlabeled target is `verified_unmanaged` with `none` provenance, and a target
+that cannot be observed is `unavailable` (`observation_missing` locally,
+`cache_miss` on the fenced fleet lane, `search_observation_unavailable` on direct
+ACM). An invalid label value is `invalid`, exactly as for a
+namespaced target: since [#2686](https://github.com/jordigilh/kubernaut/issues/2686)
+the fenced syncer stages and commits the invalid observation, so the previously
+committed authorization is revoked at the next committed repair rather than
+serving until TTL. ADR-053 §"Recognized kinds" records the rule.
+
+Supported targets differ by lane, so choose the lane accordingly. The local
+Gateway/RO lane and direct ACM can authorize any kind they can read. The fenced
+Fleet Metadata Cache observes only `Deployment`, `StatefulSet`, `DaemonSet`,
+`Pod`, `Service`, `Node` and `Namespace`: a `PersistentVolume` or a
+cluster-scoped CRD target can never resolve as managed there and ends in
+retryable `unavailable` (`cache_miss`). A read denied by RBAC is reported as
+terminal `unauthorized` (`scope_access_denied`) by a direct client such as the
+API Frontend's, whereas a cached Gateway/RO lookup that cannot read the kind ends
+in retryable `unavailable` (`scope_lookup_error`).
+
+`ScopeUnsupported` with reason `cluster_scoped_target_unsupported` is now
+reserved for a genuinely non-labelable target: `Kind: ClusterScope`, the
+reserved pseudo-kind for a cluster-level intent with no backing object to carry
+a label (DD-GATEWAY-CLUSTER-SCOPE-SIGNALS). That design remains deferred.
+
+This reverses the behavior shipped in #2637/#2662, where both scope lanes
+refused every cluster-scoped target and hub `Node`/`PersistentVolume`
+remediation that had worked through a label stopped resolving as managed. The
+reason string never crosses the Fleet wire: `ScopeResult` carries only `state`
+and `provenance` (DD-FLEET-015), so a Fleet consumer sees the bare state. For a
+`ClusterScope` request that specific qualifier still matters: an identity with no
+group and no version fails GVK validation before the boundary check and returns
+`ScopeInvalid` from the federated checker and the FMC HTTP handler, while one
+that carries a version reaches the pseudo-target guard and yields bare
+`ScopeUnsupported`.
+
+Read access is unchanged and read-only: the scope check performs a metadata-only
+read (a `Get` on `PartialObjectMetadata`, a cache read, or an ACM Search query)
+and never mutates the target. ADR-053 §"Recognized kinds" lists every kind the
+static classification recognizes and the reads each lane holds.
+
+**Cluster-scoped targets carry no namespace.** At the Gateway, an alert that
+labels a namespace for a Node, PV or other cluster-scoped kind is normalized to
+an empty target namespace, so the dedup key (which hashes the target namespace),
+the persisted `spec.targetResource` and the scope identity agree. This holds for
+the kinds the Gateway can classify — the static set plus kinds its API discovery
+reports as cluster-scoped. For cluster-scoped kinds it supersedes #1371's "honor
+an explicit namespace label" behaviour. The API Frontend still hashes the
+namespace it is given, so a cluster-scoped CRD submitted through AF with a
+namespace keeps it.
 
 ### Both `IsManagedResource` boolean lanes are removed
 
@@ -86,6 +129,21 @@ Fleet is **disabled**; with Fleet enabled, every scope request must carry a
 `ClusterID` — an unattributed request returns `ScopeInvalid`
 (`missing_cluster_attribution`) and never falls back to the local checker
 (DD-FLEET-015).
+
+## Invalid managed-label observations now revoke (#2686)
+
+On the fenced fleet lane, a target whose `kubernaut.ai/managed` label value becomes
+invalid (anything other than `"true"`/`"false"`) used to keep its previously committed
+authorization until a later repair replaced the record or its TTL expired (45s default),
+because the FMC syncer rejected the invalid observation and failed the whole sync cycle.
+The syncer now stages and commits the invalid observation like any other label state
+(DD-FLEET-016 "Invalid-label observations" amendment), and the already-shipped read-side
+mapping turns it into `ScopeInvalid` (`invalid_resource_label`) immediately — the same
+fail-closed rule the local lane applies. Readiness and partition failures are unchanged:
+they keep returning `unavailable` (`partition_unavailable`/`partition_invalid`) and are
+never flattened into `invalid`. A structurally malformed source payload still fails the
+scan as incomplete; the scan commits no observation, so the committed record and its
+clean proof remain readable until the next committed repair or their TTL expires.
 
 ### `ScopeResult.Managed` is removed
 

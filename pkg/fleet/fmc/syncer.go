@@ -360,6 +360,14 @@ func (s *Syncer) syncLegacyCluster(ctx context.Context, cluster registry.Cluster
 			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "duplicate_identity").Inc()
 			return err
 		}
+		// #2686: both write lanes share knownLabelState as the single
+		// write-boundary rule, so a non-conforming reader state fails the
+		// cycle closed before any cache mutation, mirroring the fenced
+		// lane's whole-set validation before staging.
+		if err := observation.cacheObservation.Validate(); err != nil {
+			s.metrics.SyncErrors.WithLabelValues(cluster.ID, "invalid_observation").Inc()
+			return fmt.Errorf("sync cluster %s invalid observation %q: %w", cluster.ID, observation.key, err)
+		}
 		seenKeys[observation.key] = struct{}{}
 	}
 	for _, observed := range observations {
@@ -748,9 +756,11 @@ func (s *Syncer) buildObservedResource(
 	if !scope.IsClusterScopedKind(kind) && namespace == "" {
 		return observedResource{}, fmt.Errorf("syncKind: namespaced kind=%s has empty namespace", kind)
 	}
-	if item.LabelState == scope.LabelStateInvalid {
-		return observedResource{}, fmt.Errorf("syncKind: invalid managed label for cluster=%s kind=%s namespace=%s name=%s", cluster.ID, item.Object.GetKind(), namespace, item.Object.GetName())
-	}
+	// #2686: an invalid managed-label value is a complete, decisive source
+	// observation, not a failed scan. It is staged and committed like any
+	// other label state so the read side fails closed immediately instead of
+	// retaining the last committed authorization until TTL (DD-FLEET-016
+	// invalid-label observations amendment; BR-SCOPE-001).
 	key, err := scopecache.BuildKey(cluster.ID, itemGV.Group, itemGV.Version, item.Object.GetKind(), namespace, item.Object.GetName())
 	if err != nil {
 		return observedResource{}, fmt.Errorf("syncKind: invalid resource metadata for cluster=%s kind=%s namespace=%s name=%s: %w",

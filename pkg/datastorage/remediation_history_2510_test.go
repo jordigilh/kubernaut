@@ -28,11 +28,11 @@ var _ = Describe("#2510 applied-state history evidence", func() {
 		at := time.Now().UTC().Add(-time.Hour)
 		calls := 0
 		mock := &mockRemediationHistoryQuerier{
-			queryROEventsBySpecHashFn: func(_ context.Context, _, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+			queryROEventsBySpecHashFn: func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				calls++
 				if calls == 1 {
 					return []repository.RawAuditRow{{EventType: "remediation.workflow_created", CorrelationID: "rr-2510-confirmed", EventTimestamp: at, EventData: map[string]interface{}{
-						"target_resource": "default/Deployment/api", "pre_remediation_spec_hash": "sha256:before",
+						"target_resource": "default/apps/v1/Deployment/api", "pre_remediation_spec_hash": "sha256:before",
 						"workflow_id": "workflow-a", "workflow_name": "generic-remediation", "workflow_selection_confidence": 0.9,
 					}}}, nil
 				}
@@ -47,7 +47,7 @@ var _ = Describe("#2510 applied-state history evidence", func() {
 		}
 		h := server.NewHandler(server.WithRemediationHistoryQuerier(mock))
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=default&currentSpecHash=sha256:current", nil)
+		req := httptest.NewRequest("GET", "/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=default&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:current", nil)
 		h.HandleGetRemediationHistoryContext(rec, req)
 		Expect(rec.Code).To(Equal(200))
 		var response map[string]interface{}
@@ -62,9 +62,9 @@ var _ = Describe("#2510 applied-state history evidence", func() {
 	It("UT-DS-2510-002: distinguishes explicit NoExecution from unknown evidence", func() {
 		at := time.Now().UTC().Add(-time.Hour)
 		mock := &mockRemediationHistoryQuerier{
-			queryROEventsBySpecHashFn: func(_ context.Context, _, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+			queryROEventsBySpecHashFn: func(_ context.Context, query repository.RemediationHistoryQuery) ([]repository.RawAuditRow, error) {
 				return []repository.RawAuditRow{{EventType: "remediation.workflow_created", CorrelationID: "rr-2510-no-execution", EventTimestamp: at, EventData: map[string]interface{}{
-					"target_resource": "default/Deployment/api", "pre_remediation_spec_hash": "sha256:before",
+					"target_resource": "default/apps/v1/Deployment/api", "pre_remediation_spec_hash": "sha256:before",
 				}}}, nil
 			},
 			queryEffectivenessEventsFn: func(_ context.Context, _ []string) (map[string][]*server.EffectivenessEvent, error) {
@@ -73,7 +73,7 @@ var _ = Describe("#2510 applied-state history evidence", func() {
 		}
 		h := server.NewHandler(server.WithRemediationHistoryQuerier(mock))
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=default&currentSpecHash=sha256:current", nil)
+		req := httptest.NewRequest("GET", "/api/v1/remediation-history/context?targetKind=Deployment&targetName=api&targetNamespace=default&targetApiVersion=apps%2Fv1&currentSpecHash=sha256:current", nil)
 		h.HandleGetRemediationHistoryContext(rec, req)
 		Expect(rec.Code).To(Equal(200))
 		var response map[string]interface{}

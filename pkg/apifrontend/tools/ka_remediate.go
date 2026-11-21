@@ -39,6 +39,11 @@ type RemediateArgs struct {
 	// candidate's alert name after the user has explicitly confirmed it
 	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
 	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
+	// ConfirmedAPIGroup is the API group the user confirmed the correlated
+	// alert refers to (#2658), used to resolve an ambiguous result whose
+	// ambiguity_reason is group_unscopable. Accepts "apps", "apps/v1", or
+	// "v1"/"core" for the core group. Leave empty on the first call.
+	ConfirmedAPIGroup string `json:"confirmed_api_group,omitempty"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -62,6 +67,10 @@ type RemediateResult struct {
 	Ambiguous           bool   `json:"ambiguous,omitempty"`
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AmbiguityReason/CandidateAPIGroups (#2658) must stay in this exact
+	// trailing order too -- see the conversion note above.
+	AmbiguityReason    string   `json:"ambiguity_reason,omitempty"`
+	CandidateAPIGroups []string `json:"candidate_api_groups,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -118,6 +127,7 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 		ClusterScoped:                args.Namespace == "",
 		ClusterID:                    args.ClusterID,
 		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
+		ConfirmedAmbiguousAPIGroup:   args.ConfirmedAPIGroup,
 	}
 
 	result, err := HandleCreateRR(ctx, d, createArgs, username)
@@ -125,13 +135,10 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 		return RemediateResult{}, err
 	}
 
+	// DD-AF-012/#2027/#2028, #2658: no RR was created -- surface the typed
+	// ambiguity (reason, candidate, and candidate API groups) unchanged.
 	if result.Ambiguous {
-		return RemediateResult{
-			Ambiguous:           true,
-			CandidateSignalName: result.CandidateSignalName,
-			CandidateSeverity:   result.CandidateSeverity,
-			Message:             result.Message,
-		}, nil
+		return RemediateResult(result), nil
 	}
 
 	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))

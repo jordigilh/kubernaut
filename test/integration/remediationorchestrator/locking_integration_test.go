@@ -161,7 +161,8 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ns := createTestNamespace(ctx, "locking-dedup")
 			defer deleteTestNamespace(ns)
 
-			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
+			// #2658: the lock identity is group-aware; both RRs still share it.
+			targetResource := fmt.Sprintf("%s/apps/v1/Deployment/test-app", ns)
 
 			// Create RR1 and advance to Analyzing
 			rr1, _ := advanceToAnalyzing(ns, "rr-lock-001")
@@ -312,7 +313,8 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ns := createTestNamespace(ctx, "locking-approval")
 			defer deleteTestNamespace(ns)
 
-			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
+			// #2658: the lock identity is group-aware; both RRs still share it.
+			targetResource := fmt.Sprintf("%s/apps/v1/Deployment/test-app", ns)
 
 			// Create RR1 via normal path, let it create WFE1
 			rr1, _ := advanceToAnalyzing(ns, "rr-lock-normal")

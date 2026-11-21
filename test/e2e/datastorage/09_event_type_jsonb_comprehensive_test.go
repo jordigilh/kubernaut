@@ -766,7 +766,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 					ExecutionName:   wfeName,
 					WorkflowID:      "kubectl-restart-deployment-e2e",
 					WorkflowVersion: "v1.0.0",
-					TargetResource:  "default/deployment/test-deployment",
+					TargetResource:  "default/apps/v1/Deployment/test-deployment",
 					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
 				}),
 			}
@@ -801,7 +801,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 					ExecutionName:   wfeName,
 					WorkflowID:      "kubectl-restart-deployment-e2e",
 					WorkflowVersion: "v1.0.0",
-					TargetResource:  "default/deployment/test-deployment",
+					TargetResource:  "default/apps/v1/Deployment/test-deployment",
 					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
 				}),
 			}
@@ -836,7 +836,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 					ExecutionName:   wfeName,
 					WorkflowID:      "kubectl-restart-deployment-e2e",
 					WorkflowVersion: "v1.0.0",
-					TargetResource:  "default/deployment/test-deployment",
+					TargetResource:  "default/apps/v1/Deployment/test-deployment",
 					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
 				}),
 			}
@@ -871,7 +871,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 					ExecutionName:   wfeName,
 					WorkflowID:      "kubectl-restart-deployment-e2e",
 					WorkflowVersion: "v1.0.0",
-					TargetResource:  "default/deployment/test-deployment",
+					TargetResource:  "default/apps/v1/Deployment/test-deployment",
 					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
 				}),
 			}
@@ -905,7 +905,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 					ExecutionName:   wfeName,
 					WorkflowID:      "kubectl-restart-deployment-e2e",
 					WorkflowVersion: "v1.0.0",
-					TargetResource:  "default/deployment/test-deployment",
+					TargetResource:  "default/apps/v1/Deployment/test-deployment",
 					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhasePending,
 					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
 				}),

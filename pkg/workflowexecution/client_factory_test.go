@@ -212,7 +212,7 @@ var _ = Describe("ClientFactory (BR-FLEET-054)", func() {
 			factory := executor.NewMCPClientFactory(localClient, parentClient.Session())
 			je := executor.NewJobExecutorWithFactory(factory)
 
-			targetResource := "kubernaut-system/deployment/crashloop-app"
+			targetResource := "kubernaut-system/apps/v1/Deployment/crashloop-app"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{Name: "we-remote", Namespace: "kubernaut-system"},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{

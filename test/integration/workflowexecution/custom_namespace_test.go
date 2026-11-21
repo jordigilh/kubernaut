@@ -72,7 +72,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			Expect(WorkflowExecutionNS).To(Equal("kubernaut-workflows"))
 
 			By("Creating WorkflowExecution in default namespace")
-			wfe := createUniqueWFE("custom-ns", "default/deployment/test-app")
+			wfe := createUniqueWFE("custom-ns", "default/apps/v1/Deployment/test-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			// WFE is in "default" namespace, but PipelineRun should be in "kubernaut-workflows"
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
@@ -166,8 +166,8 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			var err error
 
 			By("Creating multiple WorkflowExecutions in different namespaces")
-			wfe1 := createUniqueWFE("multi-ns-1", "default/deployment/app1")
-			wfe2 := createUniqueWFE("multi-ns-2", "default/deployment/app2")
+			wfe1 := createUniqueWFE("multi-ns-1", "default/apps/v1/Deployment/app1")
+			wfe2 := createUniqueWFE("multi-ns-2", "default/apps/v1/Deployment/app2")
 			wfe1.Spec.WorkflowRef.WorkflowID = workflowID
 			wfe2.Spec.WorkflowRef.WorkflowID = workflowID
 
@@ -251,7 +251,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			var err error
 
 			By("Creating WorkflowExecution")
-			wfe := createUniqueWFE("isolation", "default/deployment/isolated-app")
+			wfe := createUniqueWFE("isolation", "default/apps/v1/Deployment/isolated-app")
 			wfe.Spec.WorkflowRef.WorkflowID = workflowID
 			Expect(createWorkflowExecutionWithActiveParent(ctx, wfe)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, wfe) }()
