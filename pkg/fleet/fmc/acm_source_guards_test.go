@@ -110,7 +110,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 	})
 
 	// UT-FMC-SRC-2661-019 / 011
-	DescribeTable("UT-FMC-SRC-2661-019: malformed projected labels are invalid, never absent and never resolved",
+	DescribeTable("UT-FMC-SRC-2661-012: malformed projected labels are invalid, never absent and never resolved",
 		func(label string, expected scope.LabelState) {
 			item := searchItem("uid-1", "api", label)
 			observed, err := readAll(newACMSource(&fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}))
@@ -130,7 +130,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Entry("other labels only", "app=checkout;tier=web", scope.LabelStateAbsent),
 	)
 
-	It("UT-FMC-SRC-2661-019: a null label field is invalid, not absent", func() {
+	It("UT-FMC-SRC-2661-012: a null label field is invalid, not absent", func() {
 		item := searchItem("uid-1", "api", "")
 		item["label"] = json.RawMessage("null")
 
@@ -142,7 +142,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Expect(observed.Items[0].LabelsPresent).To(BeTrue())
 	})
 
-	DescribeTable("UT-FMC-SRC-2661-019: a per-key label projection is held to the same rule as the semicolon field",
+	DescribeTable("UT-FMC-SRC-2661-012: a per-key label projection is held to the same rule as the semicolon field",
 		func(rawValue string) {
 			// Legacy projections use a dedicated key instead of the `label` field.
 			item := searchItem("uid-1", "api", "")
@@ -161,7 +161,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Entry("empty value", `""`),
 	)
 
-	It("UT-FMC-SRC-2661-019: two managed-label sources at once is corruption, not a precedence choice", func() {
+	It("UT-FMC-SRC-2661-012: two managed-label sources at once is corruption, not a precedence choice", func() {
 		// Search answers with either the projected `label` field or the legacy
 		// per-key form. Both at once has no defined winner, and silently picking
 		// one can turn corruption into a clean managed/unmanaged answer.
@@ -175,7 +175,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		Expect(observed.Items[0].LabelState).To(Equal(scope.LabelStateInvalid))
 	})
 
-	It("UT-FMC-SRC-2661-019: conflicting legacy managed-label spellings are corruption", func() {
+	It("UT-FMC-SRC-2661-012: conflicting legacy managed-label spellings are corruption", func() {
 		item := searchItem("uid-1", "api", "")
 		item["label.kubernaut.ai/managed"] = mustJSON("true")
 		item["labels.kubernaut.ai/managed"] = mustJSON("false")
@@ -188,7 +188,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			"first-match would invent an answer the source never gave")
 	})
 
-	It("UT-FMC-SRC-2661-019: a space-adjacent separator is malformed, matching the Check lane", func() {
+	It("UT-FMC-SRC-2661-012: a space-adjacent separator is malformed, matching the Check lane", func() {
 		// pkg/fleet/acm/client_test.go pins "kubernaut.ai/managed =true" as
 		// ScopeInvalid for the Check lane; the collector must not read the same
 		// string as managed, or the two lanes disagree about one fleet.

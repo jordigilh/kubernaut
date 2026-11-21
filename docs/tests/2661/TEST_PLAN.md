@@ -12,7 +12,7 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
 for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
 configuration surface (`UT-FMC-SRC-2661-001..010`), the ACM collector
-(`UT-FMC-SRC-2661-011..019`, `021..023`; `020` lives in
+(`UT-FMC-SRC-2661-011..019`, `021..025`; `020` lives in
 `pkg/fleet/scopecache/inventory_page_test.go`), and the Tier 2 integration
 specs `IT-FMC-SRC-2661-001..004` (commit `73e66c805`,
 `work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
@@ -206,8 +206,8 @@ live run.
 | UT-FMC-SRC-2661-009 | Presence selects a source (D4.1a rule 2): a present `sources` block that is empty, null, or names only a null `acm` fails loading, and `acm: {}` loads as ACM then fails validation for its missing endpoint — a named source never resolves back to MCP | ✅ |
 | UT-FMC-SRC-2661-010 | A merged `sources` block is validated, not skipped, and flattening reproduces YAML merge precedence: a direct key wins over a merge, and the earlier merge target wins over a later one (CM-6) | ✅ |
 | UT-FMC-SRC-2661-011 | Observation shape: every object of a configured kind is written with its label state (`true`/`false`/`absent`/`invalid`), matching the MCP collector's cache shape so both sources project identically | ✅ |
-| UT-FMC-SRC-2661-012 | Precedence: explicit `false` overrides namespace `true`; invalid label is invalid, never absent, never inherits; cluster-scoped never inherits | ✅ |
-| UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item) | ✅ |
+| UT-FMC-SRC-2661-012 | Precedence: explicit `false` overrides namespace `true`; invalid label is invalid, never absent, never inherits; cluster-scoped never inherits. **Review-hardened shapes (rounds 2-3):** a present-but-unusable projection — JSON `null`, an empty managed value, a duplicate key, an entry without `=`, or a space-adjacent separator — is invalid, never absent, never resolved; legacy per-key projections are held to the same rule as the semicolon `label` field; more than one managed-label source at once is corruption, never a precedence choice (parity with the Check lane) | ✅ |
+| UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item). **Review-hardened:** an item with no or non-string `cluster` attribution fails the kind — Search visibility is not membership — and a present-but-non-string `namespace` field is a failure, never a silent cluster-scoped reclassification | ✅ |
 | UT-FMC-SRC-2661-014 | Traversal: explicit `orderBy uid asc`, offset chunking, strictly increasing `_uid`, stable `count` → complete collection | ✅ |
 | UT-FMC-SRC-2661-015 | `count` changes mid-walk → exactly one restart from offset 0, then complete; a second change → incomplete | ✅ |
 | UT-FMC-SRC-2661-016 | Duplicate/non-increasing `_uid`, non-final short page, or `sum(items) != count` → incomplete | ✅ |
@@ -219,6 +219,7 @@ live run.
 | UT-FMC-SRC-2661-022 | **Aggregate bounds across kinds**: a syncer fixture runs two configured kinds, each individually inside 50 items/page and 100 pages, whose *summed* pages or items exceed the partition-wide ceilings — assert no `Repair`, no staged write, no `CommitRepair`, and that the previous proven generation stays readable | ✅ |
 | UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **WITHOUT rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
 | UT-FMC-SRC-2661-024 | **Deadline ownership (D4.1a rule 7b)**: `repairPartition` sets exactly one collection deadline per repair, at repair start, from `RepairCollectionBudget` — every configured kind's collection sees the identical value — and never overwrites a deadline already present on the context | ✅ |
+| UT-FMC-SRC-2661-025 | **Transport hardening (review round 1)**: one Search reply is byte-bounded before decoding, so the 50-item logical guard is never the only defense against a hostile or broken endpoint; chunk failures are classified transport/tool/malformed and mapped onto the matching observation failure — an HTTP or GraphQL answer is never reported as a network outage, and a TLS failure as a tool failure | ✅ |
 
 ### Tier 2 — Integration
 
