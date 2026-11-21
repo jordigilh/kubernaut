@@ -465,7 +465,11 @@ func (f *acmSyncITFixture) advance(d time.Duration) {
 }
 
 // partitionPrefix mirrors scopecache's hashed partition keyspace so the specs
-// can assert on the committed/staged keys directly.
+// can assert on the committed/staged keys directly. It is a deliberate copy
+// of the unexported original in pkg/fleet/scopecache/status_store.go
+// (partitionPrefix, near the key helpers at the bottom of that file): a
+// production key-scheme change makes keyExists return false here and the
+// specs fail loudly, never false-pass.
 func (f *acmSyncITFixture) partitionPrefix() string {
 	digest := sha256.Sum256([]byte(acmITCluster.ID + "\x00" + acmITCluster.RegistrationUID))
 	return "kubernaut:fmc:v2:" + hex.EncodeToString(digest[:])

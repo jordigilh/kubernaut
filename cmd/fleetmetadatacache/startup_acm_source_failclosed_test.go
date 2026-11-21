@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -123,8 +124,12 @@ sources:
 		Expect(err).NotTo(HaveOccurred(), string(buildOutput))
 		command := exec.Command(binary, "-config", config)
 		command.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig, "KUBERNAUT_CONTROLLER_NAMESPACE=kubernaut-system")
-		var output bytes.Buffer
-		command.Stdout, command.Stderr = &output, &output
+		// The buffer is written by exec's copier goroutine while the poller
+		// below reads it, so it must be synchronized: bytes.Buffer is not
+		// concurrency-safe, and an unsynchronized read is a data race under
+		// -race (caught by the make target's parallel scheduling).
+		output := &synchronizedBuffer{}
+		command.Stdout, command.Stderr = output, output
 		Expect(command.Start()).To(Succeed())
 		var exited atomic.Bool
 		done := make(chan error, 1)
@@ -161,3 +166,22 @@ sources:
 			"wireFMCDependencies must return the error, not exit the process itself")
 	})
 })
+
+// synchronizedBuffer is a concurrency-safe bytes.Buffer: exec's stdout/stderr
+// copier goroutine writes it while the spec's poller reads the tail.
+type synchronizedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}

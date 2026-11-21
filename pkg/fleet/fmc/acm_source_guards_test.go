@@ -109,7 +109,7 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			"the partition ceiling is a bound, not a truncation point")
 	})
 
-	// UT-FMC-SRC-2661-019 / 011
+	// UT-FMC-SRC-2661-012: the collector-side label-state shapes
 	DescribeTable("UT-FMC-SRC-2661-012: malformed projected labels are invalid, never absent and never resolved",
 		func(label string, expected scope.LabelState) {
 			item := searchItem("uid-1", "api", label)
